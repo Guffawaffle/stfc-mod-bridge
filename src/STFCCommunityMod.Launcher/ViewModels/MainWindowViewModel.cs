@@ -22,21 +22,25 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string Headline => presentation.Headline;
-
-    public string HeadlineDetail => presentation.Detail;
-
     public string GameFolderStatus => presentation.GameFolderStatus;
 
     public string GameFolderIcon => presentation.GameFolderIcon;
 
     public LauncherHomeTone GameFolderTone => presentation.GameFolderTone;
 
+    public string GameFolderStatusAutomationName => presentation.GameFolderStatusAutomationName;
+
     public string GameFolderActionLabel => presentation.GameFolderActionLabel;
 
     public string GameFolderActionAutomationName => presentation.GameFolderActionAutomationName;
 
     public string GameClientStatus => presentation.GameClientStatus;
+
+    public string GameClientIcon => presentation.GameClientIcon;
+
+    public LauncherHomeTone GameClientTone => presentation.GameClientTone;
+
+    public string GameClientStatusAutomationName => presentation.GameClientStatusAutomationName;
 
     public bool IsGameRunning => presentation.IsGameRunning;
 
@@ -88,14 +92,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
-        OnPropertyChanged(nameof(Headline));
-        OnPropertyChanged(nameof(HeadlineDetail));
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
         OnPropertyChanged(nameof(GameFolderTone));
+        OnPropertyChanged(nameof(GameFolderStatusAutomationName));
         OnPropertyChanged(nameof(GameFolderActionLabel));
         OnPropertyChanged(nameof(GameFolderActionAutomationName));
         OnPropertyChanged(nameof(GameClientStatus));
+        OnPropertyChanged(nameof(GameClientIcon));
+        OnPropertyChanged(nameof(GameClientTone));
+        OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
         OnPropertyChanged(nameof(InitialBrowseDirectory));
     }

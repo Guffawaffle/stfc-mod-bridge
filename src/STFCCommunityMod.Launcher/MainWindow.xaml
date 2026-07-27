@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         xmlns:core="clr-namespace:STFCCommunityMod.Launcher.Core;assembly=STFCCommunityMod.Launcher.Core"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="STFC Community Mod Launcher"
         Width="680"
         Height="590"
@@ -11,30 +12,36 @@
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True"
         automation:AutomationProperties.Name="STFC Community Mod Launcher">
-  <Grid Margin="34,28,34,26">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="56"
+                        ResizeBorderThickness="6"
+                        GlassFrameThickness="0"
+                        CornerRadius="10"
+                        UseAeroCaptionButtons="False" />
+  </shell:WindowChrome.WindowChrome>
+
+  <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
+      <RowDefinition Height="56" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Grid Grid.Row="0">
+    <Grid Grid.Row="0"
+          Margin="24,0,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <StackPanel VerticalAlignment="Center">
-        <TextBlock FontSize="18"
-                   FontWeight="SemiBold"
-                   Text="STFC Community Mod" />
-        <TextBlock Margin="0,3,0,0"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Windows Launcher" />
-      </StackPanel>
+      <TextBlock VerticalAlignment="Center"
+                 FontSize="14"
+                 FontWeight="SemiBold"
+                 Text="STFC Community Mod" />
       <Button x:Name="ThemeToggleButton"
               Grid.Column="1"
               Style="{StaticResource QuietButtonStyle}"
@@ -42,7 +49,31 @@
               Content="Light"
               FontSize="13"
               ToolTip="Switch theme"
+              shell:WindowChrome.IsHitTestVisibleInChrome="True"
               automation:AutomationProperties.Name="Switch launcher theme" />
+      <StackPanel Grid.Column="2"
+                  Orientation="Horizontal">
+        <Button Style="{StaticResource CaptionButtonStyle}"
+                Click="MinimizeButton_Click"
+                Content="—"
+                ToolTip="Minimize"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Minimize launcher" />
+        <Button x:Name="MaximizeRestoreButton"
+                Style="{StaticResource CaptionButtonStyle}"
+                Click="MaximizeRestoreButton_Click"
+                Content="□"
+                ToolTip="Maximize"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Maximize launcher" />
+        <Button Style="{StaticResource CloseCaptionButtonStyle}"
+                Click="CloseButton_Click"
+                Content="×"
+                FontSize="20"
+                ToolTip="Close"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Close launcher" />
+      </StackPanel>
     </Grid>
 
     <StackPanel Grid.Row="1"
@@ -53,14 +84,13 @@
       <TextBlock HorizontalAlignment="Center"
                  FontSize="32"
                  FontWeight="SemiBold"
-                 Text="{Binding Headline}"
-                 TextAlignment="Center"
-                 automation:AutomationProperties.LiveSetting="Polite" />
+                 Text="Make STFC yours."
+                 TextAlignment="Center" />
       <TextBlock Margin="24,10,24,0"
                  HorizontalAlignment="Center"
                  FontSize="15"
                  Foreground="{DynamicResource TextSecondaryBrush}"
-                 Text="{Binding HeadlineDetail}"
+                 Text="Install, update, and configure the community mod in one place."
                  TextAlignment="Center" />
 
       <Border Margin="0,30,0,0"
@@ -107,7 +137,8 @@
                        FontSize="20"
                        FontWeight="Bold"
                        Text="{Binding GameFolderIcon}"
-                       TextAlignment="Center">
+                       TextAlignment="Center"
+                       automation:AutomationProperties.Name="{Binding GameFolderStatusAutomationName}">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
                   <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
@@ -145,10 +176,12 @@
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
                   <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                  <Setter Property="Visibility" Value="Visible" />
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding GameFolderTone}"
                                  Value="{x:Static core:LauncherHomeTone.Success}">
                       <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                      <Setter Property="Visibility" Value="Collapsed" />
                     </DataTrigger>
                     <DataTrigger Binding="{Binding GameFolderTone}"
                                  Value="{x:Static core:LauncherHomeTone.Error}">
@@ -173,14 +206,45 @@
                   Height="34"
                   Margin="0,0,14,0"
                   VerticalAlignment="Center"
-                  Background="{DynamicResource SurfaceMutedBrush}"
                   CornerRadius="17">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding GameClientTone}"
+                               Value="{x:Static core:LauncherHomeTone.Success}">
+                    <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding GameClientTone}"
+                               Value="{x:Static core:LauncherHomeTone.Warning}">
+                    <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
             <TextBlock HorizontalAlignment="Center"
                        VerticalAlignment="Center"
-                       FontSize="17"
-                       Foreground="{DynamicResource AccentBrush}"
-                       Text="●"
-                       TextAlignment="Center" />
+                       FontSize="14"
+                       FontWeight="Bold"
+                       Text="{Binding GameClientIcon}"
+                       TextAlignment="Center"
+                       automation:AutomationProperties.Name="{Binding GameClientStatusAutomationName}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding GameClientTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Success}">
+                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding GameClientTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Warning}">
+                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
           </Border>
           <TextBlock Grid.Row="2"
                      Grid.Column="1"
@@ -192,8 +256,23 @@
                      Grid.Column="2"
                      VerticalAlignment="Center"
                      FontSize="15"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="{Binding GameClientStatus}" />
+                     Text="{Binding GameClientStatus}">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding GameClientTone}"
+                               Value="{x:Static core:LauncherHomeTone.Success}">
+                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding GameClientTone}"
+                               Value="{x:Static core:LauncherHomeTone.Warning}">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
         </Grid>
       </Border>
 
@@ -210,7 +289,8 @@
       </Border>
     </StackPanel>
 
-    <Grid Grid.Row="2">
+    <Grid Grid.Row="2"
+          Margin="34,0,34,26">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />

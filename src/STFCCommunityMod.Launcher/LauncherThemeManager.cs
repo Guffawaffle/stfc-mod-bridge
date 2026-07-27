@@ -18,6 +18,8 @@ internal static class LauncherThemeManager
 {
     private const int DwmUseImmersiveDarkMode = 20;
     private const int DwmUseImmersiveDarkModeBefore20H1 = 19;
+    private const int DwmWindowCornerPreference = 33;
+    private const int DwmWindowCornerRound = 2;
     private const string WindowsThemeRegistryPath =
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
@@ -97,6 +99,13 @@ internal static class LauncherThemeManager
                 ref enabled,
                 Marshal.SizeOf<int>());
         }
+
+        var cornerPreference = DwmWindowCornerRound;
+        _ = DwmSetWindowAttribute(
+            windowHandle,
+            DwmWindowCornerPreference,
+            ref cornerPreference,
+            Marshal.SizeOf<int>());
     }
 
     private static LauncherTheme Apply(LauncherTheme theme)

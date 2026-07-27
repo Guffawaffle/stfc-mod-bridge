@@ -9,14 +9,16 @@ public enum LauncherHomeTone
 }
 
 public sealed record LauncherHomePresentation(
-    string Headline,
-    string Detail,
     string GameFolderStatus,
     string GameFolderIcon,
     LauncherHomeTone GameFolderTone,
+    string GameFolderStatusAutomationName,
     string GameFolderActionLabel,
     string GameFolderActionAutomationName,
     string GameClientStatus,
+    string GameClientIcon,
+    LauncherHomeTone GameClientTone,
+    string GameClientStatusAutomationName,
     bool IsGameRunning)
 {
     public static LauncherHomePresentation FromSnapshot(LauncherEnvironmentSnapshot snapshot)
@@ -32,34 +34,13 @@ public sealed record LauncherHomePresentation(
         var gameFolderIsSet = snapshot.SelectedGameDirectory is not null;
         var boundedCandidateFound = !gameFolderIsSet && snapshot.Discovery.ValidCandidates.Count > 0;
 
-        var (headline, detail) = snapshot.IsGameRunning
-            ? (
-                "Game is running",
-                gameFolderIsSet
-                    ? "The saved game folder remains ready while you play."
-                    : "Installation checks remain available while you play.")
-            : snapshot.HealthCode switch
-            {
-                LauncherHealthCode.InstallationReady => (
-                    "Game folder ready",
-                    "STFC was found and validated."),
-                LauncherHealthCode.SelectionInvalid => (
-                    "Game folder needs attention",
-                    "Choose the folder that directly contains prime.exe."),
-                LauncherHealthCode.CandidateFound => (
-                    "Game installation found",
-                    "Confirm the folder before the launcher manages the mod."),
-                _ => (
-                    "Choose your game folder",
-                    "Select the folder that directly contains prime.exe."),
-            };
-
-        var (folderStatus, folderIcon, folderTone, actionLabel, automationName) =
+        var (folderStatus, folderIcon, folderTone, folderAutomationName, actionLabel, actionAutomationName) =
             gameFolderIsSet
                 ? (
-                    "Set",
+                    string.Empty,
                     "✓",
                     LauncherHomeTone.Success,
+                    "Game folder set",
                     "_Change",
                     "Change confirmed STFC game folder")
                 : savedSelectionNeedsAttention
@@ -67,6 +48,7 @@ public sealed record LauncherHomePresentation(
                         "Needs attention",
                         "×",
                         LauncherHomeTone.Error,
+                        "Game folder needs attention",
                         "_Choose folder",
                         "Choose a replacement STFC game folder")
                     : boundedCandidateFound
@@ -74,24 +56,41 @@ public sealed record LauncherHomePresentation(
                             "Found",
                             "!",
                             LauncherHomeTone.Warning,
+                            "Game folder found and awaiting confirmation",
                             "_Confirm",
                             "Confirm discovered STFC game folder")
                         : (
                             "Not set",
                             "!",
                             LauncherHomeTone.Warning,
+                            "Game folder not set",
                             "_Set folder",
                             "Set STFC game folder");
 
+        var (clientStatus, clientIcon, clientTone, clientAutomationName) =
+            snapshot.IsGameRunning
+                ? (
+                    "Running",
+                    "●",
+                    LauncherHomeTone.Success,
+                    "STFC game client is running")
+                : (
+                    "Not running",
+                    "○",
+                    LauncherHomeTone.Neutral,
+                    "STFC game client is not running");
+
         return new(
-            headline,
-            detail,
             folderStatus,
             folderIcon,
             folderTone,
+            folderAutomationName,
             actionLabel,
-            automationName,
-            snapshot.IsGameRunning ? "Running" : "Not running",
+            actionAutomationName,
+            clientStatus,
+            clientIcon,
+            clientTone,
+            clientAutomationName,
             snapshot.IsGameRunning);
     }
 }
