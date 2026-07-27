@@ -42,4 +42,5 @@ deployment, update, repair, configuration, and launch mutations belong to
 their dependent work items.
 
 See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md)
-and [the product contract](../docs/windows-launcher/CONTRACT.md).
+[the product contract](../docs/windows-launcher/CONTRACT.md), and
+[the Windows signing policy](../docs/windows-launcher/CODE_SIGNING.md).
