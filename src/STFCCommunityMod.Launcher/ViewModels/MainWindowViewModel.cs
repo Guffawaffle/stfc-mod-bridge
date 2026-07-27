@@ -9,73 +9,50 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly LauncherEnvironmentProbe environmentProbe;
     private LauncherEnvironmentSnapshot snapshot;
-    private string selectionFeedback = "Selection is explicit: the launcher will never choose a folder silently.";
+    private LauncherHomePresentation presentation;
+    private string selectionFeedback = string.Empty;
 
     private MainWindowViewModel(LauncherEnvironmentProbe environmentProbe)
     {
         this.environmentProbe = environmentProbe;
         snapshot = environmentProbe.Capture();
+        presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         RefreshCommand = new RelayCommand(Refresh);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string StatusTitle => snapshot.StatusTitle;
+    public string Headline => presentation.Headline;
 
-    public string StatusDetail => snapshot.StatusDetail;
+    public string HeadlineDetail => presentation.Detail;
 
-    public string ProcessStatus => snapshot.IsGameRunning ? "STFC is running" : "STFC is not running";
+    public string GameFolderStatus => presentation.GameFolderStatus;
 
-    public string InstallOwnershipStatus { get; } = "Per-user launcher storage is configured";
+    public string GameFolderIcon => presentation.GameFolderIcon;
 
-    public string GameFolderState =>
-        snapshot.SelectedGameDirectory is null ? "GAME FOLDER NOT SET" : "GAME FOLDER SET";
+    public LauncherHomeTone GameFolderTone => presentation.GameFolderTone;
 
-    public string GameFolderDetail =>
-        snapshot.SelectedGameDirectory is null
-            ? "Choose the folder that directly contains prime.exe."
-            : "Confirmed and revalidated by prime.exe. The path is hidden for privacy.";
+    public string GameFolderActionLabel => presentation.GameFolderActionLabel;
 
-    public string GameFolderActionLabel =>
-        snapshot.SelectedGameDirectory is null ? "_Set game folder" : "_Change game folder";
+    public string GameFolderActionAutomationName => presentation.GameFolderActionAutomationName;
 
-    public string GameFolderActionAutomationName =>
-        snapshot.SelectedGameDirectory is null
-            ? "Set STFC game folder"
-            : "Change confirmed STFC game folder";
+    public string GameClientStatus => presentation.GameClientStatus;
 
-    public string DiscoverySummary
-    {
-        get
-        {
-            var validCount = snapshot.Discovery.ValidCandidates.Count;
-            var inspectedCount = snapshot.Discovery.Candidates.Count;
-            return $"Inspected {inspectedCount} bounded candidate{(inspectedCount == 1 ? string.Empty : "s")}; "
-                + $"{validCount} valid.";
-        }
-    }
-
-    public IReadOnlyList<string> CandidateSummaries =>
-        snapshot.Discovery.Candidates
-            .Select(
-                (candidate, index) =>
-                {
-                    var state = candidate.Validation.IsValid ? "VALID" : candidate.Validation.Code.ToString().ToUpperInvariant();
-                    var provenance = string.Join(
-                        ", ",
-                        candidate.Evidence.Select(evidence => evidence.Source).Distinct());
-                    return $"CANDIDATE {index + 1} • {state} • {candidate.Confidence} • {provenance}";
-                })
-            .ToArray();
-
-    public IReadOnlyList<string> HealthSummaries =>
-        snapshot.HealthDimensions
-            .Select(dimension => $"{dimension.Title}: {dimension.Detail}")
-            .ToArray();
+    public bool IsGameRunning => presentation.IsGameRunning;
 
     public string SelectionFeedback => selectionFeedback;
 
-    public string? InitialBrowseDirectory => snapshot.SelectedGameDirectory;
+    public bool HasSelectionFeedback => !string.IsNullOrWhiteSpace(selectionFeedback);
+
+    public string? InitialBrowseDirectory
+    {
+        get
+        {
+            var validCandidates = snapshot.Discovery.ValidCandidates;
+            return snapshot.SelectedGameDirectory
+                ?? (validCandidates.Count > 0 ? validCandidates[0].GameDirectory : null);
+        }
+    }
 
     public ICommand RefreshCommand { get; }
 
@@ -99,25 +76,27 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public void ConfirmManualSelection(string gameDirectory)
     {
         var candidate = environmentProbe.ConfirmManualSelection(gameDirectory);
-        selectionFeedback = candidate.Validation.Message;
+        selectionFeedback = candidate.Validation.IsValid
+            ? "Game folder saved."
+            : candidate.Validation.Message;
         Refresh();
         OnPropertyChanged(nameof(SelectionFeedback));
+        OnPropertyChanged(nameof(HasSelectionFeedback));
     }
 
     private void Refresh()
     {
         snapshot = environmentProbe.Capture();
-        OnPropertyChanged(nameof(StatusTitle));
-        OnPropertyChanged(nameof(StatusDetail));
-        OnPropertyChanged(nameof(ProcessStatus));
-        OnPropertyChanged(nameof(InstallOwnershipStatus));
-        OnPropertyChanged(nameof(GameFolderState));
-        OnPropertyChanged(nameof(GameFolderDetail));
+        presentation = LauncherHomePresentation.FromSnapshot(snapshot);
+        OnPropertyChanged(nameof(Headline));
+        OnPropertyChanged(nameof(HeadlineDetail));
+        OnPropertyChanged(nameof(GameFolderStatus));
+        OnPropertyChanged(nameof(GameFolderIcon));
+        OnPropertyChanged(nameof(GameFolderTone));
         OnPropertyChanged(nameof(GameFolderActionLabel));
         OnPropertyChanged(nameof(GameFolderActionAutomationName));
-        OnPropertyChanged(nameof(DiscoverySummary));
-        OnPropertyChanged(nameof(CandidateSummaries));
-        OnPropertyChanged(nameof(HealthSummaries));
+        OnPropertyChanged(nameof(GameClientStatus));
+        OnPropertyChanged(nameof(IsGameRunning));
         OnPropertyChanged(nameof(InitialBrowseDirectory));
     }
 

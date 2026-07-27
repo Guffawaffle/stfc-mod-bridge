@@ -4,8 +4,8 @@ This directory contains the Windows launcher parity+ implementation. `WL-001`
 established the build, test, high-DPI shell, per-user ownership model, signing,
 and self-contained packaging shape. The current `WL-002` slice adds bounded
 installation discovery, explicit `prime.exe` validation, user-confirmed
-selection, and composable read-only health without modifying the game
-installation.
+selection, composable read-only health, and the accepted compact Light/Dark
+Home presentation without modifying the game installation.
 
 ## Projects
 

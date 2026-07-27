@@ -3,29 +3,42 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="SpaceBrush" Color="#080B14" />
-    <SolidColorBrush x:Key="PanelBrush" Color="#11182A" />
-    <SolidColorBrush x:Key="TextBrush" Color="#F7F5EF" />
-    <SolidColorBrush x:Key="MutedTextBrush" Color="#C3CADB" />
-    <SolidColorBrush x:Key="AccentOrangeBrush" Color="#FF9F43" />
-    <SolidColorBrush x:Key="AccentPurpleBrush" Color="#B89CFF" />
-    <SolidColorBrush x:Key="AccentBlueBrush" Color="#7DD3FC" />
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#0B1220" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#111B2C" />
+    <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#172337" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F7FAFC" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A9B7CA" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#2A3950" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#168BFF" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#3DA1FF" />
+    <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="#223149" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#57D17C" />
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#183A2A" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#F6BE4F" />
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#3A2F18" />
+    <SolidColorBrush x:Key="ErrorBrush" Color="#FF7070" />
+    <SolidColorBrush x:Key="ErrorSoftBrush" Color="#3C2025" />
 
     <Style TargetType="TextBlock">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FontFamily" Value="Segoe UI" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
     <Style TargetType="Button">
       <Setter Property="MinHeight" Value="44" />
-      <Setter Property="Padding" Value="18,8" />
-      <Setter Property="Margin" Value="0,0,12,0" />
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Padding" Value="18,9" />
+      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="FontSize" Value="14" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="#10131D" />
-      <Setter Property="Background" Value="{StaticResource AccentOrangeBrush}" />
-      <Setter Property="BorderBrush" Value="#FFFFFF" />
-      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
       <Setter Property="FocusVisualStyle">
         <Setter.Value>
           <Style>
@@ -39,6 +52,69 @@
           </Style>
         </Setter.Value>
       </Setter>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ButtonBorder"
+                        Property="Background"
+                        Value="{DynamicResource AccentHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ButtonBorder"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="QuietButtonStyle"
+           BasedOn="{StaticResource SecondaryButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="BorderThickness" Value="0" />
     </Style>
   </Application.Resources>
 </Application>
