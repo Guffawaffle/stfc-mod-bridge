@@ -1,0 +1,44 @@
+<Application x:Class="STFCCommunityMod.Launcher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="SpaceBrush" Color="#080B14" />
+    <SolidColorBrush x:Key="PanelBrush" Color="#11182A" />
+    <SolidColorBrush x:Key="TextBrush" Color="#F7F5EF" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="#C3CADB" />
+    <SolidColorBrush x:Key="AccentOrangeBrush" Color="#FF9F43" />
+    <SolidColorBrush x:Key="AccentPurpleBrush" Color="#B89CFF" />
+    <SolidColorBrush x:Key="AccentBlueBrush" Color="#7DD3FC" />
+
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style TargetType="Button">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="18,8" />
+      <Setter Property="Margin" Value="0,0,12,0" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#10131D" />
+      <Setter Property="Background" Value="{StaticResource AccentOrangeBrush}" />
+      <Setter Property="BorderBrush" Value="#FFFFFF" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FocusVisualStyle">
+        <Setter.Value>
+          <Style>
+            <Setter Property="Control.Template">
+              <Setter.Value>
+                <ControlTemplate>
+                  <Border BorderBrush="#FFFFFF" BorderThickness="3" CornerRadius="4" />
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+          </Style>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Application.Resources>
+</Application>
