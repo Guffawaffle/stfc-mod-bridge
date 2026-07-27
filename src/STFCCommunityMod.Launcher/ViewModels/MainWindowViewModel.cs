@@ -88,7 +88,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasSelectionFeedback));
     }
 
-    private void Refresh()
+    public void Refresh()
     {
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);

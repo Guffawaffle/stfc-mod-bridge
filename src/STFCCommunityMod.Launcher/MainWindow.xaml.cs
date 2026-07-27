@@ -3,20 +3,26 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Interop;
 using System.Windows.Shell;
+using System.Windows.Threading;
+using STFCCommunityMod.Launcher.Services;
 using STFCCommunityMod.Launcher.ViewModels;
 
 namespace STFCCommunityMod.Launcher;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IDisposable
 {
-    private const int WindowNonClientHitTest = 0x0084;
-    private const int HitTestMaximizeButton = 9;
-
     private LauncherTheme currentTheme;
-    private HwndSource? windowSource;
+    private readonly IGameProcessStateMonitor processStateMonitor;
+    private bool isDisposed;
 
     public MainWindow()
+        : this(new WindowsGameProcessStateMonitor())
     {
+    }
+
+    internal MainWindow(IGameProcessStateMonitor processStateMonitor)
+    {
+        this.processStateMonitor = processStateMonitor;
         InitializeComponent();
         currentTheme = LauncherThemeManager.ApplySystemPreference();
         UpdateThemeToggle();
@@ -27,15 +33,30 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         LauncherThemeManager.ApplyWindowChrome(this, currentTheme);
-        windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-        windowSource?.AddHook(WindowProcedure);
+        processStateMonitor.StateChanged += ProcessStateMonitor_StateChanged;
+        if (processStateMonitor.TryStart(new WindowInteropHelper(this).Handle))
+        {
+            RefreshEnvironment();
+        }
     }
 
     protected override void OnClosed(EventArgs e)
     {
-        windowSource?.RemoveHook(WindowProcedure);
-        windowSource = null;
+        Dispose();
         base.OnClosed(e);
+    }
+
+    public void Dispose()
+    {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        isDisposed = true;
+        processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
+        processStateMonitor.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     protected override void OnStateChanged(EventArgs e)
@@ -46,12 +67,7 @@ public partial class MainWindow : Window
 
     private void AboutButton_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(
-            this,
-            "STFC Community Mod Launcher\nVersion 0.1.0\n\nCommunity-built tools for Star Trek Fleet Command.",
-            "About STFC Community Mod Launcher",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        AboutDialog.IsOpen = true;
     }
 
     private void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e)
@@ -123,41 +139,31 @@ public partial class MainWindow : Window
     private void UpdateMaximizeRestoreButton()
     {
         var isMaximized = WindowState == WindowState.Maximized;
-        MaximizeRestoreButton.Content = isMaximized ? "❐" : "□";
+        MaximizeGlyph.Visibility = isMaximized ? Visibility.Collapsed : Visibility.Visible;
+        RestoreGlyph.Visibility = isMaximized ? Visibility.Visible : Visibility.Collapsed;
         MaximizeRestoreButton.ToolTip = isMaximized ? "Restore" : "Maximize";
         AutomationProperties.SetName(
             MaximizeRestoreButton,
             isMaximized ? "Restore launcher" : "Maximize launcher");
     }
 
-    private IntPtr WindowProcedure(
-        IntPtr windowHandle,
-        int message,
-        IntPtr wordParameter,
-        IntPtr longParameter,
-        ref bool handled)
+    private void ProcessStateMonitor_StateChanged(object? sender, EventArgs e)
     {
-        _ = windowHandle;
-        _ = wordParameter;
-        if (message != WindowNonClientHitTest || !IsOverMaximizeRestoreButton(longParameter))
+        _ = sender;
+        _ = e;
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
         {
-            return IntPtr.Zero;
+            return;
         }
 
-        handled = true;
-        return new IntPtr(HitTestMaximizeButton);
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, RefreshEnvironment);
     }
 
-    private bool IsOverMaximizeRestoreButton(IntPtr longParameter)
+    private void RefreshEnvironment()
     {
-        var packedPoint = longParameter.ToInt64();
-        var screenPoint = new Point(
-            unchecked((short)(packedPoint & 0xFFFF)),
-            unchecked((short)((packedPoint >> 16) & 0xFFFF)));
-        var buttonPoint = MaximizeRestoreButton.PointFromScreen(screenPoint);
-        return buttonPoint.X >= 0
-            && buttonPoint.Y >= 0
-            && buttonPoint.X <= MaximizeRestoreButton.ActualWidth
-            && buttonPoint.Y <= MaximizeRestoreButton.ActualHeight;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.Refresh();
+        }
     }
 }
