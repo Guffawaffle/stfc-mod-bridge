@@ -49,3 +49,6 @@ See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
 [the discovery and health contract](../docs/windows-launcher/DISCOVERY_AND_HEALTH.md),
 [the product contract](../docs/windows-launcher/CONTRACT.md), and
 [the Windows signing policy](../docs/windows-launcher/CODE_SIGNING.md).
+The accepted compact home, adaptive settings workspace, notification-scale
+requirements, themes, diagnostics boundary, and directional mockup are in
+[the UX direction](../docs/windows-launcher/UX_DIRECTION.md).
