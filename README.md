@@ -1,9 +1,11 @@
 # STFC Community Mod Launcher for Windows
 
-This directory contains the Windows launcher parity+ implementation. The
-current `WL-001` slice is an architecture spike: it proves the build, test,
-high-DPI shell, per-user ownership model, and self-contained packaging shape
-without modifying the game installation.
+This directory contains the Windows launcher parity+ implementation. `WL-001`
+established the build, test, high-DPI shell, per-user ownership model, signing,
+and self-contained packaging shape. The current `WL-002` slice adds bounded
+installation discovery, explicit `prime.exe` validation, user-confirmed
+selection, and composable read-only health without modifying the game
+installation.
 
 ## Projects
 
@@ -25,22 +27,25 @@ dotnet publish windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.L
 The repository `global.json` selects .NET 8. The launcher publish is
 self-contained and does not require a machine-wide .NET runtime.
 
-## Package the spike
+## Package the launcher
 
 ```powershell
 ./windows-launcher/scripts/publish.ps1
 ```
 
 The script writes an unpackaged per-user payload, a ZIP, a SHA-256 sidecar, and
-a small architecture-spike manifest under `windows-launcher/artifacts/`.
+a small launcher manifest under `windows-launcher/artifacts/`.
 
 ## Current safety boundary
 
-The spike is deliberately read-only. It may inspect whether `prime.exe` is
-running and display the proposed per-user install location. Discovery,
-deployment, update, repair, configuration, and launch mutations belong to
-their dependent work items.
+The current launcher is deliberately read-only with respect to the game
+installation. It may inspect whether `prime.exe` is running, read the official
+launcher's exact `GAME_PATH` setting, validate bounded conventional or
+user-selected folders, and persist a confirmed selection under launcher-owned
+state. Deployment, update, repair, configuration, and launch mutations belong
+to their dependent work items.
 
-See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md)
+See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
+[the discovery and health contract](../docs/windows-launcher/DISCOVERY_AND_HEALTH.md),
 [the product contract](../docs/windows-launcher/CONTRACT.md), and
 [the Windows signing policy](../docs/windows-launcher/CODE_SIGNING.md).

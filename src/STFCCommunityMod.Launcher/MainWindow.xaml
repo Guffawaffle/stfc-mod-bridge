@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterScreen"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True"
-        automation:AutomationProperties.Name="STFC Community Mod Launcher architecture preview">
+        automation:AutomationProperties.Name="STFC Community Mod Launcher installation discovery preview">
   <Grid Margin="24">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="132" />
@@ -33,7 +33,7 @@
                  Foreground="#11131B"
                  FontSize="18"
                  FontWeight="Bold"
-                 Text="LCARS&#x0a;WL-001"
+                 Text="LCARS&#x0a;WL-002"
                  VerticalAlignment="Top" />
     </Grid>
 
@@ -54,7 +54,7 @@
           <TextBlock FontSize="13"
                      FontWeight="Bold"
                      Foreground="{StaticResource AccentPurpleBrush}"
-                     Text="WINDOWS LAUNCHER / ARCHITECTURE SPIKE" />
+                     Text="WINDOWS LAUNCHER / INSTALLATION DISCOVERY" />
           <TextBlock Margin="0,5,0,0"
                      FontSize="30"
                      FontWeight="Bold"
@@ -136,10 +136,65 @@
               <TextBlock FontSize="13"
                          FontWeight="Bold"
                          Foreground="{StaticResource AccentPurpleBrush}"
-                         Text="SPIKE BOUNDARY" />
+                         Text="CONFIRMED GAME FOLDER" />
               <TextBlock Margin="0,8,0,0"
-                         FontSize="16"
-                         Text="This build is read-only. Discovery, installation, update, repair, and configuration mutations remain locked until their dependent work items are accepted." />
+                         FontSize="15"
+                         FontWeight="SemiBold"
+                         Text="{Binding SelectedGameDirectory}" />
+              <TextBlock Margin="0,6,0,0"
+                         Foreground="{StaticResource MutedTextBrush}"
+                         Text="{Binding SelectionFeedback}"
+                         automation:AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </Border>
+
+          <Border Margin="0,16,0,0"
+                  Padding="18"
+                  Background="{StaticResource PanelBrush}"
+                  CornerRadius="12">
+            <StackPanel>
+              <TextBlock FontSize="13"
+                         FontWeight="Bold"
+                         Foreground="{StaticResource AccentPurpleBrush}"
+                         Text="BOUNDED CANDIDATES" />
+              <TextBlock Margin="0,8,0,0"
+                         FontSize="15"
+                         Text="{Binding DiscoverySummary}" />
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding CandidateSummaries}"
+                            automation:AutomationProperties.Name="STFC installation candidates">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="0,3,0,0"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               Text="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <Border Margin="0,16,0,0"
+                  Padding="18"
+                  Background="{StaticResource PanelBrush}"
+                  CornerRadius="12">
+            <StackPanel>
+              <TextBlock FontSize="13"
+                         FontWeight="Bold"
+                         Foreground="{StaticResource AccentBlueBrush}"
+                         Text="COMPOSABLE HEALTH" />
+              <ItemsControl Margin="0,8,0,0"
+                            ItemsSource="{Binding HealthSummaries}"
+                            automation:AutomationProperties.Name="Launcher health dimensions">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Margin="0,3,0,0" Text="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Margin="0,8,0,0"
+                         Foreground="{StaticResource MutedTextBrush}"
+                         Text="Discovery and selection are read-only with respect to the game installation." />
             </StackPanel>
           </Border>
         </StackPanel>
@@ -147,12 +202,16 @@
 
       <DockPanel Grid.Row="2" LastChildFill="False">
         <Button Command="{Binding RefreshCommand}"
-                Content="_Refresh status"
-                automation:AutomationProperties.Name="Refresh launcher status" />
+                Content="_Refresh discovery"
+                automation:AutomationProperties.Name="Refresh installation discovery" />
+        <Button Background="{StaticResource AccentPurpleBrush}"
+                Click="ChooseGameFolderButton_Click"
+                Content="_Choose game folder"
+                automation:AutomationProperties.Name="Choose STFC game folder" />
         <Button Background="{StaticResource AccentBlueBrush}"
                 Click="CloseButton_Click"
-                Content="E_xit preview"
-                automation:AutomationProperties.Name="Exit launcher preview" />
+                Content="E_xit"
+                automation:AutomationProperties.Name="Exit launcher" />
         <TextBlock Margin="8,0,0,0"
                    VerticalAlignment="Center"
                    Foreground="{StaticResource MutedTextBrush}"

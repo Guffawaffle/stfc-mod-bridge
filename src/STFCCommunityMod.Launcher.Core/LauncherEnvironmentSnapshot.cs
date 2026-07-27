@@ -5,4 +5,7 @@ public sealed record LauncherEnvironmentSnapshot(
     string StatusTitle,
     string StatusDetail,
     bool IsGameRunning,
-    PerUserInstallLayout InstallLayout);
+    PerUserInstallLayout InstallLayout,
+    string? SelectedGameDirectory,
+    GameInstallDiscoverySnapshot Discovery,
+    IReadOnlyList<LauncherHealthDimension> HealthDimensions);
