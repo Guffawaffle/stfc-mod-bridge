@@ -1,9 +1,12 @@
+using System.Diagnostics;
+using System.IO;
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Interop;
 using System.Windows.Shell;
 using System.Windows.Threading;
+using STFCCommunityMod.Launcher.Core;
 using STFCCommunityMod.Launcher.Services;
 using STFCCommunityMod.Launcher.ViewModels;
 
@@ -11,9 +14,19 @@ namespace STFCCommunityMod.Launcher;
 
 public partial class MainWindow : Window, IDisposable
 {
+    private const double HomeWidth = 680;
+    private const double HomeHeight = 590;
+    private const double SettingsWidth = 1040;
+    private const double SettingsHeight = 740;
+    private const string GuffawaffleSchemaResource =
+        "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json";
+
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
+    private RelayCommand? openRawTomlCommand;
     private bool isDisposed;
+    private bool isSettingsWorkspaceOpen;
+    private bool isSettingsWorkspaceInitialized;
 
     public MainWindow()
         : this(new WindowsGameProcessStateMonitor())
@@ -70,6 +83,16 @@ public partial class MainWindow : Window, IDisposable
         AboutDialog.IsOpen = true;
     }
 
+    private void WorkspaceNavigationButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized())
+        {
+            return;
+        }
+
+        SetSettingsWorkspaceOpen(!isSettingsWorkspaceOpen);
+    }
+
     private void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel viewModel)
@@ -90,6 +113,7 @@ public partial class MainWindow : Window, IDisposable
         if (dialog.ShowDialog(this) == true)
         {
             viewModel.ConfirmManualSelection(dialog.FolderName);
+            openRawTomlCommand?.NotifyCanExecuteChanged();
         }
     }
 
@@ -147,6 +171,107 @@ public partial class MainWindow : Window, IDisposable
             isMaximized ? "Restore launcher" : "Maximize launcher");
     }
 
+    private void SetSettingsWorkspaceOpen(bool isOpen)
+    {
+        isSettingsWorkspaceOpen = isOpen;
+        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        AboutButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        RefreshStatusButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        WorkspaceNavigationButton.Content = isOpen ? "_Home" : "_Settings";
+        AutomationProperties.SetName(
+            WorkspaceNavigationButton,
+            isOpen ? "Return to launcher home" : "Open launcher settings");
+
+        MinWidth = isOpen ? 820 : 560;
+        MinHeight = isOpen ? 620 : 500;
+        if (WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        Width = Math.Min(
+            isOpen ? Math.Max(ActualWidth, SettingsWidth) : HomeWidth,
+            SystemParameters.WorkArea.Width);
+        Height = Math.Min(
+            isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
+            SystemParameters.WorkArea.Height);
+    }
+
+    private bool EnsureSettingsWorkspaceInitialized()
+    {
+        if (isSettingsWorkspaceInitialized)
+        {
+            return true;
+        }
+
+        try
+        {
+            using var schemaStream = typeof(MainWindow).Assembly.GetManifestResourceStream(
+                GuffawaffleSchemaResource);
+            if (schemaStream is null)
+            {
+                throw new LauncherConfigurationSchemaException(
+                    "The packaged Guffawaffle configuration catalog is missing.");
+            }
+
+            var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
+            openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
+            SettingsWorkspace.DataContext = new SettingsViewModel(
+                catalog.VisibleSettings,
+                $"{catalog.Source.DisplayName} Community Mod",
+                openRawTomlCommand,
+                _ => new RelayCommand(() => { }, () => false));
+            isSettingsWorkspaceInitialized = true;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            SettingsUnavailableMessage.Text = exception.Message;
+            SettingsUnavailableDialog.IsOpen = true;
+            return false;
+        }
+    }
+
+    private bool CanOpenRawConfiguration()
+    {
+        return TryGetConfigurationFilePath(out var path) && File.Exists(path);
+    }
+
+    private void OpenRawConfiguration()
+    {
+        if (!TryGetConfigurationFilePath(out var path) || !File.Exists(path))
+        {
+            SettingsUnavailableMessage.Text =
+                "Select a valid game folder with an existing community_patch_settings.toml first.";
+            SettingsUnavailableDialog.IsOpen = true;
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                "Windows could not open the active TOML file. Check the default app for .toml files.";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private bool TryGetConfigurationFilePath(out string path)
+    {
+        if (DataContext is MainWindowViewModel { ConfigurationFilePath: { } configurationFilePath })
+        {
+            path = configurationFilePath;
+            return true;
+        }
+
+        path = string.Empty;
+        return false;
+    }
+
     private void ProcessStateMonitor_StateChanged(object? sender, EventArgs e)
     {
         _ = sender;
@@ -164,6 +289,7 @@ public partial class MainWindow : Window, IDisposable
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.Refresh();
+            openRawTomlCommand?.NotifyCanExecuteChanged();
         }
     }
 }

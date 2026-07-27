@@ -5,6 +5,7 @@
         xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
         xmlns:core="clr-namespace:STFCCommunityMod.Launcher.Core;assembly=STFCCommunityMod.Launcher.Core"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
         Title="STFC Community Mod Launcher"
         Width="680"
         Height="590"
@@ -116,7 +117,8 @@
       </StackPanel>
     </Grid>
 
-    <StackPanel Grid.Row="1"
+    <StackPanel x:Name="HomeWorkspace"
+                Grid.Row="1"
                 Width="520"
                 MaxWidth="520"
                 HorizontalAlignment="Center"
@@ -332,6 +334,11 @@
       </Border>
     </StackPanel>
 
+    <views:SettingsView x:Name="SettingsWorkspace"
+                        Grid.Row="1"
+                        Margin="28,12,28,18"
+                        Visibility="Collapsed" />
+
     <Grid Grid.Row="2"
           Margin="34,0,34,26">
       <Grid.ColumnDefinitions>
@@ -339,13 +346,22 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <Button Grid.Column="1"
+      <Button x:Name="WorkspaceNavigationButton"
+              Grid.Column="0"
+              HorizontalAlignment="Left"
+              Style="{StaticResource UtilityActionButtonStyle}"
+              Click="WorkspaceNavigationButton_Click"
+              Content="_Settings"
+              automation:AutomationProperties.Name="Open launcher settings" />
+      <Button x:Name="AboutButton"
+              Grid.Column="1"
               Margin="0,0,8,0"
               Style="{StaticResource UtilityActionButtonStyle}"
               Click="AboutButton_Click"
               Content="_About"
               automation:AutomationProperties.Name="About STFC Community Mod Launcher" />
-      <Button Grid.Column="2"
+      <Button x:Name="RefreshStatusButton"
+              Grid.Column="2"
               Style="{StaticResource UtilityActionButtonStyle}"
               Command="{Binding RefreshCommand}"
               Content="_Refresh status"
@@ -382,6 +398,16 @@
                      Text="Community-built tools for Star Trek Fleet Command." />
         </StackPanel>
       </Grid>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="SettingsUnavailableDialog"
+                          Grid.RowSpan="3"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Settings unavailable"
+                          automation:AutomationProperties.Name="Settings unavailable dialog">
+      <TextBlock x:Name="SettingsUnavailableMessage"
+                 Foreground="{DynamicResource TextSecondaryBrush}"
+                 Text="The launcher could not load its configuration catalog." />
     </controls:InAppDialog>
   </Grid>
 </Window>

@@ -2,15 +2,21 @@ using System.Windows.Input;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
-internal sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
+public sealed class SettingsActionCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {
     public event EventHandler? CanExecuteChanged;
 
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
 
-    public void Execute(object? parameter) => execute();
+    public void Execute(object? parameter)
+    {
+        if (CanExecute(parameter))
+        {
+            execute();
+        }
+    }
 
-    public void NotifyCanExecuteChanged()
+    public void RaiseCanExecuteChanged()
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }

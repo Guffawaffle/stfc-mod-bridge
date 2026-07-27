@@ -1,0 +1,515 @@
+<UserControl x:Class="STFCCommunityMod.Launcher.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
+             MinWidth="520"
+             Background="{DynamicResource WindowBackgroundBrush}"
+             Foreground="{DynamicResource TextPrimaryBrush}"
+             Focusable="False"
+             automation:AutomationProperties.Name="Mod settings">
+  <UserControl.Resources>
+    <Style x:Key="SettingsInputStyle"
+           TargetType="TextBox">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="SettingsComboItemStyle"
+           TargetType="ComboBoxItem">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="2" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border x:Name="ItemBorder"
+                    MinHeight="{TemplateBinding MinHeight}"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ItemBorder"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemBorder"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="ItemBorder"
+                        Property="Background"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter Property="Foreground"
+                        Value="{DynamicResource AccentForegroundBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="ItemBorder"
+                        Property="BorderBrush"
+                        Value="{DynamicResource FocusOuterBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SettingsComboStyle"
+           TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="MinWidth" Value="190" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="ItemContainerStyle" Value="{StaticResource SettingsComboItemStyle}" />
+      <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="DropDownToggle"
+                            MinHeight="{TemplateBinding MinHeight}"
+                            Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            ClickMode="Press"
+                            Focusable="False"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ControlBorder"
+                            MinHeight="{TemplateBinding MinHeight}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="7">
+                      <Grid>
+                        <ContentPresenter Margin="12,0,40,0"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Center"
+                                          Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType={x:Type ComboBox}}}"
+                                          ContentStringFormat="{Binding SelectionBoxItemStringFormat, RelativeSource={RelativeSource AncestorType={x:Type ComboBox}}}"
+                                          ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType={x:Type ComboBox}}}"
+                                          IsHitTestVisible="False"
+                                          RecognizesAccessKey="True"
+                                          TextElement.Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ComboBox}}}" />
+                        <Path Width="10"
+                              Height="6"
+                              Margin="0,0,14,0"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center"
+                              Data="M 1,1 L 5,5 L 9,1"
+                              Fill="Transparent"
+                              Stroke="{DynamicResource TextSecondaryBrush}"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round"
+                              StrokeThickness="1.5" />
+                      </Grid>
+                    </Border>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+
+              <Popup x:Name="PART_Popup"
+                     AllowsTransparency="True"
+                     Focusable="False"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     Placement="Bottom"
+                     PopupAnimation="Fade">
+                <Border x:Name="PopupBorder"
+                        MinWidth="{Binding ActualWidth, ElementName=DropDownToggle}"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                        Margin="0,4,0,0"
+                        Padding="1"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="7">
+                  <ScrollViewer CanContentScroll="True"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="DropDownToggle"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="DropDownToggle"
+                        Property="BorderBrush"
+                        Value="{DynamicResource FocusOuterBrush}" />
+                <Setter TargetName="DropDownToggle"
+                        Property="BorderThickness"
+                        Value="2" />
+              </Trigger>
+              <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="DropDownToggle"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+                <Setter TargetName="DropDownToggle"
+                        Property="BorderBrush"
+                        Value="{DynamicResource FocusOuterBrush}" />
+                <Setter TargetName="DropDownToggle"
+                        Property="BorderThickness"
+                        Value="2" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+              <Trigger Property="HasItems" Value="False">
+                <Setter TargetName="PopupBorder"
+                        Property="MinHeight"
+                        Value="44" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SettingsChipStyle"
+           TargetType="Border">
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Margin="28,20,28,24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <StackPanel>
+        <TextBlock FontSize="28"
+                   FontWeight="SemiBold"
+                   Text="Settings" />
+        <TextBlock Margin="0,5,0,0"
+                   FontSize="14"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Find and review mod behavior. Editors are added safely as each setting type is supported." />
+      </StackPanel>
+
+      <StackPanel Grid.Column="1"
+                  Margin="24,0,0,0"
+                  HorizontalAlignment="Right">
+        <TextBlock FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Release source" />
+        <TextBlock Margin="0,3,0,0"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Text="{Binding SourceIdentity}"
+                   automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="1"
+          Margin="0,22,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Margin="0,0,14,0">
+        <Label x:Name="SearchLabel"
+               Padding="0,0,0,5"
+               Foreground="{DynamicResource TextPrimaryBrush}"
+               FontWeight="SemiBold"
+               Content="_Search settings"
+               Target="{Binding ElementName=SearchBox}" />
+        <TextBox x:Name="SearchBox"
+                 Style="{StaticResource SettingsInputStyle}"
+                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                 automation:AutomationProperties.Name="Search settings"
+                 automation:AutomationProperties.HelpText="Filter settings by name, key, description, category, control, or value type." />
+      </StackPanel>
+
+      <StackPanel Grid.Column="1">
+        <Label Padding="0,0,0,5"
+               Foreground="{DynamicResource TextPrimaryBrush}"
+               FontWeight="SemiBold"
+               Content="_Category"
+               Target="{Binding ElementName=CategoryFilter}" />
+        <ComboBox x:Name="CategoryFilter"
+                  Style="{StaticResource SettingsComboStyle}"
+                  ItemsSource="{Binding Categories}"
+                  SelectedItem="{Binding SelectedCategory}"
+                  automation:AutomationProperties.Name="Settings category"
+                  automation:AutomationProperties.HelpText="Limit the settings list to one category." />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="2"
+          Margin="0,16,0,12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <TextBlock VerticalAlignment="Center"
+                 FontSize="13"
+                 Foreground="{DynamicResource TextSecondaryBrush}"
+                 Text="{Binding VisibleSettingCount, StringFormat={}{0} settings shown}"
+                 automation:AutomationProperties.LiveSetting="Polite" />
+
+      <StackPanel Grid.Column="1"
+                  HorizontalAlignment="Right">
+        <Button Style="{StaticResource UtilityActionButtonStyle}"
+                Command="{Binding OpenRawTomlCommand}"
+                Content="Open raw _TOML"
+                ToolTip="{Binding OpenRawTomlAvailability}"
+                automation:AutomationProperties.Name="Open active configuration as raw TOML"
+                automation:AutomationProperties.HelpText="{Binding OpenRawTomlAvailability}" />
+        <TextBlock MaxWidth="330"
+                   Margin="0,5,0,0"
+                   HorizontalAlignment="Right"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding OpenRawTomlAvailability}"
+                   TextAlignment="Right" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="3">
+      <ListBox ItemsSource="{Binding FilteredSettings}"
+               Background="Transparent"
+               BorderThickness="0"
+               ScrollViewer.CanContentScroll="True"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               VirtualizingPanel.IsVirtualizing="True"
+               VirtualizingPanel.VirtualizationMode="Recycling"
+               KeyboardNavigation.TabNavigation="Continue"
+               automation:AutomationProperties.Name="Filtered mod settings">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemContainerStyle>
+          <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+              <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                  <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+          </Style>
+        </ListBox.ItemContainerStyle>
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="{x:Type viewModels:SettingsRowViewModel}">
+            <Border Padding="18"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    automation:AutomationProperties.Name="{Binding Title}"
+                    automation:AutomationProperties.HelpText="{Binding Description}">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock FontSize="17"
+                               FontWeight="SemiBold"
+                               Text="{Binding Title}"
+                               ToolTip="{Binding Path}" />
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="1"
+                              Margin="18,0,0,0"
+                              HorizontalAlignment="Right">
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding EffectiveState}" />
+                    <TextBlock Margin="0,3,0,0"
+                               HorizontalAlignment="Right"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Text="{Binding EffectiveValue}" />
+                  </StackPanel>
+                </Grid>
+
+                <TextBlock Grid.Row="1"
+                           Margin="0,10,0,0"
+                           FontSize="13"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding Description}" />
+
+                <WrapPanel Grid.Row="2"
+                           Margin="0,12,0,0">
+                  <Border Style="{StaticResource SettingsChipStyle}">
+                    <TextBlock FontSize="12"
+                               Text="{Binding Category}" />
+                  </Border>
+                  <Border Style="{StaticResource SettingsChipStyle}"
+                          ToolTip="Editor contract">
+                    <TextBlock FontSize="12"
+                               Text="{Binding EditorLabel}" />
+                  </Border>
+                  <Border Style="{StaticResource SettingsChipStyle}"
+                          ToolTip="Setting stability">
+                    <TextBlock FontSize="12"
+                               Text="{Binding Stability}" />
+                  </Border>
+                </WrapPanel>
+
+                <Grid Grid.Row="3"
+                      Margin="0,14,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+
+                  <Border MinHeight="44"
+                          Padding="12,8"
+                          VerticalAlignment="Center"
+                          Background="{DynamicResource SurfaceMutedBrush}"
+                          BorderBrush="{DynamicResource ControlBorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="7"
+                          automation:AutomationProperties.Name="{Binding EditorAutomationName}">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="Default" />
+                        <TextBlock Margin="0,2,0,0"
+                                   FontSize="13"
+                                   Text="{Binding DefaultValue}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="24,0,0,0"
+                                  VerticalAlignment="Center">
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="Apply state" />
+                        <TextBlock Margin="0,2,0,0"
+                                   FontSize="13"
+                                   Text="{Binding ApplyState}" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+
+                  <Button Grid.Column="1"
+                          MinWidth="138"
+                          Margin="12,0,0,0"
+                          Style="{StaticResource UtilityActionButtonStyle}"
+                          Command="{Binding RemoveOverrideCommand}"
+                          Content="_Remove override"
+                          ToolTip="{Binding RemoveOverrideAvailability}"
+                          automation:AutomationProperties.Name="{Binding Title, StringFormat=Remove override for {0}}"
+                          automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                </Grid>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <Border Padding="34"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Center"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="12"
+              Visibility="{Binding EmptyStateVisibility}"
+              automation:AutomationProperties.LiveSetting="Polite"
+              automation:AutomationProperties.Name="No settings match the current filters">
+        <StackPanel HorizontalAlignment="Center">
+          <TextBlock HorizontalAlignment="Center"
+                     FontSize="19"
+                     FontWeight="SemiBold"
+                     Text="No settings found"
+                     TextAlignment="Center" />
+          <TextBlock MaxWidth="420"
+                     Margin="0,8,0,0"
+                     HorizontalAlignment="Center"
+                     FontSize="14"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="Try a different search or choose another category."
+                     TextAlignment="Center" />
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -2,10 +2,10 @@
 
 This directory contains the Windows launcher parity+ implementation. `WL-001`
 established the build, test, high-DPI shell, per-user ownership model, signing,
-and self-contained packaging shape. The current `WL-002` slice adds bounded
-installation discovery, explicit `prime.exe` validation, user-confirmed
-selection, composable read-only health, and the accepted compact Light/Dark
-Home presentation without modifying the game installation.
+and self-contained packaging shape. The integrated launcher now includes
+bounded installation discovery, explicit `prime.exe` validation,
+user-confirmed selection, composable read-only health, the accepted compact
+Light/Dark Home, and the first schema-driven Settings workspace.
 
 ## Projects
 
@@ -14,6 +14,13 @@ Home presentation without modifying the game installation.
   platform services.
 - `STFCCommunityMod.Launcher.Core.Tests` — deterministic unit tests with no
   installed STFC dependency.
+
+The Settings workspace loads the generated Guffawaffle schema embedded in the
+launcher package. Its current vertical slice provides search, category
+filtering, source identity, defaults, raw-file access gating, and the
+source-preserving TOML/atomic-write core. Concrete scalar, hotkey, and
+notification editors plus staged Save/Discard integration remain in `WL-006`;
+disabled actions stay visibly unavailable rather than acting as no-ops.
 
 ## Build and test
 
@@ -41,9 +48,11 @@ a small launcher manifest under `windows-launcher/artifacts/`.
 The current launcher is deliberately read-only with respect to the game
 installation. It may inspect whether `prime.exe` is running, read the official
 launcher's exact `GAME_PATH` setting, validate bounded conventional or
-user-selected folders, and persist a confirmed selection under launcher-owned
-state. Deployment, update, repair, configuration, and launch mutations belong
-to their dependent work items.
+user-selected folders, persist a confirmed selection under launcher-owned
+state, load the configuration catalog, and open an existing TOML file through
+an explicit user action. The tested TOML engine is not wired to UI mutation
+until the staged Save/Discard session is in place. Deployment, update, repair,
+configuration save, and launch mutations belong to their dependent work items.
 
 See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
 [the discovery and health contract](../docs/windows-launcher/DISCOVERY_AND_HEALTH.md),
@@ -52,3 +61,5 @@ See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
 The accepted compact home, adaptive settings workspace, notification-scale
 requirements, themes, diagnostics boundary, and directional mockup are in
 [the UX direction](../docs/windows-launcher/UX_DIRECTION.md).
+The configuration editor's current safety boundary and next weave are in
+[the configuration editor notes](../docs/windows-launcher/CONFIG_EDITOR.md).

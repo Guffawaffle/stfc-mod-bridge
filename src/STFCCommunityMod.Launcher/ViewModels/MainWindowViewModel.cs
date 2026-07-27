@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
@@ -58,6 +59,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public string? ConfigurationFilePath =>
+        snapshot.SelectedGameDirectory is null
+            ? null
+            : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
+
     public ICommand RefreshCommand { get; }
 
     public static MainWindowViewModel CreateDefault()
@@ -104,6 +110,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
         OnPropertyChanged(nameof(InitialBrowseDirectory));
+        OnPropertyChanged(nameof(ConfigurationFilePath));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
