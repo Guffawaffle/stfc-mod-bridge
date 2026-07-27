@@ -57,6 +57,15 @@ public sealed class LauncherEnvironmentProbeTests
                 dimension =>
                     dimension.Category == LauncherHealthDimensionCategory.InstallationSelection
                     && dimension.Severity == LauncherHealthSeverity.Healthy));
+        Assert.IsFalse(result.StatusDetail.Contains(temporaryDirectory.Path, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(
+            result.HealthDimensions.Any(
+                dimension => dimension.Detail.Contains(temporaryDirectory.Path, StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(
+            result.HealthDimensions.Any(
+                dimension =>
+                    dimension.Category == LauncherHealthDimensionCategory.InstallationSelection
+                    && dimension.Detail.Contains("hidden for privacy", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static LauncherEnvironmentProbe CreateProbe(

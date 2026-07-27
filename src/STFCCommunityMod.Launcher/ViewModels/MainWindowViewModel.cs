@@ -26,10 +26,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public string ProcessStatus => snapshot.IsGameRunning ? "STFC is running" : "STFC is not running";
 
-    public string ProgramDirectory => snapshot.InstallLayout.ProgramDirectory;
+    public string InstallOwnershipStatus { get; } = "Per-user launcher storage is configured";
 
-    public string SelectedGameDirectory =>
-        snapshot.SelectedGameDirectory ?? "No game folder has been confirmed.";
+    public string GameFolderState =>
+        snapshot.SelectedGameDirectory is null ? "GAME FOLDER NOT SET" : "GAME FOLDER SET";
+
+    public string GameFolderDetail =>
+        snapshot.SelectedGameDirectory is null
+            ? "Choose the folder that directly contains prime.exe."
+            : "Confirmed and revalidated by prime.exe. The path is hidden for privacy.";
+
+    public string GameFolderActionLabel =>
+        snapshot.SelectedGameDirectory is null ? "_Set game folder" : "_Change game folder";
+
+    public string GameFolderActionAutomationName =>
+        snapshot.SelectedGameDirectory is null
+            ? "Set STFC game folder"
+            : "Change confirmed STFC game folder";
 
     public string DiscoverySummary
     {
@@ -45,13 +58,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<string> CandidateSummaries =>
         snapshot.Discovery.Candidates
             .Select(
-                candidate =>
+                (candidate, index) =>
                 {
                     var state = candidate.Validation.IsValid ? "VALID" : candidate.Validation.Code.ToString().ToUpperInvariant();
                     var provenance = string.Join(
                         ", ",
                         candidate.Evidence.Select(evidence => evidence.Source).Distinct());
-                    return $"{state} • {candidate.Confidence} • {candidate.GameDirectory} • {provenance}";
+                    return $"CANDIDATE {index + 1} • {state} • {candidate.Confidence} • {provenance}";
                 })
             .ToArray();
 
@@ -97,8 +110,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(StatusTitle));
         OnPropertyChanged(nameof(StatusDetail));
         OnPropertyChanged(nameof(ProcessStatus));
-        OnPropertyChanged(nameof(ProgramDirectory));
-        OnPropertyChanged(nameof(SelectedGameDirectory));
+        OnPropertyChanged(nameof(InstallOwnershipStatus));
+        OnPropertyChanged(nameof(GameFolderState));
+        OnPropertyChanged(nameof(GameFolderDetail));
+        OnPropertyChanged(nameof(GameFolderActionLabel));
+        OnPropertyChanged(nameof(GameFolderActionAutomationName));
         OnPropertyChanged(nameof(DiscoverySummary));
         OnPropertyChanged(nameof(CandidateSummaries));
         OnPropertyChanged(nameof(HealthSummaries));

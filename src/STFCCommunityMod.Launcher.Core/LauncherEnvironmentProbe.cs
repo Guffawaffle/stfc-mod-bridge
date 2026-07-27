@@ -66,7 +66,7 @@ public sealed class LauncherEnvironmentProbe(
                 LauncherHealthDimensionCategory.InstallationSelection,
                 LauncherHealthSeverity.Healthy,
                 "Confirmed installation is valid",
-                persistedCandidate.GameDirectory);
+                "The confirmed folder still contains prime.exe. Its path is hidden for privacy.");
         }
         else if (persistedCandidate is not null)
         {
@@ -130,7 +130,7 @@ public sealed class LauncherEnvironmentProbe(
             return (
                 LauncherHealthCode.InstallationReady,
                 "INSTALLATION READY",
-                $"Confirmed and revalidated {persistedCandidate.GameDirectory}");
+                "The confirmed game folder still contains prime.exe. Its path is hidden for privacy.");
         }
 
         if (discovery.ValidCandidates.Count > 0)

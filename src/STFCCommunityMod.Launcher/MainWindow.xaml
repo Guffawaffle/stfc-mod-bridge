@@ -120,10 +120,10 @@
                 <TextBlock Margin="0,8,0,0"
                            FontSize="15"
                            FontWeight="SemiBold"
-                           Text="{Binding ProgramDirectory}" />
+                           Text="{Binding InstallOwnershipStatus}" />
                 <TextBlock Margin="0,6,0,0"
                            Foreground="{StaticResource MutedTextBrush}"
-                           Text="Per-user, unpackaged, and never silently elevated." />
+                           Text="Unpackaged, never silently elevated, and path-hidden in the normal UI." />
               </StackPanel>
             </Border>
           </UniformGrid>
@@ -136,15 +136,24 @@
               <TextBlock FontSize="13"
                          FontWeight="Bold"
                          Foreground="{StaticResource AccentPurpleBrush}"
-                         Text="CONFIRMED GAME FOLDER" />
+                         Text="GAME FOLDER" />
               <TextBlock Margin="0,8,0,0"
-                         FontSize="15"
-                         FontWeight="SemiBold"
-                         Text="{Binding SelectedGameDirectory}" />
+                         FontSize="17"
+                         FontWeight="Bold"
+                         Text="{Binding GameFolderState}" />
+              <TextBlock Margin="0,6,0,0"
+                         Foreground="{StaticResource MutedTextBrush}"
+                         Text="{Binding GameFolderDetail}" />
               <TextBlock Margin="0,6,0,0"
                          Foreground="{StaticResource MutedTextBrush}"
                          Text="{Binding SelectionFeedback}"
                          automation:AutomationProperties.LiveSetting="Polite" />
+              <Button Margin="0,12,0,0"
+                      HorizontalAlignment="Left"
+                      Background="{StaticResource AccentPurpleBrush}"
+                      Click="ChooseGameFolderButton_Click"
+                      Content="{Binding GameFolderActionLabel}"
+                      automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
             </StackPanel>
           </Border>
 
@@ -204,10 +213,6 @@
         <Button Command="{Binding RefreshCommand}"
                 Content="_Refresh discovery"
                 automation:AutomationProperties.Name="Refresh installation discovery" />
-        <Button Background="{StaticResource AccentPurpleBrush}"
-                Click="ChooseGameFolderButton_Click"
-                Content="_Choose game folder"
-                automation:AutomationProperties.Name="Choose STFC game folder" />
         <Button Background="{StaticResource AccentBlueBrush}"
                 Click="CloseButton_Click"
                 Content="E_xit"
