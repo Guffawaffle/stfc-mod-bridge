@@ -5,6 +5,9 @@ public sealed class LauncherEnvironmentProbe(
     PerUserInstallLayout installLayout,
     GameInstallDiscovery installDiscovery)
 {
+    private const string SavedSelectionReadFailureDetail =
+        "The saved installation selection could not be read. Choose the STFC game folder again.";
+
     public LauncherEnvironmentSnapshot Capture(CancellationToken cancellationToken = default)
     {
         var gameRunning = processInspector.IsGameRunning();
@@ -58,7 +61,7 @@ public sealed class LauncherEnvironmentProbe(
                 LauncherHealthDimensionCategory.InstallationSelection,
                 LauncherHealthSeverity.ActionRequired,
                 "Saved selection is unreadable",
-                discovery.PersistedSelection.Error ?? "Select the STFC game folder again.");
+                SavedSelectionReadFailureDetail);
         }
         else if (persistedCandidate?.Validation.IsValid == true)
         {
@@ -121,8 +124,7 @@ public sealed class LauncherEnvironmentProbe(
                 LauncherHealthCode.SelectionInvalid,
                 "SELECTION NEEDS ATTENTION",
                 persistedCandidate?.Validation.Message
-                    ?? discovery.PersistedSelection.Error
-                    ?? "Choose the STFC game folder again.");
+                    ?? SavedSelectionReadFailureDetail);
         }
 
         if (persistedCandidate?.Validation.IsValid == true)

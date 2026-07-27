@@ -68,6 +68,24 @@ public sealed class LauncherEnvironmentProbeTests
                     && dimension.Detail.Contains("hidden for privacy", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [TestMethod]
+    public void CaptureDoesNotRenderPathsFromPersistedSelectionErrors()
+    {
+        const string sensitivePath = @"C:\Users\Streamer\AppData\Local\STFC Community Mod Launcher\install-selection.json";
+        var probe = CreateProbe(
+            false,
+            GameInstallSelectionLoadResult.Invalid($"Access denied: {sensitivePath}"));
+
+        var result = probe.Capture();
+
+        Assert.AreEqual(LauncherHealthCode.SelectionInvalid, result.HealthCode);
+        Assert.IsFalse(result.StatusDetail.Contains(sensitivePath, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(
+            result.HealthDimensions.Any(
+                dimension => dimension.Detail.Contains(sensitivePath, StringComparison.OrdinalIgnoreCase)));
+        StringAssert.Contains(result.StatusDetail, "could not be read");
+    }
+
     private static LauncherEnvironmentProbe CreateProbe(
         bool gameRunning,
         GameInstallSelectionLoadResult? selection = null)
