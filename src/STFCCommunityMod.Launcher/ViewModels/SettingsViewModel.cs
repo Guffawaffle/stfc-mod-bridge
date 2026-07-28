@@ -22,6 +22,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private string searchText = string.Empty;
     private SettingsSection selectedSection = SettingsSection.General;
     private string operationStatus = string.Empty;
+    private bool isSearchVisible;
 
     public SettingsViewModel(
         LauncherConfigurationCatalog catalog,
@@ -59,6 +60,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
+        SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
         SelectSection(SettingsSection.General);
     }
 
@@ -77,6 +79,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public ICommand DiscardCommand => discardCommand;
 
     public ICommand SaveCommand => saveCommand;
+
+    public ICommand SearchToggleCommand { get; }
 
     public string SearchText
     {
@@ -100,6 +104,25 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool IsSearchActive => !string.IsNullOrWhiteSpace(SearchText);
 
+    public bool IsSearchVisible
+    {
+        get => isSearchVisible;
+        private set
+        {
+            if (isSearchVisible == value)
+            {
+                return;
+            }
+
+            isSearchVisible = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SearchToggleHelp));
+        }
+    }
+
+    public string SearchToggleHelp =>
+        IsSearchVisible ? "Close settings search" : "Search all settings";
+
     public SettingsSection SelectedSection => selectedSection;
 
     public string WorkspaceTitle =>
@@ -111,6 +134,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             : SelectedSectionItem.Description;
 
     public bool IsAboutSelected => !IsSearchActive && selectedSection == SettingsSection.About;
+
+    public bool IsGeneralSelected => !IsSearchActive && selectedSection == SettingsSection.General;
 
     public bool IsSettingsListVisible => !IsAboutSelected;
 
@@ -253,8 +278,21 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(WorkspaceTitle));
         OnPropertyChanged(nameof(WorkspaceDescription));
         OnPropertyChanged(nameof(IsAboutSelected));
+        OnPropertyChanged(nameof(IsGeneralSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
         RefreshFilter();
+    }
+
+    private void ToggleSearch()
+    {
+        if (IsSearchVisible)
+        {
+            SearchText = string.Empty;
+            IsSearchVisible = false;
+            return;
+        }
+
+        IsSearchVisible = true;
     }
 
     private bool ShouldInclude(object item)

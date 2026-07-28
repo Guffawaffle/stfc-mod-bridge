@@ -117,7 +117,7 @@
 
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="250" />
+      <ColumnDefinition Width="200" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
@@ -129,15 +129,13 @@
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,1,0">
-      <Grid Margin="0,18,0,14">
+      <Grid Margin="0,8,0,8">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
-          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Button
-                Style="{StaticResource SettingsNavigationButtonStyle}"
+        <Button Style="{StaticResource SettingsNavigationButtonStyle}"
                 Command="{Binding NavigateHomeCommand}"
                 Content="_Home"
                 automation:AutomationProperties.Name="Return to launcher home" />
@@ -149,7 +147,6 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type viewModels:SettingsSectionViewModel}">
               <Button Style="{StaticResource SettingsNavigationButtonStyle}"
-                      Tag="{Binding IsSelected}"
                       Command="{Binding SelectCommand}"
                       Content="{Binding Title}"
                       ToolTip="{Binding Description}"
@@ -158,23 +155,11 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-
-        <StackPanel Grid.Row="2"
-                    Margin="22,12,18,0">
-          <TextBlock FontSize="11"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="Release source" />
-          <TextBlock Margin="0,3,0,0"
-                     FontSize="13"
-                     FontWeight="SemiBold"
-                     Text="{Binding SourceIdentity}"
-                     automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}" />
-        </StackPanel>
       </Grid>
     </Border>
 
     <Grid Grid.Column="1"
-          Margin="32,22,32,20">
+          Margin="24,14,24,12">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
@@ -182,8 +167,79 @@
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Grid MaxWidth="650"
-            HorizontalAlignment="Stretch">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock FontSize="28"
+                     FontWeight="SemiBold"
+                     Text="{Binding WorkspaceTitle}" />
+          <TextBlock Margin="0,4,0,0"
+                     FontSize="14"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="{Binding WorkspaceDescription}" />
+        </StackPanel>
+
+        <Button x:Name="SearchToggleButton"
+                Grid.Column="1"
+                Width="44"
+                MinWidth="44"
+                Margin="16,0,0,0"
+                Padding="0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Command="{Binding SearchToggleCommand}"
+                Click="SearchToggleButton_Click"
+                ToolTip="{Binding SearchToggleHelp}"
+                automation:AutomationProperties.Name="{Binding SearchToggleHelp}"
+                automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
+          <Grid Width="18"
+                Height="18">
+            <Path Data="M 7.5,1.5 A 6,6 0 1 1 7.5,13.5 A 6,6 0 1 1 7.5,1.5 M 12,12 L 17,17"
+                  Fill="Transparent"
+                  Stroke="{DynamicResource TextPrimaryBrush}"
+                  StrokeEndLineCap="Round"
+                  StrokeThickness="1.8">
+              <Path.Style>
+                <Style TargetType="Path">
+                  <Setter Property="Visibility" Value="Visible" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Path.Style>
+            </Path>
+            <Path Data="M 3,3 L 15,15 M 15,3 L 3,15"
+                  Fill="Transparent"
+                  Stroke="{DynamicResource TextPrimaryBrush}"
+                  StrokeEndLineCap="Round"
+                  StrokeThickness="1.8">
+              <Path.Style>
+                <Style TargetType="Path">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Path.Style>
+            </Path>
+          </Grid>
+        </Button>
+      </Grid>
+
+      <Grid Grid.Row="1"
+            MaxWidth="650"
+            Margin="0,12,0,0"
+            HorizontalAlignment="Stretch"
+            Visibility="{Binding IsSearchVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <TextBox x:Name="SearchBox"
                  HorizontalAlignment="Stretch"
                  Style="{StaticResource SettingsSearchStyle}"
@@ -208,19 +264,8 @@
         </TextBlock>
       </Grid>
 
-      <StackPanel Grid.Row="1"
-                  Margin="0,22,0,0">
-        <TextBlock FontSize="28"
-                   FontWeight="SemiBold"
-                   Text="{Binding WorkspaceTitle}" />
-        <TextBlock Margin="0,5,0,0"
-                   FontSize="14"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="{Binding WorkspaceDescription}" />
-      </StackPanel>
-
       <Grid Grid.Row="2"
-            Margin="0,14,0,10"
+            Margin="0,12,0,8"
             Visibility="{Binding IsSettingsListVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -235,6 +280,22 @@
                      FontSize="12"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="{Binding ConfigurationStatus}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Margin="20,0,0,0"
+                    HorizontalAlignment="Right"
+                    Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBlock HorizontalAlignment="Right"
+                     FontSize="11"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="Release source" />
+          <TextBlock Margin="0,2,0,0"
+                     HorizontalAlignment="Right"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     Text="{Binding SourceIdentity}"
+                     automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}" />
         </StackPanel>
       </Grid>
 
@@ -470,7 +531,7 @@
 
     <Border Grid.Row="1"
             Grid.Column="1"
-            Padding="24,14,32,14"
+            Padding="20,6,24,6"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,1,0,0">
@@ -480,18 +541,25 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <StackPanel VerticalAlignment="Center">
+        <Grid VerticalAlignment="Center">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
           <TextBlock FontSize="13"
                      FontWeight="SemiBold"
                      Text="{Binding PendingChangesText}"
                      automation:AutomationProperties.LiveSetting="Polite" />
-          <TextBlock MaxWidth="520"
-                     Margin="0,3,0,0"
+          <TextBlock Grid.Column="1"
+                     MaxWidth="520"
+                     Margin="14,0,0,0"
+                     VerticalAlignment="Center"
                      FontSize="11"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="{Binding OperationStatus}"
+                     TextTrimming="CharacterEllipsis"
                      automation:AutomationProperties.LiveSetting="Assertive" />
-        </StackPanel>
+        </Grid>
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal">
