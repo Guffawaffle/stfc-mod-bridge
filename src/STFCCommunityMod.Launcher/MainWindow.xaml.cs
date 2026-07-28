@@ -84,7 +84,7 @@ public partial class MainWindow : Window, IDisposable
         AboutDialog.IsOpen = true;
     }
 
-    private void WorkspaceNavigationButton_Click(object sender, RoutedEventArgs e)
+    private void SettingsNavigationButton_Click(object sender, RoutedEventArgs e)
     {
         if (!isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized())
         {
@@ -124,6 +124,11 @@ public partial class MainWindow : Window, IDisposable
         currentTheme = LauncherThemeManager.Toggle(currentTheme);
         LauncherThemeManager.ApplyWindowChrome(this, currentTheme);
         UpdateThemeToggle();
+    }
+
+    private void SettingsSearchToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsWorkspace.FocusSearchBoxWhenVisible();
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -178,14 +183,10 @@ public partial class MainWindow : Window, IDisposable
         isSettingsWorkspaceOpen = isOpen;
         HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsBackTitleBarContent.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         HomeActions.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        AboutButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        RefreshStatusButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        WorkspaceNavigationButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        WorkspaceNavigationButton.Content = "_Settings";
-        AutomationProperties.SetName(
-            WorkspaceNavigationButton,
-            "Open launcher settings");
 
         MinWidth = isOpen ? 820 : 560;
         MinHeight = isOpen ? 620 : 500;

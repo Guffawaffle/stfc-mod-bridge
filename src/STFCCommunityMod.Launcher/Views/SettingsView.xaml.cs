@@ -1,4 +1,3 @@
-using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using STFCCommunityMod.Launcher.ViewModels;
@@ -12,17 +11,17 @@ public partial class SettingsView : UserControl
         InitializeComponent();
     }
 
-    private void SearchToggleButton_Click(object sender, RoutedEventArgs e)
+    public void FocusSearchBoxWhenVisible()
     {
-        if (DataContext is SettingsViewModel { IsSearchVisible: true })
-        {
-            _ = Dispatcher.BeginInvoke(
-                DispatcherPriority.Input,
-                () =>
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () =>
+            {
+                if (DataContext is SettingsViewModel { IsSearchVisible: true })
                 {
                     SearchBox.Focus();
                     SearchBox.SelectAll();
-                });
-        }
+                }
+            });
     }
 }
