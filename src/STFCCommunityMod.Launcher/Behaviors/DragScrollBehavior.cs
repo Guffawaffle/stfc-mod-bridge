@@ -89,6 +89,10 @@ public static class DragScrollBehavior
         state.LastPoint = state.StartPoint;
         state.LastSampleTimestamp = Stopwatch.GetTimestamp();
         state.Velocity = 0;
+        if (!Mouse.Capture(listBox, CaptureMode.SubTree))
+        {
+            CancelDrag(listBox, state);
+        }
     }
 
     private static void PreviewMouseMove(object sender, MouseEventArgs args)
@@ -117,13 +121,13 @@ public static class DragScrollBehavior
 
         if (!state.IsDragging)
         {
-            state.IsDragging = listBox.CaptureMouse();
-            if (!state.IsDragging)
+            if (!listBox.IsMouseCaptured)
             {
                 CancelDrag(listBox, state);
                 return;
             }
 
+            state.IsDragging = true;
             listBox.Cursor = Cursors.ScrollNS;
         }
 
