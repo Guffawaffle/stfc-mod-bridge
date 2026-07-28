@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -84,7 +85,7 @@ public static class DragScrollBehavior
         }
 
         state.IsCandidate = true;
-        state.StartPoint = args.GetPosition(listBox);
+        state.StartPoint = GetPointerPosition(listBox, args);
         state.StartOffset = scrollViewer.VerticalOffset;
         state.LastPoint = state.StartPoint;
         state.LastSampleTimestamp = Stopwatch.GetTimestamp();
@@ -110,7 +111,7 @@ public static class DragScrollBehavior
             return;
         }
 
-        var currentPoint = args.GetPosition(listBox);
+        var currentPoint = GetPointerPosition(listBox, args);
         var delta = currentPoint - state.StartPoint;
         if (!state.IsDragging
             && Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance
@@ -368,6 +369,16 @@ public static class DragScrollBehavior
             _ => LogicalTreeHelper.GetParent(element),
         };
 
+    private static Point GetPointerPosition(ListBox listBox, MouseEventArgs args)
+    {
+        if (GetCursorPos(out var screenPoint))
+        {
+            return listBox.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+        }
+
+        return args.GetPosition(listBox);
+    }
+
     private static T? FindDescendant<T>(DependencyObject root)
         where T : DependencyObject
     {
@@ -411,5 +422,17 @@ public static class DragScrollBehavior
         public DispatcherTimer? InertiaTimer { get; set; }
 
         public EventHandler? InertiaTickHandler { get; set; }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativePoint
+    {
+        public readonly int X;
+
+        public readonly int Y;
     }
 }
