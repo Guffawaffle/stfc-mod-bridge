@@ -30,3 +30,21 @@ public sealed record SparseTomlEditResult(
     public static SparseTomlEditResult Invalid(SparseTomlError error) =>
         new(false, false, null, error);
 }
+
+public sealed record SparseTomlOverride(
+    string CanonicalPath,
+    string RenderedValue,
+    int LineNumber);
+
+public sealed record SparseTomlReadResult(
+    bool IsValid,
+    IReadOnlyDictionary<string, SparseTomlOverride>? Overrides,
+    SparseTomlError? Error)
+{
+    public static SparseTomlReadResult Success(
+        IReadOnlyDictionary<string, SparseTomlOverride> overrides) =>
+        new(true, overrides, null);
+
+    public static SparseTomlReadResult Invalid(SparseTomlError error) =>
+        new(false, null, error);
+}

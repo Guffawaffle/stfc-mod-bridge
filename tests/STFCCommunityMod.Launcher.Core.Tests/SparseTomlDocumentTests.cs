@@ -210,6 +210,46 @@ public sealed class SparseTomlDocumentTests
         Assert.IsNull(result.Contents);
     }
 
+    [TestMethod]
+    public void ReadOverridesReturnsCanonicalPathsRawValuesAndLineNumbers()
+    {
+        var document = Load(
+            """
+            root = "keep"
+
+            [notifications]
+            incoming_attack_player = { system = true, audio = true, sound = "alarm" }
+            """);
+
+        var result = document.ReadOverrides();
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.IsNotNull(result.Overrides);
+        Assert.AreEqual("\"keep\"", result.Overrides["root"].RenderedValue);
+        Assert.AreEqual(1, result.Overrides["root"].LineNumber);
+        Assert.AreEqual(
+            """{ system = true, audio = true, sound = "alarm" }""",
+            result.Overrides["notifications.incoming_attack_player"].RenderedValue);
+        Assert.AreEqual(4, result.Overrides["notifications.incoming_attack_player"].LineNumber);
+    }
+
+    [TestMethod]
+    public void ReadOverridesPreservesTomlCaseSensitiveKeys()
+    {
+        var document = Load(
+            """
+            FutureKey = 1
+            futurekey = 2
+            """);
+
+        var result = document.ReadOverrides();
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(2, result.Overrides?.Count);
+        Assert.AreEqual("1", result.Overrides!["FutureKey"].RenderedValue);
+        Assert.AreEqual("2", result.Overrides["futurekey"].RenderedValue);
+    }
+
     private static SparseTomlDocument Load(string source) =>
         Load(Encoding.UTF8.GetBytes(source));
 

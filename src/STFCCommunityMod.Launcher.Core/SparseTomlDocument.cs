@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Collections.ObjectModel;
 
 namespace STFCCommunityMod.Launcher.Core;
 
@@ -61,6 +62,25 @@ public sealed partial class SparseTomlDocument
         return analysis.Error is null
             ? SparseTomlEditResult.Unchanged([.. originalContents])
             : SparseTomlEditResult.Invalid(analysis.Error);
+    }
+
+    public SparseTomlReadResult ReadOverrides()
+    {
+        var analysis = Analyze(targetPath: null);
+        if (analysis.Error is not null)
+        {
+            return SparseTomlReadResult.Invalid(analysis.Error);
+        }
+
+        var overrides = analysis.AllAssignments.ToDictionary(
+            assignment => string.Join('.', assignment.Path),
+            assignment => new SparseTomlOverride(
+                string.Join('.', assignment.Path),
+                text[assignment.ValueStart..assignment.ValueEnd],
+                assignment.Line.Number),
+            StringComparer.Ordinal);
+        return SparseTomlReadResult.Success(
+            new ReadOnlyDictionary<string, SparseTomlOverride>(overrides));
     }
 
     public SparseTomlEditResult SetOverride(string canonicalPath, string renderedTomlValue)

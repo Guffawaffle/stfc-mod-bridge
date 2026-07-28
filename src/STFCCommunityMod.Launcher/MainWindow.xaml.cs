@@ -24,6 +24,7 @@ public partial class MainWindow : Window, IDisposable
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
     private RelayCommand? openRawTomlCommand;
+    private SettingsViewModel? settingsViewModel;
     private bool isDisposed;
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
@@ -114,6 +115,7 @@ public partial class MainWindow : Window, IDisposable
         {
             viewModel.ConfirmManualSelection(dialog.FolderName);
             openRawTomlCommand?.NotifyCanExecuteChanged();
+            settingsViewModel?.ReloadConfiguration();
         }
     }
 
@@ -176,12 +178,14 @@ public partial class MainWindow : Window, IDisposable
         isSettingsWorkspaceOpen = isOpen;
         HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        HomeActions.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         AboutButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         RefreshStatusButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        WorkspaceNavigationButton.Content = isOpen ? "_Home" : "_Settings";
+        WorkspaceNavigationButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        WorkspaceNavigationButton.Content = "_Settings";
         AutomationProperties.SetName(
             WorkspaceNavigationButton,
-            isOpen ? "Return to launcher home" : "Open launcher settings");
+            "Open launcher settings");
 
         MinWidth = isOpen ? 820 : 560;
         MinHeight = isOpen ? 620 : 500;
@@ -217,11 +221,12 @@ public partial class MainWindow : Window, IDisposable
 
             var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
             openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
-            SettingsWorkspace.DataContext = new SettingsViewModel(
-                catalog.VisibleSettings,
-                $"{catalog.Source.DisplayName} Community Mod",
+            settingsViewModel = new SettingsViewModel(
+                catalog,
+                new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
                 openRawTomlCommand,
-                _ => new RelayCommand(() => { }, () => false));
+                GetConfigurationFilePath);
+            SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
         }
@@ -272,6 +277,9 @@ public partial class MainWindow : Window, IDisposable
         return false;
     }
 
+    private string? GetConfigurationFilePath() =>
+        TryGetConfigurationFilePath(out var path) ? path : null;
+
     private void ProcessStateMonitor_StateChanged(object? sender, EventArgs e)
     {
         _ = sender;
@@ -290,6 +298,7 @@ public partial class MainWindow : Window, IDisposable
         {
             viewModel.Refresh();
             openRawTomlCommand?.NotifyCanExecuteChanged();
+            settingsViewModel?.ReloadConfiguration();
         }
     }
 }

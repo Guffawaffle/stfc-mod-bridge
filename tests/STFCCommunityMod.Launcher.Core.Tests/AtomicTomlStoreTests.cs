@@ -165,4 +165,60 @@ public sealed class AtomicTomlStoreTests
         Assert.IsTrue(secondEnteredReplaceHook.Task.IsCompleted);
         Assert.AreEqual("[settings]\nvalue = \"second\"\n", await File.ReadAllTextAsync(configPath));
     }
+
+    [TestMethod]
+    public async Task SaveDocumentWritesOneBatchAgainstTheExpectedBaseline()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = System.Text.Encoding.UTF8.GetBytes(
+            "[graphics]\nfree_resize = true\nallow_cursor = true\n");
+        var updated = System.Text.Encoding.UTF8.GetBytes(
+            "[graphics]\nfree_resize = false\nallow_cursor = false\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var store = new AtomicTomlStore();
+
+        var result = await store.SaveDocumentAsync(configPath, original, updated);
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        CollectionAssert.AreEqual(updated, await File.ReadAllBytesAsync(configPath));
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configPath + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task SaveDocumentPreservesAnExternalEditMadeAfterSessionLoad()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = System.Text.Encoding.UTF8.GetBytes("[graphics]\nfree_resize = true\n");
+        var launcherUpdate = System.Text.Encoding.UTF8.GetBytes("[graphics]\nfree_resize = false\n");
+        const string externalUpdate = "[graphics]\nfree_resize = true\n# player edit\n";
+        await File.WriteAllBytesAsync(configPath, original);
+        await File.WriteAllTextAsync(configPath, externalUpdate);
+        var store = new AtomicTomlStore();
+
+        var result = await store.SaveDocumentAsync(configPath, original, launcherUpdate);
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        Assert.AreEqual(externalUpdate, await File.ReadAllTextAsync(configPath));
+        Assert.IsFalse(File.Exists(configPath + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task SaveDocumentReportsDisappearanceAsAConflict()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = System.Text.Encoding.UTF8.GetBytes("[graphics]\nfree_resize = true\n");
+        var launcherUpdate = System.Text.Encoding.UTF8.GetBytes("[graphics]\nfree_resize = false\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        File.Delete(configPath);
+        var store = new AtomicTomlStore();
+
+        var result = await store.SaveDocumentAsync(configPath, original, launcherUpdate);
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        Assert.IsFalse(File.Exists(configPath));
+        Assert.IsFalse(File.Exists(configPath + ".bak"));
+    }
 }
