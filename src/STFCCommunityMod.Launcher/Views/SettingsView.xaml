@@ -212,25 +212,26 @@
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Border Grid.RowSpan="2"
-            Background="{DynamicResource SurfaceBrush}"
+    <Border Grid.ColumnSpan="2"
+            Background="{DynamicResource WindowBackgroundBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
-            BorderThickness="0,0,1,0">
-      <Grid Margin="0,8,0,8">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+            BorderThickness="0,0,0,1">
+      <Grid Margin="12,4,24,4">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="200" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <Button Width="44"
                 MinWidth="44"
-                Margin="12,0,0,4"
                 Padding="0"
                 HorizontalAlignment="Left"
+                VerticalAlignment="Center"
                 Style="{StaticResource UtilityActionButtonStyle}"
                 Command="{Binding NavigateHomeCommand}"
                 ToolTip="Back to launcher home"
@@ -247,9 +248,78 @@
                 StrokeThickness="1.8" />
         </Button>
 
-        <ItemsControl Grid.Row="1"
-                      Margin="0,4,0,0"
-                      ItemsSource="{Binding Sections}"
+        <Grid Grid.Column="1"
+              Margin="12,0,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock VerticalAlignment="Center"
+                     FontSize="22"
+                     FontWeight="SemiBold"
+                     Text="{Binding WorkspaceTitle}" />
+
+          <Button x:Name="SearchToggleButton"
+                  Grid.Column="1"
+                  Width="44"
+                  MinWidth="44"
+                  Padding="0"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Command="{Binding SearchToggleCommand}"
+                  Click="SearchToggleButton_Click"
+                  ToolTip="{Binding SearchToggleHelp}"
+                  automation:AutomationProperties.Name="{Binding SearchToggleHelp}"
+                  automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
+            <Grid Width="18"
+                  Height="18">
+              <Path Data="M 7.5,1.5 A 6,6 0 1 1 7.5,13.5 A 6,6 0 1 1 7.5,1.5 M 12,12 L 17,17"
+                    Fill="Transparent"
+                    Stroke="{DynamicResource TextPrimaryBrush}"
+                    StrokeEndLineCap="Round"
+                    StrokeThickness="1.8">
+                <Path.Style>
+                  <Style TargetType="Path">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Path.Style>
+              </Path>
+              <Path Data="M 3,3 L 15,15 M 15,3 L 3,15"
+                    Fill="Transparent"
+                    Stroke="{DynamicResource TextPrimaryBrush}"
+                    StrokeEndLineCap="Round"
+                    StrokeThickness="1.8">
+                <Path.Style>
+                  <Style TargetType="Path">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Path.Style>
+              </Path>
+            </Grid>
+          </Button>
+        </Grid>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="1"
+            Grid.RowSpan="2"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,0,1,0">
+      <Grid Margin="0,4,0,8">
+        <ItemsControl ItemsSource="{Binding Sections}"
                       KeyboardNavigation.TabNavigation="Continue">
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type viewModels:SettingsSectionViewModel}">
@@ -265,86 +335,17 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Column="1"
-          Margin="24,14,24,12">
+    <Grid Grid.Row="1"
+          Grid.Column="1"
+          Margin="24,0,24,12">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-
-        <StackPanel VerticalAlignment="Center">
-          <TextBlock FontSize="28"
-                     FontWeight="SemiBold"
-                     Text="{Binding WorkspaceTitle}" />
-          <TextBlock Margin="0,4,0,0"
-                     FontSize="14"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="{Binding WorkspaceDescription}" />
-        </StackPanel>
-
-        <Button x:Name="SearchToggleButton"
-                Grid.Column="1"
-                Width="44"
-                MinWidth="44"
-                Margin="16,0,0,0"
-                Padding="0"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Style="{StaticResource UtilityActionButtonStyle}"
-                Command="{Binding SearchToggleCommand}"
-                Click="SearchToggleButton_Click"
-                ToolTip="{Binding SearchToggleHelp}"
-                automation:AutomationProperties.Name="{Binding SearchToggleHelp}"
-                automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
-          <Grid Width="18"
-                Height="18">
-            <Path Data="M 7.5,1.5 A 6,6 0 1 1 7.5,13.5 A 6,6 0 1 1 7.5,1.5 M 12,12 L 17,17"
-                  Fill="Transparent"
-                  Stroke="{DynamicResource TextPrimaryBrush}"
-                  StrokeEndLineCap="Round"
-                  StrokeThickness="1.8">
-              <Path.Style>
-                <Style TargetType="Path">
-                  <Setter Property="Visibility" Value="Visible" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
-                      <Setter Property="Visibility" Value="Collapsed" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </Path.Style>
-            </Path>
-            <Path Data="M 3,3 L 15,15 M 15,3 L 3,15"
-                  Fill="Transparent"
-                  Stroke="{DynamicResource TextPrimaryBrush}"
-                  StrokeEndLineCap="Round"
-                  StrokeThickness="1.8">
-              <Path.Style>
-                <Style TargetType="Path">
-                  <Setter Property="Visibility" Value="Collapsed" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsSearchVisible}" Value="True">
-                      <Setter Property="Visibility" Value="Visible" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </Path.Style>
-            </Path>
-          </Grid>
-        </Button>
-      </Grid>
-
-      <Grid Grid.Row="1"
-            MaxWidth="650"
-            Margin="0,12,0,0"
+      <Grid MaxWidth="650"
+            Margin="0,8,0,0"
             HorizontalAlignment="Stretch"
             Visibility="{Binding IsSearchVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <TextBox x:Name="SearchBox"
@@ -371,8 +372,8 @@
         </TextBlock>
       </Grid>
 
-      <Grid Grid.Row="2"
-            Margin="0,12,0,8"
+      <Grid Grid.Row="1"
+            Margin="0,8,0,8"
             Visibility="{Binding IsSettingsListVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -381,12 +382,18 @@
         <StackPanel>
           <TextBlock FontSize="13"
                      Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="{Binding VisibleSettingCount, StringFormat={}{0} settings shown}"
-                     automation:AutomationProperties.LiveSetting="Polite" />
+                     Text="{Binding WorkspaceDescription}" />
           <TextBlock Margin="0,3,0,0"
                      FontSize="12"
                      Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="{Binding ConfigurationStatus}" />
+                     automation:AutomationProperties.LiveSetting="Polite">
+            <TextBlock.Text>
+              <MultiBinding StringFormat="{}{0} settings shown · {1}">
+                <Binding Path="VisibleSettingCount" />
+                <Binding Path="ConfigurationStatus" />
+              </MultiBinding>
+            </TextBlock.Text>
+          </TextBlock>
         </StackPanel>
 
         <StackPanel Grid.Column="1"
@@ -406,7 +413,7 @@
         </StackPanel>
       </Grid>
 
-      <Grid Grid.Row="3">
+      <Grid Grid.Row="2">
         <ListBox x:Name="SettingsList"
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  ItemsSource="{Binding FilteredSettings}"
@@ -644,7 +651,7 @@
       </Grid>
     </Grid>
 
-    <Border Grid.Row="1"
+    <Border Grid.Row="2"
             Grid.Column="1"
             Padding="20,6,24,6"
             Background="{DynamicResource SurfaceBrush}"
