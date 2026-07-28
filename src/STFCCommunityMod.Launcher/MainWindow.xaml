@@ -31,7 +31,6 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="56" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <Grid Grid.Row="0"
@@ -76,20 +75,19 @@
           </StackPanel>
         </Button>
 
-        <StackPanel x:Name="SettingsBackTitleBarContent"
-                    Grid.Column="0"
-                    Visibility="Collapsed"
-                    Orientation="Horizontal">
-          <Button Width="44"
-                  MinWidth="44"
-                  Padding="0"
-                  VerticalAlignment="Center"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}"
-                  ToolTip="Back to launcher home"
-                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                  automation:AutomationProperties.Name="Back to launcher home"
-                  automation:AutomationProperties.HelpText="Return to the launcher home screen.">
+        <Button x:Name="SettingsHomeTitleBarButton"
+                Grid.Column="0"
+                Padding="10,6"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                Style="{StaticResource QuietButtonStyle}"
+                Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}"
+                ToolTip="Return to launcher home"
+                Visibility="Collapsed"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Return to launcher home"
+                automation:AutomationProperties.HelpText="Return to the launcher home screen.">
+          <StackPanel Orientation="Horizontal">
             <Path Width="18"
                   Height="18"
                   Data="M 15,2 L 5,9 L 15,16"
@@ -99,14 +97,14 @@
                   StrokeEndLineCap="Round"
                   StrokeLineJoin="Round"
                   StrokeThickness="1.8" />
-          </Button>
-          <TextBlock Margin="12,0,0,0"
-                     VerticalAlignment="Center"
-                     FontSize="14"
-                     FontWeight="SemiBold"
-                     Foreground="{DynamicResource AccentBrush}"
-                     Text="Settings" />
-        </StackPanel>
+            <TextBlock Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource AccentBrush}"
+                       Text="Home" />
+          </StackPanel>
+        </Button>
 
         <Border Grid.Column="1"
                 Width="1"
@@ -475,61 +473,8 @@
                         Margin="20,0,20,12"
                         Visibility="Collapsed" />
 
-    <Grid x:Name="HomeActions"
-          Grid.Row="2"
-          Margin="34,0,34,26">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <Button Grid.Column="1"
-              Margin="0,0,8,0"
-              Style="{StaticResource UtilityActionButtonStyle}"
-              Click="AboutButton_Click"
-              Content="_About"
-              automation:AutomationProperties.Name="About STFC Community Mod Launcher" />
-      <Button Grid.Column="2"
-              Style="{StaticResource UtilityActionButtonStyle}"
-              Command="{Binding RefreshCommand}"
-              Content="_Refresh status"
-              automation:AutomationProperties.Name="Refresh launcher status" />
-    </Grid>
-
-    <controls:InAppDialog x:Name="AboutDialog"
-                          Grid.RowSpan="3"
-                          Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="About STFC Community Mod Launcher"
-                          automation:AutomationProperties.Name="About STFC Community Mod Launcher dialog">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="76" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <Image Width="64"
-               Height="64"
-               HorizontalAlignment="Left"
-               VerticalAlignment="Top"
-               Source="Assets/stfc-community-mod.png"
-               Stretch="Uniform"
-               automation:AutomationProperties.Name="STFC Community Mod icon" />
-        <StackPanel Grid.Column="1"
-                    Margin="18,0,0,0">
-          <TextBlock FontSize="15"
-                     FontWeight="SemiBold"
-                     Text="Version 0.1.0" />
-          <TextBlock Margin="0,12,0,0"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="A streamlined home for installing, updating, and configuring the STFC Community Mod." />
-          <TextBlock Margin="0,12,0,0"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="Community-built tools for Star Trek Fleet Command." />
-        </StackPanel>
-      </Grid>
-    </controls:InAppDialog>
-
     <controls:InAppDialog x:Name="SettingsUnavailableDialog"
-                          Grid.RowSpan="3"
+                          Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
                           DialogTitle="Settings unavailable"
                           automation:AutomationProperties.Name="Settings unavailable dialog">

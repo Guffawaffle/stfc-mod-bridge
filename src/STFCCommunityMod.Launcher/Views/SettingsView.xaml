@@ -216,8 +216,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0"
-            Grid.RowSpan="2"
+    <Border Grid.RowSpan="2"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,1,0">
@@ -556,10 +555,12 @@
 
     <Border Grid.Row="1"
             Grid.Column="1"
-            Padding="20,6,24,6"
+            Padding="20,8,24,8"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
-            BorderThickness="0,1,0,0">
+            BorderThickness="0,1,0,0"
+            Visibility="{Binding HasPendingChanges, Converter={StaticResource BooleanToVisibilityConverter}}"
+            automation:AutomationProperties.Name="{Binding PendingChangesText}">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />

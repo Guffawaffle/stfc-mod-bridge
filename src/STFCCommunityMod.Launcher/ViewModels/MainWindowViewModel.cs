@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
@@ -18,7 +17,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         this.environmentProbe = environmentProbe;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
-        RefreshCommand = new RelayCommand(Refresh);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -63,8 +61,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         snapshot.SelectedGameDirectory is null
             ? null
             : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
-
-    public ICommand RefreshCommand { get; }
 
     public static MainWindowViewModel CreateDefault()
     {

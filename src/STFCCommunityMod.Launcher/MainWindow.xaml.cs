@@ -16,7 +16,7 @@ public partial class MainWindow : Window, IDisposable
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 590;
-    private const double SettingsWidth = 1040;
+    private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
     private const string GuffawaffleSchemaResource =
         "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json";
@@ -77,11 +77,6 @@ public partial class MainWindow : Window, IDisposable
     {
         base.OnStateChanged(e);
         UpdateMaximizeRestoreButton();
-    }
-
-    private void AboutButton_Click(object sender, RoutedEventArgs e)
-    {
-        AboutDialog.IsOpen = true;
     }
 
     private void SettingsNavigationButton_Click(object sender, RoutedEventArgs e)
@@ -184,12 +179,11 @@ public partial class MainWindow : Window, IDisposable
         HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsBackTitleBarContent.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        HomeActions.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
 
-        MinWidth = isOpen ? 820 : 560;
-        MinHeight = isOpen ? 620 : 500;
+        MinWidth = isOpen ? SettingsWidth : 560;
+        MinHeight = isOpen ? 680 : 500;
         if (WindowState != WindowState.Normal)
         {
             return;
