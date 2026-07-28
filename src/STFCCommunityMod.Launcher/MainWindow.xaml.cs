@@ -225,7 +225,9 @@ public partial class MainWindow : Window, IDisposable
                 catalog,
                 new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
                 openRawTomlCommand,
-                GetConfigurationFilePath);
+                GetConfigurationFilePath,
+                uiPreferencesStore: new JsonLauncherUiPreferencesStore(
+                    PerUserInstallLayout.FromCurrentUser().StateDirectory));
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;

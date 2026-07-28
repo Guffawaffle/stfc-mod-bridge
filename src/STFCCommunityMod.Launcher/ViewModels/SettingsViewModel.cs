@@ -14,6 +14,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly LauncherConfigurationCatalog catalog;
     private readonly AtomicTomlStore store;
     private readonly Func<string?> configurationPathProvider;
+    private readonly ILauncherUiPreferencesStore? uiPreferencesStore;
     private readonly List<SettingsRowViewModel> settings = [];
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
@@ -29,7 +30,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ICommand navigateHomeCommand,
         ICommand openRawTomlCommand,
         Func<string?> configurationPathProvider,
-        AtomicTomlStore? store = null)
+        AtomicTomlStore? store = null,
+        ILauncherUiPreferencesStore? uiPreferencesStore = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -37,6 +39,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
         this.store = store ?? new AtomicTomlStore();
+        this.uiPreferencesStore = uiPreferencesStore;
+        isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
@@ -117,6 +121,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             isSearchVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(SearchToggleHelp));
+            SaveUiPreferences();
         }
     }
 
@@ -293,6 +298,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         IsSearchVisible = true;
+    }
+
+    private void SaveUiPreferences()
+    {
+        if (uiPreferencesStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            uiPreferencesStore.Save(new LauncherUiPreferences(IsSearchVisible));
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            // UI preferences are best-effort and must never block configuration editing.
+        }
     }
 
     private bool ShouldInclude(object item)
