@@ -12,8 +12,8 @@ namespace STFCCommunityMod.Launcher.Behaviors;
 
 public static class DragScrollBehavior
 {
-    private const double DecelerationPerSecond = 6.5;
-    private const double MaximumVelocity = 3600;
+    private const double DecelerationPerSecond = 5.8;
+    private const double MaximumVelocity = 4600;
     private const double MinimumInertiaVelocity = 140;
     private const double StopVelocity = 30;
     private static readonly TimeSpan MaximumReleaseSampleAge = TimeSpan.FromMilliseconds(120);
