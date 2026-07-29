@@ -7,6 +7,8 @@ namespace STFCCommunityMod.Launcher.Controls;
 
 public sealed class KeybindingCaptureButton : Button
 {
+    public event EventHandler? CaptureFinished;
+
     public static readonly DependencyProperty CapturedCommandProperty =
         DependencyProperty.Register(
             nameof(CapturedCommand),
@@ -58,6 +60,16 @@ public sealed class KeybindingCaptureButton : Button
         BeginCapture();
     }
 
+    public void StartCapture()
+    {
+        if (IsEnabled && !isCapturing)
+        {
+            BeginCapture();
+        }
+    }
+
+    public void StopCapture() => CancelCapture();
+
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         if (!isCapturing)
@@ -71,6 +83,7 @@ public sealed class KeybindingCaptureButton : Button
         if (key == Key.Escape)
         {
             CancelCapture();
+            CaptureFinished?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -136,6 +149,7 @@ public sealed class KeybindingCaptureButton : Button
         {
             command.Execute(chord);
         }
+        CaptureFinished?.Invoke(this, EventArgs.Empty);
     }
 
     private void CancelCapture()

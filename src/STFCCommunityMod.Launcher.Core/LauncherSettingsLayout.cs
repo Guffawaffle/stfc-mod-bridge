@@ -23,6 +23,10 @@ public sealed record LauncherSettingsSectionDefinition(
 public sealed record LauncherSettingsPlacement(
     LauncherSettingsSection Section,
     string Group,
+    int GroupOrder,
+    string FamilyId,
+    int FamilyOrder,
+    int MemberOrder,
     string SortKey,
     bool IsUncategorized = false);
 
@@ -39,6 +43,8 @@ public interface ILauncherSettingsLayoutProvider
     string DisplayName { get; }
 
     IReadOnlyList<LauncherSettingsSectionDefinition> Sections { get; }
+
+    bool ShowGroupHeadings { get; }
 
     LauncherSettingsPlacement Place(LauncherConfigurationSetting setting);
 }
@@ -94,6 +100,8 @@ public sealed class PrincipalCatalogSettingsLayoutProvider :
     public IReadOnlyList<LauncherSettingsSectionDefinition> Sections =>
         SectionDefinitions;
 
+    public bool ShowGroupHeadings => true;
+
     public LauncherSettingsPlacement Place(
         LauncherConfigurationSetting setting)
     {
@@ -104,9 +112,29 @@ public sealed class PrincipalCatalogSettingsLayoutProvider :
         return new(
             ResolveSection(setting),
             group,
+            GroupOrder(group),
+            setting.Presentation.Family?.Id ?? string.Empty,
+            setting.Presentation.Family?.DisplayOrder ?? 500_000,
+            setting.Presentation.Family?.MemberOrder ?? 0,
             setting.Presentation.Label,
             string.Equals(group, "Uncategorized", StringComparison.Ordinal));
     }
+
+    private static int GroupOrder(string group) =>
+        group switch
+        {
+            "Fleet" => 10,
+            "Ships" => 20,
+            "Navigation" => 30,
+            "Camera" => 40,
+            "Panels" => 50,
+            "Chat" => 60,
+            "Interface" => 70,
+            "System" => 80,
+            "Diagnostics" => 90,
+            "Uncategorized" => 10_000,
+            _ => 1_000,
+        };
 
     private static LauncherSettingsSection ResolveSection(
         LauncherConfigurationSetting setting)
@@ -165,6 +193,8 @@ public sealed class AlphabeticalSettingsLayoutProvider :
     public IReadOnlyList<LauncherSettingsSectionDefinition> Sections =>
         SectionDefinitions;
 
+    public bool ShowGroupHeadings => false;
+
     public LauncherSettingsPlacement Place(
         LauncherConfigurationSetting setting)
     {
@@ -172,6 +202,10 @@ public sealed class AlphabeticalSettingsLayoutProvider :
         return new(
             LauncherSettingsSection.General,
             string.Empty,
+            0,
+            string.Empty,
+            0,
+            0,
             setting.Presentation.Label);
     }
 }

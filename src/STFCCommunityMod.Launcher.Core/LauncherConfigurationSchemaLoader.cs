@@ -189,6 +189,7 @@ public static class LauncherConfigurationSchemaLoader
             "group",
             "searchTerms",
             "enumOptions",
+            "family",
             "unit",
             "editorWidth",
             "applyTiming",
@@ -211,6 +212,7 @@ public static class LauncherConfigurationSchemaLoader
             valueKind,
             valueType,
             context);
+        var family = ReadPresentationFamily(element, group, control, context);
         var unit = ReadOptionalString(element, "unit", context);
         if (unit is not null
             && (control != LauncherConfigurationControl.Scalar
@@ -238,11 +240,64 @@ public static class LauncherConfigurationSchemaLoader
             group,
             searchTerms,
             enumOptions,
+            family,
             unit,
             editorWidth,
             applyTiming,
             ReadRequiredString(element, "accessibleName", context),
             ReadRequiredString(element, "accessibleHelp", context));
+    }
+
+    private static LauncherConfigurationPresentationFamily? ReadPresentationFamily(
+        JsonElement presentation,
+        string group,
+        LauncherConfigurationControl control,
+        string context)
+    {
+        if (!presentation.TryGetProperty("family", out var element))
+        {
+            return null;
+        }
+
+        RequireKind(element, JsonValueKind.Object, $"{context}.family");
+        RejectUnknownProperties(
+            element,
+            $"{context}.family",
+            "id",
+            "parentGroup",
+            "label",
+            "help",
+            "displayOrder",
+            "presentationHint",
+            "memberLabel",
+            "memberOrder");
+        var parentGroup = ReadRequiredString(element, "parentGroup", $"{context}.family");
+        if (!string.Equals(parentGroup, group, StringComparison.Ordinal))
+        {
+            throw Invalid($"{context}.family.parentGroup must match presentation.group.");
+        }
+
+        var presentationHint = ReadRequiredString(
+            element,
+            "presentationHint",
+            $"{context}.family");
+        if (!string.Equals(presentationHint, "compact-binding-list", StringComparison.Ordinal)
+            || control != LauncherConfigurationControl.Keybinding)
+        {
+            throw Invalid(
+                $"{context}.family.presentationHint is only supported as "
+                + "'compact-binding-list' for keybindings.");
+        }
+
+        return new(
+            ReadRequiredString(element, "id", $"{context}.family"),
+            parentGroup,
+            ReadRequiredString(element, "label", $"{context}.family"),
+            ReadOptionalString(element, "help", $"{context}.family"),
+            ReadRequiredInt32(element, "displayOrder", $"{context}.family"),
+            presentationHint,
+            ReadRequiredString(element, "memberLabel", $"{context}.family"),
+            ReadRequiredInt32(element, "memberOrder", $"{context}.family"));
     }
 
     private static ReadOnlyCollection<LauncherConfigurationPresentationOption> ReadPresentationEnumOptions(
@@ -705,6 +760,20 @@ public static class LauncherConfigurationSchemaLoader
         }
 
         return value.GetString();
+    }
+
+    private static int ReadRequiredInt32(
+        JsonElement parent,
+        string propertyName,
+        string context)
+    {
+        var value = ReadRequiredProperty(parent, propertyName, context);
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var result))
+        {
+            throw Invalid($"{context}.{propertyName} must be an integer.");
+        }
+
+        return result;
     }
 
     private static ReadOnlyCollection<string> ReadDistinctStrings(

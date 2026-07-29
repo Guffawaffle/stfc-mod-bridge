@@ -1,34 +1,36 @@
 <UserControl x:Class="STFCCommunityMod.Launcher.Controls.SettingsRowActions"
+             x:Name="Root"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
              xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              Focusable="False">
   <UserControl.Resources>
-    <Style TargetType="ContextMenu">
-      <Setter Property="Padding" Value="4" />
-      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style TargetType="MenuItem">
-      <Setter Property="MinHeight" Value="40" />
-      <Setter Property="Padding" Value="12,8" />
-      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+    <Style x:Key="RowMenuActionStyle"
+           BasedOn="{StaticResource QuietButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinWidth" Value="280" />
+      <Setter Property="Height" Value="42" />
+      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="FontSize" Value="13" />
-      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-      <Setter Property="Background" Value="Transparent" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Style.Triggers>
-        <Trigger Property="IsHighlighted" Value="True">
-          <Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" />
-        </Trigger>
         <Trigger Property="IsKeyboardFocused" Value="True">
-          <Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" />
           <Setter Property="BorderBrush" Value="{DynamicResource FocusOuterBrush}" />
           <Setter Property="BorderThickness" Value="2" />
         </Trigger>
       </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CaptureActionStyle"
+           BasedOn="{StaticResource SecondaryButtonStyle}"
+           TargetType="controls:KeybindingCaptureButton">
+      <Setter Property="Height" Value="44" />
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     </Style>
   </UserControl.Resources>
 
@@ -46,25 +48,104 @@
       <controls:AppIcon Kind="RevertDraft" />
     </Button>
 
-    <controls:OverflowMenuButton Width="44"
-                                 Height="44"
-                                 MinHeight="44"
-                                 Margin="4,0,0,0"
-                                 Padding="0"
-                                 Style="{StaticResource QuietButtonStyle}"
-                                 ToolTip="More setting actions"
-                                 automation:AutomationProperties.Name="{Binding Title, StringFormat=More actions for {0}}"
-                                 automation:AutomationProperties.HelpText="Includes the command to clear the explicit override and use the application default.">
+    <Button x:Name="MoreActionsButton"
+            Width="44"
+            Height="44"
+            MinHeight="44"
+            Margin="4,0,0,0"
+            Padding="0"
+            Style="{StaticResource QuietButtonStyle}"
+            Click="MoreActionsButton_Click"
+            ToolTip="More actions"
+            Visibility="{Binding HasOverflowActions, Converter={StaticResource BooleanToVisibilityConverter}}"
+            automation:AutomationProperties.Name="{Binding Title, StringFormat=More actions for {0}}"
+            automation:AutomationProperties.HelpText="Opens additional actions for this setting.">
       <controls:AppIcon Kind="More" />
-      <controls:OverflowMenuButton.ContextMenu>
-        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-          <MenuItem Header="{Binding UseDefaultLabel}"
-                    Command="{Binding UseDefaultCommand}"
-                    ToolTip="{Binding UseDefaultAvailability}"
-                    automation:AutomationProperties.Name="{Binding UseDefaultLabel}"
-                    automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}" />
-        </ContextMenu>
-      </controls:OverflowMenuButton.ContextMenu>
-    </controls:OverflowMenuButton>
+    </Button>
+
+    <Popup x:Name="ActionPopup"
+           PlacementTarget="{Binding ElementName=MoreActionsButton}"
+           Placement="Bottom"
+           HorizontalOffset="-236"
+           AllowsTransparency="True"
+           StaysOpen="False"
+           PopupAnimation="Fade">
+      <Border Margin="4"
+              Padding="4"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource ControlBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="8"
+              PreviewKeyDown="ActionPopup_PreviewKeyDown"
+              DataContext="{Binding DataContext, ElementName=Root}">
+        <StackPanel>
+          <Button x:Name="AddBindingAction"
+                  Style="{StaticResource RowMenuActionStyle}"
+                  Click="AddBinding_Click"
+                  Visibility="{Binding IsKeybindingEditor, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  ToolTip="Capture another keyboard key or mouse button"
+                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Add a binding for {0}}"
+                  automation:AutomationProperties.HelpText="Opens a focused popup that captures the next key or mouse button.">
+            <StackPanel Orientation="Horizontal">
+              <controls:AppIcon Width="18"
+                                Height="18"
+                                Margin="0,0,10,0"
+                                Kind="Add" />
+              <TextBlock VerticalAlignment="Center"
+                         Text="Add binding" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="UseDefaultAction"
+                  Style="{StaticResource RowMenuActionStyle}"
+                  Command="{Binding UseDefaultCommand}"
+                  Click="UseDefault_Click"
+                  ToolTip="{Binding UseDefaultAvailability}"
+                  ToolTipService.ShowOnDisabled="True"
+                  automation:AutomationProperties.Name="{Binding UseDefaultLabel}"
+                  automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}">
+            <TextBlock Margin="28,0,0,0"
+                       VerticalAlignment="Center"
+                       Text="{Binding UseDefaultLabel}" />
+          </Button>
+        </StackPanel>
+      </Border>
+    </Popup>
+
+    <Popup x:Name="CapturePopup"
+           PlacementTarget="{Binding ElementName=MoreActionsButton}"
+           Placement="Bottom"
+           HorizontalOffset="-276"
+           AllowsTransparency="True"
+           StaysOpen="False"
+           Closed="CapturePopup_Closed"
+           PopupAnimation="Fade">
+      <Border Width="320"
+              Margin="4"
+              Padding="16"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource ControlBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="10"
+              DataContext="{Binding DataContext, ElementName=Root}">
+        <StackPanel>
+          <TextBlock FontSize="15"
+                     FontWeight="SemiBold"
+                     Text="Add binding" />
+          <TextBlock Margin="0,5,0,14"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="Press a keyboard key or mouse button. Escape cancels."
+                     TextWrapping="Wrap" />
+          <controls:KeybindingCaptureButton x:Name="CaptureButton"
+                                            Style="{StaticResource CaptureActionStyle}"
+                                            Prompt="Listening…"
+                                            CapturedCommand="{Binding AddKeybindingCommand}"
+                                            IsEnabled="{Binding CanEdit}"
+                                            CaptureFinished="CaptureButton_CaptureFinished"
+                                            automation:AutomationProperties.Name="{Binding Title, StringFormat=Capture a new binding for {0}}"
+                                            automation:AutomationProperties.HelpText="Press a keyboard key or mouse button. Escape cancels." />
+        </StackPanel>
+      </Border>
+    </Popup>
   </StackPanel>
 </UserControl>

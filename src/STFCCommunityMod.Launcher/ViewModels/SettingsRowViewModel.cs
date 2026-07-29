@@ -25,6 +25,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private string? numericValidationError;
     private string? stringDraft;
     private string? stringValidationError;
+    private bool isFamilyHeaderVisible;
 
     internal SettingsRowViewModel(
         LauncherConfigurationSetting setting,
@@ -48,6 +49,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         Title = setting.Presentation.Label;
         Description = setting.Presentation.Help ?? string.Empty;
         Group = placement.Group;
+        FamilyId = setting.Presentation.Family?.Id ?? string.Empty;
+        FamilyLabel = setting.Presentation.Family?.Label ?? string.Empty;
+        FamilyDescription = setting.Presentation.Family?.Help ?? string.Empty;
+        FamilyMemberLabel = setting.Presentation.Family?.MemberLabel ?? string.Empty;
+        IsCompactBindingFamily = string.Equals(
+            setting.Presentation.Family?.PresentationHint,
+            "compact-binding-list",
+            StringComparison.Ordinal);
         Unit = setting.Presentation.Unit ?? string.Empty;
         ApplyTiming = setting.Presentation.ApplyTiming;
         AccessibleName = setting.Presentation.AccessibleName;
@@ -117,6 +126,23 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public string Group { get; }
 
+    public string FamilyId { get; }
+
+    public string FamilyLabel { get; }
+
+    public string FamilyDescription { get; }
+
+    public bool HasFamilyDescription => !string.IsNullOrWhiteSpace(FamilyDescription);
+
+    public string FamilyMemberLabel { get; }
+
+    public bool IsCompactBindingFamily { get; }
+
+    public string DisplayTitle =>
+        IsCompactBindingFamily ? FamilyMemberLabel : Title;
+
+    public bool IsFamilyHeaderVisible => isFamilyHeaderVisible;
+
     public string Unit { get; }
 
     public bool HasUnit => !string.IsNullOrWhiteSpace(Unit);
@@ -167,6 +193,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public bool IsCustom => DraftHasOverride;
 
+    public bool HasOverflowActions => IsKeybindingEditor || DraftHasOverride;
+
     public bool IsExperimental =>
         Setting.Stability == LauncherConfigurationStability.Experimental;
 
@@ -191,12 +219,26 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string RevertDraftAutomationHelp =>
         $"Restores both the saved value and its saved {(SavedHasOverride ? "custom override" : "default")} state.";
 
-    public string UseDefaultLabel => $"Use default: {DefaultValue}";
+    public string UseDefaultLabel => $"Use default: {DefaultValueText}";
 
     public string UseDefaultAvailability =>
         DraftHasOverride
-            ? $"Remove the explicit override and use the application default {DefaultValue}."
-            : $"This setting already uses the application default {DefaultValue}.";
+            ? $"Remove the explicit override and use the application default {DefaultValueText}."
+            : $"This setting already uses the application default {DefaultValueText}.";
+
+    public string DefaultValueText
+    {
+        get
+        {
+            if (!IsKeybindingEditor)
+            {
+                return DefaultValue;
+            }
+
+            var parsed = LauncherKeybindingValue.Parse(DefaultValue);
+            return parsed.IsValid ? parsed.Display : DefaultValue;
+        }
+    }
 
     public bool BooleanValue
     {
@@ -555,6 +597,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DraftHasOverride));
         OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(IsCustom));
+        OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
         OnPropertyChanged(nameof(BooleanValue));
@@ -718,6 +761,17 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         keybindingConflictMessage = message;
         setInputValidity(Setting, message is null);
         NotifyKeybindingStateChanged();
+    }
+
+    internal void SetFamilyHeaderVisible(bool value)
+    {
+        if (isFamilyHeaderVisible == value)
+        {
+            return;
+        }
+
+        isFamilyHeaderVisible = value;
+        OnPropertyChanged(nameof(IsFamilyHeaderVisible));
     }
 
     private void AddKeybinding(string chord)

@@ -408,6 +408,18 @@ public sealed class LauncherConfigurationSchemaLoaderTests
         Assert.IsTrue(templates.All(setting => !setting.IsDirectlyEditable));
         Assert.IsFalse(catalog.VisibleSettings.Any(setting => setting.IsTemplate));
         Assert.AreEqual(0, catalog.Search("*").Count);
+
+        var savedZoomFamily = catalog.Settings
+            .Where(setting =>
+                setting.Presentation.Family?.Id == "camera.saved-zoom-positions")
+            .OrderBy(setting => setting.Presentation.Family!.MemberOrder)
+            .ToArray();
+        Assert.AreEqual(6, savedZoomFamily.Length);
+        Assert.AreEqual("Camera", savedZoomFamily[0].Presentation.Family!.ParentGroup);
+        Assert.AreEqual("Default", savedZoomFamily[0].Presentation.Family!.MemberLabel);
+        Assert.AreEqual("Preset 5", savedZoomFamily[5].Presentation.Family!.MemberLabel);
+        Assert.IsTrue(savedZoomFamily.All(setting =>
+            setting.Presentation.Family!.PresentationHint == "compact-binding-list"));
     }
 
     private static LauncherConfigurationCatalog LoadJson(string json)

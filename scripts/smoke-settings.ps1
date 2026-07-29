@@ -96,9 +96,15 @@ function Find-AutomationElement {
   )
 
   while ([DateTimeOffset]::UtcNow -lt $Deadline) {
-    $elements = $Root.FindAll(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      [System.Windows.Automation.Condition]::TrueCondition)
+    try {
+      $elements = $Root.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    }
+    catch [System.Runtime.InteropServices.COMException] {
+      Start-Sleep -Milliseconds 100
+      continue
+    }
     foreach ($element in $elements) {
       if ($element.Current.Name -ne $Name) {
         continue
@@ -307,16 +313,33 @@ try {
     -Name "Notification settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
-  [void](Find-AutomationElement `
+  $hotkeysNavigation = Find-AutomationElement `
     -Root $root `
     -Name "Hotkey settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline $settingsDeadline)
+    -Deadline $settingsDeadline
 
   Invoke-AutomationElement -Element $notificationsNavigation
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Choose which events alert you and how." `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+
+  Invoke-AutomationElement -Element $hotkeysNavigation
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Fleet" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $moreFleetActions = Find-AutomationElement `
+    -Root $root `
+    -Name "More actions for Primary fleet action" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $moreFleetActions
+  [void](Find-AutomationElement `
+    -Root ([System.Windows.Automation.AutomationElement]::RootElement) `
+    -Name "Add a binding for Primary fleet action" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
 
   $aboutNavigation = Find-AutomationElement `
@@ -338,7 +361,7 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: launcher chrome, Settings navigation, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  Write-Host "PASS: launcher chrome, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_

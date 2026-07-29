@@ -19,6 +19,16 @@ public sealed record LauncherConfigurationPresentationOption(
     string Label,
     string? Help);
 
+public sealed record LauncherConfigurationPresentationFamily(
+    string Id,
+    string ParentGroup,
+    string Label,
+    string? Help,
+    int DisplayOrder,
+    string PresentationHint,
+    string MemberLabel,
+    int MemberOrder);
+
 public sealed class LauncherConfigurationPresentation
 {
     internal LauncherConfigurationPresentation(
@@ -27,6 +37,7 @@ public sealed class LauncherConfigurationPresentation
         string group,
         IReadOnlyList<string> searchTerms,
         IReadOnlyList<LauncherConfigurationPresentationOption> enumOptions,
+        LauncherConfigurationPresentationFamily? family,
         string? unit,
         LauncherConfigurationEditorWidth editorWidth,
         string applyTiming,
@@ -38,6 +49,7 @@ public sealed class LauncherConfigurationPresentation
         Group = group;
         SearchTerms = searchTerms;
         EnumOptions = enumOptions;
+        Family = family;
         Unit = unit;
         EditorWidth = editorWidth;
         ApplyTiming = applyTiming;
@@ -54,6 +66,8 @@ public sealed class LauncherConfigurationPresentation
     public IReadOnlyList<string> SearchTerms { get; }
 
     public IReadOnlyList<LauncherConfigurationPresentationOption> EnumOptions { get; }
+
+    public LauncherConfigurationPresentationFamily? Family { get; }
 
     public string? Unit { get; }
 

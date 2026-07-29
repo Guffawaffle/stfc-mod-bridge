@@ -73,7 +73,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 RevertDraft,
                 SetInputValidity))
             .OrderBy(setting => placementsByPath[setting.Path].Section)
+            .ThenBy(setting => placementsByPath[setting.Path].GroupOrder)
             .ThenBy(setting => setting.Group, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(setting => placementsByPath[setting.Path].FamilyOrder)
+            .ThenBy(setting => placementsByPath[setting.Path].FamilyId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(setting => placementsByPath[setting.Path].MemberOrder)
             .ThenBy(setting => placementsByPath[setting.Path].SortKey, StringComparer.OrdinalIgnoreCase)
             .ToList());
         settingsByPath = settings.ToDictionary(
@@ -83,6 +87,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         FilteredSettings = CollectionViewSource.GetDefaultView(settings);
         FilteredSettings.Filter = ShouldInclude;
+        if (layoutProvider.ShowGroupHeadings)
+        {
+            FilteredSettings.GroupDescriptions.Add(
+                new PropertyGroupDescription(nameof(SettingsRowViewModel.Group)));
+        }
         FilteredSettings.CollectionChanged += (_, _) => NotifyFilterSummaryChanged();
 
         SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
@@ -168,6 +177,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsSettingsListVisible => !IsAboutSelected;
 
     public int VisibleSettingCount => FilteredSettings.Cast<object>().Count();
+
+    public string VisibleItemsSummary
+    {
+        get
+        {
+            var noun = IsSearchActive
+                ? "results"
+                : SelectedSection == LauncherSettingsSection.Hotkeys
+                    ? "actions"
+                    : "settings";
+            return $"{VisibleSettingCount} {noun} shown · {ConfigurationStatus}";
+        }
+    }
 
     public Visibility EmptyStateVisibility =>
         IsSettingsListVisible && FilteredSettings.IsEmpty
@@ -342,6 +364,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SelectedSection));
         OnPropertyChanged(nameof(WorkspaceTitle));
         OnPropertyChanged(nameof(WorkspaceDescription));
+        OnPropertyChanged(nameof(VisibleItemsSummary));
         OnPropertyChanged(nameof(IsAboutSelected));
         OnPropertyChanged(nameof(IsGeneralSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
@@ -698,12 +721,31 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void RefreshFilter()
     {
         FilteredSettings.Refresh();
+        UpdateVisibleFamilyHeaders();
         NotifyFilterSummaryChanged();
+    }
+
+    private void UpdateVisibleFamilyHeaders()
+    {
+        var seenFamilies = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var setting in settings)
+        {
+            setting.SetFamilyHeaderVisible(false);
+        }
+
+        foreach (var setting in FilteredSettings.Cast<SettingsRowViewModel>())
+        {
+            if (setting.FamilyId.Length > 0 && seenFamilies.Add(setting.FamilyId))
+            {
+                setting.SetFamilyHeaderVisible(true);
+            }
+        }
     }
 
     private void NotifyFilterSummaryChanged()
     {
         OnPropertyChanged(nameof(VisibleSettingCount));
+        OnPropertyChanged(nameof(VisibleItemsSummary));
         OnPropertyChanged(nameof(EmptyStateVisibility));
     }
 
