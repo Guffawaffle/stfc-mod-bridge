@@ -15,8 +15,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsActionCommand removeOverrideCommand;
     private readonly SettingsActionCommand unbindKeybindingCommand;
-    private readonly SettingsValueCommand<string> replaceKeybindingCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
+    private readonly SettingsValueCommand<string> removeKeybindingCommand;
     private SettingsValueState valueState;
     private LauncherNotificationPolicyParseResult? notificationPolicy;
     private string? keybindingConflictMessage;
@@ -90,11 +90,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         unbindKeybindingCommand = new SettingsActionCommand(
             UnbindKeybinding,
             () => CanEdit && IsKeybindingEditor && !CurrentKeybinding().IsUnbound);
-        replaceKeybindingCommand = new SettingsValueCommand<string>(
-            ReplaceKeybinding,
-            _ => CanEdit && IsKeybindingEditor);
         addKeybindingCommand = new SettingsValueCommand<string>(
             AddKeybinding,
+            _ => CanEdit && IsKeybindingEditor);
+        removeKeybindingCommand = new SettingsValueCommand<string>(
+            RemoveKeybinding,
             _ => CanEdit && IsKeybindingEditor);
     }
 
@@ -327,6 +327,13 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public string KeybindingDisplay => CurrentKeybinding().Display;
 
+    public IReadOnlyList<SettingsKeybindingChord> KeybindingChords =>
+        CurrentKeybinding().Chords
+            .Select(chord => new SettingsKeybindingChord(chord.Canonical, chord.Display, Title))
+            .ToArray();
+
+    public bool IsKeybindingUnbound => CurrentKeybinding().IsUnbound;
+
     public bool KeybindingNeedsAttention =>
         IsKeybindingEditor
         && (!TryReadEffectiveKeybinding(out var parsed) || !parsed.IsValid
@@ -343,13 +350,13 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
             return !TryReadEffectiveKeybinding(out var parsed) || !parsed.IsValid
                 ? parsed.Error ?? "The configured shortcut is invalid; the runtime default is shown."
-                : "Change replaces this binding. Add keeps this binding as an alternative.";
+                : "Add another shortcut, remove individual alternatives, or unbind the action.";
         }
     }
 
-    public ICommand ReplaceKeybindingCommand => replaceKeybindingCommand;
-
     public ICommand AddKeybindingCommand => addKeybindingCommand;
+
+    public ICommand RemoveKeybindingCommand => removeKeybindingCommand;
 
     public ICommand UnbindKeybindingCommand => unbindKeybindingCommand;
 
@@ -508,8 +515,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 || IsNotificationEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
         unbindKeybindingCommand.RaiseCanExecuteChanged();
-        replaceKeybindingCommand.RaiseCanExecuteChanged();
         addKeybindingCommand.RaiseCanExecuteChanged();
+        removeKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
         OnPropertyChanged(nameof(IsStaged));
@@ -662,20 +669,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         NotifyKeybindingStateChanged();
     }
 
-    private void ReplaceKeybinding(string chord)
-    {
-        var parsed = LauncherKeybindingValue.Parse(chord);
-        if (!CanEdit
-            || !parsed.IsValid
-            || parsed.IsUnbound
-            || !stageValue(Setting, LauncherTomlValue.RenderString(parsed.Normalized)))
-        {
-            return;
-        }
-
-        NotifyKeybindingStateChanged();
-    }
-
     private void AddKeybinding(string chord)
     {
         var captured = LauncherKeybindingValue.Parse(chord);
@@ -690,6 +683,32 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             : LauncherKeybindingValue.Parse($"{current.Normalized}|{captured.Normalized}");
         if (combined.IsValid
             && stageValue(Setting, LauncherTomlValue.RenderString(combined.Normalized)))
+        {
+            NotifyKeybindingStateChanged();
+        }
+    }
+
+    private void RemoveKeybinding(string canonicalChord)
+    {
+        if (!CanEdit)
+        {
+            return;
+        }
+
+        var current = CurrentKeybinding();
+        var remaining = current.Chords
+            .Where(chord => !string.Equals(chord.Canonical, canonicalChord, StringComparison.Ordinal))
+            .Select(chord => chord.Canonical)
+            .ToArray();
+        if (remaining.Length == current.Chords.Count)
+        {
+            return;
+        }
+
+        var normalized = remaining.Length == 0
+            ? "NONE"
+            : string.Join('|', remaining);
+        if (stageValue(Setting, LauncherTomlValue.RenderString(normalized)))
         {
             NotifyKeybindingStateChanged();
         }
@@ -737,6 +756,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     {
         unbindKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(KeybindingDisplay));
+        OnPropertyChanged(nameof(KeybindingChords));
+        OnPropertyChanged(nameof(IsKeybindingUnbound));
         OnPropertyChanged(nameof(KeybindingNeedsAttention));
         OnPropertyChanged(nameof(KeybindingValidationMessage));
         OnPropertyChanged(nameof(EditorAutomationName));
@@ -1011,3 +1032,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 public sealed record SettingsEnumOption(
     string Value,
     string Label);
+
+public sealed record SettingsKeybindingChord(
+    string Canonical,
+    string Display,
+    string OwnerTitle)
+{
+    public string RemoveAutomationName => $"Remove {Display} from {OwnerTitle}";
+}
