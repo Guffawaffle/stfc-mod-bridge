@@ -58,6 +58,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 editSession is not null,
                 StageValue,
                 StageRemove,
+                RevertDraft,
                 SetInputValidity))
             .OrderBy(setting => ResolveSection(setting.Setting))
             .ThenBy(setting => setting.Group, StringComparer.OrdinalIgnoreCase)
@@ -190,7 +191,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string PendingApplyTimingText =>
         LauncherConfigurationApplySummary.From(
             settings
-                .Where(setting => setting.IsStaged)
+                .Where(setting => setting.IsDirty)
                 .Select(setting => setting.Setting.ApplyBehavior))
             .Text;
 
@@ -427,15 +428,24 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         if (editSession is null)
         {
-            return new(SettingsRowViewModelValue(setting.DefaultValue), false);
+            var defaultValue = SettingsRowViewModelValue(setting.DefaultValue);
+            return new(
+                defaultValue,
+                defaultValue,
+                false,
+                defaultValue,
+                false,
+                false);
         }
 
         var state = editSession.GetState(setting);
         return new(
-            state.EffectiveRenderedValue ?? state.DefaultValue,
-            state.HasOverride,
-            state.IsStaged,
-            state.IsRemoval);
+            state.DefaultValue,
+            state.SavedEffectiveValue,
+            state.SavedHasOverride,
+            state.DraftEffectiveValue,
+            state.DraftHasOverride,
+            state.IsDirty);
     }
 
     private static object? SettingsRowViewModelValue(JsonElement defaultValue) =>
@@ -480,6 +490,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         var result = editSession.StageRemove(setting);
         OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The override could not be removed.";
+        if (!result.IsValid)
+        {
+            return false;
+        }
+
+        RefreshState(setting);
+        RefreshKeybindingConflicts();
+        NotifySessionChanged();
+        return true;
+    }
+
+    private bool RevertDraft(LauncherConfigurationSetting setting)
+    {
+        if (editSession is null)
+        {
+            return false;
+        }
+
+        var result = editSession.Revert(setting);
+        OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The change could not be reverted.";
         if (!result.IsValid)
         {
             return false;

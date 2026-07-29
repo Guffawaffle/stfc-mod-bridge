@@ -24,6 +24,13 @@
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Style.Triggers>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource FocusOuterBrush}" />
+          <Setter Property="BorderThickness" Value="2" />
+        </Trigger>
+      </Style.Triggers>
     </Style>
 
     <Style x:Key="SettingsNavigationButtonStyle"
@@ -87,6 +94,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ToggleButton">
@@ -246,6 +254,24 @@
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="ItemContainerStyle" Value="{StaticResource SettingsEnumItemStyle}" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="ItemTemplate">
+        <Setter.Value>
+          <DataTemplate DataType="{x:Type viewModels:SettingsEnumOption}">
+            <StackPanel>
+              <TextBlock FontSize="13"
+                         FontWeight="SemiBold"
+                         Text="{Binding Label}" />
+              <TextBlock Margin="0,3,0,0"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding Help}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding HasHelp, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </StackPanel>
+          </DataTemplate>
+        </Setter.Value>
+      </Setter>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ComboBox">
@@ -513,7 +539,11 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel>
-          <TextBlock FontSize="13"
+          <TextBlock FontSize="22"
+                     FontWeight="SemiBold"
+                     Text="{Binding WorkspaceTitle}" />
+          <TextBlock Margin="0,4,0,0"
+                     FontSize="13"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="{Binding WorkspaceDescription}" />
           <TextBlock Margin="0,3,0,0"
@@ -607,25 +637,42 @@
                       <ColumnDefinition Width="420" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Margin="0,0,28,0"
-                                VerticalAlignment="Center">
-                      <WrapPanel Orientation="Horizontal">
-                        <TextBlock FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding Title}"
-                                   ToolTip="{Binding Path}" />
-                        <Border Margin="9,0,0,0"
+                    <Grid Margin="0,0,28,0"
+                          VerticalAlignment="Center">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock FontSize="16"
+                                 FontWeight="SemiBold"
+                                 Text="{Binding Title}"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip="{Binding Path}" />
+                      <StackPanel Grid.Column="1"
+                                  Margin="12,0,0,0"
+                                  VerticalAlignment="Center"
+                                  Orientation="Horizontal">
+                        <TextBlock Margin="0,0,9,0"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="Custom"
+                                   Visibility="{Binding IsCustom, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Border Margin="0,0,7,0"
                                 Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource QuietHoverBrush}"
                                 CornerRadius="4"
-                                Visibility="{Binding IsModified, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                Visibility="{Binding IsDirty, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
                                      Foreground="{DynamicResource AccentBrush}"
-                                     Text="Modified" />
+                                     Text="Unsaved" />
                         </Border>
-                        <Border Margin="7,0,0,0"
-                                Padding="7,2"
+                        <Border Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource SurfaceMutedBrush}"
                                 CornerRadius="4"
@@ -634,14 +681,16 @@
                                      Foreground="{DynamicResource TextSecondaryBrush}"
                                      Text="Experimental" />
                         </Border>
-                      </WrapPanel>
-                      <TextBlock Margin="0,5,0,0"
+                      </StackPanel>
+                      <TextBlock Grid.Row="1"
+                                 Grid.ColumnSpan="2"
+                                 Margin="0,5,0,0"
                                  FontSize="13"
                                  Foreground="{DynamicResource TextSecondaryBrush}"
                                  Text="{Binding Description}"
                                  TextWrapping="Wrap"
                                  Visibility="{Binding HasDescription, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    </StackPanel>
+                    </Grid>
 
                     <Grid Grid.Column="1"
                           VerticalAlignment="Center">
@@ -663,20 +712,8 @@
                                   IsEnabled="{Binding CanEdit}"
                                   automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle {0}}"
                                   automation:AutomationProperties.HelpText="{Binding AccessibleHelp}" />
-                        <Button Grid.Column="2"
-                                Width="44"
-                                Height="44"
-                                MinHeight="44"
-                                Margin="8,0,0,0"
-                                Padding="0"
-                                Style="{StaticResource QuietButtonStyle}"
-                                Command="{Binding RemoveOverrideCommand}"
-                                ToolTip="{Binding RemoveOverrideAvailability}"
-                                Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                          <controls:AppIcon Kind="RestoreDefault" />
-                        </Button>
+                        <controls:SettingsRowActions Grid.Column="2"
+                                                     Margin="8,0,0,0" />
                       </Grid>
 
                       <StackPanel Visibility="{Binding IsEnumEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -685,29 +722,18 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <ComboBox Style="{StaticResource SettingsEnumComboBoxStyle}"
+                          <ComboBox Width="220"
+                                    HorizontalAlignment="Right"
+                                    Style="{StaticResource SettingsEnumComboBoxStyle}"
                                     ItemsSource="{Binding EnumOptions}"
-                                    DisplayMemberPath="Label"
                                     SelectedValuePath="Value"
                                     SelectedValue="{Binding EnumValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsEnabled="{Binding CanEdit}"
                                     ToolTip="{Binding EnumValidationMessage}"
                                     automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose {0}}"
                                     automation:AutomationProperties.HelpText="{Binding EnumValidationMessage}" />
-                          <Button Grid.Column="1"
-                                  Width="44"
-                                  Height="44"
-                                  MinHeight="44"
-                                  Margin="8,0,0,0"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding RemoveOverrideCommand}"
-                                  ToolTip="{Binding RemoveOverrideAvailability}"
-                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <controls:AppIcon Kind="RestoreDefault" />
-                          </Button>
+                          <controls:SettingsRowActions Grid.Column="1"
+                                                       Margin="8,0,0,0" />
                         </Grid>
                         <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
@@ -719,7 +745,7 @@
                       <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Grid HorizontalAlignment="Right">
                           <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="124" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
@@ -738,20 +764,8 @@
                                      Foreground="{DynamicResource TextSecondaryBrush}"
                                      Text="{Binding Unit}"
                                      Visibility="{Binding HasUnit, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                          <Button Grid.Column="2"
-                                  Width="44"
-                                  Height="44"
-                                  MinHeight="44"
-                                  Margin="8,0,0,0"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding RemoveOverrideCommand}"
-                                  ToolTip="{Binding RemoveOverrideAvailability}"
-                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <controls:AppIcon Kind="RestoreDefault" />
-                          </Button>
+                          <controls:SettingsRowActions Grid.Column="2"
+                                                       Margin="8,0,0,0" />
                         </Grid>
                         <TextBlock Margin="0,4,52,0"
                                    HorizontalAlignment="Right"
@@ -769,27 +783,17 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBox Style="{StaticResource SettingsStringEditorStyle}"
+                          <TextBox Width="280"
+                                   HorizontalAlignment="Right"
+                                   Style="{StaticResource SettingsStringEditorStyle}"
                                    Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                    IsEnabled="{Binding CanEdit}"
                                    ToolTip="{Binding StringValidationMessage}"
                                    behaviors:TextInputCommitBehavior.CommitOnEnter="True"
                                    automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
                                    automation:AutomationProperties.HelpText="{Binding StringValidationMessage}" />
-                          <Button Grid.Column="1"
-                                  Width="44"
-                                  Height="44"
-                                  MinHeight="44"
-                                  Margin="8,0,0,0"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding RemoveOverrideCommand}"
-                                  ToolTip="{Binding RemoveOverrideAvailability}"
-                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <controls:AppIcon Kind="RestoreDefault" />
-                          </Button>
+                          <controls:SettingsRowActions Grid.Column="1"
+                                                       Margin="8,0,0,0" />
                         </Grid>
                         <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
@@ -883,19 +887,7 @@
                                                             ToolTip="Add another shortcut"
                                                             automation:AutomationProperties.Name="{Binding Title, StringFormat=Add an alternative shortcut for {0}}"
                                                             automation:AutomationProperties.HelpText="Press a keyboard key or mouse button. Escape cancels." />
-                          <Button Width="44"
-                                  Height="44"
-                                  MinHeight="44"
-                                  Margin="8,2,0,2"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding RemoveOverrideCommand}"
-                                  ToolTip="{Binding RemoveOverrideAvailability}"
-                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <controls:AppIcon Kind="RestoreDefault" />
-                          </Button>
+                          <controls:SettingsRowActions Margin="8,2,0,2" />
                         </WrapPanel>
                         <TextBlock MaxWidth="420"
                                    Margin="0,4,0,0"
@@ -920,25 +912,6 @@
                             <ColumnDefinition Width="132" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBlock VerticalAlignment="Center"
-                                     HorizontalAlignment="Right"
-                                     FontSize="13"
-                                     FontWeight="SemiBold"
-                                     Text="{Binding NotificationStateText}">
-                            <TextBlock.Style>
-                              <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                                <Style.Triggers>
-                                  <DataTrigger Binding="{Binding NotificationStateText}" Value="On">
-                                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                                  </DataTrigger>
-                                  <DataTrigger Binding="{Binding NotificationNeedsAttention}" Value="True">
-                                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                                  </DataTrigger>
-                                </Style.Triggers>
-                              </Style>
-                            </TextBlock.Style>
-                          </TextBlock>
                           <ToggleButton Grid.Column="1"
                                         Margin="10,0,0,0"
                                         Style="{StaticResource NotificationDeliveryToggleStyle}"
@@ -958,6 +931,7 @@
                             <controls:AppIcon Kind="Sound" />
                           </ToggleButton>
                           <ComboBox Grid.Column="3"
+                                    Width="112"
                                     Margin="8,0,0,0"
                                     Style="{StaticResource SettingsEnumComboBoxStyle}"
                                     ItemsSource="{Binding NotificationSoundOptions}"
@@ -967,20 +941,8 @@
                                     IsEnabled="{Binding CanSelectNotificationSound}"
                                     ToolTip="Choose the in-game notification sound"
                                     automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose sound for {0}}" />
-                          <Button Grid.Column="4"
-                                  Width="44"
-                                  Height="44"
-                                  MinHeight="44"
-                                  Margin="8,0,0,0"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding RemoveOverrideCommand}"
-                                  ToolTip="{Binding RemoveOverrideAvailability}"
-                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
-                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <controls:AppIcon Kind="RestoreDefault" />
-                          </Button>
+                          <controls:SettingsRowActions Grid.Column="4"
+                                                       Margin="8,0,0,0" />
                         </Grid>
                       </StackPanel>
 

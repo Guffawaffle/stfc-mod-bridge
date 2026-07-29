@@ -86,10 +86,55 @@ public sealed class LauncherConfigurationEditSessionTests
         Assert.AreEqual(0, session.PendingChangeCount);
         Assert.IsFalse(session.HasPendingChanges);
         var state = session.GetState(setting);
-        Assert.AreEqual("true", state.RenderedOverride);
-        Assert.IsTrue(state.HasOverride);
-        Assert.IsFalse(state.IsStaged);
+        Assert.AreEqual("true", state.SavedRenderedOverride);
+        Assert.AreEqual("true", state.DraftRenderedOverride);
+        Assert.IsTrue(state.SavedHasOverride);
+        Assert.IsTrue(state.DraftHasOverride);
+        Assert.IsFalse(state.IsDirty);
         CollectionAssert.AreEqual(original, session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
+    public void RevertRestoresSavedValueAndSavedOverridePresenceForOneRow()
+    {
+        const string source =
+            """
+            [graphics]
+            free_resize = true
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var savedCustom = catalog.Settings.Single(
+            item => item.Path == "graphics.free_resize");
+        var savedDefault = catalog.Settings.Single(
+            item => item.Path == "graphics.ui_scale");
+
+        Assert.IsTrue(session!.StageRemove(savedCustom).IsValid);
+        Assert.IsTrue(session.StageSet(savedDefault, "0.60").IsValid);
+        Assert.AreEqual(2, session.PendingChangeCount);
+        Assert.IsFalse(session.GetState(savedCustom).DraftHasOverride);
+        Assert.IsTrue(session.GetState(savedDefault).DraftHasOverride);
+
+        Assert.IsTrue(session.Revert(savedCustom).IsValid);
+        Assert.IsTrue(session.Revert(savedDefault).IsValid);
+
+        Assert.AreEqual(0, session.PendingChangeCount);
+        var customState = session.GetState(savedCustom);
+        Assert.IsTrue(customState.SavedHasOverride);
+        Assert.IsTrue(customState.DraftHasOverride);
+        Assert.AreEqual("true", customState.SavedRenderedOverride);
+        Assert.AreEqual("true", customState.DraftRenderedOverride);
+        Assert.IsFalse(customState.IsDirty);
+        var defaultState = session.GetState(savedDefault);
+        Assert.IsFalse(defaultState.SavedHasOverride);
+        Assert.IsFalse(defaultState.DraftHasOverride);
+        Assert.IsFalse(defaultState.IsDirty);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
     }
 
     [TestMethod]
@@ -108,7 +153,12 @@ public sealed class LauncherConfigurationEditSessionTests
 
         Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
         Assert.AreEqual(0, session.PendingChangeCount);
-        Assert.AreEqual("false", session.GetState(setting).RenderedOverride);
+        var state = session.GetState(setting);
+        Assert.AreEqual("false", state.SavedRenderedOverride);
+        Assert.AreEqual("false", state.DraftRenderedOverride);
+        Assert.IsTrue(state.SavedHasOverride);
+        Assert.IsTrue(state.DraftHasOverride);
+        Assert.IsFalse(state.IsDirty);
         CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(path + ".bak"));
     }
 
@@ -184,7 +234,7 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
-    public void StagingRuntimeDefaultClearsPendingChangeWhenNoOverrideExists()
+    public void ExplicitRuntimeDefaultRemainsAnOverrideWhenNoOverrideWasSaved()
     {
         const string source =
             """
@@ -202,19 +252,19 @@ public sealed class LauncherConfigurationEditSessionTests
         var numericSetting = catalog.Settings.Single(
             item => item.Path == "graphics.ui_scale");
 
-        Assert.IsTrue(session!.StageSet(booleanSetting, "false").IsValid);
-        Assert.IsTrue(session.StageSet(enumSetting, "\"fallthrough_unhandled\"").IsValid);
-        Assert.IsTrue(session.StageSet(numericSetting, "0.7").IsValid);
-        Assert.AreEqual(3, session.PendingChangeCount);
-
-        Assert.IsTrue(session.StageSet(booleanSetting, "true").IsValid);
+        Assert.IsTrue(session!.StageSet(booleanSetting, "true").IsValid);
         Assert.IsTrue(session.StageSet(enumSetting, "\"mod\"").IsValid);
         Assert.IsTrue(session.StageSet(numericSetting, "0.60").IsValid);
+        Assert.AreEqual(3, session.PendingChangeCount);
 
-        Assert.AreEqual(0, session.PendingChangeCount);
-        CollectionAssert.AreEqual(
-            Encoding.UTF8.GetBytes(source),
-            session.BuildDraft().Contents!);
+        var booleanState = session.GetState(booleanSetting);
+        Assert.IsFalse(booleanState.SavedHasOverride);
+        Assert.IsTrue(booleanState.DraftHasOverride);
+        Assert.IsTrue(booleanState.IsDirty);
+        var draft = Encoding.UTF8.GetString(session.BuildDraft().Contents!);
+        StringAssert.Contains(draft, "free_resize = true");
+        StringAssert.Contains(draft, "original_frame_policy = \"mod\"");
+        StringAssert.Contains(draft, "ui_scale = 0.60");
     }
 
     [TestMethod]
@@ -301,7 +351,7 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
-    public void EmptyStringDefaultDoesNotMaterializeAnOverride()
+    public void EmptyStringDefaultCanBeSavedAsAnExplicitOverride()
     {
         const string source = "# All public strings use their runtime defaults.\n";
         var catalog = LoadCatalog();
@@ -315,10 +365,10 @@ public sealed class LauncherConfigurationEditSessionTests
         var result = session!.StageSet(setting, "\"\"");
 
         Assert.IsTrue(result.IsValid, result.Error?.Message);
-        Assert.AreEqual(0, session.PendingChangeCount);
-        CollectionAssert.AreEqual(
-            Encoding.UTF8.GetBytes(source),
-            session.BuildDraft().Contents!);
+        Assert.AreEqual(1, session.PendingChangeCount);
+        StringAssert.Contains(
+            Encoding.UTF8.GetString(session.BuildDraft().Contents!),
+            "assets_url_override = \"\"");
     }
 
     [TestMethod]
@@ -349,7 +399,7 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
-    public void NotificationEventDefaultDoesNotMaterializeAnOverride()
+    public void NotificationEventDefaultCanBeSavedAsAnExplicitOverride()
     {
         const string source = "# Notifications use event defaults.\n";
         var catalog = LoadCatalog();
@@ -363,10 +413,10 @@ public sealed class LauncherConfigurationEditSessionTests
         var result = session!.StageSet(setting, "false");
 
         Assert.IsTrue(result.IsValid, result.Error?.Message);
-        Assert.AreEqual(0, session.PendingChangeCount);
-        CollectionAssert.AreEqual(
-            Encoding.UTF8.GetBytes(source),
-            session.BuildDraft().Contents!);
+        Assert.AreEqual(1, session.PendingChangeCount);
+        StringAssert.Contains(
+            Encoding.UTF8.GetString(session.BuildDraft().Contents!),
+            "armada_created = false");
     }
 
     [TestMethod]
@@ -399,7 +449,7 @@ public sealed class LauncherConfigurationEditSessionTests
         Assert.IsTrue(load.IsValid, load.Error?.Message);
         Assert.IsNotNull(session);
         var setting = catalog.Settings.Single(item => item.Path == "graphics.free_resize");
-        var current = session.GetState(setting).RenderedOverride;
+        var current = session.GetState(setting).DraftRenderedOverride;
         var replacement = string.Equals(current, "true", StringComparison.Ordinal) ? "false" : "true";
         Assert.IsTrue(session.StageSet(setting, replacement).IsValid);
 

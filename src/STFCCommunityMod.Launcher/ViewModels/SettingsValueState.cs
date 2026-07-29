@@ -1,7 +1,9 @@
 namespace STFCCommunityMod.Launcher.ViewModels;
 
 public sealed record SettingsValueState(
-    object? EffectiveValue,
-    bool HasOverride,
-    bool IsStaged = false,
-    bool IsRemoval = false);
+    object? SchemaDefaultValue,
+    object? SavedValue,
+    bool SavedHasOverride,
+    object? DraftValue,
+    bool DraftHasOverride,
+    bool IsDirty);

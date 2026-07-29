@@ -137,6 +137,7 @@ public static class LauncherConfigurationSchemaLoader
             ReadRequiredProperty(element, "presentation", context),
             control,
             valueKind,
+            valueType,
             applyBehavior,
             path);
         var platforms = ReadPlatforms(ReadRequiredProperty(element, "platforms", context), path);
@@ -174,6 +175,7 @@ public static class LauncherConfigurationSchemaLoader
         JsonElement element,
         LauncherConfigurationControl control,
         LauncherConfigurationValueKind valueKind,
+        JsonElement valueType,
         LauncherConfigurationApplyBehavior applyBehavior,
         string path)
     {
@@ -186,6 +188,7 @@ public static class LauncherConfigurationSchemaLoader
             "help",
             "group",
             "searchTerms",
+            "enumOptions",
             "unit",
             "editorWidth",
             "applyTiming",
@@ -203,6 +206,11 @@ public static class LauncherConfigurationSchemaLoader
             throw Invalid($"{context}.searchTerms must include the canonical setting path.");
         }
 
+        var enumOptions = ReadPresentationEnumOptions(
+            element,
+            valueKind,
+            valueType,
+            context);
         var unit = ReadOptionalString(element, "unit", context);
         if (unit is not null
             && (control != LauncherConfigurationControl.Scalar
@@ -229,11 +237,66 @@ public static class LauncherConfigurationSchemaLoader
             help,
             group,
             searchTerms,
+            enumOptions,
             unit,
             editorWidth,
             applyTiming,
             ReadRequiredString(element, "accessibleName", context),
             ReadRequiredString(element, "accessibleHelp", context));
+    }
+
+    private static ReadOnlyCollection<LauncherConfigurationPresentationOption> ReadPresentationEnumOptions(
+        JsonElement presentation,
+        LauncherConfigurationValueKind valueKind,
+        JsonElement valueType,
+        string context)
+    {
+        if (!presentation.TryGetProperty("enumOptions", out var element))
+        {
+            return Array.AsReadOnly(Array.Empty<LauncherConfigurationPresentationOption>());
+        }
+
+        if (valueKind != LauncherConfigurationValueKind.Enum)
+        {
+            throw Invalid($"{context}.enumOptions is only valid for enum settings.");
+        }
+
+        RequireKind(element, JsonValueKind.Array, $"{context}.enumOptions");
+        var options = new List<LauncherConfigurationPresentationOption>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var option in element.EnumerateArray())
+        {
+            RequireKind(option, JsonValueKind.Object, $"{context}.enumOptions item");
+            RejectUnknownProperties(
+                option,
+                $"{context}.enumOptions item",
+                "value",
+                "label",
+                "help");
+            var value = ReadRequiredString(option, "value", $"{context}.enumOptions item");
+            if (!seen.Add(value))
+            {
+                throw Invalid($"{context}.enumOptions contains duplicate value '{value}'.");
+            }
+
+            options.Add(
+                new(
+                    value,
+                    ReadRequiredString(option, "label", $"{context}.enumOptions item"),
+                    ReadOptionalString(option, "help", $"{context}.enumOptions item")));
+        }
+
+        var declaredValues = valueType.GetProperty("values")
+            .EnumerateArray()
+            .Select(value => value.GetString()!)
+            .ToArray();
+        if (options.Count != declaredValues.Length
+            || declaredValues.Any(value => !seen.Contains(value)))
+        {
+            throw Invalid($"{context}.enumOptions must describe every declared enum value exactly once.");
+        }
+
+        return options.AsReadOnly();
     }
 
     private static LauncherConfigurationKeybindingMetadata? ReadKeybindingMetadata(

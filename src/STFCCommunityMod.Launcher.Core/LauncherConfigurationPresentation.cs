@@ -14,6 +14,11 @@ public enum LauncherConfigurationEditorWidth
     Wide,
 }
 
+public sealed record LauncherConfigurationPresentationOption(
+    string Value,
+    string Label,
+    string? Help);
+
 public sealed class LauncherConfigurationPresentation
 {
     internal LauncherConfigurationPresentation(
@@ -21,6 +26,7 @@ public sealed class LauncherConfigurationPresentation
         string? help,
         string group,
         IReadOnlyList<string> searchTerms,
+        IReadOnlyList<LauncherConfigurationPresentationOption> enumOptions,
         string? unit,
         LauncherConfigurationEditorWidth editorWidth,
         string applyTiming,
@@ -31,6 +37,7 @@ public sealed class LauncherConfigurationPresentation
         Help = help;
         Group = group;
         SearchTerms = searchTerms;
+        EnumOptions = enumOptions;
         Unit = unit;
         EditorWidth = editorWidth;
         ApplyTiming = applyTiming;
@@ -45,6 +52,8 @@ public sealed class LauncherConfigurationPresentation
     public string Group { get; }
 
     public IReadOnlyList<string> SearchTerms { get; }
+
+    public IReadOnlyList<LauncherConfigurationPresentationOption> EnumOptions { get; }
 
     public string? Unit { get; }
 

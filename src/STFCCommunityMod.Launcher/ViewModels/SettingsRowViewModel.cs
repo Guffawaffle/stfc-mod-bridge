@@ -12,8 +12,10 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 {
     private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
+    private readonly Func<LauncherConfigurationSetting, bool> revertDraft;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
-    private readonly SettingsActionCommand removeOverrideCommand;
+    private readonly SettingsActionCommand useDefaultCommand;
+    private readonly SettingsActionCommand revertDraftCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
     private readonly SettingsValueCommand<string> removeKeybindingCommand;
     private SettingsValueState valueState;
@@ -30,12 +32,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
         Func<LauncherConfigurationSetting, bool> stageRemove,
+        Func<LauncherConfigurationSetting, bool> revertDraft,
         Action<LauncherConfigurationSetting, bool> setInputValidity)
     {
         Setting = setting;
         this.valueState = valueState;
         this.stageValue = stageValue;
         this.stageRemove = stageRemove;
+        this.revertDraft = revertDraft;
         this.setInputValidity = setInputValidity;
 
         Path = setting.Path;
@@ -83,9 +87,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
-        removeOverrideCommand = new SettingsActionCommand(
-            RemoveOverride,
-            () => editingAvailable && HasOverride);
+        useDefaultCommand = new SettingsActionCommand(
+            UseDefault,
+            () => CanEdit && DraftHasOverride);
+        revertDraftCommand = new SettingsActionCommand(
+            RevertDraft,
+            () => CanEdit && IsDirty);
         addKeybindingCommand = new SettingsValueCommand<string>(
             AddKeybinding,
             _ => CanEdit && IsKeybindingEditor);
@@ -150,23 +157,44 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<SettingsEnumOption> EnumOptions { get; }
 
-    public bool HasOverride => valueState.HasOverride;
+    public bool SavedHasOverride => valueState.SavedHasOverride;
 
-    public bool IsStaged => valueState.IsStaged;
+    public bool DraftHasOverride => valueState.DraftHasOverride;
 
-    public bool IsRemoval => valueState.IsRemoval;
+    public bool IsDirty => valueState.IsDirty;
 
-    public bool IsModified => HasOverride || IsStaged;
+    public bool IsCustom => DraftHasOverride;
 
     public bool IsExperimental =>
         Setting.Stability == LauncherConfigurationStability.Experimental;
 
     public string EffectiveState =>
-        IsStaged
-            ? IsRemoval ? "Will use default" : "Unsaved"
-            : HasOverride ? "Override" : "Default";
+        IsDirty
+            ? DraftHasOverride ? "Unsaved custom value" : "Unsaved default"
+            : DraftHasOverride ? "Custom" : "Default";
 
-    public string EffectiveValue => FormatValue(valueState.EffectiveValue ?? Setting.DefaultValue);
+    public string EffectiveValue => FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
+
+    public string SavedValueText =>
+        FormatStateValue(valueState.SavedValue, SavedHasOverride);
+
+    public string RevertDraftAvailability =>
+        IsDirty
+            ? $"Revert unsaved change — saved: {SavedValueText}"
+            : "This row matches its saved state.";
+
+    public string RevertDraftAutomationName =>
+        $"Revert {Title} to saved value {SavedValueText}";
+
+    public string RevertDraftAutomationHelp =>
+        $"Restores both the saved value and its saved {(SavedHasOverride ? "custom override" : "default")} state.";
+
+    public string UseDefaultLabel => $"Use default: {DefaultValue}";
+
+    public string UseDefaultAvailability =>
+        DraftHasOverride
+            ? $"Remove the explicit override and use the application default {DefaultValue}."
+            : $"This setting already uses the application default {DefaultValue}.";
 
     public bool BooleanValue
     {
@@ -209,8 +237,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public bool EnumNeedsAttention =>
         IsEnumEditor
-        && HasOverride
-        && !TryReadValidEnumValue(valueState.EffectiveValue, out _);
+        && DraftHasOverride
+        && !TryReadValidEnumValue(valueState.DraftValue, out _);
 
     public string EnumValidationMessage =>
         EnumNeedsAttention
@@ -254,8 +282,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public bool NumericNeedsAttention =>
         numericValidationError is not null
         || (IsNumericEditor
-            && HasOverride
-            && !TryReadValidNumericValue(valueState.EffectiveValue, out _));
+            && DraftHasOverride
+            && !TryReadValidNumericValue(valueState.DraftValue, out _));
 
     public string NumericValidationMessage =>
         numericValidationError
@@ -319,7 +347,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public bool StringNeedsAttention =>
         stringValidationError is not null
-        || (IsStringEditor && HasOverride && !TryReadValidStringValue(valueState.EffectiveValue, out _));
+        || (IsStringEditor && DraftHasOverride && !TryReadValidStringValue(valueState.DraftValue, out _));
 
     public string StringValidationMessage =>
         stringValidationError
@@ -334,9 +362,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             "comma-separated-list" => "Comma-separated names · Empty disables filtering",
             _ => "Text value",
         };
-
-    public string NotificationStateText =>
-        notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
 
     public string KeybindingDisplay => CurrentKeybinding().Display;
 
@@ -419,7 +444,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<SettingsEnumOption> NotificationSoundOptions =>
         NotificationSounds
-            .Select(sound => new SettingsEnumOption(sound, FormatCategory(sound)))
+            .Select(sound => new SettingsEnumOption(sound, FormatCategory(sound), string.Empty))
             .ToArray();
 
     public bool CanSelectNotificationSound =>
@@ -481,25 +506,15 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             : IsKeybindingEditor
                 ? $"{Title}, {EffectiveState}, {KeybindingDisplay}. {KeybindingValidationMessage}"
             : IsNotificationEditor
-                ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Use the inline delivery controls."
+                ? $"{Title}, {EffectiveState}, {NotificationDeliverySummary}. Use the system and sound delivery controls."
                 : $"{Title} requires its dedicated {Control} editor.";
 
     public string SpecializedEditorMessage =>
         $"This {Control.ToLowerInvariant()} value is catalogued and awaits its typed editor.";
 
-    public ICommand RemoveOverrideCommand => removeOverrideCommand;
+    public ICommand UseDefaultCommand => useDefaultCommand;
 
-    public bool CanRemoveOverride => removeOverrideCommand.CanExecute(null);
-
-    public string RemoveOverrideAvailability =>
-        HasOverride
-            ? CanRemoveOverride
-                ? $"Restore default — {DefaultValue}"
-                : "Override removal requires a valid writable configuration."
-            : "This setting already uses its runtime default.";
-
-    public string RemoveOverrideAutomationName =>
-        $"Restore {Title} to its default value {DefaultValue}";
+    public ICommand RevertDraftCommand => revertDraftCommand;
 
     internal bool Matches(string searchText)
     {
@@ -529,14 +544,15 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 || IsStringEditor
                 || IsKeybindingEditor
                 || IsNotificationEditor);
-        removeOverrideCommand.RaiseCanExecuteChanged();
+        useDefaultCommand.RaiseCanExecuteChanged();
+        revertDraftCommand.RaiseCanExecuteChanged();
         addKeybindingCommand.RaiseCanExecuteChanged();
         removeKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
-        OnPropertyChanged(nameof(HasOverride));
-        OnPropertyChanged(nameof(IsStaged));
-        OnPropertyChanged(nameof(IsRemoval));
-        OnPropertyChanged(nameof(IsModified));
+        OnPropertyChanged(nameof(SavedHasOverride));
+        OnPropertyChanged(nameof(DraftHasOverride));
+        OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(IsCustom));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
         OnPropertyChanged(nameof(BooleanValue));
@@ -547,7 +563,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         NotifyNumericStateChanged();
         NotifyStringStateChanged();
         NotifyKeybindingStateChanged();
-        OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationSystem));
         OnPropertyChanged(nameof(NotificationAudio));
         OnPropertyChanged(nameof(NotificationSound));
@@ -558,19 +573,22 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(NotificationNeedsAttention));
         OnPropertyChanged(nameof(NotificationPolicyHelp));
         OnPropertyChanged(nameof(EditorAutomationName));
-        OnPropertyChanged(nameof(CanRemoveOverride));
-        OnPropertyChanged(nameof(RemoveOverrideAvailability));
-        OnPropertyChanged(nameof(RemoveOverrideAutomationName));
+        OnPropertyChanged(nameof(SavedValueText));
+        OnPropertyChanged(nameof(RevertDraftAvailability));
+        OnPropertyChanged(nameof(RevertDraftAutomationName));
+        OnPropertyChanged(nameof(RevertDraftAutomationHelp));
+        OnPropertyChanged(nameof(UseDefaultLabel));
+        OnPropertyChanged(nameof(UseDefaultAvailability));
     }
 
     private bool ReadBooleanValue()
     {
-        if (valueState.EffectiveValue is bool boolean)
+        if (valueState.DraftValue is bool boolean)
         {
             return boolean;
         }
 
-        if (valueState.EffectiveValue is string text
+        if (valueState.DraftValue is string text
             && bool.TryParse(text, out var parsed))
         {
             return parsed;
@@ -582,7 +600,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private string ReadEnumValue()
     {
-        if (TryReadValidEnumValue(valueState.EffectiveValue, out var value))
+        if (TryReadValidEnumValue(valueState.DraftValue, out var value))
         {
             return value;
         }
@@ -621,7 +639,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         notificationPolicy = IsNotificationEditor
             ? LauncherNotificationPolicyParser.Parse(
                 Setting,
-                valueState.HasOverride ? valueState.EffectiveValue as string : null)
+                valueState.DraftHasOverride ? valueState.DraftValue as string : null)
             : null;
     }
 
@@ -636,7 +654,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             return;
         }
 
-        OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationSystem));
         OnPropertyChanged(nameof(NotificationAudio));
         OnPropertyChanged(nameof(NotificationSound));
@@ -647,9 +664,24 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EditorAutomationName));
     }
 
-    private void RemoveOverride()
+    private void UseDefault()
     {
         if (stageRemove(Setting))
+        {
+            OnPropertyChanged(nameof(BooleanValue));
+            OnPropertyChanged(nameof(BooleanStateText));
+            OnPropertyChanged(nameof(EnumValue));
+            OnPropertyChanged(nameof(EnumNeedsAttention));
+            OnPropertyChanged(nameof(EnumValidationMessage));
+            NotifyNumericStateChanged();
+            NotifyStringStateChanged();
+            NotifyKeybindingStateChanged();
+        }
+    }
+
+    private void RevertDraft()
+    {
+        if (revertDraft(Setting))
         {
             OnPropertyChanged(nameof(BooleanValue));
             OnPropertyChanged(nameof(BooleanStateText));
@@ -745,12 +777,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         out LauncherKeybindingParseResult binding)
     {
         binding = LauncherKeybindingValue.Parse("NONE");
-        if (!IsKeybindingEditor || valueState.EffectiveValue is not string text)
+        if (!IsKeybindingEditor || valueState.DraftValue is not string text)
         {
             return false;
         }
 
-        if ((HasOverride || IsStaged)
+        if (DraftHasOverride
             && LauncherTomlValue.TryReadString(text, out var parsedText))
         {
             text = parsedText;
@@ -772,7 +804,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private string ReadStringText()
     {
-        if (TryReadValidStringValue(valueState.EffectiveValue, out var value))
+        if (TryReadValidStringValue(valueState.DraftValue, out var value))
         {
             return value;
         }
@@ -793,7 +825,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             return false;
         }
 
-        if (HasOverride)
+        if (DraftHasOverride)
         {
             if (!LauncherTomlValue.TryReadString(text, out value))
             {
@@ -827,7 +859,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private string ReadNumericText()
     {
-        if (TryReadValidNumericValue(valueState.EffectiveValue, out var rendered))
+        if (TryReadValidNumericValue(valueState.DraftValue, out var rendered))
         {
             return rendered;
         }
@@ -979,11 +1011,22 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             return [];
         }
 
+        var presentationOptions = setting.Presentation.EnumOptions
+            .ToDictionary(option => option.Value, StringComparer.Ordinal);
         return values.EnumerateArray()
             .Where(value => value.ValueKind == JsonValueKind.String)
             .Select(value => value.GetString())
             .Where(value => value is not null)
-            .Select(value => new SettingsEnumOption(value!, FormatCategory(value!)))
+            .Select(value =>
+            {
+                var rawValue = value!;
+                return presentationOptions.TryGetValue(rawValue, out var option)
+                    ? new SettingsEnumOption(
+                        rawValue,
+                        option.Label,
+                        option.Help ?? string.Empty)
+                    : new SettingsEnumOption(rawValue, FormatCategory(rawValue), string.Empty);
+            })
             .ToArray();
     }
 
@@ -994,6 +1037,52 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     {
         var formatted = FormatValue(value);
         return formatted == "Not specified" ? "Unspecified" : formatted;
+    }
+
+    private string FormatStateValue(object? value, bool hasOverride)
+    {
+        if (!hasOverride)
+        {
+            return DefaultValue;
+        }
+
+        if (value is not string rendered)
+        {
+            return FormatValue(value);
+        }
+
+        if (IsBooleanEditor && bool.TryParse(rendered, out var boolean))
+        {
+            return boolean ? "On" : "Off";
+        }
+
+        if ((IsEnumEditor || IsStringEditor || IsKeybindingEditor)
+            && LauncherTomlValue.TryReadString(rendered, out var text))
+        {
+            return IsEnumEditor ? FormatCategory(text) : text;
+        }
+
+        if (IsNotificationEditor)
+        {
+            var parsed = LauncherNotificationPolicyParser.Parse(Setting, rendered);
+            if (parsed.IsValid)
+            {
+                var channels = new List<string>();
+                if (parsed.Policy.System)
+                {
+                    channels.Add("system");
+                }
+
+                if (parsed.Policy.Audio)
+                {
+                    channels.Add($"{FormatCategory(parsed.Policy.Sound)} sound");
+                }
+
+                return channels.Count == 0 ? "Off" : string.Join(" and ", channels);
+            }
+        }
+
+        return rendered;
     }
 
     private static string FormatCategory(string category)
@@ -1038,7 +1127,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
 public sealed record SettingsEnumOption(
     string Value,
-    string Label);
+    string Label,
+    string Help)
+{
+    public bool HasHelp => !string.IsNullOrWhiteSpace(Help);
+}
 
 public sealed record SettingsKeybindingChord(
     string Canonical,

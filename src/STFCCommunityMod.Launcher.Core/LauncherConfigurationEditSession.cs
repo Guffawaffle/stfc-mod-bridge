@@ -5,13 +5,17 @@ namespace STFCCommunityMod.Launcher.Core;
 
 public sealed record LauncherConfigurationEntryState(
     object? DefaultValue,
-    string? RenderedOverride,
-    bool HasOverride,
-    bool IsStaged,
-    bool IsRemoval)
+    string? SavedRenderedOverride,
+    bool SavedHasOverride,
+    string? DraftRenderedOverride,
+    bool DraftHasOverride,
+    bool IsDirty)
 {
-    public string? EffectiveRenderedValue =>
-        IsRemoval ? null : RenderedOverride;
+    public object? SavedEffectiveValue =>
+        SavedHasOverride ? SavedRenderedOverride : DefaultValue;
+
+    public object? DraftEffectiveValue =>
+        DraftHasOverride ? DraftRenderedOverride : DefaultValue;
 }
 
 public sealed class LauncherConfigurationEditSession
@@ -86,16 +90,18 @@ public sealed class LauncherConfigurationEditSession
                 ConvertJsonValue(setting.DefaultValue),
                 baseline?.RenderedValue,
                 baseline is not null,
-                false,
+                baseline?.RenderedValue,
+                baseline is not null,
                 false);
         }
 
         return new(
             ConvertJsonValue(setting.DefaultValue),
+            baseline?.RenderedValue,
+            baseline is not null,
             staged.IsRemoval ? null : staged.RenderedValue,
             !staged.IsRemoval,
-            true,
-            staged.IsRemoval);
+            true);
     }
 
     public SparseTomlEditResult StageSet(
@@ -117,9 +123,7 @@ public sealed class LauncherConfigurationEditSession
              && AreEquivalentSettingValues(
                  setting,
                  baseline!.RenderedValue,
-                 renderedTomlValue))
-            || (!hasBaselineOverride
-                && IsEquivalentToDefault(setting, renderedTomlValue)))
+                 renderedTomlValue)))
         {
             stagedChanges.Remove(setting.Path);
         }
@@ -156,6 +160,21 @@ public sealed class LauncherConfigurationEditSession
         if (!draft.IsValid)
         {
             RestorePreviousChange(setting.Path, hadPreviousChange, previousChange);
+        }
+
+        return draft;
+    }
+
+    public SparseTomlEditResult Revert(LauncherConfigurationSetting setting)
+    {
+        ArgumentNullException.ThrowIfNull(setting);
+        EnsureKnownSetting(setting.Path);
+
+        var hadPreviousChange = stagedChanges.Remove(setting.Path, out var previousChange);
+        var draft = BuildDraft();
+        if (!draft.IsValid && hadPreviousChange)
+        {
+            stagedChanges[setting.Path] = previousChange!;
         }
 
         return draft;
@@ -431,43 +450,6 @@ public sealed class LauncherConfigurationEditSession
             _ => false,
         };
     }
-
-    private static bool IsEquivalentToDefault(
-        LauncherConfigurationSetting setting,
-        string renderedValue) =>
-        setting.ValueKind switch
-        {
-            LauncherConfigurationValueKind.Boolean
-                when setting.DefaultValue.ValueKind is JsonValueKind.True or JsonValueKind.False =>
-                renderedValue == (setting.DefaultValue.GetBoolean() ? "true" : "false"),
-            LauncherConfigurationValueKind.String
-                or LauncherConfigurationValueKind.Enum
-                when setting.DefaultValue.ValueKind == JsonValueKind.String
-                     && LauncherTomlValue.TryReadString(renderedValue, out var value) =>
-                string.Equals(
-                    value,
-                    setting.DefaultValue.GetString(),
-                    StringComparison.Ordinal),
-            LauncherConfigurationValueKind.Keybinding
-                when setting.DefaultValue.ValueKind == JsonValueKind.String
-                     && LauncherTomlValue.TryReadString(renderedValue, out var binding)
-                     && LauncherKeybindingValue.Parse(binding) is { IsValid: true } parsed
-                     && LauncherKeybindingValue.Parse(setting.DefaultValue.GetString()!) is { IsValid: true } defaultParsed =>
-                string.Equals(parsed.Normalized, defaultParsed.Normalized, StringComparison.Ordinal),
-            LauncherConfigurationValueKind.Integer
-                when setting.DefaultValue.TryGetInt64(out var defaultInteger)
-                     && LauncherTomlValue.TryReadInteger(renderedValue, out var integer) =>
-                integer == defaultInteger,
-            LauncherConfigurationValueKind.Number
-                when setting.DefaultValue.TryGetDouble(out var defaultNumber)
-                     && LauncherTomlValue.TryReadNumber(renderedValue, out var number) =>
-                number.Equals(defaultNumber),
-            LauncherConfigurationValueKind.Union
-                when setting.Control == LauncherConfigurationControl.NotificationPolicy
-                     && LauncherNotificationPolicyParser.Parse(setting, renderedValue) is { IsValid: true } policy =>
-                policy.Policy == LauncherNotificationPolicyParser.Parse(setting, null).Policy,
-            _ => false,
-        };
 
     private static object? ConvertJsonValue(JsonElement value) =>
         value.ValueKind switch
