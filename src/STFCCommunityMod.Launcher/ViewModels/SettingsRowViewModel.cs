@@ -10,7 +10,7 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 
 public sealed class SettingsRowViewModel : INotifyPropertyChanged
 {
-    private readonly Func<LauncherConfigurationSetting, bool, bool> stageBoolean;
+    private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly SettingsActionCommand removeOverrideCommand;
     private SettingsValueState valueState;
@@ -20,12 +20,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         SettingsValueState valueState,
         bool editingAvailable,
-        Func<LauncherConfigurationSetting, bool, bool> stageBoolean,
+        Func<LauncherConfigurationSetting, string, bool> stageValue,
         Func<LauncherConfigurationSetting, bool> stageRemove)
     {
         Setting = setting;
         this.valueState = valueState;
-        this.stageBoolean = stageBoolean;
+        this.stageValue = stageValue;
         this.stageRemove = stageRemove;
 
         Path = setting.Path;
@@ -45,9 +45,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         SourceSupport = FormatMetadata(setting.SourceSupport);
         IsBooleanEditor = setting.Control == LauncherConfigurationControl.Scalar
             && setting.ValueKind == LauncherConfigurationValueKind.Boolean;
+        IsEnumEditor = setting.Control == LauncherConfigurationControl.Scalar
+            && setting.ValueKind == LauncherConfigurationValueKind.Enum;
         IsNotificationEditor = setting.Control == LauncherConfigurationControl.NotificationPolicy;
-        IsSpecializedEditor = !IsBooleanEditor && !IsNotificationEditor;
-        CanEdit = editingAvailable && IsBooleanEditor;
+        IsSpecializedEditor = !IsBooleanEditor && !IsEnumEditor && !IsNotificationEditor;
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor);
+        EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
         removeOverrideCommand = new SettingsActionCommand(
@@ -83,11 +86,15 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public bool IsBooleanEditor { get; }
 
+    public bool IsEnumEditor { get; }
+
     public bool IsNotificationEditor { get; }
 
     public bool IsSpecializedEditor { get; }
 
     public bool CanEdit { get; private set; }
+
+    public IReadOnlyList<SettingsEnumOption> EnumOptions { get; }
 
     public bool HasOverride => valueState.HasOverride;
 
@@ -112,7 +119,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (stageBoolean(Setting, value))
+            if (stageValue(Setting, value ? "true" : "false"))
             {
                 OnPropertyChanged();
             }
@@ -120,6 +127,35 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     }
 
     public string BooleanStateText => BooleanValue ? "On" : "Off";
+
+    public string EnumValue
+    {
+        get => ReadEnumValue();
+        set
+        {
+            if (!CanEdit
+                || string.IsNullOrEmpty(value)
+                || string.Equals(value, ReadEnumValue(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (stageValue(Setting, LauncherTomlValue.RenderString(value)))
+            {
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool EnumNeedsAttention =>
+        IsEnumEditor
+        && HasOverride
+        && !TryReadValidEnumValue(valueState.EffectiveValue, out _);
+
+    public string EnumValidationMessage =>
+        EnumNeedsAttention
+            ? $"The configured value is invalid. {FormatCategory(EnumValue)} is the runtime default."
+            : $"Choose one of {EnumOptions.Count} supported values.";
 
     public string NotificationStateText =>
         notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
@@ -171,6 +207,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string EditorAutomationName =>
         IsBooleanEditor
             ? $"{Title}, {EffectiveState}, {BooleanValue}"
+            : IsEnumEditor
+                ? $"{Title}, {EffectiveState}, {FormatCategory(EnumValue)}"
             : IsNotificationEditor
                 ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Review only."
                 : $"{Title} requires its dedicated {Control} editor.";
@@ -210,7 +248,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     {
         valueState = state;
         RefreshNotificationPolicy();
-        CanEdit = editingAvailable && IsBooleanEditor;
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
@@ -220,6 +258,9 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EffectiveValue));
         OnPropertyChanged(nameof(BooleanValue));
         OnPropertyChanged(nameof(BooleanStateText));
+        OnPropertyChanged(nameof(EnumValue));
+        OnPropertyChanged(nameof(EnumNeedsAttention));
+        OnPropertyChanged(nameof(EnumValidationMessage));
         OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationDeliverySummary));
         OnPropertyChanged(nameof(NotificationNeedsAttention));
@@ -246,6 +287,42 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             && Setting.DefaultValue.GetBoolean();
     }
 
+    private string ReadEnumValue()
+    {
+        if (TryReadValidEnumValue(valueState.EffectiveValue, out var value))
+        {
+            return value;
+        }
+
+        var defaultValue = Setting.DefaultValue.ValueKind == JsonValueKind.String
+            ? Setting.DefaultValue.GetString()
+            : null;
+        return defaultValue is not null
+            && EnumOptions.Any(option => option.Value == defaultValue)
+                ? defaultValue
+                : EnumOptions.Count > 0 ? EnumOptions[0].Value : string.Empty;
+    }
+
+    private bool TryReadValidEnumValue(object? candidate, out string value)
+    {
+        value = candidate as string ?? string.Empty;
+        if (value.Length >= 2
+            && (value[0] == '\'' || value[0] == '"'))
+        {
+            if (!LauncherTomlValue.TryReadString(value, out var parsed))
+            {
+                value = string.Empty;
+            }
+            else
+            {
+                value = parsed;
+            }
+        }
+
+        var parsedValue = value;
+        return EnumOptions.Any(option => option.Value == parsedValue);
+    }
+
     private void RefreshNotificationPolicy()
     {
         notificationPolicy = IsNotificationEditor
@@ -261,7 +338,28 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(BooleanValue));
             OnPropertyChanged(nameof(BooleanStateText));
+            OnPropertyChanged(nameof(EnumValue));
+            OnPropertyChanged(nameof(EnumNeedsAttention));
+            OnPropertyChanged(nameof(EnumValidationMessage));
         }
+    }
+
+    private static SettingsEnumOption[] ReadEnumOptions(
+        LauncherConfigurationSetting setting)
+    {
+        if (setting.ValueKind != LauncherConfigurationValueKind.Enum
+            || !setting.ValueTypeDefinition.TryGetProperty("values", out var values)
+            || values.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return values.EnumerateArray()
+            .Where(value => value.ValueKind == JsonValueKind.String)
+            .Select(value => value.GetString())
+            .Where(value => value is not null)
+            .Select(value => new SettingsEnumOption(value!, FormatCategory(value!)))
+            .ToArray();
     }
 
     private static bool Contains(string candidate, string searchText) =>
@@ -312,3 +410,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
+
+public sealed record SettingsEnumOption(
+    string Value,
+    string Label);

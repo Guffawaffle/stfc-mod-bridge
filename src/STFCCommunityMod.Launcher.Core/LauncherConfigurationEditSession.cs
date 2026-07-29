@@ -113,11 +113,14 @@ public sealed class LauncherConfigurationEditSession
         }
 
         var hadPreviousChange = stagedChanges.TryGetValue(setting.Path, out var previousChange);
-        if (baselineOverrides.TryGetValue(setting.Path, out var baseline)
-            && string.Equals(
-                baseline.RenderedValue,
-                renderedTomlValue,
-                StringComparison.Ordinal))
+        var hasBaselineOverride = baselineOverrides.TryGetValue(setting.Path, out var baseline);
+        if ((hasBaselineOverride
+             && AreEquivalentSettingValues(
+                 setting,
+                 baseline!.RenderedValue,
+                 renderedTomlValue))
+            || (!hasBaselineOverride
+                && IsEquivalentToDefault(setting, renderedTomlValue)))
         {
             stagedChanges.Remove(setting.Path);
         }
@@ -299,9 +302,9 @@ public sealed class LauncherConfigurationEditSession
                 && !double.IsNaN(number),
             LauncherConfigurationValueKind.String
                 or LauncherConfigurationValueKind.Keybinding =>
-                IsQuotedTomlString(renderedTomlValue),
+                LauncherTomlValue.TryReadString(renderedTomlValue, out _),
             LauncherConfigurationValueKind.Enum =>
-                TryReadQuotedTomlString(renderedTomlValue, out var enumValue)
+                LauncherTomlValue.TryReadString(renderedTomlValue, out var enumValue)
                 && IsDeclaredEnumValue(setting, enumValue),
             LauncherConfigurationValueKind.Union =>
                 setting.Control == LauncherConfigurationControl.NotificationPolicy
@@ -326,38 +329,39 @@ public sealed class LauncherConfigurationEditSession
                 candidate.ValueKind == JsonValueKind.String
                 && string.Equals(candidate.GetString(), value, StringComparison.Ordinal));
 
-    private static bool IsQuotedTomlString(string value) =>
-        TryReadQuotedTomlString(value, out _);
-
-    private static bool TryReadQuotedTomlString(string value, out string parsed)
+    private static bool AreEquivalentSettingValues(
+        LauncherConfigurationSetting setting,
+        string first,
+        string second)
     {
-        parsed = string.Empty;
-        if (value.Length < 2)
+        if (string.Equals(first, second, StringComparison.Ordinal))
         {
-            return false;
-        }
-
-        if (value[0] == '\'' && value[^1] == '\'')
-        {
-            parsed = value[1..^1];
-            return !parsed.Contains('\'');
-        }
-
-        if (value[0] != '"' || value[^1] != '"')
-        {
-            return false;
-        }
-
-        try
-        {
-            parsed = JsonSerializer.Deserialize<string>(value) ?? string.Empty;
             return true;
         }
-        catch (JsonException)
-        {
-            return false;
-        }
+
+        return setting.ValueKind == LauncherConfigurationValueKind.Enum
+            && LauncherTomlValue.TryReadString(first, out var firstValue)
+            && LauncherTomlValue.TryReadString(second, out var secondValue)
+            && string.Equals(firstValue, secondValue, StringComparison.Ordinal);
     }
+
+    private static bool IsEquivalentToDefault(
+        LauncherConfigurationSetting setting,
+        string renderedValue) =>
+        setting.ValueKind switch
+        {
+            LauncherConfigurationValueKind.Boolean
+                when setting.DefaultValue.ValueKind is JsonValueKind.True or JsonValueKind.False =>
+                renderedValue == (setting.DefaultValue.GetBoolean() ? "true" : "false"),
+            LauncherConfigurationValueKind.Enum
+                when setting.DefaultValue.ValueKind == JsonValueKind.String
+                     && LauncherTomlValue.TryReadString(renderedValue, out var value) =>
+                string.Equals(
+                    value,
+                    setting.DefaultValue.GetString(),
+                    StringComparison.Ordinal),
+            _ => false,
+        };
 
     private static object? ConvertJsonValue(JsonElement value) =>
         value.ValueKind switch

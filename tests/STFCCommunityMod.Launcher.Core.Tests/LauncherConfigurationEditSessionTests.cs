@@ -148,6 +148,72 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
+    public void EnumStagingAcceptsDeclaredValuesAndCancelsEquivalentQuoteChanges()
+    {
+        const string source =
+            """
+            [input]
+            original_frame_policy = 'mod'
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var setting = catalog.Settings.Single(
+            item => item.Path == "input.original_frame_policy");
+
+        var changed = session!.StageSet(setting, "\"fallthrough_unhandled\"");
+        Assert.IsTrue(changed.IsValid, changed.Error?.Message);
+        Assert.AreEqual(1, session.PendingChangeCount);
+        StringAssert.Contains(
+            Encoding.UTF8.GetString(session.BuildDraft().Contents!),
+            "original_frame_policy = \"fallthrough_unhandled\"");
+
+        var restored = session.StageSet(setting, "\"mod\"");
+        Assert.IsTrue(restored.IsValid, restored.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+
+        var invalid = session.StageSet(setting, "\"unsupported\"");
+        Assert.IsFalse(invalid.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidValue, invalid.Error?.Code);
+        Assert.AreEqual(0, session.PendingChangeCount);
+    }
+
+    [TestMethod]
+    public void StagingRuntimeDefaultClearsPendingChangeWhenNoOverrideExists()
+    {
+        const string source =
+            """
+            # No explicit values: both settings use their runtime defaults.
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var booleanSetting = catalog.Settings.Single(
+            item => item.Path == "graphics.free_resize");
+        var enumSetting = catalog.Settings.Single(
+            item => item.Path == "input.original_frame_policy");
+
+        Assert.IsTrue(session!.StageSet(booleanSetting, "false").IsValid);
+        Assert.IsTrue(session.StageSet(enumSetting, "\"fallthrough_unhandled\"").IsValid);
+        Assert.AreEqual(2, session.PendingChangeCount);
+
+        Assert.IsTrue(session.StageSet(booleanSetting, "true").IsValid);
+        Assert.IsTrue(session.StageSet(enumSetting, "\"mod\"").IsValid);
+
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
     public void SessionRefusesToStageAnInvalidNotificationPolicy()
     {
         var catalog = LoadCatalog();

@@ -116,6 +116,157 @@
       </Setter>
     </Style>
 
+    <Style x:Key="SettingsEnumItemStyle"
+           TargetType="ComboBoxItem">
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="automation:AutomationProperties.Name"
+              Value="{Binding Label}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border x:Name="ItemSurface"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="5">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemSurface"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Foreground"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SettingsEnumComboBoxStyle"
+           TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="MaxDropDownHeight" Value="260" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="ItemContainerStyle" Value="{StaticResource SettingsEnumItemStyle}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="DropDownToggle"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Focusable="False"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ControlSurface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="7">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="36" />
+                        </Grid.ColumnDefinitions>
+                        <Path Grid.Column="1"
+                              Width="10"
+                              Height="6"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Data="M 1,1 L 5,5 L 9,1"
+                              Stretch="None"
+                              Stroke="{DynamicResource TextSecondaryBrush}"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              StrokeThickness="1.5" />
+                      </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="ControlSurface"
+                                Property="BorderBrush"
+                                Value="{DynamicResource AccentBrush}" />
+                      </Trigger>
+                      <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="ControlSurface"
+                                Property="BorderBrush"
+                                Value="{DynamicResource AccentBrush}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+
+              <ContentPresenter Margin="12,0,40,0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                Content="{Binding SelectedItem.Label, RelativeSource={RelativeSource TemplatedParent}}" />
+
+              <Border x:Name="KeyboardFocusBorder"
+                      BorderBrush="{DynamicResource FocusOuterBrush}"
+                      BorderThickness="2"
+                      CornerRadius="8"
+                      IsHitTestVisible="False"
+                      Visibility="Collapsed" />
+
+              <Popup x:Name="PART_Popup"
+                     AllowsTransparency="True"
+                     Focusable="False"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     Placement="Bottom"
+                     PlacementTarget="{Binding ElementName=DropDownToggle}"
+                     PopupAnimation="Fade">
+                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                        Margin="0,4,0,0"
+                        Padding="3"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="7">
+                  <ScrollViewer CanContentScroll="True"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="KeyboardFocusBorder"
+                        Property="Visibility"
+                        Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="InvisibleScrollBarPageButtonStyle"
            TargetType="{x:Type primitives:RepeatButton}">
       <Setter Property="Focusable" Value="False" />
@@ -423,6 +574,32 @@
                                 automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle {0}}"
                                 automation:AutomationProperties.HelpText="{Binding Description}" />
                     </Grid>
+
+                    <StackPanel Visibility="{Binding IsEnumEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ComboBox Style="{StaticResource SettingsEnumComboBoxStyle}"
+                                ItemsSource="{Binding EnumOptions}"
+                                DisplayMemberPath="Label"
+                                SelectedValuePath="Value"
+                                SelectedValue="{Binding EnumValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                IsEnabled="{Binding CanEdit}"
+                                ToolTip="{Binding EnumValidationMessage}"
+                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose {0}}"
+                                automation:AutomationProperties.HelpText="{Binding EnumValidationMessage}" />
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Text="Invalid override · Default shown"
+                                   Visibility="{Binding EnumNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Button HorizontalAlignment="Right"
+                                Style="{StaticResource QuietButtonStyle}"
+                                Command="{Binding RemoveOverrideCommand}"
+                                Content="Use default"
+                                ToolTip="{Binding RemoveOverrideAvailability}"
+                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                      </Grid>
+                    </StackPanel>
 
                     <Border Padding="12,9"
                             Background="{DynamicResource SurfaceMutedBrush}"

@@ -52,7 +52,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 setting,
                 GetValueState(setting),
                 editSession is not null,
-                StageBoolean,
+                StageValue,
                 StageRemove))
             .OrderBy(setting => ResolveSection(setting.Setting))
             .ThenBy(setting => setting.Title, StringComparer.OrdinalIgnoreCase)
@@ -423,14 +423,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             _ => defaultValue,
         };
 
-    private bool StageBoolean(LauncherConfigurationSetting setting, bool value)
+    private bool StageValue(
+        LauncherConfigurationSetting setting,
+        string renderedTomlValue)
     {
         if (editSession is null)
         {
             return false;
         }
 
-        var result = editSession.StageSet(setting, value ? "true" : "false");
+        var result = editSession.StageSet(setting, renderedTomlValue);
         OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The change is not valid.";
         if (!result.IsValid)
         {
