@@ -308,6 +308,17 @@ public sealed class LauncherConfigurationEditSession
                 $"The value is not valid for {setting.ValueKind.ToString().ToLowerInvariant()} setting '{setting.Path}'.");
         }
 
+        if (setting.ValueKind == LauncherConfigurationValueKind.String
+            && LauncherTomlValue.TryReadString(renderedTomlValue, out var stringValue)
+            && !LauncherConfigurationStringValue.TryNormalize(
+                setting,
+                stringValue,
+                out _,
+                out var stringValidationError))
+        {
+            return InvalidValue(setting, stringValidationError);
+        }
+
         if (setting.NumericConstraints is { } numericConstraints)
         {
             if (!TryReadConstrainedNumber(setting, renderedTomlValue, out var number))
@@ -386,7 +397,9 @@ public sealed class LauncherConfigurationEditSession
 
         return setting.ValueKind switch
         {
-            LauncherConfigurationValueKind.Enum =>
+            LauncherConfigurationValueKind.String
+                or LauncherConfigurationValueKind.Keybinding
+                or LauncherConfigurationValueKind.Enum =>
                 LauncherTomlValue.TryReadString(first, out var firstValue)
                 && LauncherTomlValue.TryReadString(second, out var secondValue)
                 && string.Equals(firstValue, secondValue, StringComparison.Ordinal),
@@ -410,7 +423,9 @@ public sealed class LauncherConfigurationEditSession
             LauncherConfigurationValueKind.Boolean
                 when setting.DefaultValue.ValueKind is JsonValueKind.True or JsonValueKind.False =>
                 renderedValue == (setting.DefaultValue.GetBoolean() ? "true" : "false"),
-            LauncherConfigurationValueKind.Enum
+            LauncherConfigurationValueKind.String
+                or LauncherConfigurationValueKind.Keybinding
+                or LauncherConfigurationValueKind.Enum
                 when setting.DefaultValue.ValueKind == JsonValueKind.String
                      && LauncherTomlValue.TryReadString(renderedValue, out var value) =>
                 string.Equals(

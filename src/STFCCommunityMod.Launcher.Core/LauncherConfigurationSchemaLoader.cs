@@ -119,6 +119,7 @@ public static class LauncherConfigurationSchemaLoader
             ReadRequiredString(valueType, "kind", $"{context}.valueType"),
             path);
         ValidateControlAndValueKind(control, valueKind, path);
+        ValidateStringFormat(valueType, valueKind, path);
         var numericConstraints = ReadNumericConstraints(element, valueKind, path);
 
         var defaultValue = ReadRequiredProperty(element, "default", context);
@@ -155,6 +156,24 @@ public static class LauncherConfigurationSchemaLoader
             sourceSupport,
             sensitivity,
             apply);
+    }
+
+    private static void ValidateStringFormat(
+        JsonElement valueType,
+        LauncherConfigurationValueKind valueKind,
+        string path)
+    {
+        if (!valueType.TryGetProperty("format", out var format))
+        {
+            return;
+        }
+
+        if (valueKind != LauncherConfigurationValueKind.String
+            || format.ValueKind != JsonValueKind.String
+            || format.GetString() is not ("uri" or "comma-separated-list"))
+        {
+            throw Invalid($"Setting '{path}' declares an unsupported string format.");
+        }
     }
 
     private static LauncherConfigurationNumericConstraints? ReadNumericConstraints(

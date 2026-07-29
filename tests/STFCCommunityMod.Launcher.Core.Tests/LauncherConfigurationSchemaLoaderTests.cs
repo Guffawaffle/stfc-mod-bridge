@@ -259,6 +259,41 @@ public sealed class LauncherConfigurationSchemaLoaderTests
     }
 
     [TestMethod]
+    public void RetainsPurposeSpecificStringFormatsAndRejectsUnknownFormats()
+    {
+        const string stringSetting =
+            """
+            {
+              "path": "config.settings_url",
+              "title": "Settings URL",
+              "description": "Remote settings URL.",
+              "category": "config",
+              "control": "scalar",
+              "valueType": { "kind": "string", "format": "uri" },
+              "default": "",
+              "platforms": [ "windows" ],
+              "apply": "next-session",
+              "sensitivity": "public",
+              "stability": "stable",
+              "sourceSupport": [ "guffawaffle" ]
+            }
+            """;
+
+        var catalog = LoadJson(SchemaWithSettings(stringSetting));
+        var setting = catalog.Settings.Single();
+        Assert.AreEqual(
+            "uri",
+            LauncherConfigurationStringValue.ReadFormat(setting));
+
+        var unknownFormat = stringSetting.Replace(
+            @"""format"": ""uri""",
+            @"""format"": ""surprise""",
+            StringComparison.Ordinal);
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(SchemaWithSettings(unknownFormat)));
+    }
+
+    [TestMethod]
     public void LoadsGeneratedRepositorySchema()
     {
         var schemaPath = FindRepositoryFile(

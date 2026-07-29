@@ -61,6 +61,20 @@
       </Style.Triggers>
     </Style>
 
+    <Style x:Key="SettingsStringEditorStyle"
+           BasedOn="{StaticResource SettingsSearchStyle}"
+           TargetType="TextBox">
+      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="MaxLength" Value="2048" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding StringNeedsAttention}" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
+          <Setter Property="BorderThickness" Value="2" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
     <Style x:Key="BooleanEditorStyle"
            TargetType="CheckBox">
       <Setter Property="MinWidth" Value="44" />
@@ -651,6 +665,51 @@
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip="{Binding NumericValidationMessage}"
                                    Visibility="{Binding NumericNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Button HorizontalAlignment="Right"
+                                Style="{StaticResource QuietButtonStyle}"
+                                Command="{Binding RemoveOverrideCommand}"
+                                Content="Use default"
+                                ToolTip="{Binding RemoveOverrideAvailability}"
+                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                      </Grid>
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding IsStringEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <TextBox Style="{StaticResource SettingsStringEditorStyle}"
+                               Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                               IsEnabled="{Binding CanEdit}"
+                               ToolTip="{Binding StringValidationMessage}"
+                               behaviors:TextInputCommitBehavior.CommitOnEnter="True"
+                               automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
+                               automation:AutomationProperties.HelpText="{Binding StringValidationMessage}" />
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock MaxWidth="190"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="{Binding StringInputHint}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding StringInputHint}">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Visibility" Value="Visible" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding StringNeedsAttention}" Value="True">
+                                  <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock MaxWidth="190"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Text="{Binding StringValidationMessage}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding StringValidationMessage}"
+                                   Visibility="{Binding StringNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <Button HorizontalAlignment="Right"
                                 Style="{StaticResource QuietButtonStyle}"
                                 Command="{Binding RemoveOverrideCommand}"

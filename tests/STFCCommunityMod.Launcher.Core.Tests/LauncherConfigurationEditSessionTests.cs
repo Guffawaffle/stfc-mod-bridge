@@ -264,6 +264,64 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
+    public void StringStagingUsesSemanticEqualityAndPurposeSpecificValidation()
+    {
+        const string source =
+            """
+            [config]
+            settings_url = 'https://example.invalid/settings'
+
+            [ui]
+            disabled_banner_types = "Victory"
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var settingsUrl = catalog.Settings.Single(
+            item => item.Path == "config.settings_url");
+        var disabledBanners = catalog.Settings.Single(
+            item => item.Path == "ui.disabled_banner_types");
+
+        var semanticNoOp = session!.StageSet(
+            settingsUrl,
+            "\"https://example.invalid/settings\"");
+        Assert.IsTrue(semanticNoOp.IsValid, semanticNoOp.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+
+        var invalidUrl = session.StageSet(settingsUrl, "\"ftp://example.invalid/settings\"");
+        Assert.IsFalse(invalidUrl.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidValue, invalidUrl.Error?.Code);
+        Assert.AreEqual(0, session.PendingChangeCount);
+
+        var banners = session.StageSet(disabledBanners, "\"Victory, Defeat\"");
+        Assert.IsTrue(banners.IsValid, banners.Error?.Message);
+        Assert.AreEqual(1, session.PendingChangeCount);
+    }
+
+    [TestMethod]
+    public void EmptyStringDefaultDoesNotMaterializeAnOverride()
+    {
+        const string source = "# All public strings use their runtime defaults.\n";
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var setting = catalog.Settings.Single(
+            item => item.Path == "config.assets_url_override");
+
+        var result = session!.StageSet(setting, "\"\"");
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
     public void SessionRefusesToStageAnInvalidNotificationPolicy()
     {
         var catalog = LoadCatalog();

@@ -18,6 +18,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private LauncherNotificationPolicyParseResult? notificationPolicy;
     private string? numericDraft;
     private string? numericValidationError;
+    private string? stringDraft;
+    private string? stringValidationError;
 
     internal SettingsRowViewModel(
         LauncherConfigurationSetting setting,
@@ -56,10 +58,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             && setting.ValueKind
                 is LauncherConfigurationValueKind.Integer
                 or LauncherConfigurationValueKind.Number;
+        IsStringEditor = setting.Control == LauncherConfigurationControl.Scalar
+            && setting.ValueKind == LauncherConfigurationValueKind.String;
         IsNotificationEditor = setting.Control == LauncherConfigurationControl.NotificationPolicy;
         IsSpecializedEditor =
-            !IsBooleanEditor && !IsEnumEditor && !IsNumericEditor && !IsNotificationEditor;
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor);
+            !IsBooleanEditor && !IsEnumEditor && !IsNumericEditor && !IsStringEditor && !IsNotificationEditor;
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor);
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
@@ -99,6 +103,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public bool IsEnumEditor { get; }
 
     public bool IsNumericEditor { get; }
+
+    public bool IsStringEditor { get; }
 
     public bool IsNotificationEditor { get; }
 
@@ -236,6 +242,58 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         }
     }
 
+    public string StringText
+    {
+        get => stringDraft ?? ReadStringText();
+        set
+        {
+            if (!CanEdit || string.Equals(value, StringText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            stringDraft = value;
+            if (!TryNormalizeStringValue(value, out var normalized, out var validationError))
+            {
+                stringValidationError = validationError;
+                setInputValidity(Setting, false);
+                NotifyStringStateChanged();
+                return;
+            }
+
+            stringValidationError = null;
+            if (stageValue(Setting, LauncherTomlValue.RenderString(normalized)))
+            {
+                stringDraft = null;
+            }
+            else
+            {
+                stringValidationError = "The value could not be staged. Review the settings status and try again.";
+            }
+
+            setInputValidity(Setting, stringValidationError is null);
+            NotifyStringStateChanged();
+        }
+    }
+
+    public bool StringNeedsAttention =>
+        stringValidationError is not null
+        || (IsStringEditor && HasOverride && !TryReadValidStringValue(valueState.EffectiveValue, out _));
+
+    public string StringValidationMessage =>
+        stringValidationError
+        ?? (StringNeedsAttention
+            ? $"The configured value is invalid. {ReadDefaultStringText()} is shown."
+            : $"{StringInputHint}. Press Enter, Tab, or click elsewhere to stage the value.");
+
+    public string StringInputHint =>
+        ReadStringFormat() switch
+        {
+            "uri" => "HTTP or HTTPS URL · Empty uses the game default",
+            "comma-separated-list" => "Comma-separated names · Empty disables filtering",
+            _ => "Text value",
+        };
+
     public string NotificationStateText =>
         notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
 
@@ -290,6 +348,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 ? $"{Title}, {EffectiveState}, {FormatCategory(EnumValue)}"
             : IsNumericEditor
                 ? $"{Title}, {EffectiveState}, {NumericText}. {NumericValidationMessage}"
+            : IsStringEditor
+                ? $"{Title}, {EffectiveState}, {StringText}. {StringValidationMessage}"
             : IsNotificationEditor
                 ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Review only."
                 : $"{Title} requires its dedicated {Control} editor.";
@@ -330,9 +390,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         valueState = state;
         numericDraft = null;
         numericValidationError = null;
+        stringDraft = null;
+        stringValidationError = null;
         setInputValidity(Setting, true);
         RefreshNotificationPolicy();
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor);
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
@@ -346,6 +408,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EnumNeedsAttention));
         OnPropertyChanged(nameof(EnumValidationMessage));
         NotifyNumericStateChanged();
+        NotifyStringStateChanged();
         OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationDeliverySummary));
         OnPropertyChanged(nameof(NotificationNeedsAttention));
@@ -427,8 +490,64 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(EnumNeedsAttention));
             OnPropertyChanged(nameof(EnumValidationMessage));
             NotifyNumericStateChanged();
+            NotifyStringStateChanged();
         }
     }
+
+    private string ReadStringText()
+    {
+        if (TryReadValidStringValue(valueState.EffectiveValue, out var value))
+        {
+            return value;
+        }
+
+        return ReadDefaultStringText();
+    }
+
+    private string ReadDefaultStringText() =>
+        Setting.DefaultValue.ValueKind == JsonValueKind.String
+            ? Setting.DefaultValue.GetString() ?? string.Empty
+            : string.Empty;
+
+    private bool TryReadValidStringValue(object? candidate, out string value)
+    {
+        if (candidate is not string text)
+        {
+            value = string.Empty;
+            return false;
+        }
+
+        if (HasOverride)
+        {
+            if (!LauncherTomlValue.TryReadString(text, out value))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            value = text;
+        }
+
+        return LauncherConfigurationStringValue.TryNormalize(
+            Setting,
+            value,
+            out value,
+            out _);
+    }
+
+    private bool TryNormalizeStringValue(
+        string value,
+        out string normalized,
+        out string validationError) =>
+        LauncherConfigurationStringValue.TryNormalize(
+            Setting,
+            value,
+            out normalized,
+            out validationError);
+
+    private string? ReadStringFormat() =>
+        LauncherConfigurationStringValue.ReadFormat(Setting);
 
     private string ReadNumericText()
     {
@@ -559,6 +678,15 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(NumericNeedsAttention));
         OnPropertyChanged(nameof(NumericValidationMessage));
         OnPropertyChanged(nameof(NumericConstraintText));
+        OnPropertyChanged(nameof(EditorAutomationName));
+    }
+
+    private void NotifyStringStateChanged()
+    {
+        OnPropertyChanged(nameof(StringText));
+        OnPropertyChanged(nameof(StringNeedsAttention));
+        OnPropertyChanged(nameof(StringValidationMessage));
+        OnPropertyChanged(nameof(StringInputHint));
         OnPropertyChanged(nameof(EditorAutomationName));
     }
 
