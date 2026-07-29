@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace STFCCommunityMod.Launcher.Behaviors;
 
@@ -45,6 +46,23 @@ public static class TextInputCommitBehavior
         }
 
         textBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        FindAncestor<ListBox>(textBox)?.Focus();
         args.Handled = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject element)
+        where T : DependencyObject
+    {
+        for (var current = VisualTreeHelper.GetParent(element);
+             current is not null;
+             current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 }
