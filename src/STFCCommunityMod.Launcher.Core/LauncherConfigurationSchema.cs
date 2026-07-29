@@ -96,7 +96,8 @@ public sealed class LauncherConfigurationSetting
         IReadOnlyList<LauncherConfigurationPlatform> platforms,
         IReadOnlyList<LauncherConfigurationSourceId> sourceSupport,
         LauncherConfigurationSensitivity sensitivity,
-        string apply)
+        LauncherConfigurationApplyBehavior applyBehavior,
+        LauncherConfigurationPresentation presentation)
     {
         Path = path;
         Title = title;
@@ -112,7 +113,8 @@ public sealed class LauncherConfigurationSetting
         Platforms = platforms;
         SourceSupport = sourceSupport;
         Sensitivity = sensitivity;
-        Apply = apply;
+        ApplyBehavior = applyBehavior;
+        Presentation = presentation;
         IsTemplate = path.Split('.').Contains("*", StringComparer.Ordinal);
     }
 
@@ -152,7 +154,15 @@ public sealed class LauncherConfigurationSetting
 
     public LauncherConfigurationSensitivity Sensitivity { get; }
 
-    public string Apply { get; }
+    public LauncherConfigurationApplyBehavior ApplyBehavior { get; }
+
+    /// <summary>
+    /// The authoritative serialized apply token. Prefer <see cref="ApplyBehavior"/>
+    /// for decisions and <see cref="Presentation"/> for player-facing copy.
+    /// </summary>
+    public string Apply => LauncherConfigurationPresentation.ApplyTokenFor(ApplyBehavior);
+
+    public LauncherConfigurationPresentation Presentation { get; }
 
     /// <summary>
     /// True when the schema path contains a wildcard path segment that must be
@@ -218,13 +228,18 @@ public sealed class LauncherConfigurationCatalog
                     || Contains(setting.Path, normalizedQuery)
                     || Contains(setting.Title, normalizedQuery)
                     || Contains(setting.Description, normalizedQuery)
-                    || Contains(setting.Category, normalizedQuery)));
+                    || Contains(setting.Category, normalizedQuery)
+                    || Contains(setting.Presentation.Label, normalizedQuery)
+                    || Contains(setting.Presentation.Help, normalizedQuery)
+                    || Contains(setting.Presentation.Group, normalizedQuery)
+                    || setting.Presentation.SearchTerms.Any(
+                        term => Contains(term, normalizedQuery))));
 
         return Array.AsReadOnly(matches.ToArray());
     }
 
-    private static bool Contains(string value, string query) =>
-        value.Contains(query, StringComparison.OrdinalIgnoreCase);
+    private static bool Contains(string? value, string query) =>
+        value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true;
 }
 
 public sealed class LauncherConfigurationSchemaException : Exception

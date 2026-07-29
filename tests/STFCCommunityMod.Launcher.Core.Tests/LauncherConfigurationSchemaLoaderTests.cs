@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
@@ -44,7 +45,20 @@ public sealed class LauncherConfigurationSchemaLoaderTests
                   "apply": "next-session",
                   "sensitivity": "public",
                   "stability": "experimental",
-                  "sourceSupport": [ "guffawaffle" ]
+                  "sourceSupport": [ "guffawaffle" ],
+                  "presentation": {
+                    "label": "Fleet arrived in system",
+                    "help": "Choose system and audio delivery.",
+                    "group": "Fleet movement and mining",
+                    "searchTerms": [
+                      "notifications.fleet_arrived_in_system",
+                      "fleet arrival"
+                    ],
+                    "editorWidth": "standard",
+                    "applyTiming": "Next launch",
+                    "accessibleName": "Fleet arrived in system",
+                    "accessibleHelp": "Choose system and audio delivery. Applies: Next launch."
+                  }
                 }
               ]
             }
@@ -63,6 +77,18 @@ public sealed class LauncherConfigurationSchemaLoaderTests
         Assert.AreEqual(LauncherConfigurationControl.NotificationPolicy, setting.Control);
         Assert.AreEqual(LauncherConfigurationValueKind.Union, setting.ValueKind);
         Assert.AreEqual(LauncherConfigurationStability.Experimental, setting.Stability);
+        Assert.AreEqual(
+            LauncherConfigurationApplyBehavior.NextSession,
+            setting.ApplyBehavior);
+        Assert.AreEqual("next-session", setting.Apply);
+        Assert.AreEqual("Fleet arrived in system", setting.Presentation.Label);
+        Assert.AreEqual("Fleet movement and mining", setting.Presentation.Group);
+        Assert.AreEqual(
+            LauncherConfigurationEditorWidth.Standard,
+            setting.Presentation.EditorWidth);
+        CollectionAssert.Contains(
+            setting.Presentation.SearchTerms.ToArray(),
+            "notifications.fleet_arrived_in_system");
         CollectionAssert.AreEqual(
             new[]
             {
@@ -166,6 +192,9 @@ public sealed class LauncherConfigurationSchemaLoaderTests
         Assert.AreEqual(
             "notifications.fleet_arrived_in_system",
             catalog.Search("arrival").Single().Path);
+        Assert.AreEqual(
+            "graphics.ui_scale",
+            catalog.Search("friendly graphics search").Single().Path);
         Assert.AreEqual(0, catalog.Search("runtime trace").Count);
         Assert.AreEqual(0, catalog.Search("target endpoint").Count);
         Assert.AreEqual(2, catalog.Search(string.Empty).Count);
@@ -198,6 +227,49 @@ public sealed class LauncherConfigurationSchemaLoaderTests
             () => LoadJson(unsupportedVersion));
         Assert.ThrowsException<LauncherConfigurationSchemaException>(
             () => LoadJson(unknownControl));
+    }
+
+    [TestMethod]
+    public void RejectsInvalidPresentationAndApplyMetadata()
+    {
+        var missingPresentation = SchemaWithSettings(
+            ValidBooleanSetting(),
+            includePresentation: false);
+        var unknownApply = SchemaWithSettings(
+            ValidBooleanSetting().Replace(
+                @"""apply"": ""next-session""",
+                @"""apply"": ""surprise""",
+                StringComparison.Ordinal));
+        var mismatchedApplyTiming = SchemaWithSettings(
+            ValidBooleanSetting(),
+            applyTiming: "Immediate");
+        var unknownPresentationProperty = SchemaWithSettings(
+            ValidBooleanSetting(),
+            extraPresentationProperty: @"""surprise"": true");
+        var duplicateSearchTerm = SchemaWithSettings(
+            ValidBooleanSetting(),
+            duplicateSearchTerm: true);
+        var unitOnBoolean = SchemaWithSettings(
+            ValidBooleanSetting(),
+            unit: "%");
+        var unknownEditorWidth = SchemaWithSettings(
+            ValidBooleanSetting(),
+            editorWidth: "enormous");
+
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(missingPresentation));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(unknownApply));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(mismatchedApplyTiming));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(unknownPresentationProperty));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(duplicateSearchTerm));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(unitOnBoolean));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(unknownEditorWidth));
     }
 
     [TestMethod]
@@ -239,7 +311,11 @@ public sealed class LauncherConfigurationSchemaLoaderTests
             }
             """;
 
-        var catalog = LoadJson(SchemaWithSettings(numericSetting));
+        var catalog = LoadJson(
+            SchemaWithSettings(
+                numericSetting,
+                unit: "ms",
+                editorWidth: "compact"));
         var constraints = catalog.Settings.Single().NumericConstraints;
 
         Assert.IsNotNull(constraints);
@@ -247,6 +323,10 @@ public sealed class LauncherConfigurationSchemaLoaderTests
         Assert.AreEqual(60000d, constraints.Maximum);
         Assert.IsTrue(constraints.Contains(5000));
         Assert.IsFalse(constraints.Contains(999));
+        Assert.AreEqual("ms", catalog.Settings.Single().Presentation.Unit);
+        Assert.AreEqual(
+            LauncherConfigurationEditorWidth.Compact,
+            catalog.Settings.Single().Presentation.EditorWidth);
 
         var reversedRange = numericSetting
             .Replace(@"""minimum"": 1000", @"""minimum"": 70000", StringComparison.Ordinal);
@@ -279,8 +359,12 @@ public sealed class LauncherConfigurationSchemaLoaderTests
             }
             """;
 
-        var catalog = LoadJson(SchemaWithSettings(stringSetting));
+        var catalog = LoadJson(
+            SchemaWithSettings(
+                stringSetting,
+                includeHelp: false));
         var setting = catalog.Settings.Single();
+        Assert.IsNull(setting.Presentation.Help);
         Assert.AreEqual(
             "uri",
             LauncherConfigurationStringValue.ReadFormat(setting));
@@ -337,7 +421,66 @@ public sealed class LauncherConfigurationSchemaLoaderTests
 
     private static string SchemaWithSettings(
         string settings,
-        string schemaVersion = "1.0.0") =>
+        string schemaVersion = "1.0.0",
+        bool includePresentation = true,
+        bool includeHelp = true,
+        string? applyTiming = null,
+        string? extraPresentationProperty = null,
+        bool duplicateSearchTerm = false,
+        string? unit = null,
+        string editorWidth = "standard")
+    {
+        var settingArray = JsonNode.Parse($"[{settings}]")!.AsArray();
+        if (includePresentation)
+        {
+            foreach (var settingNode in settingArray)
+            {
+                var setting = settingNode!.AsObject();
+                var path = setting["path"]!.GetValue<string>();
+                var title = setting["title"]!.GetValue<string>();
+                var description = setting["description"]!.GetValue<string>();
+                var apply = setting["apply"]!.GetValue<string>();
+                var terms = new JsonArray(path);
+                if (path == "graphics.ui_scale")
+                {
+                    terms.Add("friendly graphics search");
+                }
+                if (duplicateSearchTerm)
+                {
+                    terms.Add(path.ToUpperInvariant());
+                }
+
+                var presentation = new JsonObject
+                {
+                    ["label"] = title,
+                    ["group"] = "Test group",
+                    ["searchTerms"] = terms,
+                    ["editorWidth"] = editorWidth,
+                    ["applyTiming"] = applyTiming ?? ApplyTimingForTest(apply),
+                    ["accessibleName"] = title,
+                    ["accessibleHelp"] = $"{description} Applies: {applyTiming ?? ApplyTimingForTest(apply)}.",
+                };
+                if (includeHelp)
+                {
+                    presentation["help"] = description;
+                }
+                if (unit is not null)
+                {
+                    presentation["unit"] = unit;
+                }
+                if (extraPresentationProperty is not null)
+                {
+                    var property = JsonNode.Parse($"{{{extraPresentationProperty}}}")!.AsObject().Single();
+                    presentation[property.Key] = property.Value?.DeepClone();
+                }
+                setting["presentation"] = presentation;
+            }
+        }
+
+        var renderedSettings = string.Join(
+            $",{Environment.NewLine}",
+            settingArray.Select(setting => setting!.ToJsonString()));
+        return
         $$"""
           {
             "schemaVersion": "{{schemaVersion}}",
@@ -347,10 +490,20 @@ public sealed class LauncherConfigurationSchemaLoaderTests
               "repository": "Guffawaffle/stfc-mod"
             },
             "settings": [
-              {{settings}}
+              {{renderedSettings}}
             ]
           }
           """;
+    }
+
+    private static string ApplyTimingForTest(string apply) =>
+        apply switch
+        {
+            "live" => "Immediate",
+            "next-session" => "Next launch",
+            "restart-required" => "Restart required",
+            _ => "Unsupported",
+        };
 
     private static string ValidBooleanSetting() =>
         """

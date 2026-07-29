@@ -130,7 +130,15 @@ public static class LauncherConfigurationSchemaLoader
 
         var stability = ParseStability(ReadRequiredString(element, "stability", context), path);
         var sensitivity = ParseSensitivity(ReadRequiredString(element, "sensitivity", context), path);
-        var apply = ReadRequiredString(element, "apply", context);
+        var applyBehavior = ParseApplyBehavior(
+            ReadRequiredString(element, "apply", context),
+            path);
+        var presentation = ReadPresentation(
+            ReadRequiredProperty(element, "presentation", context),
+            control,
+            valueKind,
+            applyBehavior,
+            path);
         var platforms = ReadPlatforms(ReadRequiredProperty(element, "platforms", context), path);
         var sourceSupport = ReadSourceSupport(
             ReadRequiredProperty(element, "sourceSupport", context),
@@ -158,7 +166,74 @@ public static class LauncherConfigurationSchemaLoader
             platforms,
             sourceSupport,
             sensitivity,
-            apply);
+            applyBehavior,
+            presentation);
+    }
+
+    private static LauncherConfigurationPresentation ReadPresentation(
+        JsonElement element,
+        LauncherConfigurationControl control,
+        LauncherConfigurationValueKind valueKind,
+        LauncherConfigurationApplyBehavior applyBehavior,
+        string path)
+    {
+        var context = $"presentation for '{path}'";
+        RequireKind(element, JsonValueKind.Object, context);
+        RejectUnknownProperties(
+            element,
+            context,
+            "label",
+            "help",
+            "group",
+            "searchTerms",
+            "unit",
+            "editorWidth",
+            "applyTiming",
+            "accessibleName",
+            "accessibleHelp");
+
+        var label = ReadRequiredString(element, "label", context);
+        var help = ReadOptionalString(element, "help", context);
+        var group = ReadRequiredString(element, "group", context);
+        var searchTerms = ReadDistinctStrings(
+            ReadRequiredProperty(element, "searchTerms", context),
+            $"{context}.searchTerms");
+        if (!searchTerms.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            throw Invalid($"{context}.searchTerms must include the canonical setting path.");
+        }
+
+        var unit = ReadOptionalString(element, "unit", context);
+        if (unit is not null
+            && (control != LauncherConfigurationControl.Scalar
+                || valueKind is not LauncherConfigurationValueKind.Integer
+                    and not LauncherConfigurationValueKind.Number))
+        {
+            throw Invalid($"{context}.unit is only valid for numeric scalar settings.");
+        }
+
+        var editorWidth = ParseEditorWidth(
+            ReadRequiredString(element, "editorWidth", context),
+            path);
+        var applyTiming = ReadRequiredString(element, "applyTiming", context);
+        var expectedApplyTiming = LauncherConfigurationPresentation.ApplyTimingFor(applyBehavior);
+        if (!string.Equals(applyTiming, expectedApplyTiming, StringComparison.Ordinal))
+        {
+            throw Invalid(
+                $"{context}.applyTiming must be '{expectedApplyTiming}' for apply behavior "
+                + $"'{LauncherConfigurationPresentation.ApplyTokenFor(applyBehavior)}'.");
+        }
+
+        return new(
+            label,
+            help,
+            group,
+            searchTerms,
+            unit,
+            editorWidth,
+            applyTiming,
+            ReadRequiredString(element, "accessibleName", context),
+            ReadRequiredString(element, "accessibleHelp", context));
     }
 
     private static LauncherConfigurationKeybindingMetadata? ReadKeybindingMetadata(
@@ -483,6 +558,28 @@ public static class LauncherConfigurationSchemaLoader
             _ => throw Invalid($"Setting '{path}' uses unsupported stability '{value}'."),
         };
 
+    private static LauncherConfigurationApplyBehavior ParseApplyBehavior(
+        string value,
+        string path) =>
+        value switch
+        {
+            "live" => LauncherConfigurationApplyBehavior.Live,
+            "next-session" => LauncherConfigurationApplyBehavior.NextSession,
+            "restart-required" => LauncherConfigurationApplyBehavior.RestartRequired,
+            _ => throw Invalid($"Setting '{path}' uses unsupported apply behavior '{value}'."),
+        };
+
+    private static LauncherConfigurationEditorWidth ParseEditorWidth(
+        string value,
+        string path) =>
+        value switch
+        {
+            "compact" => LauncherConfigurationEditorWidth.Compact,
+            "standard" => LauncherConfigurationEditorWidth.Standard,
+            "wide" => LauncherConfigurationEditorWidth.Wide,
+            _ => throw Invalid($"Setting '{path}' uses unsupported presentation editor width '{value}'."),
+        };
+
     private static LauncherConfigurationSensitivity ParseSensitivity(string value, string path) =>
         value switch
         {
@@ -526,6 +623,65 @@ public static class LauncherConfigurationSchemaLoader
         }
 
         return value.GetString()!;
+    }
+
+    private static string? ReadOptionalString(
+        JsonElement parent,
+        string propertyName,
+        string context)
+    {
+        if (!parent.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            throw Invalid($"{context}.{propertyName} must be a non-empty string when present.");
+        }
+
+        return value.GetString();
+    }
+
+    private static ReadOnlyCollection<string> ReadDistinctStrings(
+        JsonElement element,
+        string context)
+    {
+        RequireKind(element, JsonValueKind.Array, context);
+        var values = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var elementValue in element.EnumerateArray())
+        {
+            var value = ReadArrayString(elementValue, context);
+            if (!seen.Add(value))
+            {
+                throw Invalid($"{context} contains duplicate value '{value}'.");
+            }
+            values.Add(value);
+        }
+
+        if (values.Count == 0)
+        {
+            throw Invalid($"{context} must contain at least one value.");
+        }
+
+        return Array.AsReadOnly(values.ToArray());
+    }
+
+    private static void RejectUnknownProperties(
+        JsonElement element,
+        string context,
+        params string[] supportedProperties)
+    {
+        var supported = new HashSet<string>(supportedProperties, StringComparer.Ordinal);
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!supported.Contains(property.Name))
+            {
+                throw Invalid($"{context} contains unsupported property '{property.Name}'.");
+            }
+        }
     }
 
     private static string ReadArrayString(JsonElement value, string context)
