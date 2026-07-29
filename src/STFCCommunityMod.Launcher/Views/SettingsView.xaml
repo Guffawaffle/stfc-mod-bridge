@@ -78,8 +78,8 @@
 
     <Style x:Key="NotificationDeliveryToggleStyle"
            TargetType="ToggleButton">
-      <Setter Property="Width" Value="36" />
-      <Setter Property="Height" Value="36" />
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="44" />
       <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
       <Setter Property="FontSize" Value="17" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
@@ -100,9 +100,9 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource SuccessBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter TargetName="ToggleSurface"
@@ -169,10 +169,10 @@
               <Trigger Property="IsChecked" Value="True">
                 <Setter TargetName="ToggleTrack"
                         Property="Background"
-                        Value="{DynamicResource SuccessSoftBrush}" />
+                        Value="{DynamicResource QuietHoverBrush}" />
                 <Setter TargetName="ToggleTrack"
                         Property="BorderBrush"
-                        Value="{DynamicResource SuccessBrush}" />
+                        Value="{DynamicResource AccentBrush}" />
                 <Setter TargetName="ToggleThumb"
                         Property="HorizontalAlignment"
                         Value="Right" />
@@ -181,7 +181,7 @@
                         Value="0,0,4,0" />
                 <Setter TargetName="ToggleThumb"
                         Property="Fill"
-                        Value="{DynamicResource SuccessBrush}" />
+                        Value="{DynamicResource AccentBrush}" />
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter TargetName="ToggleTrack"
@@ -590,367 +590,338 @@
           </ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate>
             <DataTemplate DataType="{x:Type viewModels:SettingsRowViewModel}">
-              <Border Padding="16,15"
-                      BorderBrush="{DynamicResource BorderBrush}"
-                      BorderThickness="0,0,0,1"
-                      automation:AutomationProperties.Name="{Binding Title}"
-                      automation:AutomationProperties.HelpText="{Binding Description}">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="290" />
-                  </Grid.ColumnDefinitions>
+              <Border BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="0,0,0,1">
+                <Border x:Name="RowInteractionSurface"
+                        Margin="2"
+                        Padding="16,13"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
+                        BorderThickness="2"
+                        CornerRadius="8"
+                        automation:AutomationProperties.Name="{Binding AccessibleName}"
+                        automation:AutomationProperties.HelpText="{Binding AccessibleHelp}">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="420" />
+                    </Grid.ColumnDefinitions>
 
-                  <StackPanel Margin="0,0,24,0"
-                              VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                      <TextBlock FontSize="15"
-                                 FontWeight="SemiBold"
-                                 Text="{Binding Title}"
-                                 ToolTip="{Binding Path}" />
-                      <TextBlock Margin="9,0,0,0"
-                                 VerticalAlignment="Center"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource AccentBrush}"
-                                 Text="Unsaved"
-                                 Visibility="{Binding IsStaged, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <StackPanel Margin="0,0,28,0"
+                                VerticalAlignment="Center">
+                      <WrapPanel Orientation="Horizontal">
+                        <TextBlock FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding Title}"
+                                   ToolTip="{Binding Path}" />
+                        <Border Margin="9,0,0,0"
+                                Padding="7,2"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource QuietHoverBrush}"
+                                CornerRadius="4"
+                                Visibility="{Binding IsModified, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <TextBlock FontSize="11"
+                                     Foreground="{DynamicResource AccentBrush}"
+                                     Text="Modified" />
+                        </Border>
+                        <Border Margin="7,0,0,0"
+                                Padding="7,2"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource SurfaceMutedBrush}"
+                                CornerRadius="4"
+                                Visibility="{Binding IsExperimental, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <TextBlock FontSize="11"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="Experimental" />
+                        </Border>
+                      </WrapPanel>
+                      <TextBlock Margin="0,5,0,0"
+                                 FontSize="13"
+                                 Foreground="{DynamicResource TextSecondaryBrush}"
+                                 Text="{Binding Description}"
+                                 TextWrapping="Wrap"
+                                 Visibility="{Binding HasDescription, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </StackPanel>
-                    <TextBlock Margin="0,5,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               Text="{Binding Description}" />
-                    <TextBlock Margin="0,5,0,0"
-                               FontSize="11"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               Text="{Binding ApplyState}" />
-                  </StackPanel>
 
-                  <Grid Grid.Column="1"
-                        VerticalAlignment="Center">
-                    <Grid Visibility="{Binding IsBooleanEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                      </Grid.ColumnDefinitions>
-                      <StackPanel VerticalAlignment="Center">
+                    <Grid Grid.Column="1"
+                          VerticalAlignment="Center">
+                      <Grid Visibility="{Binding IsBooleanEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <TextBlock HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
                                    FontSize="14"
                                    FontWeight="SemiBold"
                                    Text="{Binding BooleanStateText}" />
-                        <Button Margin="0,4,0,0"
-                                HorizontalAlignment="Right"
+                        <CheckBox Grid.Column="1"
+                                  Margin="14,0,0,0"
+                                  Style="{StaticResource BooleanEditorStyle}"
+                                  IsChecked="{Binding BooleanValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding CanEdit}"
+                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle {0}}"
+                                  automation:AutomationProperties.HelpText="{Binding AccessibleHelp}" />
+                        <Button Grid.Column="2"
+                                Width="44"
+                                Height="44"
+                                MinHeight="44"
+                                Margin="8,0,0,0"
+                                Padding="0"
                                 Style="{StaticResource QuietButtonStyle}"
                                 Command="{Binding RemoveOverrideCommand}"
-                                Content="Use default"
                                 ToolTip="{Binding RemoveOverrideAvailability}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
-                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
-                      </StackPanel>
-                      <CheckBox Grid.Column="1"
-                                Margin="14,0,0,0"
-                                Style="{StaticResource BooleanEditorStyle}"
-                                IsChecked="{Binding BooleanValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                IsEnabled="{Binding CanEdit}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle {0}}"
-                                automation:AutomationProperties.HelpText="{Binding Description}" />
-                    </Grid>
+                                Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
+                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
+                          <controls:AppIcon Kind="RestoreDefault" />
+                        </Button>
+                      </Grid>
 
-                    <StackPanel Visibility="{Binding IsEnumEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <ComboBox Style="{StaticResource SettingsEnumComboBoxStyle}"
-                                ItemsSource="{Binding EnumOptions}"
-                                DisplayMemberPath="Label"
-                                SelectedValuePath="Value"
-                                SelectedValue="{Binding EnumValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                IsEnabled="{Binding CanEdit}"
-                                ToolTip="{Binding EnumValidationMessage}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose {0}}"
-                                automation:AutomationProperties.HelpText="{Binding EnumValidationMessage}" />
-                      <Grid Margin="0,4,0,0">
-                        <TextBlock VerticalAlignment="Center"
+                      <StackPanel Visibility="{Binding IsEnumEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <ComboBox Style="{StaticResource SettingsEnumComboBoxStyle}"
+                                    ItemsSource="{Binding EnumOptions}"
+                                    DisplayMemberPath="Label"
+                                    SelectedValuePath="Value"
+                                    SelectedValue="{Binding EnumValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding CanEdit}"
+                                    ToolTip="{Binding EnumValidationMessage}"
+                                    automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose {0}}"
+                                    automation:AutomationProperties.HelpText="{Binding EnumValidationMessage}" />
+                          <Button Grid.Column="1"
+                                  Width="44"
+                                  Height="44"
+                                  MinHeight="44"
+                                  Margin="8,0,0,0"
+                                  Padding="0"
+                                  Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding RemoveOverrideCommand}"
+                                  ToolTip="{Binding RemoveOverrideAvailability}"
+                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
+                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
+                            <controls:AppIcon Kind="RestoreDefault" />
+                          </Button>
+                        </Grid>
+                        <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
                                    Foreground="{DynamicResource WarningBrush}"
                                    Text="Invalid override · Default shown"
                                    Visibility="{Binding EnumNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <Button HorizontalAlignment="Right"
-                                Style="{StaticResource QuietButtonStyle}"
-                                Command="{Binding RemoveOverrideCommand}"
-                                Content="Use default"
-                                ToolTip="{Binding RemoveOverrideAvailability}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
-                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
-                      </Grid>
-                    </StackPanel>
+                      </StackPanel>
 
-                    <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
-                               Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                               IsEnabled="{Binding CanEdit}"
-                               ToolTip="{Binding NumericValidationMessage}"
-                               behaviors:TextInputCommitBehavior.CommitOnEnter="True"
-                               automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
-                               automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
-                      <Grid Margin="0,4,0,0">
-                        <TextBlock MaxWidth="150"
-                                   VerticalAlignment="Center"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="{Binding NumericConstraintText}"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding NumericConstraintText}">
-                          <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                              <Setter Property="Visibility" Value="Visible" />
-                              <Style.Triggers>
-                                <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
-                                  <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                              </Style.Triggers>
-                            </Style>
-                          </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock MaxWidth="150"
-                                   VerticalAlignment="Center"
+                      <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid HorizontalAlignment="Right">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
+                                   Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                   IsEnabled="{Binding CanEdit}"
+                                   ToolTip="{Binding NumericValidationMessage}"
+                                   behaviors:TextInputCommitBehavior.CommitOnEnter="True"
+                                   automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
+                                   automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
+                          <TextBlock Grid.Column="1"
+                                     MinWidth="32"
+                                     Margin="10,0,0,0"
+                                     VerticalAlignment="Center"
+                                     FontSize="12"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="{Binding Unit}"
+                                     Visibility="{Binding HasUnit, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                          <Button Grid.Column="2"
+                                  Width="44"
+                                  Height="44"
+                                  MinHeight="44"
+                                  Margin="8,0,0,0"
+                                  Padding="0"
+                                  Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding RemoveOverrideCommand}"
+                                  ToolTip="{Binding RemoveOverrideAvailability}"
+                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
+                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
+                            <controls:AppIcon Kind="RestoreDefault" />
+                          </Button>
+                        </Grid>
+                        <TextBlock Margin="0,4,52,0"
+                                   HorizontalAlignment="Right"
                                    FontSize="11"
                                    Foreground="{DynamicResource WarningBrush}"
                                    Text="{Binding NumericValidationMessage}"
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip="{Binding NumericValidationMessage}"
                                    Visibility="{Binding NumericNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <Button HorizontalAlignment="Right"
-                                Style="{StaticResource QuietButtonStyle}"
-                                Command="{Binding RemoveOverrideCommand}"
-                                Content="Use default"
-                                ToolTip="{Binding RemoveOverrideAvailability}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
-                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
-                      </Grid>
-                    </StackPanel>
+                      </StackPanel>
 
-                    <StackPanel Visibility="{Binding IsStringEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <TextBox Style="{StaticResource SettingsStringEditorStyle}"
-                               Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                               IsEnabled="{Binding CanEdit}"
-                               ToolTip="{Binding StringValidationMessage}"
-                               behaviors:TextInputCommitBehavior.CommitOnEnter="True"
-                               automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
-                               automation:AutomationProperties.HelpText="{Binding StringValidationMessage}" />
-                      <Grid Margin="0,4,0,0">
-                        <TextBlock MaxWidth="190"
-                                   VerticalAlignment="Center"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="{Binding StringInputHint}"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding StringInputHint}">
-                          <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                              <Setter Property="Visibility" Value="Visible" />
-                              <Style.Triggers>
-                                <DataTrigger Binding="{Binding StringNeedsAttention}" Value="True">
-                                  <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                              </Style.Triggers>
-                            </Style>
-                          </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock MaxWidth="190"
-                                   VerticalAlignment="Center"
+                      <StackPanel Visibility="{Binding IsStringEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <TextBox Style="{StaticResource SettingsStringEditorStyle}"
+                                   Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                   IsEnabled="{Binding CanEdit}"
+                                   ToolTip="{Binding StringValidationMessage}"
+                                   behaviors:TextInputCommitBehavior.CommitOnEnter="True"
+                                   automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
+                                   automation:AutomationProperties.HelpText="{Binding StringValidationMessage}" />
+                          <Button Grid.Column="1"
+                                  Width="44"
+                                  Height="44"
+                                  MinHeight="44"
+                                  Margin="8,0,0,0"
+                                  Padding="0"
+                                  Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding RemoveOverrideCommand}"
+                                  ToolTip="{Binding RemoveOverrideAvailability}"
+                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
+                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
+                            <controls:AppIcon Kind="RestoreDefault" />
+                          </Button>
+                        </Grid>
+                        <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
                                    Foreground="{DynamicResource WarningBrush}"
                                    Text="{Binding StringValidationMessage}"
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip="{Binding StringValidationMessage}"
                                    Visibility="{Binding StringNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <Button HorizontalAlignment="Right"
-                                Style="{StaticResource QuietButtonStyle}"
-                                Command="{Binding RemoveOverrideCommand}"
-                                Content="Use default"
-                                ToolTip="{Binding RemoveOverrideAvailability}"
-                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
-                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
-                      </Grid>
-                    </StackPanel>
+                      </StackPanel>
 
-                    <StackPanel Visibility="{Binding IsKeybindingEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <Border Padding="8"
-                              Background="{DynamicResource SurfaceMutedBrush}"
-                              BorderThickness="1"
-                              CornerRadius="7"
-                              ToolTip="{Binding KeybindingValidationMessage}"
-                              automation:AutomationProperties.Name="{Binding EditorAutomationName}"
-                              automation:AutomationProperties.HelpText="{Binding KeybindingValidationMessage}">
-                        <Border.Style>
-                          <Style TargetType="Border">
-                            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
-                            <Style.Triggers>
-                              <DataTrigger Binding="{Binding KeybindingNeedsAttention}" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
-                                <Setter Property="BorderThickness" Value="2" />
-                              </DataTrigger>
-                            </Style.Triggers>
-                          </Style>
-                        </Border.Style>
-                        <Grid>
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                          </Grid.ColumnDefinitions>
+                      <StackPanel Visibility="{Binding IsKeybindingEditor, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  ToolTip="{Binding KeybindingValidationMessage}"
+                                  automation:AutomationProperties.Name="{Binding EditorAutomationName}"
+                                  automation:AutomationProperties.HelpText="{Binding KeybindingValidationMessage}">
+                        <WrapPanel HorizontalAlignment="Right"
+                                   VerticalAlignment="Center">
+                          <ItemsControl ItemsSource="{Binding KeybindingChords}">
+                            <ItemsControl.Style>
+                              <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsKeybindingUnbound}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </ItemsControl.Style>
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="{x:Type viewModels:SettingsKeybindingChord}">
+                                <Border Margin="0,2,7,2"
+                                        Padding="10,3,3,3"
+                                        Background="{DynamicResource SurfaceMutedBrush}"
+                                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="7">
+                                  <StackPanel Orientation="Horizontal">
+                                    <TextBlock VerticalAlignment="Center"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding Display}" />
+                                    <Button Width="44"
+                                            Height="44"
+                                            MinHeight="44"
+                                            Margin="5,0,0,0"
+                                            Padding="0"
+                                            Style="{StaticResource QuietButtonStyle}"
+                                            Command="{Binding DataContext.RemoveKeybindingCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding Canonical}"
+                                            ToolTip="Remove this shortcut"
+                                            automation:AutomationProperties.Name="{Binding RemoveAutomationName}">
+                                      <controls:AppIcon Kind="Remove" />
+                                    </Button>
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
 
-                          <Grid Margin="0,0,6,0"
-                                VerticalAlignment="Center">
-                            <ItemsControl ItemsSource="{Binding KeybindingChords}">
-                              <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                  <Setter Property="Visibility" Value="Visible" />
-                                  <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsKeybindingUnbound}" Value="True">
-                                      <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                  </Style.Triggers>
-                                </Style>
-                              </ItemsControl.Style>
-                              <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                  <WrapPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                              </ItemsControl.ItemsPanel>
-                              <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type viewModels:SettingsKeybindingChord}">
-                                  <Border Margin="0,2,6,2"
-                                          Padding="8,4,3,4"
-                                          Background="{DynamicResource SurfaceBrush}"
-                                          BorderBrush="{DynamicResource ControlBorderBrush}"
-                                          BorderThickness="1"
-                                          CornerRadius="6">
-                                    <StackPanel Orientation="Horizontal">
-                                      <TextBlock VerticalAlignment="Center"
-                                                 FontSize="12"
-                                                 FontWeight="SemiBold"
-                                                 Text="{Binding Display}" />
-                                      <Button Width="22"
-                                              Height="22"
-                                              MinHeight="22"
-                                              Margin="5,0,0,0"
-                                              Padding="0"
-                                              Style="{StaticResource QuietButtonStyle}"
-                                              Command="{Binding DataContext.RemoveKeybindingCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                              CommandParameter="{Binding Canonical}"
-                                              ToolTip="Remove this shortcut"
-                                              automation:AutomationProperties.Name="{Binding RemoveAutomationName}">
-                                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="10"
-                                                   Text="&#xE711;" />
-                                      </Button>
-                                    </StackPanel>
-                                  </Border>
-                                </DataTemplate>
-                              </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                          <TextBlock Margin="8,0"
+                                     VerticalAlignment="Center"
+                                     FontSize="12"
+                                     FontWeight="SemiBold"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="Unbound">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsKeybindingUnbound}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
 
-                            <TextBlock Margin="6,0"
-                                       VerticalAlignment="Center"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                       Text="Unbound">
-                              <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                  <Setter Property="Visibility" Value="Collapsed" />
-                                  <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsKeybindingUnbound}" Value="True">
-                                      <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                  </Style.Triggers>
-                                </Style>
-                              </TextBlock.Style>
-                            </TextBlock>
-                          </Grid>
-
-                          <controls:KeybindingCaptureButton Grid.Column="1"
-                                                            Width="36"
-                                                            Height="36"
-                                                            MinHeight="36"
-                                                            Padding="0"
-                                                            Style="{StaticResource QuietButtonStyle}"
-                                                            Prompt="+"
+                          <controls:KeybindingCaptureButton MinWidth="112"
+                                                            Height="44"
+                                                            MinHeight="44"
+                                                            Margin="0,2,0,2"
+                                                            Padding="12,0"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            Prompt="+ Add binding"
                                                             CapturedCommand="{Binding AddKeybindingCommand}"
                                                             IsEnabled="{Binding CanEdit}"
                                                             ToolTip="Add another shortcut"
                                                             automation:AutomationProperties.Name="{Binding Title, StringFormat=Add an alternative shortcut for {0}}"
                                                             automation:AutomationProperties.HelpText="Press a keyboard key or mouse button. Escape cancels." />
-                          <Button Grid.Column="2"
-                                  Width="36"
-                                  Height="36"
-                                  MinHeight="36"
-                                  Margin="6,0,0,0"
-                                  Padding="0"
-                                  Style="{StaticResource QuietButtonStyle}"
-                                  Command="{Binding UnbindKeybindingCommand}"
-                                  ToolTip="Unbind this action"
-                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Unbind {0}}">
-                            <TextBlock FontFamily="Segoe MDL2 Assets"
-                                       FontSize="14"
-                                       Text="&#xE738;" />
-                          </Button>
-                          <Button Grid.Column="3"
-                                  Width="36"
-                                  Height="36"
-                                  MinHeight="36"
-                                  Margin="6,0,0,0"
+                          <Button Width="44"
+                                  Height="44"
+                                  MinHeight="44"
+                                  Margin="8,2,0,2"
                                   Padding="0"
                                   Style="{StaticResource QuietButtonStyle}"
                                   Command="{Binding RemoveOverrideCommand}"
                                   ToolTip="{Binding RemoveOverrideAvailability}"
                                   Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
                                   automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <TextBlock FontFamily="Segoe MDL2 Assets"
-                                       FontSize="16"
-                                       Text="&#xE777;" />
+                            <controls:AppIcon Kind="RestoreDefault" />
                           </Button>
-                        </Grid>
-                      </Border>
-                      <TextBlock MaxWidth="290"
-                                 Margin="0,4,0,0"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource WarningBrush}"
-                                 Text="{Binding KeybindingValidationMessage}"
-                                 TextTrimming="CharacterEllipsis"
-                                 ToolTip="{Binding KeybindingValidationMessage}"
-                                 Visibility="{Binding KeybindingNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    </StackPanel>
+                        </WrapPanel>
+                        <TextBlock MaxWidth="420"
+                                   Margin="0,4,0,0"
+                                   HorizontalAlignment="Right"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Text="{Binding KeybindingValidationMessage}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding KeybindingValidationMessage}"
+                                   Visibility="{Binding KeybindingNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                      </StackPanel>
 
-                    <StackPanel Visibility="{Binding IsNotificationEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <Border Padding="8"
-                              Background="{DynamicResource SurfaceMutedBrush}"
-                              BorderThickness="1"
-                              CornerRadius="7"
-                              ToolTip="{Binding NotificationPolicyHelp}"
-                              automation:AutomationProperties.Name="{Binding EditorAutomationName}"
-                              automation:AutomationProperties.HelpText="{Binding NotificationPolicyHelp}">
-                        <Border.Style>
-                          <Style TargetType="Border">
-                            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                            <Style.Triggers>
-                              <DataTrigger Binding="{Binding NotificationNeedsAttention}" Value="True">
-                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
-                                <Setter Property="BorderThickness" Value="2" />
-                              </DataTrigger>
-                            </Style.Triggers>
-                          </Style>
-                        </Border.Style>
+                      <StackPanel Visibility="{Binding IsNotificationEditor, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  ToolTip="{Binding NotificationPolicyHelp}"
+                                  automation:AutomationProperties.Name="{Binding EditorAutomationName}"
+                                  automation:AutomationProperties.HelpText="{Binding NotificationPolicyHelp}">
                         <Grid>
                           <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="132" />
+                            <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBlock Width="26"
-                                     VerticalAlignment="Center"
+                          <TextBlock VerticalAlignment="Center"
+                                     HorizontalAlignment="Right"
                                      FontSize="13"
                                      FontWeight="SemiBold"
                                      Text="{Binding NotificationStateText}">
@@ -969,15 +940,13 @@
                             </TextBlock.Style>
                           </TextBlock>
                           <ToggleButton Grid.Column="1"
-                                        Margin="8,0,0,0"
+                                        Margin="10,0,0,0"
                                         Style="{StaticResource NotificationDeliveryToggleStyle}"
                                         IsChecked="{Binding NotificationSystem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                         IsEnabled="{Binding CanEdit}"
                                         ToolTip="Windows system notification"
                                         automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle system delivery for {0}}">
-                            <TextBlock FontFamily="Segoe MDL2 Assets"
-                                       FontSize="17"
-                                       Text="&#xE7E7;" />
+                            <controls:AppIcon Kind="Notification" />
                           </ToggleButton>
                           <ToggleButton Grid.Column="2"
                                         Margin="8,0,0,0"
@@ -986,12 +955,9 @@
                                         IsEnabled="{Binding CanEdit}"
                                         ToolTip="In-game notification sound"
                                         automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle audio delivery for {0}}">
-                            <TextBlock FontFamily="Segoe MDL2 Assets"
-                                       FontSize="17"
-                                       Text="&#xE767;" />
+                            <controls:AppIcon Kind="Sound" />
                           </ToggleButton>
                           <ComboBox Grid.Column="3"
-                                    MinWidth="94"
                                     Margin="8,0,0,0"
                                     Style="{StaticResource SettingsEnumComboBoxStyle}"
                                     ItemsSource="{Binding NotificationSoundOptions}"
@@ -1002,44 +968,58 @@
                                     ToolTip="Choose the in-game notification sound"
                                     automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose sound for {0}}" />
                           <Button Grid.Column="4"
-                                  Width="36"
-                                  Height="36"
-                                  MinHeight="36"
+                                  Width="44"
+                                  Height="44"
+                                  MinHeight="44"
                                   Margin="8,0,0,0"
                                   Padding="0"
                                   Style="{StaticResource QuietButtonStyle}"
                                   Command="{Binding RemoveOverrideCommand}"
                                   ToolTip="{Binding RemoveOverrideAvailability}"
                                   Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                  automation:AutomationProperties.Name="{Binding RemoveOverrideAutomationName}"
                                   automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
-                            <TextBlock FontFamily="Segoe MDL2 Assets"
-                                       FontSize="16"
-                                       Text="&#xE777;" />
+                            <controls:AppIcon Kind="RestoreDefault" />
                           </Button>
                         </Grid>
-                      </Border>
-                    </StackPanel>
-
-                    <Border Padding="12,9"
-                            Background="{DynamicResource SurfaceMutedBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="7"
-                            Visibility="{Binding IsSpecializedEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <StackPanel>
-                        <TextBlock FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding EffectiveState}" />
-                        <TextBlock Margin="0,3,0,0"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="{Binding SpecializedEditorMessage}" />
                       </StackPanel>
-                    </Border>
+
+                      <Border Padding="12,9"
+                              Background="{DynamicResource SurfaceMutedBrush}"
+                              BorderBrush="{DynamicResource BorderBrush}"
+                              BorderThickness="1"
+                              CornerRadius="7"
+                              Visibility="{Binding IsSpecializedEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                          <TextBlock FontSize="12"
+                                     FontWeight="SemiBold"
+                                     Text="{Binding EffectiveState}" />
+                          <TextBlock Margin="0,3,0,0"
+                                     FontSize="11"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="{Binding SpecializedEditorMessage}" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
                   </Grid>
-                </Grid>
+                </Border>
               </Border>
+              <DataTemplate.Triggers>
+                <Trigger SourceName="RowInteractionSurface"
+                         Property="IsMouseOver"
+                         Value="True">
+                  <Setter TargetName="RowInteractionSurface"
+                          Property="Background"
+                          Value="{DynamicResource QuietHoverBrush}" />
+                </Trigger>
+                <Trigger SourceName="RowInteractionSurface"
+                         Property="IsKeyboardFocusWithin"
+                         Value="True">
+                  <Setter TargetName="RowInteractionSurface"
+                          Property="BorderBrush"
+                          Value="{DynamicResource FocusOuterBrush}" />
+                </Trigger>
+              </DataTemplate.Triggers>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
@@ -1123,25 +1103,23 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <Grid VerticalAlignment="Center">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center">
           <TextBlock FontSize="13"
                      FontWeight="SemiBold"
                      Text="{Binding PendingChangesText}"
                      automation:AutomationProperties.LiveSetting="Polite" />
-          <TextBlock Grid.Column="1"
-                     MaxWidth="520"
-                     Margin="14,0,0,0"
-                     VerticalAlignment="Center"
+          <TextBlock Margin="0,3,0,0"
+                     FontSize="11"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="{Binding PendingApplyTimingText}" />
+          <TextBlock MaxWidth="520"
+                     Margin="0,3,0,0"
                      FontSize="11"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="{Binding OperationStatus}"
                      TextTrimming="CharacterEllipsis"
                      automation:AutomationProperties.LiveSetting="Assertive" />
-        </Grid>
+        </StackPanel>
 
         <StackPanel Grid.Column="1"
                     Orientation="Horizontal">
