@@ -1033,6 +1033,58 @@
                        FontSize="15"
                        FontWeight="SemiBold"
                        Text="{Binding SourceIdentity}" />
+            <Grid MaxWidth="620"
+                  Margin="0,18,0,0"
+                  HorizontalAlignment="Left">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Detected runtime" />
+              <TextBlock Grid.Column="1"
+                         FontSize="12"
+                         Text="{Binding DetectedRuntime}" />
+              <TextBlock Grid.Row="1"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Semantic grouping" />
+              <TextBlock Grid.Row="1"
+                         Grid.Column="1"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Text="{Binding SemanticGroupingStatus}" />
+              <TextBlock Grid.Row="2"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Settings layout" />
+              <TextBlock Grid.Row="2"
+                         Grid.Column="1"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Text="{Binding SettingsLayoutName}" />
+              <TextBlock Grid.Row="3"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Reason" />
+              <TextBlock Grid.Row="3"
+                         Grid.Column="1"
+                         MaxWidth="430"
+                         Margin="0,7,0,0"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding SemanticGroupingReason}" />
+            </Grid>
             <Button Margin="0,20,0,0"
                     HorizontalAlignment="Left"
                     Style="{StaticResource UtilityActionButtonStyle}"

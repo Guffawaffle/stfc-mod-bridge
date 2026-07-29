@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -14,8 +15,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly LauncherConfigurationCatalog catalog;
     private readonly AtomicTomlStore store;
     private readonly Func<string?> configurationPathProvider;
+    private readonly ILauncherSettingsLayoutProvider layoutProvider;
+    private readonly LauncherSettingsActivationDiagnostics settingsDiagnostics;
     private readonly ILauncherUiPreferencesStore? uiPreferencesStore;
     private readonly List<SettingsRowViewModel> settings = [];
+    private readonly IReadOnlyDictionary<string, LauncherSettingsPlacement> placementsByPath;
     private readonly Dictionary<string, SettingsRowViewModel> settingsByPath;
     private readonly HashSet<string> invalidInputPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
@@ -23,7 +27,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private LauncherConfigurationEditSession? editSession;
     private string? loadedConfigurationPath;
     private string searchText = string.Empty;
-    private SettingsSection selectedSection = SettingsSection.General;
+    private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
     private bool isSearchVisible;
 
@@ -32,6 +36,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ICommand navigateHomeCommand,
         ICommand openRawTomlCommand,
         Func<string?> configurationPathProvider,
+        ILauncherSettingsLayoutProvider layoutProvider,
+        LauncherSettingsActivationDiagnostics settingsDiagnostics,
         AtomicTomlStore? store = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null)
     {
@@ -40,6 +46,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OpenRawTomlCommand = openRawTomlCommand ?? throw new ArgumentNullException(nameof(openRawTomlCommand));
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
+        this.layoutProvider =
+            layoutProvider ?? throw new ArgumentNullException(nameof(layoutProvider));
+        this.settingsDiagnostics =
+            settingsDiagnostics ?? throw new ArgumentNullException(nameof(settingsDiagnostics));
         this.store = store ?? new AtomicTomlStore();
         this.uiPreferencesStore = uiPreferencesStore;
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
@@ -51,18 +61,20 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
 
         TryLoadConfiguration();
+        placementsByPath = CreatePlacements();
         settings.AddRange(catalog.VisibleSettings
             .Select(setting => new SettingsRowViewModel(
                 setting,
+                placementsByPath[setting.Path],
                 GetValueState(setting),
                 editSession is not null,
                 StageValue,
                 StageRemove,
                 RevertDraft,
                 SetInputValidity))
-            .OrderBy(setting => ResolveSection(setting.Setting))
+            .OrderBy(setting => placementsByPath[setting.Path].Section)
             .ThenBy(setting => setting.Group, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(setting => setting.Title, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(setting => placementsByPath[setting.Path].SortKey, StringComparer.OrdinalIgnoreCase)
             .ToList());
         settingsByPath = settings.ToDictionary(
             setting => setting.Path,
@@ -74,7 +86,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         FilteredSettings.CollectionChanged += (_, _) => NotifyFilterSummaryChanged();
 
         SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
-        SelectSection(SettingsSection.General);
+        SelectSection(layoutProvider.Sections[0].Id);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -137,7 +149,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string SearchToggleHelp =>
         IsSearchVisible ? "Close settings search" : "Search all settings";
 
-    public SettingsSection SelectedSection => selectedSection;
+    public LauncherSettingsSection SelectedSection => selectedSection;
 
     public string WorkspaceTitle =>
         IsSearchActive ? "Search results" : SelectedSectionItem.Title;
@@ -147,9 +159,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? "Results across every mod setting category."
             : SelectedSectionItem.Description;
 
-    public bool IsAboutSelected => !IsSearchActive && selectedSection == SettingsSection.About;
+    public bool IsAboutSelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.About;
 
-    public bool IsGeneralSelected => !IsSearchActive && selectedSection == SettingsSection.General;
+    public bool IsGeneralSelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.General;
 
     public bool IsSettingsListVisible => !IsAboutSelected;
 
@@ -168,6 +182,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             : "Raw TOML becomes available after the launcher selects an active configuration.";
 
     public bool IsConfigurationReady => editSession is not null;
+
+    public string DetectedRuntime => settingsDiagnostics.DetectedRuntime;
+
+    public string SemanticGroupingStatus =>
+        settingsDiagnostics.SemanticGroupingStatus;
+
+    public string SemanticGroupingReason =>
+        settingsDiagnostics.SemanticGroupingReason;
+
+    public string SettingsLayoutName =>
+        settingsDiagnostics.SettingsLayoutName;
 
     public string ConfigurationStatus =>
         IsConfigurationReady
@@ -245,59 +270,68 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private SettingsSectionViewModel SelectedSectionItem =>
         Sections.Single(section => section.Id == selectedSection);
 
-    private IReadOnlyList<SettingsSectionViewModel> CreateSections() =>
-    [
-        new(
-            SettingsSection.General,
-            "General",
-            "Core mod behavior and ordinary preferences.",
-            "General settings",
-            SelectSection),
-        new(
-            SettingsSection.Interface,
-            "Interface",
-            "Game interface behavior and quality-of-life controls.",
-            "Interface settings",
-            SelectSection),
-        new(
-            SettingsSection.Graphics,
-            "Graphics",
-            "Display, scaling, loading, and zoom behavior.",
-            "Graphics settings",
-            SelectSection),
-        new(
-            SettingsSection.Notifications,
-            "Notifications",
-            "Choose which events alert you and how.",
-            "Notification settings",
-            SelectSection),
-        new(
-            SettingsSection.Hotkeys,
-            "Hotkeys",
-            "Capture keyboard and mouse shortcuts with runtime-aware conflict checks.",
-            "Hotkey settings",
-            SelectSection),
-        new(
-            SettingsSection.DataSync,
-            "Data Sync",
-            "Control supported sync feeds and destination behavior.",
-            "Data Sync settings",
-            SelectSection),
-        new(
-            SettingsSection.Advanced,
-            "Advanced",
-            "Experimental, patch, diagnostic, and support-directed controls.",
-            "Advanced settings",
-            SelectSection),
-        new(
-            SettingsSection.About,
-            "About",
-            "Release source, configuration ownership, and technical escape hatches.",
-            "About launcher settings",
-            SelectSection),
-    ];
+    private ReadOnlyCollection<SettingsSectionViewModel> CreateSections()
+    {
+        if (layoutProvider.Sections.Count == 0
+            || layoutProvider.Sections.Any(
+                section => section.Id == LauncherSettingsSection.About))
+        {
+            throw new InvalidOperationException(
+                "The settings layout must provide at least one content section and must not own About.");
+        }
 
-    private void SelectSection(SettingsSection section)
+        var duplicateSection = layoutProvider.Sections
+            .GroupBy(section => section.Id)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateSection is not null)
+        {
+            throw new InvalidOperationException(
+                $"The settings layout defines section '{duplicateSection.Key}' more than once.");
+        }
+
+        var sections = layoutProvider.Sections
+            .Select(
+                section => new SettingsSectionViewModel(
+                    section.Id,
+                    section.Title,
+                    section.Description,
+                    section.AutomationName,
+                    SelectSection))
+            .ToList();
+        sections.Add(
+            new(
+                LauncherSettingsSection.About,
+                "About",
+                "Release source, configuration ownership, and technical escape hatches.",
+                "About launcher settings",
+                SelectSection));
+        return sections.AsReadOnly();
+    }
+
+    private ReadOnlyDictionary<string, LauncherSettingsPlacement> CreatePlacements()
+    {
+        var declaredSections = layoutProvider.Sections
+            .Select(section => section.Id)
+            .ToHashSet();
+        var placements = new Dictionary<string, LauncherSettingsPlacement>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var setting in catalog.VisibleSettings)
+        {
+            var placement = layoutProvider.Place(setting);
+            if (!declaredSections.Contains(placement.Section))
+            {
+                throw new InvalidOperationException(
+                    $"Settings layout '{layoutProvider.Id}' placed '{setting.Path}' "
+                    + $"in undeclared section '{placement.Section}'.");
+            }
+
+            placements.Add(setting.Path, placement);
+        }
+
+        return new(placements);
+    }
+
+    private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
         foreach (var item in Sections)
@@ -359,34 +393,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             string.IsNullOrWhiteSpace(SearchText)
             || setting.Matches(SearchText.Trim());
         return searchMatches
-            && (IsSearchActive || ResolveSection(setting.Setting) == selectedSection);
-    }
-
-    private static SettingsSection ResolveSection(LauncherConfigurationSetting setting)
-    {
-        if (setting.Control == LauncherConfigurationControl.NotificationPolicy
-            || string.Equals(setting.Category, "notifications", StringComparison.OrdinalIgnoreCase))
-        {
-            return SettingsSection.Notifications;
-        }
-
-        if (setting.Control == LauncherConfigurationControl.Keybinding
-            || string.Equals(setting.Category, "input", StringComparison.OrdinalIgnoreCase))
-        {
-            return SettingsSection.Hotkeys;
-        }
-
-        return setting.Category.ToLowerInvariant() switch
-        {
-            "graphics" => SettingsSection.Graphics,
-            "ui" or "buffs" => SettingsSection.Interface,
-            "sync" or "sidecar" => SettingsSection.DataSync,
-            "advanced" or "patches" or "battle_log_decoder" => SettingsSection.Advanced,
-            _ => setting.Stability is LauncherConfigurationStability.Advanced
-                    or LauncherConfigurationStability.Experimental
-                ? SettingsSection.Advanced
-                : SettingsSection.General,
-        };
+            && (IsSearchActive
+                || placementsByPath[setting.Path].Section == selectedSection);
     }
 
     private void TryLoadConfiguration()

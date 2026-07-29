@@ -30,6 +30,7 @@ public partial class MainWindow : Window, IDisposable
 
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
+    private readonly LauncherStartupComposition startupComposition;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
@@ -40,13 +41,20 @@ public partial class MainWindow : Window, IDisposable
     private bool isColorModeSelectorReady;
 
     public MainWindow()
-        : this(new WindowsGameProcessStateMonitor())
+        : this(
+            new WindowsGameProcessStateMonitor(),
+            LauncherStartupComposition.CreateDefault())
     {
     }
 
-    internal MainWindow(IGameProcessStateMonitor processStateMonitor)
+    internal MainWindow(
+        IGameProcessStateMonitor processStateMonitor,
+        LauncherStartupComposition startupComposition)
     {
-        this.processStateMonitor = processStateMonitor;
+        this.processStateMonitor =
+            processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
+        this.startupComposition =
+            startupComposition ?? throw new ArgumentNullException(nameof(startupComposition));
         InitializeComponent();
         uiPreferencesStore = new JsonLauncherUiPreferencesStore(
             PerUserInstallLayout.FromCurrentUser().StateDirectory);
@@ -264,6 +272,8 @@ public partial class MainWindow : Window, IDisposable
                 new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
                 openRawTomlCommand,
                 GetConfigurationFilePath,
+                startupComposition.SettingsLayout,
+                startupComposition.SettingsDiagnostics,
                 uiPreferencesStore: uiPreferencesStore);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;

@@ -28,6 +28,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     internal SettingsRowViewModel(
         LauncherConfigurationSetting setting,
+        LauncherSettingsPlacement placement,
         SettingsValueState valueState,
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
@@ -36,6 +37,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         Action<LauncherConfigurationSetting, bool> setInputValidity)
     {
         Setting = setting;
+        ArgumentNullException.ThrowIfNull(placement);
         this.valueState = valueState;
         this.stageValue = stageValue;
         this.stageRemove = stageRemove;
@@ -45,7 +47,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         Path = setting.Path;
         Title = setting.Presentation.Label;
         Description = setting.Presentation.Help ?? string.Empty;
-        Group = setting.Presentation.Group;
+        Group = placement.Group;
         Unit = setting.Presentation.Unit ?? string.Empty;
         ApplyTiming = setting.Presentation.ApplyTiming;
         AccessibleName = setting.Presentation.AccessibleName;

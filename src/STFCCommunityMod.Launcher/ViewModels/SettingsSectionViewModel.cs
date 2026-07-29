@@ -1,31 +1,20 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
-
-public enum SettingsSection
-{
-    General,
-    Interface,
-    Graphics,
-    Notifications,
-    Hotkeys,
-    DataSync,
-    Advanced,
-    About,
-}
 
 public sealed class SettingsSectionViewModel : INotifyPropertyChanged
 {
     private bool isSelected;
 
     public SettingsSectionViewModel(
-        SettingsSection id,
+        LauncherSettingsSection id,
         string title,
         string description,
         string automationName,
-        Action<SettingsSection> select)
+        Action<LauncherSettingsSection> select)
     {
         Id = id;
         Title = title;
@@ -36,7 +25,7 @@ public sealed class SettingsSectionViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public SettingsSection Id { get; }
+    public LauncherSettingsSection Id { get; }
 
     public string Title { get; }
 

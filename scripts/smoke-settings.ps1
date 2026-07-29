@@ -201,6 +201,16 @@ if (-not (Test-Path -LiteralPath $resolvedLauncherPath -PathType Leaf) -or
   throw "LauncherPath must identify an existing .exe file: $LauncherPath"
 }
 
+$runtimeManifestPath = (
+  Resolve-Path -LiteralPath (
+    Join-Path `
+      $PSScriptRoot `
+      "..\..\docs\windows-launcher\runtime-manifest.guffawaffle.v1.json")
+).Path
+$runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw |
+  ConvertFrom-Json -ErrorAction Stop
+$expectedRuntimeIdentity = "Guffawaffle $($runtimeManifest.runtimeVersion)"
+
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
@@ -309,7 +319,26 @@ try {
     -Name "Choose which events alert you and how." `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
 
-  Write-Host "PASS: launcher chrome, Settings entry, settings navigation, and appearance selection are UI Automation accessible."
+  $aboutNavigation = Find-AutomationElement `
+    -Root $root `
+    -Name "About launcher settings" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $settingsDeadline
+  Invoke-AutomationElement -Element $aboutNavigation
+  foreach ($diagnosticValue in @(
+      $expectedRuntimeIdentity,
+      "Active",
+      "Semantic",
+      "Runtime provides settings.principal-taxonomy.v1."
+    )) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name $diagnosticValue `
+      -ControlType ([System.Windows.Automation.ControlType]::Text) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  }
+
+  Write-Host "PASS: launcher chrome, Settings navigation, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_
