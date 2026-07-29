@@ -60,6 +60,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 StageRemove,
                 SetInputValidity))
             .OrderBy(setting => ResolveSection(setting.Setting))
+            .ThenBy(setting => setting.Group, StringComparer.OrdinalIgnoreCase)
             .ThenBy(setting => setting.Title, StringComparer.OrdinalIgnoreCase)
             .ToList());
         settingsByPath = settings.ToDictionary(
@@ -185,6 +186,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             1 => "1 unsaved change",
             _ => $"{PendingChangeCount} unsaved changes",
         };
+
+    public string PendingApplyTimingText =>
+        LauncherConfigurationApplySummary.From(
+            settings
+                .Where(setting => setting.IsStaged)
+                .Select(setting => setting.Setting.ApplyBehavior))
+            .Text;
 
     public bool CanSave =>
         IsConfigurationReady
@@ -419,14 +427,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         if (editSession is null)
         {
-            return new(SettingsRowViewModelValue(setting.DefaultValue), false, setting.Apply);
+            return new(SettingsRowViewModelValue(setting.DefaultValue), false);
         }
 
         var state = editSession.GetState(setting);
         return new(
             state.EffectiveRenderedValue ?? state.DefaultValue,
             state.HasOverride,
-            setting.Apply,
             state.IsStaged,
             state.IsRemoval);
     }
@@ -617,6 +624,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PendingChangeCount));
         OnPropertyChanged(nameof(HasPendingChanges));
         OnPropertyChanged(nameof(PendingChangesText));
+        OnPropertyChanged(nameof(PendingApplyTimingText));
         OnPropertyChanged(nameof(HasInvalidInput));
         OnPropertyChanged(nameof(CanSave));
         OnPropertyChanged(nameof(SaveAvailability));

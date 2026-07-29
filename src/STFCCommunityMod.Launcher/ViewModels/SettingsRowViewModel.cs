@@ -14,7 +14,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsActionCommand removeOverrideCommand;
-    private readonly SettingsActionCommand unbindKeybindingCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
     private readonly SettingsValueCommand<string> removeKeybindingCommand;
     private SettingsValueState valueState;
@@ -40,17 +39,17 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         this.setInputValidity = setInputValidity;
 
         Path = setting.Path;
-        Title = string.IsNullOrWhiteSpace(setting.Title) ? setting.Path : setting.Title;
-        Description = string.IsNullOrWhiteSpace(setting.Description)
-            ? "No description is available for this setting."
-            : setting.Description;
+        Title = setting.Presentation.Label;
+        Description = setting.Presentation.Help ?? string.Empty;
+        Group = setting.Presentation.Group;
+        Unit = setting.Presentation.Unit ?? string.Empty;
+        ApplyTiming = setting.Presentation.ApplyTiming;
+        AccessibleName = setting.Presentation.AccessibleName;
+        AccessibleHelp = setting.Presentation.AccessibleHelp;
         Category = FormatCategory(setting.Category);
         Control = FormatMetadata(setting.Control);
         ValueKind = FormatMetadata(setting.ValueKind);
         DefaultValue = FormatValue(setting.DefaultValue);
-        ApplyState = string.IsNullOrWhiteSpace(valueState.ApplyState)
-            ? "Apply behavior is not available."
-            : valueState.ApplyState;
         Stability = FormatMetadata(setting.Stability);
         Platforms = FormatMetadata(setting.Platforms);
         SourceSupport = FormatMetadata(setting.SourceSupport);
@@ -87,9 +86,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         removeOverrideCommand = new SettingsActionCommand(
             RemoveOverride,
             () => editingAvailable && HasOverride);
-        unbindKeybindingCommand = new SettingsActionCommand(
-            UnbindKeybinding,
-            () => CanEdit && IsKeybindingEditor && !CurrentKeybinding().IsUnbound);
         addKeybindingCommand = new SettingsValueCommand<string>(
             AddKeybinding,
             _ => CanEdit && IsKeybindingEditor);
@@ -108,6 +104,20 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public string Description { get; }
 
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public string Group { get; }
+
+    public string Unit { get; }
+
+    public bool HasUnit => !string.IsNullOrWhiteSpace(Unit);
+
+    public string ApplyTiming { get; }
+
+    public string AccessibleName { get; }
+
+    public string AccessibleHelp { get; }
+
     public string Category { get; }
 
     public string Control { get; }
@@ -115,8 +125,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string ValueKind { get; }
 
     public string DefaultValue { get; }
-
-    public string ApplyState { get; }
 
     public string Stability { get; }
 
@@ -147,6 +155,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public bool IsStaged => valueState.IsStaged;
 
     public bool IsRemoval => valueState.IsRemoval;
+
+    public bool IsModified => HasOverride || IsStaged;
+
+    public bool IsExperimental =>
+        Setting.Stability == LauncherConfigurationStability.Experimental;
 
     public string EffectiveState =>
         IsStaged
@@ -350,15 +363,13 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
             return !TryReadEffectiveKeybinding(out var parsed) || !parsed.IsValid
                 ? parsed.Error ?? "The configured shortcut is invalid; the runtime default is shown."
-                : "Add another shortcut, remove individual alternatives, or unbind the action.";
+                : "Add another shortcut or remove individual alternatives.";
         }
     }
 
     public ICommand AddKeybindingCommand => addKeybindingCommand;
 
     public ICommand RemoveKeybindingCommand => removeKeybindingCommand;
-
-    public ICommand UnbindKeybindingCommand => unbindKeybindingCommand;
 
     public bool NotificationSystem
     {
@@ -483,18 +494,23 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string RemoveOverrideAvailability =>
         HasOverride
             ? CanRemoveOverride
-                ? $"Remove the override for {Title} and use its runtime default."
+                ? $"Restore default — {DefaultValue}"
                 : "Override removal requires a valid writable configuration."
             : "This setting already uses its runtime default.";
+
+    public string RemoveOverrideAutomationName =>
+        $"Restore {Title} to its default value {DefaultValue}";
 
     internal bool Matches(string searchText)
     {
         return Contains(Path, searchText)
             || Contains(Title, searchText)
             || Contains(Description, searchText)
+            || Contains(Group, searchText)
             || Contains(Category, searchText)
             || Contains(Control, searchText)
-            || Contains(ValueKind, searchText);
+            || Contains(ValueKind, searchText)
+            || Setting.Presentation.SearchTerms.Any(term => Contains(term, searchText));
     }
 
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
@@ -514,13 +530,13 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 || IsKeybindingEditor
                 || IsNotificationEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
-        unbindKeybindingCommand.RaiseCanExecuteChanged();
         addKeybindingCommand.RaiseCanExecuteChanged();
         removeKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
         OnPropertyChanged(nameof(IsStaged));
         OnPropertyChanged(nameof(IsRemoval));
+        OnPropertyChanged(nameof(IsModified));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
         OnPropertyChanged(nameof(BooleanValue));
@@ -544,6 +560,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EditorAutomationName));
         OnPropertyChanged(nameof(CanRemoveOverride));
         OnPropertyChanged(nameof(RemoveOverrideAvailability));
+        OnPropertyChanged(nameof(RemoveOverrideAutomationName));
     }
 
     private bool ReadBooleanValue()
@@ -714,15 +731,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         }
     }
 
-    private void UnbindKeybinding()
-    {
-        if (CanEdit
-            && stageValue(Setting, LauncherTomlValue.RenderString("NONE")))
-        {
-            NotifyKeybindingStateChanged();
-        }
-    }
-
     private LauncherKeybindingParseResult CurrentKeybinding()
     {
         if (TryReadEffectiveKeybinding(out var binding) && binding.IsValid)
@@ -754,7 +762,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private void NotifyKeybindingStateChanged()
     {
-        unbindKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(KeybindingDisplay));
         OnPropertyChanged(nameof(KeybindingChords));
         OnPropertyChanged(nameof(IsKeybindingUnbound));
