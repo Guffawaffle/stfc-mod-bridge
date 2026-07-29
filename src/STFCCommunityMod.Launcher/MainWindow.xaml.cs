@@ -13,7 +13,7 @@ using STFCCommunityMod.Launcher.ViewModels;
 
 namespace STFCCommunityMod.Launcher;
 
-public partial class MainWindow : Window, IDisposable
+public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarget
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 590;
@@ -31,6 +31,7 @@ public partial class MainWindow : Window, IDisposable
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
     private readonly LauncherStartupComposition startupComposition;
+    private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
@@ -55,6 +56,7 @@ public partial class MainWindow : Window, IDisposable
             processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
         this.startupComposition =
             startupComposition ?? throw new ArgumentNullException(nameof(startupComposition));
+        shellLifecycleController = new(this);
         InitializeComponent();
         uiPreferencesStore = new JsonLauncherUiPreferencesStore(
             PerUserInstallLayout.FromCurrentUser().StateDirectory);
@@ -74,7 +76,7 @@ public partial class MainWindow : Window, IDisposable
         processStateMonitor.StateChanged += ProcessStateMonitor_StateChanged;
         if (processStateMonitor.TryStart(new WindowInteropHelper(this).Handle))
         {
-            RefreshEnvironment();
+            shellLifecycleController.HandleStartup();
         }
     }
 
@@ -133,8 +135,7 @@ public partial class MainWindow : Window, IDisposable
         if (dialog.ShowDialog(this) == true)
         {
             viewModel.ConfirmManualSelection(dialog.FolderName);
-            openRawTomlCommand?.NotifyCanExecuteChanged();
-            settingsViewModel?.ReloadConfiguration();
+            shellLifecycleController.HandleGameInstallationChanged();
         }
     }
 
@@ -338,17 +339,27 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
 
-        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, RefreshEnvironment);
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            shellLifecycleController.HandleGameProcessChanged);
     }
 
-    private void RefreshEnvironment()
+    void ILauncherShellRefreshTarget.RefreshHome()
     {
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.Refresh();
-            openRawTomlCommand?.NotifyCanExecuteChanged();
-            settingsViewModel?.ReloadConfiguration();
         }
+    }
+
+    void ILauncherShellRefreshTarget.RefreshConfigurationAvailability()
+    {
+        openRawTomlCommand?.NotifyCanExecuteChanged();
+    }
+
+    void ILauncherShellRefreshTarget.ReloadConfigurationDocument()
+    {
+        settingsViewModel?.ReloadConfiguration();
     }
 }
 

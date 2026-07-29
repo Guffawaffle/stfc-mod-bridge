@@ -85,7 +85,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         selectionFeedback = candidate.Validation.IsValid
             ? "Game folder saved."
             : candidate.Validation.Message;
-        Refresh();
         OnPropertyChanged(nameof(SelectionFeedback));
         OnPropertyChanged(nameof(HasSelectionFeedback));
     }
