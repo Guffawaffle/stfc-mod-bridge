@@ -6,6 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Interop;
 using System.Windows.Shell;
 using System.Windows.Threading;
+using STFCCommunityMod.Launcher.Controls;
 using STFCCommunityMod.Launcher.Core;
 using STFCCommunityMod.Launcher.Services;
 using STFCCommunityMod.Launcher.ViewModels;
@@ -20,14 +21,23 @@ public partial class MainWindow : Window, IDisposable
     private const double SettingsHeight = 740;
     private const string GuffawaffleSchemaResource =
         "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json";
+    private static readonly IReadOnlyList<ColorModeChoice> ColorModeChoices =
+    [
+        new(LauncherColorMode.System, "System", AppIconKind.SystemAppearance),
+        new(LauncherColorMode.Light, "Light", AppIconKind.LightAppearance),
+        new(LauncherColorMode.Dark, "Dark", AppIconKind.DarkAppearance),
+    ];
 
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
+    private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
+    private LauncherColorMode selectedColorMode = LauncherColorMode.System;
     private bool isDisposed;
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
+    private bool isColorModeSelectorReady;
 
     public MainWindow()
         : this(new WindowsGameProcessStateMonitor())
@@ -38,8 +48,14 @@ public partial class MainWindow : Window, IDisposable
     {
         this.processStateMonitor = processStateMonitor;
         InitializeComponent();
-        currentTheme = LauncherThemeManager.ApplySystemPreference();
-        UpdateThemeToggle();
+        uiPreferencesStore = new JsonLauncherUiPreferencesStore(
+            PerUserInstallLayout.FromCurrentUser().StateDirectory);
+        selectedColorMode = uiPreferencesStore.Load().ColorMode;
+        currentTheme = LauncherThemeManager.ApplyColorMode(selectedColorMode);
+        ColorModeSelector.ItemsSource = ColorModeChoices;
+        ColorModeSelector.SelectedValue = selectedColorMode;
+        isColorModeSelectorReady = true;
+        UpdateColorModeSelectorAccessibility();
         DataContext = MainWindowViewModel.CreateDefault();
     }
 
@@ -114,11 +130,22 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
-    private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
+    private void ColorModeSelector_SelectionChanged(object sender, RoutedEventArgs e)
     {
-        currentTheme = LauncherThemeManager.Toggle(currentTheme);
+        _ = sender;
+        _ = e;
+        if (!isColorModeSelectorReady
+            || ColorModeSelector.SelectedValue is not LauncherColorMode colorMode
+            || colorMode == selectedColorMode)
+        {
+            return;
+        }
+
+        selectedColorMode = colorMode;
+        currentTheme = LauncherThemeManager.ApplyColorMode(selectedColorMode);
         LauncherThemeManager.ApplyWindowChrome(this, currentTheme);
-        UpdateThemeToggle();
+        SaveColorModePreference();
+        UpdateColorModeSelectorAccessibility();
     }
 
     private void SettingsSearchToggleButton_Click(object sender, RoutedEventArgs e)
@@ -148,18 +175,34 @@ public partial class MainWindow : Window, IDisposable
         SystemCommands.CloseWindow(this);
     }
 
-    private void UpdateThemeToggle()
+    private void SaveColorModePreference()
     {
-        var switchingToLight = currentTheme == LauncherTheme.Dark;
-        ThemeToggleButton.Content = switchingToLight ? "Light" : "Dark";
-        ThemeToggleButton.ToolTip = switchingToLight
-            ? "Switch to light theme"
-            : "Switch to dark theme";
+        try
+        {
+            var preferences = uiPreferencesStore.Load();
+            uiPreferencesStore.Save(
+                preferences with { ColorMode = selectedColorMode });
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            // UI preferences are best-effort and must never block the launcher.
+        }
+    }
+
+    private void UpdateColorModeSelectorAccessibility()
+    {
+        var resolvedMode = currentTheme == LauncherTheme.Light ? "Light" : "Dark";
+        var helpText = selectedColorMode == LauncherColorMode.System
+            ? $"System follows the Windows app theme, currently {resolvedMode}."
+            : $"{selectedColorMode} is selected instead of the Windows app theme.";
+        ColorModeSelector.ToolTip = helpText;
         AutomationProperties.SetName(
-            ThemeToggleButton,
-            switchingToLight
-                ? "Switch launcher to light theme"
-                : "Switch launcher to dark theme");
+            ColorModeSelector,
+            $"Launcher color mode, {selectedColorMode}");
+        AutomationProperties.SetHelpText(ColorModeSelector, helpText);
     }
 
     private void UpdateMaximizeRestoreButton()
@@ -221,8 +264,7 @@ public partial class MainWindow : Window, IDisposable
                 new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
                 openRawTomlCommand,
                 GetConfigurationFilePath,
-                uiPreferencesStore: new JsonLauncherUiPreferencesStore(
-                    PerUserInstallLayout.FromCurrentUser().StateDirectory));
+                uiPreferencesStore: uiPreferencesStore);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -299,3 +341,8 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 }
+
+internal sealed record ColorModeChoice(
+    LauncherColorMode Mode,
+    string Label,
+    AppIconKind Icon);

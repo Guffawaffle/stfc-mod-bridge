@@ -326,7 +326,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         try
         {
-            uiPreferencesStore.Save(new LauncherUiPreferences(IsSearchVisible));
+            var preferences = uiPreferencesStore.Load();
+            uiPreferencesStore.Save(
+                preferences with { SettingsSearchVisible = IsSearchVisible });
         }
         catch (Exception exception) when (
             exception is IOException

@@ -2,9 +2,19 @@ using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core;
 
-public sealed record LauncherUiPreferences(bool SettingsSearchVisible)
+public enum LauncherColorMode
 {
-    public static LauncherUiPreferences Default { get; } = new(false);
+    System,
+    Light,
+    Dark,
+}
+
+public sealed record LauncherUiPreferences(
+    bool SettingsSearchVisible,
+    LauncherColorMode ColorMode = LauncherColorMode.System)
+{
+    public static LauncherUiPreferences Default { get; } =
+        new(false, LauncherColorMode.System);
 }
 
 public interface ILauncherUiPreferencesStore
@@ -16,7 +26,7 @@ public interface ILauncherUiPreferencesStore
 
 public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILauncherUiPreferencesStore
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -37,12 +47,29 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         {
             var contents = File.ReadAllText(preferencesPath);
             var document = JsonSerializer.Deserialize<PreferencesDocument>(contents, SerializerOptions);
-            if (document is null || document.SchemaVersion != CurrentSchemaVersion)
+            if (document is null)
             {
                 return LauncherUiPreferences.Default;
             }
 
-            return new(document.SettingsSearchVisible);
+            if (document.SchemaVersion == 1)
+            {
+                return new(document.SettingsSearchVisible, LauncherColorMode.System);
+            }
+
+            if (document.SchemaVersion != CurrentSchemaVersion)
+            {
+                return LauncherUiPreferences.Default;
+            }
+
+            var colorMode = Enum.TryParse<LauncherColorMode>(
+                    document.ColorMode,
+                    ignoreCase: true,
+                    out var parsedColorMode)
+                && Enum.IsDefined(parsedColorMode)
+                    ? parsedColorMode
+                    : LauncherColorMode.System;
+            return new(document.SettingsSearchVisible, colorMode);
         }
         catch (Exception exception) when (
             exception is IOException
@@ -67,7 +94,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
             $".ui-preferences.{Guid.NewGuid():N}.tmp");
         var document = new PreferencesDocument(
             CurrentSchemaVersion,
-            preferences.SettingsSearchVisible);
+            preferences.SettingsSearchVisible,
+            preferences.ColorMode.ToString());
 
         try
         {
@@ -94,5 +122,6 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
 
     private sealed record PreferencesDocument(
         int SchemaVersion,
-        bool SettingsSearchVisible);
+        bool SettingsSearchVisible,
+        string? ColorMode = null);
 }

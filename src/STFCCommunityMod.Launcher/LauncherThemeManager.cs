@@ -5,6 +5,7 @@ using System.Security;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher;
 
@@ -73,15 +74,23 @@ internal static class LauncherThemeManager
             ["DialogBackdropBrush"] = "#730B1220",
         };
 
-    public static LauncherTheme ApplySystemPreference()
+    public static LauncherTheme ApplyColorMode(LauncherColorMode colorMode)
     {
-        return Apply(IsSystemLightTheme() ? LauncherTheme.Light : LauncherTheme.Dark);
+        var theme = ResolveColorMode(colorMode, IsSystemLightTheme());
+        return Apply(theme);
     }
 
-    public static LauncherTheme Toggle(LauncherTheme current)
-    {
-        return Apply(current == LauncherTheme.Dark ? LauncherTheme.Light : LauncherTheme.Dark);
-    }
+    internal static LauncherTheme ResolveColorMode(
+        LauncherColorMode colorMode,
+        bool isSystemLightTheme) =>
+        colorMode switch
+        {
+            LauncherColorMode.System =>
+                isSystemLightTheme ? LauncherTheme.Light : LauncherTheme.Dark,
+            LauncherColorMode.Light => LauncherTheme.Light,
+            LauncherColorMode.Dark => LauncherTheme.Dark,
+            _ => throw new ArgumentOutOfRangeException(nameof(colorMode)),
+        };
 
     public static void ApplyWindowChrome(Window window, LauncherTheme theme)
     {

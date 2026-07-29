@@ -27,6 +27,199 @@
                         UseAeroCaptionButtons="False" />
   </shell:WindowChrome.WindowChrome>
 
+  <Window.Resources>
+    <Style x:Key="TitleBarColorModeItemStyle"
+           TargetType="ComboBoxItem">
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="automation:AutomationProperties.Name"
+              Value="{Binding Label}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border x:Name="ItemSurface"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="5">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemSurface"
+                        Property="Background"
+                        Value="{DynamicResource QuietHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Foreground"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <DataTemplate x:Key="TitleBarColorModeItemTemplate">
+      <Grid MinWidth="116">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="22" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="22" />
+        </Grid.ColumnDefinitions>
+        <controls:AppIcon Width="18"
+                          Height="18"
+                          VerticalAlignment="Center"
+                          FontSize="18"
+                          Kind="{Binding Icon}" />
+        <TextBlock Grid.Column="1"
+                   Margin="8,0"
+                   VerticalAlignment="Center"
+                   FontSize="13"
+                   Text="{Binding Label}" />
+        <controls:AppIcon Grid.Column="2"
+                          Width="16"
+                          Height="16"
+                          VerticalAlignment="Center"
+                          FontSize="16"
+                          Kind="Checkmark">
+          <controls:AppIcon.Style>
+            <Style TargetType="controls:AppIcon">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}"
+                             Value="True">
+                  <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </controls:AppIcon.Style>
+        </controls:AppIcon>
+      </Grid>
+    </DataTemplate>
+
+    <Style x:Key="TitleBarColorModeComboBoxStyle"
+           TargetType="ComboBox">
+      <Setter Property="MinWidth" Value="142" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="ItemContainerStyle" Value="{StaticResource TitleBarColorModeItemStyle}" />
+      <Setter Property="ItemTemplate" Value="{StaticResource TitleBarColorModeItemTemplate}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="DropDownToggle"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Focusable="False"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ControlSurface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="7">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="30" />
+                        </Grid.ColumnDefinitions>
+                        <Path Grid.Column="1"
+                              Width="10"
+                              Height="6"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Data="M 1,1 L 5,5 L 9,1"
+                              Stretch="None"
+                              Stroke="{DynamicResource TextSecondaryBrush}"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              StrokeThickness="1.5" />
+                      </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="ControlSurface"
+                                Property="Background"
+                                Value="{DynamicResource QuietHoverBrush}" />
+                        <Setter TargetName="ControlSurface"
+                                Property="BorderBrush"
+                                Value="{DynamicResource AccentBrush}" />
+                      </Trigger>
+                      <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="ControlSurface"
+                                Property="BorderBrush"
+                                Value="{DynamicResource AccentBrush}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+
+              <ContentPresenter Margin="10,0,32,0"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+
+              <Border x:Name="KeyboardFocusBorder"
+                      BorderBrush="{DynamicResource FocusOuterBrush}"
+                      BorderThickness="2"
+                      CornerRadius="8"
+                      IsHitTestVisible="False"
+                      Visibility="Collapsed" />
+
+              <Popup x:Name="PART_Popup"
+                     AllowsTransparency="True"
+                     Focusable="False"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     Placement="Bottom"
+                     PlacementTarget="{Binding ElementName=DropDownToggle}">
+                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        Margin="0,4,0,0"
+                        Padding="3"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="7">
+                  <ScrollViewer CanContentScroll="True"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="KeyboardFocusBorder"
+                        Property="Visibility"
+                        Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="56" />
@@ -61,11 +254,11 @@
                 automation:AutomationProperties.Name="Open launcher settings"
                 automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and launcher settings.">
           <StackPanel Orientation="Horizontal">
-            <TextBlock VerticalAlignment="Center"
-                       FontFamily="Segoe MDL2 Assets"
-                       FontSize="16"
-                       FontWeight="Normal"
-                       Text="&#xE713;" />
+            <controls:AppIcon Width="18"
+                              Height="18"
+                              VerticalAlignment="Center"
+                              FontSize="18"
+                              Kind="Settings" />
             <TextBlock Margin="10,0,0,0"
                        VerticalAlignment="Center"
                        FontSize="14"
@@ -88,15 +281,11 @@
                 automation:AutomationProperties.Name="Return to launcher home"
                 automation:AutomationProperties.HelpText="Return to the launcher home screen.">
           <StackPanel Orientation="Horizontal">
-            <Path Width="18"
-                  Height="18"
-                  Data="M 15,2 L 5,9 L 15,16"
-                  Fill="Transparent"
-                  Stretch="None"
-                  Stroke="{DynamicResource TextPrimaryBrush}"
-                  StrokeEndLineCap="Round"
-                  StrokeLineJoin="Round"
-                  StrokeThickness="1.8" />
+            <controls:AppIcon Width="18"
+                              Height="18"
+                              VerticalAlignment="Center"
+                              FontSize="18"
+                              Kind="Back" />
             <TextBlock Margin="10,0,0,0"
                        VerticalAlignment="Center"
                        FontSize="14"
@@ -135,15 +324,13 @@
               shell:WindowChrome.IsHitTestVisibleInChrome="True"
               automation:AutomationProperties.Name="{Binding DataContext.SearchToggleHelp, ElementName=SettingsWorkspace}"
               automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
-        <Grid Width="18"
-              Height="18">
-          <Path Data="M 7.5,1.5 A 6,6 0 1 1 7.5,13.5 A 6,6 0 1 1 7.5,1.5 M 12,12 L 17,17"
-                Fill="Transparent"
-                Stroke="{DynamicResource TextPrimaryBrush}"
-                StrokeEndLineCap="Round"
-                StrokeThickness="1.8">
-            <Path.Style>
-              <Style TargetType="Path">
+        <Grid Width="18" Height="18">
+          <controls:AppIcon Width="18"
+                            Height="18"
+                            FontSize="18"
+                            Kind="Search">
+            <controls:AppIcon.Style>
+              <Style TargetType="controls:AppIcon">
                 <Setter Property="Visibility" Value="Visible" />
                 <Style.Triggers>
                   <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
@@ -152,15 +339,14 @@
                   </DataTrigger>
                 </Style.Triggers>
               </Style>
-            </Path.Style>
-          </Path>
-          <Path Data="M 3,3 L 15,15 M 15,3 L 3,15"
-                Fill="Transparent"
-                Stroke="{DynamicResource TextPrimaryBrush}"
-                StrokeEndLineCap="Round"
-                StrokeThickness="1.8">
-            <Path.Style>
-              <Style TargetType="Path">
+            </controls:AppIcon.Style>
+          </controls:AppIcon>
+          <controls:AppIcon Width="18"
+                            Height="18"
+                            FontSize="18"
+                            Kind="Remove">
+            <controls:AppIcon.Style>
+              <Style TargetType="controls:AppIcon">
                 <Setter Property="Visibility" Value="Collapsed" />
                 <Style.Triggers>
                   <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
@@ -169,20 +355,22 @@
                   </DataTrigger>
                 </Style.Triggers>
               </Style>
-            </Path.Style>
-          </Path>
+            </controls:AppIcon.Style>
+          </controls:AppIcon>
         </Grid>
       </Button>
 
-      <Button x:Name="ThemeToggleButton"
-              Grid.Column="2"
-              Style="{StaticResource QuietButtonStyle}"
-              Click="ThemeToggleButton_Click"
-              Content="Light"
-              FontSize="13"
-              ToolTip="Switch theme"
-              shell:WindowChrome.IsHitTestVisibleInChrome="True"
-              automation:AutomationProperties.Name="Switch launcher theme" />
+      <ComboBox x:Name="ColorModeSelector"
+                Grid.Column="2"
+                Margin="4,0,4,0"
+                VerticalAlignment="Center"
+                Style="{StaticResource TitleBarColorModeComboBoxStyle}"
+                SelectedValuePath="Mode"
+                SelectionChanged="ColorModeSelector_SelectionChanged"
+                ToolTip="Choose how the launcher follows light and dark appearance."
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Launcher color mode"
+                automation:AutomationProperties.HelpText="Choose System, Light, or Dark. System follows the Windows app theme." />
       <StackPanel Grid.Column="3"
                   Orientation="Horizontal">
         <Button Style="{StaticResource CaptionButtonStyle}"
