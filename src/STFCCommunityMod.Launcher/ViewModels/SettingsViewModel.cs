@@ -16,6 +16,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly Func<string?> configurationPathProvider;
     private readonly ILauncherUiPreferencesStore? uiPreferencesStore;
     private readonly List<SettingsRowViewModel> settings = [];
+    private readonly Dictionary<string, SettingsRowViewModel> settingsByPath;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private LauncherConfigurationEditSession? editSession;
@@ -57,6 +58,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .OrderBy(setting => ResolveSection(setting.Setting))
             .ThenBy(setting => setting.Title, StringComparer.OrdinalIgnoreCase)
             .ToList());
+        settingsByPath = settings.ToDictionary(
+            setting => setting.Path,
+            StringComparer.OrdinalIgnoreCase);
 
         FilteredSettings = CollectionViewSource.GetDefaultView(settings);
         FilteredSettings.Filter = ShouldInclude;
@@ -439,7 +443,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return false;
         }
 
-        RefreshAllStates();
+        RefreshState(setting);
         NotifySessionChanged();
         return true;
     }
@@ -458,7 +462,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return false;
         }
 
-        RefreshAllStates();
+        RefreshState(setting);
         NotifySessionChanged();
         return true;
     }
@@ -518,6 +522,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         foreach (var setting in settings)
         {
             setting.UpdateState(GetValueState(setting.Setting), editSession is not null);
+        }
+    }
+
+    private void RefreshState(LauncherConfigurationSetting setting)
+    {
+        if (settingsByPath.TryGetValue(setting.Path, out var row))
+        {
+            row.UpdateState(GetValueState(setting), editSession is not null);
         }
     }
 

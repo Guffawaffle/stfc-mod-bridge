@@ -133,9 +133,10 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         get => ReadEnumValue();
         set
         {
+            var currentValue = ReadEnumValue();
             if (!CanEdit
                 || string.IsNullOrEmpty(value)
-                || string.Equals(value, ReadEnumValue(), StringComparison.Ordinal))
+                || string.Equals(value, currentValue, StringComparison.Ordinal))
             {
                 return;
             }

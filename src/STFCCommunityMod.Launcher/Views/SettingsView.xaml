@@ -234,8 +234,7 @@
                      Focusable="False"
                      IsOpen="{TemplateBinding IsDropDownOpen}"
                      Placement="Bottom"
-                     PlacementTarget="{Binding ElementName=DropDownToggle}"
-                     PopupAnimation="Fade">
+                     PlacementTarget="{Binding ElementName=DropDownToggle}">
                 <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                         MaxHeight="{TemplateBinding MaxDropDownHeight}"
                         Margin="0,4,0,0"

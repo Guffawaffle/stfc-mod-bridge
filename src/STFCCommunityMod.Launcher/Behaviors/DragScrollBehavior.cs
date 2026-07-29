@@ -120,10 +120,11 @@ public static class DragScrollBehavior
         private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs args)
         {
             _ = sender;
+            var originalSource = args.OriginalSource as DependencyObject;
             StopInertia();
             CancelDrag();
 
-            if (IsInteractiveElement(args.OriginalSource as DependencyObject, _listBox)
+            if (!IsDragSurface(originalSource, _listBox)
                 || FindDescendant<ScrollViewer>(_listBox) is not { ScrollableHeight: > 0 } scrollViewer)
             {
                 return;
@@ -422,12 +423,15 @@ public static class DragScrollBehavior
         }
     }
 
-    private static bool IsInteractiveElement(DependencyObject? source, DependencyObject boundary)
+    private static bool IsDragSurface(DependencyObject? source, DependencyObject boundary)
     {
-        for (var current = source;
-             current is not null && !ReferenceEquals(current, boundary);
-             current = GetParent(current))
+        for (var current = source; current is not null; current = GetParent(current))
         {
+            if (ReferenceEquals(current, boundary))
+            {
+                return true;
+            }
+
             if (current is ButtonBase
                 or TextBoxBase
                 or Selector
@@ -435,7 +439,7 @@ public static class DragScrollBehavior
                 or ScrollBar
                 or Thumb)
             {
-                return true;
+                return false;
             }
         }
 
