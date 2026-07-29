@@ -322,6 +322,54 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
+    public void NotificationPolicyStagingUsesWholePolicySemanticEquality()
+    {
+        const string source =
+            """
+            [notifications]
+            fleet_arrived_in_system = { audio = true, sound = 'arrival', system = true }
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var setting = catalog.Settings.Single(
+            item => item.Path == "notifications.fleet_arrived_in_system");
+
+        var semanticNoOp = session!.StageSet(
+            setting,
+            """{ system = true, audio = true, sound = "arrival" }""");
+
+        Assert.IsTrue(semanticNoOp.IsValid, semanticNoOp.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
+    public void NotificationEventDefaultDoesNotMaterializeAnOverride()
+    {
+        const string source = "# Notifications use event defaults.\n";
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var setting = catalog.Settings.Single(
+            item => item.Path == "notifications.armada_created");
+
+        var result = session!.StageSet(setting, "false");
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
     public void SessionRefusesToStageAnInvalidNotificationPolicy()
     {
         var catalog = LoadCatalog();

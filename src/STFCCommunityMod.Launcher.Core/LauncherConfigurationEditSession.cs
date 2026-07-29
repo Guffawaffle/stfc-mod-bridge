@@ -411,6 +411,11 @@ public sealed class LauncherConfigurationEditSession
                 LauncherTomlValue.TryReadNumber(first, out var firstNumber)
                 && LauncherTomlValue.TryReadNumber(second, out var secondNumber)
                 && firstNumber.Equals(secondNumber),
+            LauncherConfigurationValueKind.Union
+                when setting.Control == LauncherConfigurationControl.NotificationPolicy =>
+                LauncherNotificationPolicyParser.Parse(setting, first) is { IsValid: true } firstPolicy
+                && LauncherNotificationPolicyParser.Parse(setting, second) is { IsValid: true } secondPolicy
+                && firstPolicy.Policy == secondPolicy.Policy,
             _ => false,
         };
     }
@@ -440,6 +445,10 @@ public sealed class LauncherConfigurationEditSession
                 when setting.DefaultValue.TryGetDouble(out var defaultNumber)
                      && LauncherTomlValue.TryReadNumber(renderedValue, out var number) =>
                 number.Equals(defaultNumber),
+            LauncherConfigurationValueKind.Union
+                when setting.Control == LauncherConfigurationControl.NotificationPolicy
+                     && LauncherNotificationPolicyParser.Parse(setting, renderedValue) is { IsValid: true } policy =>
+                policy.Policy == LauncherNotificationPolicyParser.Parse(setting, null).Policy,
             _ => false,
         };
 

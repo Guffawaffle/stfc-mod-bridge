@@ -75,6 +75,56 @@
       </Style.Triggers>
     </Style>
 
+    <Style x:Key="NotificationDeliveryToggleStyle"
+           TargetType="ToggleButton">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="ToggleSurface"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SuccessBrush}" />
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ToggleSurface"
+                        Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="ToggleSurface"
+                        Property="BorderBrush"
+                        Value="{DynamicResource FocusOuterBrush}" />
+                <Setter TargetName="ToggleSurface"
+                        Property="BorderThickness"
+                        Value="2" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.58" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="BooleanEditorStyle"
            TargetType="CheckBox">
       <Setter Property="MinWidth" Value="44" />
@@ -547,7 +597,7 @@
                 <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="230" />
+                    <ColumnDefinition Width="290" />
                   </Grid.ColumnDefinitions>
 
                   <StackPanel Margin="0,0,24,0"
@@ -720,46 +770,104 @@
                       </Grid>
                     </StackPanel>
 
-                    <Border Padding="12,9"
-                            Background="{DynamicResource SurfaceMutedBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="7"
-                            ToolTip="{Binding NotificationPolicyHelp}"
-                            Visibility="{Binding IsNotificationEditor, Converter={StaticResource BooleanToVisibilityConverter}}"
-                            automation:AutomationProperties.Name="{Binding EditorAutomationName}"
-                            automation:AutomationProperties.HelpText="{Binding NotificationPolicyHelp}">
-                      <Grid>
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock FontSize="14"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding NotificationStateText}">
-                          <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                              <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                              <Style.Triggers>
-                                <DataTrigger Binding="{Binding NotificationStateText}" Value="On">
-                                  <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding NotificationNeedsAttention}" Value="True">
-                                  <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                                </DataTrigger>
-                              </Style.Triggers>
-                            </Style>
-                          </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock Grid.Column="1"
-                                   Margin="16,0,0,0"
-                                   HorizontalAlignment="Right"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="{Binding NotificationDeliverySummary}"
-                                   TextAlignment="Right" />
-                      </Grid>
-                    </Border>
+                    <StackPanel Visibility="{Binding IsNotificationEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <Border Padding="8"
+                              Background="{DynamicResource SurfaceMutedBrush}"
+                              BorderThickness="1"
+                              CornerRadius="7"
+                              ToolTip="{Binding NotificationPolicyHelp}"
+                              automation:AutomationProperties.Name="{Binding EditorAutomationName}"
+                              automation:AutomationProperties.HelpText="{Binding NotificationPolicyHelp}">
+                        <Border.Style>
+                          <Style TargetType="Border">
+                            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding NotificationNeedsAttention}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Border.Style>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock Width="26"
+                                     VerticalAlignment="Center"
+                                     FontSize="13"
+                                     FontWeight="SemiBold"
+                                     Text="{Binding NotificationStateText}">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding NotificationStateText}" Value="On">
+                                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                                  </DataTrigger>
+                                  <DataTrigger Binding="{Binding NotificationNeedsAttention}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
+                          <ToggleButton Grid.Column="1"
+                                        Margin="8,0,0,0"
+                                        Style="{StaticResource NotificationDeliveryToggleStyle}"
+                                        IsChecked="{Binding NotificationSystem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsEnabled="{Binding CanEdit}"
+                                        ToolTip="Windows system notification"
+                                        automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle system delivery for {0}}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="17"
+                                       Text="&#xE7E7;" />
+                          </ToggleButton>
+                          <ToggleButton Grid.Column="2"
+                                        Margin="8,0,0,0"
+                                        Style="{StaticResource NotificationDeliveryToggleStyle}"
+                                        IsChecked="{Binding NotificationAudio, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        IsEnabled="{Binding CanEdit}"
+                                        ToolTip="In-game notification sound"
+                                        automation:AutomationProperties.Name="{Binding Title, StringFormat=Toggle audio delivery for {0}}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="17"
+                                       Text="&#xE767;" />
+                          </ToggleButton>
+                          <ComboBox Grid.Column="3"
+                                    MinWidth="94"
+                                    Margin="8,0,0,0"
+                                    Style="{StaticResource SettingsEnumComboBoxStyle}"
+                                    ItemsSource="{Binding NotificationSoundOptions}"
+                                    DisplayMemberPath="Label"
+                                    SelectedValuePath="Value"
+                                    SelectedValue="{Binding NotificationSound, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    IsEnabled="{Binding CanSelectNotificationSound}"
+                                    ToolTip="Choose the in-game notification sound"
+                                    automation:AutomationProperties.Name="{Binding Title, StringFormat=Choose sound for {0}}" />
+                          <Button Grid.Column="4"
+                                  Width="36"
+                                  Height="36"
+                                  MinHeight="36"
+                                  Margin="8,0,0,0"
+                                  Padding="0"
+                                  Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding RemoveOverrideCommand}"
+                                  ToolTip="{Binding RemoveOverrideAvailability}"
+                                  Visibility="{Binding HasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="16"
+                                       Text="&#xE777;" />
+                          </Button>
+                        </Grid>
+                      </Border>
+                    </StackPanel>
 
                     <Border Padding="12,9"
                             Background="{DynamicResource SurfaceMutedBrush}"

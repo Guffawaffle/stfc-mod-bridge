@@ -63,7 +63,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         IsNotificationEditor = setting.Control == LauncherConfigurationControl.NotificationPolicy;
         IsSpecializedEditor =
             !IsBooleanEditor && !IsEnumEditor && !IsNumericEditor && !IsStringEditor && !IsNotificationEditor;
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor);
+        CanEdit = editingAvailable
+            && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor || IsNotificationEditor);
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
@@ -297,6 +298,60 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string NotificationStateText =>
         notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
 
+    public bool NotificationSystem
+    {
+        get => notificationPolicy?.Policy.System == true;
+        set
+        {
+            var policy = CurrentNotificationPolicy();
+            if (value != policy.System)
+            {
+                StageNotificationPolicy(policy with { System = value });
+            }
+        }
+    }
+
+    public bool NotificationAudio
+    {
+        get => notificationPolicy?.Policy.Audio == true;
+        set
+        {
+            var policy = CurrentNotificationPolicy();
+            if (value != policy.Audio)
+            {
+                StageNotificationPolicy(policy with { Audio = value });
+            }
+        }
+    }
+
+    public string NotificationSound
+    {
+        get => CurrentNotificationPolicy().Sound;
+        set
+        {
+            var policy = CurrentNotificationPolicy();
+            if (!string.IsNullOrEmpty(value)
+                && !string.Equals(value, policy.Sound, StringComparison.Ordinal)
+                && NotificationSounds.Contains(value, StringComparer.Ordinal))
+            {
+                StageNotificationPolicy(policy with { Sound = value });
+            }
+        }
+    }
+
+    public IReadOnlyList<string> NotificationSounds =>
+        IsNotificationEditor
+            ? LauncherNotificationPolicyParser.ReadAllowedSounds(Setting)
+            : [];
+
+    public IReadOnlyList<SettingsEnumOption> NotificationSoundOptions =>
+        NotificationSounds
+            .Select(sound => new SettingsEnumOption(sound, FormatCategory(sound)))
+            .ToArray();
+
+    public bool CanSelectNotificationSound =>
+        CanEdit && NotificationAudio && NotificationSounds.Count > 0;
+
     public string NotificationDeliverySummary
     {
         get
@@ -337,7 +392,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string NotificationPolicyHelp =>
         notificationPolicy is { IsValid: false }
             ? notificationPolicy.Error ?? "The canonical policy is invalid; the event default is shown."
-            : "Notification delivery is review-only until the dedicated policy editor is connected.";
+            : "Toggle Windows or audio delivery and choose the in-game sound.";
 
     public string EditorLabel => $"{Control} · {ValueKind}";
 
@@ -351,14 +406,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             : IsStringEditor
                 ? $"{Title}, {EffectiveState}, {StringText}. {StringValidationMessage}"
             : IsNotificationEditor
-                ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Review only."
+                ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Use the inline delivery controls."
                 : $"{Title} requires its dedicated {Control} editor.";
 
     public string SpecializedEditorMessage =>
         Setting.Control switch
         {
-            LauncherConfigurationControl.NotificationPolicy =>
-                "System, audio, and sound delivery editor follows in the Notifications adapter.",
             LauncherConfigurationControl.Keybinding =>
                 "Key capture and conflict detection follow in the Hotkeys adapter.",
             _ => "This value type is catalogued and awaits its typed editor.",
@@ -394,7 +447,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         stringValidationError = null;
         setInputValidity(Setting, true);
         RefreshNotificationPolicy();
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor);
+        CanEdit = editingAvailable
+            && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor || IsNotificationEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
@@ -410,6 +464,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         NotifyNumericStateChanged();
         NotifyStringStateChanged();
         OnPropertyChanged(nameof(NotificationStateText));
+        OnPropertyChanged(nameof(NotificationSystem));
+        OnPropertyChanged(nameof(NotificationAudio));
+        OnPropertyChanged(nameof(NotificationSound));
+        OnPropertyChanged(nameof(NotificationSounds));
+        OnPropertyChanged(nameof(NotificationSoundOptions));
+        OnPropertyChanged(nameof(CanSelectNotificationSound));
         OnPropertyChanged(nameof(NotificationDeliverySummary));
         OnPropertyChanged(nameof(NotificationNeedsAttention));
         OnPropertyChanged(nameof(NotificationPolicyHelp));
@@ -478,6 +538,28 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 Setting,
                 valueState.HasOverride ? valueState.EffectiveValue as string : null)
             : null;
+    }
+
+    private LauncherNotificationPolicy CurrentNotificationPolicy() =>
+        notificationPolicy?.Policy
+        ?? LauncherNotificationPolicyParser.Parse(Setting, null).Policy;
+
+    private void StageNotificationPolicy(LauncherNotificationPolicy policy)
+    {
+        if (!CanEdit || !IsNotificationEditor || !stageValue(Setting, policy.Render()))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(NotificationStateText));
+        OnPropertyChanged(nameof(NotificationSystem));
+        OnPropertyChanged(nameof(NotificationAudio));
+        OnPropertyChanged(nameof(NotificationSound));
+        OnPropertyChanged(nameof(CanSelectNotificationSound));
+        OnPropertyChanged(nameof(NotificationDeliverySummary));
+        OnPropertyChanged(nameof(NotificationNeedsAttention));
+        OnPropertyChanged(nameof(NotificationPolicyHelp));
+        OnPropertyChanged(nameof(EditorAutomationName));
     }
 
     private void RemoveOverride()
