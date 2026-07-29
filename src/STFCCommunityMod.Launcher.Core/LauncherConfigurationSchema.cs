@@ -62,6 +62,16 @@ public sealed record LauncherConfigurationSource(
         };
 }
 
+public sealed record LauncherConfigurationNumericConstraints(
+    double? Minimum,
+    double? Maximum)
+{
+    public bool Contains(double value) =>
+        double.IsFinite(value)
+        && (!Minimum.HasValue || value >= Minimum.Value)
+        && (!Maximum.HasValue || value <= Maximum.Value);
+}
+
 public sealed class LauncherConfigurationSetting
 {
     internal LauncherConfigurationSetting(
@@ -72,6 +82,7 @@ public sealed class LauncherConfigurationSetting
         LauncherConfigurationControl control,
         LauncherConfigurationValueKind valueKind,
         JsonElement valueTypeDefinition,
+        LauncherConfigurationNumericConstraints? numericConstraints,
         JsonElement defaultValue,
         LauncherConfigurationStability stability,
         IReadOnlyList<LauncherConfigurationPlatform> platforms,
@@ -86,6 +97,7 @@ public sealed class LauncherConfigurationSetting
         Control = control;
         ValueKind = valueKind;
         ValueTypeDefinition = valueTypeDefinition;
+        NumericConstraints = numericConstraints;
         DefaultValue = defaultValue;
         Stability = stability;
         Platforms = platforms;
@@ -112,6 +124,8 @@ public sealed class LauncherConfigurationSetting
     /// metadata such as enum values and notification policy variants.
     /// </summary>
     public JsonElement ValueTypeDefinition { get; }
+
+    public LauncherConfigurationNumericConstraints? NumericConstraints { get; }
 
     /// <summary>
     /// A detached copy of the JSON default. Callers may safely retain this value

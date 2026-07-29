@@ -119,9 +119,11 @@ public static class LauncherConfigurationSchemaLoader
             ReadRequiredString(valueType, "kind", $"{context}.valueType"),
             path);
         ValidateControlAndValueKind(control, valueKind, path);
+        var numericConstraints = ReadNumericConstraints(element, valueKind, path);
 
         var defaultValue = ReadRequiredProperty(element, "default", context);
         ValidateDefault(defaultValue, valueKind, valueType, path);
+        ValidateDefaultConstraints(defaultValue, numericConstraints, path);
 
         var stability = ParseStability(ReadRequiredString(element, "stability", context), path);
         var sensitivity = ParseSensitivity(ReadRequiredString(element, "sensitivity", context), path);
@@ -146,12 +148,95 @@ public static class LauncherConfigurationSchemaLoader
             control,
             valueKind,
             valueType.Clone(),
+            numericConstraints,
             defaultValue.Clone(),
             stability,
             platforms,
             sourceSupport,
             sensitivity,
             apply);
+    }
+
+    private static LauncherConfigurationNumericConstraints? ReadNumericConstraints(
+        JsonElement setting,
+        LauncherConfigurationValueKind valueKind,
+        string path)
+    {
+        if (!setting.TryGetProperty("constraints", out var constraints))
+        {
+            return null;
+        }
+
+        if (valueKind is not LauncherConfigurationValueKind.Integer
+            and not LauncherConfigurationValueKind.Number)
+        {
+            throw Invalid($"Setting '{path}' declares numeric constraints for a non-numeric value.");
+        }
+
+        RequireKind(constraints, JsonValueKind.Object, $"constraints for '{path}'");
+        var minimum = ReadOptionalFiniteNumber(constraints, "minimum", path);
+        var maximum = ReadOptionalFiniteNumber(constraints, "maximum", path);
+        if (!minimum.HasValue && !maximum.HasValue)
+        {
+            throw Invalid($"Setting '{path}' has an empty numeric constraints object.");
+        }
+
+        if (valueKind == LauncherConfigurationValueKind.Integer
+            && ((minimum.HasValue
+                 && (minimum.Value != Math.Truncate(minimum.Value)
+                     || minimum.Value < long.MinValue
+                     || minimum.Value > long.MaxValue))
+                || (maximum.HasValue
+                    && (maximum.Value != Math.Truncate(maximum.Value)
+                        || maximum.Value < long.MinValue
+                        || maximum.Value > long.MaxValue))))
+        {
+            throw Invalid($"Integer setting '{path}' must use signed 64-bit integer constraints.");
+        }
+
+        if (minimum > maximum)
+        {
+            throw Invalid($"Setting '{path}' has a minimum greater than its maximum.");
+        }
+
+        return new(minimum, maximum);
+    }
+
+    private static double? ReadOptionalFiniteNumber(
+        JsonElement constraints,
+        string propertyName,
+        string path)
+    {
+        if (!constraints.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number
+            || !value.TryGetDouble(out var number)
+            || !double.IsFinite(number))
+        {
+            throw Invalid($"Constraint '{propertyName}' for '{path}' must be a finite number.");
+        }
+
+        return number;
+    }
+
+    private static void ValidateDefaultConstraints(
+        JsonElement defaultValue,
+        LauncherConfigurationNumericConstraints? constraints,
+        string path)
+    {
+        if (constraints is null)
+        {
+            return;
+        }
+
+        var value = defaultValue.GetDouble();
+        if (!constraints.Contains(value))
+        {
+            throw Invalid($"Default for setting '{path}' falls outside its numeric constraints.");
+        }
     }
 
     private static ReadOnlyCollection<LauncherConfigurationPlatform> ReadPlatforms(

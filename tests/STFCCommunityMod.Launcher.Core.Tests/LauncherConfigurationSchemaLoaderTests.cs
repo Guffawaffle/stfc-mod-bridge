@@ -218,6 +218,47 @@ public sealed class LauncherConfigurationSchemaLoaderTests
     }
 
     [TestMethod]
+    public void RetainsNumericConstraintsAndRejectsInvalidRanges()
+    {
+        const string numericSetting =
+            """
+            {
+              "path": "advanced.interval",
+              "title": "Interval",
+              "description": "Diagnostic interval.",
+              "category": "advanced",
+              "control": "scalar",
+              "valueType": { "kind": "integer" },
+              "constraints": { "minimum": 1000, "maximum": 60000 },
+              "default": 5000,
+              "platforms": [ "windows" ],
+              "apply": "next-session",
+              "sensitivity": "public",
+              "stability": "advanced",
+              "sourceSupport": [ "guffawaffle" ]
+            }
+            """;
+
+        var catalog = LoadJson(SchemaWithSettings(numericSetting));
+        var constraints = catalog.Settings.Single().NumericConstraints;
+
+        Assert.IsNotNull(constraints);
+        Assert.AreEqual(1000d, constraints.Minimum);
+        Assert.AreEqual(60000d, constraints.Maximum);
+        Assert.IsTrue(constraints.Contains(5000));
+        Assert.IsFalse(constraints.Contains(999));
+
+        var reversedRange = numericSetting
+            .Replace(@"""minimum"": 1000", @"""minimum"": 70000", StringComparison.Ordinal);
+        var invalidDefault = numericSetting
+            .Replace(@"""default"": 5000", @"""default"": 999", StringComparison.Ordinal);
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(SchemaWithSettings(reversedRange)));
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(SchemaWithSettings(invalidDefault)));
+    }
+
+    [TestMethod]
     public void LoadsGeneratedRepositorySchema()
     {
         var schemaPath = FindRepositoryFile(

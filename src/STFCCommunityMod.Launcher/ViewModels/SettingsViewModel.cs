@@ -17,6 +17,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly ILauncherUiPreferencesStore? uiPreferencesStore;
     private readonly List<SettingsRowViewModel> settings = [];
     private readonly Dictionary<string, SettingsRowViewModel> settingsByPath;
+    private readonly HashSet<string> invalidInputPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private LauncherConfigurationEditSession? editSession;
@@ -46,6 +47,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
+        discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
+        saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
 
         TryLoadConfiguration();
         settings.AddRange(catalog.VisibleSettings
@@ -54,7 +57,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 GetValueState(setting),
                 editSession is not null,
                 StageValue,
-                StageRemove))
+                StageRemove,
+                SetInputValidity))
             .OrderBy(setting => ResolveSection(setting.Setting))
             .ThenBy(setting => setting.Title, StringComparer.OrdinalIgnoreCase)
             .ToList());
@@ -66,8 +70,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         FilteredSettings.Filter = ShouldInclude;
         FilteredSettings.CollectionChanged += (_, _) => NotifyFilterSummaryChanged();
 
-        discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
-        saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
         SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
         SelectSection(SettingsSection.General);
     }
@@ -173,6 +175,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool HasPendingChanges => PendingChangeCount > 0;
 
+    public bool HasInvalidInput => invalidInputPaths.Count > 0;
+
     public string PendingChangesText =>
         PendingChangeCount switch
         {
@@ -184,7 +188,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool CanSave =>
         IsConfigurationReady
         && HasPendingChanges
+        && !HasInvalidInput
         && ConfigurationPathMatchesLoadedSession();
+
+    public string SaveAvailability =>
+        HasInvalidInput
+            ? "Fix the highlighted setting before saving."
+            : CanSave
+                ? "Save all staged configuration changes."
+                : "Stage a valid configuration change before saving.";
 
     public string OperationStatus
     {
@@ -467,6 +479,24 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         return true;
     }
 
+    private void SetInputValidity(
+        LauncherConfigurationSetting setting,
+        bool isValid)
+    {
+        var changed = isValid
+            ? invalidInputPaths.Remove(setting.Path)
+            : invalidInputPaths.Add(setting.Path);
+        if (!changed)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasInvalidInput));
+        OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveAvailability));
+        saveCommand.RaiseCanExecuteChanged();
+    }
+
     private void Discard()
     {
         var selectedConfigurationChanged = !ConfigurationPathMatchesLoadedSession();
@@ -540,7 +570,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PendingChangeCount));
         OnPropertyChanged(nameof(HasPendingChanges));
         OnPropertyChanged(nameof(PendingChangesText));
+        OnPropertyChanged(nameof(HasInvalidInput));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveAvailability));
         discardCommand.RaiseCanExecuteChanged();
         saveCommand.RaiseCanExecuteChanged();
     }

@@ -12,21 +12,26 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 {
     private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
+    private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsActionCommand removeOverrideCommand;
     private SettingsValueState valueState;
     private LauncherNotificationPolicyParseResult? notificationPolicy;
+    private string? numericDraft;
+    private string? numericValidationError;
 
     internal SettingsRowViewModel(
         LauncherConfigurationSetting setting,
         SettingsValueState valueState,
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
-        Func<LauncherConfigurationSetting, bool> stageRemove)
+        Func<LauncherConfigurationSetting, bool> stageRemove,
+        Action<LauncherConfigurationSetting, bool> setInputValidity)
     {
         Setting = setting;
         this.valueState = valueState;
         this.stageValue = stageValue;
         this.stageRemove = stageRemove;
+        this.setInputValidity = setInputValidity;
 
         Path = setting.Path;
         Title = string.IsNullOrWhiteSpace(setting.Title) ? setting.Path : setting.Title;
@@ -47,9 +52,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             && setting.ValueKind == LauncherConfigurationValueKind.Boolean;
         IsEnumEditor = setting.Control == LauncherConfigurationControl.Scalar
             && setting.ValueKind == LauncherConfigurationValueKind.Enum;
+        IsNumericEditor = setting.Control == LauncherConfigurationControl.Scalar
+            && setting.ValueKind
+                is LauncherConfigurationValueKind.Integer
+                or LauncherConfigurationValueKind.Number;
         IsNotificationEditor = setting.Control == LauncherConfigurationControl.NotificationPolicy;
-        IsSpecializedEditor = !IsBooleanEditor && !IsEnumEditor && !IsNotificationEditor;
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor);
+        IsSpecializedEditor =
+            !IsBooleanEditor && !IsEnumEditor && !IsNumericEditor && !IsNotificationEditor;
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor);
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
@@ -87,6 +97,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public bool IsBooleanEditor { get; }
 
     public bool IsEnumEditor { get; }
+
+    public bool IsNumericEditor { get; }
 
     public bool IsNotificationEditor { get; }
 
@@ -158,6 +170,72 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             ? $"The configured value is invalid. {FormatCategory(EnumValue)} is the runtime default."
             : $"Choose one of {EnumOptions.Count} supported values.";
 
+    public string NumericText
+    {
+        get => numericDraft ?? ReadNumericText();
+        set
+        {
+            if (!CanEdit || string.Equals(value, NumericText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            numericDraft = value;
+            if (!TryNormalizeNumericValue(value, out var rendered, out var validationError))
+            {
+                numericValidationError = validationError;
+                setInputValidity(Setting, false);
+                NotifyNumericStateChanged();
+                return;
+            }
+
+            numericValidationError = null;
+            if (stageValue(Setting, rendered))
+            {
+                numericDraft = null;
+            }
+            else
+            {
+                numericValidationError = "The value could not be staged. Review the settings status and try again.";
+            }
+
+            setInputValidity(Setting, numericValidationError is null);
+            NotifyNumericStateChanged();
+        }
+    }
+
+    public bool NumericNeedsAttention =>
+        numericValidationError is not null
+        || (IsNumericEditor
+            && HasOverride
+            && !TryReadValidNumericValue(valueState.EffectiveValue, out _));
+
+    public string NumericValidationMessage =>
+        numericValidationError
+        ?? (NumericNeedsAttention
+            ? $"The configured value is invalid or outside its supported range. {ReadDefaultNumericText()} is shown."
+            : $"{NumericConstraintText}. Press Enter, Tab, or click elsewhere to stage the value.");
+
+    public string NumericConstraintText
+    {
+        get
+        {
+            var valueType = Setting.ValueKind == LauncherConfigurationValueKind.Integer
+                ? "Whole number"
+                : "Decimal number";
+            return Setting.NumericConstraints switch
+            {
+                { Minimum: not null, Maximum: not null } constraints =>
+                    $"{valueType} · {FormatNumber(constraints.Minimum.Value)}–{FormatNumber(constraints.Maximum.Value)}",
+                { Minimum: not null } constraints =>
+                    $"{valueType} · Minimum {FormatNumber(constraints.Minimum.Value)}",
+                { Maximum: not null } constraints =>
+                    $"{valueType} · Maximum {FormatNumber(constraints.Maximum.Value)}",
+                _ => valueType,
+            };
+        }
+    }
+
     public string NotificationStateText =>
         notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
 
@@ -210,6 +288,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             ? $"{Title}, {EffectiveState}, {BooleanValue}"
             : IsEnumEditor
                 ? $"{Title}, {EffectiveState}, {FormatCategory(EnumValue)}"
+            : IsNumericEditor
+                ? $"{Title}, {EffectiveState}, {NumericText}. {NumericValidationMessage}"
             : IsNotificationEditor
                 ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Review only."
                 : $"{Title} requires its dedicated {Control} editor.";
@@ -248,8 +328,11 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
     {
         valueState = state;
+        numericDraft = null;
+        numericValidationError = null;
+        setInputValidity(Setting, true);
         RefreshNotificationPolicy();
-        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor);
+        CanEdit = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
@@ -262,6 +345,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EnumValue));
         OnPropertyChanged(nameof(EnumNeedsAttention));
         OnPropertyChanged(nameof(EnumValidationMessage));
+        NotifyNumericStateChanged();
         OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationDeliverySummary));
         OnPropertyChanged(nameof(NotificationNeedsAttention));
@@ -342,8 +426,144 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(EnumValue));
             OnPropertyChanged(nameof(EnumNeedsAttention));
             OnPropertyChanged(nameof(EnumValidationMessage));
+            NotifyNumericStateChanged();
         }
     }
+
+    private string ReadNumericText()
+    {
+        if (TryReadValidNumericValue(valueState.EffectiveValue, out var rendered))
+        {
+            return rendered;
+        }
+
+        return ReadDefaultNumericText();
+    }
+
+    private string ReadDefaultNumericText()
+    {
+        if (Setting.ValueKind == LauncherConfigurationValueKind.Integer
+            && Setting.DefaultValue.TryGetInt64(out var integer))
+        {
+            return LauncherTomlValue.RenderInteger(integer);
+        }
+
+        return Setting.DefaultValue.TryGetDouble(out var number)
+            ? LauncherTomlValue.RenderNumber(number)
+            : string.Empty;
+    }
+
+    private bool TryReadValidNumericValue(
+        object? candidate,
+        out string rendered)
+    {
+        rendered = string.Empty;
+        switch (Setting.ValueKind)
+        {
+            case LauncherConfigurationValueKind.Integer:
+                if (!TryReadInteger(candidate, out var integer)
+                    || Setting.NumericConstraints is { } integerConstraints
+                    && !integerConstraints.Contains(integer))
+                {
+                    return false;
+                }
+
+                rendered = LauncherTomlValue.RenderInteger(integer);
+                return true;
+
+            case LauncherConfigurationValueKind.Number:
+                if (!TryReadNumber(candidate, out var number)
+                    || Setting.NumericConstraints is { } numberConstraints
+                    && !numberConstraints.Contains(number))
+                {
+                    return false;
+                }
+
+                rendered = LauncherTomlValue.RenderNumber(number);
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private bool TryNormalizeNumericValue(
+        string value,
+        out string rendered,
+        out string validationError)
+    {
+        rendered = string.Empty;
+        validationError = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            validationError = "Enter a value.";
+            return false;
+        }
+
+        if (!TryReadValidNumericValue(value, out rendered))
+        {
+            validationError = $"Enter a valid {NumericConstraintText.ToLower(CultureInfo.CurrentCulture)}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadInteger(object? candidate, out long value)
+    {
+        value = default;
+        if (candidate is long integer)
+        {
+            value = integer;
+            return true;
+        }
+
+        if (candidate is int integer32)
+        {
+            value = integer32;
+            return true;
+        }
+
+        return candidate is string text
+            && LauncherTomlValue.TryReadInteger(text, out value);
+    }
+
+    private static bool TryReadNumber(object? candidate, out double value)
+    {
+        value = default;
+        if (candidate is double number)
+        {
+            value = number;
+            return double.IsFinite(value);
+        }
+
+        if (candidate is float single)
+        {
+            value = single;
+            return float.IsFinite(single);
+        }
+
+        if (candidate is long integer)
+        {
+            value = integer;
+            return true;
+        }
+
+        return candidate is string text
+            && LauncherTomlValue.TryReadNumber(text, out value);
+    }
+
+    private void NotifyNumericStateChanged()
+    {
+        OnPropertyChanged(nameof(NumericText));
+        OnPropertyChanged(nameof(NumericNeedsAttention));
+        OnPropertyChanged(nameof(NumericValidationMessage));
+        OnPropertyChanged(nameof(NumericConstraintText));
+        OnPropertyChanged(nameof(EditorAutomationName));
+    }
+
+    private static string FormatNumber(double value) =>
+        value.ToString("G", CultureInfo.CurrentCulture);
 
     private static SettingsEnumOption[] ReadEnumOptions(
         LauncherConfigurationSetting setting)

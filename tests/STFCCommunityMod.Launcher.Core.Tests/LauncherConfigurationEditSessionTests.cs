@@ -199,14 +199,64 @@ public sealed class LauncherConfigurationEditSessionTests
             item => item.Path == "graphics.free_resize");
         var enumSetting = catalog.Settings.Single(
             item => item.Path == "input.original_frame_policy");
+        var numericSetting = catalog.Settings.Single(
+            item => item.Path == "graphics.ui_scale");
 
         Assert.IsTrue(session!.StageSet(booleanSetting, "false").IsValid);
         Assert.IsTrue(session.StageSet(enumSetting, "\"fallthrough_unhandled\"").IsValid);
-        Assert.AreEqual(2, session.PendingChangeCount);
+        Assert.IsTrue(session.StageSet(numericSetting, "0.7").IsValid);
+        Assert.AreEqual(3, session.PendingChangeCount);
 
         Assert.IsTrue(session.StageSet(booleanSetting, "true").IsValid);
         Assert.IsTrue(session.StageSet(enumSetting, "\"mod\"").IsValid);
+        Assert.IsTrue(session.StageSet(numericSetting, "0.60").IsValid);
 
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(
+            Encoding.UTF8.GetBytes(source),
+            session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
+    public void NumericStagingEnforcesBoundsAndCancelsSemanticNoOps()
+    {
+        const string source =
+            """
+            [sidecar.logging]
+            jsonl_recent_logs = 3_00
+
+            [graphics]
+            ui_scale = 6e-1
+            """;
+        var catalog = LoadCatalog();
+        LauncherConfigurationEditSession.Load(
+            Encoding.UTF8.GetBytes(source),
+            catalog,
+            out var session);
+        var retainedLogs = catalog.Settings.Single(
+            item => item.Path == "sidecar.logging.jsonl_recent_logs");
+        var uiScale = catalog.Settings.Single(
+            item => item.Path == "graphics.ui_scale");
+
+        var retainedLogsChange = session!.StageSet(retainedLogs, "600");
+        Assert.IsTrue(retainedLogsChange.IsValid, retainedLogsChange.Error?.Message);
+        Assert.AreEqual(1, session.PendingChangeCount);
+
+        var retainedLogsRestore = session.StageSet(retainedLogs, "300");
+        Assert.IsTrue(retainedLogsRestore.IsValid, retainedLogsRestore.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+
+        var invalidRetainedLogs = session.StageSet(retainedLogs, "-1");
+        Assert.IsFalse(invalidRetainedLogs.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidValue, invalidRetainedLogs.Error?.Code);
+        Assert.AreEqual(0, session.PendingChangeCount);
+
+        var scaleChange = session.StageSet(uiScale, "0.7");
+        Assert.IsTrue(scaleChange.IsValid, scaleChange.Error?.Message);
+        Assert.AreEqual(1, session.PendingChangeCount);
+
+        var scaleRestore = session.StageSet(uiScale, "0.60");
+        Assert.IsTrue(scaleRestore.IsValid, scaleRestore.Error?.Message);
         Assert.AreEqual(0, session.PendingChangeCount);
         CollectionAssert.AreEqual(
             Encoding.UTF8.GetBytes(source),

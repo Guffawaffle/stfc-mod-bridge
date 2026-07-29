@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core;
@@ -287,19 +286,9 @@ public sealed class LauncherConfigurationEditSession
             LauncherConfigurationValueKind.Boolean =>
                 renderedTomlValue is "true" or "false",
             LauncherConfigurationValueKind.Integer =>
-                long.TryParse(
-                    renderedTomlValue,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out _),
+                LauncherTomlValue.TryReadInteger(renderedTomlValue, out _),
             LauncherConfigurationValueKind.Number =>
-                double.TryParse(
-                    renderedTomlValue,
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out var number)
-                && !double.IsInfinity(number)
-                && !double.IsNaN(number),
+                LauncherTomlValue.TryReadNumber(renderedTomlValue, out _),
             LauncherConfigurationValueKind.String
                 or LauncherConfigurationValueKind.Keybinding =>
                 LauncherTomlValue.TryReadString(renderedTomlValue, out _),
@@ -312,12 +301,68 @@ public sealed class LauncherConfigurationEditSession
             _ => false,
         };
 
-        return valid
-            ? null
-            : InvalidValue(
+        if (!valid)
+        {
+            return InvalidValue(
                 setting,
                 $"The value is not valid for {setting.ValueKind.ToString().ToLowerInvariant()} setting '{setting.Path}'.");
+        }
+
+        if (setting.NumericConstraints is { } numericConstraints)
+        {
+            if (!TryReadConstrainedNumber(setting, renderedTomlValue, out var number))
+            {
+                return InvalidValue(
+                    setting,
+                    $"The value is not valid for numeric setting '{setting.Path}'.");
+            }
+
+            if (!numericConstraints.Contains(number))
+            {
+                return InvalidValue(
+                    setting,
+                    $"The value for '{setting.Path}' must be {FormatNumericRange(setting)}.");
+            }
+        }
+
+        return null;
     }
+
+    private static bool TryReadConstrainedNumber(
+        LauncherConfigurationSetting setting,
+        string renderedTomlValue,
+        out double value)
+    {
+        if (setting.ValueKind == LauncherConfigurationValueKind.Integer
+            && LauncherTomlValue.TryReadInteger(renderedTomlValue, out var integer))
+        {
+            value = integer;
+            return true;
+        }
+
+        return LauncherTomlValue.TryReadNumber(renderedTomlValue, out value);
+    }
+
+    private static string FormatNumericRange(LauncherConfigurationSetting setting)
+    {
+        var constraints = setting.NumericConstraints!;
+        if (constraints.Minimum.HasValue && constraints.Maximum.HasValue)
+        {
+            return $"between {FormatConstraint(setting, constraints.Minimum.Value)} and "
+                + $"{FormatConstraint(setting, constraints.Maximum.Value)}";
+        }
+
+        return constraints.Minimum.HasValue
+            ? $"at least {FormatConstraint(setting, constraints.Minimum.Value)}"
+            : $"at most {FormatConstraint(setting, constraints.Maximum!.Value)}";
+    }
+
+    private static string FormatConstraint(
+        LauncherConfigurationSetting setting,
+        double value) =>
+        setting.ValueKind == LauncherConfigurationValueKind.Integer
+            ? LauncherTomlValue.RenderInteger(checked((long)value))
+            : LauncherTomlValue.RenderNumber(value);
 
     private static bool IsDeclaredEnumValue(
         LauncherConfigurationSetting setting,
@@ -339,10 +384,22 @@ public sealed class LauncherConfigurationEditSession
             return true;
         }
 
-        return setting.ValueKind == LauncherConfigurationValueKind.Enum
-            && LauncherTomlValue.TryReadString(first, out var firstValue)
-            && LauncherTomlValue.TryReadString(second, out var secondValue)
-            && string.Equals(firstValue, secondValue, StringComparison.Ordinal);
+        return setting.ValueKind switch
+        {
+            LauncherConfigurationValueKind.Enum =>
+                LauncherTomlValue.TryReadString(first, out var firstValue)
+                && LauncherTomlValue.TryReadString(second, out var secondValue)
+                && string.Equals(firstValue, secondValue, StringComparison.Ordinal),
+            LauncherConfigurationValueKind.Integer =>
+                LauncherTomlValue.TryReadInteger(first, out var firstInteger)
+                && LauncherTomlValue.TryReadInteger(second, out var secondInteger)
+                && firstInteger == secondInteger,
+            LauncherConfigurationValueKind.Number =>
+                LauncherTomlValue.TryReadNumber(first, out var firstNumber)
+                && LauncherTomlValue.TryReadNumber(second, out var secondNumber)
+                && firstNumber.Equals(secondNumber),
+            _ => false,
+        };
     }
 
     private static bool IsEquivalentToDefault(
@@ -360,6 +417,14 @@ public sealed class LauncherConfigurationEditSession
                     value,
                     setting.DefaultValue.GetString(),
                     StringComparison.Ordinal),
+            LauncherConfigurationValueKind.Integer
+                when setting.DefaultValue.TryGetInt64(out var defaultInteger)
+                     && LauncherTomlValue.TryReadInteger(renderedValue, out var integer) =>
+                integer == defaultInteger,
+            LauncherConfigurationValueKind.Number
+                when setting.DefaultValue.TryGetDouble(out var defaultNumber)
+                     && LauncherTomlValue.TryReadNumber(renderedValue, out var number) =>
+                number.Equals(defaultNumber),
             _ => false,
         };
 

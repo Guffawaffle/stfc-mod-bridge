@@ -45,6 +45,22 @@
       </Style.Triggers>
     </Style>
 
+    <Style x:Key="SettingsNumericEditorStyle"
+           BasedOn="{StaticResource SettingsSearchStyle}"
+           TargetType="TextBox">
+      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="HorizontalContentAlignment" Value="Right" />
+      <Setter Property="TextAlignment" Value="Right" />
+      <Setter Property="MaxLength" Value="64" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
+          <Setter Property="BorderThickness" Value="2" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
     <Style x:Key="BooleanEditorStyle"
            TargetType="CheckBox">
       <Setter Property="MinWidth" Value="44" />
@@ -600,6 +616,51 @@
                       </Grid>
                     </StackPanel>
 
+                    <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
+                               Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                               IsEnabled="{Binding CanEdit}"
+                               ToolTip="{Binding NumericValidationMessage}"
+                               behaviors:TextInputCommitBehavior.CommitOnEnter="True"
+                               automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
+                               automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock MaxWidth="150"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="{Binding NumericConstraintText}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding NumericConstraintText}">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Visibility" Value="Visible" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
+                                  <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock MaxWidth="150"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Text="{Binding NumericValidationMessage}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding NumericValidationMessage}"
+                                   Visibility="{Binding NumericNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Button HorizontalAlignment="Right"
+                                Style="{StaticResource QuietButtonStyle}"
+                                Command="{Binding RemoveOverrideCommand}"
+                                Content="Use default"
+                                ToolTip="{Binding RemoveOverrideAvailability}"
+                                automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                      </Grid>
+                    </StackPanel>
+
                     <Border Padding="12,9"
                             Background="{DynamicResource SurfaceMutedBrush}"
                             BorderBrush="{DynamicResource BorderBrush}"
@@ -774,7 +835,9 @@
                   Margin="12,0,0,0"
                   Command="{Binding SaveCommand}"
                   Content="_Save changes"
-                  automation:AutomationProperties.Name="Save configuration changes" />
+                  ToolTip="{Binding SaveAvailability}"
+                  automation:AutomationProperties.Name="Save configuration changes"
+                  automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
         </StackPanel>
       </Grid>
     </Border>
