@@ -4,7 +4,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Data;
 using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
 
@@ -18,10 +17,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly ILauncherSettingsLayoutProvider layoutProvider;
     private readonly LauncherSettingsActivationDiagnostics settingsDiagnostics;
     private readonly ILauncherUiPreferencesStore? uiPreferencesStore;
-    private readonly List<SettingsRowViewModel> settings = [];
-    private readonly IReadOnlyDictionary<string, LauncherSettingsPlacement> placementsByPath;
-    private readonly Dictionary<string, SettingsRowViewModel> settingsByPath;
-    private readonly HashSet<string> invalidInputPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LauncherSettingsProjectionQuery projectionQuery;
+    private readonly SettingsProjectionCollection projectedItems = [];
+    private readonly SettingsEditorDraftStore editorDraftStore = new();
+    private readonly Dictionary<string, SettingsRowViewModel> projectedRowsByPath =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> keybindingIssueMessages =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> editorInvalidInputPaths =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> keybindingInvalidPaths =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private LauncherConfigurationEditSession? editSession;
@@ -30,6 +36,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
     private bool isSearchVisible;
+    private int projectionRevision;
 
     public SettingsViewModel(
         LauncherConfigurationCatalog catalog,
@@ -61,38 +68,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
 
         TryLoadConfiguration();
-        placementsByPath = CreatePlacements();
-        settings.AddRange(catalog.VisibleSettings
-            .Select(setting => new SettingsRowViewModel(
-                setting,
-                placementsByPath[setting.Path],
-                GetValueState(setting),
-                editSession is not null,
-                StageValue,
-                StageRemove,
-                RevertDraft,
-                SetInputValidity))
-            .OrderBy(setting => placementsByPath[setting.Path].Section)
-            .ThenBy(setting => placementsByPath[setting.Path].GroupOrder)
-            .ThenBy(setting => setting.Group, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(setting => placementsByPath[setting.Path].FamilyOrder)
-            .ThenBy(setting => placementsByPath[setting.Path].FamilyId, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(setting => placementsByPath[setting.Path].MemberOrder)
-            .ThenBy(setting => placementsByPath[setting.Path].SortKey, StringComparer.OrdinalIgnoreCase)
-            .ToList());
-        settingsByPath = settings.ToDictionary(
-            setting => setting.Path,
-            StringComparer.OrdinalIgnoreCase);
+        projectionQuery = new(catalog, layoutProvider);
         RefreshKeybindingConflicts();
-
-        FilteredSettings = CollectionViewSource.GetDefaultView(settings);
-        FilteredSettings.Filter = ShouldInclude;
-        if (layoutProvider.ShowGroupHeadings)
-        {
-            FilteredSettings.GroupDescriptions.Add(
-                new PropertyGroupDescription(nameof(SettingsRowViewModel.Group)));
-        }
-        FilteredSettings.CollectionChanged += (_, _) => NotifyFilterSummaryChanged();
 
         SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
         SelectSection(layoutProvider.Sections[0].Id);
@@ -104,7 +81,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<SettingsSectionViewModel> Sections { get; }
 
-    public ICollectionView FilteredSettings { get; }
+    public IReadOnlyList<SettingsListItemViewModel> FilteredSettings =>
+        projectedItems;
+
+    public SettingsProjectionSnapshot ProjectionSnapshot { get; private set; } =
+        new(0, 0, 0, 0, []);
 
     public ICommand NavigateHomeCommand { get; }
 
@@ -132,7 +113,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSearchActive));
             OnPropertyChanged(nameof(WorkspaceTitle));
             OnPropertyChanged(nameof(WorkspaceDescription));
-            RefreshFilter();
+            RebuildProjection();
         }
     }
 
@@ -176,7 +157,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool IsSettingsListVisible => !IsAboutSelected;
 
-    public int VisibleSettingCount => FilteredSettings.Cast<object>().Count();
+    public int VisibleSettingCount =>
+        projectedItems.OfType<SettingsRowViewModel>().Count();
 
     public string VisibleItemsSummary
     {
@@ -192,7 +174,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public Visibility EmptyStateVisibility =>
-        IsSettingsListVisible && FilteredSettings.IsEmpty
+        IsSettingsListVisible && VisibleSettingCount == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -225,7 +207,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool HasPendingChanges => PendingChangeCount > 0;
 
-    public bool HasInvalidInput => invalidInputPaths.Count > 0;
+    public bool HasInvalidInput =>
+        editorInvalidInputPaths.Count > 0 || keybindingInvalidPaths.Count > 0;
 
     public string PendingChangesText =>
         PendingChangeCount switch
@@ -237,9 +220,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public string PendingApplyTimingText =>
         LauncherConfigurationApplySummary.From(
-            settings
-                .Where(setting => setting.IsDirty)
-                .Select(setting => setting.Setting.ApplyBehavior))
+            catalog.VisibleSettings
+                .Where(setting => GetValueState(setting).IsDirty)
+                .Select(setting => setting.ApplyBehavior))
             .Text;
 
     public bool CanSave =>
@@ -284,6 +267,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return;
         }
 
+        ClearEditorDrafts();
         TryLoadConfiguration();
         RefreshAllStates();
         NotifySessionChanged();
@@ -330,29 +314,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         return sections.AsReadOnly();
     }
 
-    private ReadOnlyDictionary<string, LauncherSettingsPlacement> CreatePlacements()
-    {
-        var declaredSections = layoutProvider.Sections
-            .Select(section => section.Id)
-            .ToHashSet();
-        var placements = new Dictionary<string, LauncherSettingsPlacement>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var setting in catalog.VisibleSettings)
-        {
-            var placement = layoutProvider.Place(setting);
-            if (!declaredSections.Contains(placement.Section))
-            {
-                throw new InvalidOperationException(
-                    $"Settings layout '{layoutProvider.Id}' placed '{setting.Path}' "
-                    + $"in undeclared section '{placement.Section}'.");
-            }
-
-            placements.Add(setting.Path, placement);
-        }
-
-        return new(placements);
-    }
-
     private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
@@ -368,7 +329,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsAboutSelected));
         OnPropertyChanged(nameof(IsGeneralSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
-        RefreshFilter();
+        RebuildProjection();
     }
 
     private void ToggleSearch()
@@ -403,21 +364,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             // UI preferences are best-effort and must never block configuration editing.
         }
-    }
-
-    private bool ShouldInclude(object item)
-    {
-        if (item is not SettingsRowViewModel setting || IsAboutSelected)
-        {
-            return false;
-        }
-
-        var searchMatches =
-            string.IsNullOrWhiteSpace(SearchText)
-            || setting.Matches(SearchText.Trim());
-        return searchMatches
-            && (IsSearchActive
-                || placementsByPath[setting.Path].Section == selectedSection);
     }
 
     private void TryLoadConfiguration()
@@ -557,13 +503,18 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         bool isValid)
     {
         var changed = isValid
-            ? invalidInputPaths.Remove(setting.Path)
-            : invalidInputPaths.Add(setting.Path);
+            ? editorInvalidInputPaths.Remove(setting.Path)
+            : editorInvalidInputPaths.Add(setting.Path);
         if (!changed)
         {
             return;
         }
 
+        NotifyValidationChanged();
+    }
+
+    private void NotifyValidationChanged()
+    {
         OnPropertyChanged(nameof(HasInvalidInput));
         OnPropertyChanged(nameof(CanSave));
         OnPropertyChanged(nameof(SaveAvailability));
@@ -579,6 +530,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             TryLoadConfiguration();
         }
 
+        ClearEditorDrafts();
         OperationStatus = selectedConfigurationChanged
             ? "Unsaved changes discarded and the selected configuration reloaded."
             : "Unsaved changes discarded.";
@@ -622,7 +574,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RefreshAllStates()
     {
-        foreach (var setting in settings)
+        foreach (var setting in projectedRowsByPath.Values)
         {
             setting.UpdateState(GetValueState(setting.Setting), editSession is not null);
         }
@@ -632,7 +584,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RefreshState(LauncherConfigurationSetting setting)
     {
-        if (settingsByPath.TryGetValue(setting.Path, out var row))
+        if (projectedRowsByPath.TryGetValue(setting.Path, out var row))
         {
             row.UpdateState(GetValueState(setting), editSession is not null);
         }
@@ -640,30 +592,39 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RefreshKeybindingConflicts()
     {
-        var keybindings = settings
-            .Where(row => row.IsKeybindingEditor)
+        var keybindings = catalog.VisibleSettings
+            .Where(setting =>
+                setting.Control == LauncherConfigurationControl.Keybinding
+                && setting.ValueKind == LauncherConfigurationValueKind.Keybinding)
             .ToArray();
-        foreach (var row in keybindings)
-        {
-            row.SetKeybindingConflict(null);
-        }
 
         var assignments = keybindings
-            .Select(row => row.ReadKeybindingAssignment())
+            .Select(ReadKeybindingAssignment)
             .OfType<LauncherKeybindingAssignment>()
             .ToArray();
         var conflicts = LauncherKeybindingConflictDetector.FindConflicts(assignments);
-        foreach (var row in keybindings)
+        var previousInvalidCount = keybindingInvalidPaths.Count;
+        keybindingInvalidPaths.Clear();
+        keybindingIssueMessages.Clear();
+        foreach (var setting in keybindings)
         {
-            var rowConflicts = conflicts
+            if (ReadKeybindingAssignment(setting) is null)
+            {
+                keybindingInvalidPaths.Add(setting.Path);
+                keybindingIssueMessages[setting.Path] =
+                    "The configured shortcut is invalid; the runtime default is shown.";
+                continue;
+            }
+
+            var settingConflicts = conflicts
                 .Where(conflict =>
-                    string.Equals(conflict.First.Path, row.Path, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(conflict.Second.Path, row.Path, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(conflict.First.Path, setting.Path, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(conflict.Second.Path, setting.Path, StringComparison.OrdinalIgnoreCase))
                 .Select(conflict =>
                 {
                     var other = string.Equals(
                         conflict.First.Path,
-                        row.Path,
+                        setting.Path,
                         StringComparison.OrdinalIgnoreCase)
                         ? conflict.Second
                         : conflict.First;
@@ -671,11 +632,45 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 })
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            if (rowConflicts.Length > 0)
+            if (settingConflicts.Length > 0)
             {
-                row.SetKeybindingConflict(string.Join(' ', rowConflicts));
+                keybindingInvalidPaths.Add(setting.Path);
+                keybindingIssueMessages[setting.Path] =
+                    string.Join(' ', settingConflicts);
             }
         }
+
+        foreach (var row in projectedRowsByPath.Values.Where(row => row.IsKeybindingEditor))
+        {
+            row.SetKeybindingConflict(
+                keybindingIssueMessages.GetValueOrDefault(row.Path));
+        }
+
+        if (previousInvalidCount != keybindingInvalidPaths.Count)
+        {
+            NotifyValidationChanged();
+        }
+    }
+
+    private LauncherKeybindingAssignment? ReadKeybindingAssignment(
+        LauncherConfigurationSetting setting)
+    {
+        var state = GetValueState(setting);
+        if (state.DraftValue is not string text)
+        {
+            return null;
+        }
+
+        if (state.DraftHasOverride
+            && !LauncherTomlValue.TryReadString(text, out text))
+        {
+            return null;
+        }
+
+        var binding = LauncherKeybindingValue.Parse(text);
+        return binding.IsValid
+            ? new LauncherKeybindingAssignment(setting, binding)
+            : null;
     }
 
     private void NotifySessionChanged()
@@ -718,28 +713,68 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    private void RefreshFilter()
+    private void RebuildProjection()
     {
-        FilteredSettings.Refresh();
-        UpdateVisibleFamilyHeaders();
+        var projection = IsAboutSelected
+            ? []
+            : projectionQuery.Project(selectedSection, SearchText);
+        var items = new List<SettingsListItemViewModel>(projection.Count);
+        projectedRowsByPath.Clear();
+        var constructedPaths = new List<string>();
+        var groupHeaderCount = 0;
+        var familyHeaderCount = 0;
+        foreach (var item in projection)
+        {
+            switch (item)
+            {
+                case LauncherSettingsGroupHeaderProjection group:
+                    items.Add(new SettingsGroupHeaderViewModel(group.Label));
+                    ++groupHeaderCount;
+                    break;
+
+                case LauncherSettingsFamilyHeaderProjection family:
+                    items.Add(
+                        new SettingsFamilyHeaderViewModel(
+                            family.Id,
+                            family.Label,
+                            family.Description));
+                    ++familyHeaderCount;
+                    break;
+
+                case LauncherSettingRowProjection setting:
+                    var row = new SettingsRowViewModel(
+                        setting.Setting,
+                        GetValueState(setting.Setting),
+                        editSession is not null,
+                        StageValue,
+                        StageRemove,
+                        RevertDraft,
+                        SetInputValidity,
+                        editorDraftStore);
+                    row.SetKeybindingConflict(
+                        keybindingIssueMessages.GetValueOrDefault(row.Path));
+                    items.Add(row);
+                    projectedRowsByPath.Add(row.Path, row);
+                    constructedPaths.Add(row.Path);
+                    break;
+            }
+        }
+
+        projectedItems.ReplaceAll(items);
+        ProjectionSnapshot = new(
+            ++projectionRevision,
+            constructedPaths.Count,
+            groupHeaderCount,
+            familyHeaderCount,
+            constructedPaths.AsReadOnly());
+        OnPropertyChanged(nameof(ProjectionSnapshot));
         NotifyFilterSummaryChanged();
     }
 
-    private void UpdateVisibleFamilyHeaders()
+    private void ClearEditorDrafts()
     {
-        var seenFamilies = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var setting in settings)
-        {
-            setting.SetFamilyHeaderVisible(false);
-        }
-
-        foreach (var setting in FilteredSettings.Cast<SettingsRowViewModel>())
-        {
-            if (setting.FamilyId.Length > 0 && seenFamilies.Add(setting.FamilyId))
-            {
-                setting.SetFamilyHeaderVisible(true);
-            }
-        }
+        editorDraftStore.Clear();
+        editorInvalidInputPaths.Clear();
     }
 
     private void NotifyFilterSummaryChanged()

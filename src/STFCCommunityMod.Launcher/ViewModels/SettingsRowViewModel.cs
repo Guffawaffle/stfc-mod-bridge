@@ -8,12 +8,15 @@ using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
-public sealed class SettingsRowViewModel : INotifyPropertyChanged
+public sealed class SettingsRowViewModel :
+    SettingsListItemViewModel,
+    INotifyPropertyChanged
 {
     private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly Func<LauncherConfigurationSetting, bool> revertDraft;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
+    private readonly SettingsEditorDraftStore editorDraftStore;
     private readonly SettingsActionCommand useDefaultCommand;
     private readonly SettingsActionCommand revertDraftCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
@@ -25,33 +28,29 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private string? numericValidationError;
     private string? stringDraft;
     private string? stringValidationError;
-    private bool isFamilyHeaderVisible;
 
     internal SettingsRowViewModel(
         LauncherConfigurationSetting setting,
-        LauncherSettingsPlacement placement,
         SettingsValueState valueState,
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
         Func<LauncherConfigurationSetting, bool> stageRemove,
         Func<LauncherConfigurationSetting, bool> revertDraft,
-        Action<LauncherConfigurationSetting, bool> setInputValidity)
+        Action<LauncherConfigurationSetting, bool> setInputValidity,
+        SettingsEditorDraftStore editorDraftStore)
     {
         Setting = setting;
-        ArgumentNullException.ThrowIfNull(placement);
         this.valueState = valueState;
         this.stageValue = stageValue;
         this.stageRemove = stageRemove;
         this.revertDraft = revertDraft;
         this.setInputValidity = setInputValidity;
+        this.editorDraftStore =
+            editorDraftStore ?? throw new ArgumentNullException(nameof(editorDraftStore));
 
         Path = setting.Path;
         Title = setting.Presentation.Label;
         Description = setting.Presentation.Help ?? string.Empty;
-        Group = placement.Group;
-        FamilyId = setting.Presentation.Family?.Id ?? string.Empty;
-        FamilyLabel = setting.Presentation.Family?.Label ?? string.Empty;
-        FamilyDescription = setting.Presentation.Family?.Help ?? string.Empty;
         FamilyMemberLabel = setting.Presentation.Family?.MemberLabel ?? string.Empty;
         IsCompactBindingFamily = string.Equals(
             setting.Presentation.Family?.PresentationHint,
@@ -61,7 +60,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         ApplyTiming = setting.Presentation.ApplyTiming;
         AccessibleName = setting.Presentation.AccessibleName;
         AccessibleHelp = setting.Presentation.AccessibleHelp;
-        Category = FormatCategory(setting.Category);
         Control = FormatMetadata(setting.Control);
         ValueKind = FormatMetadata(setting.ValueKind);
         DefaultValue = FormatValue(setting.DefaultValue);
@@ -97,6 +95,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 || IsNotificationEditor);
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
+        RestoreEditorDraft();
 
         useDefaultCommand = new SettingsActionCommand(
             UseDefault,
@@ -124,24 +123,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 
-    public string Group { get; }
-
-    public string FamilyId { get; }
-
-    public string FamilyLabel { get; }
-
-    public string FamilyDescription { get; }
-
-    public bool HasFamilyDescription => !string.IsNullOrWhiteSpace(FamilyDescription);
-
     public string FamilyMemberLabel { get; }
 
     public bool IsCompactBindingFamily { get; }
 
     public string DisplayTitle =>
         IsCompactBindingFamily ? FamilyMemberLabel : Title;
-
-    public bool IsFamilyHeaderVisible => isFamilyHeaderVisible;
 
     public string Unit { get; }
 
@@ -152,8 +139,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string AccessibleName { get; }
 
     public string AccessibleHelp { get; }
-
-    public string Category { get; }
 
     public string Control { get; }
 
@@ -303,12 +288,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             if (!TryNormalizeNumericValue(value, out var rendered, out var validationError))
             {
                 numericValidationError = validationError;
+                editorDraftStore.Set(Path, value, validationError);
                 setInputValidity(Setting, false);
                 NotifyNumericStateChanged();
                 return;
             }
 
             numericValidationError = null;
+            editorDraftStore.Remove(Path);
             if (stageValue(Setting, rendered))
             {
                 numericDraft = null;
@@ -316,6 +303,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             else
             {
                 numericValidationError = "The value could not be staged. Review the settings status and try again.";
+                editorDraftStore.Set(Path, value, numericValidationError);
             }
 
             setInputValidity(Setting, numericValidationError is null);
@@ -369,12 +357,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             if (!TryNormalizeStringValue(value, out var normalized, out var validationError))
             {
                 stringValidationError = validationError;
+                editorDraftStore.Set(Path, value, validationError);
                 setInputValidity(Setting, false);
                 NotifyStringStateChanged();
                 return;
             }
 
             stringValidationError = null;
+            editorDraftStore.Remove(Path);
             if (stageValue(Setting, LauncherTomlValue.RenderString(normalized)))
             {
                 stringDraft = null;
@@ -382,6 +372,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             else
             {
                 stringValidationError = "The value could not be staged. Review the settings status and try again.";
+                editorDraftStore.Set(Path, value, stringValidationError);
             }
 
             setInputValidity(Setting, stringValidationError is null);
@@ -560,26 +551,10 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     public ICommand RevertDraftCommand => revertDraftCommand;
 
-    internal bool Matches(string searchText)
-    {
-        return Contains(Path, searchText)
-            || Contains(Title, searchText)
-            || Contains(Description, searchText)
-            || Contains(Group, searchText)
-            || Contains(Category, searchText)
-            || Contains(Control, searchText)
-            || Contains(ValueKind, searchText)
-            || Setting.Presentation.SearchTerms.Any(term => Contains(term, searchText));
-    }
-
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
     {
         valueState = state;
-        numericDraft = null;
-        numericValidationError = null;
-        stringDraft = null;
-        stringValidationError = null;
-        setInputValidity(Setting, true);
+        RestoreEditorDraft();
         RefreshNotificationPolicy();
         CanEdit = editingAvailable
             && (IsBooleanEditor
@@ -711,7 +686,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private void UseDefault()
     {
-        if (stageRemove(Setting))
+        if (RunWithClearedEditorDraft(() => stageRemove(Setting)))
         {
             OnPropertyChanged(nameof(BooleanValue));
             OnPropertyChanged(nameof(BooleanStateText));
@@ -726,7 +701,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
 
     private void RevertDraft()
     {
-        if (revertDraft(Setting))
+        if (RunWithClearedEditorDraft(() => revertDraft(Setting)))
         {
             OnPropertyChanged(nameof(BooleanValue));
             OnPropertyChanged(nameof(BooleanStateText));
@@ -739,16 +714,23 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         }
     }
 
-    internal LauncherKeybindingAssignment? ReadKeybindingAssignment()
+    private bool RunWithClearedEditorDraft(Func<bool> operation)
     {
-        if (!IsKeybindingEditor
-            || !TryReadEffectiveKeybinding(out var binding)
-            || !binding.IsValid)
+        var hadDraft = editorDraftStore.TryGet(Path, out var draft);
+        editorDraftStore.Remove(Path);
+        if (operation())
         {
-            return null;
+            setInputValidity(Setting, true);
+            return true;
         }
 
-        return new(Setting, binding);
+        if (hadDraft && draft is not null)
+        {
+            editorDraftStore.Set(Path, draft.RawText, draft.ParseIssue);
+            RestoreEditorDraft();
+        }
+
+        return false;
     }
 
     internal void SetKeybindingConflict(string? message)
@@ -759,19 +741,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         }
 
         keybindingConflictMessage = message;
-        setInputValidity(Setting, message is null);
         NotifyKeybindingStateChanged();
-    }
-
-    internal void SetFamilyHeaderVisible(bool value)
-    {
-        if (isFamilyHeaderVisible == value)
-        {
-            return;
-        }
-
-        isFamilyHeaderVisible = value;
-        OnPropertyChanged(nameof(IsFamilyHeaderVisible));
     }
 
     private void AddKeybinding(string chord)
@@ -872,6 +842,31 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         Setting.DefaultValue.ValueKind == JsonValueKind.String
             ? Setting.DefaultValue.GetString() ?? string.Empty
             : string.Empty;
+
+    private void RestoreEditorDraft()
+    {
+        numericDraft = null;
+        numericValidationError = null;
+        stringDraft = null;
+        stringValidationError = null;
+        if (editorDraftStore.TryGet(Path, out var draft) && draft is not null)
+        {
+            if (IsNumericEditor)
+            {
+                numericDraft = draft.RawText;
+                numericValidationError = draft.ParseIssue;
+            }
+            else if (IsStringEditor)
+            {
+                stringDraft = draft.RawText;
+                stringValidationError = draft.ParseIssue;
+            }
+        }
+
+        setInputValidity(
+            Setting,
+            numericValidationError is null && stringValidationError is null);
+    }
 
     private bool TryReadValidStringValue(object? candidate, out string value)
     {
@@ -1085,9 +1080,6 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             })
             .ToArray();
     }
-
-    private static bool Contains(string candidate, string searchText) =>
-        candidate.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
     private static string FormatMetadata(object? value)
     {

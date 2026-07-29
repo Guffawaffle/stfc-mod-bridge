@@ -598,7 +598,6 @@
                  ScrollViewer.PanningMode="VerticalOnly"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  VirtualizingPanel.IsVirtualizing="True"
-                 VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                  VirtualizingPanel.ScrollUnit="Pixel"
                  VirtualizingPanel.VirtualizationMode="Recycling"
                  KeyboardNavigation.TabNavigation="Continue"
@@ -630,43 +629,36 @@
               </Setter>
             </Style>
           </ListBox.ItemContainerStyle>
-          <ListBox.GroupStyle>
-            <GroupStyle>
-              <GroupStyle.HeaderTemplate>
-                <DataTemplate>
-                  <Border Margin="18,22,18,6"
-                          Padding="0,0,0,8"
-                          BorderBrush="{DynamicResource BorderBrush}"
-                          BorderThickness="0,0,0,1">
-                    <TextBlock FontSize="20"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               Text="{Binding Name}" />
-                  </Border>
-                </DataTemplate>
-              </GroupStyle.HeaderTemplate>
-              <GroupStyle.Panel>
-                <ItemsPanelTemplate>
-                  <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-              </GroupStyle.Panel>
-            </GroupStyle>
-          </ListBox.GroupStyle>
           <ListBox.ItemTemplate>
-            <DataTemplate DataType="{x:Type viewModels:SettingsRowViewModel}">
-              <StackPanel>
-                <StackPanel Margin="20,16,20,5"
-                            Visibility="{Binding IsFamilyHeaderVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                  <TextBlock FontSize="17"
-                             FontWeight="SemiBold"
-                             Text="{Binding FamilyLabel}" />
-                  <TextBlock Margin="0,4,0,0"
-                             FontSize="13"
-                             Foreground="{DynamicResource TextSecondaryBrush}"
-                             Text="{Binding FamilyDescription}"
-                             TextWrapping="Wrap"
-                             Visibility="{Binding HasFamilyDescription, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                </StackPanel>
+            <DataTemplate>
+              <ContentControl HorizontalContentAlignment="Stretch"
+                              Content="{Binding}">
+                <ContentControl.Resources>
+                  <DataTemplate DataType="{x:Type viewModels:SettingsGroupHeaderViewModel}">
+                    <Border Margin="18,22,18,6"
+                            Padding="0,0,0,8"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,0,0,1">
+                      <TextBlock FontSize="20"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 Text="{Binding Label}" />
+                    </Border>
+                  </DataTemplate>
+                  <DataTemplate DataType="{x:Type viewModels:SettingsFamilyHeaderViewModel}">
+                    <StackPanel Margin="20,16,20,5">
+                      <TextBlock FontSize="17"
+                                 FontWeight="SemiBold"
+                                 Text="{Binding Label}" />
+                      <TextBlock Margin="0,4,0,0"
+                                 FontSize="13"
+                                 Foreground="{DynamicResource TextSecondaryBrush}"
+                                 Text="{Binding Description}"
+                                 TextWrapping="Wrap"
+                                 Visibility="{Binding HasDescription, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </StackPanel>
+                  </DataTemplate>
+                  <DataTemplate DataType="{x:Type viewModels:SettingsRowViewModel}">
               <Border BorderBrush="{DynamicResource BorderBrush}"
                       BorderThickness="0,0,0,1">
                 <Border x:Name="RowInteractionSurface"
@@ -1001,7 +993,6 @@
                   </Grid>
                 </Border>
               </Border>
-              </StackPanel>
               <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsCompactBindingFamily}" Value="True">
                   <Setter TargetName="RowInteractionSurface"
@@ -1023,6 +1014,9 @@
                           Value="{DynamicResource FocusOuterBrush}" />
                 </Trigger>
               </DataTemplate.Triggers>
+                  </DataTemplate>
+                </ContentControl.Resources>
+              </ContentControl>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>

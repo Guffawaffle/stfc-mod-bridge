@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher.Core.Tests", "tests\STFCCommunityMod.Launcher.Core.Tests\STFCCommunityMod.Launcher.Core.Tests.csproj", "{C32D57D2-4C77-4D57-AC33-B7C9C62A937E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher.Tests", "tests\STFCCommunityMod.Launcher.Tests\STFCCommunityMod.Launcher.Tests.csproj", "{D5B9185D-98E4-4C93-93AC-BE8E4019210E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,5 +28,9 @@ Global
 		{C32D57D2-4C77-4D57-AC33-B7C9C62A937E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C32D57D2-4C77-4D57-AC33-B7C9C62A937E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C32D57D2-4C77-4D57-AC33-B7C9C62A937E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
