@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
              xmlns:behaviors="clr-namespace:STFCCommunityMod.Launcher.Behaviors"
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
              MinWidth="760"
@@ -767,6 +768,90 @@
                                 ToolTip="{Binding RemoveOverrideAvailability}"
                                 automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
                                 automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                      </Grid>
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding IsKeybindingEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <Border Padding="10,8"
+                              Background="{DynamicResource SurfaceMutedBrush}"
+                              BorderThickness="1"
+                              CornerRadius="7"
+                              ToolTip="{Binding KeybindingValidationMessage}"
+                              automation:AutomationProperties.Name="{Binding EditorAutomationName}"
+                              automation:AutomationProperties.HelpText="{Binding KeybindingValidationMessage}">
+                        <Border.Style>
+                          <Style TargetType="Border">
+                            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding KeybindingNeedsAttention}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Border.Style>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock Margin="2,0,8,0"
+                                     VerticalAlignment="Center"
+                                     FontSize="13"
+                                     FontWeight="SemiBold"
+                                     Text="{Binding KeybindingDisplay}"
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTip="{Binding KeybindingDisplay}" />
+                          <controls:KeybindingCaptureButton Grid.Column="1"
+                                                            MinWidth="70"
+                                                            MinHeight="36"
+                                                            Padding="10,6"
+                                                            Style="{StaticResource QuietButtonStyle}"
+                                                            Prompt="Change"
+                                                            CapturedCommand="{Binding ReplaceKeybindingCommand}"
+                                                            IsEnabled="{Binding CanEdit}"
+                                                            automation:AutomationProperties.Name="{Binding Title, StringFormat=Replace shortcut for {0}}"
+                                                            automation:AutomationProperties.HelpText="Press a keyboard key or mouse button. Escape cancels." />
+                          <controls:KeybindingCaptureButton Grid.Column="2"
+                                                            Width="36"
+                                                            Height="36"
+                                                            MinHeight="36"
+                                                            Margin="6,0,0,0"
+                                                            Padding="0"
+                                                            Style="{StaticResource QuietButtonStyle}"
+                                                            Prompt="+"
+                                                            CapturedCommand="{Binding AddKeybindingCommand}"
+                                                            IsEnabled="{Binding CanEdit}"
+                                                            ToolTip="Add another shortcut"
+                                                            automation:AutomationProperties.Name="{Binding Title, StringFormat=Add an alternative shortcut for {0}}"
+                                                            automation:AutomationProperties.HelpText="Press a keyboard key or mouse button. Escape cancels." />
+                        </Grid>
+                      </Border>
+                      <Grid Margin="0,4,0,0">
+                        <TextBlock MaxWidth="168"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Text="{Binding KeybindingValidationMessage}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding KeybindingValidationMessage}"
+                                   Visibility="{Binding KeybindingNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <StackPanel HorizontalAlignment="Right"
+                                    Orientation="Horizontal">
+                          <Button Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding UnbindKeybindingCommand}"
+                                  Content="Unbind"
+                                  ToolTip="Disable this shortcut"
+                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Unbind {0}}" />
+                          <Button Margin="6,0,0,0"
+                                  Style="{StaticResource QuietButtonStyle}"
+                                  Command="{Binding RemoveOverrideCommand}"
+                                  Content="Use default"
+                                  ToolTip="{Binding RemoveOverrideAvailability}"
+                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Use default for {0}}"
+                                  automation:AutomationProperties.HelpText="{Binding RemoveOverrideAvailability}" />
+                        </StackPanel>
                       </Grid>
                     </StackPanel>
 

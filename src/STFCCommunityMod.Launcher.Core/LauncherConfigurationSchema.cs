@@ -72,6 +72,13 @@ public sealed record LauncherConfigurationNumericConstraints(
         && (!Maximum.HasValue || value <= Maximum.Value);
 }
 
+public sealed record LauncherConfigurationKeybindingMetadata(
+    string TriggerMode,
+    string InputPhase,
+    string InputLayer,
+    string ConflictGroup,
+    string ActionCategory);
+
 public sealed class LauncherConfigurationSetting
 {
     internal LauncherConfigurationSetting(
@@ -83,6 +90,7 @@ public sealed class LauncherConfigurationSetting
         LauncherConfigurationValueKind valueKind,
         JsonElement valueTypeDefinition,
         LauncherConfigurationNumericConstraints? numericConstraints,
+        LauncherConfigurationKeybindingMetadata? keybindingMetadata,
         JsonElement defaultValue,
         LauncherConfigurationStability stability,
         IReadOnlyList<LauncherConfigurationPlatform> platforms,
@@ -98,6 +106,7 @@ public sealed class LauncherConfigurationSetting
         ValueKind = valueKind;
         ValueTypeDefinition = valueTypeDefinition;
         NumericConstraints = numericConstraints;
+        KeybindingMetadata = keybindingMetadata;
         DefaultValue = defaultValue;
         Stability = stability;
         Platforms = platforms;
@@ -126,6 +135,8 @@ public sealed class LauncherConfigurationSetting
     public JsonElement ValueTypeDefinition { get; }
 
     public LauncherConfigurationNumericConstraints? NumericConstraints { get; }
+
+    public LauncherConfigurationKeybindingMetadata? KeybindingMetadata { get; }
 
     /// <summary>
     /// A detached copy of the JSON default. Callers may safely retain this value

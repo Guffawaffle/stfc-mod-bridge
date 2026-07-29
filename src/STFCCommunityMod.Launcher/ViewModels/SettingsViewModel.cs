@@ -65,6 +65,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         settingsByPath = settings.ToDictionary(
             setting => setting.Path,
             StringComparer.OrdinalIgnoreCase);
+        RefreshKeybindingConflicts();
 
         FilteredSettings = CollectionViewSource.GetDefaultView(settings);
         FilteredSettings.Filter = ShouldInclude;
@@ -264,7 +265,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(
             SettingsSection.Hotkeys,
             "Hotkeys",
-            "Review bindings and, in the next adapter, capture keys safely.",
+            "Capture keyboard and mouse shortcuts with runtime-aware conflict checks.",
             "Hotkey settings",
             SelectSection),
         new(
@@ -456,6 +457,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         RefreshState(setting);
+        RefreshKeybindingConflicts();
         NotifySessionChanged();
         return true;
     }
@@ -475,6 +477,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         RefreshState(setting);
+        RefreshKeybindingConflicts();
         NotifySessionChanged();
         return true;
     }
@@ -553,6 +556,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             setting.UpdateState(GetValueState(setting.Setting), editSession is not null);
         }
+
+        RefreshKeybindingConflicts();
     }
 
     private void RefreshState(LauncherConfigurationSetting setting)
@@ -560,6 +565,46 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         if (settingsByPath.TryGetValue(setting.Path, out var row))
         {
             row.UpdateState(GetValueState(setting), editSession is not null);
+        }
+    }
+
+    private void RefreshKeybindingConflicts()
+    {
+        var keybindings = settings
+            .Where(row => row.IsKeybindingEditor)
+            .ToArray();
+        foreach (var row in keybindings)
+        {
+            row.SetKeybindingConflict(null);
+        }
+
+        var assignments = keybindings
+            .Select(row => row.ReadKeybindingAssignment())
+            .OfType<LauncherKeybindingAssignment>()
+            .ToArray();
+        var conflicts = LauncherKeybindingConflictDetector.FindConflicts(assignments);
+        foreach (var row in keybindings)
+        {
+            var rowConflicts = conflicts
+                .Where(conflict =>
+                    string.Equals(conflict.First.Path, row.Path, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(conflict.Second.Path, row.Path, StringComparison.OrdinalIgnoreCase))
+                .Select(conflict =>
+                {
+                    var other = string.Equals(
+                        conflict.First.Path,
+                        row.Path,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? conflict.Second
+                        : conflict.First;
+                    return $"{conflict.Chord.Display} conflicts with {other.Title}.";
+                })
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (rowConflicts.Length > 0)
+            {
+                row.SetKeybindingConflict(string.Join(' ', rowConflicts));
+            }
         }
     }
 

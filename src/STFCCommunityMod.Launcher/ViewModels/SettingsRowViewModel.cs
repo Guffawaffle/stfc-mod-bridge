@@ -14,8 +14,12 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsActionCommand removeOverrideCommand;
+    private readonly SettingsActionCommand unbindKeybindingCommand;
+    private readonly SettingsValueCommand<string> replaceKeybindingCommand;
+    private readonly SettingsValueCommand<string> addKeybindingCommand;
     private SettingsValueState valueState;
     private LauncherNotificationPolicyParseResult? notificationPolicy;
+    private string? keybindingConflictMessage;
     private string? numericDraft;
     private string? numericValidationError;
     private string? stringDraft;
@@ -60,17 +64,38 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 or LauncherConfigurationValueKind.Number;
         IsStringEditor = setting.Control == LauncherConfigurationControl.Scalar
             && setting.ValueKind == LauncherConfigurationValueKind.String;
+        IsKeybindingEditor = setting.Control == LauncherConfigurationControl.Keybinding
+            && setting.ValueKind == LauncherConfigurationValueKind.Keybinding;
         IsNotificationEditor = setting.Control == LauncherConfigurationControl.NotificationPolicy;
         IsSpecializedEditor =
-            !IsBooleanEditor && !IsEnumEditor && !IsNumericEditor && !IsStringEditor && !IsNotificationEditor;
+            !IsBooleanEditor
+            && !IsEnumEditor
+            && !IsNumericEditor
+            && !IsStringEditor
+            && !IsKeybindingEditor
+            && !IsNotificationEditor;
         CanEdit = editingAvailable
-            && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor || IsNotificationEditor);
+            && (IsBooleanEditor
+                || IsEnumEditor
+                || IsNumericEditor
+                || IsStringEditor
+                || IsKeybindingEditor
+                || IsNotificationEditor);
         EnumOptions = ReadEnumOptions(setting);
         RefreshNotificationPolicy();
 
         removeOverrideCommand = new SettingsActionCommand(
             RemoveOverride,
             () => editingAvailable && HasOverride);
+        unbindKeybindingCommand = new SettingsActionCommand(
+            UnbindKeybinding,
+            () => CanEdit && IsKeybindingEditor && !CurrentKeybinding().IsUnbound);
+        replaceKeybindingCommand = new SettingsValueCommand<string>(
+            ReplaceKeybinding,
+            _ => CanEdit && IsKeybindingEditor);
+        addKeybindingCommand = new SettingsValueCommand<string>(
+            AddKeybinding,
+            _ => CanEdit && IsKeybindingEditor);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -106,6 +131,8 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public bool IsNumericEditor { get; }
 
     public bool IsStringEditor { get; }
+
+    public bool IsKeybindingEditor { get; }
 
     public bool IsNotificationEditor { get; }
 
@@ -298,6 +325,34 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
     public string NotificationStateText =>
         notificationPolicy?.Policy.IsEnabled == true ? "On" : "Off";
 
+    public string KeybindingDisplay => CurrentKeybinding().Display;
+
+    public bool KeybindingNeedsAttention =>
+        IsKeybindingEditor
+        && (!TryReadEffectiveKeybinding(out var parsed) || !parsed.IsValid
+            || keybindingConflictMessage is not null);
+
+    public string KeybindingValidationMessage
+    {
+        get
+        {
+            if (keybindingConflictMessage is not null)
+            {
+                return keybindingConflictMessage;
+            }
+
+            return !TryReadEffectiveKeybinding(out var parsed) || !parsed.IsValid
+                ? parsed.Error ?? "The configured shortcut is invalid; the runtime default is shown."
+                : "Change replaces this binding. Add keeps this binding as an alternative.";
+        }
+    }
+
+    public ICommand ReplaceKeybindingCommand => replaceKeybindingCommand;
+
+    public ICommand AddKeybindingCommand => addKeybindingCommand;
+
+    public ICommand UnbindKeybindingCommand => unbindKeybindingCommand;
+
     public bool NotificationSystem
     {
         get => notificationPolicy?.Policy.System == true;
@@ -405,17 +460,14 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
                 ? $"{Title}, {EffectiveState}, {NumericText}. {NumericValidationMessage}"
             : IsStringEditor
                 ? $"{Title}, {EffectiveState}, {StringText}. {StringValidationMessage}"
+            : IsKeybindingEditor
+                ? $"{Title}, {EffectiveState}, {KeybindingDisplay}. {KeybindingValidationMessage}"
             : IsNotificationEditor
                 ? $"{Title}, {NotificationStateText}, {NotificationDeliverySummary}. Use the inline delivery controls."
                 : $"{Title} requires its dedicated {Control} editor.";
 
     public string SpecializedEditorMessage =>
-        Setting.Control switch
-        {
-            LauncherConfigurationControl.Keybinding =>
-                "Key capture and conflict detection follow in the Hotkeys adapter.",
-            _ => "This value type is catalogued and awaits its typed editor.",
-        };
+        $"This {Control.ToLowerInvariant()} value is catalogued and awaits its typed editor.";
 
     public ICommand RemoveOverrideCommand => removeOverrideCommand;
 
@@ -448,8 +500,16 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         setInputValidity(Setting, true);
         RefreshNotificationPolicy();
         CanEdit = editingAvailable
-            && (IsBooleanEditor || IsEnumEditor || IsNumericEditor || IsStringEditor || IsNotificationEditor);
+            && (IsBooleanEditor
+                || IsEnumEditor
+                || IsNumericEditor
+                || IsStringEditor
+                || IsKeybindingEditor
+                || IsNotificationEditor);
         removeOverrideCommand.RaiseCanExecuteChanged();
+        unbindKeybindingCommand.RaiseCanExecuteChanged();
+        replaceKeybindingCommand.RaiseCanExecuteChanged();
+        addKeybindingCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(HasOverride));
         OnPropertyChanged(nameof(IsStaged));
@@ -463,6 +523,7 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EnumValidationMessage));
         NotifyNumericStateChanged();
         NotifyStringStateChanged();
+        NotifyKeybindingStateChanged();
         OnPropertyChanged(nameof(NotificationStateText));
         OnPropertyChanged(nameof(NotificationSystem));
         OnPropertyChanged(nameof(NotificationAudio));
@@ -573,7 +634,112 @@ public sealed class SettingsRowViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(EnumValidationMessage));
             NotifyNumericStateChanged();
             NotifyStringStateChanged();
+            NotifyKeybindingStateChanged();
         }
+    }
+
+    internal LauncherKeybindingAssignment? ReadKeybindingAssignment()
+    {
+        if (!IsKeybindingEditor
+            || !TryReadEffectiveKeybinding(out var binding)
+            || !binding.IsValid)
+        {
+            return null;
+        }
+
+        return new(Setting, binding);
+    }
+
+    internal void SetKeybindingConflict(string? message)
+    {
+        if (string.Equals(keybindingConflictMessage, message, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        keybindingConflictMessage = message;
+        setInputValidity(Setting, message is null);
+        NotifyKeybindingStateChanged();
+    }
+
+    private void ReplaceKeybinding(string chord)
+    {
+        var parsed = LauncherKeybindingValue.Parse(chord);
+        if (!CanEdit
+            || !parsed.IsValid
+            || parsed.IsUnbound
+            || !stageValue(Setting, LauncherTomlValue.RenderString(parsed.Normalized)))
+        {
+            return;
+        }
+
+        NotifyKeybindingStateChanged();
+    }
+
+    private void AddKeybinding(string chord)
+    {
+        var captured = LauncherKeybindingValue.Parse(chord);
+        if (!CanEdit || !captured.IsValid || captured.IsUnbound)
+        {
+            return;
+        }
+
+        var current = CurrentKeybinding();
+        var combined = current.IsUnbound
+            ? captured
+            : LauncherKeybindingValue.Parse($"{current.Normalized}|{captured.Normalized}");
+        if (combined.IsValid
+            && stageValue(Setting, LauncherTomlValue.RenderString(combined.Normalized)))
+        {
+            NotifyKeybindingStateChanged();
+        }
+    }
+
+    private void UnbindKeybinding()
+    {
+        if (CanEdit
+            && stageValue(Setting, LauncherTomlValue.RenderString("NONE")))
+        {
+            NotifyKeybindingStateChanged();
+        }
+    }
+
+    private LauncherKeybindingParseResult CurrentKeybinding()
+    {
+        if (TryReadEffectiveKeybinding(out var binding) && binding.IsValid)
+        {
+            return binding;
+        }
+
+        return LauncherKeybindingValue.Parse(Setting.DefaultValue.GetString()!);
+    }
+
+    private bool TryReadEffectiveKeybinding(
+        out LauncherKeybindingParseResult binding)
+    {
+        binding = LauncherKeybindingValue.Parse("NONE");
+        if (!IsKeybindingEditor || valueState.EffectiveValue is not string text)
+        {
+            return false;
+        }
+
+        if ((HasOverride || IsStaged)
+            && LauncherTomlValue.TryReadString(text, out var parsedText))
+        {
+            text = parsedText;
+        }
+
+        binding = LauncherKeybindingValue.Parse(text);
+        return true;
+    }
+
+    private void NotifyKeybindingStateChanged()
+    {
+        unbindKeybindingCommand.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(KeybindingDisplay));
+        OnPropertyChanged(nameof(KeybindingNeedsAttention));
+        OnPropertyChanged(nameof(KeybindingValidationMessage));
+        OnPropertyChanged(nameof(EditorAutomationName));
     }
 
     private string ReadStringText()

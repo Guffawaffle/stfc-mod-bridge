@@ -121,10 +121,12 @@ public static class LauncherConfigurationSchemaLoader
         ValidateControlAndValueKind(control, valueKind, path);
         ValidateStringFormat(valueType, valueKind, path);
         var numericConstraints = ReadNumericConstraints(element, valueKind, path);
+        var keybindingMetadata = ReadKeybindingMetadata(valueType, valueKind, path);
 
         var defaultValue = ReadRequiredProperty(element, "default", context);
         ValidateDefault(defaultValue, valueKind, valueType, path);
         ValidateDefaultConstraints(defaultValue, numericConstraints, path);
+        ValidateKeybindingDefault(defaultValue, keybindingMetadata, path);
 
         var stability = ParseStability(ReadRequiredString(element, "stability", context), path);
         var sensitivity = ParseSensitivity(ReadRequiredString(element, "sensitivity", context), path);
@@ -150,12 +152,66 @@ public static class LauncherConfigurationSchemaLoader
             valueKind,
             valueType.Clone(),
             numericConstraints,
+            keybindingMetadata,
             defaultValue.Clone(),
             stability,
             platforms,
             sourceSupport,
             sensitivity,
             apply);
+    }
+
+    private static LauncherConfigurationKeybindingMetadata? ReadKeybindingMetadata(
+        JsonElement valueType,
+        LauncherConfigurationValueKind valueKind,
+        string path)
+    {
+        if (valueKind != LauncherConfigurationValueKind.Keybinding)
+        {
+            return null;
+        }
+
+        if (!valueType.TryGetProperty("multiple", out var multiple)
+            || multiple.ValueKind is not JsonValueKind.True)
+        {
+            throw Invalid($"Keybinding setting '{path}' must support multiple alternatives.");
+        }
+
+        var unbound = ReadRequiredString(valueType, "unbound", $"keybinding setting '{path}'");
+        if (!string.Equals(unbound, "NONE", StringComparison.Ordinal))
+        {
+            throw Invalid($"Keybinding setting '{path}' declares unsupported unbound value '{unbound}'.");
+        }
+
+        var triggerMode = ReadRequiredString(valueType, "triggerMode", $"keybinding setting '{path}'");
+        if (triggerMode is not ("Down" or "Pressed"))
+        {
+            throw Invalid($"Keybinding setting '{path}' declares unsupported trigger mode '{triggerMode}'.");
+        }
+
+        return new(
+            triggerMode,
+            ReadRequiredString(valueType, "inputPhase", $"keybinding setting '{path}'"),
+            ReadRequiredString(valueType, "inputLayer", $"keybinding setting '{path}'"),
+            ReadRequiredString(valueType, "conflictGroup", $"keybinding setting '{path}'"),
+            ReadRequiredString(valueType, "actionCategory", $"keybinding setting '{path}'"));
+    }
+
+    private static void ValidateKeybindingDefault(
+        JsonElement defaultValue,
+        LauncherConfigurationKeybindingMetadata? metadata,
+        string path)
+    {
+        if (metadata is null)
+        {
+            return;
+        }
+
+        var parsed = LauncherKeybindingValue.Parse(defaultValue.GetString()!);
+        if (!parsed.IsValid)
+        {
+            throw Invalid($"Keybinding setting '{path}' has an invalid default: {parsed.Error}");
+        }
     }
 
     private static void ValidateStringFormat(

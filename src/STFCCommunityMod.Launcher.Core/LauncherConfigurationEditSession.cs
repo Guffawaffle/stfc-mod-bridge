@@ -319,6 +319,13 @@ public sealed class LauncherConfigurationEditSession
             return InvalidValue(setting, stringValidationError);
         }
 
+        if (setting.ValueKind == LauncherConfigurationValueKind.Keybinding
+            && LauncherTomlValue.TryReadString(renderedTomlValue, out var keybindingValue)
+            && LauncherKeybindingValue.Parse(keybindingValue) is { IsValid: false } keybinding)
+        {
+            return InvalidValue(setting, keybinding.Error ?? "The shortcut binding is invalid.");
+        }
+
         if (setting.NumericConstraints is { } numericConstraints)
         {
             if (!TryReadConstrainedNumber(setting, renderedTomlValue, out var number))
@@ -398,11 +405,16 @@ public sealed class LauncherConfigurationEditSession
         return setting.ValueKind switch
         {
             LauncherConfigurationValueKind.String
-                or LauncherConfigurationValueKind.Keybinding
                 or LauncherConfigurationValueKind.Enum =>
                 LauncherTomlValue.TryReadString(first, out var firstValue)
                 && LauncherTomlValue.TryReadString(second, out var secondValue)
                 && string.Equals(firstValue, secondValue, StringComparison.Ordinal),
+            LauncherConfigurationValueKind.Keybinding =>
+                LauncherTomlValue.TryReadString(first, out var firstBinding)
+                && LauncherTomlValue.TryReadString(second, out var secondBinding)
+                && LauncherKeybindingValue.Parse(firstBinding) is { IsValid: true } firstParsed
+                && LauncherKeybindingValue.Parse(secondBinding) is { IsValid: true } secondParsed
+                && string.Equals(firstParsed.Normalized, secondParsed.Normalized, StringComparison.Ordinal),
             LauncherConfigurationValueKind.Integer =>
                 LauncherTomlValue.TryReadInteger(first, out var firstInteger)
                 && LauncherTomlValue.TryReadInteger(second, out var secondInteger)
@@ -429,7 +441,6 @@ public sealed class LauncherConfigurationEditSession
                 when setting.DefaultValue.ValueKind is JsonValueKind.True or JsonValueKind.False =>
                 renderedValue == (setting.DefaultValue.GetBoolean() ? "true" : "false"),
             LauncherConfigurationValueKind.String
-                or LauncherConfigurationValueKind.Keybinding
                 or LauncherConfigurationValueKind.Enum
                 when setting.DefaultValue.ValueKind == JsonValueKind.String
                      && LauncherTomlValue.TryReadString(renderedValue, out var value) =>
@@ -437,6 +448,12 @@ public sealed class LauncherConfigurationEditSession
                     value,
                     setting.DefaultValue.GetString(),
                     StringComparison.Ordinal),
+            LauncherConfigurationValueKind.Keybinding
+                when setting.DefaultValue.ValueKind == JsonValueKind.String
+                     && LauncherTomlValue.TryReadString(renderedValue, out var binding)
+                     && LauncherKeybindingValue.Parse(binding) is { IsValid: true } parsed
+                     && LauncherKeybindingValue.Parse(setting.DefaultValue.GetString()!) is { IsValid: true } defaultParsed =>
+                string.Equals(parsed.Normalized, defaultParsed.Normalized, StringComparison.Ordinal),
             LauncherConfigurationValueKind.Integer
                 when setting.DefaultValue.TryGetInt64(out var defaultInteger)
                      && LauncherTomlValue.TryReadInteger(renderedValue, out var integer) =>
