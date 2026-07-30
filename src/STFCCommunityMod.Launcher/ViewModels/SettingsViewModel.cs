@@ -12,7 +12,7 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 public sealed class SettingsViewModel : INotifyPropertyChanged
 {
     private readonly LauncherConfigurationCatalog catalog;
-    private readonly AtomicTomlStore store;
+    private readonly IConfigurationRepository repository;
     private readonly Func<string?> configurationPathProvider;
     private readonly ILauncherSettingsLayoutProvider layoutProvider;
     private readonly LauncherSettingsActivationDiagnostics settingsDiagnostics;
@@ -30,8 +30,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
-    private LauncherConfigurationEditSession? editSession;
-    private string? loadedConfigurationPath;
+    private ConfigurationWorkspace? workspace;
     private string searchText = string.Empty;
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
@@ -45,7 +44,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         Func<string?> configurationPathProvider,
         ILauncherSettingsLayoutProvider layoutProvider,
         LauncherSettingsActivationDiagnostics settingsDiagnostics,
-        AtomicTomlStore? store = null,
+        IConfigurationRepository? repository = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -57,7 +56,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             layoutProvider ?? throw new ArgumentNullException(nameof(layoutProvider));
         this.settingsDiagnostics =
             settingsDiagnostics ?? throw new ArgumentNullException(nameof(settingsDiagnostics));
-        this.store = store ?? new AtomicTomlStore();
+        this.repository = repository ?? new TomlConfigurationRepository();
         this.uiPreferencesStore = uiPreferencesStore;
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
@@ -185,7 +184,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? "Open the active configuration as raw TOML."
             : "Raw TOML becomes available after the launcher selects an active configuration.";
 
-    public bool IsConfigurationReady => editSession is not null;
+    public bool IsConfigurationReady => workspace is not null;
 
     public string DetectedRuntime => settingsDiagnostics.DetectedRuntime;
 
@@ -203,7 +202,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? "Changes are staged until you save."
             : "Select a game folder with a supported configuration to enable editing.";
 
-    public int PendingChangeCount => editSession?.PendingChangeCount ?? 0;
+    public int PendingChangeCount => workspace?.PendingChangeCount ?? 0;
 
     public bool HasPendingChanges => PendingChangeCount > 0;
 
@@ -368,42 +367,34 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void TryLoadConfiguration()
     {
-        editSession = null;
-        loadedConfigurationPath = null;
+        workspace = null;
         var path = configurationPathProvider();
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        var load = ConfigurationWorkspace.Load(
+            path,
+            catalog,
+            repository,
+            out var loadedWorkspace);
+        if (load.State == ConfigurationRepositoryReadState.NoConfigurationSelected)
         {
             OperationStatus = string.Empty;
             return;
         }
 
-        try
+        if (!load.IsSuccess || loadedWorkspace is null)
         {
-            var contents = File.ReadAllBytes(path);
-            var load = LauncherConfigurationEditSession.Load(contents, catalog, out var session);
-            if (!load.IsValid || session is null)
-            {
-                OperationStatus =
-                    $"Editing is unavailable because the TOML could not be loaded safely: {load.Error?.Message}";
-                return;
-            }
+            OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
+                ? $"Editing is unavailable because the TOML could not be loaded safely: {load.ValidationError?.Message}"
+                : $"Editing is unavailable: {load.Error}";
+            return;
+        }
 
-            editSession = session;
-            loadedConfigurationPath = Path.GetFullPath(path);
-            OperationStatus = string.Empty;
-        }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or NotSupportedException)
-        {
-            OperationStatus = $"Editing is unavailable: {exception.Message}";
-        }
+        workspace = loadedWorkspace;
+        OperationStatus = string.Empty;
     }
 
     private SettingsValueState GetValueState(LauncherConfigurationSetting setting)
     {
-        if (editSession is null)
+        if (workspace is null)
         {
             var defaultValue = SettingsRowViewModelValue(setting.DefaultValue);
             return new(
@@ -415,7 +406,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 false);
         }
 
-        var state = editSession.GetState(setting);
+        var state = workspace.GetState(setting);
         return new(
             state.DefaultValue,
             state.SavedEffectiveValue,
@@ -440,12 +431,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
-        if (editSession is null)
+        if (workspace is null)
         {
             return false;
         }
 
-        var result = editSession.StageSet(setting, renderedTomlValue);
+        var result = workspace.StageSet(setting, renderedTomlValue);
         OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The change is not valid.";
         if (!result.IsValid)
         {
@@ -460,12 +451,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool StageRemove(LauncherConfigurationSetting setting)
     {
-        if (editSession is null)
+        if (workspace is null)
         {
             return false;
         }
 
-        var result = editSession.StageRemove(setting);
+        var result = workspace.StageRemove(setting);
         OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The override could not be removed.";
         if (!result.IsValid)
         {
@@ -480,12 +471,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
-        if (editSession is null)
+        if (workspace is null)
         {
             return false;
         }
 
-        var result = editSession.Revert(setting);
+        var result = workspace.Revert(setting);
         OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The change could not be reverted.";
         if (!result.IsValid)
         {
@@ -524,7 +515,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void Discard()
     {
         var selectedConfigurationChanged = !ConfigurationPathMatchesLoadedSession();
-        editSession?.Discard();
+        workspace?.Discard();
         if (selectedConfigurationChanged)
         {
             TryLoadConfiguration();
@@ -540,7 +531,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private async Task SaveAsync()
     {
-        if (editSession is null)
+        if (workspace is null)
         {
             return;
         }
@@ -553,7 +544,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         OperationStatus = "Saving changes…";
-        var result = await editSession.SaveAsync(loadedConfigurationPath, store);
+        var result = await workspace.CommitAsync();
         OperationStatus = result.State switch
         {
             AtomicTomlWriteState.Succeeded =>
@@ -576,7 +567,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         foreach (var setting in projectedRowsByPath.Values)
         {
-            setting.UpdateState(GetValueState(setting.Setting), editSession is not null);
+            setting.UpdateState(GetValueState(setting.Setting), workspace is not null);
         }
 
         RefreshKeybindingConflicts();
@@ -586,7 +577,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         if (projectedRowsByPath.TryGetValue(setting.Path, out var row))
         {
-            row.UpdateState(GetValueState(setting), editSession is not null);
+            row.UpdateState(GetValueState(setting), workspace is not null);
         }
     }
 
@@ -692,7 +683,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         var currentPath = configurationPathProvider();
         if (string.IsNullOrWhiteSpace(currentPath)
-            || string.IsNullOrWhiteSpace(loadedConfigurationPath))
+            || workspace is null)
         {
             return false;
         }
@@ -701,7 +692,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             return string.Equals(
                 Path.GetFullPath(currentPath),
-                loadedConfigurationPath,
+                workspace.DocumentPath,
                 OperatingSystem.IsWindows()
                     ? StringComparison.OrdinalIgnoreCase
                     : StringComparison.Ordinal);
@@ -745,7 +736,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     var row = new SettingsRowViewModel(
                         setting.Setting,
                         GetValueState(setting.Setting),
-                        editSession is not null,
+                        workspace is not null,
                         StageValue,
                         StageRemove,
                         RevertDraft,

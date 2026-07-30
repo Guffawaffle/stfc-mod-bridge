@@ -182,6 +182,24 @@ public sealed class LauncherConfigurationEditSession
 
     public void Discard() => stagedChanges.Clear();
 
+    internal ConfigurationChangeSet BuildChangeSet() =>
+        new(
+            stagedChanges
+                .OrderBy(change => change.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(
+                    change =>
+                        new ConfigurationSemanticChange(
+                            change.Key,
+                            settingsByPath[change.Key],
+                            change.Value.IsRemoval
+                                ? ConfigurationSemanticChangeKind.ClearOverride
+                                : ConfigurationSemanticChangeKind.SetOverride,
+                            change.Value.IsRemoval
+                                ? null
+                                : ReadSemanticValue(
+                                    settingsByPath[change.Key],
+                                    change.Value.RenderedValue!))));
+
     public SparseTomlEditResult BuildDraft()
     {
         var contents = baselineContents;
@@ -241,19 +259,37 @@ public sealed class LauncherConfigurationEditSession
             return result;
         }
 
-        var load = SparseTomlDocument.Load(draft.Contents, out var savedDocument);
-        var read = savedDocument?.ReadOverrides();
-        if (!load.IsValid || savedDocument is null || read is null || !read.IsValid || read.Overrides is null)
-        {
-            return new(
+        var accepted = AcceptCommittedBaseline(draft.Contents);
+        return accepted.IsValid
+            ? result
+            : new(
                 AtomicTomlWriteState.Invalid,
-                ValidationError: load.Error ?? read?.Error);
+                ValidationError: accepted.Error);
+    }
+
+    internal SparseTomlEditResult AcceptCommittedBaseline(byte[] contents)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        var load = SparseTomlDocument.Load(contents, out var savedDocument);
+        var read = savedDocument?.ReadOverrides();
+        if (!load.IsValid
+            || savedDocument is null
+            || read is null
+            || !read.IsValid
+            || read.Overrides is null)
+        {
+            return SparseTomlEditResult.Invalid(
+                load.Error
+                ?? read?.Error
+                ?? new SparseTomlError(
+                    SparseTomlErrorCode.UnsupportedDocument,
+                    "The committed configuration baseline could not be read."));
         }
 
-        baselineContents = [.. draft.Contents];
+        baselineContents = [.. contents];
         baselineOverrides = read.Overrides;
         stagedChanges.Clear();
-        return result;
+        return SparseTomlEditResult.Unchanged([.. contents]);
     }
 
     private void EnsureKnownSetting(string path)
@@ -363,6 +399,51 @@ public sealed class LauncherConfigurationEditSession
         }
 
         return null;
+    }
+
+    private static object ReadSemanticValue(
+        LauncherConfigurationSetting setting,
+        string renderedTomlValue)
+    {
+        return setting.ValueKind switch
+        {
+            LauncherConfigurationValueKind.Boolean =>
+                renderedTomlValue == "true",
+            LauncherConfigurationValueKind.Integer
+                when LauncherTomlValue.TryReadInteger(
+                    renderedTomlValue,
+                    out var integer) =>
+                integer,
+            LauncherConfigurationValueKind.Number
+                when LauncherTomlValue.TryReadNumber(
+                    renderedTomlValue,
+                    out var number) =>
+                number,
+            LauncherConfigurationValueKind.String
+                or LauncherConfigurationValueKind.Enum
+                when LauncherTomlValue.TryReadString(
+                    renderedTomlValue,
+                    out var text) =>
+                text,
+            LauncherConfigurationValueKind.Keybinding
+                when LauncherTomlValue.TryReadString(
+                    renderedTomlValue,
+                    out var binding)
+                && LauncherKeybindingValue.Parse(binding) is
+                { IsValid: true } parsedBinding =>
+                parsedBinding.Normalized,
+            LauncherConfigurationValueKind.Union
+                when setting.Control
+                    == LauncherConfigurationControl.NotificationPolicy
+                && LauncherNotificationPolicyParser.Parse(
+                    setting,
+                    renderedTomlValue) is
+                { IsValid: true } parsedPolicy =>
+                parsedPolicy.Policy,
+            _ => throw new InvalidOperationException(
+                $"The staged value for '{setting.Path}' could not be converted "
+                + "to its typed configuration value."),
+        };
     }
 
     private static bool TryReadConstrainedNumber(
