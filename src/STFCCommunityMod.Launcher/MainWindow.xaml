@@ -368,6 +368,7 @@
                 SelectedValuePath="Mode"
                 SelectionChanged="ColorModeSelector_SelectionChanged"
                 ToolTip="Choose how the launcher follows light and dark appearance."
+                Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                 automation:AutomationProperties.Name="Launcher color mode"
                 automation:AutomationProperties.HelpText="Choose System, Light, or Dark. System follows the Windows app theme." />

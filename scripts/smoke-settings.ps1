@@ -159,6 +159,27 @@ function Find-ColorModeSelector {
   throw "UI Automation did not expose a Launcher color mode ComboBox with a selected System, Light, or Dark value."
 }
 
+function Test-ColorModeSelectorPresent {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Root
+  )
+
+  $elements = $Root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition)
+  foreach ($element in $elements) {
+    if ($element.Current.ControlType -eq
+        [System.Windows.Automation.ControlType]::ComboBox -and
+        $element.Current.Name -match
+        '^Launcher color mode, (System|Light|Dark)$') {
+      return $true
+    }
+  }
+
+  return $false
+}
+
 function Invoke-AutomationElement {
   param(
     [Parameter(Mandatory)]
@@ -286,9 +307,10 @@ try {
     -Name "Close launcher" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
-
-  $appearance = Find-ColorModeSelector -Root $root -Deadline $deadline
-  Write-Host "Appearance selector exposes selected value: $($appearance.SelectedMode)"
+  if (Test-ColorModeSelectorPresent -Root $root) {
+    throw "The appearance selector must not consume title space on launcher Home."
+  }
+  Write-Host "PASS: launcher Home omits the appearance selector."
 
   $settingsEntry = Find-AutomationElement `
     -Root $root `
@@ -303,6 +325,8 @@ try {
     -Name "Return to launcher home" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline)
+  $appearance = Find-ColorModeSelector -Root $root -Deadline $settingsDeadline
+  Write-Host "Settings appearance selector exposes selected value: $($appearance.SelectedMode)"
   [void](Find-AutomationElement `
     -Root $root `
     -Name "General settings" `

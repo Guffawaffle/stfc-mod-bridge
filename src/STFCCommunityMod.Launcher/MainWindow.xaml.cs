@@ -233,6 +233,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
 
         MinWidth = isOpen ? SettingsWidth : 560;
         MinHeight = isOpen ? 680 : 500;
