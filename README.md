@@ -4,8 +4,9 @@ This directory contains the Windows launcher parity+ implementation. `WL-001`
 established the build, test, high-DPI shell, per-user ownership model, signing,
 and self-contained packaging shape. The integrated launcher now includes
 bounded installation discovery, explicit `prime.exe` validation,
-user-confirmed selection, composable read-only health, the accepted compact
-Light/Dark Home, and the first schema-driven Settings workspace.
+user-confirmed selection, composable health, the accepted compact Light/Dark
+Home, a schema-driven Settings workspace, and verified transactional mod
+deployment.
 
 ## Projects
 
@@ -16,11 +17,9 @@ Light/Dark Home, and the first schema-driven Settings workspace.
   installed STFC dependency.
 
 The Settings workspace loads the generated Guffawaffle schema embedded in the
-launcher package. Its current vertical slice provides search, category
-filtering, source identity, defaults, raw-file access gating, and the
-source-preserving TOML/atomic-write core. Concrete scalar, hotkey, and
-notification editors plus staged Save/Discard integration remain in `WL-006`;
-disabled actions stay visibly unavailable rather than acting as no-ops.
+launcher package. It provides search, category filtering, source identity,
+defaults, concrete scalar/hotkey/notification editors, and a revisioned
+Save/Discard session over the source-preserving TOML/atomic-write core.
 
 ## Build and test
 
@@ -45,14 +44,19 @@ a small launcher manifest under `windows-launcher/artifacts/`.
 
 ## Current safety boundary
 
-The current launcher is deliberately read-only with respect to the game
-installation. It may inspect whether `prime.exe` is running, read the official
-launcher's exact `GAME_PATH` setting, validate bounded conventional or
-user-selected folders, persist a confirmed selection under launcher-owned
-state, load the configuration catalog, and open an existing TOML file through
-an explicit user action. The tested TOML engine is not wired to UI mutation
-until the staged Save/Discard session is in place. Deployment, update, repair,
-configuration save, and launch mutations belong to their dependent work items.
+The launcher reads the official launcher's exact `GAME_PATH` setting, validates
+bounded conventional or user-selected folders, and persists a confirmed
+selection under launcher-owned state. It can edit the selected installation's
+TOML through an explicit revisioned Save/Discard session.
+
+Mod installation and update are explicit, game-closed transactions. The
+launcher accepts only the canonical Windows artifact selected from the signed
+release contract, verifies its HTTPS response, size, SHA-256, Authenticode
+publisher, and embedded version, and commits only `version.dll` through a
+persistent same-volume rollback journal. A pre-existing manual DLL is never
+silently claimed; the player must explicitly adopt it and its previous bytes
+are preserved. Recovery, uninstall, launch handoff, diagnostics, and launcher
+self-update are completed in their dependent work items before the v1 release.
 
 See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
 [the discovery and health contract](../docs/windows-launcher/DISCOVERY_AND_HEALTH.md),

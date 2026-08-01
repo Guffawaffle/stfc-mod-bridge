@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using STFCCommunityMod.Launcher.Core;
 
@@ -8,15 +9,25 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 internal sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly LauncherEnvironmentProbe environmentProbe;
+    private readonly ModManagementCoordinator modManagementCoordinator;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
+    private ModManagementPresentation modPresentation;
     private string selectionFeedback = string.Empty;
+    private string modOperationFeedback = string.Empty;
+    private bool isModOperationInProgress;
 
-    private MainWindowViewModel(LauncherEnvironmentProbe environmentProbe)
+    private MainWindowViewModel(
+        LauncherEnvironmentProbe environmentProbe,
+        ModManagementCoordinator modManagementCoordinator)
     {
         this.environmentProbe = environmentProbe;
+        this.modManagementCoordinator = modManagementCoordinator;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
+        modPresentation = modManagementCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            snapshot.IsGameRunning);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -43,6 +54,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool IsGameRunning => presentation.IsGameRunning;
 
+    public string ModStatus => modPresentation.Status;
+
+    public LauncherHomeTone ModTone => modPresentation.Tone;
+
+    public string ModActionLabel => isModOperationInProgress ? "Working…" : modPresentation.ActionLabel;
+
+    public string ModActionAutomationName => isModOperationInProgress
+        ? "Community mod operation in progress"
+        : modPresentation.AutomationName;
+
+    public bool CanManageMod => modPresentation.CanExecute && !isModOperationInProgress;
+
+    public string ModOperationFeedback => modOperationFeedback;
+
+    public bool HasModOperationFeedback => !string.IsNullOrWhiteSpace(modOperationFeedback);
+
+    public bool IsModOperationInProgress => isModOperationInProgress;
+
+    public string? SelectedGameDirectory => snapshot.SelectedGameDirectory;
+
     public string SelectionFeedback => selectionFeedback;
 
     public bool HasSelectionFeedback => !string.IsNullOrWhiteSpace(selectionFeedback);
@@ -62,9 +93,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             ? null
             : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
 
-    public static MainWindowViewModel CreateDefault()
+    public static MainWindowViewModel CreateDefault(HttpClient httpClient)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
+        var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
             new JsonGameInstallSelectionStore(installLayout.StateDirectory),
             [
@@ -72,11 +105,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 BoundedGameInstallCandidateProvider.FromCurrentMachine(),
             ]);
 
+        var deploymentService = new ModDeploymentService(
+            installLayout.StateDirectory,
+            new HttpModArtifactDownloader(httpClient),
+            new WindowsModArtifactVersionReader(),
+            new WindowsAuthenticodeVerifier("Joseph Gustavson"),
+            processInspector.IsGameRunning);
         return new(
             new LauncherEnvironmentProbe(
-                new SystemGameProcessInspector(),
+                processInspector,
                 installLayout,
-                installDiscovery));
+                installDiscovery),
+            new ModManagementCoordinator(
+                deploymentService,
+                new GitHubWindowsReleaseClient(httpClient),
+                new Version(0, 1, 0)));
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -93,6 +136,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
+        modPresentation = modManagementCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            snapshot.IsGameRunning);
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
         OnPropertyChanged(nameof(GameFolderTone));
@@ -104,8 +150,120 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(GameClientTone));
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
+        NotifyModPresentationChanged();
         OnPropertyChanged(nameof(InitialBrowseDirectory));
         OnPropertyChanged(nameof(ConfigurationFilePath));
+        OnPropertyChanged(nameof(SelectedGameDirectory));
+    }
+
+    public async Task<ModOperationPreparation?> PrepareModOperationAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanManageMod || snapshot.SelectedGameDirectory is null)
+        {
+            return null;
+        }
+
+        SetModOperationState(true, "Checking the selected release…");
+        try
+        {
+            var preparation = await modManagementCoordinator.PrepareLatestAsync(
+                snapshot.SelectedGameDirectory,
+                snapshot.IsGameRunning,
+                cancellationToken);
+            if (preparation.State == ModOperationPreparationState.UpToDate)
+            {
+                modOperationFeedback = preparation.Message;
+                OnPropertyChanged(nameof(ModOperationFeedback));
+                OnPropertyChanged(nameof(HasModOperationFeedback));
+            }
+            else
+            {
+                modOperationFeedback = $"Community mod {preparation.ReleaseVersion} is ready for confirmation.";
+            }
+            return preparation;
+        }
+        catch (OperationCanceledException)
+        {
+            modOperationFeedback = "The release check was canceled or timed out.";
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException
+                or InvalidDataException
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            modOperationFeedback = $"Could not prepare the mod operation: {exception.Message}";
+            OnPropertyChanged(nameof(ModOperationFeedback));
+            OnPropertyChanged(nameof(HasModOperationFeedback));
+            return null;
+        }
+        finally
+        {
+            SetModOperationState(false, modOperationFeedback);
+        }
+    }
+
+    public async Task<ModDeploymentResult?> ExecuteModOperationAsync(
+        ModOperationPreparation preparation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preparation);
+        if (isModOperationInProgress)
+        {
+            return null;
+        }
+
+        SetModOperationState(true, "Installing the verified community mod…");
+        try
+        {
+            var result = await modManagementCoordinator.ExecuteAsync(preparation, cancellationToken);
+            modOperationFeedback = result.Message;
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            modOperationFeedback = "The mod operation was canceled.";
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException
+                or HttpRequestException)
+        {
+            modOperationFeedback = $"The mod operation failed: {exception.Message}";
+            return null;
+        }
+        finally
+        {
+            SetModOperationState(false, modOperationFeedback);
+            Refresh();
+        }
+    }
+
+    private void SetModOperationState(bool isInProgress, string feedback)
+    {
+        isModOperationInProgress = isInProgress;
+        modOperationFeedback = feedback;
+        OnPropertyChanged(nameof(IsModOperationInProgress));
+        OnPropertyChanged(nameof(ModActionLabel));
+        OnPropertyChanged(nameof(ModActionAutomationName));
+        OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(ModOperationFeedback));
+        OnPropertyChanged(nameof(HasModOperationFeedback));
+    }
+
+    private void NotifyModPresentationChanged()
+    {
+        OnPropertyChanged(nameof(ModStatus));
+        OnPropertyChanged(nameof(ModTone));
+        OnPropertyChanged(nameof(ModActionLabel));
+        OnPropertyChanged(nameof(ModActionAutomationName));
+        OnPropertyChanged(nameof(CanManageMod));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

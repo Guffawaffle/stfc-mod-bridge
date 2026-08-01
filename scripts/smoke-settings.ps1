@@ -312,6 +312,25 @@ try {
   }
   Write-Host "PASS: launcher Home omits the appearance selector."
 
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Community mod status" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
+    -Deadline $deadline)
+  $buttonCondition = [System.Windows.Automation.PropertyCondition]::new(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::Button)
+  $homeButtons = $root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    $buttonCondition)
+  $modAction = $homeButtons | Where-Object {
+    $_.Current.Name -match '(?i)community mod'
+  } | Select-Object -First 1
+  if ($null -eq $modAction) {
+    throw "Launcher Home did not expose an accessible community-mod action."
+  }
+  Write-Host "PASS: launcher Home exposes community-mod state and action '$($modAction.Current.Name)'."
+
   $settingsEntry = Find-AutomationElement `
     -Root $root `
     -Name "Open launcher settings" `

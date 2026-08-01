@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Automation;
@@ -16,7 +18,7 @@ namespace STFCCommunityMod.Launcher;
 public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarget
 {
     private const double HomeWidth = 680;
-    private const double HomeHeight = 590;
+    private const double HomeHeight = 680;
     private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
     private const string GuffawaffleSchemaResource =
@@ -30,6 +32,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private LauncherTheme currentTheme;
     private readonly IGameProcessStateMonitor processStateMonitor;
+    private readonly HttpClient httpClient;
+    private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly LauncherStartupComposition startupComposition;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
@@ -40,6 +44,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
     private bool isColorModeSelectorReady;
+    private ModOperationPreparation? pendingModOperation;
 
     public MainWindow()
         : this(
@@ -56,6 +61,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
         this.startupComposition =
             startupComposition ?? throw new ArgumentNullException(nameof(startupComposition));
+        httpClient = new HttpClient(new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.All,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(45),
+        };
         shellLifecycleController = new(this);
         InitializeComponent();
         uiPreferencesStore = new JsonLauncherUiPreferencesStore(
@@ -66,7 +78,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.SelectedValue = selectedColorMode;
         isColorModeSelectorReady = true;
         UpdateColorModeSelectorAccessibility();
-        DataContext = MainWindowViewModel.CreateDefault();
+        DataContext = MainWindowViewModel.CreateDefault(httpClient);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -94,8 +106,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         isDisposed = true;
+        lifetimeCancellation.Cancel();
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
+        httpClient.Dispose();
+        lifetimeCancellation.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -137,6 +152,58 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             viewModel.ConfirmManualSelection(dialog.FolderName);
             shellLifecycleController.HandleGameInstallationChanged();
         }
+    }
+
+    private async void ModActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        pendingModOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
+        if (isDisposed)
+        {
+            return;
+        }
+        if (pendingModOperation is null
+            || pendingModOperation.State != ModOperationPreparationState.Ready)
+        {
+            return;
+        }
+
+        ModOperationDialog.DialogTitle = pendingModOperation.ExistingArtifactPolicy
+            == ExistingArtifactPolicy.AdoptAndPreserve
+            ? "Adopt and update community mod?"
+            : "Install community mod?";
+        ModOperationSummary.Text = pendingModOperation.Message;
+        ModOperationTarget.Text = pendingModOperation.GameDirectory;
+        ConfirmModOperationButton.Content = pendingModOperation.ExistingArtifactPolicy
+            == ExistingArtifactPolicy.AdoptAndPreserve
+            ? "_Adopt and install"
+            : "_Install";
+        ModOperationDialog.IsOpen = true;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () => ConfirmModOperationButton.Focus());
+    }
+
+    private async void ConfirmModOperationButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (pendingModOperation is null
+            || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var preparation = pendingModOperation;
+        pendingModOperation = null;
+        ModOperationDialog.IsOpen = false;
+        await viewModel.ExecuteModOperationAsync(preparation, lifetimeCancellation.Token);
     }
 
     private void ColorModeSelector_SelectionChanged(object sender, RoutedEventArgs e)

@@ -8,9 +8,9 @@
         xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
         Title="STFC Community Mod Launcher"
         Width="680"
-        Height="590"
+        Height="680"
         MinWidth="560"
-        MinHeight="500"
+        MinHeight="620"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
         Icon="Assets/stfc-community-mod.ico"
@@ -469,6 +469,8 @@
             <RowDefinition Height="76" />
             <RowDefinition Height="1" />
             <RowDefinition Height="76" />
+            <RowDefinition Height="1" />
+            <RowDefinition Height="76" />
           </Grid.RowDefinitions>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
@@ -641,6 +643,90 @@
               </Style>
             </TextBlock.Style>
           </TextBlock>
+
+          <Border Grid.Row="3"
+                  Grid.ColumnSpan="3"
+                  Background="{DynamicResource BorderBrush}" />
+
+          <Border Grid.Row="4"
+                  Width="34"
+                  Height="34"
+                  Margin="0,0,14,0"
+                  VerticalAlignment="Center"
+                  CornerRadius="17">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding ModTone}"
+                               Value="{x:Static core:LauncherHomeTone.Success}">
+                    <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding ModTone}"
+                               Value="{x:Static core:LauncherHomeTone.Warning}">
+                    <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding ModTone}"
+                               Value="{x:Static core:LauncherHomeTone.Error}">
+                    <Setter Property="Background" Value="{DynamicResource ErrorSoftBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <TextBlock HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       FontWeight="Bold"
+                       Text="MOD"
+                       TextAlignment="Center"
+                       automation:AutomationProperties.Name="Community mod status">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding ModTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Success}">
+                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding ModTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Warning}">
+                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding ModTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Error}">
+                      <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Border>
+
+          <TextBlock Grid.Row="4"
+                     Grid.Column="1"
+                     VerticalAlignment="Center"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     Text="Community mod" />
+
+          <StackPanel Grid.Row="4"
+                      Grid.Column="2"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center"
+                      Orientation="Horizontal">
+            <TextBlock Margin="0,0,14,0"
+                       VerticalAlignment="Center"
+                       FontSize="15"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding ModStatus}"
+                       automation:AutomationProperties.LiveSetting="Polite" />
+            <Button Style="{StaticResource QuietButtonStyle}"
+                    Click="ModActionButton_Click"
+                    Content="{Binding ModActionLabel}"
+                    IsEnabled="{Binding CanManageMod}"
+                    automation:AutomationProperties.Name="{Binding ModActionAutomationName}"
+                    automation:AutomationProperties.HelpText="Downloads and verifies the selected community mod release before asking for confirmation." />
+          </StackPanel>
         </Grid>
       </Border>
 
@@ -655,12 +741,58 @@
                    TextAlignment="Center"
                    automation:AutomationProperties.LiveSetting="Polite" />
       </Border>
+
+      <Border Margin="0,8,0,0"
+              Padding="12,9"
+              Background="{DynamicResource SurfaceMutedBrush}"
+              CornerRadius="8"
+              Visibility="{Binding HasModOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock FontSize="13"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding ModOperationFeedback}"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+      </Border>
     </StackPanel>
 
     <views:SettingsView x:Name="SettingsWorkspace"
                         Grid.Row="1"
                         Margin="20,0,20,12"
                         Visibility="Collapsed" />
+
+    <controls:InAppDialog x:Name="ModOperationDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Install community mod?"
+                          automation:AutomationProperties.Name="Community mod confirmation dialog">
+      <StackPanel>
+        <TextBlock x:Name="ModOperationSummary"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,0"
+                   FontWeight="SemiBold"
+                   Text="Exact game target" />
+        <TextBlock x:Name="ModOperationTarget"
+                   Margin="0,4,0,0"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,12,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="The download must match the release size and SHA-256, pass Authenticode for Joseph Gustavson, and report the expected embedded version. The game must remain closed."
+                   TextWrapping="Wrap" />
+        <Button x:Name="ConfirmModOperationButton"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="ConfirmModOperationButton_Click"
+                Content="_Install"
+                automation:AutomationProperties.Name="Confirm community mod installation" />
+      </StackPanel>
+    </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="SettingsUnavailableDialog"
                           Grid.RowSpan="2"
