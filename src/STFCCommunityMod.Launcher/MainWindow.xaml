@@ -659,7 +659,7 @@
                 </Style>
               </TextBlock.Style>
             </TextBlock>
-            <Button Style="{StaticResource QuietButtonStyle}"
+            <Button MinWidth="124"
                     Click="LaunchGameButton_Click"
                     Content="{Binding LaunchActionLabel}"
                     IsEnabled="{Binding CanLaunchGame}"

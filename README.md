@@ -41,13 +41,19 @@ self-contained and does not require a machine-wide .NET runtime.
 ./windows-launcher/scripts/publish.ps1
 ```
 
-The script writes an unpackaged per-user payload, an internal self-update ZIP,
-a SHA-256 sidecar, a small launcher manifest, and the user-facing single-file
-`setup/STFCCommunityMod.Launcher.Setup.exe` under `windows-launcher/artifacts/`.
-Release users download only the setup executable; it installs without
-elevation, creates a Start-menu shortcut, and starts the launcher. Ordinary PR
-artifacts are unsigned build evidence and are intentionally rejected by the
-production install trust checks.
+The script writes an unpackaged payload and machine-consumed self-update ZIP as
+release-pipeline inputs, plus the single-file
+`setup/STFCCommunityMod.Launcher.Setup.exe`. Setup is the only Windows launcher
+install artifact: it installs per-user without elevation, creates a Start-menu
+shortcut, and starts the launcher. A portable distribution is intentionally
+deferred.
+
+Branch and pull-request workflow artifacts expose only the setup executable;
+the unavoidable GitHub Actions transport ZIP contains no nested build
+workspace. Tagged workflows retain the signed self-update archive because the
+launcher consumes it automatically, but release users install through Setup.
+Ordinary PR builds remain unsigned build evidence and are correctly rejected
+by the production install trust checks.
 
 ## Current safety boundary
 

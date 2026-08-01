@@ -42,6 +42,26 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task ExistingManualInstallIsLaunchableWithoutAdoption()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), ArtifactContents);
+        var fixture = CreateFixture(temporaryDirectory);
+
+        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory);
+        var launchTask = fixture.Coordinator.LaunchAsync(gameDirectory);
+        await fixture.LauncherService.WaitUntilStartedAsync();
+
+        Assert.AreEqual("Ready to play", presentation.Status);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.AreEqual(1, fixture.LauncherService.StartCount);
+        fixture.LauncherService.CompleteExit();
+        var result = await launchTask;
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+    }
+
+    [TestMethod]
     public async Task OfficialLauncherMustBeAvailable()
     {
         using var temporaryDirectory = new TemporaryDirectory();

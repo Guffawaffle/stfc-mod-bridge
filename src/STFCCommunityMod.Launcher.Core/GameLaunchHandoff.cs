@@ -207,9 +207,12 @@ public sealed class GameLaunchHandoffCoordinator(
             var targetPath = Path.Combine(validation.GameDirectory, "version.dll");
             if (state is null)
             {
-                return Blocked("Mod required", "Install or adopt the community mod before a modded launch.", mode);
+                if (!File.Exists(targetPath))
+                {
+                    return Blocked("Mod required", "Install the community mod before a modded launch.", mode);
+                }
             }
-            if (!PathEquals(state.GameDirectory, validation.GameDirectory)
+            else if (!PathEquals(state.GameDirectory, validation.GameDirectory)
                 || !File.Exists(targetPath)
                 || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
             {
