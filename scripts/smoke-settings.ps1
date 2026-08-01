@@ -360,6 +360,11 @@ try {
   if ($diagnosticText -notmatch '"health"') {
     throw "The diagnostic preview did not expose health facts."
   }
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Check for a launcher self-update" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
   if ($diagnosticText.IndexOf($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
     throw "The diagnostic preview exposed the raw user-profile path."
   }

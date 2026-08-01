@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
@@ -12,6 +13,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
     private readonly LauncherDiagnosticService diagnosticService;
+    private readonly LauncherSelfUpdateService launcherSelfUpdateService;
+    private readonly IWindowsReleaseDiscoveryClient releaseDiscoveryClient;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
@@ -26,12 +29,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         LauncherEnvironmentProbe environmentProbe,
         ModManagementCoordinator modManagementCoordinator,
         GameLaunchHandoffCoordinator gameLaunchCoordinator,
-        LauncherDiagnosticService diagnosticService)
+        LauncherDiagnosticService diagnosticService,
+        LauncherSelfUpdateService launcherSelfUpdateService,
+        IWindowsReleaseDiscoveryClient releaseDiscoveryClient)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
         this.gameLaunchCoordinator = gameLaunchCoordinator;
         this.diagnosticService = diagnosticService;
+        this.launcherSelfUpdateService = launcherSelfUpdateService;
+        this.releaseDiscoveryClient = releaseDiscoveryClient;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
@@ -148,6 +155,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new WindowsModArtifactVersionReader(),
             new WindowsAuthenticodeVerifier("Joseph Gustavson"),
             processInspector.IsGameRunning);
+        var releaseClient = new GitHubWindowsReleaseClient(httpClient);
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
@@ -161,14 +169,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installDiscovery),
             new ModManagementCoordinator(
                 deploymentService,
-                new GitHubWindowsReleaseClient(httpClient),
+                releaseClient,
                 new Version(0, 1, 0)),
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
                 officialLauncherService,
                 processInspector,
-                "0.1.0"));
+                "0.1.0"),
+            new LauncherSelfUpdateService(
+                installLayout.StateDirectory,
+                installLayout.ProgramDirectory,
+                new HttpLauncherArchiveDownloader(httpClient),
+                new WindowsAuthenticodeVerifier("Joseph Gustavson"),
+                new WindowsLauncherArtifactIdentityReader()),
+            releaseClient);
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -333,6 +348,57 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         string outputPath,
         CancellationToken cancellationToken = default) =>
         LauncherDiagnosticService.ExportAsync(preview, outputPath, cancellationToken);
+
+    public async Task<LauncherUpdatePreparation?> PrepareLauncherUpdateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        SetModOperationState(true, "Checking for a launcher update…");
+        try
+        {
+            var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
+                "stable",
+                new Version(0, 1, 0),
+                cancellationToken);
+            var preparation = await launcherSelfUpdateService.PrepareAsync(
+                discovery,
+                CurrentSourceCommit(),
+                Environment.ProcessId,
+                cancellationToken);
+            modOperationFeedback = preparation.Message;
+            return preparation;
+        }
+        catch (OperationCanceledException)
+        {
+            modOperationFeedback = "The launcher update check was canceled or timed out.";
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException
+                or InvalidDataException
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            modOperationFeedback = $"The launcher update could not be prepared: {exception.Message}";
+            return null;
+        }
+        finally
+        {
+            SetModOperationState(false, modOperationFeedback);
+        }
+    }
+
+    public static void StartLauncherUpdate(LauncherUpdatePreparation preparation) =>
+        LauncherSelfUpdateService.StartUpdater(preparation);
+
+    private static string CurrentSourceCommit()
+    {
+        var informational = Assembly.GetEntryAssembly()?
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+        var separator = informational?.LastIndexOf('+') ?? -1;
+        return separator >= 0 ? informational![(separator + 1)..] : string.Empty;
+    }
 
     public async Task<ModDeploymentResult?> RecoverModAsync(CancellationToken cancellationToken = default)
     {

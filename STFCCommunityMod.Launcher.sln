@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -9,6 +9,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher.Core.Tests", "tests\STFCCommunityMod.Launcher.Core.Tests\STFCCommunityMod.Launcher.Core.Tests.csproj", "{C32D57D2-4C77-4D57-AC33-B7C9C62A937E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher.Tests", "tests\STFCCommunityMod.Launcher.Tests\STFCCommunityMod.Launcher.Tests.csproj", "{D5B9185D-98E4-4C93-93AC-BE8E4019210E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{00E5D03C-C5DE-4469-AB5E-C5C84BE7BF52}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "STFCCommunityMod.Launcher.Updater", "src\STFCCommunityMod.Launcher.Updater\STFCCommunityMod.Launcher.Updater.csproj", "{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -32,5 +36,12 @@ Global
 		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D5B9185D-98E4-4C93-93AC-BE8E4019210E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A0F6BB29-014C-4F7C-92B7-8DEBF17574AE} = {00E5D03C-C5DE-4469-AB5E-C5C84BE7BF52}
 	EndGlobalSection
 EndGlobal

@@ -5,7 +5,8 @@ namespace STFCCommunityMod.Launcher.Core;
 
 public sealed record WindowsReleaseDiscovery(
     WindowsReleaseManifest Manifest,
-    ModReleaseArtifact ModArtifact);
+    ModReleaseArtifact ModArtifact,
+    LauncherReleaseArtifact? LauncherArtifact = null);
 
 public interface IWindowsReleaseDiscoveryClient
 {
@@ -84,7 +85,14 @@ public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindows
                 manifest,
                 channel,
                 currentLauncherVersion);
-            return new(manifest, artifact);
+            var launcherArtifact = manifest.Artifacts.Any(
+                candidate => candidate.Id == "windows-launcher-archive-x64")
+                ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
+                    manifest,
+                    channel,
+                    currentLauncherVersion)
+                : null;
+            return new(manifest, artifact, launcherArtifact);
         }
 
         throw new InvalidDataException(

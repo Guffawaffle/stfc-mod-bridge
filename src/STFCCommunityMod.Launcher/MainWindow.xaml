@@ -868,7 +868,44 @@
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod"
                   automation:AutomationProperties.Name="Remove launcher-managed community mod" />
+          <Button Margin="0,0,0,8"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="CheckLauncherUpdateButton_Click"
+                  Content="Check launcher _update"
+                  automation:AutomationProperties.Name="Check for a launcher self-update" />
         </WrapPanel>
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="LauncherUpdateDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Install launcher update?"
+                          automation:AutomationProperties.Name="Launcher self-update confirmation dialog">
+      <StackPanel>
+        <TextBlock x:Name="LauncherUpdateSummary"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,0"
+                   FontWeight="SemiBold"
+                   Text="Per-user launcher target" />
+        <TextBlock x:Name="LauncherUpdateTarget"
+                   Margin="0,4,0,0"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,12,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="The launcher will exit. A copied helper verifies and swaps the signed payload, starts the update, and restores the previous launcher if startup is not acknowledged. No elevation is requested."
+                   TextWrapping="Wrap" />
+        <Button Margin="0,20,0,0"
+                HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="ConfirmLauncherUpdateButton_Click"
+                Content="_Install and restart"
+                automation:AutomationProperties.Name="Install verified launcher update and restart" />
       </StackPanel>
     </controls:InAppDialog>
 

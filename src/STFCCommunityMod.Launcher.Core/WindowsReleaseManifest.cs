@@ -292,6 +292,8 @@ public static partial class WindowsReleaseSelectionPolicy
     private const string Repository = "Guffawaffle/stfc-mod";
     private const string ModArtifactId = "windows-mod-dll-x64";
     private const long MaximumModArtifactSize = 128L * 1024L * 1024L;
+    private const string LauncherArtifactId = "windows-launcher-archive-x64";
+    private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
 
     [GeneratedRegex(
         "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+)))?$",
@@ -351,6 +353,57 @@ public static partial class WindowsReleaseSelectionPolicy
             artifact.Size,
             artifact.Sha256,
             expectedFileVersion);
+    }
+
+    public static LauncherReleaseArtifact SelectLauncherArtifact(
+        WindowsReleaseManifest manifest,
+        string selectedChannel,
+        Version currentLauncherVersion)
+    {
+        ValidateRelease(manifest, selectedChannel, currentLauncherVersion);
+        var matches = manifest.Artifacts.Where(artifact => artifact.Id == LauncherArtifactId).ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException("The release must contain exactly one Windows launcher archive.");
+        }
+        var artifact = matches[0];
+        if (artifact.Kind != "windows-launcher"
+            || artifact.Platform != "windows"
+            || artifact.Architecture != "x64"
+            || artifact.FileName != "stfc-community-mod-launcher-win-x64.zip"
+            || artifact.MediaType != "application/zip"
+            || artifact.Size > MaximumLauncherArtifactSize
+            || artifact.Authenticity.Scheme != "authenticode"
+            || artifact.Authenticity.Scope != "contents"
+            || artifact.Authenticity.SignedFiles.Count != 2
+            || artifact.Authenticity.SignedFiles[0] != "STFCCommunityMod.Launcher.exe"
+            || artifact.Authenticity.SignedFiles[1] != "STFCCommunityMod.Launcher.Updater.exe")
+        {
+            throw new InvalidDataException("The Windows launcher artifact contract is invalid or unsupported.");
+        }
+        return new(
+            new Uri($"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{artifact.FileName}"),
+            artifact.FileName,
+            artifact.Size,
+            artifact.Sha256,
+            manifest.ReleaseVersion,
+            manifest.Source.TargetCommit);
+    }
+
+    private static void ValidateRelease(
+        WindowsReleaseManifest manifest,
+        string selectedChannel,
+        Version currentLauncherVersion)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(currentLauncherVersion);
+        if (manifest.ReleaseState != "active"
+            || !string.Equals(manifest.Channel, selectedChannel, StringComparison.Ordinal)
+            || currentLauncherVersion < manifest.MinimumLauncherVersion
+            || !string.Equals(manifest.Source.Repository, Repository, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The release is not eligible for this launcher channel.");
+        }
     }
 
     public static string DeriveEmbeddedFileVersion(string releaseVersion)

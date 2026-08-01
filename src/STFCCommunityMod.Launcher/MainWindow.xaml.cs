@@ -47,6 +47,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private ModOperationPreparation? pendingModOperation;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private MaintenanceAction pendingMaintenanceAction;
+    private LauncherUpdatePreparation? pendingLauncherUpdate;
 
     public MainWindow()
         : this(
@@ -315,6 +316,53 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             DiagnosticsDialog.IsOpen = false;
             ShowMaintenanceConfirmation(MaintenanceAction.Uninstall, viewModel);
+        }
+    }
+
+    private async void CheckLauncherUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        DiagnosticsDialog.IsOpen = false;
+        pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
+        if (pendingLauncherUpdate is null
+            || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
+        {
+            return;
+        }
+        LauncherUpdateSummary.Text = pendingLauncherUpdate.Message;
+        LauncherUpdateTarget.Text = pendingLauncherUpdate.TargetDirectory;
+        LauncherUpdateDialog.IsOpen = true;
+    }
+
+    private void ConfirmLauncherUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (pendingLauncherUpdate is null)
+        {
+            return;
+        }
+        var preparation = pendingLauncherUpdate;
+        pendingLauncherUpdate = null;
+        LauncherUpdateDialog.IsOpen = false;
+        try
+        {
+            MainWindowViewModel.StartLauncherUpdate(preparation);
+            Application.Current.Shutdown();
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text = $"The update helper could not start: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
         }
     }
 
