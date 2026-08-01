@@ -95,3 +95,10 @@ public interface IModArtifactVersionReader
 {
     string? ReadVersion(string artifactPath);
 }
+
+public sealed record ModArtifactAuthenticityResult(bool IsTrusted, string Message);
+
+public interface IModArtifactAuthenticityVerifier
+{
+    ModArtifactAuthenticityResult Verify(string artifactPath);
+}

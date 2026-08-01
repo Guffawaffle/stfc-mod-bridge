@@ -14,6 +14,7 @@ public sealed partial class ModDeploymentService
     private readonly string stateDirectory;
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
+    private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
     private readonly Func<bool> isGameRunning;
     private readonly TimeProvider timeProvider;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
@@ -22,6 +23,7 @@ public sealed partial class ModDeploymentService
         string stateDirectory,
         IModArtifactDownloader downloader,
         IModArtifactVersionReader versionReader,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
         Func<bool> isGameRunning,
         TimeProvider? timeProvider = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null)
@@ -30,6 +32,7 @@ public sealed partial class ModDeploymentService
         this.stateDirectory = Path.GetFullPath(stateDirectory);
         this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
+        this.authenticityVerifier = authenticityVerifier ?? throw new ArgumentNullException(nameof(authenticityVerifier));
         this.isGameRunning = isGameRunning ?? throw new ArgumentNullException(nameof(isGameRunning));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.afterPhasePersisted = afterPhasePersisted;
@@ -176,6 +179,7 @@ public sealed partial class ModDeploymentService
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Verified, cancellationToken);
             await WriteStageAsync(stagePath, download.Contents, cancellationToken);
             VerifyFile(stagePath, journal.Artifact);
+            VerifyAuthenticity(stagePath);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Staged, cancellationToken);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committing, cancellationToken);
 
@@ -593,6 +597,15 @@ public sealed partial class ModDeploymentService
         {
             throw new InvalidDataException(
                 $"The installed artifact version '{actualVersion ?? "unreadable"}' does not match '{expectedVersion}'.");
+        }
+    }
+
+    private void VerifyAuthenticity(string path)
+    {
+        var result = authenticityVerifier.Verify(path);
+        if (!result.IsTrusted)
+        {
+            throw new InvalidDataException($"Artifact authenticity verification failed: {result.Message}");
         }
     }
 

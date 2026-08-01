@@ -410,6 +410,7 @@ public sealed class ModDeploymentServiceTests
             stateDirectory,
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
             () => false);
 
         var result = await service.RecoverAsync();
@@ -448,6 +449,7 @@ public sealed class ModDeploymentServiceTests
             stateDirectory,
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
             () => false);
 
         var result = await service.RecoverAsync();
@@ -486,6 +488,7 @@ public sealed class ModDeploymentServiceTests
             stateDirectory,
             downloader,
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
             () => false);
 
         var result = await service.DeployAsync(
@@ -513,6 +516,26 @@ public sealed class ModDeploymentServiceTests
         Assert.AreEqual(0, result.Contents.Length);
     }
 
+    [TestMethod]
+    public async Task UntrustedAuthenticodeArtifactNeverReachesTarget()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var service = CreateService(
+            temporaryDirectory,
+            SuccessfulDownload(),
+            authenticityVerifier: new FakeAuthenticityVerifier(false));
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+    }
+
     private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
     {
         var gameDirectory = temporaryDirectory.CreateDirectory("game");
@@ -525,12 +548,14 @@ public sealed class ModDeploymentServiceTests
         ModArtifactDownload download,
         Func<bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
+        IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
         CreateService(
             temporaryDirectory,
             new FakeDownloader(download),
             isGameRunning,
             versionReader,
+            authenticityVerifier,
             afterPhasePersisted);
 
     private static ModDeploymentService CreateService(
@@ -538,11 +563,13 @@ public sealed class ModDeploymentServiceTests
         IModArtifactDownloader downloader,
         Func<bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
+        IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
         new(
             temporaryDirectory.CreateDirectory("state"),
             downloader,
             versionReader ?? new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            authenticityVerifier ?? new FakeAuthenticityVerifier(true),
             isGameRunning ?? (() => false),
             afterPhasePersisted: afterPhasePersisted);
 
@@ -586,6 +613,12 @@ public sealed class ModDeploymentServiceTests
     private sealed class FakeVersionReader(string? version) : IModArtifactVersionReader
     {
         public string? ReadVersion(string artifactPath) => version;
+    }
+
+    private sealed class FakeAuthenticityVerifier(bool trusted) : IModArtifactAuthenticityVerifier
+    {
+        public ModArtifactAuthenticityResult Verify(string artifactPath) =>
+            new(trusted, trusted ? "trusted test artifact" : "untrusted test artifact");
     }
 
     private sealed class InjectedDeploymentFaultException(ModDeploymentPhase phase)
