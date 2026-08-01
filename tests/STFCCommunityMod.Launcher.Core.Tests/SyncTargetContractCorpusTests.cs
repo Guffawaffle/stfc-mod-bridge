@@ -32,6 +32,13 @@ public sealed class SyncTargetContractCorpusTests
 
     private static readonly string[] LocalSidecarKindOnly = ["local_sidecar"];
 
+    private static readonly string[] LockedResolutionSources =
+    [
+        "global_default",
+        "target_type_default",
+        "target",
+    ];
+
     [TestMethod]
     public void CorpusCoversLockedCompatibilityCasesAndPreservesEveryFixtureByte()
     {
@@ -91,6 +98,9 @@ public sealed class SyncTargetContractCorpusTests
         CollectionAssert.AreEquivalent(
             LockedProvenanceStates,
             root.GetProperty("provenanceStates").EnumerateArray().Select(item => item.GetString()).ToArray());
+        CollectionAssert.AreEquivalent(
+            LockedResolutionSources,
+            root.GetProperty("resolutionSources").EnumerateArray().Select(item => item.GetString()).ToArray());
 
         var kinds = root.GetProperty("targetKinds");
         Assert.IsFalse(kinds.GetProperty("local_sidecar").GetProperty("inheritsGlobalSync").GetBoolean());
