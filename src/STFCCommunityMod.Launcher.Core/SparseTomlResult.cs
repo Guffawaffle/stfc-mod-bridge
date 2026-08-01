@@ -36,15 +36,21 @@ public sealed record SparseTomlOverride(
     string RenderedValue,
     int LineNumber);
 
+public sealed record SparseTomlTable(
+    string CanonicalPath,
+    int LineNumber);
+
 public sealed record SparseTomlReadResult(
     bool IsValid,
     IReadOnlyDictionary<string, SparseTomlOverride>? Overrides,
+    IReadOnlyList<SparseTomlTable>? Tables,
     SparseTomlError? Error)
 {
     public static SparseTomlReadResult Success(
-        IReadOnlyDictionary<string, SparseTomlOverride> overrides) =>
-        new(true, overrides, null);
+        IReadOnlyDictionary<string, SparseTomlOverride> overrides,
+        IReadOnlyList<SparseTomlTable> tables) =>
+        new(true, overrides, tables, null);
 
     public static SparseTomlReadResult Invalid(SparseTomlError error) =>
-        new(false, null, error);
+        new(false, null, null, error);
 }

@@ -79,8 +79,14 @@ public sealed partial class SparseTomlDocument
                 text[assignment.ValueStart..assignment.ValueEnd],
                 assignment.Line.Number),
             StringComparer.Ordinal);
+        var tables = analysis.Sections
+            .Select(section => new SparseTomlTable(
+                string.Join('.', section.Path),
+                section.HeaderLine.Number))
+            .ToArray();
         return SparseTomlReadResult.Success(
-            new ReadOnlyDictionary<string, SparseTomlOverride>(overrides));
+            new ReadOnlyDictionary<string, SparseTomlOverride>(overrides),
+            Array.AsReadOnly(tables));
     }
 
     public SparseTomlEditResult SetOverride(string canonicalPath, string renderedTomlValue)
@@ -215,6 +221,140 @@ public sealed partial class SparseTomlDocument
         var line = analysis.TargetAssignments[0].Line;
         var updatedText = text.Remove(line.Start, line.End - line.Start);
         return BuildResult(updatedText);
+    }
+
+    public SparseTomlEditResult RemoveTable(string canonicalTablePath)
+    {
+        var pathResult = ParseCanonicalPath(canonicalTablePath);
+        if (pathResult.Error is not null)
+        {
+            return SparseTomlEditResult.Invalid(pathResult.Error);
+        }
+
+        var path = pathResult.Segments!;
+        var analysis = Analyze(targetPath: null);
+        if (analysis.Error is not null)
+        {
+            return SparseTomlEditResult.Invalid(analysis.Error);
+        }
+
+        var matchingSections = analysis.Sections
+            .Where(section => HasPathPrefix(section.Path, path))
+            .OrderByDescending(section => section.HeaderLine.Start)
+            .ToArray();
+        if (matchingSections.Length == 0)
+        {
+            return analysis.AllAssignments.Any(assignment => HasPathPrefix(assignment.Path, path))
+                ? SparseTomlEditResult.Invalid(
+                    new(
+                        SparseTomlErrorCode.UnsupportedTarget,
+                        $"Table '[{canonicalTablePath}]' is represented by dotted assignments and cannot be removed safely."))
+                : SparseTomlEditResult.Unchanged([.. originalContents]);
+        }
+
+        var updatedText = text;
+        foreach (var section in matchingSections)
+        {
+            updatedText = updatedText.Remove(
+                section.HeaderLine.Start,
+                section.End - section.HeaderLine.Start);
+        }
+
+        return BuildValidatedResult(updatedText);
+    }
+
+    public SparseTomlEditResult RenameTable(string canonicalTablePath, string newCanonicalTablePath)
+    {
+        var sourceResult = ParseCanonicalPath(canonicalTablePath);
+        if (sourceResult.Error is not null)
+        {
+            return SparseTomlEditResult.Invalid(sourceResult.Error);
+        }
+
+        var destinationResult = ParseCanonicalPath(newCanonicalTablePath);
+        if (destinationResult.Error is not null)
+        {
+            return SparseTomlEditResult.Invalid(destinationResult.Error);
+        }
+
+        var source = sourceResult.Segments!;
+        var destination = destinationResult.Segments!;
+        if (source.SequenceEqual(destination, StringComparer.Ordinal))
+        {
+            return SparseTomlEditResult.Unchanged([.. originalContents]);
+        }
+
+        var analysis = Analyze(targetPath: null);
+        if (analysis.Error is not null)
+        {
+            return SparseTomlEditResult.Invalid(analysis.Error);
+        }
+
+        var matchingSections = analysis.Sections
+            .Where(section => HasPathPrefix(section.Path, source))
+            .ToArray();
+        if (matchingSections.Length == 0)
+        {
+            return analysis.AllAssignments.Any(assignment => HasPathPrefix(assignment.Path, source))
+                ? SparseTomlEditResult.Invalid(
+                    new(
+                        SparseTomlErrorCode.UnsupportedTarget,
+                        $"Table '[{canonicalTablePath}]' is represented by dotted assignments and cannot be renamed safely."))
+                : SparseTomlEditResult.Invalid(
+                    new(
+                        SparseTomlErrorCode.UnsupportedTarget,
+                        $"Table '[{canonicalTablePath}]' does not exist."));
+        }
+
+        var selected = matchingSections.ToHashSet();
+        foreach (var section in matchingSections)
+        {
+            var mappedPath = destination.Concat(section.Path[source.Length..]).ToArray();
+            if (analysis.Sections.Any(other =>
+                    !selected.Contains(other)
+                    && other.Path.SequenceEqual(mappedPath, StringComparer.Ordinal)))
+            {
+                return SparseTomlEditResult.Invalid(
+                    new(
+                        SparseTomlErrorCode.DuplicateTarget,
+                        $"Table '[{string.Join('.', mappedPath)}]' already exists.",
+                        section.HeaderLine.Number));
+            }
+
+            if (analysis.AllAssignments.Any(assignment =>
+                    !HasPathPrefix(assignment.Path, source)
+                    && HasPathPrefix(assignment.Path, mappedPath)))
+            {
+                return SparseTomlEditResult.Invalid(
+                    new(
+                        SparseTomlErrorCode.UnsupportedTarget,
+                        $"Table '[{string.Join('.', mappedPath)}]' collides with an existing dotted assignment.",
+                        section.HeaderLine.Number));
+            }
+        }
+
+        var replacements = matchingSections
+            .Select(section =>
+            {
+                var match = SimpleTableHeaderRegex().Match(section.HeaderLine.Content);
+                var pathGroup = match.Groups["path"];
+                var suffix = section.Path[source.Length..];
+                return new TableHeaderReplacement(
+                    section.HeaderLine.Start + pathGroup.Index,
+                    pathGroup.Length,
+                    string.Join('.', destination.Concat(suffix)));
+            })
+            .OrderByDescending(replacement => replacement.Start)
+            .ToArray();
+
+        var updatedText = text;
+        foreach (var replacement in replacements)
+        {
+            updatedText = updatedText.Remove(replacement.Start, replacement.Length)
+                .Insert(replacement.Start, replacement.Value);
+        }
+
+        return BuildValidatedResult(updatedText);
     }
 
     private Analysis Analyze(string[]? targetPath)
@@ -566,6 +706,28 @@ public sealed partial class SparseTomlDocument
             ? SparseTomlEditResult.Unchanged(updatedContents)
             : SparseTomlEditResult.Updated(updatedContents);
     }
+
+    private SparseTomlEditResult BuildValidatedResult(string updatedText)
+    {
+        var result = BuildResult(updatedText);
+        if (!result.IsValid || !result.Changed || result.Contents is null)
+        {
+            return result;
+        }
+
+        var load = Load(result.Contents, out var updatedDocument);
+        if (!load.IsValid || updatedDocument is null)
+        {
+            return load;
+        }
+
+        var validation = updatedDocument.ValidateForMutation();
+        return validation.IsValid ? result : validation;
+    }
+
+    private static bool HasPathPrefix(string[] path, string[] prefix) =>
+        path.Length >= prefix.Length
+        && path.AsSpan(0, prefix.Length).SequenceEqual(prefix);
 
     private static PathParseResult ParseCanonicalPath(string canonicalPath)
     {
@@ -919,6 +1081,11 @@ public sealed partial class SparseTomlDocument
         PhysicalLine Line,
         int ValueStart,
         int ValueEnd);
+
+    private sealed record TableHeaderReplacement(
+        int Start,
+        int Length,
+        string Value);
 
     private sealed class Section(string[] path, PhysicalLine headerLine, int end)
     {

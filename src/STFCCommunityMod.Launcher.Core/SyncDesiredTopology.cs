@@ -157,7 +157,10 @@ public sealed class SyncDesiredTopology
         return Succeeded(new(GlobalDefaults, changed));
     }
 
-    public SyncTopologyTransitionResult ChangeTargetKind(string name, SyncTargetKind newKind)
+    public SyncTopologyTransitionResult ChangeTargetKind(
+        string name,
+        SyncTargetKind newKind,
+        SyncTargetKindChangePolicy policy = SyncTargetKindChangePolicy.PreserveCompatibleOverrides)
     {
         if (!targets.TryGetValue(name, out var target))
         {
@@ -180,6 +183,11 @@ public sealed class SyncDesiredTopology
 
         var supported = SyncTargetTypeCatalog.Get(newKind).SupportedDataKinds;
         var changedTarget = target.WithKind(newKind);
+        if (policy == SyncTargetKindChangePolicy.ResetOverrides)
+        {
+            changedTarget = changedTarget.WithoutOverrides();
+        }
+
         foreach (var unsupported in changedTarget.DataOverrides.Keys.Where(kind => !supported.Contains(kind)).ToArray())
         {
             changedTarget = changedTarget.WithDataOverride(unsupported, SyncOverride.Inherited<bool>());
@@ -298,12 +306,14 @@ public static class SyncTopologyResolver
         }
 
         var definition = SyncTargetTypeCatalog.Get(target.Kind);
-        if (definition.RequiresUrl && !TryValidateEndpoint(target.Url, target.Kind, out var endpointCode, out var endpointMessage))
+        if (target.Enabled
+            && definition.RequiresUrl
+            && !TryValidateEndpoint(target.Url, target.Kind, out var endpointCode, out var endpointMessage))
         {
             diagnostics.Add(SyncDesiredTopology.Error(endpointCode, target.Name, "url", endpointMessage));
         }
 
-        if (definition.RequiresToken && !target.Token.IsConfigured)
+        if (target.Enabled && definition.RequiresToken && !target.Token.IsConfigured)
         {
             diagnostics.Add(SyncDesiredTopology.Error(
                 "SYNC_CREDENTIALS_INCOMPLETE",
@@ -441,6 +451,13 @@ public static class SyncTopologyResolver
         {
             code = "SYNC_ENDPOINT_INVALID";
             message = "The target endpoint must be an absolute HTTP or HTTPS URL.";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            code = "SYNC_ENDPOINT_EMBEDDED_CREDENTIALS";
+            message = "The target endpoint cannot contain embedded credentials; use the token field.";
             return false;
         }
 

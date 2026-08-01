@@ -51,6 +51,12 @@ public enum SyncTopologyDiagnosticSeverity
     Error,
 }
 
+public enum SyncTargetKindChangePolicy
+{
+    PreserveCompatibleOverrides,
+    ResetOverrides,
+}
+
 public readonly record struct SyncOverride<T>(bool IsExplicit, T Value)
 {
     public SyncResolvedValue<T> Resolve(T inheritedValue, SyncValueSource inheritedSource)
@@ -68,6 +74,8 @@ public readonly record struct SyncOverride<T>(bool IsExplicit, T Value)
         };
         return new(Value, provenance, SyncValueSource.Target);
     }
+
+    public override string ToString() => IsExplicit ? "[explicit]" : "[inherited]";
 }
 
 public static class SyncOverride
@@ -80,7 +88,10 @@ public static class SyncOverride
 public sealed record SyncResolvedValue<T>(
     T Value,
     SyncValueProvenance Provenance,
-    SyncValueSource Source);
+    SyncValueSource Source)
+{
+    public override string ToString() => $"[{Provenance} from {Source}]";
+}
 
 public sealed class SyncSecret : IEquatable<SyncSecret>
 {
@@ -347,6 +358,15 @@ public sealed class SyncTargetDraft
 
     public SyncTargetDraft WithoutSecret() => Copy(token: SyncSecret.Missing);
 
+    public SyncTargetDraft WithoutOverrides() =>
+        Copy(
+            proxy: SyncOverride.Inherited<string>(),
+            verifySsl: SyncOverride.Inherited<bool>(),
+            allowUnsafeTlsWithoutCertificateValidation: SyncOverride.Inherited<bool>(),
+            dataOverrides: new Dictionary<SyncDataKind, SyncOverride<bool>>(),
+            battlelogEnrichment: SyncOverride.Inherited<bool>(),
+            fleetRuntimeMode: SyncOverride.Inherited<string>());
+
     private SyncTargetDraft Copy(
         string? name = null,
         SyncTargetKind? kind = null,
@@ -380,18 +400,45 @@ public sealed record SyncTopologyDiagnostic(
     string? TargetName = null,
     string? Field = null);
 
-public sealed record SyncResolvedTarget(
-    string Name,
-    SyncTargetKind Kind,
-    bool Enabled,
-    string Url,
-    bool CredentialsConfigured,
-    SyncResolvedValue<string> Proxy,
-    SyncResolvedValue<bool> VerifySsl,
-    SyncResolvedValue<bool> AllowUnsafeTlsWithoutCertificateValidation,
-    IReadOnlyDictionary<SyncDataKind, SyncResolvedValue<bool>> DataKinds,
-    SyncResolvedValue<bool>? BattlelogEnrichment,
-    SyncResolvedValue<string>? FleetRuntimeMode);
+public sealed class SyncResolvedTarget(
+    string name,
+    SyncTargetKind kind,
+    bool enabled,
+    string url,
+    bool credentialsConfigured,
+    SyncResolvedValue<string> proxy,
+    SyncResolvedValue<bool> verifySsl,
+    SyncResolvedValue<bool> allowUnsafeTlsWithoutCertificateValidation,
+    IReadOnlyDictionary<SyncDataKind, SyncResolvedValue<bool>> dataKinds,
+    SyncResolvedValue<bool>? battlelogEnrichment,
+    SyncResolvedValue<string>? fleetRuntimeMode)
+{
+    public string Name { get; } = name;
+
+    public SyncTargetKind Kind { get; } = kind;
+
+    public bool Enabled { get; } = enabled;
+
+    public string Url { get; } = url;
+
+    public bool CredentialsConfigured { get; } = credentialsConfigured;
+
+    public SyncResolvedValue<string> Proxy { get; } = proxy;
+
+    public SyncResolvedValue<bool> VerifySsl { get; } = verifySsl;
+
+    public SyncResolvedValue<bool> AllowUnsafeTlsWithoutCertificateValidation { get; } =
+        allowUnsafeTlsWithoutCertificateValidation;
+
+    public IReadOnlyDictionary<SyncDataKind, SyncResolvedValue<bool>> DataKinds { get; } = dataKinds;
+
+    public SyncResolvedValue<bool>? BattlelogEnrichment { get; } = battlelogEnrichment;
+
+    public SyncResolvedValue<string>? FleetRuntimeMode { get; } = fleetRuntimeMode;
+
+    public override string ToString() =>
+        $"{Name} ({Kind}, {(Enabled ? "enabled" : "disabled")}, credentials {(CredentialsConfigured ? "configured" : "missing")})";
+}
 
 public sealed record SyncResolvedTopology(
     IReadOnlyList<SyncResolvedTarget> Targets,

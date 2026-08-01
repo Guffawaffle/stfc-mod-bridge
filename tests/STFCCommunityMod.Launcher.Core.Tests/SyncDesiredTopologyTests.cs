@@ -193,6 +193,33 @@ public sealed class SyncDesiredTopologyTests
     }
 
     [TestMethod]
+    public void KindChangeResetPolicyClearsTargetOverridesButKeepsConnection()
+    {
+        var topology = AddConfigured(
+            SyncDesiredTopology.Empty,
+            "community",
+            SyncTargetKind.LegacyCommunity,
+            "https://community.example.invalid/sync",
+            target => target
+                .WithProxy(SyncOverride.Explicit("target-proxy"))
+                .WithDataOverride(SyncDataKind.Jobs, SyncOverride.Explicit(false)));
+        var original = topology.Targets["community"];
+
+        topology = RequireSuccess(
+            topology.ChangeTargetKind(
+                "community",
+                SyncTargetKind.MajelIngest,
+                SyncTargetKindChangePolicy.ResetOverrides));
+        var changed = topology.Targets["community"];
+
+        Assert.AreEqual(SyncTargetKind.MajelIngest, changed.Kind);
+        Assert.AreEqual(original.Url, changed.Url);
+        Assert.AreEqual(original.Token, changed.Token);
+        Assert.IsFalse(changed.Proxy.IsExplicit);
+        Assert.AreEqual(0, changed.DataOverrides.Count);
+    }
+
+    [TestMethod]
     public void SidecarCardinalityIdentityAndDuplicationAreGuarded()
     {
         var topology = RequireSuccess(
@@ -243,10 +270,22 @@ public sealed class SyncDesiredTopologyTests
                 "external",
                 target => target.WithConnection(
                     "http://127.0.0.1:43127/api/sidecar/ingest",
-                    SyncSecret.FromPlainText("hidden-value"))));
+                    SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
         var externalResolved = external.Resolve();
         Assert.IsFalse(externalResolved.IsCommittable);
         Assert.IsTrue(externalResolved.Diagnostics.Any(item => item.Code == "SYNC_LOOPBACK_TARGET_INVALID"));
+
+        var embeddedCredentials = RequireSuccess(
+            SyncDesiredTopology.Empty.AddTarget("embedded", SyncTargetKind.LegacyCommunity));
+        embeddedCredentials = RequireSuccess(
+            embeddedCredentials.UpdateTarget(
+                "embedded",
+                target => target.WithConnection(
+                    "https://username:password@community.example.invalid/sync",
+                    SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
+        Assert.IsTrue(
+            embeddedCredentials.Resolve().Diagnostics.Any(
+                item => item.Code == "SYNC_ENDPOINT_EMBEDDED_CREDENTIALS"));
 
         var missing = RequireSuccess(
             SyncDesiredTopology.Empty.AddTarget("missing", SyncTargetKind.MajelIngest));
@@ -255,7 +294,7 @@ public sealed class SyncDesiredTopologyTests
                 "missing",
                 target => target.WithConnection(
                     "https://majel.example.invalid/api/ingest/events",
-                    SyncSecret.Missing)));
+                    SyncSecret.Missing).WithEnabled(true)));
         Assert.IsTrue(missing.Resolve().Diagnostics.Any(item => item.Code == "SYNC_CREDENTIALS_INCOMPLETE"));
 
         var sidecar = RequireSuccess(
@@ -265,7 +304,7 @@ public sealed class SyncDesiredTopologyTests
                 SyncDesiredTopology.LocalSidecarIdentity,
                 target => target.WithConnection(
                     "https://sidecar.example.invalid/ingest",
-                    SyncSecret.FromPlainText("hidden-value"))));
+                    SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
         Assert.IsTrue(sidecar.Resolve().Diagnostics.Any(item => item.Code == "SYNC_SIDECAR_ENDPOINT_NOT_LOOPBACK"));
     }
 
@@ -326,12 +365,30 @@ public sealed class SyncDesiredTopologyTests
         topology = RequireSuccess(
             topology.UpdateTarget(
                 "external",
-                target => target.WithConnection("not-a-url", secret)));
+                target => target.WithConnection("not-a-url", secret).WithEnabled(true)));
 
         var diagnostics = topology.Resolve().Diagnostics;
         Assert.IsTrue(diagnostics.Count > 0);
         Assert.IsFalse(diagnostics.Any(item => item.Message.Contains(secretValue, StringComparison.Ordinal)));
         Assert.IsFalse(diagnostics.Any(item => item.ToString().Contains(secretValue, StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void ProxyUserInfoDoesNotAppearInDomainDisplayStrings()
+    {
+        const string proxy = "http://proxy-user:proxy-password@example.invalid:8080";
+        var topology = AddConfigured(
+            SyncDesiredTopology.Empty,
+            "community",
+            SyncTargetKind.LegacyCommunity,
+            "https://community.example.invalid/sync",
+            target => target.WithProxy(SyncOverride.Explicit(proxy)));
+        var draft = topology.Targets["community"];
+        var resolved = topology.Resolve().Targets.Single();
+
+        Assert.IsFalse(draft.Proxy.ToString().Contains("proxy-password", StringComparison.Ordinal));
+        Assert.IsFalse(resolved.Proxy.ToString().Contains("proxy-password", StringComparison.Ordinal));
+        Assert.IsFalse(resolved.ToString().Contains("proxy-password", StringComparison.Ordinal));
     }
 
     [TestMethod]

@@ -231,6 +231,9 @@ public sealed class SparseTomlDocumentTests
             """{ system = true, audio = true, sound = "alarm" }""",
             result.Overrides["notifications.incoming_attack_player"].RenderedValue);
         Assert.AreEqual(4, result.Overrides["notifications.incoming_attack_player"].LineNumber);
+        Assert.AreEqual(1, result.Tables?.Count);
+        Assert.AreEqual("notifications", result.Tables![0].CanonicalPath);
+        Assert.AreEqual(3, result.Tables[0].LineNumber);
     }
 
     [TestMethod]
@@ -248,6 +251,108 @@ public sealed class SparseTomlDocumentTests
         Assert.AreEqual(2, result.Overrides?.Count);
         Assert.AreEqual("1", result.Overrides!["FutureKey"].RenderedValue);
         Assert.AreEqual("2", result.Overrides["futurekey"].RenderedValue);
+    }
+
+    [TestMethod]
+    public void RenameTablePreservesBodyUnknownFieldsCommentsAndChildTables()
+    {
+        const string source = """
+            # target heading stays outside the table body
+            [sync.targets.old] # provider note
+            url = "https://example.invalid/sync"
+            future = "keep"
+
+            [sync.targets.old.metadata]
+            label = "keep child"
+
+            [unrelated]
+            value = true
+            """;
+        var document = Load(source);
+
+        var result = document.RenameTable("sync.targets.old", "sync.targets.renamed");
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.IsTrue(result.Changed);
+        Assert.AreEqual(
+            source
+                .Replace("[sync.targets.old]", "[sync.targets.renamed]", StringComparison.Ordinal)
+                .Replace("[sync.targets.old.metadata]", "[sync.targets.renamed.metadata]", StringComparison.Ordinal),
+            Decode(result.Contents!));
+    }
+
+    [TestMethod]
+    public void RenameTableRejectsDestinationAndDottedAssignmentCollisions()
+    {
+        var destination = Load(
+            """
+            [sync.targets.old]
+            value = true
+            [sync.targets.new]
+            value = false
+            """);
+        var destinationResult = destination.RenameTable("sync.targets.old", "sync.targets.new");
+        Assert.IsFalse(destinationResult.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, destinationResult.Error?.Code);
+        Assert.IsNull(destinationResult.Contents);
+
+        var dotted = Load(
+            """
+            sync.targets.new.value = false
+            [sync.targets.old]
+            value = true
+            """);
+        var dottedResult = dotted.RenameTable("sync.targets.old", "sync.targets.new");
+        Assert.IsFalse(dottedResult.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.UnsupportedTarget, dottedResult.Error?.Code);
+        Assert.IsNull(dottedResult.Contents);
+    }
+
+    [TestMethod]
+    public void RemoveTableRemovesItsDescendantsAndPreservesUnrelatedTables()
+    {
+        const string source = """
+            [sync.targets.remove]
+            url = "https://example.invalid/sync"
+            unknown = "remove with owner"
+
+            [unrelated]
+            value = true
+
+            [sync.targets.remove.metadata]
+            label = "also remove"
+
+            [sync.targets.keep]
+            url = "https://keep.example.invalid/sync"
+            """;
+        var document = Load(source);
+
+        var result = document.RemoveTable("sync.targets.remove");
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        var updated = Decode(result.Contents!);
+        Assert.IsFalse(updated.Contains("sync.targets.remove", StringComparison.Ordinal));
+        Assert.IsFalse(updated.Contains("unknown", StringComparison.Ordinal));
+        StringAssert.Contains(updated, "[unrelated]");
+        StringAssert.Contains(updated, "[sync.targets.keep]");
+    }
+
+    [TestMethod]
+    public void TableOperationsPreserveBomAndCrLf()
+    {
+        const string source = "[sync.targets.old]\r\nurl = \"https://example.invalid\"\r\n";
+        var contents = new byte[] { 0xef, 0xbb, 0xbf }
+            .Concat(Encoding.UTF8.GetBytes(source))
+            .ToArray();
+        var document = Load(contents);
+
+        var result = document.RenameTable("sync.targets.old", "sync.targets.new");
+
+        CollectionAssert.AreEqual(
+            new byte[] { 0xef, 0xbb, 0xbf }
+                .Concat(Encoding.UTF8.GetBytes(source.Replace("old", "new", StringComparison.Ordinal)))
+                .ToArray(),
+            result.Contents!);
     }
 
     private static SparseTomlDocument Load(string source) =>
