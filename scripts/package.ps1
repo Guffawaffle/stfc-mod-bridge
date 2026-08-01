@@ -17,6 +17,9 @@ $archive = Join-Path $outputRoot "stfc-community-mod-launcher-win-x64.zip"
 $checksum = "$archive.sha256"
 $manifestPath = Join-Path $outputRoot "launcher-spike-manifest.json"
 
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-launcher.ps1") -Destination (Join-Path $payload "Install-Launcher.ps1") -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "uninstall-launcher.ps1") -Destination (Join-Path $payload "Uninstall-Launcher.ps1") -Force
+
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   throw "Launcher payload does not contain the expected executable: $launcher"
 }

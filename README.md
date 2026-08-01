@@ -56,8 +56,8 @@ publisher, and embedded version, and commits only `version.dll` through a
 persistent same-volume rollback journal. A pre-existing manual DLL is never
 silently claimed; the player must explicitly adopt it and its previous bytes
 are preserved. Launch handoff, recovery, verified repair, allowlist-only
-uninstall, and previewed redacted diagnostics are available. Launcher
-self-update remains the final dependent product feature before the v1 release.
+uninstall, previewed redacted diagnostics, and signed replace-on-exit launcher
+self-update are available.
 
 See [the architecture decision](../docs/windows-launcher/ARCHITECTURE_SPIKE.md),
 [the discovery and health contract](../docs/windows-launcher/DISCOVERY_AND_HEALTH.md),
