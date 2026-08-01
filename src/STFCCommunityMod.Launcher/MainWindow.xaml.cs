@@ -45,6 +45,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isSettingsWorkspaceInitialized;
     private bool isColorModeSelectorReady;
     private ModOperationPreparation? pendingModOperation;
+    private LauncherDiagnosticPreview? diagnosticPreview;
+    private MaintenanceAction pendingMaintenanceAction;
 
     public MainWindow()
         : this(
@@ -137,6 +139,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
+        if (viewModel.ModActionKind == ModManagementActionKind.Recover)
+        {
+            ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
+            return;
+        }
+
         var dialog = new OpenFolderDialog
         {
             Title = "Select the STFC game folder that contains prime.exe",
@@ -174,16 +182,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
-        ModOperationDialog.DialogTitle = pendingModOperation.ExistingArtifactPolicy
-            == ExistingArtifactPolicy.AdoptAndPreserve
-            ? "Adopt and update community mod?"
-            : "Install community mod?";
+        ModOperationDialog.DialogTitle = pendingModOperation.ActionKind switch
+        {
+            ModManagementActionKind.AdoptAndInstall => "Adopt and update community mod?",
+            ModManagementActionKind.Repair => "Repair community mod?",
+            ModManagementActionKind.CheckForUpdate => "Update community mod?",
+            _ => "Install community mod?",
+        };
         ModOperationSummary.Text = pendingModOperation.Message;
         ModOperationTarget.Text = pendingModOperation.GameDirectory;
-        ConfirmModOperationButton.Content = pendingModOperation.ExistingArtifactPolicy
-            == ExistingArtifactPolicy.AdoptAndPreserve
-            ? "_Adopt and install"
-            : "_Install";
+        ConfirmModOperationButton.Content = pendingModOperation.ActionKind switch
+        {
+            ModManagementActionKind.AdoptAndInstall => "_Adopt and install",
+            ModManagementActionKind.Repair => "_Repair",
+            ModManagementActionKind.CheckForUpdate => "_Update",
+            _ => "_Install",
+        };
         ModOperationDialog.IsOpen = true;
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Input,
@@ -197,6 +211,150 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         if (DataContext is MainWindowViewModel viewModel)
         {
             await viewModel.LaunchGameAsync(lifetimeCancellation.Token);
+        }
+    }
+
+    private void DiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        try
+        {
+            diagnosticPreview = viewModel.BuildDiagnosticPreview();
+            DiagnosticPreviewText.Text = diagnosticPreview.RedactedJson;
+            DiagnosticsRecoverButton.IsEnabled = viewModel.CanRecoverMod;
+            DiagnosticsUninstallButton.IsEnabled = viewModel.CanUninstallMod;
+            DiagnosticsDialog.IsOpen = true;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException)
+        {
+            SettingsUnavailableMessage.Text = $"Diagnostics could not be prepared: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (diagnosticPreview is not null)
+        {
+            try
+            {
+                Clipboard.SetText(diagnosticPreview.RedactedJson);
+                DiagnosticExportStatus.Text = "Copied the redacted preview. Nothing was uploaded.";
+            }
+            catch (System.Runtime.InteropServices.ExternalException exception)
+            {
+                DiagnosticExportStatus.Text = $"Windows could not access the clipboard: {exception.Message}";
+            }
+        }
+    }
+
+    private async void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (diagnosticPreview is null || DataContext is not MainWindowViewModel)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export redacted launcher diagnostics",
+            FileName = $"stfc-launcher-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            DefaultExt = ".json",
+            Filter = "JSON diagnostics (*.json)|*.json",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+        try
+        {
+            await MainWindowViewModel.ExportDiagnosticsAsync(
+                diagnosticPreview,
+                dialog.FileName,
+                lifetimeCancellation.Token);
+            DiagnosticExportStatus.Text = "Saved the exact redacted preview. Nothing was uploaded.";
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            DiagnosticExportStatus.Text = $"The diagnostic export failed: {exception.Message}";
+        }
+    }
+
+    private void DiagnosticsRecoverButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel && viewModel.CanRecoverMod)
+        {
+            DiagnosticsDialog.IsOpen = false;
+            ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
+        }
+    }
+
+    private void DiagnosticsUninstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel && viewModel.CanUninstallMod)
+        {
+            DiagnosticsDialog.IsOpen = false;
+            ShowMaintenanceConfirmation(MaintenanceAction.Uninstall, viewModel);
+        }
+    }
+
+    private void ShowMaintenanceConfirmation(MaintenanceAction action, MainWindowViewModel viewModel)
+    {
+        if (viewModel.SelectedGameDirectory is null)
+        {
+            return;
+        }
+        pendingMaintenanceAction = action;
+        MaintenanceDialog.DialogTitle = action == MaintenanceAction.Recover
+            ? "Recover mod transaction?"
+            : "Remove launcher-managed mod?";
+        MaintenanceSummary.Text = action == MaintenanceAction.Recover
+            ? "Roll back the incomplete transaction using its persisted journal. Only version.dll and transaction-scoped allowlisted files can change."
+            : "Remove launcher-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
+        MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
+        ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
+        MaintenanceDialog.IsOpen = true;
+    }
+
+    private async void ConfirmMaintenanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is not MainWindowViewModel viewModel
+            || pendingMaintenanceAction == MaintenanceAction.None)
+        {
+            return;
+        }
+        var action = pendingMaintenanceAction;
+        pendingMaintenanceAction = MaintenanceAction.None;
+        MaintenanceDialog.IsOpen = false;
+        if (action == MaintenanceAction.Recover)
+        {
+            await viewModel.RecoverModAsync(lifetimeCancellation.Token);
+        }
+        else
+        {
+            await viewModel.UninstallModAsync(lifetimeCancellation.Token);
         }
     }
 
@@ -445,3 +603,10 @@ internal sealed record ColorModeChoice(
     LauncherColorMode Mode,
     string Label,
     AppIconKind Icon);
+
+internal enum MaintenanceAction
+{
+    None,
+    Recover,
+    Uninstall,
+}

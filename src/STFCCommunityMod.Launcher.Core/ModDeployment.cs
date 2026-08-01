@@ -65,7 +65,31 @@ public sealed partial class ModDeploymentService
         string gameDirectory,
         ModReleaseArtifact artifact,
         ExistingArtifactPolicy existingArtifactPolicy,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await DeployCoreAsync(
+            gameDirectory,
+            artifact,
+            existingArtifactPolicy,
+            allowManagedRepair: false,
+            cancellationToken);
+
+    public async Task<ModDeploymentResult> RepairAsync(
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        CancellationToken cancellationToken = default) =>
+        await DeployCoreAsync(
+            gameDirectory,
+            artifact,
+            ExistingArtifactPolicy.Reject,
+            allowManagedRepair: true,
+            cancellationToken);
+
+    private async Task<ModDeploymentResult> DeployCoreAsync(
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        bool allowManagedRepair,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(artifact);
         var validationFailure = ValidateRequest(gameDirectory, artifact, out var normalizedGameDirectory);
@@ -116,11 +140,12 @@ public sealed partial class ModDeploymentService
                     ModDeploymentResultState.RecoveryRequired,
                     "Launcher-managed mod state belongs to a different game installation; remove or repair it first.");
             }
-            if (!hadExistingArtifact
+            if ((!hadExistingArtifact
                 || !string.Equals(
                     ComputeFileSha256(targetPath),
                     previousInstalledState.Sha256,
                     StringComparison.OrdinalIgnoreCase))
+                && !allowManagedRepair)
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
@@ -192,7 +217,12 @@ public sealed partial class ModDeploymentService
             VerifyVersion(targetPath, journal.Artifact.ExpectedVersion);
 
             string? retainedBackupPath = null;
-            if (File.Exists(sameVolumeBackupPath))
+            if (isManagedUpdate)
+            {
+                DeleteIfExists(sameVolumeBackupPath);
+                retainedBackupPath = previousInstalledState?.PreviousArtifactBackupPath;
+            }
+            else if (File.Exists(sameVolumeBackupPath))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(durableBackupPath)!);
                 File.Move(sameVolumeBackupPath, durableBackupPath);

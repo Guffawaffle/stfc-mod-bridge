@@ -11,6 +11,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly LauncherEnvironmentProbe environmentProbe;
     private readonly ModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
+    private readonly LauncherDiagnosticService diagnosticService;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
@@ -24,11 +25,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
         ModManagementCoordinator modManagementCoordinator,
-        GameLaunchHandoffCoordinator gameLaunchCoordinator)
+        GameLaunchHandoffCoordinator gameLaunchCoordinator,
+        LauncherDiagnosticService diagnosticService)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
         this.gameLaunchCoordinator = gameLaunchCoordinator;
+        this.diagnosticService = diagnosticService;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
@@ -72,6 +75,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         : modPresentation.AutomationName;
 
     public bool CanManageMod => modPresentation.CanExecute && !isModOperationInProgress && !isLaunchInProgress;
+
+    public ModManagementActionKind ModActionKind => modPresentation.ActionKind;
+
+    public bool CanRecoverMod =>
+        modPresentation.ActionKind == ModManagementActionKind.Recover && CanManageMod;
+
+    public bool CanUninstallMod =>
+        modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
+        && modPresentation.CanExecute
+        && !isModOperationInProgress
+        && !isLaunchInProgress;
 
     public string LaunchActionLabel => isLaunchInProgress ? "Official launcher open…" : launchPresentation.ActionLabel;
 
@@ -134,10 +148,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new WindowsModArtifactVersionReader(),
             new WindowsAuthenticodeVerifier("Joseph Gustavson"),
             processInspector.IsGameRunning);
+        var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
             deploymentService,
-            WindowsOfficialLauncherService.FromCurrentUser(),
+            officialLauncherService,
             processInspector);
         return new(
             new LauncherEnvironmentProbe(
@@ -148,7 +163,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 deploymentService,
                 new GitHubWindowsReleaseClient(httpClient),
                 new Version(0, 1, 0)),
-            launchCoordinator);
+            launchCoordinator,
+            new LauncherDiagnosticService(
+                deploymentService,
+                officialLauncherService,
+                processInspector,
+                "0.1.0"));
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -305,6 +325,72 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public LauncherDiagnosticPreview BuildDiagnosticPreview() =>
+        diagnosticService.BuildPreview(snapshot.SelectedGameDirectory);
+
+    public static Task ExportDiagnosticsAsync(
+        LauncherDiagnosticPreview preview,
+        string outputPath,
+        CancellationToken cancellationToken = default) =>
+        LauncherDiagnosticService.ExportAsync(preview, outputPath, cancellationToken);
+
+    public async Task<ModDeploymentResult?> RecoverModAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanRecoverMod)
+        {
+            return null;
+        }
+        return await ExecuteMaintenanceAsync(
+            "Recovering the incomplete mod transaction…",
+            modManagementCoordinator.RecoverAsync,
+            cancellationToken);
+    }
+
+    public async Task<ModDeploymentResult?> UninstallModAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanUninstallMod)
+        {
+            return null;
+        }
+        return await ExecuteMaintenanceAsync(
+            "Removing the launcher-managed community mod…",
+            modManagementCoordinator.UninstallAsync,
+            cancellationToken);
+    }
+
+    private async Task<ModDeploymentResult?> ExecuteMaintenanceAsync(
+        string progress,
+        Func<CancellationToken, Task<ModDeploymentResult>> operation,
+        CancellationToken cancellationToken)
+    {
+        SetModOperationState(true, progress);
+        try
+        {
+            var result = await operation(cancellationToken);
+            modOperationFeedback = result.Message;
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            modOperationFeedback = "The maintenance operation was canceled.";
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            modOperationFeedback = $"The maintenance operation failed: {exception.Message}";
+            return null;
+        }
+        finally
+        {
+            SetModOperationState(false, modOperationFeedback);
+            Refresh();
+        }
+    }
+
     private void SetModOperationState(bool isInProgress, string feedback)
     {
         isModOperationInProgress = isInProgress;
@@ -313,6 +399,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ModActionLabel));
         OnPropertyChanged(nameof(ModActionAutomationName));
         OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(ModActionKind));
+        OnPropertyChanged(nameof(CanRecoverMod));
+        OnPropertyChanged(nameof(CanUninstallMod));
         OnPropertyChanged(nameof(ModOperationFeedback));
         OnPropertyChanged(nameof(HasModOperationFeedback));
         OnPropertyChanged(nameof(HomeOperationFeedback));
@@ -327,6 +416,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ModActionLabel));
         OnPropertyChanged(nameof(ModActionAutomationName));
         OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(ModActionKind));
+        OnPropertyChanged(nameof(CanRecoverMod));
+        OnPropertyChanged(nameof(CanUninstallMod));
     }
 
     private void SetLaunchState(bool isInProgress, string feedback)
@@ -338,6 +430,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(LaunchActionAutomationName));
         OnPropertyChanged(nameof(CanLaunchGame));
         OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(CanRecoverMod));
+        OnPropertyChanged(nameof(CanUninstallMod));
         OnPropertyChanged(nameof(HomeOperationFeedback));
         OnPropertyChanged(nameof(HasHomeOperationFeedback));
     }

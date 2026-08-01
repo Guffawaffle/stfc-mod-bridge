@@ -240,6 +240,7 @@
           <ColumnDefinition Width="196" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <Button x:Name="HomeSettingsTitleBarButton"
@@ -307,6 +308,18 @@
                    FontSize="14"
                    FontWeight="SemiBold"
                    Text="STFC Community Mod" />
+
+        <Button Grid.Column="3"
+                Margin="16,0,0,0"
+                Padding="10,6"
+                VerticalAlignment="Center"
+                Style="{StaticResource QuietButtonStyle}"
+                Click="DiagnosticsButton_Click"
+                Content="Diagnostics"
+                ToolTip="Preview redacted launcher diagnostics"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Open redacted launcher diagnostics"
+                automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically." />
       </Grid>
 
       <Button x:Name="SettingsSearchToggleButton"
@@ -801,6 +814,89 @@
                 Click="ConfirmModOperationButton_Click"
                 Content="_Install"
                 automation:AutomationProperties.Name="Confirm community mod installation" />
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="DiagnosticsDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Launcher diagnostics"
+                          automation:AutomationProperties.Name="Redacted launcher diagnostics dialog">
+      <StackPanel Width="388">
+        <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Preview before copying or exporting. Paths, tokens, cookies, and endpoints are redacted. Nothing is uploaded automatically."
+                   TextWrapping="Wrap" />
+        <TextBox x:Name="DiagnosticPreviewText"
+                 Height="300"
+                 Margin="0,14,0,0"
+                 Padding="10"
+                 AcceptsReturn="True"
+                 FontFamily="Consolas"
+                 FontSize="11"
+                 HorizontalScrollBarVisibility="Auto"
+                 IsReadOnly="True"
+                 TextWrapping="NoWrap"
+                 VerticalScrollBarVisibility="Auto"
+                 automation:AutomationProperties.Name="Redacted diagnostic preview" />
+        <TextBlock x:Name="DiagnosticExportStatus"
+                   Margin="0,8,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+        <WrapPanel Margin="0,16,0,0"
+                   HorizontalAlignment="Right">
+          <Button Margin="0,0,8,8"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="CopyDiagnosticsButton_Click"
+                  Content="_Copy preview"
+                  automation:AutomationProperties.Name="Copy redacted diagnostics" />
+          <Button Margin="0,0,8,8"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="ExportDiagnosticsButton_Click"
+                  Content="_Export JSON…"
+                  automation:AutomationProperties.Name="Export redacted diagnostics JSON" />
+          <Button x:Name="DiagnosticsRecoverButton"
+                  Margin="0,0,8,8"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="DiagnosticsRecoverButton_Click"
+                  Content="_Recover"
+                  automation:AutomationProperties.Name="Recover incomplete mod transaction" />
+          <Button x:Name="DiagnosticsUninstallButton"
+                  Margin="0,0,0,8"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="DiagnosticsUninstallButton_Click"
+                  Content="Remove _mod"
+                  automation:AutomationProperties.Name="Remove launcher-managed community mod" />
+        </WrapPanel>
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="MaintenanceDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Confirm maintenance"
+                          automation:AutomationProperties.Name="Community mod maintenance confirmation dialog">
+      <StackPanel>
+        <TextBlock x:Name="MaintenanceSummary"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,0"
+                   FontWeight="SemiBold"
+                   Text="Exact game target" />
+        <TextBlock x:Name="MaintenanceTarget"
+                   Margin="0,4,0,0"
+                   FontFamily="Consolas"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <Button x:Name="ConfirmMaintenanceButton"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="ConfirmMaintenanceButton_Click"
+                Content="_Confirm"
+                automation:AutomationProperties.Name="Confirm community mod maintenance" />
       </StackPanel>
     </controls:InAppDialog>
 

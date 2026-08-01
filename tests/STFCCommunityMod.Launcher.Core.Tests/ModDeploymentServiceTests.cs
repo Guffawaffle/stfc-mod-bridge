@@ -124,8 +124,66 @@ public sealed class ModDeploymentServiceTests
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
         CollectionAssert.AreEqual(updatedContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
-        var rollbackPath = updateService.ReadInstalledState()!.PreviousArtifactBackupPath!;
-        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(rollbackPath));
+        Assert.IsNull(updateService.ReadInstalledState()!.PreviousArtifactBackupPath);
+    }
+
+    [TestMethod]
+    public async Task ManagedUpdatePreservesOriginalAdoptedArtifactForUninstall()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var originalManualArtifact = new byte[] { 1, 3, 3, 7 };
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), originalManualArtifact);
+        var installService = CreateService(temporaryDirectory, SuccessfulDownload());
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.AdoptAndPreserve)).State);
+
+        var updatedContents = new byte[] { 9, 8, 7, 6 };
+        var updatedArtifact = new ModReleaseArtifact(
+            new Uri("https://example.invalid/version.dll"),
+            "version.dll",
+            updatedContents.LongLength,
+            Convert.ToHexString(SHA256.HashData(updatedContents)),
+            "2.1.0.9");
+        var updateService = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, updatedContents, updatedContents.LongLength),
+            versionReader: new FakeVersionReader(updatedArtifact.ExpectedVersion));
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await updateService.DeployAsync(
+                gameDirectory,
+                updatedArtifact,
+                ExistingArtifactPolicy.Reject)).State);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await updateService.UninstallAsync()).State);
+        CollectionAssert.AreEqual(
+            originalManualArtifact,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task ExplicitRepairReplacesChangedManagedArtifactTransactionally()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await service.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [4, 2]);
+
+        var result = await service.RepairAsync(gameDirectory, ReleaseArtifact());
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
     }
 
     [DataTestMethod]

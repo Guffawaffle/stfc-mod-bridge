@@ -8,6 +8,8 @@ public enum ModManagementActionKind
     Install,
     AdoptAndInstall,
     CheckForUpdate,
+    Repair,
+    Recover,
 }
 
 public sealed record ModManagementPresentation(
@@ -30,7 +32,8 @@ public sealed record ModOperationPreparation(
     string GameDirectory,
     string ReleaseVersion,
     ModReleaseArtifact Artifact,
-    ExistingArtifactPolicy ExistingArtifactPolicy);
+    ExistingArtifactPolicy ExistingArtifactPolicy,
+    ModManagementActionKind ActionKind);
 
 public sealed class ModManagementCoordinator(
     ModDeploymentService deploymentService,
@@ -82,8 +85,8 @@ public sealed class ModManagementCoordinator(
                     "Recovery required",
                     LauncherHomeTone.Error,
                     "Recover",
-                    ModManagementActionKind.None,
-                    false,
+                    ModManagementActionKind.Recover,
+                    !isGameRunning,
                     "Community mod transaction recovery is required");
             }
             state = deploymentService.ReadInstalledState();
@@ -113,7 +116,9 @@ public sealed class ModManagementCoordinator(
             || !File.Exists(targetPath)
             || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
         {
-            return RepairRequired("The installed artifact no longer matches launcher-managed state.");
+            return RepairRequired(
+                "The installed artifact no longer matches launcher-managed state.",
+                !isGameRunning);
         }
 
         return new(
@@ -136,12 +141,18 @@ public sealed class ModManagementCoordinator(
             throw new InvalidOperationException(presentation.AutomationName);
         }
 
+        if (presentation.ActionKind == ModManagementActionKind.Recover)
+        {
+            throw new InvalidOperationException("Recovery does not require release discovery.");
+        }
+
         var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
             channel,
             launcherVersion,
             cancellationToken);
         var installedState = deploymentService.ReadInstalledState();
-        if (installedState is not null
+        if (presentation.ActionKind != ModManagementActionKind.Repair
+            && installedState is not null
             && string.Equals(installedState.Sha256, discovery.ModArtifact.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             return new(
@@ -150,7 +161,8 @@ public sealed class ModManagementCoordinator(
                 Path.GetFullPath(gameDirectory),
                 discovery.Manifest.ReleaseVersion,
                 discovery.ModArtifact,
-                ExistingArtifactPolicy.Reject);
+                ExistingArtifactPolicy.Reject,
+                presentation.ActionKind);
         }
 
         var policy = presentation.ActionKind == ModManagementActionKind.AdoptAndInstall
@@ -160,6 +172,8 @@ public sealed class ModManagementCoordinator(
             ? "Install"
             : presentation.ActionKind == ModManagementActionKind.AdoptAndInstall
                 ? "Adopt the existing version.dll and install"
+                : presentation.ActionKind == ModManagementActionKind.Repair
+                    ? "Repair with"
                 : "Update to";
         return new(
             ModOperationPreparationState.Ready,
@@ -167,7 +181,8 @@ public sealed class ModManagementCoordinator(
             Path.GetFullPath(gameDirectory),
             discovery.Manifest.ReleaseVersion,
             discovery.ModArtifact,
-            policy);
+            policy,
+            presentation.ActionKind);
     }
 
     public Task<ModDeploymentResult> ExecuteAsync(
@@ -179,19 +194,30 @@ public sealed class ModManagementCoordinator(
         {
             throw new InvalidOperationException("Only a ready mod operation can execute.");
         }
-        return deploymentService.DeployAsync(
-            preparation.GameDirectory,
-            preparation.Artifact,
-            preparation.ExistingArtifactPolicy,
-            cancellationToken);
+        return preparation.ActionKind == ModManagementActionKind.Repair
+            ? deploymentService.RepairAsync(
+                preparation.GameDirectory,
+                preparation.Artifact,
+                cancellationToken)
+            : deploymentService.DeployAsync(
+                preparation.GameDirectory,
+                preparation.Artifact,
+                preparation.ExistingArtifactPolicy,
+                cancellationToken);
     }
 
-    private static ModManagementPresentation RepairRequired(string detail) => new(
+    public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
+        deploymentService.RecoverAsync(cancellationToken);
+
+    public Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default) =>
+        deploymentService.UninstallAsync(cancellationToken);
+
+    private static ModManagementPresentation RepairRequired(string detail, bool canExecute = false) => new(
         "Repair required",
         LauncherHomeTone.Error,
         "Repair",
-        ModManagementActionKind.None,
-        false,
+        canExecute ? ModManagementActionKind.Repair : ModManagementActionKind.None,
+        canExecute,
         $"Community mod repair is required: {detail}");
 
     private static string ComputeSha256(string path)

@@ -339,6 +339,44 @@ try {
   }
   Write-Host "PASS: launcher Home exposes explicit modded-launch state '$($launchAction.Current.Name)'."
 
+  $diagnosticsEntry = Find-AutomationElement `
+    -Root $root `
+    -Name "Open redacted launcher diagnostics" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $diagnosticsEntry
+  $diagnosticPreview = Find-AutomationElement `
+    -Root $root `
+    -Name "Redacted diagnostic preview" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline $deadline
+  $valuePattern = $null
+  if (-not $diagnosticPreview.TryGetCurrentPattern(
+      [System.Windows.Automation.ValuePattern]::Pattern,
+      [ref]$valuePattern)) {
+    throw "The redacted diagnostic preview does not expose its text through UI Automation."
+  }
+  $diagnosticText = $valuePattern.Current.Value
+  if ($diagnosticText -notmatch '"health"') {
+    throw "The diagnostic preview did not expose health facts."
+  }
+  if ($diagnosticText.IndexOf($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+    throw "The diagnostic preview exposed the raw user-profile path."
+  }
+  if ($null -ne $configurationPath) {
+    $activeGameDirectory = Split-Path -Parent $configurationPath
+    if ($diagnosticText.IndexOf($activeGameDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      throw "The diagnostic preview exposed the raw game-directory path."
+    }
+  }
+  $closeDiagnostics = Find-AutomationElement `
+    -Root $root `
+    -Name "Close dialog" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $closeDiagnostics
+  Write-Host "PASS: diagnostics are previewed through UI Automation with private paths redacted."
+
   $settingsEntry = Find-AutomationElement `
     -Root $root `
     -Name "Open launcher settings" `

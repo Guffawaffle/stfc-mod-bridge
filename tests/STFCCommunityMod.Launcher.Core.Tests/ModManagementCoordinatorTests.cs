@@ -112,7 +112,8 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual("Repair required", presentation.Status);
         Assert.AreEqual(LauncherHomeTone.Error, presentation.Tone);
-        Assert.IsFalse(presentation.CanExecute);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.AreEqual(ModManagementActionKind.Repair, presentation.ActionKind);
     }
 
     [TestMethod]
