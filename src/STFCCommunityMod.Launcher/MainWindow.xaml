@@ -620,29 +620,39 @@
                      FontSize="16"
                      FontWeight="SemiBold"
                      Text="Game client" />
-          <TextBlock Grid.Row="2"
-                     Grid.Column="2"
-                     HorizontalAlignment="Right"
-                     VerticalAlignment="Center"
-                     FontSize="15"
-                     Text="{Binding GameClientStatus}"
-                     TextAlignment="Right">
-            <TextBlock.Style>
-              <Style TargetType="TextBlock">
-                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding GameClientTone}"
-                               Value="{x:Static core:LauncherHomeTone.Success}">
-                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding GameClientTone}"
-                               Value="{x:Static core:LauncherHomeTone.Warning}">
-                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </TextBlock.Style>
-          </TextBlock>
+          <StackPanel Grid.Row="2"
+                      Grid.Column="2"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center"
+                      Orientation="Horizontal">
+            <TextBlock Margin="0,0,14,0"
+                       VerticalAlignment="Center"
+                       FontSize="15"
+                       Text="{Binding GameClientStatus}"
+                       TextAlignment="Right">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding GameClientTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Success}">
+                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding GameClientTone}"
+                                 Value="{x:Static core:LauncherHomeTone.Warning}">
+                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+            <Button Style="{StaticResource QuietButtonStyle}"
+                    Click="LaunchGameButton_Click"
+                    Content="{Binding LaunchActionLabel}"
+                    IsEnabled="{Binding CanLaunchGame}"
+                    automation:AutomationProperties.Name="{Binding LaunchActionAutomationName}"
+                    automation:AutomationProperties.HelpText="Launches the modded game through the official Star Trek Fleet Command launcher. Authentication and game updates remain official-launcher responsibilities." />
+          </StackPanel>
 
           <Border Grid.Row="3"
                   Grid.ColumnSpan="3"
@@ -746,10 +756,10 @@
               Padding="12,9"
               Background="{DynamicResource SurfaceMutedBrush}"
               CornerRadius="8"
-              Visibility="{Binding HasModOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}">
+              Visibility="{Binding HasHomeOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}">
         <TextBlock FontSize="13"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="{Binding ModOperationFeedback}"
+                   Text="{Binding HomeOperationFeedback}"
                    TextAlignment="Center"
                    TextWrapping="Wrap"
                    automation:AutomationProperties.LiveSetting="Polite" />

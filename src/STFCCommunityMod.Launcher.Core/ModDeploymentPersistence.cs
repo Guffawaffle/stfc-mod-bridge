@@ -137,13 +137,4 @@ public sealed partial class ModDeploymentService
         }
     }
 
-    private sealed class OperationLease(SemaphoreSlim gate, FileStream lockStream) : IAsyncDisposable
-    {
-        public ValueTask DisposeAsync()
-        {
-            lockStream.Dispose();
-            gate.Release();
-            return ValueTask.CompletedTask;
-        }
-    }
 }

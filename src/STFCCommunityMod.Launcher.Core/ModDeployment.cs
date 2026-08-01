@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 
@@ -9,9 +8,8 @@ public sealed partial class ModDeploymentService
     private const int SchemaVersion = 1;
     private const long MaximumArtifactSize = 128L * 1024L * 1024L;
     private const string ManagedFileName = "version.dll";
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ProcessGates = new(
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private readonly string stateDirectory;
+    private readonly LauncherOperationLock operationLock;
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
     private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
@@ -30,6 +28,7 @@ public sealed partial class ModDeploymentService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
+        operationLock = new(this.stateDirectory);
         this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
         this.authenticityVerifier = authenticityVerifier ?? throw new ArgumentNullException(nameof(authenticityVerifier));
@@ -80,7 +79,7 @@ public sealed partial class ModDeploymentService
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before changing the mod.");
         }
 
-        await using var lease = await TryAcquireOperationLeaseAsync(cancellationToken);
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
             return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
@@ -236,7 +235,7 @@ public sealed partial class ModDeploymentService
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before removing the mod.");
         }
 
-        await using var lease = await TryAcquireOperationLeaseAsync(cancellationToken);
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
             return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
@@ -345,7 +344,7 @@ public sealed partial class ModDeploymentService
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before recovery.");
         }
 
-        await using var lease = await TryAcquireOperationLeaseAsync(cancellationToken);
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
             return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
@@ -533,33 +532,6 @@ public sealed partial class ModDeploymentService
         else
         {
             WriteJsonAtomically(InstalledStatePath, state);
-        }
-    }
-
-    private async ValueTask<IAsyncDisposable?> TryAcquireOperationLeaseAsync(CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(stateDirectory);
-        var gate = ProcessGates.GetOrAdd(stateDirectory, _ => new SemaphoreSlim(1, 1));
-        if (!await gate.WaitAsync(0, cancellationToken))
-        {
-            return null;
-        }
-
-        try
-        {
-            var lockStream = new FileStream(
-                Path.Combine(stateDirectory, "operation.lock"),
-                FileMode.OpenOrCreate,
-                FileAccess.ReadWrite,
-                FileShare.None,
-                1,
-                FileOptions.Asynchronous);
-            return new OperationLease(gate, lockStream);
-        }
-        catch (IOException)
-        {
-            gate.Release();
-            return null;
         }
     }
 

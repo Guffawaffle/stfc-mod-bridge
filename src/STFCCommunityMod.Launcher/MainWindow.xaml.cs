@@ -190,6 +190,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             () => ConfirmModOperationButton.Focus());
     }
 
+    private async void LaunchGameButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            await viewModel.LaunchGameAsync(lifetimeCancellation.Token);
+        }
+    }
+
     private async void ConfirmModOperationButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -303,7 +313,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
 
         MinWidth = isOpen ? SettingsWidth : 560;
-        MinHeight = isOpen ? 680 : 500;
+        MinHeight = isOpen ? 680 : 620;
         if (WindowState != WindowState.Normal)
         {
             return;

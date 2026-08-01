@@ -10,24 +10,31 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly LauncherEnvironmentProbe environmentProbe;
     private readonly ModManagementCoordinator modManagementCoordinator;
+    private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
+    private GameLaunchPresentation launchPresentation;
     private string selectionFeedback = string.Empty;
     private string modOperationFeedback = string.Empty;
     private bool isModOperationInProgress;
+    private bool isLaunchInProgress;
+    private string launchFeedback = string.Empty;
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
-        ModManagementCoordinator modManagementCoordinator)
+        ModManagementCoordinator modManagementCoordinator,
+        GameLaunchHandoffCoordinator gameLaunchCoordinator)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
+        this.gameLaunchCoordinator = gameLaunchCoordinator;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
+        launchPresentation = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -64,13 +71,29 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         ? "Community mod operation in progress"
         : modPresentation.AutomationName;
 
-    public bool CanManageMod => modPresentation.CanExecute && !isModOperationInProgress;
+    public bool CanManageMod => modPresentation.CanExecute && !isModOperationInProgress && !isLaunchInProgress;
+
+    public string LaunchActionLabel => isLaunchInProgress ? "Official launcher open…" : launchPresentation.ActionLabel;
+
+    public string LaunchActionAutomationName => isLaunchInProgress
+        ? "Official Star Trek Fleet Command launcher handoff in progress"
+        : launchPresentation.AutomationName;
+
+    public bool CanLaunchGame => launchPresentation.CanExecute && !isLaunchInProgress && !isModOperationInProgress;
 
     public string ModOperationFeedback => modOperationFeedback;
 
     public bool HasModOperationFeedback => !string.IsNullOrWhiteSpace(modOperationFeedback);
 
     public bool IsModOperationInProgress => isModOperationInProgress;
+
+    public bool IsLaunchInProgress => isLaunchInProgress;
+
+    public string HomeOperationFeedback => !string.IsNullOrWhiteSpace(launchFeedback)
+        ? launchFeedback
+        : modOperationFeedback;
+
+    public bool HasHomeOperationFeedback => !string.IsNullOrWhiteSpace(HomeOperationFeedback);
 
     public string? SelectedGameDirectory => snapshot.SelectedGameDirectory;
 
@@ -111,6 +134,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new WindowsModArtifactVersionReader(),
             new WindowsAuthenticodeVerifier("Joseph Gustavson"),
             processInspector.IsGameRunning);
+        var launchCoordinator = new GameLaunchHandoffCoordinator(
+            installLayout.StateDirectory,
+            deploymentService,
+            WindowsOfficialLauncherService.FromCurrentUser(),
+            processInspector);
         return new(
             new LauncherEnvironmentProbe(
                 processInspector,
@@ -119,7 +147,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new ModManagementCoordinator(
                 deploymentService,
                 new GitHubWindowsReleaseClient(httpClient),
-                new Version(0, 1, 0)));
+                new Version(0, 1, 0)),
+            launchCoordinator);
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -139,6 +168,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         modPresentation = modManagementCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
+        launchPresentation = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory);
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
         OnPropertyChanged(nameof(GameFolderTone));
@@ -151,6 +181,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
         NotifyModPresentationChanged();
+        NotifyLaunchPresentationChanged();
         OnPropertyChanged(nameof(InitialBrowseDirectory));
         OnPropertyChanged(nameof(ConfigurationFilePath));
         OnPropertyChanged(nameof(SelectedGameDirectory));
@@ -245,6 +276,35 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task<GameLaunchHandoffResult?> LaunchGameAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanLaunchGame || snapshot.SelectedGameDirectory is null)
+        {
+            return null;
+        }
+
+        SetLaunchState(true, "Opening the official Star Trek Fleet Command launcher…");
+        try
+        {
+            var result = await gameLaunchCoordinator.LaunchAsync(
+                snapshot.SelectedGameDirectory,
+                GameLaunchMode.Modded,
+                cancellationToken);
+            launchFeedback = result.Message;
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            launchFeedback = "The official-launcher handoff was canceled.";
+            return null;
+        }
+        finally
+        {
+            SetLaunchState(false, launchFeedback);
+            Refresh();
+        }
+    }
+
     private void SetModOperationState(bool isInProgress, string feedback)
     {
         isModOperationInProgress = isInProgress;
@@ -255,6 +315,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanManageMod));
         OnPropertyChanged(nameof(ModOperationFeedback));
         OnPropertyChanged(nameof(HasModOperationFeedback));
+        OnPropertyChanged(nameof(HomeOperationFeedback));
+        OnPropertyChanged(nameof(HasHomeOperationFeedback));
+        OnPropertyChanged(nameof(CanLaunchGame));
     }
 
     private void NotifyModPresentationChanged()
@@ -264,6 +327,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ModActionLabel));
         OnPropertyChanged(nameof(ModActionAutomationName));
         OnPropertyChanged(nameof(CanManageMod));
+    }
+
+    private void SetLaunchState(bool isInProgress, string feedback)
+    {
+        isLaunchInProgress = isInProgress;
+        launchFeedback = feedback;
+        OnPropertyChanged(nameof(IsLaunchInProgress));
+        OnPropertyChanged(nameof(LaunchActionLabel));
+        OnPropertyChanged(nameof(LaunchActionAutomationName));
+        OnPropertyChanged(nameof(CanLaunchGame));
+        OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(HomeOperationFeedback));
+        OnPropertyChanged(nameof(HasHomeOperationFeedback));
+    }
+
+    private void NotifyLaunchPresentationChanged()
+    {
+        OnPropertyChanged(nameof(LaunchActionLabel));
+        OnPropertyChanged(nameof(LaunchActionAutomationName));
+        OnPropertyChanged(nameof(CanLaunchGame));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

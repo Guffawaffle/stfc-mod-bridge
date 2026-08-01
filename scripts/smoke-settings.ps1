@@ -331,6 +331,14 @@ try {
   }
   Write-Host "PASS: launcher Home exposes community-mod state and action '$($modAction.Current.Name)'."
 
+  $launchAction = $homeButtons | Where-Object {
+    $_.Current.Name -match '(?i)^launch (the )?(modded game|game)'
+  } | Select-Object -First 1
+  if ($null -eq $launchAction) {
+    throw "Launcher Home did not expose an accessible game-launch action."
+  }
+  Write-Host "PASS: launcher Home exposes explicit modded-launch state '$($launchAction.Current.Name)'."
+
   $settingsEntry = Find-AutomationElement `
     -Root $root `
     -Name "Open launcher settings" `
