@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -102,8 +101,6 @@ public sealed class LauncherSelfUpdateService(
     IModArtifactAuthenticityVerifier authenticityVerifier,
     ILauncherArtifactIdentityReader identityReader)
 {
-    private const int MaximumEntries = 128;
-    private const long MaximumExpandedBytes = 768L * 1024L * 1024L;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -147,7 +144,7 @@ public sealed class LauncherSelfUpdateService(
         var transactionRoot = Path.Combine(stateDirectory, "self-update", transactionId);
         var stageDirectory = Path.Combine(transactionRoot, "stage");
         Directory.CreateDirectory(stageDirectory);
-        ExtractArchive(download.Contents, stageDirectory);
+        LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
 
         var launcherPath = Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.exe");
         var updaterPath = Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.Updater.exe");
@@ -214,36 +211,6 @@ public sealed class LauncherSelfUpdateService(
         if (!result.IsTrusted)
         {
             throw new InvalidDataException($"Launcher update signature verification failed: {result.Message}");
-        }
-    }
-
-    private static void ExtractArchive(byte[] contents, string destination)
-    {
-        using var archive = new ZipArchive(new MemoryStream(contents, writable: false), ZipArchiveMode.Read);
-        if (archive.Entries.Count is 0 or > MaximumEntries)
-        {
-            throw new InvalidDataException("Launcher archive entry count is invalid.");
-        }
-        long expandedBytes = 0;
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in archive.Entries)
-        {
-            if (string.IsNullOrEmpty(entry.Name))
-            {
-                continue;
-            }
-            expandedBytes += entry.Length;
-            var relative = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-            var target = Path.GetFullPath(Path.Combine(destination, relative));
-            if (expandedBytes > MaximumExpandedBytes
-                || !target.StartsWith(Path.GetFullPath(destination) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                || !seen.Add(relative)
-                || (entry.ExternalAttributes & 0xF0000000) == 0xA0000000)
-            {
-                throw new InvalidDataException("Launcher archive contains an unsafe entry.");
-            }
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            entry.ExtractToFile(target, overwrite: false);
         }
     }
 

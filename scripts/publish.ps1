@@ -46,5 +46,6 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 }
 
 & (Join-Path $PSScriptRoot "package.ps1") -OutputDirectory $outputRoot
+& (Join-Path $PSScriptRoot "publish-bootstrapper.ps1") -OutputDirectory $outputRoot
 
 Write-Host "Published launcher payload: $payload"

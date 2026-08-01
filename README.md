@@ -11,6 +11,8 @@ deployment.
 ## Projects
 
 - `STFCCommunityMod.Launcher` — .NET 8 WPF shell for Windows x64.
+- `STFCCommunityMod.Launcher.Setup` — signed one-file per-user installer and
+  launcher entry point.
 - `STFCCommunityMod.Launcher.Core` — UI-independent launcher contracts and
   platform services.
 - `STFCCommunityMod.Launcher.Core.Tests` — deterministic unit tests with no
@@ -39,8 +41,13 @@ self-contained and does not require a machine-wide .NET runtime.
 ./windows-launcher/scripts/publish.ps1
 ```
 
-The script writes an unpackaged per-user payload, a ZIP, a SHA-256 sidecar, and
-a small launcher manifest under `windows-launcher/artifacts/`.
+The script writes an unpackaged per-user payload, an internal self-update ZIP,
+a SHA-256 sidecar, a small launcher manifest, and the user-facing single-file
+`setup/STFCCommunityMod.Launcher.Setup.exe` under `windows-launcher/artifacts/`.
+Release users download only the setup executable; it installs without
+elevation, creates a Start-menu shortcut, and starts the launcher. Ordinary PR
+artifacts are unsigned build evidence and are intentionally rejected by the
+production install trust checks.
 
 ## Current safety boundary
 

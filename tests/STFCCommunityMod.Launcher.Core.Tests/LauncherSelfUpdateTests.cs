@@ -52,6 +52,20 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public async Task ArchiveAlternateDataStreamFailsBeforeExecutableVerification()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var archive = CreateArchive(
+            ("payload.txt:stream", [1]),
+            ("STFCCommunityMod.Launcher.exe", [2]),
+            ("STFCCommunityMod.Launcher.Updater.exe", [3]));
+        var service = CreateService(temporaryDirectory, archive);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => service.PrepareAsync(Discovery(Artifact(archive)), new string('a', 40), 123));
+    }
+
+    [TestMethod]
     public void LauncherSelectionRequiresSignedContentsContract()
     {
         var archive = new byte[] { 1, 2, 3 };

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <AssemblyName>STFCCommunityMod.Launcher.Setup</AssemblyName>
+    <RootNamespace>STFCCommunityMod.Launcher.Setup</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\STFCCommunityMod.Launcher\Assets\stfc-community-mod.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\STFCCommunityMod.Launcher.Core\STFCCommunityMod.Launcher.Core.csproj" />
+    <Content Include="..\STFCCommunityMod.Launcher\Assets\stfc-community-mod.ico"
+             Link="stfc-community-mod.ico" />
+    <EmbeddedResource Include="$(LauncherPayloadPath)"
+                      Condition="'$(LauncherPayloadPath)' != ''"
+                      LogicalName="STFCCommunityMod.Launcher.Payload.zip" />
+  </ItemGroup>
+
+  <Target Name="RequireEmbeddedLauncherPayload" BeforeTargets="PrepareForBuild"
+          Condition="'$(RequireLauncherPayload)' == 'true' and !Exists('$(LauncherPayloadPath)')">
+    <Error Text="LauncherPayloadPath must identify the packaged launcher ZIP." />
+  </Target>
+</Project>
