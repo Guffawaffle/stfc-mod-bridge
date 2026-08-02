@@ -35,6 +35,11 @@ dotnet publish windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.L
 The repository `global.json` selects .NET 8. The launcher publish is
 self-contained and does not require a machine-wide .NET runtime.
 
+For routine local dogfooding, double-click `run-launcher.cmd` at the repository
+root. It incrementally builds the current checkout in Release mode and starts
+the exact launcher executable produced by that build. A failed build remains
+visible in the command window instead of launching an older output.
+
 ## Package the launcher
 
 ```powershell
