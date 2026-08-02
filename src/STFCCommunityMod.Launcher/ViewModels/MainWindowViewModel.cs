@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Reflection;
 using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
+using STFCCommunityMod.Launcher.Services;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
@@ -17,6 +18,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
+    private readonly IDiagnosticFolderService diagnosticFolderService;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHealthSnapshot localHealth;
     private HomeHealthProjection homeHealth;
@@ -27,6 +29,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
     private readonly HomeActionFeedbackArbiter homeFeedback;
     private LauncherLaunchTarget selectedLaunchTarget;
+    private LauncherDiagnosticPreview? diagnosticPreview;
+    private string diagnosticActionStatus = string.Empty;
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
@@ -35,7 +39,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
-        ILauncherUiPreferencesStore uiPreferencesStore)
+        ILauncherUiPreferencesStore uiPreferencesStore,
+        IDiagnosticFolderService diagnosticFolderService)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
@@ -44,6 +49,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.uiPreferencesStore = uiPreferencesStore;
+        this.diagnosticFolderService = diagnosticFolderService;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
@@ -148,6 +154,18 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
         && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
+    public string DiagnosticRecoveryAvailability => CanRecoverMod
+        ? "Recovery is available for the detected incomplete transaction."
+        : ModActionKind == ModManagementActionKind.Recover
+            ? modPresentation.AutomationName
+            : "No incomplete deployment transaction is available to recover.";
+
+    public string DiagnosticRemovalAvailability => CanUninstallMod
+        ? "Removal is available after confirmation."
+        : IsGameRunning
+            ? "Close Star Trek Fleet Command before removing the managed community mod."
+            : "Removal is available only for a verified Mod Control-managed installation owned by the selected provider.";
+
     public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
 
     public string LaunchActionAutomationName => actionFeedback.Launch.IsWorking
@@ -223,6 +241,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public string LauncherUpdateFeedback => actionFeedback.LauncherUpdate.StatusText;
 
     public bool CanCheckLauncherUpdate => actionFeedback.LauncherUpdate.IsCommandAvailable;
+
+    public IReadOnlyList<LauncherDiagnosticFact> DiagnosticChecks =>
+        diagnosticPreview?.Document.Health ?? [];
+
+    public string DiagnosticTechnicalReport => diagnosticPreview?.RedactedJson ?? string.Empty;
+
+    public string DiagnosticSummary => diagnosticPreview?.RedactedSummary ?? string.Empty;
+
+    public string DiagnosticActionStatus => diagnosticActionStatus;
+
+    public bool HasDiagnosticActionStatus => !string.IsNullOrWhiteSpace(diagnosticActionStatus);
+
+    public bool CanOpenGameFolder => snapshot.SelectedGameDirectory is not null;
+
+    public bool CanOpenLogsFolder => snapshot.SelectedGameDirectory is not null;
 
     public string? InitialBrowseDirectory
     {
@@ -307,6 +340,30 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new WindowsGameExecutableLaunchService(),
             officialLauncherService,
             processInspector);
+        LauncherConfigurationDiagnosisEvidence configurationEvidence;
+        try
+        {
+            configurationEvidence = distributionProvider.GetCapabilityStatus(
+                    LauncherProviderCapabilityIds.ConfigurationCatalog)
+                    == LauncherProviderCapabilityStatus.Supported
+                ? LauncherConfigurationDiagnosisEvidence.Supported(
+                    distributionProvider.Id,
+                    releaseChannel.Id,
+                    BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider))
+                : LauncherConfigurationDiagnosisEvidence.Unavailable(
+                    distributionProvider.Id,
+                    releaseChannel.Id,
+                    distributionProvider.GetCapabilityStatus(
+                        LauncherProviderCapabilityIds.ConfigurationCatalog));
+        }
+        catch (LauncherConfigurationSchemaException)
+        {
+            configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
+                distributionProvider.Id,
+                releaseChannel.Id,
+                LauncherProviderCapabilityStatus.Unknown);
+        }
+
         return new(
             new LauncherEnvironmentProbe(
                 processInspector,
@@ -324,7 +381,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 deploymentService,
                 officialLauncherService,
                 processInspector,
-                currentLauncherVersion.ToString(3)),
+                currentLauncherVersion.ToString(3),
+                configurationEvidence: configurationEvidence,
+                runtimeDistributionId: distributionProvider.RuntimeDistributionId),
             new LauncherSelfUpdateService(
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
@@ -332,7 +391,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient,
-            uiPreferencesStore);
+            uiPreferencesStore,
+            new WindowsDiagnosticFolderService());
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -509,8 +569,39 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 
-    public LauncherDiagnosticPreview BuildDiagnosticPreview() =>
-        diagnosticService.BuildPreview(snapshot.SelectedGameDirectory);
+    public LauncherDiagnosticPreview BuildDiagnosticPreview()
+    {
+        diagnosticPreview = diagnosticService.BuildPreview(
+            snapshot.SelectedGameDirectory,
+            localHealth);
+        OnPropertyChanged(nameof(DiagnosticChecks));
+        OnPropertyChanged(nameof(DiagnosticTechnicalReport));
+        OnPropertyChanged(nameof(DiagnosticSummary));
+        OnPropertyChanged(nameof(CanOpenGameFolder));
+        OnPropertyChanged(nameof(CanOpenLogsFolder));
+        return diagnosticPreview;
+    }
+
+    public void OpenGameFolder() =>
+        SetDiagnosticActionStatus(diagnosticFolderService.TryOpen(
+            snapshot.SelectedGameDirectory,
+            out var message), message);
+
+    public void OpenLogsFolder()
+    {
+        var directory = CanOpenLogsFolder ? snapshot.SelectedGameDirectory : null;
+        SetDiagnosticActionStatus(diagnosticFolderService.TryOpen(directory, out var message), message);
+    }
+
+    public void ReportDiagnosticAction(bool succeeded, string message) =>
+        SetDiagnosticActionStatus(succeeded, message);
+
+    private void SetDiagnosticActionStatus(bool succeeded, string message)
+    {
+        diagnosticActionStatus = succeeded ? message : $"Action unavailable. {message}";
+        OnPropertyChanged(nameof(DiagnosticActionStatus));
+        OnPropertyChanged(nameof(HasDiagnosticActionStatus));
+    }
 
     public static Task ExportDiagnosticsAsync(
         LauncherDiagnosticPreview preview,
@@ -643,6 +734,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ModActionKind));
         OnPropertyChanged(nameof(CanRecoverMod));
         OnPropertyChanged(nameof(CanUninstallMod));
+        OnPropertyChanged(nameof(DiagnosticRecoveryAvailability));
+        OnPropertyChanged(nameof(DiagnosticRemovalAvailability));
         UpdateModActionAvailability();
     }
 

@@ -1,5 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
@@ -15,13 +17,14 @@ public sealed class LauncherDiagnosticsTests
             @"C:\Users\Private Player",
             @"D:\Games\STFC\game");
         const string input =
-            @"path=C:\Users\Private Player\AppData\Local game=D:\Games\STFC\game token=super-secret Authorization: Bearer abc123 endpoint=https://private.example.test/hook?id=42";
+            @"path=C:\Users\Private Player\AppData\Local game=D:\Games\STFC\game token=super-secret cookie=session-cookie Authorization: Bearer abc123 endpoint=https://private.example.test/hook?id=42";
 
         var output = redactor.Redact(input);
 
         Assert.IsFalse(output.Contains("Private Player", StringComparison.Ordinal));
         Assert.IsFalse(output.Contains("super-secret", StringComparison.Ordinal));
         Assert.IsFalse(output.Contains("abc123", StringComparison.Ordinal));
+        Assert.IsFalse(output.Contains("session-cookie", StringComparison.Ordinal));
         Assert.IsFalse(output.Contains("private.example.test", StringComparison.Ordinal));
         Assert.IsTrue(output.Contains("%USERPROFILE%", StringComparison.Ordinal));
         Assert.IsTrue(output.Contains("%GAME_DIR%", StringComparison.Ordinal));
@@ -52,17 +55,75 @@ public sealed class LauncherDiagnosticsTests
             new FakeOfficialLauncherService(),
             new FakeGameProcessInspector(),
             "0.1.0",
-            new FixedTimeProvider());
+            new FixedTimeProvider(),
+            SupportedConfigurationEvidence());
 
-        var preview = diagnostics.BuildPreview(gameDirectory);
+        var localHealth = LauncherHealthResolver.Resolve(
+            new ModInstallationEvidence(
+                ModInstallationEvidenceState.ManagedVerified,
+                false,
+                "2.1.0.8",
+                "guffawaffle",
+                "stable",
+                "guffawaffle",
+                ReleaseArtifact().Sha256),
+            new LauncherProviderHealthContext(
+                "guffawaffle",
+                "stable",
+                "guffawaffle",
+                true,
+                string.Empty));
+
+        var preview = diagnostics.BuildPreview(gameDirectory, localHealth);
 
         Assert.IsTrue(preview.Document.Health.Any(fact => fact.Name == "Community mod"));
-        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Name == "Configuration"));
+        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Id == "configuration"));
+        Assert.IsTrue(preview.Document.Health.All(fact => !string.IsNullOrWhiteSpace(fact.Id)));
+        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Id == "local-health.nativesupport"));
         Assert.IsTrue(preview.Document.RecentModLog.Count > 0);
         Assert.IsFalse(preview.RedactedJson.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(preview.RedactedJson.Contains("runtime-secret", StringComparison.Ordinal));
         Assert.IsFalse(preview.RedactedJson.Contains("private.example.test", StringComparison.Ordinal));
         Assert.IsFalse(preview.RedactedJson.Contains("do-not-export", StringComparison.Ordinal));
+        var structuredDocument = JsonSerializer.Serialize(preview.Document);
+        Assert.IsFalse(structuredDocument.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(structuredDocument.Contains("runtime-secret", StringComparison.Ordinal));
+        Assert.IsFalse(structuredDocument.Contains("private.example.test", StringComparison.Ordinal));
+        Assert.IsFalse(preview.RedactedSummary.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(preview.RedactedSummary.Contains("runtime-secret", StringComparison.Ordinal));
+        Assert.AreEqual(2, preview.Document.SchemaVersion);
+    }
+
+    [TestMethod]
+    public void ReportSurfacesUnknownProviderDiagnosisWithoutReadingValues()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var secret = "never-project-this-token";
+        File.WriteAllText(
+            Path.Combine(gameDirectory, "community_patch_settings.toml"),
+            $"[sync]\ntoken = \"{secret}\"\nurl = \"https://private.example.invalid/ingress\"\n",
+            Encoding.UTF8);
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(),
+            "0.1.0",
+            new FixedTimeProvider(),
+            LauncherConfigurationDiagnosisEvidence.Unavailable(
+                "netniv",
+                "main",
+                LauncherProviderCapabilityStatus.Unsupported));
+
+        var preview = diagnostics.BuildPreview(gameDirectory);
+        var configuration = preview.Document.Health.Single(fact => fact.Id == "configuration");
+
+        Assert.AreEqual(LauncherDiagnosticLevel.Unavailable, configuration.Level);
+        Assert.IsTrue(configuration.Summary.Contains("unknown", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(preview.RedactedJson.Contains(secret, StringComparison.Ordinal));
+        Assert.IsFalse(preview.RedactedSummary.Contains(secret, StringComparison.Ordinal));
+        Assert.IsFalse(preview.RedactedJson.Contains("private.example.invalid", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -92,6 +153,17 @@ public sealed class LauncherDiagnosticsTests
         new FakeVersionReader(),
         new FakeAuthenticityVerifier(),
         () => false);
+
+    private static LauncherConfigurationDiagnosisEvidence SupportedConfigurationEvidence() =>
+        LauncherConfigurationDiagnosisEvidence.Supported(
+            "guffawaffle",
+            "stable",
+            LauncherConfigurationSchemaLoader.LoadFile(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "Fixtures",
+                    "Configuration",
+                    "config-schema.guffawaffle.v1.json")));
 
     private static ModReleaseArtifact ReleaseArtifact() => new(
         new Uri("https://example.invalid/version.dll"),

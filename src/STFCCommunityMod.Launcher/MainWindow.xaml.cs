@@ -282,8 +282,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         try
         {
             diagnosticPreview = viewModel.BuildDiagnosticPreview();
-            DiagnosticPreviewText.Text = diagnosticPreview.RedactedJson;
-            DiagnosticsDialog.IsOpen = true;
+            SetDiagnosticsWorkspaceOpen(true);
         }
         catch (Exception exception) when (
             exception is InvalidDataException
@@ -296,6 +295,45 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
+    private void RefreshDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.Refresh();
+            diagnosticPreview = viewModel.BuildDiagnosticPreview();
+            viewModel.ReportDiagnosticAction(true, "Diagnostics checks refreshed from current local evidence.");
+        }
+    }
+
+    private void OpenGameFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.OpenGameFolder();
+        }
+    }
+
+    private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.OpenLogsFolder();
+        }
+    }
+
+    private void DiagnosticsHomeButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        SetDiagnosticsWorkspaceOpen(false);
+    }
+
     private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -304,12 +342,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             try
             {
-                Clipboard.SetText(diagnosticPreview.RedactedJson);
-                DiagnosticExportStatus.Text = "Copied the redacted preview. Nothing was uploaded.";
+                Clipboard.SetText(diagnosticPreview.RedactedSummary);
+                if (DataContext is MainWindowViewModel viewModel)
+                {
+                    viewModel.ReportDiagnosticAction(
+                        true,
+                        "Copied the displayed redacted summary. Nothing was uploaded.");
+                }
             }
             catch (System.Runtime.InteropServices.ExternalException exception)
             {
-                DiagnosticExportStatus.Text = $"Windows could not access the clipboard: {exception.Message}";
+                if (DataContext is MainWindowViewModel viewModel)
+                {
+                    viewModel.ReportDiagnosticAction(
+                        false,
+                        $"Windows could not access the clipboard: {exception.Message}");
+                }
             }
         }
     }
@@ -318,7 +366,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         _ = sender;
         _ = e;
-        if (diagnosticPreview is null || DataContext is not MainWindowViewModel)
+        if (diagnosticPreview is null || DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
@@ -342,12 +390,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 diagnosticPreview,
                 dialog.FileName,
                 lifetimeCancellation.Token);
-            DiagnosticExportStatus.Text = "Saved the exact redacted preview. Nothing was uploaded.";
+            viewModel.ReportDiagnosticAction(
+                true,
+                "Saved the exact previewed redacted report. Nothing was uploaded.");
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
-            DiagnosticExportStatus.Text = $"The diagnostic export failed: {exception.Message}";
+            viewModel.ReportDiagnosticAction(false, $"The diagnostic export failed: {exception.Message}");
         }
     }
 
@@ -357,7 +407,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanRecoverMod)
         {
-            DiagnosticsDialog.IsOpen = false;
+            SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
         }
     }
@@ -368,7 +418,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanUninstallMod)
         {
-            DiagnosticsDialog.IsOpen = false;
+            SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Uninstall, viewModel);
         }
     }
@@ -387,7 +437,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        DiagnosticsDialog.IsOpen = false;
+        SetDiagnosticsWorkspaceOpen(false);
         LauncherUpdateSummary.Text = pendingLauncherUpdate.Message;
         LauncherUpdateTarget.Text = pendingLauncherUpdate.TargetDirectory;
         LauncherUpdateDialog.IsOpen = true;
@@ -782,6 +832,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void SetSettingsWorkspaceOpen(bool isOpen)
     {
+        if (isOpen)
+        {
+            DiagnosticsWorkspace.Visibility = Visibility.Collapsed;
+            DiagnosticsHomeTitleBarButton.Visibility = Visibility.Collapsed;
+            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
+        }
         isSettingsWorkspaceOpen = isOpen;
         HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -792,6 +848,44 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         MinWidth = isOpen ? SettingsMinWidth : 560;
         MinHeight = isOpen ? SettingsMinHeight : 620;
+        if (WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        Width = Math.Min(
+            isOpen ? Math.Max(ActualWidth, SettingsWidth) : HomeWidth,
+            SystemParameters.WorkArea.Width);
+        Height = Math.Min(
+            isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
+            SystemParameters.WorkArea.Height);
+    }
+
+    private void SetDiagnosticsWorkspaceOpen(bool isOpen)
+    {
+        if (isOpen)
+        {
+            isSettingsWorkspaceOpen = false;
+        }
+        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsWorkspace.Visibility = Visibility.Collapsed;
+        DiagnosticsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsHomeTitleBarButton.Visibility = Visibility.Collapsed;
+        DiagnosticsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (isOpen)
+        {
+            SettingsDiagnosticsTitleBarButton.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
+        }
+        SettingsSearchHost.Visibility = Visibility.Collapsed;
+        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+
+        MinWidth = isOpen ? SettingsMinWidth : 560;
+        MinHeight = SettingsMinHeight;
         if (WindowState != WindowState.Normal)
         {
             return;
