@@ -166,6 +166,59 @@ public sealed class GameLaunchHandoffTests
         StringAssert.Contains(result.Message, "no new process");
     }
 
+    [TestMethod]
+    public async Task WindowsServiceSurfacesReusedLauncherAndRetainsExactExistingLifetime()
+    {
+        var existing = new RecordingOfficialLauncherProcess();
+        var activation = new RecordingOfficialLauncherProcess();
+        var activationCount = 0;
+        var service = new WindowsOfficialLauncherService(
+            () => true,
+            () => existing,
+            () =>
+            {
+                activationCount++;
+                return activation;
+            });
+
+        var result = await service.StartAsync(CancellationToken.None);
+
+        Assert.AreEqual(OfficialLauncherStartKind.ReusedRunning, result.Kind);
+        Assert.IsFalse(result.Changed);
+        Assert.AreSame(existing, result.Process);
+        Assert.AreEqual(1, activationCount, "The executable must still be invoked to surface its existing UI.");
+        Assert.AreEqual(1, activation.DisposeCount, "The newly returned activation handle must be released immediately.");
+        Assert.AreEqual(0, existing.DisposeCount, "The exact existing process remains the handoff lifetime boundary.");
+
+        await result.Process.DisposeAsync();
+        Assert.AreEqual(1, existing.DisposeCount);
+    }
+
+    [TestMethod]
+    public async Task DeploymentReadFailureProjectsStablePathFreeRecoveryReason()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory, "sensitive-player-folder");
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+        var artifactPath = Path.Combine(gameDirectory, "version.dll");
+        using var exclusiveLock = new FileStream(
+            artifactPath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("The community mod deployment state could not be validated safely.", presentation.Reason);
+        Assert.AreEqual(LauncherLaunchRecoveryAction.OpenDiagnostics, presentation.NextAction);
+        Assert.IsFalse(presentation.Reason.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(presentation.AutomationName.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(presentation.AutomationName.Contains("sensitive-player-folder", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static Fixture CreateFixture(
         TemporaryDirectory temporaryDirectory,
         bool gameAvailable = true,
@@ -203,9 +256,11 @@ public sealed class GameLaunchHandoffTests
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
     }
 
-    private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
+    private static string CreateGameDirectory(
+        TemporaryDirectory temporaryDirectory,
+        string directoryName = "game")
     {
-        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        var gameDirectory = temporaryDirectory.CreateDirectory(directoryName);
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
         return gameDirectory;
     }
@@ -284,6 +339,19 @@ public sealed class GameLaunchHandoffTests
             public Task WaitForExitAsync(CancellationToken cancellationToken) => exitTask.WaitAsync(cancellationToken);
 
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingOfficialLauncherProcess : IOfficialLauncherProcess
+    {
+        public int DisposeCount { get; private set; }
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
         }
     }
 

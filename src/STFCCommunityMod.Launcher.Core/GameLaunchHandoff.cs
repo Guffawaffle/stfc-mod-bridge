@@ -96,14 +96,31 @@ public interface IGameExecutableLaunchService
 public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
 {
     private readonly string launcherPath;
+    private readonly Func<bool> isAvailable;
+    private readonly Func<IOfficialLauncherProcess?> findRunningLauncher;
+    private readonly Func<IOfficialLauncherProcess> startLauncher;
 
     public WindowsOfficialLauncherService(string launcherPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(launcherPath);
         this.launcherPath = Path.GetFullPath(launcherPath);
+        isAvailable = () => File.Exists(this.launcherPath);
+        findRunningLauncher = TryFindRunningLauncher;
+        startLauncher = StartLauncher;
     }
 
-    public bool IsAvailable => File.Exists(launcherPath);
+    internal WindowsOfficialLauncherService(
+        Func<bool> isAvailable,
+        Func<IOfficialLauncherProcess?> findRunningLauncher,
+        Func<IOfficialLauncherProcess> startLauncher)
+    {
+        launcherPath = "launcher.exe";
+        this.isAvailable = isAvailable ?? throw new ArgumentNullException(nameof(isAvailable));
+        this.findRunningLauncher = findRunningLauncher ?? throw new ArgumentNullException(nameof(findRunningLauncher));
+        this.startLauncher = startLauncher ?? throw new ArgumentNullException(nameof(startLauncher));
+    }
+
+    public bool IsAvailable => isAvailable();
 
     public static WindowsOfficialLauncherService FromCurrentUser()
     {
@@ -115,7 +132,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         return new(Path.Combine(localApplicationData, "Star Trek Fleet Command", "launcher.exe"));
     }
 
-    public Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken)
+    public async Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsAvailable)
@@ -123,15 +140,30 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
             throw new FileNotFoundException("The official Star Trek Fleet Command launcher is unavailable.", launcherPath);
         }
 
-        var existingProcess = TryFindRunningLauncher();
+        var existingProcess = findRunningLauncher();
         if (existingProcess is not null)
         {
-            return Task.FromResult(
-                new OfficialLauncherStartResult(
-                    OfficialLauncherStartKind.ReusedRunning,
-                    new TrackedProcess(existingProcess)));
+            try
+            {
+                await using var activationProcess = startLauncher();
+            }
+            catch
+            {
+                await existingProcess.DisposeAsync();
+                throw;
+            }
+            return new OfficialLauncherStartResult(
+                OfficialLauncherStartKind.ReusedRunning,
+                existingProcess);
         }
 
+        return new OfficialLauncherStartResult(
+            OfficialLauncherStartKind.StartedNew,
+            startLauncher());
+    }
+
+    private TrackedProcess StartLauncher()
+    {
         var process = Process.Start(new ProcessStartInfo(launcherPath)
         {
             UseShellExecute = true,
@@ -141,13 +173,10 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         {
             throw new InvalidOperationException("Windows did not start the official Star Trek Fleet Command launcher.");
         }
-        return Task.FromResult(
-            new OfficialLauncherStartResult(
-                OfficialLauncherStartKind.StartedNew,
-                new TrackedProcess(process)));
+        return new TrackedProcess(process);
     }
 
-    private Process? TryFindRunningLauncher()
+    private TrackedProcess? TryFindRunningLauncher()
     {
         var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(launcherPath));
         Process? match = null;
@@ -180,7 +209,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
                 process.Dispose();
             }
         }
-        return match;
+        return match is null ? null : new TrackedProcess(match);
     }
 
     private sealed class TrackedProcess(Process process) : IOfficialLauncherProcess
@@ -415,7 +444,7 @@ public sealed class GameLaunchHandoffCoordinator(
             return Blocked(
                 "Game folder needed",
                 "Launch prime.exe",
-                exception.Message,
+                "The selected game folder could not be validated safely.",
                 target,
                 LauncherLaunchRecoveryAction.OpenDiagnostics);
         }
@@ -488,7 +517,7 @@ public sealed class GameLaunchHandoffCoordinator(
             return Blocked(
                 "Repair required",
                 "Launch prime.exe",
-                exception.Message,
+                "The community mod deployment state could not be validated safely.",
                 target,
                 LauncherLaunchRecoveryAction.OpenDiagnostics);
         }

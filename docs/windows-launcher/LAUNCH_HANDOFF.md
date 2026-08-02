@@ -32,7 +32,8 @@ and when a game directory has not been selected.
 - a locally present manual mod, or a launcher-managed `version.dll` whose recorded bytes still match.
 
 Each Core presentation carries a stable target, reason, and `LauncherLaunchRecoveryAction`. WPF projects those fields; it
-does not infer recovery guidance from display text.
+does not infer recovery guidance from display text. Home and UI Automation reasons are stable and path-free; raw filesystem
+and deployment exception detail belongs only in the redacted Diagnostics workflow.
 
 ## Operation boundary
 
@@ -43,7 +44,9 @@ For Scopely handoff, the lease is held until the exact tracked launcher process 
 for a safely inspectable running process whose executable path exactly matches the supported launcher:
 
 - a newly started process produces a changed result;
-- an exact already-running process is reused and produces a truthful no-change result;
+- an exact already-running process is reused and produces a truthful no-change result; the executable is still invoked to
+  surface its UI, the newly returned activation handle is released immediately, and the exact pre-existing process remains
+  the tracked lifetime boundary;
 - a process that cannot be inspected or does not match is never adopted as the lifetime boundary.
 
 For direct launch, the lease is held through final validation and successful `prime.exe` process creation, then released.

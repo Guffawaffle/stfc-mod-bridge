@@ -325,7 +325,9 @@ released after successful process creation.
 Each target publishes structured availability, reason, and next-action data.
 The UI must not derive recovery behavior from target or display-name strings.
 Starting a new process is a changed action result; safely reusing an already
-running Scopely process is an explicit no-change result.
+running Scopely process is an explicit no-change result. Reuse still invokes
+the supported executable to surface its UI, disposes that activation handle,
+and retains the exact pre-existing process as the lifetime boundary.
 
 The launcher reports distinct states:
 
