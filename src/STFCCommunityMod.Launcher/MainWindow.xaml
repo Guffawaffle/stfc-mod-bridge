@@ -471,7 +471,30 @@
                  Text="Install, update, and configure the community mod in one place."
                  TextAlignment="Center" />
 
-      <Border Margin="0,30,0,0"
+      <Button MinWidth="132"
+              MinHeight="44"
+              Margin="0,16,0,0"
+              HorizontalAlignment="Center"
+              Style="{StaticResource UtilityActionButtonStyle}"
+              Command="{Binding RefreshCommand}"
+              Content="{Binding RefreshActionLabel}"
+              IsEnabled="{Binding CanRefresh}"
+              automation:AutomationProperties.Name="{Binding RefreshActionAutomationName}"
+              automation:AutomationProperties.HelpText="Checks the game folder, running game, and community mod status. Repeated activation is ignored while the check is working." />
+
+      <TextBlock MinHeight="20"
+                 Margin="24,8,24,0"
+                 HorizontalAlignment="Center"
+                 FontSize="13"
+                 Foreground="{DynamicResource TextSecondaryBrush}"
+                 Text="{Binding RefreshActionStatus}"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 Visibility="{Binding HasRefreshActionStatus, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 automation:AutomationProperties.Name="{Binding RefreshActionStatus}"
+                 automation:AutomationProperties.LiveSetting="Polite" />
+
+      <Border Margin="0,20,0,0"
               Padding="22,6"
               Background="{DynamicResource SurfaceBrush}"
               BorderBrush="{DynamicResource BorderBrush}"
@@ -743,7 +766,8 @@
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        Text="{Binding ModStatus}"
                        automation:AutomationProperties.LiveSetting="Polite" />
-            <Button Style="{StaticResource QuietButtonStyle}"
+            <Button MinHeight="44"
+                    Style="{StaticResource QuietButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
                     IsEnabled="{Binding CanManageMod}"
@@ -775,6 +799,7 @@
                    Text="{Binding HomeOperationFeedback}"
                    TextAlignment="Center"
                    TextWrapping="Wrap"
+                   automation:AutomationProperties.Name="{Binding HomeOperationFeedback}"
                    automation:AutomationProperties.LiveSetting="Polite" />
       </Border>
     </StackPanel>
