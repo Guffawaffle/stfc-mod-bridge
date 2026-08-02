@@ -118,6 +118,7 @@ public sealed class LauncherSettingsProjectionQuery
         || Contains(setting.Category, searchText)
         || Contains(setting.Control.ToString(), searchText)
         || Contains(setting.ValueKind.ToString(), searchText)
+        || setting.Aliases.Any(alias => Contains(alias.Path, searchText))
         || setting.Presentation.SearchTerms.Any(term => Contains(term, searchText));
 
     private static bool Contains(string? candidate, string searchText) =>

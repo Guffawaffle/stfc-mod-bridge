@@ -225,6 +225,19 @@ public sealed class SettingsRowViewModel :
 
     public bool IsDirty => valueState.IsDirty;
 
+    public bool IsCompatibilityResolved =>
+        valueState.DraftOrigin == LauncherConfigurationValueOrigin.CompatibilityAlias;
+
+    public string EffectiveValueSource =>
+        valueState.DraftOrigin switch
+        {
+            LauncherConfigurationValueOrigin.CanonicalOverride =>
+                $"Canonical TOML · {Path}",
+            LauncherConfigurationValueOrigin.CompatibilityAlias =>
+                "Compatibility alias · runtime-resolved",
+            _ => $"Provider default · {Setting.Provenance.DefaultSource}",
+        };
+
     public bool HasOverflowActions => IsKeybindingEditor;
 
     public bool IsExperimental =>
@@ -232,16 +245,53 @@ public sealed class SettingsRowViewModel :
 
     public string EffectiveState =>
         IsDirty
-            ? DraftHasOverride ? "Unsaved value" : "Unsaved default"
-            : DraftHasOverride ? "Configured" : "Default";
+            ? DraftHasOverride
+                ? "Unsaved value"
+                : IsCompatibilityResolved ? "Unsaved compatibility value" : "Unsaved default"
+            : DraftHasOverride
+                ? "Configured"
+                : IsCompatibilityResolved ? "Compatibility value" : "Default";
 
-    public string EffectiveValue => FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
+    public string EffectiveValue =>
+        IsCompatibilityResolved
+            ? "Unknown"
+            : FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
 
-    public string DefaultAndEffectiveHelp =>
-        $"Default: {DefaultValueText}. Effective: {EffectiveValue}. "
-        + (DraftHasOverride
-            ? "An explicit value is configured; use Reset to default to remove it."
-            : "No explicit value is configured; the runtime/provider default is effective.");
+    public string DefaultAndEffectiveHelp
+    {
+        get
+        {
+            var providerDefault =
+                $"Default: {DefaultValueText} · Provider source: {Setting.Provenance.DefaultSource}. "
+                + $"Runtime path: {Setting.Provenance.RuntimePath}. ";
+            if (IsCompatibilityResolved)
+            {
+                var canonicalEditBehavior = IsNotificationEditor
+                    ? "A canonical notification edit replaces the whole compatibility policy; "
+                    : "A canonical edit takes precedence over compatibility input; ";
+                return providerDefault
+                    + "Compatibility input detected at "
+                    + string.Join(", ", valueState.CompatibilitySourcePaths)
+                    + ". The provider schema does not define enough compatibility merge metadata "
+                    + "to reproduce the exact effective value, so the effective value is Unknown. "
+                    + canonicalEditBehavior
+                    + "ordinary Save preserves compatibility keys.";
+            }
+
+            var ignoredAliases =
+                valueState.CompatibilitySourcePaths.Count > 0
+                    ? " Canonical precedence replaces compatibility inputs at "
+                        + string.Join(", ", valueState.CompatibilitySourcePaths)
+                        + "; those keys remain preserved."
+                    : string.Empty;
+            return providerDefault
+                + $"Effective: {EffectiveValue}. {EffectiveValueSource}. "
+                + (DraftHasOverride
+                    ? "An explicit value is configured; use Reset to default to remove it."
+                    : "No explicit value is configured; the runtime/provider default is effective.")
+                + ignoredAliases;
+        }
+    }
 
     public string DefaultAndEffectiveAutomationName =>
         $"Default and effective value for {Title}";
@@ -572,6 +622,11 @@ public sealed class SettingsRowViewModel :
                 return "Policy unavailable";
             }
 
+            if (IsCompatibilityResolved)
+            {
+                return "Compatibility policy · Runtime-resolved";
+            }
+
             if (!notificationPolicy.IsValid)
             {
                 return "Invalid value · Using event default";
@@ -601,7 +656,9 @@ public sealed class SettingsRowViewModel :
         notificationPolicy is { IsValid: false };
 
     public string NotificationPolicyHelp =>
-        notificationPolicy is { IsValid: false }
+        IsCompatibilityResolved
+            ? "A deprecated compatibility policy is active. Its exact effective value is Unknown; editing creates a canonical whole-policy override."
+            : notificationPolicy is { IsValid: false }
             ? notificationPolicy.Error ?? "The canonical policy is invalid; the event default is shown."
             : "Toggle Windows or audio delivery and choose the in-game sound.";
 
@@ -649,6 +706,8 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(SavedHasOverride));
         OnPropertyChanged(nameof(DraftHasOverride));
         OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(IsCompatibilityResolved));
+        OnPropertyChanged(nameof(EffectiveValueSource));
         OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));

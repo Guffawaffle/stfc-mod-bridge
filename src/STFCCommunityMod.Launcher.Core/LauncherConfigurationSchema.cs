@@ -118,6 +118,7 @@ public sealed class LauncherConfigurationSetting
         string category,
         LauncherConfigurationControl control,
         LauncherConfigurationValueKind valueKind,
+        JsonElement schemaMetadata,
         JsonElement valueTypeDefinition,
         LauncherConfigurationNumericConstraints? numericConstraints,
         LauncherConfigurationKeybindingMetadata? keybindingMetadata,
@@ -137,6 +138,7 @@ public sealed class LauncherConfigurationSetting
         Category = category;
         Control = control;
         ValueKind = valueKind;
+        SchemaMetadata = schemaMetadata;
         ValueTypeDefinition = valueTypeDefinition;
         NumericConstraints = numericConstraints;
         KeybindingMetadata = keybindingMetadata;
@@ -171,6 +173,12 @@ public sealed class LauncherConfigurationSetting
     public LauncherConfigurationValueKind ValueKind { get; }
 
     /// <summary>
+    /// Detached provider-authored setting metadata. Typed adapters own validation
+    /// and projection of their domain-specific fields.
+    /// </summary>
+    public JsonElement SchemaMetadata { get; }
+
+    /// <summary>
     /// The complete valueType object from the schema. This retains adapter-specific
     /// metadata such as enum values and notification policy variants.
     /// </summary>
@@ -194,8 +202,15 @@ public sealed class LauncherConfigurationSetting
 
     public LauncherConfigurationSensitivity Sensitivity { get; }
 
+    /// <summary>
+    /// Provider-authored compatibility paths. Mod Control never infers aliases
+    /// from a canonical path or a provider display name.
+    /// </summary>
     public IReadOnlyList<LauncherConfigurationAlias> Aliases { get; }
 
+    /// <summary>
+    /// Provider-authored runtime and default-source identity.
+    /// </summary>
     public LauncherConfigurationProvenance Provenance { get; }
 
     public LauncherConfigurationApplyBehavior ApplyBehavior { get; }
@@ -238,6 +253,7 @@ public sealed class LauncherConfigurationCatalog
         SchemaVersion = schemaVersion;
         Source = source;
         Settings = settings;
+        NotificationCatalog = LauncherNotificationCatalog.Create(settings);
         _visibleSettings = Array.AsReadOnly(settings.Where(setting => setting.IsDirectlyEditable).ToArray());
         Categories = Array.AsReadOnly(
             _visibleSettings
@@ -252,6 +268,8 @@ public sealed class LauncherConfigurationCatalog
     public LauncherConfigurationSource Source { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> Settings { get; }
+
+    public LauncherNotificationCatalog NotificationCatalog { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> VisibleSettings => _visibleSettings;
 
@@ -276,6 +294,7 @@ public sealed class LauncherConfigurationCatalog
                     || Contains(setting.Presentation.Label, normalizedQuery)
                     || Contains(setting.Presentation.Help, normalizedQuery)
                     || Contains(setting.Presentation.Group, normalizedQuery)
+                    || setting.Aliases.Any(alias => Contains(alias.Path, normalizedQuery))
                     || setting.Presentation.SearchTerms.Any(
                         term => Contains(term, normalizedQuery))));
 

@@ -490,7 +490,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 false,
                 defaultValue,
                 false,
-                false);
+                false,
+                LauncherConfigurationValueOrigin.ProviderDefault,
+                LauncherConfigurationValueOrigin.ProviderDefault,
+                []);
         }
 
         var state = workspace.GetState(setting);
@@ -500,7 +503,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             state.SavedHasOverride,
             state.DraftEffectiveValue,
             state.DraftHasOverride,
-            state.IsDirty);
+            state.IsDirty,
+            state.SavedOrigin,
+            state.DraftOrigin,
+            state.CompatibilitySourcePaths);
     }
 
     private static object? SettingsRowViewModelValue(JsonElement defaultValue) =>

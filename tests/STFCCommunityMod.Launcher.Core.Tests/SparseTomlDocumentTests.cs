@@ -73,6 +73,28 @@ public sealed class SparseTomlDocumentTests
     }
 
     [TestMethod]
+    public void SetOverrideUsesDottedKeyWhenParentTableAlreadyExistsImplicitly()
+    {
+        const string source =
+            "# preserve compatibility input\n"
+            + "[notifications.events.fleet]\n"
+            + "arrived_in_system = true\n"
+            + "[unrelated]\nkeep = true\n";
+        var document = Load(source);
+
+        var result = document.SetOverride("notifications.fleet_arrived_in_system", "true");
+
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(
+            "# preserve compatibility input\n"
+            + "notifications.fleet_arrived_in_system = true\n"
+            + "[notifications.events.fleet]\n"
+            + "arrived_in_system = true\n"
+            + "[unrelated]\nkeep = true\n",
+            Decode(result.Contents!));
+    }
+
+    [TestMethod]
     public void RemoveOverrideRemovesOnlyTargetAssignment()
     {
         const string source = """

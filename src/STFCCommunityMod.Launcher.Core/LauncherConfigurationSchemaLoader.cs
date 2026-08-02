@@ -163,6 +163,7 @@ public static class LauncherConfigurationSchemaLoader
             category,
             control,
             valueKind,
+            element.Clone(),
             valueType.Clone(),
             numericConstraints,
             keybindingMetadata,
