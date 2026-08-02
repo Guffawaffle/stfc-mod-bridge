@@ -230,8 +230,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             diagnosticPreview = viewModel.BuildDiagnosticPreview();
             DiagnosticPreviewText.Text = diagnosticPreview.RedactedJson;
-            DiagnosticsRecoverButton.IsEnabled = viewModel.CanRecoverMod;
-            DiagnosticsUninstallButton.IsEnabled = viewModel.CanUninstallMod;
             DiagnosticsDialog.IsOpen = true;
         }
         catch (Exception exception) when (
@@ -330,13 +328,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        DiagnosticsDialog.IsOpen = false;
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null
             || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
         {
             return;
         }
+        DiagnosticsDialog.IsOpen = false;
         LauncherUpdateSummary.Text = pendingLauncherUpdate.Message;
         LauncherUpdateTarget.Text = pendingLauncherUpdate.TargetDirectory;
         LauncherUpdateDialog.IsOpen = true;
@@ -371,7 +369,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void ShowMaintenanceConfirmation(MaintenanceAction action, MainWindowViewModel viewModel)
     {
-        if (viewModel.SelectedGameDirectory is null)
+        var canStart = action == MaintenanceAction.Recover
+            ? viewModel.CanRecoverMod
+            : viewModel.CanUninstallMod;
+        if (!canStart || viewModel.SelectedGameDirectory is null)
         {
             return;
         }

@@ -564,7 +564,29 @@
                  Text="Install, update, and configure the community mod in one place."
                  TextAlignment="Center" />
 
-      <Border Margin="0,30,0,0"
+      <Button MinWidth="132"
+              MinHeight="44"
+              Margin="0,16,0,0"
+              HorizontalAlignment="Center"
+              Style="{StaticResource UtilityActionButtonStyle}"
+              Command="{Binding RefreshCommand}"
+              Content="{Binding RefreshActionLabel}"
+              IsEnabled="{Binding CanRefresh}"
+              automation:AutomationProperties.Name="{Binding RefreshActionAutomationName}"
+              automation:AutomationProperties.HelpText="Checks the game folder, running game, and community mod status. Repeated activation is ignored while the check is working." />
+
+      <TextBlock MinHeight="20"
+                 Margin="24,8,24,0"
+                 HorizontalAlignment="Center"
+                 FontSize="13"
+                 Foreground="{DynamicResource TextSecondaryBrush}"
+                 Text="{Binding RefreshActionStatus}"
+                 TextAlignment="Center"
+                 TextWrapping="Wrap"
+                 automation:AutomationProperties.LiveSetting="Polite"
+                 controls:LiveRegionBehavior.Announcement="{Binding RefreshActionStatus}" />
+
+      <Border Margin="0,20,0,0"
               Padding="22,6"
               Background="{DynamicResource SurfaceBrush}"
               BorderBrush="{DynamicResource BorderBrush}"
@@ -836,7 +858,8 @@
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        Text="{Binding ModStatus}"
                        automation:AutomationProperties.LiveSetting="Polite" />
-            <Button Style="{StaticResource QuietButtonStyle}"
+            <Button MinHeight="44"
+                    Style="{StaticResource QuietButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
                     IsEnabled="{Binding CanManageMod}"
@@ -868,6 +891,7 @@
                    Text="{Binding HomeOperationFeedback}"
                    TextAlignment="Center"
                    TextWrapping="Wrap"
+                   automation:AutomationProperties.Name="{Binding HomeOperationFeedback}"
                    automation:AutomationProperties.LiveSetting="Polite" />
       </Border>
     </StackPanel>
@@ -937,6 +961,14 @@
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    TextWrapping="Wrap"
                    automation:AutomationProperties.LiveSetting="Polite" />
+        <TextBlock MinHeight="18"
+                   Margin="0,8,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding LauncherUpdateFeedback}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding LauncherUpdateFeedback}" />
         <WrapPanel Margin="0,16,0,0"
                    HorizontalAlignment="Right">
           <Button Margin="0,0,8,8"
@@ -954,18 +986,21 @@
                   Style="{StaticResource QuietButtonStyle}"
                   Click="DiagnosticsRecoverButton_Click"
                   Content="_Recover"
+                  IsEnabled="{Binding CanRecoverMod}"
                   automation:AutomationProperties.Name="Recover incomplete mod transaction" />
           <Button x:Name="DiagnosticsUninstallButton"
                   Margin="0,0,0,8"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod"
+                  IsEnabled="{Binding CanUninstallMod}"
                   automation:AutomationProperties.Name="Remove launcher-managed community mod" />
           <Button Margin="0,0,0,8"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="CheckLauncherUpdateButton_Click"
-                  Content="Check launcher _update"
-                  automation:AutomationProperties.Name="Check for a launcher self-update" />
+                  Content="{Binding LauncherUpdateActionLabel}"
+                  IsEnabled="{Binding CanCheckLauncherUpdate}"
+                  automation:AutomationProperties.Name="{Binding LauncherUpdateActionAutomationName}" />
         </WrapPanel>
       </StackPanel>
     </controls:InAppDialog>
