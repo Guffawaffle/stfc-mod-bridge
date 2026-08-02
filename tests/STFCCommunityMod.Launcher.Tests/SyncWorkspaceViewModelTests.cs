@@ -272,6 +272,27 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void PresetEndpointCannotProjectLegacyFeedsOntoSidecarKind()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sidecar.sync]
+            enabled = false
+            url = "https://spocks.club/sync/ingress/"
+            token = "fixture-sidecar-secret"
+            """);
+
+        var sidecar = fixture.CreateViewModel().Targets.Single();
+
+        Assert.AreEqual(SyncTargetKind.LocalSidecar, sidecar.Definition.Kind);
+        CollectionAssert.AreEquivalent(
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).SupportedDataKinds.ToArray(),
+            sidecar.Feeds.Select(feed => feed.Kind).ToArray());
+        Assert.IsFalse(sidecar.Feeds.Any(feed =>
+            SyncTargetTypeCatalog.GetPreset("spocks_club").SupportedDataKinds.Contains(feed.Kind)));
+    }
+
+    [TestMethod]
     public void SiblingDraftBlocksSyncSaveWithoutDiscardingEitherDraft()
     {
         using var fixture = SyncFixture.Create(
@@ -371,6 +392,30 @@ public sealed class SyncWorkspaceViewModelTests
         wizard.CancelCommand.Execute(null);
 
         Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
+    public void InvalidWizardDestinationStaysInReviewWithoutMutatingTopology()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "invalid-endpoint";
+        wizard.Endpoint = "not-a-valid-ingest-url";
+        wizard.Token = "fixture-secret";
+        wizard.NextCommand.Execute(null);
+        wizard.FinishCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.IsAddWizardOpen);
+        Assert.IsTrue(wizard.HasError);
+        StringAssert.Contains(wizard.Error, "absolute HTTP or HTTPS");
         Assert.IsFalse(viewModel.HasPendingChanges);
         Assert.AreEqual(0, viewModel.Targets.Count);
     }
