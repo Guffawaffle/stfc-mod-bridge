@@ -1,0 +1,7 @@
+# The launcher does not own this root key.
+future_sync_setting = "keep exactly"
+
+[sync.targets.future]
+url = "https://future.example.invalid/sync"
+token = "fixture-redacted-future"
+future_transport_option = "preserve me" # including this comment

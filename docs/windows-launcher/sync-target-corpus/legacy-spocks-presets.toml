@@ -1,0 +1,12 @@
+[sync]
+battlelogs = true
+
+[sync.targets.spocksclub]
+url = "https://legacy.example.invalid/sync"
+token = "fixture-redacted-spocks"
+mode = "legacy"
+
+[sync.targets.nextspocksclub]
+url = "https://next.example.invalid/sync"
+token = "fixture-redacted-next"
+mode = "legacy"

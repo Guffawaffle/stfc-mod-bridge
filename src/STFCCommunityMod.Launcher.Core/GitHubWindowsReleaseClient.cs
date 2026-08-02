@@ -16,14 +16,43 @@ public interface IWindowsReleaseDiscoveryClient
         CancellationToken cancellationToken = default);
 }
 
-public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindowsReleaseDiscoveryClient
+public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
 {
-    private const string Repository = "Guffawaffle/stfc-mod";
-    private const string ManifestFileName = "stfc-community-mod-release-manifest.json";
     private const int MaximumReleaseResponseBytes = 2 * 1024 * 1024;
     private const int MaximumManifestBytes = 1024 * 1024;
-    private static readonly Uri ReleasesUri = new(
-        $"https://api.github.com/repos/{Repository}/releases?per_page=30");
+    private readonly HttpClient httpClient;
+    private readonly string repository;
+    private readonly string manifestFileName;
+    private readonly Uri releasesUri;
+
+    public GitHubWindowsReleaseClient(
+        HttpClient httpClient,
+        string repository,
+        string manifestFileName)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(repository);
+        ArgumentException.ThrowIfNullOrWhiteSpace(manifestFileName);
+        if (repository.Count(character => character == '/') != 1
+            || repository.Any(character => !(char.IsLetterOrDigit(character)
+                || character is '/' or '-' or '_' or '.')))
+        {
+            throw new ArgumentException(
+                "GitHub repository must use owner/name coordinates.",
+                nameof(repository));
+        }
+        if (!string.Equals(Path.GetFileName(manifestFileName), manifestFileName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Release manifest asset must be a file name, not a path.",
+                nameof(manifestFileName));
+        }
+
+        this.httpClient = httpClient;
+        this.repository = repository;
+        this.manifestFileName = manifestFileName;
+        releasesUri = new($"https://api.github.com/repos/{repository}/releases?per_page=30");
+    }
 
     public async Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
         string channel,
@@ -36,7 +65,7 @@ public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindows
         }
         ArgumentNullException.ThrowIfNull(currentLauncherVersion);
 
-        using var releasesRequest = CreateRequest(ReleasesUri);
+        using var releasesRequest = CreateRequest(releasesUri);
         using var releasesResponse = await httpClient.SendAsync(
             releasesRequest,
             HttpCompletionOption.ResponseHeadersRead,
@@ -84,13 +113,15 @@ public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindows
             var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
                 manifest,
                 channel,
-                currentLauncherVersion);
+                currentLauncherVersion,
+                repository);
             var launcherArtifact = manifest.Artifacts.Any(
                 candidate => candidate.Id == "windows-launcher-archive-x64")
                 ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
                     manifest,
                     channel,
-                    currentLauncherVersion)
+                    currentLauncherVersion,
+                    repository)
                 : null;
             return new(manifest, artifact, launcherArtifact);
         }
@@ -148,7 +179,7 @@ public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindows
         }
     }
 
-    private static bool TrySelectManifestAsset(
+    private bool TrySelectManifestAsset(
         JsonElement release,
         string channel,
         out string tag,
@@ -169,13 +200,13 @@ public sealed class GitHubWindowsReleaseClient(HttpClient httpClient) : IWindows
         }
 
         var expectedUri = new Uri(
-            $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/{ManifestFileName}");
+            $"https://github.com/{repository}/releases/download/{Uri.EscapeDataString(tag)}/{manifestFileName}");
         foreach (var asset in assets.EnumerateArray())
         {
             if (asset.ValueKind != JsonValueKind.Object
                 || !TryReadString(asset, "name", out var name)
                 || !TryReadString(asset, "browser_download_url", out var downloadUrl)
-                || name != ManifestFileName
+                || name != manifestFileName
                 || !Uri.TryCreate(downloadUrl, UriKind.Absolute, out var candidateUri)
                 || candidateUri != expectedUri)
             {

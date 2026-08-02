@@ -1,0 +1,15 @@
+[sync]
+proxy = "http://external-proxy.example.invalid:8080"
+verify_ssl = false
+
+[sidecar.sync]
+enabled = true
+url = "http://127.0.0.1:43127/api/sidecar/ingest"
+token = "fixture-redacted-sidecar"
+proxy = ""
+verify_ssl = true
+allow_unsafe_tls_without_certificate_validation = false
+battlelogs_realtime = true
+battlelog_enrichment = true
+fleet_runtime = true
+fleet_runtime_mode = "normal"

@@ -1,0 +1,165 @@
+{
+  "algorithm": "kahn_topological_sort",
+  "batches": [
+    {
+      "id": "batch1",
+      "items": [
+        {
+          "dependencies": [],
+          "id": "WL-001",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:38Z",
+            "issueNumber": 172,
+            "score": 1
+          },
+          "type": "spike"
+        }
+      ],
+      "layer": 0
+    },
+    {
+      "id": "batch2",
+      "items": [
+        {
+          "dependencies": [
+            "WL-001"
+          ],
+          "id": "WL-002",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:39Z",
+            "issueNumber": 173,
+            "score": 1
+          },
+          "type": "feature"
+        },
+        {
+          "dependencies": [
+            "WL-001"
+          ],
+          "id": "WL-003",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:40Z",
+            "issueNumber": 174,
+            "score": 1
+          },
+          "type": "infrastructure"
+        },
+        {
+          "dependencies": [
+            "WL-001"
+          ],
+          "id": "WL-005",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:42Z",
+            "issueNumber": 176,
+            "score": 1
+          },
+          "type": "contract"
+        }
+      ],
+      "layer": 1
+    },
+    {
+      "id": "batch3",
+      "items": [
+        {
+          "dependencies": [
+            "WL-002",
+            "WL-003"
+          ],
+          "id": "WL-004",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:41Z",
+            "issueNumber": 175,
+            "score": 1
+          },
+          "type": "feature"
+        },
+        {
+          "dependencies": [
+            "WL-002",
+            "WL-005"
+          ],
+          "id": "WL-006",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:43Z",
+            "issueNumber": 177,
+            "score": 1
+          },
+          "type": "feature"
+        }
+      ],
+      "layer": 2
+    },
+    {
+      "id": "batch4",
+      "items": [
+        {
+          "dependencies": [
+            "WL-002",
+            "WL-004"
+          ],
+          "id": "WL-007",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:43Z",
+            "issueNumber": 178,
+            "score": 1
+          },
+          "type": "feature"
+        },
+        {
+          "dependencies": [
+            "WL-002",
+            "WL-004",
+            "WL-006"
+          ],
+          "id": "WL-008",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:44Z",
+            "issueNumber": 179,
+            "score": 1
+          },
+          "type": "feature"
+        },
+        {
+          "dependencies": [
+            "WL-003",
+            "WL-004"
+          ],
+          "id": "WL-009",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:45Z",
+            "issueNumber": 180,
+            "score": 1
+          },
+          "type": "feature"
+        }
+      ],
+      "layer": 3
+    },
+    {
+      "id": "batch5",
+      "items": [
+        {
+          "dependencies": [
+            "WL-006",
+            "WL-007",
+            "WL-008",
+            "WL-009"
+          ],
+          "id": "WL-010",
+          "metadata": {
+            "createdAt": "2026-07-25T06:53:46Z",
+            "issueNumber": 181,
+            "score": 1
+          },
+          "type": "release"
+        }
+      ],
+      "layer": 4
+    }
+  ],
+  "deterministic": true,
+  "planHash": "sha256:8260b24495c278717e590e26415535ef8c40cf990f1db4fa26e4db4e59bb9920",
+  "planVersion": "1.0.0"
+}

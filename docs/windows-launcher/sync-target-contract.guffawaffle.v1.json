@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "1.0.0",
+  "provenanceStates": [
+    "inherited",
+    "explicit_value",
+    "explicit_false",
+    "explicit_empty"
+  ],
+  "resolutionSources": [
+    "global_default",
+    "target_type_default",
+    "target"
+  ],
+  "diagnosticSeverities": [
+    "info",
+    "warning",
+    "error"
+  ],
+  "targetKinds": {
+    "local_sidecar": {
+      "persistencePattern": "sidecar.sync",
+      "cardinality": "zero_or_one",
+      "wireContract": "sidecar_local_ingest",
+      "inheritsGlobalSync": false,
+      "uiExposure": "existing_configuration_only"
+    },
+    "legacy_community": {
+      "persistencePattern": "sync.targets.*",
+      "cardinality": "zero_or_more",
+      "wireContract": "legacy_sync_json",
+      "inheritsGlobalSync": true,
+      "uiExposure": "creatable"
+    },
+    "majel_ingest": {
+      "persistencePattern": "sync.targets.*",
+      "cardinality": "zero_or_more",
+      "wireContract": "majel.ingest.v1",
+      "inheritsGlobalSync": true,
+      "uiExposure": "hidden"
+    }
+  },
+  "presets": {
+    "spocks_club": {
+      "targetKind": "legacy_community",
+      "suggestedIdentity": "spocksclub",
+      "url": "https://spocks.club/sync/ingress/",
+      "feedDefaults": {
+        "resources": true,
+        "battlelogs": false,
+        "officer": true,
+        "missions": false,
+        "research": true,
+        "tech": false,
+        "traits": false,
+        "buildings": true,
+        "ships": false
+      }
+    },
+    "next_spocks_club": {
+      "targetKind": "legacy_community",
+      "suggestedIdentity": "spocksclub-next",
+      "url": "https://next.spocks.club/sync/ingress/",
+      "feedDefaults": {
+        "battlelogs": false,
+        "buffs": true,
+        "buildings": true,
+        "inventory": true,
+        "jobs": false,
+        "missions": true,
+        "officer": true,
+        "research": true,
+        "resources": true,
+        "ships": true,
+        "slots": true,
+        "tech": true,
+        "traits": true
+      }
+    }
+  },
+  "fields": {
+    "identity": {
+      "inheritance": "never",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "enabled": {
+      "inheritance": "never",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "url": {
+      "inheritance": "never",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "token": {
+      "inheritance": "never",
+      "secret": true,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "mode": {
+      "inheritance": "never",
+      "secret": false,
+      "kinds": ["legacy_community", "majel_ingest"]
+    },
+    "proxy": {
+      "inheritance": "external_only",
+      "allowsExplicitEmpty": true,
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "verify_ssl": {
+      "inheritance": "external_only",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "allow_unsafe_tls_without_certificate_validation": {
+      "inheritance": "external_only",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "sync_categories": {
+      "inheritance": "external_only",
+      "secret": false,
+      "kinds": ["legacy_community", "majel_ingest"]
+    },
+    "battlelogs_realtime": {
+      "inheritance": "external_only",
+      "secret": false,
+      "kinds": ["local_sidecar", "legacy_community", "majel_ingest"]
+    },
+    "fleet_runtime": {
+      "inheritance": "never",
+      "secret": false,
+      "sidecarOnly": true,
+      "kinds": ["local_sidecar"]
+    },
+    "battlelog_enrichment": {
+      "inheritance": "never",
+      "secret": false,
+      "sidecarOnly": true,
+      "kinds": ["local_sidecar"]
+    },
+    "fleet_runtime_mode": {
+      "inheritance": "never",
+      "secret": false,
+      "sidecarOnly": true,
+      "kinds": ["local_sidecar"]
+    }
+  },
+  "diagnostics": {
+    "SYNC_CREDENTIALS_INCOMPLETE": "error",
+    "SYNC_EXTERNAL_FLEET_RUNTIME_UNSUPPORTED": "warning",
+    "SYNC_LEGACY_ROOT_CONVERTED": "info",
+    "SYNC_LEGACY_ROOT_INCOMPLETE": "warning",
+    "SYNC_LOOPBACK_TARGET_INVALID": "error",
+    "SYNC_TARGET_MODE_INVALID": "warning",
+    "SYNC_TARGET_SIDECAR_NAMESPACE_INVALID": "error",
+    "SYNC_UNKNOWN_KEY_PRESERVED": "warning"
+  },
+  "mutationPolicy": {
+    "load": "never",
+    "resolve": "never",
+    "legacyConversion": "preview_then_explicit_atomic_write",
+    "preserveUnknownKeys": true,
+    "preserveComments": true,
+    "preserveOrdering": true
+  },
+  "security": {
+    "redactFields": ["token"],
+    "maskProxyUserInfo": true,
+    "unsafeTlsRequiresExplicitPair": true,
+    "sidecarInheritsExternalNetworkPolicy": false
+  }
+}

@@ -1,0 +1,4 @@
+[sync.targets.sidecar]
+url = "http://127.0.0.1:43127/api/sidecar/ingest"
+token = "fixture-redacted-invalid"
+mode = "sidecar_broker"

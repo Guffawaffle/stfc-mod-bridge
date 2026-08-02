@@ -261,7 +261,7 @@ $runtimeManifestPath = (
   Resolve-Path -LiteralPath (
     Join-Path `
       $PSScriptRoot `
-      "..\..\docs\windows-launcher\runtime-manifest.guffawaffle.v1.json")
+      "..\docs\windows-launcher\runtime-manifest.guffawaffle.v1.json")
 ).Path
 $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw |
   ConvertFrom-Json -ErrorAction Stop

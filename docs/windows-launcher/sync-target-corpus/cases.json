@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "1.0.0",
+  "contract": "../sync-target-contract.guffawaffle.v1.json",
+  "cases": [
+    {
+      "id": "global-only-defaults",
+      "file": "global-only-defaults.toml",
+      "expectedTargetKinds": [],
+      "expectedPaths": [
+        "sync.allow_unsafe_tls_without_certificate_validation",
+        "sync.battlelogs",
+        "sync.jobs",
+        "sync.proxy",
+        "sync.verify_ssl"
+      ],
+      "provenance": {},
+      "diagnostics": []
+    },
+    {
+      "id": "legacy-spocks-presets",
+      "file": "legacy-spocks-presets.toml",
+      "expectedTargetKinds": ["legacy_community", "legacy_community"],
+      "expectedPaths": [
+        "sync.battlelogs",
+        "sync.targets.nextspocksclub.mode",
+        "sync.targets.nextspocksclub.token",
+        "sync.targets.nextspocksclub.url",
+        "sync.targets.spocksclub.mode",
+        "sync.targets.spocksclub.token",
+        "sync.targets.spocksclub.url"
+      ],
+      "provenance": {
+        "nextspocksclub.battlelogs": "inherited",
+        "nextspocksclub.mode": "explicit_value",
+        "spocksclub.battlelogs": "inherited",
+        "spocksclub.mode": "explicit_value"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "majel-realtime",
+      "file": "majel-realtime.toml",
+      "expectedTargetKinds": ["majel_ingest"],
+      "expectedPaths": [
+        "sync.battlelogs_realtime",
+        "sync.targets.majel.battlelogs",
+        "sync.targets.majel.mode",
+        "sync.targets.majel.token",
+        "sync.targets.majel.url"
+      ],
+      "provenance": {
+        "majel.battlelogs": "explicit_false",
+        "majel.battlelogs_realtime": "inherited",
+        "majel.mode": "explicit_value"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "canonical-local-sidecar",
+      "file": "canonical-local-sidecar.toml",
+      "expectedTargetKinds": ["local_sidecar"],
+      "expectedPaths": [
+        "sidecar.sync.allow_unsafe_tls_without_certificate_validation",
+        "sidecar.sync.battlelog_enrichment",
+        "sidecar.sync.battlelogs_realtime",
+        "sidecar.sync.enabled",
+        "sidecar.sync.fleet_runtime",
+        "sidecar.sync.fleet_runtime_mode",
+        "sidecar.sync.proxy",
+        "sidecar.sync.token",
+        "sidecar.sync.url",
+        "sidecar.sync.verify_ssl",
+        "sync.proxy",
+        "sync.verify_ssl"
+      ],
+      "provenance": {
+        "local_sidecar.proxy": "explicit_empty",
+        "local_sidecar.verify_ssl": "explicit_value"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "mixed-multiple-targets",
+      "file": "mixed-multiple-targets.toml",
+      "expectedTargetKinds": ["local_sidecar", "legacy_community", "majel_ingest"],
+      "expectedPaths": [
+        "sidecar.sync.battlelogs_realtime",
+        "sidecar.sync.enabled",
+        "sidecar.sync.token",
+        "sidecar.sync.url",
+        "sync.jobs",
+        "sync.targets.community.jobs",
+        "sync.targets.community.mode",
+        "sync.targets.community.token",
+        "sync.targets.community.url",
+        "sync.targets.majel.battlelogs_realtime",
+        "sync.targets.majel.mode",
+        "sync.targets.majel.token",
+        "sync.targets.majel.url"
+      ],
+      "provenance": {
+        "community.jobs": "explicit_false",
+        "majel.jobs": "inherited"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "explicit-false-overrides-global",
+      "file": "explicit-false-overrides-global.toml",
+      "expectedTargetKinds": ["legacy_community"],
+      "expectedPaths": [
+        "sync.battlelogs",
+        "sync.targets.optout.battlelogs",
+        "sync.targets.optout.token",
+        "sync.targets.optout.url"
+      ],
+      "provenance": {
+        "optout.battlelogs": "explicit_false"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "explicit-empty-proxy",
+      "file": "explicit-empty-proxy.toml",
+      "expectedTargetKinds": ["legacy_community"],
+      "expectedPaths": [
+        "sync.proxy",
+        "sync.targets.direct.proxy",
+        "sync.targets.direct.token",
+        "sync.targets.direct.url"
+      ],
+      "provenance": {
+        "direct.proxy": "explicit_empty"
+      },
+      "diagnostics": []
+    },
+    {
+      "id": "missing-partial-credentials",
+      "file": "missing-partial-credentials.toml",
+      "expectedTargetKinds": [],
+      "expectedPaths": [
+        "sync.targets.missing_token.url",
+        "sync.targets.missing_url.token"
+      ],
+      "provenance": {},
+      "diagnostics": ["SYNC_CREDENTIALS_INCOMPLETE"]
+    },
+    {
+      "id": "unsupported-external-fleet-runtime",
+      "file": "unsupported-external-fleet-runtime.toml",
+      "expectedTargetKinds": ["legacy_community"],
+      "expectedPaths": [
+        "sync.targets.external.fleet_runtime",
+        "sync.targets.external.token",
+        "sync.targets.external.url"
+      ],
+      "provenance": {
+        "external.fleet_runtime": "explicit_value"
+      },
+      "diagnostics": ["SYNC_EXTERNAL_FLEET_RUNTIME_UNSUPPORTED"]
+    },
+    {
+      "id": "legacy-root-conversion",
+      "file": "legacy-root-conversion.toml",
+      "expectedTargetKinds": ["legacy_community"],
+      "expectedPaths": [
+        "sync.battlelogs",
+        "sync.token",
+        "sync.url"
+      ],
+      "provenance": {
+        "default.identity": "explicit_value"
+      },
+      "diagnostics": ["SYNC_LEGACY_ROOT_CONVERTED"]
+    },
+    {
+      "id": "invalid-loopback-external-target",
+      "file": "invalid-loopback-external-target.toml",
+      "expectedTargetKinds": [],
+      "expectedPaths": [
+        "sync.targets.sidecar.mode",
+        "sync.targets.sidecar.token",
+        "sync.targets.sidecar.url"
+      ],
+      "provenance": {},
+      "diagnostics": [
+        "SYNC_LOOPBACK_TARGET_INVALID",
+        "SYNC_TARGET_SIDECAR_NAMESPACE_INVALID"
+      ]
+    },
+    {
+      "id": "unknown-source-content-preserved",
+      "file": "unknown-source-content-preserved.toml",
+      "expectedTargetKinds": ["legacy_community"],
+      "expectedPaths": [
+        "future_sync_setting",
+        "sync.targets.future.future_transport_option",
+        "sync.targets.future.token",
+        "sync.targets.future.url"
+      ],
+      "provenance": {},
+      "diagnostics": ["SYNC_UNKNOWN_KEY_PRESERVED"]
+    }
+  ]
+}

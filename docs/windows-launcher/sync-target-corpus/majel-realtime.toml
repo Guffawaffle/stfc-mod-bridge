@@ -1,0 +1,8 @@
+[sync]
+battlelogs_realtime = true
+
+[sync.targets.majel]
+url = "https://majel.example.invalid/api/ingest/events"
+token = "fixture-redacted-majel"
+mode = "majel"
+battlelogs = false

@@ -442,7 +442,11 @@ public sealed class LauncherConfigurationEditSessionTests
     [TestMethod]
     public async Task FullGuffawaffleExampleSurvivesDisposableSaveRoundTrip()
     {
-        var sourcePath = FindRepositoryFile("example_community_patch_settings.toml");
+        var sourcePath = FindRepositoryFile(
+            "providers",
+            "guffawaffle",
+            "examples",
+            "example_community_patch_settings.toml");
         var original = await File.ReadAllBytesAsync(sourcePath);
         var catalog = LoadCatalog();
         var load = LauncherConfigurationEditSession.Load(original, catalog, out var session);

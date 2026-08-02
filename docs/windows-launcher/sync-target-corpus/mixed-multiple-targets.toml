@@ -1,0 +1,20 @@
+[sync]
+jobs = true
+
+[sidecar.sync]
+enabled = true
+url = "http://localhost:43127/api/sidecar/ingest"
+token = "fixture-redacted-sidecar"
+battlelogs_realtime = true
+
+[sync.targets.community]
+url = "https://community.example.invalid/sync"
+token = "fixture-redacted-community"
+mode = "legacy"
+jobs = false
+
+[sync.targets.majel]
+url = "https://majel.example.invalid/api/ingest/events"
+token = "fixture-redacted-majel"
+mode = "majel"
+battlelogs_realtime = true

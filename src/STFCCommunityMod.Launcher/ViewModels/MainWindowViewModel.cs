@@ -137,9 +137,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             ? null
             : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
 
-    public static MainWindowViewModel CreateDefault(HttpClient httpClient)
+    public static MainWindowViewModel CreateDefault(
+        HttpClient httpClient,
+        LauncherDistributionProvider distributionProvider)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(distributionProvider);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
         var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
@@ -153,9 +156,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             installLayout.StateDirectory,
             new HttpModArtifactDownloader(httpClient),
             new WindowsModArtifactVersionReader(),
-            new WindowsAuthenticodeVerifier("Joseph Gustavson"),
+            new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
             processInspector.IsGameRunning);
-        var releaseClient = new GitHubWindowsReleaseClient(httpClient);
+        var releaseClient = new GitHubWindowsReleaseClient(
+            httpClient,
+            distributionProvider.ModReleaseRepository,
+            distributionProvider.ModReleaseManifestAssetName);
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
@@ -181,7 +187,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
                 new HttpLauncherArchiveDownloader(httpClient),
-                new WindowsAuthenticodeVerifier("Joseph Gustavson"),
+                new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
             releaseClient);
     }

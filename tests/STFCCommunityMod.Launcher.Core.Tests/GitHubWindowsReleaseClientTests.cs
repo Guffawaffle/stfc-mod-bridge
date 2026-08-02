@@ -6,6 +6,9 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class GitHubWindowsReleaseClientTests
 {
+    private const string Repository = "Guffawaffle/stfc-mod";
+    private const string ManifestFileName = "stfc-community-mod-release-manifest.json";
+
     [TestMethod]
     public async Task StableDiscoverySkipsDraftPreviewAndManifestlessReleases()
     {
@@ -19,7 +22,7 @@ public sealed class GitHubWindowsReleaseClientTests
             """;
         var handler = new RouteHandler(releases, Manifest("2.1.0-guffa.8"));
         using var client = new HttpClient(handler);
-        var discoveryClient = new GitHubWindowsReleaseClient(client);
+        var discoveryClient = CreateDiscoveryClient(client);
 
         var result = await discoveryClient.DiscoverLatestAsync(
             "stable",
@@ -43,7 +46,7 @@ public sealed class GitHubWindowsReleaseClientTests
         var handler = new RouteHandler(releases, Manifest("2.1.0-guffa.rc9", "preview"));
         using var client = new HttpClient(handler);
 
-        var result = await new GitHubWindowsReleaseClient(client).DiscoverLatestAsync(
+        var result = await CreateDiscoveryClient(client).DiscoverLatestAsync(
             "preview",
             new Version(0, 1, 0));
 
@@ -66,7 +69,7 @@ public sealed class GitHubWindowsReleaseClientTests
         using var client = new HttpClient(handler);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
-            new GitHubWindowsReleaseClient(client).DiscoverLatestAsync(
+            CreateDiscoveryClient(client).DiscoverLatestAsync(
                 "stable",
                 new Version(0, 1, 0)));
 
@@ -82,7 +85,7 @@ public sealed class GitHubWindowsReleaseClientTests
         using var client = new HttpClient(handler);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
-            new GitHubWindowsReleaseClient(client).DiscoverLatestAsync(
+            CreateDiscoveryClient(client).DiscoverLatestAsync(
                 "stable",
                 new Version(0, 1, 0)));
     }
@@ -97,7 +100,7 @@ public sealed class GitHubWindowsReleaseClientTests
         using var client = new HttpClient(handler);
 
         var exception = await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
-            new GitHubWindowsReleaseClient(client).DiscoverLatestAsync(
+            CreateDiscoveryClient(client).DiscoverLatestAsync(
                 "stable",
                 new Version(0, 1, 0)));
 
@@ -127,6 +130,9 @@ public sealed class GitHubWindowsReleaseClientTests
             }
             """;
     }
+
+    private static GitHubWindowsReleaseClient CreateDiscoveryClient(HttpClient client) =>
+        new(client, Repository, ManifestFileName);
 
     private static string Manifest(string releaseVersion, string channel = "stable") => $$"""
         {

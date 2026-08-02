@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "repository": "Guffawaffle/stfc-mod",
+  "epicIssue": 182,
+  "milestone": "Windows Launcher Parity+ v1",
+  "maxParallelism": 3,
+  "nodes": [
+    {
+      "id": "WL-001",
+      "type": "spike",
+      "dependencies": [],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:38Z",
+        "issueNumber": 172
+      }
+    },
+    {
+      "id": "WL-002",
+      "type": "feature",
+      "dependencies": [
+        "WL-001"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:39Z",
+        "issueNumber": 173
+      }
+    },
+    {
+      "id": "WL-003",
+      "type": "infrastructure",
+      "dependencies": [
+        "WL-001"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:40Z",
+        "issueNumber": 174
+      }
+    },
+    {
+      "id": "WL-004",
+      "type": "feature",
+      "dependencies": [
+        "WL-002",
+        "WL-003"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:41Z",
+        "issueNumber": 175
+      }
+    },
+    {
+      "id": "WL-005",
+      "type": "contract",
+      "dependencies": [
+        "WL-001"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:42Z",
+        "issueNumber": 176
+      }
+    },
+    {
+      "id": "WL-006",
+      "type": "feature",
+      "dependencies": [
+        "WL-002",
+        "WL-005"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:43Z",
+        "issueNumber": 177
+      }
+    },
+    {
+      "id": "WL-007",
+      "type": "feature",
+      "dependencies": [
+        "WL-002",
+        "WL-004"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:43Z",
+        "issueNumber": 178
+      }
+    },
+    {
+      "id": "WL-008",
+      "type": "feature",
+      "dependencies": [
+        "WL-002",
+        "WL-004",
+        "WL-006"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:44Z",
+        "issueNumber": 179
+      }
+    },
+    {
+      "id": "WL-009",
+      "type": "feature",
+      "dependencies": [
+        "WL-003",
+        "WL-004"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:45Z",
+        "issueNumber": 180
+      }
+    },
+    {
+      "id": "WL-010",
+      "type": "release",
+      "dependencies": [
+        "WL-006",
+        "WL-007",
+        "WL-008",
+        "WL-009"
+      ],
+      "metadata": {
+        "score": 1,
+        "createdAt": "2026-07-25T06:53:46Z",
+        "issueNumber": 181
+      }
+    }
+  ]
+}

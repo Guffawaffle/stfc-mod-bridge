@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "1.0.0",
+  "target": "feature/wl-006-config-editor",
+  "policy": {
+    "requiredGates": [
+      "diff-check"
+    ],
+    "optionalGates": [
+      "schema-tests",
+      "schema-current",
+      "dotnet-test",
+      "wpf-build",
+      "package",
+      "live-ui-smoke"
+    ],
+    "maxWorkers": 3,
+    "blockOn": [
+      "fail",
+      "blocked"
+    ],
+    "mergeRule": {
+      "type": "strict-required"
+    }
+  },
+  "items": [
+    {
+      "name": "WL006-U1-presentation-contract",
+      "deps": [],
+      "gates": [
+        {
+          "name": "schema-tests",
+          "run": "node --test scripts/test_config_schema.mjs"
+        },
+        {
+          "name": "schema-current",
+          "run": "node scripts/generate_config_schema.mjs --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "WL006-U2-appearance-icons",
+      "deps": [],
+      "gates": [
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release --no-restore"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "WL006-U3-edit-state-presentation",
+      "deps": [
+        "WL006-U1-presentation-contract",
+        "WL006-U2-appearance-icons"
+      ],
+      "gates": [
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release --no-restore"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "WL006-U4-borderless-renderer",
+      "deps": [
+        "WL006-U1-presentation-contract",
+        "WL006-U2-appearance-icons",
+        "WL006-U3-edit-state-presentation"
+      ],
+      "gates": [
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release --no-restore"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "WL006-U5-acceptance",
+      "deps": [
+        "WL006-U4-borderless-renderer"
+      ],
+      "gates": [
+        {
+          "name": "schema-tests",
+          "run": "node --test scripts/test_config_schema.mjs"
+        },
+        {
+          "name": "schema-current",
+          "run": "node scripts/generate_config_schema.mjs --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release --no-restore"
+        },
+        {
+          "name": "package",
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/publish.ps1"
+        },
+        {
+          "name": "live-ui-smoke",
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/smoke-settings.ps1 -LauncherPath windows-launcher/artifacts/win-x64/app/STFCCommunityMod.Launcher.exe"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    }
+  ]
+}

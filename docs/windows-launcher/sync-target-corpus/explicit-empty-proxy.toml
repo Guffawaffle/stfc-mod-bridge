@@ -1,0 +1,7 @@
+[sync]
+proxy = "http://proxy.example.invalid:8080"
+
+[sync.targets.direct]
+url = "https://community.example.invalid/sync"
+token = "fixture-redacted-direct"
+proxy = ""

@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "project": "windows-launcher-parity-plus",
+  "status": "wl-004-active",
+  "repository": "Guffawaffle/stfc-mod",
+  "baselineCommit": "f8b8998e3c0aef752077b915d955813631aaadd4",
+  "defaults": {
+    "baseBranch": "main",
+    "platform": "windows-x64",
+    "reviewContract": "global.stfc-mod-private.review-contract",
+    "mutationPolicy": "foreground-single-workspace",
+    "githubWrites": "bridge-only"
+  },
+  "workItems": [
+    {
+      "id": "WL-001",
+      "type": "spike",
+      "title": "Prove Windows launcher architecture and packaging",
+      "dependsOn": [],
+      "scope": [
+        "windows-launcher/",
+        ".github/workflows/",
+        "docs/windows-launcher/"
+      ],
+      "objective": "Prove a self-contained .NET 8 WPF x64 launcher, test project, LCARS shell, and unpackaged per-user deployment on Windows CI.",
+      "acceptance": [
+        "Launcher and unit tests build on the repository Windows CI image.",
+        "The app runs without a machine-wide .NET runtime.",
+        "A minimal LCARS shell renders correctly at 100%, 150%, and 200% scale.",
+        "Packaging and replace-on-exit self-update options are documented with a recommendation.",
+        "No existing C++ target or release artifact regresses."
+      ],
+      "validation": [
+        "dotnet test",
+        "dotnet publish",
+        "xmake build stfc-community-mod",
+        "xmake run stfc-mod-tests",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-002",
+      "type": "feature",
+      "title": "Implement deterministic STFC discovery and health model",
+      "dependsOn": [
+        "WL-001"
+      ],
+      "scope": [
+        "windows-launcher/src/STFCCommunityMod.Launcher.Core/",
+        "windows-launcher/src/STFCCommunityMod.Launcher/",
+        "windows-launcher/tests/"
+      ],
+      "objective": "Discover bounded installation candidates, validate prime.exe targets, persist a user-confirmed selection, and expose a read-only health state.",
+      "acceptance": [
+        "Discovery returns evidence and confidence for every candidate.",
+        "Wrong official-launcher directories are rejected.",
+        "Manual folder selection is supported.",
+        "A user-confirmed selection is persisted and revalidated.",
+        "Process, selection, and discovery health remain composable.",
+        "Non-ASCII and non-default paths are covered by tests.",
+        "No recursive drive scan occurs."
+      ],
+      "validation": [
+        "dotnet test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-003",
+      "type": "infrastructure",
+      "title": "Publish a machine-readable Windows release manifest",
+      "dependsOn": [
+        "WL-001"
+      ],
+      "scope": [
+        ".github/workflows/",
+        "scripts/",
+        "docs/windows-launcher/"
+      ],
+      "objective": "Generate and publish versioned release metadata with Windows artifact size and SHA-256.",
+      "acceptance": [
+        "Manifest is generated from built artifacts, not handwritten.",
+        "Schema and release-channel semantics are documented.",
+        "CI validates manifest filename, size, and checksum against packaged files.",
+        "Existing direct version.dll and archive assets remain available."
+      ],
+      "validation": [
+        "manifest fixture validation",
+        "release workflow dry-run or fixture test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-004",
+      "type": "feature",
+      "title": "Implement transactional mod install, update, repair, and rollback",
+      "dependsOn": [
+        "WL-002",
+        "WL-003"
+      ],
+      "scope": [
+        "windows-launcher/src/Core/",
+        "windows-launcher/tests/",
+        "docs/GAME_DIRECTORY_FILE_ALLOWLIST.md"
+      ],
+      "objective": "Safely deploy verified version.dll artifacts with a persisted transaction journal and deterministic recovery.",
+      "acceptance": [
+        "HTTP status, size, and SHA-256 are verified before staging.",
+        "Mutation is denied while STFC is running.",
+        "Existing manual installations can be adopted or backed up.",
+        "Interrupted commits recover or roll back deterministically.",
+        "Uninstall removes only managed artifacts and preserves config and logs."
+      ],
+      "validation": [
+        "dotnet test including fault injection at every transaction boundary",
+        "manual install/update/rollback smoke test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-005",
+      "type": "contract",
+      "title": "Generate a shared mod configuration schema",
+      "dependsOn": [
+        "WL-001"
+      ],
+      "scope": [
+        "mods/src/",
+        "scripts/",
+        "tests/",
+        "docs/windows-launcher/"
+      ],
+      "objective": "Create a versioned machine-readable schema from the mod’s authoritative defaults and metadata without introducing a second hand-maintained configuration truth.",
+      "acceptance": [
+        "Schema includes types, defaults, platform support, descriptions, and restart behavior.",
+        "Release validation detects drift between C++ config loading and the schema.",
+        "Deprecated aliases are represented explicitly.",
+        "The existing TOML parser remains authoritative."
+      ],
+      "validation": [
+        "schema generation fixture tests",
+        "xmake run stfc-mod-tests",
+        "global.stfc-mod-private.review-contract"
+      ]
+    },
+    {
+      "id": "WL-006",
+      "type": "feature",
+      "title": "Build the schema-driven configuration editor",
+      "dependsOn": [
+        "WL-002",
+        "WL-005"
+      ],
+      "scope": [
+        "windows-launcher/src/",
+        "windows-launcher/tests/"
+      ],
+      "objective": "Provide searchable, validated sparse TOML editing while preserving comments and unknown keys.",
+      "acceptance": [
+        "Settings are generated from the shared schema.",
+        "A generated presentation envelope supplies player-facing labels, optional help, units, apply timing, grouping, search terms, and accessibility text without redefining runtime defaults or persistence.",
+        "The compact launcher home remains separate from the larger searchable settings workspace.",
+        "Normal settings render as a borderless full-row list with a stable control column; hover, selection, and keyboard focus remain distinct and additive.",
+        "Raw keys, value types, literal defaults, and runtime apply tokens remain searchable and available through explicit technical detail rather than the primary reading path.",
+        "Microsoft Fluent System Icons are exposed through an application-owned semantic icon layer with accessible names and consistent target sizes.",
+        "The title-area theme selector shows and marks the selected System, Light, or Dark color mode while leaving future visual styles as a separate extensibility point.",
+        "Reset is contextual to an existing override, while settings with meaningful inheritance preserve an explicit Default/On/Off distinction.",
+        "Notifications are grouped, searchable, and expandable without flattening meaningful event names or rendering every delivery control at once.",
+        "Hotkey alternatives render as individually removable chips with one Add action and no detached ambiguous unbind control.",
+        "The conditional dirty-state bar derives a visible apply-timing summary from all staged settings and reports mixed timing without hiding it in a tooltip.",
+        "Unknown keys and comments survive normal edits.",
+        "Save uses backup, validation, and atomic replacement.",
+        "Raw-file open and remove-override actions are available.",
+        "Invalid or unsupported TOML is never destructively rewritten."
+      ],
+      "validation": [
+        "dotnet test with golden TOML fixtures",
+        "manual config round-trip smoke test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-007",
+      "type": "feature",
+      "title": "Implement launch and official game-update handoff",
+      "dependsOn": [
+        "WL-002",
+        "WL-004"
+      ],
+      "scope": [
+        "windows-launcher/src/",
+        "windows-launcher/tests/"
+      ],
+      "objective": "Launch through the supported Windows path, track process state, delegate base-game updates to the official launcher, and re-check mod health afterward.",
+      "acceptance": [
+        "Modded and explicit unmodded launch states are distinguishable.",
+        "Concurrent launch and mutation are prevented.",
+        "Official-launcher exit triggers game and mod health re-evaluation.",
+        "Offline launch remains available for an already healthy installation.",
+        "Failures are actionable and never silently reset the UI."
+      ],
+      "validation": [
+        "dotnet test with fake process service",
+        "manual installed-client smoke test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-008",
+      "type": "feature",
+      "title": "Add privacy-preserving diagnostics and repair UX",
+      "dependsOn": [
+        "WL-002",
+        "WL-004",
+        "WL-006"
+      ],
+      "scope": [
+        "windows-launcher/src/",
+        "windows-launcher/tests/",
+        "docs/"
+      ],
+      "objective": "Explain unhealthy states, offer bounded repairs, and export previewable redacted diagnostics without automatic upload.",
+      "acceptance": [
+        "Every health failure maps to an explanation and safe next action.",
+        "Normal launcher UI omits filesystem paths, discovery provenance, and internal health detail unless the user explicitly opens diagnostics.",
+        "Diagnostic contents are previewed.",
+        "Fixture tests prove token, private path, and private endpoint redaction.",
+        "Repair never modifies files outside the allowlist.",
+        "No diagnostic data is uploaded automatically."
+      ],
+      "validation": [
+        "dotnet test with privacy fixtures",
+        "manual diagnostic bundle review",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-009",
+      "type": "feature",
+      "title": "Implement launcher self-update",
+      "dependsOn": [
+        "WL-003",
+        "WL-004"
+      ],
+      "scope": [
+        "windows-launcher/",
+        ".github/workflows/",
+        "windows-launcher/tests/"
+      ],
+      "objective": "Update the unpackaged launcher through a verified replace-on-exit helper with rollback.",
+      "acceptance": [
+        "The running executable is never overwritten in place.",
+        "Update payload is verified by manifest size and SHA-256.",
+        "Failed startup restores the previous launcher.",
+        "Stable and prerelease channels remain explicit.",
+        "Offline use is unaffected."
+      ],
+      "validation": [
+        "dotnet test",
+        "packaged upgrade and rollback smoke test",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "WL-010",
+      "type": "release",
+      "title": "Integrate Windows launcher packaging, accessibility, and release gates",
+      "dependsOn": [
+        "WL-006",
+        "WL-007",
+        "WL-008",
+        "WL-009"
+      ],
+      "scope": [
+        "windows-launcher/",
+        ".github/workflows/",
+        "INSTALL.md",
+        "README.md",
+        "RELEASE_CHECKLIST.md"
+      ],
+      "objective": "Publish a production-ready Windows launcher without removing the manual version.dll distribution path.",
+      "acceptance": [
+        "Windows CI builds, tests, and packages launcher and mod artifacts.",
+        "The executable, window, taskbar, shortcuts, and release surfaces use the approved multi-resolution community-mod application icon.",
+        "Keyboard, screen reader, reduced motion, and high-DPI smoke tests pass.",
+        "Clean install, adoption, update, game-update repair, rollback, uninstall, and offline launch are documented and smoked.",
+        "Manual version.dll assets and installation documentation remain supported.",
+        "Release checklist includes launcher-specific rollback and withdrawal steps."
+      ],
+      "validation": [
+        "full Windows CI",
+        "global.stfc-mod-private.review-contract",
+        "release preflight dry-run",
+        "documented manual smoke matrix"
+      ]
+    }
+  ]
+}

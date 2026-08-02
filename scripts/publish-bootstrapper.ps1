@@ -1,12 +1,12 @@
 [CmdletBinding()]
 param(
-  [string]$OutputDirectory = "windows-launcher/artifacts/win-x64",
+  [string]$OutputDirectory = "artifacts/win-x64",
   [string]$PayloadArchive
 )
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
   [System.IO.Path]::GetFullPath($OutputDirectory)
 } else {
@@ -17,7 +17,7 @@ $archive = if ($PayloadArchive) {
 } else {
   Join-Path $outputRoot "stfc-community-mod-launcher-win-x64.zip"
 }
-$project = Join-Path $repoRoot "windows-launcher\src\STFCCommunityMod.Launcher.Setup\STFCCommunityMod.Launcher.Setup.csproj"
+$project = Join-Path $repoRoot "src\STFCCommunityMod.Launcher.Setup\STFCCommunityMod.Launcher.Setup.csproj"
 $setupOutput = Join-Path $outputRoot "setup"
 
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
