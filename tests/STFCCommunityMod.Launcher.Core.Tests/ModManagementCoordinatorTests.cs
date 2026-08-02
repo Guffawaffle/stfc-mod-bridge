@@ -104,7 +104,7 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual(ModManagementActionKind.None, presentation.ActionKind);
         Assert.IsFalse(presentation.CanExecute);
-        Assert.AreEqual("Provider capabilities unknown", presentation.Status);
+        Assert.AreEqual("Not installed", presentation.Status);
         StringAssert.Contains(presentation.AutomationName, "withdrawn");
     }
 
@@ -128,6 +128,38 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(LauncherHomeTone.Success, presentation.Tone);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, presentation.ActionKind);
         Assert.AreEqual(ModOperationPreparationState.UpToDate, preparation.State);
+    }
+
+    [TestMethod]
+    public async Task ReleaseCheckRecordsIdentityBoundUpdateObservation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        Assert.AreEqual(
+            ModUpdateEvidenceState.Unknown,
+            coordinator.CaptureHealth(gameDirectory, false).UpdateAvailability);
+
+        _ = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(
+            ModUpdateEvidenceState.UpToDate,
+            coordinator.CaptureHealth(gameDirectory, false).UpdateAvailability);
     }
 
     [TestMethod]
@@ -180,13 +212,16 @@ public sealed class ModManagementCoordinatorTests
             deploymentService);
     }
 
-    private static ModDeploymentService CreateDeploymentService(TemporaryDirectory temporaryDirectory) =>
+    private static ModDeploymentService CreateDeploymentService(
+        TemporaryDirectory temporaryDirectory,
+        ModInstallationAttribution? installationAttribution = null) =>
         new(
             temporaryDirectory.CreateDirectory("state"),
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
-            () => false);
+            () => false,
+            installationAttribution: installationAttribution);
 
     private static WindowsReleaseDiscovery ReleaseDiscovery() =>
         new(
