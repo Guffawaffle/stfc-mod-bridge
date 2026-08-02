@@ -323,24 +323,48 @@
                 VerticalAlignment="Center"
                 Background="{DynamicResource BorderBrush}" />
 
-        <TextBlock Grid.Column="2"
+        <TextBlock x:Name="ProductTitleText"
+                   Grid.Column="2"
                    Margin="24,0,0,0"
                    VerticalAlignment="Center"
                    FontSize="14"
                    FontWeight="SemiBold"
-                   Text="STFC Community Mod" />
+                   Text="STFC Community Mod">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
+                             Value="True">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
 
-        <Button Grid.Column="3"
+        <Button x:Name="SettingsDiagnosticsTitleBarButton"
+                Grid.Column="3"
                 Margin="16,0,0,0"
                 Padding="10,6"
                 VerticalAlignment="Center"
-                Style="{StaticResource QuietButtonStyle}"
                 Click="DiagnosticsButton_Click"
                 Content="Diagnostics"
                 ToolTip="Preview redacted launcher diagnostics"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                 automation:AutomationProperties.Name="Open redacted launcher diagnostics"
-                automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically." />
+                automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically.">
+          <Button.Style>
+            <Style BasedOn="{StaticResource QuietButtonStyle}"
+                   TargetType="Button">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
+                             Value="True">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+        </Button>
       </Grid>
 
       <Grid x:Name="SettingsSearchHost"

@@ -337,6 +337,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
+        if (section is LauncherSettingsSection.About or LauncherSettingsSection.DataSync
+            && !IsSearchActive)
+        {
+            IsSearchVisible = false;
+        }
+
         foreach (var item in Sections)
         {
             item.IsSelected = item.Id == section;

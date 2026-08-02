@@ -210,6 +210,33 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void EmptySearchClosesForNonSearchWorkspacesButActiveQueryRemainsGlobal()
+    {
+        using var fixture = SettingsFixture.Create();
+
+        fixture.ViewModel.SearchOpenCommand.Execute(null);
+        fixture.Select(LauncherSettingsSection.DataSync);
+        Assert.IsFalse(fixture.ViewModel.IsSearchVisible);
+        Assert.IsTrue(fixture.ViewModel.IsDataSyncSelected);
+
+        fixture.ViewModel.SearchOpenCommand.Execute(null);
+        fixture.Select(LauncherSettingsSection.About);
+        Assert.IsFalse(fixture.ViewModel.IsSearchVisible);
+        Assert.IsTrue(fixture.ViewModel.IsAboutSelected);
+
+        fixture.ViewModel.SearchOpenCommand.Execute(null);
+        fixture.ViewModel.SearchText = "zoom";
+        var dataSync = fixture.ViewModel.Sections.Single(
+            item => item.Id == LauncherSettingsSection.DataSync);
+        dataSync.SelectCommand.Execute(null);
+
+        Assert.IsTrue(fixture.ViewModel.IsSearchVisible);
+        Assert.IsTrue(fixture.ViewModel.IsSearchActive);
+        Assert.AreEqual("Search results", fixture.ViewModel.WorkspaceTitle);
+        Assert.IsFalse(fixture.ViewModel.IsDataSyncSelected);
+    }
+
+    [TestMethod]
     public void SearchProjectionRetainsConflictsWithHiddenCommands()
     {
         using var fixture = SettingsFixture.Create();

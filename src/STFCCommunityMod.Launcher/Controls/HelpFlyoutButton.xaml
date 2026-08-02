@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
              Focusable="False"
+             Unloaded="HelpFlyoutButton_Unloaded"
              automation:AutomationProperties.Name="{Binding AutomationName, ElementName=Root}"
              automation:AutomationProperties.HelpText="{Binding HelpText, ElementName=Root}">
   <Grid>

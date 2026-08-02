@@ -525,7 +525,19 @@ try {
     -Name "Clear settings search query" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $searchCommandDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  while (-not $clearSettingsSearch.Current.IsEnabled -and
+      [DateTimeOffset]::UtcNow -lt $searchCommandDeadline) {
+    Start-Sleep -Milliseconds 50
+  }
+  if (-not $clearSettingsSearch.Current.IsEnabled) {
+    throw "Clear settings search did not become available after entering a query."
+  }
   Invoke-AutomationElement -Element $clearSettingsSearch
+  while ($searchValuePattern.Current.Value -ne "" -and
+      [DateTimeOffset]::UtcNow -lt $searchCommandDeadline) {
+    Start-Sleep -Milliseconds 50
+  }
   if ($searchValuePattern.Current.Value -ne "") {
     throw "Clear settings search did not clear the query."
   }

@@ -62,8 +62,8 @@
             Visibility="{Binding DraftHasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
             automation:AutomationProperties.Name="{Binding Title, StringFormat=Reset {0} to default}"
             automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}">
-      <TextBlock FontSize="12"
-                 Text="_Default" />
+      <AccessText FontSize="12"
+                  Text="_Default" />
     </Button>
 
     <Button x:Name="MoreActionsButton"

@@ -22,6 +22,7 @@ public partial class HelpFlyoutButton : UserControl
             new PropertyMetadata("More information"));
 
     private bool isPinned;
+    private DispatcherOperation? pendingCloseOperation;
 
     public HelpFlyoutButton()
     {
@@ -61,9 +62,7 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
-        _ = Dispatcher.BeginInvoke(
-            CloseIfUnowned,
-            DispatcherPriority.Background);
+        ScheduleCloseIfUnowned();
     }
 
     private void Flyout_Closed(object? sender, EventArgs e)
@@ -84,9 +83,7 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
-        _ = Dispatcher.BeginInvoke(
-            CloseIfUnowned,
-            DispatcherPriority.Background);
+        ScheduleCloseIfUnowned();
     }
 
     private void FlyoutSurface_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -106,6 +103,12 @@ public partial class HelpFlyoutButton : UserControl
 
     private void CloseIfUnowned()
     {
+        pendingCloseOperation = null;
+        if (!IsLoaded)
+        {
+            return;
+        }
+
         if (isPinned
             || FlyoutButton.IsMouseOver
             || FlyoutContent.IsMouseOver
@@ -115,6 +118,29 @@ public partial class HelpFlyoutButton : UserControl
             return;
         }
 
+        Flyout.IsOpen = false;
+    }
+
+    private void ScheduleCloseIfUnowned()
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        pendingCloseOperation?.Abort();
+        pendingCloseOperation = Dispatcher.BeginInvoke(
+            CloseIfUnowned,
+            DispatcherPriority.Background);
+    }
+
+    private void HelpFlyoutButton_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pendingCloseOperation?.Abort();
+        pendingCloseOperation = null;
+        isPinned = false;
         Flyout.IsOpen = false;
     }
 }
