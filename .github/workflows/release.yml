@@ -1,4 +1,4 @@
-name: Signed launcher release
+name: Signed Mod Control release
 
 on:
   push:
@@ -17,11 +17,11 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: global.json
 
@@ -32,7 +32,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
-            throw "Launcher release tags must use vX.Y.Z or vX.Y.Z-rc.N."
+            throw "Mod Control release tags must use vX.Y.Z or vX.Y.Z-rc.N."
           }
           "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
           "prerelease=$($Matches.version.Contains('-rc.'))" >> $env:GITHUB_OUTPUT
@@ -43,7 +43,7 @@ jobs:
           dotnet restore STFCCommunityMod.Launcher.sln
           dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
-      - name: Build unsigned release payload
+      - name: Build unsigned Mod Control payload
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -53,10 +53,10 @@ jobs:
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
-      - name: Upload unsigned launcher payload
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Upload unsigned Mod Control payload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: unsigned-launcher-payload
+          name: unsigned-mod-control-payload
           path: artifacts/win-x64/app
           if-no-files-found: error
 
@@ -75,16 +75,16 @@ jobs:
       AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
       AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: global.json
 
-      - name: Download unsigned launcher payload
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Download unsigned Mod Control payload
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: unsigned-launcher-payload
+          name: unsigned-mod-control-payload
           path: artifacts/win-x64/app
 
       - name: Validate protected signing configuration
@@ -101,7 +101,7 @@ jobs:
             throw "Missing signing environment values: $($missing -join ', ')"
           }
           if ($env:WIN_PUBLISHER_NAME -ne "Joseph Gustavson") {
-            throw "WIN_PUBLISHER_NAME must match the reviewed launcher publisher."
+            throw "WIN_PUBLISHER_NAME must match the reviewed Mod Control publisher."
           }
 
       - name: Azure login with GitHub OIDC
@@ -111,7 +111,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sign launcher and updater
+      - name: Sign Mod Control and updater
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
@@ -157,7 +157,7 @@ jobs:
           -RequireSignatures
           -ExpectedPublisher "$env:WIN_PUBLISHER_NAME"
 
-      - name: Generate repository-owned launcher manifest
+      - name: Generate repository-owned Mod Control manifest
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -170,13 +170,13 @@ jobs:
           -Repository "$env:RELEASE_REPOSITORY"
 
       - name: Upload signed release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: signed-launcher-release-assets
+          name: signed-mod-control-release-assets
           path: |
-            artifacts/win-x64/setup/STFCCommunityMod.Launcher.Setup.exe
-            artifacts/win-x64/stfc-community-mod-launcher-win-x64.zip
-            artifacts/win-x64/stfc-mod-launcher-release-manifest.json
+            artifacts/win-x64/setup/STFCModControl.Setup.exe
+            artifacts/win-x64/stfc-mod-control-win-x64.zip
+            artifacts/win-x64/stfc-mod-control-release-manifest.json
           if-no-files-found: error
 
   publish:
@@ -187,9 +187,9 @@ jobs:
       contents: write
     steps:
       - name: Download signed release assets
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: signed-launcher-release-assets
+          name: signed-mod-control-release-assets
           path: artifacts/win-x64
 
       - name: Publish setup and machine-consumed update inputs
@@ -203,12 +203,12 @@ jobs:
         run: |
           $root = "artifacts/win-x64"
           $assets = @(
-            "$root/setup/STFCCommunityMod.Launcher.Setup.exe",
-            "$root/stfc-community-mod-launcher-win-x64.zip",
-            "$root/stfc-mod-launcher-release-manifest.json"
+            "$root/setup/STFCModControl.Setup.exe",
+            "$root/stfc-mod-control-win-x64.zip",
+            "$root/stfc-mod-control-release-manifest.json"
           )
           $notes = @"
-          Install STFC Mod Control with `STFCCommunityMod.Launcher.Setup.exe`.
+          Install STFC Mod Control with `STFCModControl.Setup.exe`.
 
           The ZIP and JSON assets are machine-consumed self-update inputs, not alternate installation packages.
           "@

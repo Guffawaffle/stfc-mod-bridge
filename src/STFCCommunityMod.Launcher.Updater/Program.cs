@@ -125,7 +125,7 @@ static void ValidatePlan(LauncherUpdatePlan plan, string planPath)
         || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
         || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
         || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
-        || plan.LauncherRelativePath != "STFCCommunityMod.Launcher.exe")
+        || plan.LauncherRelativePath != ModControlProductIdentity.ExecutableName)
     {
         throw new InvalidDataException("Update plan paths are invalid.");
     }

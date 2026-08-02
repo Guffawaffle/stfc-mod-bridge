@@ -170,33 +170,30 @@ public sealed class SettingsProjectionTests
 
         fixture.Select(LauncherSettingsSection.Interface);
         var interfaceRow = fixture.Row("ui.extend_chest_purchase_max");
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
+        StringAssert.Contains(interfaceRow.SettingDetailsHelp, "Default: 160");
         StringAssert.Contains(
-            interfaceRow.DefaultAndEffectiveHelp,
+            interfaceRow.SettingDetailsHelp,
             $"Default: 160{Environment.NewLine}Runtime path:");
-        Assert.IsFalse(interfaceRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
+        Assert.IsFalse(interfaceRow.SettingDetailsHelp.Contains("Current value:", StringComparison.Ordinal));
         interfaceRow.NumericText = "120";
         Assert.IsTrue(interfaceRow.DraftHasOverride);
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
-        Assert.IsTrue(interfaceRow.UseDefaultCommand.CanExecute(null));
-        interfaceRow.UseDefaultCommand.Execute(null);
-        Assert.IsFalse(interfaceRow.DraftHasOverride);
+        StringAssert.Contains(interfaceRow.SettingDetailsHelp, "Default: 160");
 
         fixture.Select(LauncherSettingsSection.Graphics);
         var graphicsRow = fixture.Row("graphics.default_system_zoom");
         Assert.AreEqual(
             "Setting details for Default system zoom",
-            graphicsRow.DefaultAndEffectiveAutomationName);
-        StringAssert.Contains(graphicsRow.DefaultAndEffectiveHelp, "Default: 1750");
+            graphicsRow.SettingDetailsAutomationName);
+        StringAssert.Contains(graphicsRow.SettingDetailsHelp, "Default: 1750");
 
         var booleanRow = fixture.Row("graphics.free_resize");
-        StringAssert.Contains(booleanRow.DefaultAndEffectiveHelp, "Default:");
-        Assert.IsFalse(booleanRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
+        StringAssert.Contains(booleanRow.SettingDetailsHelp, "Default:");
+        Assert.IsFalse(booleanRow.SettingDetailsHelp.Contains("Current value:", StringComparison.Ordinal));
 
         fixture.ViewModel.SearchText = "config.assets_url_override";
         var blankDefaultRow = fixture.Row("config.assets_url_override");
         StringAssert.Contains(
-            blankDefaultRow.DefaultAndEffectiveHelp,
+            blankDefaultRow.SettingDetailsHelp,
             $"Default: (blank){Environment.NewLine}Runtime path: config.assets_url_override");
     }
 
@@ -521,8 +518,8 @@ public sealed class SettingsProjectionTests
         Assert.AreEqual("Compatibility value", row.EffectiveState);
         Assert.AreEqual("Unknown", row.EffectiveValue);
         Assert.AreEqual("Compatibility policy · Runtime-resolved", row.NotificationDeliverySummary);
-        StringAssert.Contains(row.DefaultAndEffectiveHelp, alias.Path);
-        StringAssert.Contains(row.DefaultAndEffectiveHelp, "Unknown");
+        StringAssert.Contains(row.SettingDetailsHelp, alias.Path);
+        StringAssert.Contains(row.SettingDetailsHelp, "Unknown");
         StringAssert.Contains(row.NotificationPolicyHelp, "canonical whole-policy override");
         Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
         Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
@@ -543,7 +540,7 @@ public sealed class SettingsProjectionTests
         row.NotificationSystem = true;
         Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
         Assert.AreEqual("Canonical TOML · notifications.fleet_arrived_in_system", row.EffectiveValueSource);
-        StringAssert.Contains(row.DefaultAndEffectiveHelp, "Canonical precedence");
+        StringAssert.Contains(row.SettingDetailsHelp, "Canonical precedence");
 
         fixture.ViewModel.SaveCommand.Execute(null);
         await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);

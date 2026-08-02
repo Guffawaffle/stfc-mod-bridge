@@ -25,7 +25,7 @@ public sealed class LauncherBootstrapInstallerTests
 
         Assert.IsTrue(result.ReplacedExistingInstallation);
         Assert.IsTrue(File.Exists(result.LauncherPath));
-        Assert.IsTrue(File.Exists(Path.Combine(program, "STFCCommunityMod.Launcher.Updater.exe")));
+        Assert.IsTrue(File.Exists(Path.Combine(program, "STFCModControl.Updater.exe")));
         Assert.IsFalse(File.Exists(Path.Combine(program, "old.txt")));
         Assert.AreEqual(0, Directory.GetDirectories(Path.Combine(state, "bootstrap")).Length);
     }
@@ -43,7 +43,7 @@ public sealed class LauncherBootstrapInstallerTests
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() => installer.InstallAsync(CreateArchive()));
 
         Assert.AreEqual("old", File.ReadAllText(sentinel));
-        Assert.IsFalse(File.Exists(Path.Combine(program, "STFCCommunityMod.Launcher.exe")));
+        Assert.IsFalse(File.Exists(Path.Combine(program, "STFCModControl.exe")));
     }
 
     [TestMethod]
@@ -106,7 +106,7 @@ public sealed class LauncherBootstrapInstallerTests
             program,
             backup,
             Path.Combine(transactionRoot, "startup.ack"),
-            "STFCCommunityMod.Launcher.exe",
+            "STFCModControl.exe",
             [],
             [oldFile]);
         File.WriteAllText(
@@ -146,7 +146,7 @@ public sealed class LauncherBootstrapInstallerTests
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            foreach (var name in new[] { "STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe" })
+            foreach (var name in new[] { "STFCModControl.exe", "STFCModControl.Updater.exe" })
             {
                 var entry = archive.CreateEntry(name);
                 using var target = entry.Open();

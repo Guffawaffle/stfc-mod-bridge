@@ -168,7 +168,7 @@
         },
         {
           "name": "packaged-ui-smoke",
-          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/smoke-settings.ps1 -LauncherPath windows-launcher/artifacts/win-x64/app/STFCCommunityMod.Launcher.exe"
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/smoke-settings.ps1 -LauncherPath windows-launcher/artifacts/win-x64/app/STFCModControl.exe"
         },
         {
           "name": "diff-check",

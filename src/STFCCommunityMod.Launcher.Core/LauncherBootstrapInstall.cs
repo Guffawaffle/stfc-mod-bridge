@@ -36,8 +36,8 @@ public sealed class LauncherBootstrapInstaller(
         try
         {
             LauncherArchiveExtractor.Extract(archive, stageDirectory);
-            VerifyExecutable(Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.exe"));
-            VerifyExecutable(Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.Updater.exe"));
+            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.ExecutableName));
+            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.UpdaterExecutableName));
 
             Directory.CreateDirectory(Path.GetDirectoryName(programDirectory)!);
             if (hadPrevious)
@@ -55,7 +55,7 @@ public sealed class LauncherBootstrapInstaller(
             }
 
             return new(
-                Path.Combine(programDirectory, "STFCCommunityMod.Launcher.exe"),
+                Path.Combine(programDirectory, ModControlProductIdentity.ExecutableName),
                 hadPrevious);
         }
         catch

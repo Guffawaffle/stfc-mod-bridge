@@ -166,7 +166,7 @@ public static class LauncherUpdateRecovery
             || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
             || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
             || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
-            || plan.LauncherRelativePath != "STFCCommunityMod.Launcher.exe")
+            || plan.LauncherRelativePath != ModControlProductIdentity.ExecutableName)
         {
             throw new InvalidDataException("An abandoned Mod Control update plan has invalid recovery paths.");
         }
@@ -330,8 +330,8 @@ public sealed class LauncherSelfUpdateService(
         Directory.CreateDirectory(stageDirectory);
         LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
 
-        var launcherPath = Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.exe");
-        var updaterPath = Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.Updater.exe");
+        var launcherPath = Path.Combine(stageDirectory, ModControlProductIdentity.ExecutableName);
+        var updaterPath = Path.Combine(stageDirectory, ModControlProductIdentity.UpdaterExecutableName);
         VerifySignedExecutable(launcherPath);
         VerifySignedExecutable(updaterPath);
         if (!string.Equals(identityReader.ReadSourceCommit(launcherPath), artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
@@ -355,12 +355,12 @@ public sealed class LauncherSelfUpdateService(
             programDirectory,
             Path.Combine(transactionRoot, "backup"),
             Path.Combine(transactionRoot, "startup.ack"),
-            "STFCCommunityMod.Launcher.exe",
+            ModControlProductIdentity.ExecutableName,
             files,
             Directory.Exists(programDirectory) ? EnumerateFiles(programDirectory) : []);
         var planPath = Path.Combine(transactionRoot, "plan.json");
         await File.WriteAllTextAsync(planPath, JsonSerializer.Serialize(plan, JsonOptions), cancellationToken);
-        var runnerPath = Path.Combine(transactionRoot, "STFCCommunityMod.Launcher.Updater.exe");
+        var runnerPath = Path.Combine(transactionRoot, ModControlProductIdentity.UpdaterExecutableName);
         File.Copy(updaterPath, runnerPath);
         return new(
             LauncherUpdatePreparationState.Ready,

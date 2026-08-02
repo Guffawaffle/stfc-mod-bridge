@@ -6,13 +6,13 @@ param(
   [string]$TargetCommit,
   [string]$Repository = "Guffawaffle/stfc-mod-launcher",
   [string]$OutputDirectory = "artifacts/win-x64",
-  [string]$OutputPath = "artifacts/win-x64/stfc-mod-launcher-release-manifest.json"
+  [string]$OutputPath = "artifacts/win-x64/stfc-mod-control-release-manifest.json"
 )
 
 $ErrorActionPreference = "Stop"
 
 if ($Tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
-  throw "Launcher tags must use vX.Y.Z or vX.Y.Z-rc.N."
+  throw "Mod Control tags must use vX.Y.Z or vX.Y.Z-rc.N."
 }
 $version = $Matches.version
 if ($TargetCommit -cnotmatch '^[0-9a-f]{40}$') {
@@ -66,8 +66,8 @@ function New-Artifact {
   }
 }
 
-$archiveName = "stfc-community-mod-launcher-win-x64.zip"
-$setupName = "STFCCommunityMod.Launcher.Setup.exe"
+$archiveName = "stfc-mod-control-win-x64.zip"
+$setupName = "STFCModControl.Setup.exe"
 $archive = Join-Path $outputRoot $archiveName
 $setup = Join-Path (Join-Path $outputRoot "setup") $setupName
 $manifest = [ordered]@{
@@ -81,16 +81,16 @@ $manifest = [ordered]@{
   manifestAuthenticity = [ordered]@{ scheme = "none" }
   artifacts = @(
     New-Artifact `
-      -Id "windows-launcher-archive-x64" `
-      -Kind "windows-launcher" `
+      -Id "windows-mod-control-archive-x64" `
+      -Kind "windows-mod-control" `
       -Path $archive `
       -FileName $archiveName `
       -MediaType "application/zip" `
       -Scope "contents" `
-      -SignedFiles @("STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe")
+      -SignedFiles @("STFCModControl.exe", "STFCModControl.Updater.exe")
     New-Artifact `
-      -Id "windows-launcher-setup-x64" `
-      -Kind "windows-launcher-setup" `
+      -Id "windows-mod-control-setup-x64" `
+      -Kind "windows-mod-control-setup" `
       -Path $setup `
       -FileName $setupName `
       -MediaType "application/vnd.microsoft.portable-executable" `
@@ -104,4 +104,4 @@ $temporaryPath = "$manifestPath.tmp"
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporaryPath -Encoding utf8NoBOM
 Move-Item -LiteralPath $temporaryPath -Destination $manifestPath -Force
 
-Write-Host "Generated standalone launcher release manifest: $manifestPath"
+Write-Host "Generated Mod Control release manifest: $manifestPath"

@@ -35,9 +35,9 @@ GitHub issues the environment-scoped OIDC token.
 
 The standalone tag workflow signs and verifies:
 
-- `STFCCommunityMod.Launcher.exe`
-- `STFCCommunityMod.Launcher.Updater.exe`
-- `STFCCommunityMod.Launcher.Setup.exe`
+- `STFCModControl.exe`
+- `STFCModControl.Updater.exe`
+- `STFCModControl.Setup.exe`
 
 Future executable release components must be added to an explicit signing
 allowlist before release. Package inspection identifies PE files by their

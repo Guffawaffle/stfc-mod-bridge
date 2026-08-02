@@ -67,7 +67,7 @@ payload.
 - [UX direction](docs/windows-launcher/UX_DIRECTION.md)
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
-- [Product identity and compatibility inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)
+- [Product identity inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)
 - [About, attribution, and notice ownership](docs/windows-launcher/ABOUT.md)
 - [Generated third-party notices](THIRD-PARTY-NOTICES.md)
 

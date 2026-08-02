@@ -560,7 +560,7 @@ Expanding the row exposes the complete event policy:
 - system notification;
 - audio notification;
 - sound selection and preview when supported;
-- runtime default/effective value;
+- catalog default and runtime path;
 - reset/remove override;
 - migration or validation warning.
 
@@ -738,11 +738,10 @@ Sync as a generic application search. A clear-query command keeps the search
 surface open; close-search clears the query, collapses the surface, and returns
 keyboard focus to the command that opened it.
 
-Setting rows expose catalog-resolved default and effective values through one
-stable, focusable circled-help surface. An explicit `Default` command removes
-an override directly; it is not hidden in a one-item overflow menu. Reverting
-an unsaved edit to the saved value remains a separate action because saved and
-default are different transaction states.
+Setting rows expose the catalog default and runtime path through one stable,
+focusable circled-help surface. Current values remain visible in their editors
+and are not repeated in help text. Reverting an unsaved edit to the saved value
+remains the row-level transaction action.
 
 Shared geometry follows component role:
 

@@ -77,7 +77,7 @@ internal static class Program
 
     private static bool IsLauncherRunning()
     {
-        var processes = Process.GetProcessesByName(ModControlProductIdentity.LegacyProcessName);
+        var processes = Process.GetProcessesByName(ModControlProductIdentity.ProcessName);
         try
         {
             return processes.Length > 0;
@@ -97,10 +97,6 @@ internal static class Program
             Environment.GetFolderPath(Environment.SpecialFolder.Programs),
             ModControlProductIdentity.StartMenuGroupName);
         Directory.CreateDirectory(startMenuDirectory);
-        DeleteIfPresent(Path.Combine(startMenuDirectory, ModControlProductIdentity.LegacyShortcutFileName));
-        DeleteIfPresent(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-            ModControlProductIdentity.LegacyShortcutFileName));
         var shellType = Type.GetTypeFromProgID("WScript.Shell")
             ?? throw new InvalidOperationException("Windows shortcut support is unavailable.");
         object? shell = null;
@@ -180,13 +176,5 @@ internal static class Program
         key.SetValue("QuietUninstallString", uninstallCommand, RegistryValueKind.String);
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
-    }
-
-    private static void DeleteIfPresent(string path)
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
     }
 }

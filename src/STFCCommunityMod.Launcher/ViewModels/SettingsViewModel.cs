@@ -554,26 +554,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         return true;
     }
 
-    private bool StageRemove(LauncherConfigurationSetting setting)
-    {
-        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
-        {
-            return false;
-        }
-
-        var result = workspace.StageRemove(setting);
-        OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The override could not be removed.";
-        if (!result.IsValid)
-        {
-            return false;
-        }
-
-        RefreshState(setting);
-        RefreshKeybindingConflicts();
-        NotifySessionChanged();
-        return true;
-    }
-
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
         if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
@@ -892,7 +872,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                         GetValueState(setting.Setting),
                         workspace is not null,
                         StageValue,
-                        StageRemove,
                         RevertDraft,
                         SetInputValidity,
                         editorDraftStore);

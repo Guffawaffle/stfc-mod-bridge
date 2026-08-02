@@ -46,14 +46,14 @@ dotnet publish $updaterProject `
   -p:PublishSingleFile=true `
   @buildProperties
 Copy-Item `
-  -LiteralPath (Join-Path $updaterPublish "STFCCommunityMod.Launcher.Updater.exe") `
+  -LiteralPath (Join-Path $updaterPublish "STFCModControl.Updater.exe") `
   -Destination $payload `
   -Force
 Remove-Item -LiteralPath $updaterPublish -Recurse -Force
 
-$launcher = Join-Path $payload "STFCCommunityMod.Launcher.exe"
+$launcher = Join-Path $payload "STFCModControl.exe"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-  throw "Self-contained launcher executable was not published: $launcher"
+  throw "Self-contained Mod Control executable was not published: $launcher"
 }
 
 & (Join-Path $PSScriptRoot "package.ps1") -OutputDirectory $outputRoot
@@ -63,4 +63,4 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   -SourceRevisionId $SourceRevisionId
 & (Join-Path $PSScriptRoot "inspect-package.ps1") -OutputDirectory $outputRoot
 
-Write-Host "Published launcher payload: $payload"
+Write-Host "Published Mod Control payload: $payload"

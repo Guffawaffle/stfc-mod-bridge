@@ -13,10 +13,10 @@ public sealed class PerUserInstallLayoutTests
         var result = PerUserInstallLayout.FromLocalApplicationData(localAppData);
 
         Assert.AreEqual(
-            Path.Combine(Path.GetFullPath(localAppData), "Programs", "STFC Community Mod Launcher"),
+            Path.Combine(Path.GetFullPath(localAppData), "Programs", "STFC Mod Control"),
             result.ProgramDirectory);
         Assert.AreEqual(
-            Path.Combine(Path.GetFullPath(localAppData), "STFC Community Mod Launcher"),
+            Path.Combine(Path.GetFullPath(localAppData), "STFC Mod Control"),
             result.StateDirectory);
         Assert.AreNotEqual(result.ProgramDirectory, result.StateDirectory);
     }
@@ -29,17 +29,18 @@ public sealed class PerUserInstallLayoutTests
     }
 
     [TestMethod]
-    public void PublicIdentityIsSeparatedFromRetainedUpgradeIdentifiers()
+    public void ProductIdentityOwnsGreenfieldInstallAndArtifactNames()
     {
         Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.ProductName);
         Assert.AreEqual("Mod Control", ModControlProductIdentity.ShortName);
         Assert.AreEqual("Install · Configure · Diagnose · Run", ModControlProductIdentity.Descriptor);
-        Assert.AreEqual("STFC Community Mod Launcher", ModControlProductIdentity.LegacyProgramDirectoryName);
-        Assert.AreEqual("STFC Community Mod Launcher", ModControlProductIdentity.LegacyStateDirectoryName);
-        Assert.AreEqual("STFCCommunityMod.Launcher.exe", ModControlProductIdentity.LegacyExecutableName);
-        Assert.AreEqual("STFCCommunityMod.Launcher", ModControlProductIdentity.LegacyProcessName);
-        Assert.AreNotEqual(
-            ModControlProductIdentity.ProductName,
-            ModControlProductIdentity.LegacyProgramDirectoryName);
+        Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.ProgramDirectoryName);
+        Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.StateDirectoryName);
+        Assert.AreEqual("STFCModControl.exe", ModControlProductIdentity.ExecutableName);
+        Assert.AreEqual("STFCModControl.Updater.exe", ModControlProductIdentity.UpdaterExecutableName);
+        Assert.AreEqual("STFCModControl.Setup.exe", ModControlProductIdentity.SetupExecutableName);
+        Assert.AreEqual("STFCModControl", ModControlProductIdentity.ProcessName);
+        Assert.AreEqual("stfc-mod-control-win-x64.zip", ModControlProductIdentity.UpdateArchiveName);
+        Assert.AreEqual("stfc-mod-control-release-manifest.json", ModControlProductIdentity.ReleaseManifestName);
     }
 }

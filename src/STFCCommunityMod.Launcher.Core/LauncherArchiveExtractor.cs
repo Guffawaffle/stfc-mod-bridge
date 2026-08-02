@@ -8,8 +8,8 @@ public static class LauncherArchiveExtractor
     private const long MaximumExpandedBytes = 768L * 1024L * 1024L;
     private static readonly HashSet<string> PortableExecutableAllowlist = new(StringComparer.Ordinal)
     {
-        "STFCCommunityMod.Launcher.exe",
-        "STFCCommunityMod.Launcher.Updater.exe",
+        ModControlProductIdentity.ExecutableName,
+        ModControlProductIdentity.UpdaterExecutableName,
     };
 
     public static void Extract(byte[] contents, string destination)

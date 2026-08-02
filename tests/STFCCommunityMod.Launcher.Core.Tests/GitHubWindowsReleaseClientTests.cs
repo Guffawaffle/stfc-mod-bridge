@@ -162,7 +162,7 @@ public sealed class GitHubWindowsReleaseClientTests
     public async Task LauncherDiscoveryUsesStandaloneAuthorityWithoutRequiringModArtifact()
     {
         const string repository = "Guffawaffle/stfc-mod-launcher";
-        const string manifestName = "stfc-mod-launcher-release-manifest.json";
+        const string manifestName = "stfc-mod-control-release-manifest.json";
         const string tag = "v0.2.0";
         var releases = $$"""
             [{
@@ -189,11 +189,11 @@ public sealed class GitHubWindowsReleaseClientTests
               },
               "manifestAuthenticity": { "scheme": "none" },
               "artifacts": [{
-                "id": "windows-launcher-archive-x64",
-                "kind": "windows-launcher",
+                "id": "windows-mod-control-archive-x64",
+                "kind": "windows-mod-control",
                 "platform": "windows",
                 "architecture": "x64",
-                "fileName": "stfc-community-mod-launcher-win-x64.zip",
+                "fileName": "stfc-mod-control-win-x64.zip",
                 "mediaType": "application/zip",
                 "size": 123,
                 "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -201,8 +201,8 @@ public sealed class GitHubWindowsReleaseClientTests
                   "scheme": "authenticode",
                   "scope": "contents",
                   "signedFiles": [
-                    "STFCCommunityMod.Launcher.exe",
-                    "STFCCommunityMod.Launcher.Updater.exe"
+                    "STFCModControl.exe",
+                    "STFCModControl.Updater.exe"
                   ]
                 }
               }]
@@ -224,7 +224,7 @@ public sealed class GitHubWindowsReleaseClientTests
     public async Task LauncherDiscoveryRejectsReplayAtOrBelowInstalledVersion()
     {
         const string repository = "Guffawaffle/stfc-mod-launcher";
-        const string manifestName = "stfc-mod-launcher-release-manifest.json";
+        const string manifestName = "stfc-mod-control-release-manifest.json";
         var releases = $$"""
             [{
               "tag_name": "v0.2.0",
@@ -243,11 +243,11 @@ public sealed class GitHubWindowsReleaseClientTests
               "source": { "repository": "Guffawaffle/stfc-mod-launcher", "targetCommit": "0123456789abcdef0123456789abcdef01234567" },
               "manifestAuthenticity": { "scheme": "none" },
               "artifacts": [{
-                "id": "windows-launcher-archive-x64", "kind": "windows-launcher",
+                "id": "windows-mod-control-archive-x64", "kind": "windows-mod-control",
                 "platform": "windows", "architecture": "x64",
-                "fileName": "stfc-community-mod-launcher-win-x64.zip", "mediaType": "application/zip",
+                "fileName": "stfc-mod-control-win-x64.zip", "mediaType": "application/zip",
                 "size": 123, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "authenticity": { "scheme": "authenticode", "scope": "contents", "signedFiles": ["STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe"] }
+                "authenticity": { "scheme": "authenticode", "scope": "contents", "signedFiles": ["STFCModControl.exe", "STFCModControl.Updater.exe"] }
               }]
             }
             """;

@@ -26,7 +26,7 @@ function Get-ActiveConfigurationPath {
 
   $selectionPath = Join-Path `
     $localApplicationData `
-    "STFC Community Mod Launcher\install-selection.json"
+    "STFC Mod Control\install-selection.json"
   if (-not (Test-Path -LiteralPath $selectionPath -PathType Leaf)) {
     return $null
   }
@@ -65,7 +65,7 @@ function Wait-ForResponsiveMainWindow {
   while ([DateTimeOffset]::UtcNow -lt $Deadline) {
     $Process.Refresh()
     if ($Process.HasExited) {
-      throw "The launcher exited with code $($Process.ExitCode) before creating its main window."
+      throw "Mod Control exited with code $($Process.ExitCode) before creating its main window."
     }
 
     if ($Process.MainWindowHandle -ne [IntPtr]::Zero -and $Process.Responding) {
@@ -86,7 +86,7 @@ function Wait-ForResponsiveMainWindow {
     Start-Sleep -Milliseconds 100
   }
 
-  throw "The launcher did not create a responsive main window within the timeout."
+  throw "Mod Control did not create a responsive main window within the timeout."
 }
 
 function Find-AutomationElement {
@@ -109,7 +109,11 @@ function Find-AutomationElement {
         [System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.Condition]::TrueCondition)
     }
-    catch [System.Runtime.InteropServices.COMException] {
+    catch {
+      # UI Automation can transiently fail while WPF replaces a visual tree or
+      # Windows is opening the target process token. The caller's deadline
+      # remains the bound; persistent failures still report the missing
+      # accessible element below.
       Start-Sleep -Milliseconds 100
       continue
     }
@@ -380,12 +384,12 @@ if ([string]::IsNullOrWhiteSpace($originalWindir)) {
 
   [Environment]::SetEnvironmentVariable("WINDIR", $env:SystemRoot, "Process")
   $windirWasRestored = $true
-  Write-Verbose "Restored process WINDIR from SystemRoot for the launcher smoke."
+  Write-Verbose "Restored process WINDIR from SystemRoot for the Mod Control smoke."
 }
 
 $selectionPath = Join-Path `
   ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
-  "STFC Community Mod Launcher\install-selection.json"
+  "STFC Mod Control\install-selection.json"
 $selectionExisted = Test-Path -LiteralPath $selectionPath -PathType Leaf
 $selectionBytes = if ($selectionExisted) {
   [System.IO.File]::ReadAllBytes($selectionPath)
@@ -491,21 +495,21 @@ try {
 
   $launcherProcess = [System.Diagnostics.Process]::Start($startInfo)
   if ($null -eq $launcherProcess) {
-    throw "Windows did not return a process for the launcher."
+    throw "Windows did not return a process for Mod Control."
   }
 
-  Write-Host "Started launcher process $($launcherProcess.Id)."
+  Write-Host "Started Mod Control process $($launcherProcess.Id)."
   $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
   $windowHandle = Wait-ForResponsiveMainWindow `
     -Process $launcherProcess `
     -Deadline $deadline
   $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
   if ($null -eq $root -or $root.Current.ProcessId -ne $launcherProcess.Id) {
-    throw "UI Automation did not attach to the exact launcher process that was started."
+    throw "UI Automation did not attach to the exact Mod Control process that was started."
   }
 
   if ($root.Current.Name -ne "STFC Mod Control") {
-    throw "Unexpected launcher window title '$($root.Current.Name)'."
+    throw "Unexpected Mod Control window title '$($root.Current.Name)'."
   }
 
   [void](Find-AutomationElement `
@@ -519,9 +523,9 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if (Test-ColorModeSelectorPresent -Root $root) {
-    throw "The appearance selector must not consume title space on launcher Home."
+    throw "The appearance selector must not consume title space on Mod Control Home."
   }
-  Write-Host "PASS: launcher Home omits the appearance selector."
+  Write-Host "PASS: Mod Control Home omits the appearance selector."
 
   [void](Find-AutomationElement `
     -Root $root `
@@ -543,15 +547,15 @@ try {
     $_.Current.Name -match '(?i)community mod'
   } | Select-Object -First 1
   if ($null -eq $modAction) {
-    throw "Launcher Home did not expose an accessible community-mod action."
+    throw "Mod Control Home did not expose an accessible community-mod action."
   }
-  Write-Host "PASS: launcher Home exposes community-mod state and action '$($modAction.Current.Name)'."
+  Write-Host "PASS: Mod Control Home exposes community-mod state and action '$($modAction.Current.Name)'."
 
   $launchAction = $homeButtons | Where-Object {
     $_.Current.Name -match '(?i)^(launch prime\.exe|open Scopely launcher)'
   } | Select-Object -First 1
   if ($null -eq $launchAction) {
-    throw "Launcher Home did not expose an accessible game-launch action."
+    throw "Mod Control Home did not expose an accessible game-launch action."
   }
   $launchTargetMenu = Find-AutomationElement `
     -Root $root `
@@ -603,7 +607,7 @@ try {
     throw "The launch-target menu expanded into a page-width panel instead of a compact menu."
   }
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
-  Write-Host "PASS: launcher Home exposes a compact, right-owned launch menu without invoking either target."
+  Write-Host "PASS: Mod Control Home exposes a compact, right-owned launch menu without invoking either target."
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `
@@ -759,20 +763,24 @@ try {
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   Write-Host "PASS: settings search exposes distinct open, clear-query, and close actions."
 
-  $provenanceSurface = $root.FindAll(
+  $settingDetailsSurface = $root.FindAll(
       [System.Windows.Automation.TreeScope]::Descendants,
       [System.Windows.Automation.Condition]::TrueCondition) |
     Where-Object {
       $_.Current.Name.StartsWith(
-        "Default and effective value for ",
+        "Setting details for ",
         [StringComparison]::Ordinal)
     } |
     Select-Object -First 1
-  if ($null -eq $provenanceSurface -or
-      [string]::IsNullOrWhiteSpace($provenanceSurface.Current.HelpText)) {
-    throw "Settings rows do not expose default/effective provenance through UI Automation."
+  if ($null -eq $settingDetailsSurface -or
+      [string]::IsNullOrWhiteSpace($settingDetailsSurface.Current.HelpText) -or
+      -not $settingDetailsSurface.Current.HelpText.StartsWith("Default: ", [StringComparison]::Ordinal) -or
+      -not $settingDetailsSurface.Current.HelpText.Contains(
+        "Runtime path: ",
+        [StringComparison]::Ordinal)) {
+    throw "Settings rows do not expose default and runtime-path details through UI Automation."
   }
-  Write-Host "PASS: settings rows expose a stable default/effective provenance help surface."
+  Write-Host "PASS: settings rows expose stable default and runtime-path details."
 
   $unexpectedSyncWorkspace = $root.FindFirst(
     [System.Windows.Automation.TreeScope]::Descendants,
@@ -851,13 +859,13 @@ try {
       [System.Windows.Automation.TransformPattern]::Pattern,
       [ref]$transformPattern) -or
       -not $transformPattern.Current.CanResize) {
-    throw "The launcher window does not expose resize support for minimum-width validation."
+    throw "The Mod Control window does not expose resize support for minimum-width validation."
   }
   $transformPattern.Resize(960, 620)
   Start-Sleep -Milliseconds 250
   $bounds = $root.Current.BoundingRectangle
   if ($bounds.Width -lt 959 -or $bounds.Height -lt 619) {
-    throw "The launcher did not retain its supported 960x620 minimum after resize."
+    throw "Mod Control did not retain its supported 960x620 minimum after resize."
   }
   if ($scrollPattern.Current.HorizontallyScrollable) {
     throw "The Data Sync page exposed horizontal scrolling at 960x620."
@@ -1057,8 +1065,8 @@ try {
   Expand-AutomationElement -Element $technicalDetails
   foreach ($diagnosticValue in @(
       $expectedRuntimeIdentity,
-      "Active",
-      "Semantic",
+      "Semantic grouping: Active",
+      "Settings layout: Semantic",
       "Runtime provides settings.principal-taxonomy.v1."
     )) {
     [void](Find-AutomationElement `
@@ -1068,7 +1076,7 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: launcher chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  Write-Host "PASS: Mod Control chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_

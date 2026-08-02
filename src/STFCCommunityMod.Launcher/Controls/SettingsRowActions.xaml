@@ -35,8 +35,8 @@
   </UserControl.Resources>
 
   <StackPanel Orientation="Horizontal">
-    <controls:HelpFlyoutButton HelpText="{Binding DefaultAndEffectiveHelp}"
-                               AutomationName="{Binding DefaultAndEffectiveAutomationName}" />
+    <controls:HelpFlyoutButton HelpText="{Binding SettingDetailsHelp}"
+                               AutomationName="{Binding SettingDetailsAutomationName}" />
 
     <Button Width="44"
             Height="44"

@@ -93,13 +93,13 @@ public sealed partial class ReleaseTrustAutomationTests
         var setup = Directory.CreateDirectory(Path.Combine(output, "setup"));
         var portableExecutable = await File.ReadAllBytesAsync(Environment.ProcessPath!);
         await File.WriteAllBytesAsync(
-            Path.Combine(setup.FullName, "STFCCommunityMod.Launcher.Setup.exe"),
+            Path.Combine(setup.FullName, "STFCModControl.Setup.exe"),
             portableExecutable);
-        var archivePath = Path.Combine(output, "stfc-community-mod-launcher-win-x64.zip");
+        var archivePath = Path.Combine(output, "stfc-mod-control-win-x64.zip");
         using (var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
         {
-            AddEntry(archive, "STFCCommunityMod.Launcher.exe", portableExecutable);
-            AddEntry(archive, "STFCCommunityMod.Launcher.Updater.exe", portableExecutable);
+            AddEntry(archive, "STFCModControl.exe", portableExecutable);
+            AddEntry(archive, "STFCModControl.Updater.exe", portableExecutable);
             AddEntry(archive, unexpectedName, portableExecutable);
         }
 

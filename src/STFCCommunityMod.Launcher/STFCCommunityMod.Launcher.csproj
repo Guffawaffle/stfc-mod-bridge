@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>STFCCommunityMod.Launcher</RootNamespace>
-    <AssemblyName>STFCCommunityMod.Launcher</AssemblyName>
+    <AssemblyName>STFCModControl</AssemblyName>
     <AssemblyTitle>STFC Mod Control</AssemblyTitle>
     <FileDescription>STFC Mod Control</FileDescription>
     <ApplicationManifest>app.manifest</ApplicationManifest>

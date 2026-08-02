@@ -20,11 +20,9 @@ public sealed class SettingsRowViewModel :
     INotifyPropertyChanged
 {
     private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
-    private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly Func<LauncherConfigurationSetting, bool> revertDraft;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsEditorDraftStore editorDraftStore;
-    private readonly SettingsActionCommand useDefaultCommand;
     private readonly SettingsActionCommand revertDraftCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
     private readonly SettingsValueCommand<string> removeKeybindingCommand;
@@ -41,7 +39,6 @@ public sealed class SettingsRowViewModel :
         SettingsValueState valueState,
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
-        Func<LauncherConfigurationSetting, bool> stageRemove,
         Func<LauncherConfigurationSetting, bool> revertDraft,
         Action<LauncherConfigurationSetting, bool> setInputValidity,
         SettingsEditorDraftStore editorDraftStore)
@@ -49,7 +46,6 @@ public sealed class SettingsRowViewModel :
         Setting = setting;
         this.valueState = valueState;
         this.stageValue = stageValue;
-        this.stageRemove = stageRemove;
         this.revertDraft = revertDraft;
         this.setInputValidity = setInputValidity;
         this.editorDraftStore =
@@ -104,9 +100,6 @@ public sealed class SettingsRowViewModel :
         RefreshNotificationPolicy();
         RestoreEditorDraft();
 
-        useDefaultCommand = new SettingsActionCommand(
-            UseDefault,
-            () => CanEdit && DraftHasOverride);
         revertDraftCommand = new SettingsActionCommand(
             RevertDraft,
             () => CanEdit && IsDirty);
@@ -257,7 +250,7 @@ public sealed class SettingsRowViewModel :
             ? "Unknown"
             : FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
 
-    public string DefaultAndEffectiveHelp
+    public string SettingDetailsHelp
     {
         get
         {
@@ -290,7 +283,7 @@ public sealed class SettingsRowViewModel :
         }
     }
 
-    public string DefaultAndEffectiveAutomationName =>
+    public string SettingDetailsAutomationName =>
         $"Setting details for {Title}";
 
     public string SavedValueText =>
@@ -306,11 +299,6 @@ public sealed class SettingsRowViewModel :
 
     public string RevertDraftAutomationHelp =>
         $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "initial")} state.";
-
-    public string UseDefaultAvailability =>
-        DraftHasOverride
-            ? $"Remove the explicit override and use the application default {DefaultValueText}."
-            : $"This setting already uses the application default {DefaultValueText}.";
 
     public string DefaultValueText
     {
@@ -679,8 +667,6 @@ public sealed class SettingsRowViewModel :
     public string SpecializedEditorMessage =>
         $"This {Control.ToLowerInvariant()} value is catalogued and awaits its typed editor.";
 
-    public ICommand UseDefaultCommand => useDefaultCommand;
-
     public ICommand RevertDraftCommand => revertDraftCommand;
 
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
@@ -695,7 +681,6 @@ public sealed class SettingsRowViewModel :
                 || IsStringEditor
                 || IsKeybindingEditor
                 || IsNotificationEditor);
-        useDefaultCommand.RaiseCanExecuteChanged();
         revertDraftCommand.RaiseCanExecuteChanged();
         addKeybindingCommand.RaiseCanExecuteChanged();
         removeKeybindingCommand.RaiseCanExecuteChanged();
@@ -708,7 +693,7 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
-        OnPropertyChanged(nameof(DefaultAndEffectiveHelp));
+        OnPropertyChanged(nameof(SettingDetailsHelp));
         OnPropertyChanged(nameof(BooleanValue));
         OnPropertyChanged(nameof(BooleanStateText));
         OnPropertyChanged(nameof(EnumValue));
@@ -731,7 +716,6 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(RevertDraftAvailability));
         OnPropertyChanged(nameof(RevertDraftAutomationName));
         OnPropertyChanged(nameof(RevertDraftAutomationHelp));
-        OnPropertyChanged(nameof(UseDefaultAvailability));
     }
 
     private SettingsInputWidth ResolveNumericInputWidth()
@@ -840,21 +824,6 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(NotificationNeedsAttention));
         OnPropertyChanged(nameof(NotificationPolicyHelp));
         OnPropertyChanged(nameof(EditorAutomationName));
-    }
-
-    private void UseDefault()
-    {
-        if (RunWithClearedEditorDraft(() => stageRemove(Setting)))
-        {
-            OnPropertyChanged(nameof(BooleanValue));
-            OnPropertyChanged(nameof(BooleanStateText));
-            OnPropertyChanged(nameof(EnumValue));
-            OnPropertyChanged(nameof(EnumNeedsAttention));
-            OnPropertyChanged(nameof(EnumValidationMessage));
-            NotifyNumericStateChanged();
-            NotifyStringStateChanged();
-            NotifyKeybindingStateChanged();
-        }
     }
 
     private void RevertDraft()

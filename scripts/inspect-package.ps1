@@ -13,9 +13,9 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
 } else {
   [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
 }
-$archive = Join-Path $outputRoot "stfc-community-mod-launcher-win-x64.zip"
+$archive = Join-Path $outputRoot "stfc-mod-control-win-x64.zip"
 $setupDirectory = Join-Path $outputRoot "setup"
-$setup = Join-Path $setupDirectory "STFCCommunityMod.Launcher.Setup.exe"
+$setup = Join-Path $setupDirectory "STFCModControl.Setup.exe"
 
 function Test-PortableExecutable {
   param([string]$Path)
@@ -71,11 +71,11 @@ function Assert-PortableExecutable {
 }
 
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-  throw "Launcher self-update archive was not found: $archive"
+  throw "Mod Control self-update archive was not found: $archive"
 }
 $setupFiles = @(Get-ChildItem -LiteralPath $setupDirectory -File)
 if ($setupFiles.Count -ne 1 -or $setupFiles[0].FullName -ne $setup) {
-  throw "The setup directory must contain exactly one user-facing artifact: STFCCommunityMod.Launcher.Setup.exe"
+  throw "The setup directory must contain exactly one user-facing artifact: STFCModControl.Setup.exe"
 }
 Assert-PortableExecutable $setup
 
@@ -86,17 +86,17 @@ try {
   $relativeFiles = @($files | ForEach-Object {
     [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
   })
-  $requiredExecutables = @("STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe")
+  $requiredExecutables = @("STFCModControl.exe", "STFCModControl.Updater.exe")
   $portableExecutables = @($files | Where-Object { Test-PortableExecutable $_.FullName } | ForEach-Object {
     [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
   })
   $unexpectedPortableExecutables = @($portableExecutables | Where-Object { $_ -cnotin $requiredExecutables })
   if ($unexpectedPortableExecutables.Count -gt 0) {
-    throw "Launcher archive contains a portable executable outside the reviewed signing allowlist: $($unexpectedPortableExecutables -join ', ')"
+    throw "Mod Control archive contains a portable executable outside the reviewed signing allowlist: $($unexpectedPortableExecutables -join ', ')"
   }
   foreach ($required in $requiredExecutables) {
     if (@($relativeFiles | Where-Object { $_ -eq $required }).Count -ne 1) {
-      throw "Launcher archive must contain exactly one root $required"
+      throw "Mod Control archive must contain exactly one root $required"
     }
     Assert-PortableExecutable (Join-Path $inspectionRoot $required)
   }

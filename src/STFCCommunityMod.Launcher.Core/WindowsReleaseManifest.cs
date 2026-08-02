@@ -291,7 +291,7 @@ public static partial class WindowsReleaseSelectionPolicy
 {
     private const string ModArtifactId = "windows-mod-dll-x64";
     private const long MaximumModArtifactSize = 128L * 1024L * 1024L;
-    private const string LauncherArtifactId = "windows-launcher-archive-x64";
+    private const string LauncherArtifactId = "windows-mod-control-archive-x64";
     private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
 
     [GeneratedRegex(
@@ -404,17 +404,17 @@ public static partial class WindowsReleaseSelectionPolicy
             throw new InvalidDataException("The release must contain exactly one Windows Mod Control archive.");
         }
         var artifact = matches[0];
-        if (artifact.Kind != "windows-launcher"
+        if (artifact.Kind != "windows-mod-control"
             || artifact.Platform != "windows"
             || artifact.Architecture != "x64"
-            || artifact.FileName != "stfc-community-mod-launcher-win-x64.zip"
+            || artifact.FileName != ModControlProductIdentity.UpdateArchiveName
             || artifact.MediaType != "application/zip"
             || artifact.Size > MaximumLauncherArtifactSize
             || artifact.Authenticity.Scheme != "authenticode"
             || artifact.Authenticity.Scope != "contents"
             || artifact.Authenticity.SignedFiles.Count != 2
-            || artifact.Authenticity.SignedFiles[0] != "STFCCommunityMod.Launcher.exe"
-            || artifact.Authenticity.SignedFiles[1] != "STFCCommunityMod.Launcher.Updater.exe")
+            || artifact.Authenticity.SignedFiles[0] != ModControlProductIdentity.ExecutableName
+            || artifact.Authenticity.SignedFiles[1] != ModControlProductIdentity.UpdaterExecutableName)
         {
             throw new InvalidDataException("The Windows Mod Control artifact contract is invalid or unsupported.");
         }

@@ -3,19 +3,16 @@ param([switch]$RemoveState)
 
 $ErrorActionPreference = "Stop"
 $productName = "STFC Mod Control"
-$legacyProductName = "STFC Community Mod Launcher"
-if (Get-Process -Name "STFCCommunityMod.Launcher" -ErrorAction SilentlyContinue) {
+if (Get-Process -Name "STFCModControl" -ErrorAction SilentlyContinue) {
   throw "Close $productName before uninstalling it."
 }
 $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$target = Join-Path $localAppData "Programs\STFC Community Mod Launcher"
-$state = Join-Path $localAppData "STFC Community Mod Launcher"
+$target = Join-Path $localAppData "Programs\STFC Mod Control"
+$state = Join-Path $localAppData "STFC Mod Control"
 $shortcuts = @(
-  (Join-Path $programs "STFC Community Mod\$productName.lnk"),
-  (Join-Path $programs "STFC Community Mod\$legacyProductName.lnk"),
-  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$productName.lnk"),
-  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$legacyProductName.lnk")
+  (Join-Path $programs "STFC Mod Control\$productName.lnk"),
+  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$productName.lnk")
 )
 foreach ($shortcut in $shortcuts) {
   if (Test-Path -LiteralPath $shortcut) {

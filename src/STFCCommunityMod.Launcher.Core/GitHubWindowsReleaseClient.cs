@@ -76,7 +76,7 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
             channel,
             currentLauncherVersion,
             repository);
-        var launcherArtifact = manifest.Artifacts.Any(candidate => candidate.Id == "windows-launcher-archive-x64")
+        var launcherArtifact = manifest.Artifacts.Any(candidate => candidate.Id == "windows-mod-control-archive-x64")
             ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(manifest, channel, currentLauncherVersion, repository)
             : null;
         return new(manifest, artifact, launcherArtifact);

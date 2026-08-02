@@ -31,7 +31,7 @@ public sealed class SelfUpdateArchitectureTests
     {
         Assert.AreEqual("Guffawaffle/stfc-mod-launcher", LauncherSelfUpdateAuthority.ReleaseRepository);
         Assert.AreEqual(
-            "stfc-mod-launcher-release-manifest.json",
+            "stfc-mod-control-release-manifest.json",
             LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
         Assert.AreEqual("Joseph Gustavson", LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
     }

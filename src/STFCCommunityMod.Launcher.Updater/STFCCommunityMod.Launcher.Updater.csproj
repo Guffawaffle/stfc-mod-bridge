@@ -6,7 +6,7 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
-    <AssemblyName>STFCCommunityMod.Launcher.Updater</AssemblyName>
+    <AssemblyName>STFCModControl.Updater</AssemblyName>
     <AssemblyTitle>STFC Mod Control Update Helper</AssemblyTitle>
     <FileDescription>STFC Mod Control Update Helper</FileDescription>
     <Version>0.1.0</Version>
