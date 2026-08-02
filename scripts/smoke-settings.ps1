@@ -130,41 +130,6 @@ function Find-AutomationElement {
   throw "UI Automation could not find $typeDescription '$Name' within the timeout."
 }
 
-function Find-AutomationElementByNamePattern {
-  param(
-    [Parameter(Mandatory)]
-    [System.Windows.Automation.AutomationElement]$Root,
-
-    [Parameter(Mandatory)]
-    [string]$NamePattern,
-
-    [System.Windows.Automation.ControlType]$ControlType,
-
-    [Parameter(Mandatory)]
-    [DateTimeOffset]$Deadline
-  )
-
-  while ([DateTimeOffset]::UtcNow -lt $Deadline) {
-    $elements = $Root.FindAll(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($element in $elements) {
-      if ($element.Current.Name -notmatch $NamePattern) {
-        continue
-      }
-
-      if ($null -eq $ControlType -or
-          $element.Current.ControlType -eq $ControlType) {
-        return $element
-      }
-    }
-
-    Start-Sleep -Milliseconds 100
-  }
-
-  throw "UI Automation could not find an element matching '$NamePattern' within the timeout."
-}
-
 function Find-ColorModeSelector {
   param(
     [Parameter(Mandatory)]
@@ -233,30 +198,79 @@ function Invoke-AutomationElement {
   $pattern.Invoke()
 }
 
-function Activate-AutomationElement {
+function Send-AutomationKeyAndWaitForFocus {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Element,
+
+    [Parameter(Mandatory)]
+    [string]$Keys,
+
+    [Parameter(Mandatory)]
+    [string]$ExpectedNamePattern,
+
+    [Parameter(Mandatory)]
+    [DateTimeOffset]$Deadline
+  )
+
+  $Element.SetFocus()
+  [System.Windows.Forms.SendKeys]::SendWait($Keys)
+  while ([DateTimeOffset]::UtcNow -lt $Deadline) {
+    $focused = [System.Windows.Automation.AutomationElement]::FocusedElement
+    if ($null -ne $focused -and $focused.Current.Name -match $ExpectedNamePattern) {
+      return $focused
+    }
+
+    Start-Sleep -Milliseconds 50
+  }
+
+  $actualName = [System.Windows.Automation.AutomationElement]::FocusedElement.Current.Name
+  throw "Keyboard input '$Keys' did not move focus to '$ExpectedNamePattern'; focus remained '$actualName'."
+}
+
+function Assert-AutomationToggleOn {
   param(
     [Parameter(Mandatory)]
     [System.Windows.Automation.AutomationElement]$Element
   )
 
-  $invokePattern = $null
-  if ($Element.TryGetCurrentPattern(
-      [System.Windows.Automation.InvokePattern]::Pattern,
-      [ref]$invokePattern)) {
-    $invokePattern.Invoke()
-    return
-  }
-
   $togglePattern = $null
-  if ($Element.TryGetCurrentPattern(
+  if (-not $Element.TryGetCurrentPattern(
       [System.Windows.Automation.TogglePattern]::Pattern,
-      [ref]$togglePattern)) {
-    $Element.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait(" ")
-    return
+      [ref]$togglePattern) -or
+      $togglePattern.Current.ToggleState -ne
+        [System.Windows.Automation.ToggleState]::On) {
+    throw "UI Automation element '$($Element.Current.Name)' has focus but is not the selected tab."
+  }
+}
+
+function Wait-ForHorizontalScrollChange {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.ScrollPattern]$ScrollPattern,
+
+    [Parameter(Mandatory)]
+    [double]$PreviousPercent,
+
+    [Parameter(Mandatory)]
+    [ValidateSet("Increase", "Decrease")]
+    [string]$Direction,
+
+    [Parameter(Mandatory)]
+    [DateTimeOffset]$Deadline
+  )
+
+  while ([DateTimeOffset]::UtcNow -lt $Deadline) {
+    $current = $ScrollPattern.Current.HorizontalScrollPercent
+    if (($Direction -eq "Increase" -and $current -gt $PreviousPercent) -or
+        ($Direction -eq "Decrease" -and $current -lt $PreviousPercent)) {
+      return $current
+    }
+
+    Start-Sleep -Milliseconds 50
   }
 
-  throw "UI Automation element '$($Element.Current.Name)' cannot be activated."
+  throw "Destination tab overflow did not $($Direction.ToLowerInvariant()) from $PreviousPercent percent."
 }
 
 function Stop-OwnedProcess {
@@ -753,24 +767,52 @@ try {
     throw "The Data Sync information button has no keyboard-readable help text."
   }
 
-  [void](Find-AutomationElement `
+  $scrollTabsLeft = Find-AutomationElement `
     -Root $root `
     -Name "Scroll destination tabs left" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
-  [void](Find-AutomationElement `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $scrollTabsRight = Find-AutomationElement `
     -Root $root `
     -Name "Scroll destination tabs right" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $tabOverflow = Find-AutomationElement `
+    -Root $root `
+    -Name "Destination tab overflow" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $tabScrollPattern = $null
+  if (-not $tabOverflow.TryGetCurrentPattern(
+      [System.Windows.Automation.ScrollPattern]::Pattern,
+      [ref]$tabScrollPattern) -or
+      -not $tabScrollPattern.Current.HorizontallyScrollable) {
+    throw "The forced-overflow destination strip does not expose a horizontal offset."
+  }
+  $leftPercent = $tabScrollPattern.Current.HorizontalScrollPercent
+  Invoke-AutomationElement -Element $scrollTabsRight
+  $rightPercent = Wait-ForHorizontalScrollChange `
+    -ScrollPattern $tabScrollPattern `
+    -PreviousPercent $leftPercent `
+    -Direction Increase `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $scrollTabsLeft
+  [void](Wait-ForHorizontalScrollChange `
+    -ScrollPattern $tabScrollPattern `
+    -PreviousPercent $rightPercent `
+    -Direction Decrease `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
 
-  $sidecarTab = Find-AutomationElementByNamePattern `
+  $globalTab = Find-AutomationElement `
     -Root $root `
-    -NamePattern '^local-sidecar, Sidecar, (Ready|Needs attention)$' `
+    -Name "Global Data Sync defaults tab" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
-  Activate-AutomationElement -Element $sidecarTab
-  Start-Sleep -Milliseconds 250
+  $focusedTab = Send-AutomationKeyAndWaitForFocus `
+    -Element $globalTab `
+    -Keys "{END}" `
+    -ExpectedNamePattern '^local-sidecar, Sidecar, (Ready|Needs attention)$' `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Assert-AutomationToggleOn -Element $focusedTab
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Destination Realtime battlelogs feed override, inherited" `
@@ -790,40 +832,74 @@ try {
     throw "The Sidecar editor exposed an unsupported Jobs feed override."
   }
 
-  $globalTab = Find-AutomationElement `
-    -Root $root `
-    -Name "Global Data Sync defaults tab" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+  $focusedTab = Send-AutomationKeyAndWaitForFocus `
+    -Element $focusedTab `
+    -Keys "{HOME}" `
+    -ExpectedNamePattern '^Global Data Sync defaults tab$' `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
-  Activate-AutomationElement -Element $globalTab
+  Assert-AutomationToggleOn -Element $focusedTab
+  $focusedTab = Send-AutomationKeyAndWaitForFocus `
+    -Element $focusedTab `
+    -Keys "{RIGHT}" `
+    -ExpectedNamePattern '^alpha, Ready$' `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Assert-AutomationToggleOn -Element $focusedTab
+  $focusedTab = Send-AutomationKeyAndWaitForFocus `
+    -Element $focusedTab `
+    -Keys "{LEFT}" `
+    -ExpectedNamePattern '^Global Data Sync defaults tab$' `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Assert-AutomationToggleOn -Element $focusedTab
 
   $addDestination = Find-AutomationElement `
     -Root $root `
     -Name "Add Data Sync destination" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $addDestination.SetFocus()
   Invoke-AutomationElement -Element $addDestination
+  $customChoice = $null
   foreach ($choice in @("Custom sync", "Spock's Club", "Next Spock's Club")) {
-    [void](Find-AutomationElement `
+    $choiceElement = Find-AutomationElement `
       -Root $root `
       -Name $choice `
       -ControlType ([System.Windows.Automation.ControlType]::Button) `
-      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    if ($choice -eq "Custom sync") {
+      $customChoice = $choiceElement
+    }
   }
-  $cancelWizard = Find-AutomationElement `
+  [void](Send-AutomationKeyAndWaitForFocus `
+    -Element $customChoice `
+    -Keys " " `
+    -ExpectedNamePattern '^Custom sync$' `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $nextWizardStep = Find-AutomationElement `
     -Root $root `
-    -Name "Cancel" `
+    -Name "Next" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
-  Invoke-AutomationElement -Element $cancelWizard
-  [void](Find-AutomationElement `
-    -Root $root `
-    -Name "Add Data Sync destination" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+  $focusedField = Send-AutomationKeyAndWaitForFocus `
+    -Element $nextWizardStep `
+    -Keys "{ENTER}" `
+    -ExpectedNamePattern '^Destination display name$' `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  [void](Send-AutomationKeyAndWaitForFocus `
+    -Element $focusedField `
+    -Keys "{ESC}" `
+    -ExpectedNamePattern '^Add Data Sync destination$' `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $wizardStillOpen = $root.FindFirst(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::NameProperty,
+      "Custom sync"))
+  if ($null -ne $wizardStillOpen) {
+    throw "Escape did not cancel the Add destination wizard."
+  }
   $transformPattern.Resize(1120, 740)
   Start-Sleep -Milliseconds 250
-  Write-Host "PASS: Data Sync is source-bound, minimum-width safe, vertically scoped, tab-overflow accessible, capability-filtered, and wizard cancellation is non-mutating."
+  Write-Host "PASS: Data Sync is source-bound, minimum-width safe, vertically scoped, capability-filtered, and keyboard-proven across overflow tabs and wizard cancellation/focus restoration."
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `

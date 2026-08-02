@@ -272,6 +272,27 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void PresetEndpointCannotProjectLegacyFeedsOntoSidecarKind()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sidecar.sync]
+            enabled = false
+            url = "https://spocks.club/sync/ingress/"
+            token = "fixture-sidecar-secret"
+            """);
+
+        var sidecar = fixture.CreateViewModel().Targets.Single();
+
+        Assert.AreEqual(SyncTargetKind.LocalSidecar, sidecar.Definition.Kind);
+        CollectionAssert.AreEquivalent(
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).SupportedDataKinds.ToArray(),
+            sidecar.Feeds.Select(feed => feed.Kind).ToArray());
+        Assert.IsFalse(sidecar.Feeds.Any(feed =>
+            SyncTargetTypeCatalog.GetPreset("spocks_club").SupportedDataKinds.Contains(feed.Kind)));
+    }
+
+    [TestMethod]
     public void SiblingDraftBlocksSyncSaveWithoutDiscardingEitherDraft()
     {
         using var fixture = SyncFixture.Create(

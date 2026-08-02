@@ -54,6 +54,10 @@ public partial class SyncView : UserControl
         }
     }
 
+    private void WizardStep_Click(object sender, RoutedEventArgs e) =>
+        _ = Dispatcher.BeginInvoke(
+            () => WizardDialog.MoveFocus(new TraversalRequest(FocusNavigationDirection.First)));
+
     private void GlobalTab_Click(object sender, RoutedEventArgs e)
     {
         if (ViewModel is { Tabs.Count: > 0 } viewModel)

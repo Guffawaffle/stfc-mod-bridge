@@ -274,7 +274,8 @@
           <ScrollViewer x:Name="DestinationTabScrollViewer" Grid.Column="2"
                         HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                         PanningMode="HorizontalOnly" PreviewMouseWheel="DestinationTabs_PreviewMouseWheel"
-                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged">
+                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged"
+                        automation:AutomationProperties.Name="Destination tab overflow">
             <ItemsControl x:Name="DestinationTabs" ItemsSource="{Binding Tabs}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemContainerStyle>
@@ -559,8 +560,8 @@
             <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource ErrorBrush}" Text="{Binding Error}" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Style="{StaticResource QuietButtonStyle}" Command="{Binding CancelCommand}" Content="Cancel" />
-              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" />
-              <Button Command="{Binding NextCommand}" Content="Next" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" Click="WizardStep_Click" />
+              <Button Command="{Binding NextCommand}" Content="Next" Click="WizardStep_Click" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
               <Button Command="{Binding FinishCommand}" Content="Finish" Visibility="{Binding IsLastStep, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
           </Grid>
