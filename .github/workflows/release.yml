@@ -1,0 +1,162 @@
+name: Signed launcher release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    environment:
+      name: windows-release
+    env:
+      WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+      AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+      AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
+      AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Resolve and validate tag identity
+        id: release
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_name }}" -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
+            throw "Launcher release tags must use vX.Y.Z or vX.Y.Z-rc.N."
+          }
+          "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
+          "prerelease=$($Matches.version.Contains('-rc.'))" >> $env:GITHUB_OUTPUT
+
+      - name: Restore and test
+        shell: pwsh
+        run: |
+          dotnet restore STFCCommunityMod.Launcher.sln
+          dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
+
+      - name: Build unsigned release payload
+        shell: pwsh
+        run: >-
+          ./scripts/publish.ps1
+          -Version "${{ steps.release.outputs.version }}"
+          -SourceRevisionId "${{ github.sha }}"
+
+      - name: Validate protected signing configuration
+        shell: pwsh
+        run: |
+          $required = @(
+            "WIN_PUBLISHER_NAME",
+            "AZURE_TRUSTED_SIGNING_ENDPOINT",
+            "AZURE_CODE_SIGNING_ACCOUNT_NAME",
+            "AZURE_CERTIFICATE_PROFILE_NAME"
+          )
+          $missing = @($required | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
+          if ($missing.Count -gt 0) {
+            throw "Missing signing environment values: $($missing -join ', ')"
+          }
+          if ($env:WIN_PUBLISHER_NAME -ne "Joseph Gustavson") {
+            throw "WIN_PUBLISHER_NAME must match the reviewed launcher publisher."
+          }
+
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign launcher and updater
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files-folder: artifacts/win-x64/app
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: STFC Mod Launcher
+          description-url: https://github.com/Guffawaffle/stfc-mod-launcher
+
+      - name: Repackage signed payload and rebuild setup
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1
+          ./scripts/publish-bootstrapper.ps1 `
+            -Version "${{ steps.release.outputs.version }}" `
+            -SourceRevisionId "${{ github.sha }}"
+
+      - name: Sign setup
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files-folder: artifacts/win-x64/setup
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: STFC Mod Launcher Setup
+          description-url: https://github.com/Guffawaffle/stfc-mod-launcher
+
+      - name: Verify every release PE and inspect package boundary
+        shell: pwsh
+        run: >-
+          ./scripts/inspect-package.ps1
+          -RequireSignatures
+          -ExpectedPublisher "$env:WIN_PUBLISHER_NAME"
+
+      - name: Generate repository-owned launcher manifest
+        shell: pwsh
+        run: >-
+          ./scripts/generate-launcher-release-manifest.ps1
+          -Tag "${{ github.ref_name }}"
+          -TargetCommit "${{ github.sha }}"
+          -Repository "${{ github.repository }}"
+
+      - name: Publish setup and machine-consumed update inputs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = "artifacts/win-x64"
+          $assets = @(
+            "$root/setup/STFCCommunityMod.Launcher.Setup.exe",
+            "$root/stfc-community-mod-launcher-win-x64.zip",
+            "$root/stfc-mod-launcher-release-manifest.json"
+          )
+          $notes = @"
+          Install STFC Mod Launcher with `STFCCommunityMod.Launcher.Setup.exe`.
+
+          The ZIP and JSON assets are machine-consumed self-update inputs, not alternate installation packages.
+          "@
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM
+          $arguments = @(
+            "release", "create", "${{ github.ref_name }}",
+            "--repo", "${{ github.repository }}",
+            "--verify-tag",
+            "--title", "STFC Mod Launcher ${{ steps.release.outputs.version }}",
+            "--notes-file", $notesPath
+          )
+          if ("${{ steps.release.outputs.prerelease }}" -eq "True") {
+            $arguments += "--prerelease"
+          }
+          $arguments += $assets
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release publication failed."
+          }

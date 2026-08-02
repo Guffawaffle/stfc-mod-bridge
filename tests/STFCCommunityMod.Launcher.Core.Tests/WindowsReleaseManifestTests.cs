@@ -33,6 +33,7 @@ public sealed class WindowsReleaseManifestTests
     [DataRow("2.1.0", "2.1.0.0")]
     [DataRow("2.1.0-guffa.8", "2.1.0.8")]
     [DataRow("2.1.0-guffa.rc9", "2.1.0.9")]
+    [DataRow("2.1.0-rc.9", "2.1.0.9")]
     [DataRow("2.1.0.alpha.3", "2.1.0.3")]
     [DataRow("2.1.0.beta.4", "2.1.0.4")]
     public void ReleaseVersionsMapToNumericFileVersions(string releaseVersion, string expected)

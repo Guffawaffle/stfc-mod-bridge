@@ -107,6 +107,106 @@ public sealed class GitHubWindowsReleaseClientTests
         Assert.AreEqual(HttpStatusCode.Forbidden, exception.StatusCode);
     }
 
+    [TestMethod]
+    public async Task LauncherDiscoveryUsesStandaloneAuthorityWithoutRequiringModArtifact()
+    {
+        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string manifestName = "stfc-mod-launcher-release-manifest.json";
+        const string tag = "v0.2.0";
+        var releases = $$"""
+            [{
+              "tag_name": "{{tag}}",
+              "draft": false,
+              "prerelease": false,
+              "assets": [{
+                "name": "{{manifestName}}",
+                "browser_download_url": "https://github.com/{{repository}}/releases/download/{{tag}}/{{manifestName}}"
+              }]
+            }]
+            """;
+        var manifest = $$"""
+            {
+              "schemaVersion": 1,
+              "releaseVersion": "0.2.0",
+              "tag": "{{tag}}",
+              "channel": "stable",
+              "releaseState": "active",
+              "minimumLauncherVersion": "0.1.0",
+              "source": {
+                "repository": "{{repository}}",
+                "targetCommit": "0123456789abcdef0123456789abcdef01234567"
+              },
+              "manifestAuthenticity": { "scheme": "none" },
+              "artifacts": [{
+                "id": "windows-launcher-archive-x64",
+                "kind": "windows-launcher",
+                "platform": "windows",
+                "architecture": "x64",
+                "fileName": "stfc-community-mod-launcher-win-x64.zip",
+                "mediaType": "application/zip",
+                "size": 123,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "authenticity": {
+                  "scheme": "authenticode",
+                  "scope": "contents",
+                  "signedFiles": [
+                    "STFCCommunityMod.Launcher.exe",
+                    "STFCCommunityMod.Launcher.Updater.exe"
+                  ]
+                }
+              }]
+            }
+            """;
+        var handler = new RouteHandler(releases, manifest);
+        using var httpClient = new HttpClient(handler);
+        var client = new GitHubLauncherReleaseClient(httpClient, repository, manifestName);
+
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+
+        Assert.AreEqual(repository, result.Manifest.Source.Repository);
+        Assert.AreEqual("0.2.0", result.LauncherArtifact.ReleaseVersion);
+        Assert.IsTrue(handler.Requests.All(request =>
+            request.Uri.Host is "api.github.com" or "github.com"));
+    }
+
+    [TestMethod]
+    public async Task LauncherDiscoveryRejectsReplayAtOrBelowInstalledVersion()
+    {
+        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string manifestName = "stfc-mod-launcher-release-manifest.json";
+        var releases = $$"""
+            [{
+              "tag_name": "v0.2.0",
+              "draft": false,
+              "prerelease": false,
+              "assets": [{
+                "name": "{{manifestName}}",
+                "browser_download_url": "https://github.com/{{repository}}/releases/download/v0.2.0/{{manifestName}}"
+              }]
+            }]
+            """;
+        var manifest = """
+            {
+              "schemaVersion": 1, "releaseVersion": "0.2.0", "tag": "v0.2.0",
+              "channel": "stable", "releaseState": "active", "minimumLauncherVersion": "0.1.0",
+              "source": { "repository": "Guffawaffle/stfc-mod-launcher", "targetCommit": "0123456789abcdef0123456789abcdef01234567" },
+              "manifestAuthenticity": { "scheme": "none" },
+              "artifacts": [{
+                "id": "windows-launcher-archive-x64", "kind": "windows-launcher",
+                "platform": "windows", "architecture": "x64",
+                "fileName": "stfc-community-mod-launcher-win-x64.zip", "mediaType": "application/zip",
+                "size": 123, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "authenticity": { "scheme": "authenticode", "scope": "contents", "signedFiles": ["STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe"] }
+              }]
+            }
+            """;
+        using var httpClient = new HttpClient(new RouteHandler(releases, manifest));
+        var client = new GitHubLauncherReleaseClient(httpClient, repository, manifestName);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 2, 0)));
+    }
+
     private static string ReleaseJson(
         string tag,
         bool draft,

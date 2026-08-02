@@ -25,4 +25,14 @@ public sealed class SelfUpdateArchitectureTests
             SelfUpdateArchitecture.RequiredPhases.ToArray());
         StringAssert.Contains(SelfUpdateArchitecture.Strategy, "replace-on-exit");
     }
+
+    [TestMethod]
+    public void SelfUpdateAuthorityBelongsToStandaloneLauncherRepository()
+    {
+        Assert.AreEqual("Guffawaffle/stfc-mod-launcher", LauncherSelfUpdateAuthority.ReleaseRepository);
+        Assert.AreEqual(
+            "stfc-mod-launcher-release-manifest.json",
+            LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
+        Assert.AreEqual("Joseph Gustavson", LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+    }
 }

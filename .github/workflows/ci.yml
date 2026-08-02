@@ -30,6 +30,10 @@ jobs:
         shell: pwsh
         run: ./scripts/publish.ps1
 
+      - name: Inspect unsigned package evidence
+        shell: pwsh
+        run: ./scripts/inspect-package.ps1
+
       - name: Upload installer evidence
         uses: actions/upload-artifact@v4
         with:

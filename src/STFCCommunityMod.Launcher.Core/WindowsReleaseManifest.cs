@@ -295,7 +295,7 @@ public static partial class WindowsReleaseSelectionPolicy
     private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
 
     [GeneratedRegex(
-        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+)))?$",
+        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReleaseVersionPattern();
 

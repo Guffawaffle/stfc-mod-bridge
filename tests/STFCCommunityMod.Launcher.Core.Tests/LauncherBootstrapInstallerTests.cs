@@ -57,6 +57,22 @@ public sealed class LauncherBootstrapInstallerTests
         Assert.IsFalse(Directory.Exists(program));
     }
 
+    [TestMethod]
+    public async Task SetupPreservesIndependentOperationJournalsInStateDirectory()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var program = Path.Combine(temporaryDirectory.Path, "program");
+        var journalDirectory = Directory.CreateDirectory(Path.Combine(state, "mod-deployment", "transaction-1"));
+        var journal = Path.Combine(journalDirectory.FullName, "journal.json");
+        File.WriteAllText(journal, "preserve-me");
+        var installer = new LauncherBootstrapInstaller(state, program, new FakeAuthenticityVerifier(true));
+
+        await installer.InstallAsync(CreateArchive());
+
+        Assert.AreEqual("preserve-me", File.ReadAllText(journal));
+    }
+
     private static byte[] CreateArchive()
     {
         using var stream = new MemoryStream();
