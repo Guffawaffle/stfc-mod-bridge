@@ -350,7 +350,7 @@
                    VerticalAlignment="Center"
                    FontSize="14"
                    FontWeight="SemiBold"
-                   Text="STFC Community Mod">
+                   Text="STFC Mod Control">
           <TextBlock.Style>
             <Style TargetType="TextBlock">
               <Style.Triggers>
@@ -649,27 +649,70 @@
                   </Style.Triggers>
                 </Style>
               </Border.Style>
-              <TextBlock HorizontalAlignment="Center"
-                         VerticalAlignment="Center"
-                         FontSize="20"
-                         FontWeight="Bold"
-                         Text="{Binding GameFolderIcon}"
-                         TextAlignment="Center"
-                         automation:AutomationProperties.Name="{Binding GameSectionStatus}">
-                <TextBlock.Style>
-                  <Style TargetType="TextBlock">
-                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Success}">
-                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                      </DataTrigger>
-                      <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Error}">
-                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </TextBlock.Style>
-              </TextBlock>
+              <Viewbox x:Name="GameStatusGlyph"
+                       Width="16"
+                       Height="16"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsHitTestVisible="False">
+                <Grid Width="16" Height="16">
+                  <Path Data="M 2,8 L 6,12 L 14,3"
+                        Fill="Transparent"
+                        Stroke="{DynamicResource SuccessBrush}"
+                        StrokeEndLineCap="Round"
+                        StrokeLineJoin="Round"
+                        StrokeStartLineCap="Round"
+                        StrokeThickness="2.2">
+                    <Path.Style>
+                      <Style TargetType="Path">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Path.Style>
+                  </Path>
+                  <Path Data="M 3,3 L 13,13 M 13,3 L 3,13"
+                        Fill="Transparent"
+                        Stroke="{DynamicResource ErrorBrush}"
+                        StrokeEndLineCap="Round"
+                        StrokeStartLineCap="Round"
+                        StrokeThickness="2.2">
+                    <Path.Style>
+                      <Style TargetType="Path">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Path.Style>
+                  </Path>
+                  <Path Data="M 8,2 L 8,10 M 8,13 L 8,14"
+                        Fill="Transparent"
+                        Stroke="{DynamicResource WarningBrush}"
+                        StrokeEndLineCap="Round"
+                        StrokeStartLineCap="Round"
+                        StrokeThickness="2.2">
+                    <Path.Style>
+                      <Style TargetType="Path">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Path.Style>
+                  </Path>
+                </Grid>
+              </Viewbox>
             </Border>
             <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
               <TextBlock FontSize="16" FontWeight="SemiBold" Text="Star Trek Fleet Command" TextWrapping="Wrap" />
@@ -775,8 +818,8 @@
                       Click="ReleaseSourceButton_Click"
                       Content="{Binding ModSourceMetadata}"
                       Foreground="{DynamicResource TextSecondaryBrush}"
-                      automation:AutomationProperties.Name="Review community mod release source"
-                      automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the Mod Control-owned mod release source." />
+                      automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
+                      automation:AutomationProperties.HelpText="Current provider and channel. Activate to review provider capabilities and safely switch the Mod Control-owned mod release source." />
             </StackPanel>
             <Button Grid.Column="2"
                     MinHeight="44"

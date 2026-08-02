@@ -140,7 +140,38 @@ public sealed class LaunchTargetSplitButtonTests
 
         Assert.AreEqual("36", (string?)refresh.Attribute("Width"));
         Assert.AreEqual("{Binding ModSourceMetadata}", (string?)source.Attribute("Content"));
+        Assert.AreEqual(
+            "{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}",
+            (string?)source.Attribute(Automation + "AutomationProperties.Name"));
+        StringAssert.Contains(
+            (string?)source.Attribute(Automation + "AutomationProperties.HelpText"),
+            "Current provider and channel");
         Assert.IsFalse(document.ToString().Contains("Source: {", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void HomeUsesModControlIdentityAndAnnouncesGameStatusOnce()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var productTitle = document.Descendants(Presentation + "TextBlock")
+            .Single(element => GetName(element) == "ProductTitleText");
+        var gameSection = document.Descendants(Presentation + "Grid")
+            .Single(element => GetName(element) == "GameStatusSection");
+        var gameStatusBindings = gameSection.Descendants()
+            .Where(element =>
+                (string?)element.Attribute(Automation + "AutomationProperties.Name")
+                == "{Binding GameSectionStatus}")
+            .ToArray();
+        var decorativeGlyph = gameSection.Descendants(Presentation + "Viewbox")
+            .Single(element => GetName(element) == "GameStatusGlyph");
+
+        Assert.AreEqual("STFC Mod Control", (string?)productTitle.Attribute("Text"));
+        Assert.AreEqual(1, gameStatusBindings.Length);
+        Assert.IsNull(decorativeGlyph.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.IsFalse(decorativeGlyph.Descendants().Any(element =>
+            element.Attribute(Automation + "AutomationProperties.Name") is not null));
+        Assert.IsFalse(gameSection.Descendants(Presentation + "TextBlock")
+            .Any(element => (string?)element.Attribute("Text") == "{Binding GameFolderIcon}"));
     }
 
     [TestMethod]
