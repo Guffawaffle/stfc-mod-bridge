@@ -81,7 +81,8 @@ public sealed record ModDeploymentJournal(
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,
     string Message,
-    ModInstalledArtifactState? InstalledState = null)
+    ModInstalledArtifactState? InstalledState = null,
+    bool Changed = false)
 {
     public bool IsSuccess => State == ModDeploymentResultState.Succeeded;
 }
