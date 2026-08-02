@@ -15,7 +15,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
     private readonly LauncherDiagnosticService diagnosticService;
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
-    private readonly IWindowsReleaseDiscoveryClient releaseDiscoveryClient;
+    private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
@@ -31,7 +31,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         GameLaunchHandoffCoordinator gameLaunchCoordinator,
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
-        IWindowsReleaseDiscoveryClient releaseDiscoveryClient)
+        ILauncherReleaseDiscoveryClient releaseDiscoveryClient)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
@@ -179,6 +179,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         ArgumentNullException.ThrowIfNull(distributionProvider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
+        var currentLauncherVersion = CurrentLauncherVersion();
         var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
             new JsonGameInstallSelectionStore(installLayout.StateDirectory),
@@ -209,7 +210,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new WindowsModArtifactVersionReader(),
             modArtifactVerifier,
             processInspector.IsGameRunning);
-        var launcherReleaseClient = new GitHubWindowsReleaseClient(
+        var launcherReleaseClient = new GitHubLauncherReleaseClient(
             httpClient,
             LauncherSelfUpdateAuthority.ReleaseRepository,
             LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
@@ -227,7 +228,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new ModManagementCoordinator(
                 deploymentService,
                 modReleaseClient,
-                new Version(0, 1, 0),
+                currentLauncherVersion,
                 providerBinding.ReleaseChannelId,
                 providerUnavailableReason: providerBinding.UnavailableReason),
             launchCoordinator,
@@ -235,7 +236,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 deploymentService,
                 officialLauncherService,
                 processInspector,
-                "0.1.0"),
+                currentLauncherVersion.ToString(3)),
             new LauncherSelfUpdateService(
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
@@ -431,7 +432,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
                 "stable",
-                new Version(0, 1, 0),
+                CurrentLauncherVersion(),
                 cancellationToken);
             var preparation = await launcherSelfUpdateService.PrepareAsync(
                 discovery,
@@ -471,6 +472,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         var separator = informational?.LastIndexOf('+') ?? -1;
         return separator >= 0 ? informational![(separator + 1)..] : string.Empty;
     }
+
+    private static Version CurrentLauncherVersion() =>
+        Assembly.GetEntryAssembly()?.GetName().Version
+        ?? throw new InvalidOperationException("The launcher assembly version is unavailable.");
 
     public async Task<ModDeploymentResult?> RecoverModAsync(CancellationToken cancellationToken = default)
     {

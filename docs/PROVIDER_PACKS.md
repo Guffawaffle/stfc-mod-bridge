@@ -100,9 +100,8 @@ workspace whose catalog belongs to the current provider.
 The launcher may bundle last-known-good packs for offline startup, but each mod
 repository remains authoritative for production runtime truth. Provider packs
 can select and authenticate mod artifacts only. Launcher self-update uses the
-repository and publisher authority declared by `LauncherSelfUpdateAuthority`;
-provider data cannot redefine either. Issue #4 owns moving that
-launcher-controlled feed to standalone launcher releases.
+standalone repository, manifest name, and publisher authority declared by
+`LauncherSelfUpdateAuthority`; provider data cannot redefine any of them.
 
 ## Maintaining packs
 

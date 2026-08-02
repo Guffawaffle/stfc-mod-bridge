@@ -295,9 +295,37 @@ public static partial class WindowsReleaseSelectionPolicy
     private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
 
     [GeneratedRegex(
-        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+)))?$",
+        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReleaseVersionPattern();
+
+    public static WindowsReleaseManifest SelectHighestEligibleRelease(
+        IEnumerable<WindowsReleaseManifest> manifests,
+        string selectedChannel,
+        Version currentLauncherVersion,
+        string expectedRepository)
+    {
+        ArgumentNullException.ThrowIfNull(manifests);
+        ArgumentNullException.ThrowIfNull(currentLauncherVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
+
+        var eligible = manifests
+            .Where(manifest => IsEligibleRelease(
+                manifest,
+                selectedChannel,
+                currentLauncherVersion,
+                expectedRepository))
+            .Select(manifest => new
+            {
+                Manifest = manifest,
+                Version = Version.Parse(DeriveEmbeddedFileVersion(manifest.ReleaseVersion)),
+            })
+            .OrderByDescending(candidate => candidate.Version)
+            .ThenByDescending(candidate => candidate.Manifest.Tag, StringComparer.Ordinal)
+            .FirstOrDefault();
+        return eligible?.Manifest
+            ?? throw new InvalidDataException($"No active {selectedChannel} release is eligible.");
+    }
 
     public static ModReleaseArtifact SelectModArtifact(
         WindowsReleaseManifest manifest,
@@ -408,17 +436,24 @@ public static partial class WindowsReleaseSelectionPolicy
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(currentLauncherVersion);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
-        if (manifest.ReleaseState != "active"
-            || !string.Equals(manifest.Channel, selectedChannel, StringComparison.Ordinal)
-            || currentLauncherVersion < manifest.MinimumLauncherVersion
-            || !string.Equals(
-                manifest.Source.Repository,
-                expectedRepository,
-                StringComparison.Ordinal))
+        if (!IsEligibleRelease(manifest, selectedChannel, currentLauncherVersion, expectedRepository))
         {
             throw new InvalidDataException("The release is not eligible for this launcher channel.");
         }
     }
+
+    private static bool IsEligibleRelease(
+        WindowsReleaseManifest manifest,
+        string selectedChannel,
+        Version currentLauncherVersion,
+        string expectedRepository) =>
+        manifest.ReleaseState == "active"
+        && string.Equals(manifest.Channel, selectedChannel, StringComparison.Ordinal)
+        && currentLauncherVersion >= manifest.MinimumLauncherVersion
+        && string.Equals(
+            manifest.Source.Repository,
+            expectedRepository,
+            StringComparison.Ordinal);
 
     public static string DeriveEmbeddedFileVersion(string releaseVersion)
     {

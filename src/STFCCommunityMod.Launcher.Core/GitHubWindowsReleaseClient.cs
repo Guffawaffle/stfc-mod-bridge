@@ -8,6 +8,10 @@ public sealed record WindowsReleaseDiscovery(
     ModReleaseArtifact ModArtifact,
     LauncherReleaseArtifact? LauncherArtifact = null);
 
+public sealed record LauncherReleaseDiscovery(
+    WindowsReleaseManifest Manifest,
+    LauncherReleaseArtifact LauncherArtifact);
+
 public interface IWindowsReleaseDiscoveryClient
 {
     Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
@@ -16,14 +20,18 @@ public interface IWindowsReleaseDiscoveryClient
         CancellationToken cancellationToken = default);
 }
 
+public interface ILauncherReleaseDiscoveryClient
+{
+    Task<LauncherReleaseDiscovery> DiscoverLatestAsync(
+        string channel,
+        Version currentLauncherVersion,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
 {
-    private const int MaximumReleaseResponseBytes = 2 * 1024 * 1024;
-    private const int MaximumManifestBytes = 1024 * 1024;
-    private readonly HttpClient httpClient;
+    private readonly GitHubReleaseManifestClient manifestClient;
     private readonly string repository;
-    private readonly string manifestFileName;
-    private readonly Uri releasesUri;
 
     public GitHubWindowsReleaseClient(
         HttpClient httpClient,
@@ -48,10 +56,8 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
                 nameof(manifestFileName));
         }
 
-        this.httpClient = httpClient;
         this.repository = repository;
-        this.manifestFileName = manifestFileName;
-        releasesUri = new($"https://api.github.com/repos/{repository}/releases?per_page=30");
+        manifestClient = new(httpClient, repository, manifestFileName);
     }
 
     public async Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
@@ -59,11 +65,108 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
         Version currentLauncherVersion,
         CancellationToken cancellationToken = default)
     {
+        var manifests = await manifestClient.DiscoverCandidatesAsync(channel, cancellationToken);
+        var manifest = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
+            manifests,
+            channel,
+            currentLauncherVersion,
+            repository);
+        var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
+            manifest,
+            channel,
+            currentLauncherVersion,
+            repository);
+        var launcherArtifact = manifest.Artifacts.Any(candidate => candidate.Id == "windows-launcher-archive-x64")
+            ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(manifest, channel, currentLauncherVersion, repository)
+            : null;
+        return new(manifest, artifact, launcherArtifact);
+    }
+}
+
+public sealed class GitHubLauncherReleaseClient : ILauncherReleaseDiscoveryClient
+{
+    private readonly GitHubReleaseManifestClient manifestClient;
+    private readonly string repository;
+
+    public GitHubLauncherReleaseClient(HttpClient httpClient, string repository, string manifestFileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(repository);
+        this.repository = repository;
+        manifestClient = new(httpClient, repository, manifestFileName);
+    }
+
+    public async Task<LauncherReleaseDiscovery> DiscoverLatestAsync(
+        string channel,
+        Version currentLauncherVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var manifests = await manifestClient.DiscoverCandidatesAsync(channel, cancellationToken);
+        var manifest = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
+            manifests,
+            channel,
+            currentLauncherVersion,
+            repository);
+        var artifact = WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
+            manifest,
+            channel,
+            currentLauncherVersion,
+            repository);
+        var candidateVersion = Version.Parse(
+            WindowsReleaseSelectionPolicy.DeriveEmbeddedFileVersion(artifact.ReleaseVersion));
+        var installedVersion = new Version(
+            currentLauncherVersion.Major,
+            currentLauncherVersion.Minor,
+            Math.Max(currentLauncherVersion.Build, 0),
+            Math.Max(currentLauncherVersion.Revision, 0));
+        if (candidateVersion <= installedVersion)
+        {
+            throw new InvalidDataException(
+                $"No newer {channel} launcher release is eligible; {artifact.ReleaseVersion} does not advance "
+                + $"the installed launcher {currentLauncherVersion}.");
+        }
+        return new(manifest, artifact);
+    }
+}
+
+internal sealed class GitHubReleaseManifestClient
+{
+    private const int MaximumReleaseResponseBytes = 2 * 1024 * 1024;
+    private const int MaximumManifestBytes = 1024 * 1024;
+    private readonly HttpClient httpClient;
+    private readonly string repository;
+    private readonly string manifestFileName;
+    private readonly Uri releasesUri;
+
+    public GitHubReleaseManifestClient(HttpClient httpClient, string repository, string manifestFileName)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(repository);
+        ArgumentException.ThrowIfNullOrWhiteSpace(manifestFileName);
+        if (repository.Count(character => character == '/') != 1
+            || repository.Any(character => !(char.IsLetterOrDigit(character)
+                || character is '/' or '-' or '_' or '.')))
+        {
+            throw new ArgumentException("GitHub repository must use owner/name coordinates.", nameof(repository));
+        }
+        if (!string.Equals(Path.GetFileName(manifestFileName), manifestFileName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Release manifest asset must be a file name, not a path.", nameof(manifestFileName));
+        }
+
+        this.httpClient = httpClient;
+        this.repository = repository;
+        this.manifestFileName = manifestFileName;
+        releasesUri = new($"https://api.github.com/repos/{repository}/releases?per_page=30");
+    }
+
+    public async Task<IReadOnlyList<WindowsReleaseManifest>> DiscoverCandidatesAsync(
+        string channel,
+        CancellationToken cancellationToken)
+    {
         if (channel is not ("stable" or "preview"))
         {
             throw new ArgumentException("Release channel must be stable or preview.", nameof(channel));
         }
-        ArgumentNullException.ThrowIfNull(currentLauncherVersion);
 
         using var releasesRequest = CreateRequest(releasesUri);
         using var releasesResponse = await httpClient.SendAsync(
@@ -86,6 +189,7 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
             throw new InvalidDataException("GitHub releases response must be an array.");
         }
 
+        var manifests = new List<WindowsReleaseManifest>();
         foreach (var release in releasesDocument.RootElement.EnumerateArray())
         {
             if (!TrySelectManifestAsset(release, channel, out var tag, out var manifestUri))
@@ -109,25 +213,13 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
             {
                 throw new InvalidDataException("GitHub release tag and release manifest tag do not match.");
             }
-
-            var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
-                manifest,
-                channel,
-                currentLauncherVersion,
-                repository);
-            var launcherArtifact = manifest.Artifacts.Any(
-                candidate => candidate.Id == "windows-launcher-archive-x64")
-                ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
-                    manifest,
-                    channel,
-                    currentLauncherVersion,
-                    repository)
-                : null;
-            return new(manifest, artifact, launcherArtifact);
+            manifests.Add(manifest);
         }
 
-        throw new InvalidDataException(
-            $"No {channel} GitHub release contains a supported Windows release manifest.");
+        return manifests.Count > 0
+            ? manifests
+            : throw new InvalidDataException(
+                $"No {channel} GitHub release contains the required manifest asset.");
     }
 
     private static HttpRequestMessage CreateRequest(Uri uri)

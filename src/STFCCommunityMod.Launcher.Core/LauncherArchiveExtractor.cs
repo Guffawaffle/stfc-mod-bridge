@@ -6,6 +6,11 @@ public static class LauncherArchiveExtractor
 {
     private const int MaximumEntries = 128;
     private const long MaximumExpandedBytes = 768L * 1024L * 1024L;
+    private static readonly HashSet<string> PortableExecutableAllowlist = new(StringComparer.Ordinal)
+    {
+        "STFCCommunityMod.Launcher.exe",
+        "STFCCommunityMod.Launcher.Updater.exe",
+    };
 
     public static void Extract(byte[] contents, string destination)
     {
@@ -47,5 +52,54 @@ public static class LauncherArchiveExtractor
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             entry.ExtractToFile(target, overwrite: false);
         }
+
+        RejectUnexpectedPortableExecutables(destinationRoot);
+    }
+
+    private static void RejectUnexpectedPortableExecutables(string destinationRoot)
+    {
+        foreach (var path in Directory.EnumerateFiles(destinationRoot, "*", SearchOption.AllDirectories))
+        {
+            if (!IsPortableExecutable(path))
+            {
+                continue;
+            }
+
+            var relativePath = Path.GetRelativePath(destinationRoot, path).Replace('\\', '/');
+            if (!PortableExecutableAllowlist.Contains(relativePath))
+            {
+                throw new InvalidDataException(
+                    $"Launcher archive contains an unexpected portable executable: {relativePath}");
+            }
+        }
+    }
+
+    private static bool IsPortableExecutable(string path)
+    {
+        using var stream = File.OpenRead(path);
+        if (stream.Length < 64 || stream.ReadByte() != 'M' || stream.ReadByte() != 'Z')
+        {
+            return false;
+        }
+
+        stream.Position = 0x3c;
+        Span<byte> offsetBytes = stackalloc byte[4];
+        if (stream.Read(offsetBytes) != offsetBytes.Length)
+        {
+            return false;
+        }
+        var peOffset = BitConverter.ToInt32(offsetBytes);
+        if (peOffset < 0 || peOffset > stream.Length - 4)
+        {
+            return false;
+        }
+
+        stream.Position = peOffset;
+        Span<byte> signature = stackalloc byte[4];
+        return stream.Read(signature) == signature.Length
+            && signature[0] == 'P'
+            && signature[1] == 'E'
+            && signature[2] == 0
+            && signature[3] == 0;
     }
 }

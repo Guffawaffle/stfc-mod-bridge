@@ -25,6 +25,7 @@ public sealed class LauncherBootstrapInstaller(
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken)
             ?? throw new InvalidOperationException("Another launcher operation is already in progress.");
+        LauncherUpdateRecovery.RecoverBeforeSetup(stateDirectory, programDirectory);
         var transactionRoot = Path.Combine(stateDirectory, "bootstrap", Guid.NewGuid().ToString("N"));
         var stageDirectory = Path.Combine(transactionRoot, "stage");
         var backupDirectory = Path.Combine(transactionRoot, "backup");

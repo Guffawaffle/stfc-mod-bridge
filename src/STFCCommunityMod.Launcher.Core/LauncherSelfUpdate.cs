@@ -42,6 +42,190 @@ public sealed record LauncherUpdatePreparation(
     string PlanPath,
     string UpdaterPath);
 
+public sealed record LauncherUpdateRecoveryResult(int ExaminedTransactions, int RestoredBackups);
+
+public static class LauncherUpdateRecovery
+{
+    private sealed record RecoveryTransaction(
+        string TransactionRoot,
+        LauncherUpdatePlan Plan,
+        bool HasBackup);
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    public static LauncherUpdateRecoveryResult RecoverBeforeSetup(
+        string stateDirectory,
+        string programDirectory) =>
+        RecoverBeforeSetup(stateDirectory, programDirectory, Directory.Move);
+
+    internal static LauncherUpdateRecoveryResult RecoverBeforeSetup(
+        string stateDirectory,
+        string programDirectory,
+        Action<string, string> moveDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(moveDirectory);
+        var stateRoot = Path.GetFullPath(stateDirectory);
+        var targetRoot = Path.GetFullPath(programDirectory);
+        var updateRoot = Path.Combine(stateRoot, "self-update");
+        if (!Directory.Exists(updateRoot))
+        {
+            return new(0, 0);
+        }
+
+        var transactions = new List<RecoveryTransaction>();
+        foreach (var transactionRoot in Directory.EnumerateDirectories(updateRoot).Order(StringComparer.Ordinal))
+        {
+            var transactionId = Path.GetFileName(transactionRoot);
+            if (!Guid.TryParseExact(transactionId, "N", out _))
+            {
+                continue;
+            }
+            var planPath = Path.Combine(transactionRoot, "plan.json");
+            if (!File.Exists(planPath))
+            {
+                continue;
+            }
+
+            RejectReparsePoints(transactionRoot);
+            var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
+                ?? throw new InvalidDataException("An abandoned launcher update plan is empty.");
+            ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
+            if (Directory.Exists(Path.Combine(transactionRoot, "failed-target")))
+            {
+                throw new InvalidDataException(
+                    "An abandoned launcher update contains an unexpected failed-target directory.");
+            }
+            var hasBackup = Directory.Exists(plan.BackupDirectory);
+            if (hasBackup)
+            {
+                RejectReparsePoints(plan.BackupDirectory);
+                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
+            }
+            transactions.Add(new(transactionRoot, plan, hasBackup));
+        }
+
+        var backups = transactions.Where(transaction => transaction.HasBackup).ToArray();
+        if (backups.Length > 1)
+        {
+            throw new InvalidDataException(
+                "Multiple abandoned launcher update backups require manual recovery.");
+        }
+
+        var restored = 0;
+        if (backups.Length == 1)
+        {
+            var recovery = backups[0];
+            var failedTarget = Path.Combine(recovery.TransactionRoot, "failed-target");
+            var movedCurrent = false;
+            if (Directory.Exists(targetRoot))
+            {
+                RejectReparsePoints(targetRoot);
+                moveDirectory(targetRoot, failedTarget);
+                movedCurrent = true;
+            }
+            try
+            {
+                moveDirectory(recovery.Plan.BackupDirectory, targetRoot);
+            }
+            catch
+            {
+                if (movedCurrent && Directory.Exists(failedTarget) && !Directory.Exists(targetRoot))
+                {
+                    Directory.Move(failedTarget, targetRoot);
+                }
+                throw;
+            }
+            if (movedCurrent)
+            {
+                Directory.Delete(failedTarget, recursive: true);
+            }
+            restored = 1;
+        }
+
+        foreach (var transaction in transactions)
+        {
+            Directory.Delete(transaction.TransactionRoot, recursive: true);
+        }
+        return new(transactions.Count, restored);
+    }
+
+    private static void ValidateRecoveryPlan(
+        LauncherUpdatePlan plan,
+        string transactionId,
+        string transactionRoot,
+        string stateRoot,
+        string targetRoot)
+    {
+        if (plan.SchemaVersion != 1
+            || !string.Equals(plan.TransactionId, transactionId, StringComparison.Ordinal)
+            || !PathEquals(plan.StateRoot, stateRoot)
+            || !PathEquals(plan.TargetDirectory, targetRoot)
+            || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
+            || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
+            || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
+            || plan.LauncherRelativePath != "STFCCommunityMod.Launcher.exe")
+        {
+            throw new InvalidDataException("An abandoned launcher update plan has invalid recovery paths.");
+        }
+    }
+
+    private static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
+    {
+        var actual = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(path => new LauncherUpdateFile(
+                Path.GetRelativePath(root, path),
+                new FileInfo(path).Length,
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+            .ToArray();
+        if (actual.Length != expected.Count)
+        {
+            throw new InvalidDataException("An abandoned launcher update backup changed file count.");
+        }
+        foreach (var expectedFile in expected)
+        {
+            var actualFile = actual.SingleOrDefault(file =>
+                string.Equals(file.RelativePath, expectedFile.RelativePath, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException("An abandoned launcher update backup changed file identity.");
+            if (actualFile.Size != expectedFile.Size
+                || !string.Equals(actualFile.Sha256, expectedFile.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("An abandoned launcher update backup failed verification.");
+            }
+        }
+    }
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static void RejectReparsePoints(string root)
+    {
+        var pendingDirectories = new Stack<string>();
+        pendingDirectories.Push(root);
+        while (pendingDirectories.TryPop(out var directory))
+        {
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException("Launcher update recovery refuses filesystem links or reparse points.");
+            }
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidDataException("Launcher update recovery refuses filesystem links or reparse points.");
+                }
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pendingDirectories.Push(entry);
+                }
+            }
+        }
+    }
+}
+
 public interface ILauncherArchiveDownloader
 {
     Task<ModArtifactDownload> DownloadAsync(Uri uri, long maximumBytes, CancellationToken cancellationToken);
@@ -110,7 +294,7 @@ public sealed class LauncherSelfUpdateService(
     private readonly string programDirectory = Path.GetFullPath(programDirectory);
 
     public async Task<LauncherUpdatePreparation> PrepareAsync(
-        WindowsReleaseDiscovery discovery,
+        LauncherReleaseDiscovery discovery,
         string currentSourceCommit,
         int parentProcessId,
         CancellationToken cancellationToken = default)

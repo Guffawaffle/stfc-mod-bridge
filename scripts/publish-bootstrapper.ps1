@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
   [string]$OutputDirectory = "artifacts/win-x64",
-  [string]$PayloadArchive
+  [string]$PayloadArchive,
+  [string]$Version = "",
+  [string]$SourceRevisionId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +21,13 @@ $archive = if ($PayloadArchive) {
 }
 $project = Join-Path $repoRoot "src\STFCCommunityMod.Launcher.Setup\STFCCommunityMod.Launcher.Setup.csproj"
 $setupOutput = Join-Path $outputRoot "setup"
+$buildProperties = @()
+if ($Version) {
+  $buildProperties += "-p:Version=$Version"
+}
+if ($SourceRevisionId) {
+  $buildProperties += "-p:SourceRevisionId=$SourceRevisionId"
+}
 
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
   throw "Packaged launcher payload was not found: $archive"
@@ -34,7 +43,8 @@ dotnet publish $project `
   --output $setupOutput `
   -p:PublishSingleFile=true `
   -p:RequireLauncherPayload=true `
-  -p:LauncherPayloadPath=$archive
+  -p:LauncherPayloadPath=$archive `
+  @buildProperties
 
 $setup = Join-Path $setupOutput "STFCCommunityMod.Launcher.Setup.exe"
 if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
