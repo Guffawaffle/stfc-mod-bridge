@@ -45,6 +45,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly LauncherStartupComposition startupComposition;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
+    private readonly WorkspaceFocusTransition diagnosticsFocusTransition = new();
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
     private LauncherColorMode selectedColorMode = LauncherColorMode.System;
@@ -281,8 +282,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         try
         {
+            var focusReturnTarget = sender as IInputElement ?? Keyboard.FocusedElement;
             diagnosticPreview = viewModel.BuildDiagnosticPreview();
             SetDiagnosticsWorkspaceOpen(true);
+            diagnosticsFocusTransition.Enter(
+                () => ScheduleFocus(RefreshDiagnosticsButton),
+                () => ScheduleFocus(focusReturnTarget ?? SettingsDiagnosticsTitleBarButton));
         }
         catch (Exception exception) when (
             exception is InvalidDataException
@@ -883,6 +888,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         SettingsSearchHost.Visibility = Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (!isOpen)
+        {
+            diagnosticsFocusTransition.Exit();
+        }
 
         MinWidth = isOpen ? SettingsMinWidth : 560;
         MinHeight = SettingsMinHeight;
@@ -897,6 +906,20 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         Height = Math.Min(
             isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
             SystemParameters.WorkArea.Height);
+    }
+
+    private void ScheduleFocus(IInputElement target)
+    {
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () =>
+            {
+                if (target is UIElement { IsVisible: true, IsEnabled: true } element)
+                {
+                    element.Focus();
+                    Keyboard.Focus(target);
+                }
+            });
     }
 
     private bool EnsureSettingsWorkspaceInitialized()

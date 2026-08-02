@@ -1080,7 +1080,8 @@
                        Text="Readable local checks, recovery entry points, and redacted support evidence. Nothing is uploaded automatically."
                        TextWrapping="Wrap" />
           </StackPanel>
-          <Button Grid.Column="1"
+          <Button x:Name="RefreshDiagnosticsButton"
+                  Grid.Column="1"
                   Margin="16,0,0,0"
                   VerticalAlignment="Top"
                   Style="{StaticResource UtilityActionButtonStyle}"

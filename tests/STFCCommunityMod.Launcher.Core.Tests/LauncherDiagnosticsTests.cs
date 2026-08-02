@@ -31,6 +31,22 @@ public sealed class LauncherDiagnosticsTests
         Assert.IsTrue(output.Contains("<redacted-endpoint>", StringComparison.Ordinal));
     }
 
+    [DataTestMethod]
+    [DataRow("{\"token\":\"json-token\",\"cookie\": \"json-cookie\"}", "json-token", "json-cookie")]
+    [DataRow("{\"password\":\"json-password\",\"api-key\":\"json-api-key\"}", "json-password", "json-api-key")]
+    [DataRow("{\"access_token\":\"json-access\",\"client-secret\":\"json-client\"}", "json-access", "json-client")]
+    public void RedactorRemovesQuotedJsonShapedSensitiveAssignments(
+        string input,
+        string firstSecret,
+        string secondSecret)
+    {
+        var output = new LauncherDiagnosticRedactor(null, null).Redact(input);
+
+        Assert.IsFalse(output.Contains(firstSecret, StringComparison.Ordinal));
+        Assert.IsFalse(output.Contains(secondSecret, StringComparison.Ordinal));
+        Assert.IsTrue(output.Contains("<redacted>", StringComparison.Ordinal));
+    }
+
     [TestMethod]
     public async Task PreviewContainsBoundedHealthAndRedactedRecentLogWithoutConfigValues()
     {
@@ -76,7 +92,8 @@ public sealed class LauncherDiagnosticsTests
 
         var preview = diagnostics.BuildPreview(gameDirectory, localHealth);
 
-        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Name == "Community mod"));
+        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Name == "Managed artifact verification"));
+        Assert.IsTrue(preview.Document.Health.Any(fact => fact.Id == "local-health.modinstallation"));
         Assert.IsTrue(preview.Document.Health.Any(fact => fact.Id == "configuration"));
         Assert.IsTrue(preview.Document.Health.All(fact => !string.IsNullOrWhiteSpace(fact.Id)));
         Assert.IsTrue(preview.Document.Health.Any(fact => fact.Id == "local-health.nativesupport"));
@@ -92,6 +109,79 @@ public sealed class LauncherDiagnosticsTests
         Assert.IsFalse(preview.RedactedSummary.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(preview.RedactedSummary.Contains("runtime-secret", StringComparison.Ordinal));
         Assert.AreEqual(2, preview.Document.SchemaVersion);
+    }
+
+    [TestMethod]
+    public void SerializedDocumentRedactsJsonShapedSecretsFromRecentLog()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        File.WriteAllText(
+            Path.Combine(gameDirectory, "community_patch.log"),
+            "{\"token\":\"document-token\",\"cookie\":\"document-cookie\","
+            + "\"password\":\"document-password\",\"api-key\":\"document-api-key\"}\n");
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(),
+            "0.1.0",
+            new FixedTimeProvider());
+
+        var preview = diagnostics.BuildPreview(gameDirectory);
+        var serializedDocument = JsonSerializer.Serialize(preview.Document);
+
+        foreach (var secret in new[]
+                 {
+                     "document-token",
+                     "document-cookie",
+                     "document-password",
+                     "document-api-key",
+                 })
+        {
+            Assert.IsFalse(serializedDocument.Contains(secret, StringComparison.Ordinal));
+            Assert.IsFalse(preview.RedactedJson.Contains(secret, StringComparison.Ordinal));
+        }
+        Assert.IsTrue(preview.Document.RecentModLog.Single().Contains("<redacted>", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ManualInstallationAndNotApplicableHealthRemainInformationalWithTechnicalFactsSeparate()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        TemporaryDirectory.CreateFile(gameDirectory, "version.dll");
+        var localHealth = LauncherHealthResolver.Resolve(
+            new ModInstallationEvidence(ModInstallationEvidenceState.ManualInstallation, false),
+            new LauncherProviderHealthContext(
+                "guffawaffle",
+                "stable",
+                "guffawaffle",
+                true,
+                string.Empty));
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(),
+            "0.1.0",
+            new FixedTimeProvider());
+
+        var preview = diagnostics.BuildPreview(gameDirectory, localHealth);
+        var installation = preview.Document.Health.Single(fact => fact.Id == "local-health.modinstallation");
+        var artifact = preview.Document.Health.Single(fact => fact.Id == "managed-artifact-verification");
+        var transaction = preview.Document.Health.Single(fact => fact.Id == "deployment-transaction");
+
+        Assert.AreEqual(LauncherDiagnosticLevel.Informational, installation.Level);
+        StringAssert.Contains(installation.Summary, "Manual installation detected");
+        Assert.AreEqual(LauncherDiagnosticLevel.Informational, artifact.Level);
+        StringAssert.Contains(artifact.Summary, "no Mod Control-managed SHA-256 identity");
+        Assert.AreEqual(LauncherDiagnosticLevel.Healthy, transaction.Level);
+        Assert.IsTrue(
+            preview.Document.Health
+                .Where(fact => fact.Id.StartsWith("local-health.", StringComparison.Ordinal))
+                .Where(fact => fact.Summary.Contains("not applicable", StringComparison.OrdinalIgnoreCase))
+                .All(fact => fact.Level == LauncherDiagnosticLevel.Informational));
     }
 
     [TestMethod]

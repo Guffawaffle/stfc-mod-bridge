@@ -10,6 +10,7 @@ public enum LauncherDiagnosticLevel
     Attention,
     Error,
     Unavailable,
+    Informational,
 }
 
 public sealed record LauncherDiagnosticFact(
@@ -26,6 +27,7 @@ public sealed record LauncherDiagnosticFact(
         LauncherDiagnosticLevel.Healthy => "Healthy",
         LauncherDiagnosticLevel.Attention => "Needs attention",
         LauncherDiagnosticLevel.Error => "Error",
+        LauncherDiagnosticLevel.Informational => "Informational",
         _ => "Unknown",
     };
 
@@ -72,7 +74,7 @@ public sealed partial class LauncherDiagnosticRedactor
 
         redacted = UserProfilePattern().Replace(redacted, "%USERPROFILE%");
         redacted = AuthorizationBearerPattern().Replace(redacted, "Authorization: Bearer <redacted>");
-        redacted = SensitiveAssignmentPattern().Replace(redacted, match => $"{match.Groups[1].Value}=<redacted>");
+        redacted = SensitiveAssignmentPattern().Replace(redacted, RedactSensitiveAssignment);
         redacted = EndpointPattern().Replace(redacted, "<redacted-endpoint>");
         return redacted;
     }
@@ -93,11 +95,35 @@ public sealed partial class LauncherDiagnosticRedactor
         }
     }
 
+    private static string RedactSensitiveAssignment(Match match)
+    {
+        var value = match.Groups["value"].Value;
+        var replacement = value.Length >= 2
+            && ((value[0] == '"' && value[^1] == '"')
+                || (value[0] == '\'' && value[^1] == '\''))
+                ? $"{value[0]}<redacted>{value[^1]}"
+                : "<redacted>";
+        return match.Groups["prefix"].Value + replacement;
+    }
+
     [GeneratedRegex(@"(?i)\bC:\\Users\\[^\\\s\""']+")]
     private static partial Regex UserProfilePattern();
 
     [GeneratedRegex(
-        @"(?i)\b(token|access[_-]?token|api[_-]?key|password|secret|cookie)\b\s*[:=]\s*(?:\""[^\""\r\n]*\""|'[^'\r\n]*'|[^\s,;]+)")]
+        @"(?ix)
+        (?<prefix>
+            [\""']?
+            (?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|passwd|secret|client[_-]?secret|cookie|set[_-]?cookie|authorization|session[_-]?(?:id|token|cookie))
+            [\""']?
+            \s*[:=]\s*
+        )
+        (?<value>
+            \""(?:\\.|[^\""\\\r\n])*\""
+            |
+            '(?:\\.|[^'\\\r\n])*'
+            |
+            [^\s,;}\]]+
+        )")]
     private static partial Regex SensitiveAssignmentPattern();
 
     [GeneratedRegex(@"(?i)\bauthorization\s*:\s*bearer\s+[^\s,;]+")]
@@ -167,7 +193,7 @@ public sealed class LauncherDiagnosticService(
             "Choose Check Mod Control update to perform a network-backed check.",
             "mod-control-update"));
 
-        AddDeploymentFacts(health, validGameDirectory);
+        AddDeploymentFacts(health, validGameDirectory, localHealth?.Installation);
         AddLocalHealthFacts(health, localHealth);
         AddConfigurationFact(
             health,
@@ -239,7 +265,10 @@ public sealed class LauncherDiagnosticService(
         }
     }
 
-    private void AddDeploymentFacts(List<LauncherDiagnosticFact> health, string? gameDirectory)
+    private void AddDeploymentFacts(
+        List<LauncherDiagnosticFact> health,
+        string? gameDirectory,
+        ModInstallationEvidence? installation)
     {
         try
         {
@@ -264,39 +293,66 @@ public sealed class LauncherDiagnosticService(
             var state = deploymentService.ReadInstalledState();
             if (state is null)
             {
-                health.Add(Attention("Community mod", "No Mod Control-managed mod is installed.", "Install or adopt the mod."));
+                health.Add(installation?.State switch
+                {
+                    ModInstallationEvidenceState.ManualInstallation => Informational(
+                        "Managed artifact verification",
+                        "A manual version.dll is present, but no Mod Control-managed SHA-256 identity is recorded.",
+                        "Choose Update when ready to place the installation under Mod Control management.",
+                        "managed-artifact-verification"),
+                    ModInstallationEvidenceState.NotInstalled => Informational(
+                        "Managed artifact verification",
+                        "No managed SHA-256 identity is recorded because no community mod is installed.",
+                        "No action needed.",
+                        "managed-artifact-verification"),
+                    _ => Unavailable(
+                        "Managed artifact verification",
+                        "No Mod Control-managed artifact identity is available.",
+                        "Review the community mod installation check.",
+                        "managed-artifact-verification"),
+                });
                 return;
             }
             if (gameDirectory is null || !PathEquals(state.GameDirectory, gameDirectory))
             {
                 health.Add(Attention(
-                    "Community mod",
+                    "Managed artifact verification",
                     "Mod Control-managed state belongs to a different or unavailable game folder.",
-                    "Select the managed game folder or review removal with support."));
+                    "Select the managed game folder or review removal with support.",
+                    "managed-artifact-verification"));
                 return;
             }
 
             var targetPath = Path.Combine(gameDirectory, "version.dll");
             if (!File.Exists(targetPath))
             {
-                health.Add(Attention("Community mod", "The managed version.dll is missing.", "Use Repair."));
+                health.Add(Attention(
+                    "Managed artifact verification",
+                    "The managed version.dll is missing.",
+                    "Use Repair.",
+                    "managed-artifact-verification"));
                 return;
             }
             if (new FileInfo(targetPath).Length > MaximumModArtifactBytes)
             {
                 health.Add(Attention(
-                    "Community mod",
+                    "Managed artifact verification",
                     "version.dll exceeds the Mod Control verification limit.",
-                    "Use Repair; Mod Control will not load the oversized file into diagnostics."));
+                    "Use Repair; Mod Control will not load the oversized file into diagnostics.",
+                    "managed-artifact-verification"));
                 return;
             }
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(targetPath)));
             health.Add(string.Equals(hash, state.Sha256, StringComparison.OrdinalIgnoreCase)
-                ? Healthy("Community mod", $"Mod Control-managed version {state.Version} matches its SHA-256 identity.")
+                ? Healthy(
+                    "Managed artifact verification",
+                    $"Mod Control-managed version {state.Version} matches its SHA-256 identity.",
+                    "managed-artifact-verification")
                 : Attention(
-                    "Community mod",
+                    "Managed artifact verification",
                     "version.dll differs from Mod Control-managed state.",
-                    "Use Repair; Mod Control will not delete an unknown artifact."));
+                    "Use Repair; Mod Control will not delete an unknown artifact.",
+                    "managed-artifact-verification"));
         }
         catch (Exception exception) when (
             exception is InvalidDataException or IOException or UnauthorizedAccessException)
@@ -320,7 +376,8 @@ public sealed class LauncherDiagnosticService(
         }
 
         foreach (var dimension in localHealth.Dimensions.Where(
-                     item => item.Category is LauncherHealthDimensionCategory.ProviderCompatibility
+                     item => item.Category is LauncherHealthDimensionCategory.ModInstallation
+                         or LauncherHealthDimensionCategory.ProviderCompatibility
                          or LauncherHealthDimensionCategory.UpdateAvailability
                          or LauncherHealthDimensionCategory.GameCompatibility
                          or LauncherHealthDimensionCategory.RuntimeActivation
@@ -328,19 +385,27 @@ public sealed class LauncherDiagnosticService(
                          or LauncherHealthDimensionCategory.ProviderAvailability))
         {
             var id = $"local-health.{dimension.Category.ToString().ToLowerInvariant()}";
+            var isInstallation = dimension.Category == LauncherHealthDimensionCategory.ModInstallation;
             health.Add(new(
-                dimension.Title,
+                isInstallation ? "Community mod installation" : dimension.Title,
                 dimension.Severity switch
                 {
                     LauncherHealthSeverity.Healthy => LauncherDiagnosticLevel.Healthy,
                     LauncherHealthSeverity.ActionRequired => LauncherDiagnosticLevel.Error,
-                    LauncherHealthSeverity.Informational => LauncherDiagnosticLevel.Attention,
+                    LauncherHealthSeverity.Informational => LauncherDiagnosticLevel.Informational,
                     _ => LauncherDiagnosticLevel.Unavailable,
                 },
-                dimension.Detail,
+                isInstallation ? $"{dimension.Title}. {dimension.Detail}" : dimension.Detail,
                 dimension.Severity == LauncherHealthSeverity.ActionRequired
                     ? "Review the selected provider and community mod state."
-                    : "No action needed.",
+                    : localHealth.Installation.State switch
+                    {
+                        ModInstallationEvidenceState.ManualInstallation when isInstallation =>
+                            "Choose Update when ready to place the installation under Mod Control management.",
+                        ModInstallationEvidenceState.NotInstalled when isInstallation =>
+                            "Choose Install to add the community mod.",
+                        _ => "No action needed.",
+                    },
                 id,
                 "launcher-local-health"));
         }
@@ -540,6 +605,13 @@ public sealed class LauncherDiagnosticService(
         string id = "") =>
         new(name, LauncherDiagnosticLevel.Attention, summary, nextAction, id);
 
+    private static LauncherDiagnosticFact Informational(
+        string name,
+        string summary,
+        string nextAction,
+        string id = "") =>
+        new(name, LauncherDiagnosticLevel.Informational, summary, nextAction, id);
+
     private static LauncherDiagnosticFact Unavailable(
         string name,
         string summary,
@@ -568,7 +640,7 @@ public sealed class LauncherDiagnosticService(
         "Game process" => "game-process",
         "Scopely launcher" => "scopely-launcher",
         "Deployment transaction" => "deployment-transaction",
-        "Community mod" => "community-mod",
+        "Managed artifact verification" => "managed-artifact-verification",
         "Deployment state" => "deployment-state",
         "Recent mod log" => "mod-log",
         _ => throw new InvalidDataException(
