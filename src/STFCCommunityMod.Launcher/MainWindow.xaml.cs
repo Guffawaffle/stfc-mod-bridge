@@ -829,7 +829,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 GetConfigurationFilePath,
                 startupComposition.SettingsLayout,
                 startupComposition.SettingsDiagnostics,
-                uiPreferencesStore: uiPreferencesStore);
+                uiPreferencesStore: uiPreferencesStore,
+                openExternalUri: OpenExternalUri);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -845,6 +846,28 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool CanOpenRawConfiguration()
     {
         return TryGetConfigurationFilePath(out var path) && File.Exists(path);
+    }
+
+    private void OpenExternalUri(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Mod Control opens HTTPS links only.");
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                $"Windows could not open this link: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
     }
 
     private void OpenRawConfiguration()

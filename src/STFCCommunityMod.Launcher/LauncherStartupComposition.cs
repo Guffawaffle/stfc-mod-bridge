@@ -48,7 +48,11 @@ internal sealed record LauncherStartupComposition(
             detectedRuntime,
             semanticGrouping.IsActive ? "Active" : "Inactive",
             semanticGrouping.Reason,
-            settingsLayout.DisplayName);
+            settingsLayout.DisplayName,
+            provider.Id,
+            provider.DisplayName,
+            provider.DefaultReleaseChannel.DisplayName,
+            provider.DefaultReleaseChannel.Repository);
         return new(
             runtimeProfile,
             activationPlan,
