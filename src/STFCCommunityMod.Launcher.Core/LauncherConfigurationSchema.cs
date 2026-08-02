@@ -87,6 +87,16 @@ public sealed record LauncherConfigurationKeybindingMetadata(
     string ConflictGroup,
     string ActionCategory);
 
+public sealed record LauncherConfigurationAlias(
+    string Path,
+    string Status,
+    string Precedence,
+    string? Removal);
+
+public sealed record LauncherConfigurationProvenance(
+    string RuntimePath,
+    string DefaultSource);
+
 public sealed class LauncherConfigurationSetting
 {
     internal LauncherConfigurationSetting(
@@ -96,6 +106,7 @@ public sealed class LauncherConfigurationSetting
         string category,
         LauncherConfigurationControl control,
         LauncherConfigurationValueKind valueKind,
+        JsonElement schemaMetadata,
         JsonElement valueTypeDefinition,
         LauncherConfigurationNumericConstraints? numericConstraints,
         LauncherConfigurationKeybindingMetadata? keybindingMetadata,
@@ -105,6 +116,8 @@ public sealed class LauncherConfigurationSetting
         IReadOnlyList<LauncherConfigurationSourceId> sourceSupport,
         LauncherConfigurationSensitivity sensitivity,
         LauncherConfigurationApplyBehavior applyBehavior,
+        IReadOnlyList<LauncherConfigurationAlias> aliases,
+        LauncherConfigurationProvenance provenance,
         LauncherConfigurationPresentation presentation)
     {
         Path = path;
@@ -113,6 +126,7 @@ public sealed class LauncherConfigurationSetting
         Category = category;
         Control = control;
         ValueKind = valueKind;
+        SchemaMetadata = schemaMetadata;
         ValueTypeDefinition = valueTypeDefinition;
         NumericConstraints = numericConstraints;
         KeybindingMetadata = keybindingMetadata;
@@ -122,6 +136,8 @@ public sealed class LauncherConfigurationSetting
         SourceSupport = sourceSupport;
         Sensitivity = sensitivity;
         ApplyBehavior = applyBehavior;
+        Aliases = aliases;
+        Provenance = provenance;
         Presentation = presentation;
         IsTemplate = path.Split('.').Contains("*", StringComparer.Ordinal);
     }
@@ -137,6 +153,12 @@ public sealed class LauncherConfigurationSetting
     public LauncherConfigurationControl Control { get; }
 
     public LauncherConfigurationValueKind ValueKind { get; }
+
+    /// <summary>
+    /// Detached provider-authored setting metadata. Typed adapters own validation
+    /// and projection of their domain-specific fields.
+    /// </summary>
+    public JsonElement SchemaMetadata { get; }
 
     /// <summary>
     /// The complete valueType object from the schema. This retains adapter-specific
@@ -163,6 +185,17 @@ public sealed class LauncherConfigurationSetting
     public LauncherConfigurationSensitivity Sensitivity { get; }
 
     public LauncherConfigurationApplyBehavior ApplyBehavior { get; }
+
+    /// <summary>
+    /// Provider-authored compatibility paths. The launcher never infers aliases
+    /// from a canonical path or a provider display name.
+    /// </summary>
+    public IReadOnlyList<LauncherConfigurationAlias> Aliases { get; }
+
+    /// <summary>
+    /// Provider-authored runtime and default-source identity.
+    /// </summary>
+    public LauncherConfigurationProvenance Provenance { get; }
 
     /// <summary>
     /// The authoritative serialized apply token. Prefer <see cref="ApplyBehavior"/>
@@ -202,6 +235,7 @@ public sealed class LauncherConfigurationCatalog
         SchemaVersion = schemaVersion;
         Source = source;
         Settings = settings;
+        NotificationCatalog = LauncherNotificationCatalog.Create(settings);
         _visibleSettings = Array.AsReadOnly(settings.Where(setting => setting.IsDirectlyEditable).ToArray());
         Categories = Array.AsReadOnly(
             _visibleSettings
@@ -216,6 +250,8 @@ public sealed class LauncherConfigurationCatalog
     public LauncherConfigurationSource Source { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> Settings { get; }
+
+    public LauncherNotificationCatalog NotificationCatalog { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> VisibleSettings => _visibleSettings;
 
@@ -240,6 +276,7 @@ public sealed class LauncherConfigurationCatalog
                     || Contains(setting.Presentation.Label, normalizedQuery)
                     || Contains(setting.Presentation.Help, normalizedQuery)
                     || Contains(setting.Presentation.Group, normalizedQuery)
+                    || setting.Aliases.Any(alias => Contains(alias.Path, normalizedQuery))
                     || setting.Presentation.SearchTerms.Any(
                         term => Contains(term, normalizedQuery))));
 

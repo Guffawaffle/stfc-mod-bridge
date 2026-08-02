@@ -464,6 +464,84 @@ public sealed class SettingsProjectionTests
         Assert.AreEqual(originalValue, fixture.Row(patch.Path).BooleanValue);
     }
 
+    [TestMethod]
+    public void SparseConfigurationProjectsCompleteProviderNotificationCatalog()
+    {
+        using var fixture = SettingsFixture.Create("# no notification overrides\n");
+        fixture.Select(LauncherSettingsSection.Notifications);
+
+        var expected = fixture.Catalog.NotificationCatalog.Events
+            .Count(definition => definition.Setting.IsDirectlyEditable);
+        var rows = fixture.ViewModel.FilteredSettings
+            .OfType<SettingsRowViewModel>()
+            .ToArray();
+        Assert.AreEqual(expected, rows.Length);
+        Assert.IsTrue(rows.All(row => row.IsNotificationEditor));
+        Assert.IsTrue(rows.All(row => row.EffectiveState == "Default"));
+        Assert.IsTrue(rows.All(row => row.EffectiveValueSource.Contains("Provider default", StringComparison.Ordinal)));
+        Assert.IsTrue(rows.All(row => !string.IsNullOrWhiteSpace(row.AccessibleName)));
+        Assert.IsTrue(rows.All(row => !string.IsNullOrWhiteSpace(row.AccessibleHelp)));
+        Assert.IsTrue(
+            fixture.ViewModel.FilteredSettings.OfType<SettingsGroupHeaderViewModel>().Any());
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.AreEqual("# no notification overrides\n", File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public void NotificationAliasSearchAndCompatibilityProvenanceRemainDiscoverable()
+    {
+        const string source =
+            "# preserve me\n"
+            + "[notifications.events.fleet]\n"
+            + "arrived_in_system = { system = false, audio = true, sound = \"arrival\" }\n";
+        using var fixture = SettingsFixture.Create(source);
+        var definition = fixture.Catalog.NotificationCatalog.Events.Single(
+            item => item.Setting.Path == "notifications.fleet_arrived_in_system");
+        var alias = definition.Aliases.Single(
+            item => item.Path == "notifications.events.fleet.arrived_in_system");
+
+        fixture.ViewModel.SearchText = alias.Path;
+        var row = fixture.ViewModel.FilteredSettings
+            .OfType<SettingsRowViewModel>()
+            .Single();
+        Assert.AreEqual(definition.Setting.Path, row.Path);
+        Assert.IsTrue(row.IsCompatibilityResolved);
+        Assert.AreEqual("Compatibility value", row.EffectiveState);
+        Assert.AreEqual("Unknown", row.EffectiveValue);
+        Assert.AreEqual("Compatibility policy · Runtime-resolved", row.NotificationDeliverySummary);
+        StringAssert.Contains(row.DefaultAndEffectiveHelp, alias.Path);
+        StringAssert.Contains(row.DefaultAndEffectiveHelp, "Unknown");
+        StringAssert.Contains(row.NotificationPolicyHelp, "canonical whole-policy override");
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+    }
+
+    [TestMethod]
+    public async Task CanonicalNotificationEditPreservesCompatibilityAndUnrelatedToml()
+    {
+        const string source =
+            "# preserve me\n"
+            + "[notifications.events.fleet]\n"
+            + "arrived_in_system = { system = false, audio = true, sound = \"arrival\" }\n"
+            + "[custom]\nkeep = \"verbatim\"\n";
+        using var fixture = SettingsFixture.Create(source);
+        fixture.Select(LauncherSettingsSection.Notifications);
+        var row = fixture.Row("notifications.fleet_arrived_in_system");
+
+        row.NotificationSystem = true;
+        Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        Assert.AreEqual("Canonical TOML · notifications.fleet_arrived_in_system", row.EffectiveValueSource);
+        StringAssert.Contains(row.DefaultAndEffectiveHelp, "Canonical precedence");
+
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+        var persisted = File.ReadAllText(fixture.ConfigurationPath);
+        StringAssert.Contains(persisted, "# preserve me");
+        StringAssert.Contains(persisted, "arrived_in_system = { system = false, audio = true");
+        StringAssert.Contains(persisted, "fleet_arrived_in_system = true");
+        StringAssert.Contains(persisted, "[custom]\nkeep = \"verbatim\"");
+    }
+
     private static bool IsPatchSetting(LauncherConfigurationSetting setting) =>
         string.Equals(setting.Category, "patches", StringComparison.OrdinalIgnoreCase);
 

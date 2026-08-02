@@ -146,6 +146,8 @@ public static class LauncherConfigurationSchemaLoader
         var sourceSupport = ReadSourceSupport(
             ReadRequiredProperty(element, "sourceSupport", context),
             path);
+        var aliases = ReadAliases(element, path);
+        var provenance = ReadProvenance(element, path);
 
         if (!sourceSupport.Contains(schemaSource))
         {
@@ -161,6 +163,7 @@ public static class LauncherConfigurationSchemaLoader
             category,
             control,
             valueKind,
+            element.Clone(),
             valueType.Clone(),
             numericConstraints,
             keybindingMetadata,
@@ -170,7 +173,69 @@ public static class LauncherConfigurationSchemaLoader
             sourceSupport,
             sensitivity,
             applyBehavior,
+            aliases,
+            provenance,
             presentation);
+    }
+
+    private static ReadOnlyCollection<LauncherConfigurationAlias> ReadAliases(
+        JsonElement setting,
+        string path)
+    {
+        if (!setting.TryGetProperty("aliases", out var element))
+        {
+            return Array.AsReadOnly(Array.Empty<LauncherConfigurationAlias>());
+        }
+
+        RequireKind(element, JsonValueKind.Array, $"aliases for '{path}'");
+        var aliases = new List<LauncherConfigurationAlias>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var alias in element.EnumerateArray())
+        {
+            RequireKind(alias, JsonValueKind.Object, $"alias for '{path}'");
+            RejectUnknownProperties(
+                alias,
+                $"alias for '{path}'",
+                "path",
+                "status",
+                "precedence",
+                "removal");
+            var aliasPath = ReadRequiredString(alias, "path", $"alias for '{path}'");
+            if (string.Equals(aliasPath, path, StringComparison.OrdinalIgnoreCase)
+                || !paths.Add(aliasPath))
+            {
+                throw Invalid($"Setting '{path}' contains a duplicate or canonical alias '{aliasPath}'.");
+            }
+
+            aliases.Add(
+                new(
+                    aliasPath,
+                    ReadRequiredString(alias, "status", $"alias '{aliasPath}'"),
+                    ReadRequiredString(alias, "precedence", $"alias '{aliasPath}'"),
+                    ReadOptionalString(alias, "removal", $"alias '{aliasPath}'")));
+        }
+
+        return aliases.AsReadOnly();
+    }
+
+    private static LauncherConfigurationProvenance ReadProvenance(
+        JsonElement setting,
+        string path)
+    {
+        if (!setting.TryGetProperty("provenance", out var element))
+        {
+            return new("unknown", "unknown");
+        }
+
+        RequireKind(element, JsonValueKind.Object, $"provenance for '{path}'");
+        RejectUnknownProperties(
+            element,
+            $"provenance for '{path}'",
+            "runtimePath",
+            "defaultSource");
+        return new(
+            ReadRequiredString(element, "runtimePath", $"provenance for '{path}'"),
+            ReadRequiredString(element, "defaultSource", $"provenance for '{path}'"));
     }
 
     private static LauncherConfigurationPresentation ReadPresentation(
