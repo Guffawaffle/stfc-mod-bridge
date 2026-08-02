@@ -311,7 +311,7 @@ public sealed class SyncDesiredTopologyTests
     }
 
     [TestMethod]
-    public void InvalidNamesCredentialsAndEndpointOwnershipBlockCommit()
+    public void InvalidNamesBlockConstructionWhileRuntimeConnectionProblemsAreAdvisory()
     {
         Assert.IsFalse(SyncDesiredTopology.Empty.AddTarget("bad.target", SyncTargetKind.LegacyCommunity).Succeeded);
         Assert.IsFalse(SyncDesiredTopology.Empty.AddTarget("sidecar", SyncTargetKind.LegacyCommunity).Succeeded);
@@ -325,8 +325,10 @@ public sealed class SyncDesiredTopologyTests
                     "http://127.0.0.1:43127/api/sidecar/ingest",
                     SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
         var externalResolved = external.Resolve();
-        Assert.IsFalse(externalResolved.IsCommittable);
-        Assert.IsTrue(externalResolved.Diagnostics.Any(item => item.Code == "SYNC_LOOPBACK_TARGET_INVALID"));
+        Assert.IsTrue(externalResolved.IsCommittable);
+        Assert.IsTrue(externalResolved.Diagnostics.Any(item =>
+            item.Code == "SYNC_LOOPBACK_TARGET_INVALID"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
 
         var embeddedCredentials = RequireSuccess(
             SyncDesiredTopology.Empty.AddTarget("embedded", SyncTargetKind.LegacyCommunity));
@@ -338,7 +340,8 @@ public sealed class SyncDesiredTopologyTests
                     SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
         Assert.IsTrue(
             embeddedCredentials.Resolve().Diagnostics.Any(
-                item => item.Code == "SYNC_ENDPOINT_EMBEDDED_CREDENTIALS"));
+                item => item.Code == "SYNC_ENDPOINT_EMBEDDED_CREDENTIALS"
+                    && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
 
         var missing = RequireSuccess(
             SyncDesiredTopology.Empty.AddTarget("missing", SyncTargetKind.MajelIngest));
@@ -348,7 +351,10 @@ public sealed class SyncDesiredTopologyTests
                 target => target.WithConnection(
                     "https://majel.example.invalid/api/ingest/events",
                     SyncSecret.Missing).WithEnabled(true)));
-        Assert.IsTrue(missing.Resolve().Diagnostics.Any(item => item.Code == "SYNC_CREDENTIALS_INCOMPLETE"));
+        Assert.IsTrue(missing.Resolve().IsCommittable);
+        Assert.IsTrue(missing.Resolve().Diagnostics.Any(item =>
+            item.Code == "SYNC_CREDENTIALS_INCOMPLETE"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
 
         var sidecar = RequireSuccess(
             SyncDesiredTopology.Empty.AddTarget("sidecar", SyncTargetKind.LocalSidecar));
@@ -358,11 +364,14 @@ public sealed class SyncDesiredTopologyTests
                 target => target.WithConnection(
                     "https://sidecar.example.invalid/ingest",
                     SyncSecret.FromPlainText("hidden-value")).WithEnabled(true)));
-        Assert.IsTrue(sidecar.Resolve().Diagnostics.Any(item => item.Code == "SYNC_SIDECAR_ENDPOINT_NOT_LOOPBACK"));
+        Assert.IsTrue(sidecar.Resolve().IsCommittable);
+        Assert.IsTrue(sidecar.Resolve().Diagnostics.Any(item =>
+            item.Code == "SYNC_SIDECAR_ENDPOINT_NOT_LOOPBACK"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
     }
 
     [TestMethod]
-    public void UnsupportedCapabilitiesAndUnsafeTlsCannotEnterACommittableSet()
+    public void UnsafeTlsStillBlocksWhileUnsupportedCapabilitiesRemainAdvisory()
     {
         var topology = AddConfigured(
             SyncDesiredTopology.Empty,
@@ -379,6 +388,7 @@ public sealed class SyncDesiredTopologyTests
         var unsupported = blocked.Diagnostics.First(item => item.Code == "SYNC_CAPABILITY_UNSUPPORTED");
         StringAssert.Contains(unsupported.Message, "Fleet runtime");
         StringAssert.Contains(unsupported.Message, "Sync target type");
+        Assert.AreEqual(SyncTopologyDiagnosticSeverity.Warning, unsupported.Severity);
         Assert.IsTrue(blocked.Diagnostics.Any(item => item.Code == "SYNC_UNSAFE_TLS_PAIR_REQUIRED"));
 
         topology = RequireSuccess(
@@ -392,7 +402,27 @@ public sealed class SyncDesiredTopologyTests
     }
 
     [TestMethod]
-    public void InvalidSidecarRuntimeModeBlocksCommit()
+    public void UnsupportedCapabilitiesAreAdvisoryWhenTheTopologyIsOtherwiseValid()
+    {
+        var topology = AddConfigured(
+            SyncDesiredTopology.Empty,
+            "external",
+            SyncTargetKind.LegacyCommunity,
+            "https://community.example.invalid/sync",
+            target => target
+                .WithDataOverride(SyncDataKind.FleetRuntime, SyncOverride.Explicit(true))
+                .WithBattlelogEnrichment(SyncOverride.Explicit(true)));
+
+        var resolved = topology.Resolve();
+
+        Assert.IsTrue(resolved.IsCommittable);
+        Assert.IsTrue(resolved.Diagnostics
+            .Where(item => item.Code == "SYNC_CAPABILITY_UNSUPPORTED")
+            .All(item => item.Severity == SyncTopologyDiagnosticSeverity.Warning));
+    }
+
+    [TestMethod]
+    public void InvalidSidecarRuntimeModeIsAdvisory()
     {
         var topology = AddConfigured(
             SyncDesiredTopology.Empty,
@@ -403,8 +433,10 @@ public sealed class SyncDesiredTopologyTests
 
         var resolved = topology.Resolve();
 
-        Assert.IsFalse(resolved.IsCommittable);
-        Assert.IsTrue(resolved.Diagnostics.Any(item => item.Code == "SYNC_FLEET_RUNTIME_MODE_INVALID"));
+        Assert.IsTrue(resolved.IsCommittable);
+        Assert.IsTrue(resolved.Diagnostics.Any(item =>
+            item.Code == "SYNC_FLEET_RUNTIME_MODE_INVALID"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
     }
 
     [TestMethod]

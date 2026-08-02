@@ -164,17 +164,17 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
-    public void NumericAndDropdownHelpKeepsDefaultsOutOfThePermanentRowChrome()
+    public void SettingHelpShowsCatalogDefaultInsteadOfVisibleCurrentValue()
     {
         using var fixture = SettingsFixture.Create();
 
         fixture.Select(LauncherSettingsSection.Interface);
         var interfaceRow = fixture.Row("ui.extend_chest_purchase_max");
         StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Current value: 160");
+        Assert.IsFalse(interfaceRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
         interfaceRow.NumericText = "120";
         Assert.IsTrue(interfaceRow.DraftHasOverride);
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Current value: 120");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
         Assert.IsTrue(interfaceRow.UseDefaultCommand.CanExecute(null));
         interfaceRow.UseDefaultCommand.Execute(null);
         Assert.IsFalse(interfaceRow.DraftHasOverride);
@@ -187,7 +187,8 @@ public sealed class SettingsProjectionTests
         StringAssert.Contains(graphicsRow.DefaultAndEffectiveHelp, "Default: 1750");
 
         var booleanRow = fixture.Row("graphics.free_resize");
-        Assert.IsFalse(booleanRow.DefaultAndEffectiveHelp.Contains("Default:", StringComparison.Ordinal));
+        StringAssert.Contains(booleanRow.DefaultAndEffectiveHelp, "Default:");
+        Assert.IsFalse(booleanRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
     }
 
     [TestMethod]

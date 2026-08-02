@@ -315,7 +315,7 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
-    public void UnsupportedExistingCapabilityIsNamedAndCanBeRemovedBeforeSave()
+    public void UnsupportedExistingCapabilityIsAdvisoryAndCanBeRemovedBeforeSave()
     {
         using var fixture = SyncFixture.Create(
             """
@@ -335,8 +335,7 @@ public sealed class SyncWorkspaceViewModelTests
         StringAssert.Contains(target.ValidationSummary, "Fleet runtime");
         StringAssert.Contains(target.ValidationSummary, "remove unsupported settings");
         viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
-        Assert.IsFalse(viewModel.CanSave);
-        StringAssert.Contains(viewModel.SaveAvailability, "Fleet runtime");
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
 
         Assert.IsTrue(target.RemoveUnsupportedCapabilitiesCommand.CanExecute(null));
         target.RemoveUnsupportedCapabilitiesCommand.Execute(null);
@@ -428,7 +427,7 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
-    public void InvalidWizardDestinationStaysInReviewWithoutMutatingTopology()
+    public void InvalidWizardDestinationStagesWithAdvisoryAttentionState()
     {
         using var fixture = SyncFixture.Create("# empty\n");
         var viewModel = fixture.CreateViewModel();
@@ -444,11 +443,12 @@ public sealed class SyncWorkspaceViewModelTests
         wizard.NextCommand.Execute(null);
         wizard.FinishCommand.Execute(null);
 
-        Assert.IsTrue(viewModel.IsAddWizardOpen);
-        Assert.IsTrue(wizard.HasError);
-        StringAssert.Contains(wizard.Error, "absolute HTTP or HTTPS");
-        Assert.IsFalse(viewModel.HasPendingChanges);
-        Assert.AreEqual(0, viewModel.Targets.Count);
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.IsTrue(viewModel.HasPendingChanges);
+        var target = viewModel.Targets.Single();
+        Assert.IsTrue(target.NeedsAttention);
+        StringAssert.Contains(target.ValidationSummary, "absolute HTTP or HTTPS");
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
     }
 
     [TestMethod]

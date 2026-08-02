@@ -732,17 +732,20 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     {
         get
         {
-            var errors = owner.GetDiagnostics(name).Where(item => item.Severity == SyncTopologyDiagnosticSeverity.Error).ToArray();
-            var summary = errors.Length == 0 ? "Ready" : string.Join(" ", errors.Select(item => item.Message));
+            var findings = owner.GetDiagnostics(name)
+                .Where(item => item.Severity is SyncTopologyDiagnosticSeverity.Warning or SyncTopologyDiagnosticSeverity.Error)
+                .ToArray();
+            var summary = findings.Length == 0 ? "Ready" : string.Join(" ", findings.Select(item => item.Message));
             return HasUnsupportedCapabilities
-                ? summary + " Open destination actions and remove unsupported settings to continue."
+                ? summary + " Open destination actions to remove unsupported settings if you want to clean up this destination."
                 : summary;
         }
     }
-    public bool HasValidationError => owner.GetDiagnostics(name).Any(item => item.Severity == SyncTopologyDiagnosticSeverity.Error);
+    public bool NeedsAttention => owner.GetDiagnostics(name).Any(item =>
+        item.Severity is SyncTopologyDiagnosticSeverity.Warning or SyncTopologyDiagnosticSeverity.Error);
     public bool HasUnsupportedCapabilities => owner.GetDiagnostics(name).Any(item =>
         item.Code == "SYNC_CAPABILITY_UNSUPPORTED");
-    public string ReadinessLabel => HasValidationError ? "Needs attention" : "Ready";
+    public string ReadinessLabel => NeedsAttention ? "Needs attention" : "Ready";
     public string EffectiveFeeds => string.Join(", ", Feeds.Where(feed => feed.EffectiveEnabled).Select(feed => feed.Label).DefaultIfEmpty("None"));
     public IReadOnlyList<SyncTargetFeedViewModel> Feeds { get; }
     public ICommand RemoveCommand { get; }

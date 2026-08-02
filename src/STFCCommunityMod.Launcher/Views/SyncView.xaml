@@ -281,7 +281,7 @@
                       <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                       <TextBlock Margin="0,2,0,0" FontSize="10" Text="{Binding SecondaryLabel}">
                         <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                          <Style.Triggers><DataTrigger Binding="{Binding Destination.HasValidationError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
+                          <Style.Triggers><DataTrigger Binding="{Binding Destination.NeedsAttention}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
                         </Style></TextBlock.Style>
                       </TextBlock>
                     </StackPanel>
@@ -361,7 +361,7 @@
                       <Border Margin="10,1,0,0" Padding="8,3" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="5"
                               Visibility="{Binding ShowKindLabel, Converter={StaticResource BooleanToVisibilityConverter}}"><TextBlock FontSize="11" Text="{Binding KindLabel}" /></Border>
                       <TextBlock Margin="10,4,0,0" Text="{Binding ReadinessLabel}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                        <Style.Triggers><DataTrigger Binding="{Binding HasValidationError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
+                        <Style.Triggers><DataTrigger Binding="{Binding NeedsAttention}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
                       </Style></TextBlock.Style></TextBlock></StackPanel>
                     <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveFeeds, StringFormat='Effective feeds: {0}'}" />
                     <TextBlock Margin="0,4,0,0" FontSize="12" Text="{Binding ValidationSummary}" automation:AutomationProperties.LiveSetting="Polite" /></StackPanel>

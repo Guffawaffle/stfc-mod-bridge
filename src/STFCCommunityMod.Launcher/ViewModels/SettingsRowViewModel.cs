@@ -261,9 +261,7 @@ public sealed class SettingsRowViewModel :
     {
         get
         {
-            var initialValue = IsNumericEditor || IsEnumEditor
-                ? $"Default: {DefaultValueText}. "
-                : string.Empty;
+            var initialValue = $"Default: {DefaultValueText}. ";
             var runtimePath = $"Runtime path: {Setting.Provenance.RuntimePath}. ";
             if (IsCompatibilityResolved)
             {
@@ -288,7 +286,6 @@ public sealed class SettingsRowViewModel :
                     : string.Empty;
             return initialValue
                 + runtimePath
-                + $"Current value: {EffectiveValue}. "
                 + ignoredAliases;
         }
     }
