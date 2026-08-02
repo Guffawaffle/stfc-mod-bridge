@@ -85,6 +85,9 @@ public sealed class LauncherAboutCatalogTests
         StringAssert.Contains(catalog.GameAcknowledgement, "does not extend");
         StringAssert.Contains(catalog.LegalReviewStatus, "issue #30");
         Assert.IsTrue(catalog.Contributors.Any(item => item.Name == "NetniV"));
+        var tashcan = catalog.Contributors.Single(item => item.Name == "Tashcan");
+        Assert.IsNull(tashcan.Url);
+        Assert.IsFalse(tashcan.HasUrl);
     }
 
     [TestMethod]

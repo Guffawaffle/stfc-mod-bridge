@@ -1357,6 +1357,7 @@
                             Style="{StaticResource AboutLinkButtonStyle}"
                             Command="{Binding DataContext.About.OpenExternalLinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                             CommandParameter="{Binding Url}" Content="View contribution source"
+                            Visibility="{Binding HasUrl, Converter={StaticResource BooleanToVisibilityConverter}}"
                             automation:AutomationProperties.Name="{Binding Name, StringFormat='Open contribution source for {0}'}" />
                   </StackPanel>
                 </DataTemplate>

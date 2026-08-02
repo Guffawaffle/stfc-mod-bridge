@@ -41,6 +41,7 @@ public sealed class AboutSurfaceTests
         Assert.AreEqual("Guffawaffle/stfc-mod", about.ReleaseRepository);
         Assert.AreEqual("https://github.com/Guffawaffle/stfc-mod", about.RuntimeRepositoryUrl);
         Assert.IsTrue(about.Contributors.Any(item => item.Name == "NetniV"));
+        Assert.IsFalse(about.Contributors.Single(item => item.Name == "Tashcan").HasUrl);
         Assert.IsTrue(about.ThirdPartyNotices.Count >= 3);
         StringAssert.Contains(about.NoticeCoverageStatus, "does not claim legal completeness");
         StringAssert.Contains(about.NoticeCoverageStatus, "issue #30");
@@ -93,6 +94,11 @@ public sealed class AboutSurfaceTests
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Control releases");
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Control license");
         CollectionAssert.Contains(namedButtons, "Open active mod provider repository");
+        var contributionLink = about.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute("Content") == "View contribution source");
+        Assert.AreEqual(
+            "{Binding HasUrl, Converter={StaticResource BooleanToVisibilityConverter}}",
+            (string?)contributionLink.Attribute("Visibility"));
         Assert.IsTrue(
             about.Descendants(Presentation + "Expander")
                 .All(element => element.Attribute(Automation + "AutomationProperties.Name") is not null));

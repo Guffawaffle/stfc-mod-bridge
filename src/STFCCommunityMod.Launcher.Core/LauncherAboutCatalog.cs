@@ -6,7 +6,10 @@ namespace STFCCommunityMod.Launcher.Core;
 public sealed record LauncherContributor(
     string Name,
     string Contribution,
-    string? Url);
+    string? Url)
+{
+    public bool HasUrl => !string.IsNullOrWhiteSpace(Url);
+}
 
 public sealed record LauncherAcknowledgement(
     string Title,
