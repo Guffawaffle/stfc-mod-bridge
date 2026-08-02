@@ -9,132 +9,108 @@ public sealed class GameLaunchHandoffTests
     private static readonly byte[] ArtifactContents = [2, 7, 1, 8, 2, 8];
 
     [TestMethod]
-    public void ModdedAndUnsupportedUnmoddedStatesAreExplicit()
-    {
-        using var temporaryDirectory = new TemporaryDirectory();
-        var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var fixture = CreateFixture(temporaryDirectory);
-
-        var modded = fixture.Coordinator.CapturePresentation(gameDirectory, GameLaunchMode.Modded);
-        var unmodded = fixture.Coordinator.CapturePresentation(gameDirectory, GameLaunchMode.Unmodded);
-
-        Assert.AreEqual("Mod required", modded.Status);
-        Assert.AreEqual("Unmodded unavailable", unmodded.Status);
-        Assert.IsFalse(modded.CanExecute);
-        Assert.IsFalse(unmodded.CanExecute);
-        Assert.IsTrue(unmodded.AutomationName.Contains("cannot safely disable", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
-    public async Task HealthyManagedInstallIsLaunchableWithoutReleaseDiscovery()
+    public async Task HealthyManagedInstallLaunchesPrimeDirectly()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
         var fixture = CreateFixture(temporaryDirectory);
         await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
 
-        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory);
+        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
 
-        Assert.AreEqual("Ready to play", presentation.Status);
-        Assert.AreEqual("Launch game", presentation.ActionLabel);
+        Assert.AreEqual("Launch prime.exe", presentation.ActionLabel);
         Assert.IsTrue(presentation.CanExecute);
-        Assert.AreEqual(0, fixture.LauncherService.StartCount);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+        Assert.AreEqual(0, fixture.ScopelyService.StartCount);
     }
 
     [TestMethod]
-    public async Task ExistingManualInstallIsLaunchableWithoutAdoption()
+    public async Task ScopelyLauncherIsIndependentOfGameFolderAndGameProcess()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), ArtifactContents);
-        var fixture = CreateFixture(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory, isGameRunning: true);
 
-        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory);
-        var launchTask = fixture.Coordinator.LaunchAsync(gameDirectory);
-        await fixture.LauncherService.WaitUntilStartedAsync();
+        var presentation = fixture.Coordinator.CapturePresentation(null, LauncherLaunchTarget.ScopelyLauncher);
+        var result = await fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
 
-        Assert.AreEqual("Ready to play", presentation.Status);
         Assert.IsTrue(presentation.CanExecute);
-        Assert.AreEqual(1, fixture.LauncherService.StartCount);
-        fixture.LauncherService.CompleteExit();
-        var result = await launchTask;
+        Assert.AreEqual("Open Scopely launcher", presentation.ActionLabel);
         Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.ScopelyService.StartCount);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
     }
 
     [TestMethod]
-    public async Task OfficialLauncherMustBeAvailable()
-    {
-        using var temporaryDirectory = new TemporaryDirectory();
-        var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var fixture = CreateFixture(temporaryDirectory, launcherAvailable: false);
-        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
-
-        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory);
-
-        Assert.AreEqual("Official launcher needed", presentation.Status);
-        Assert.IsFalse(presentation.CanExecute);
-    }
-
-    [TestMethod]
-    public async Task LaunchHandoffHoldsDeploymentLockUntilOfficialLauncherExits()
-    {
-        using var temporaryDirectory = new TemporaryDirectory();
-        var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var fixture = CreateFixture(temporaryDirectory);
-        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
-
-        var launchTask = fixture.Coordinator.LaunchAsync(gameDirectory);
-        await fixture.LauncherService.WaitUntilStartedAsync();
-        var concurrentDeployment = await fixture.DeploymentService.DeployAsync(
-            gameDirectory,
-            ReleaseArtifact(),
-            ExistingArtifactPolicy.Reject);
-
-        Assert.AreEqual(ModDeploymentResultState.Busy, concurrentDeployment.State);
-        fixture.LauncherService.CompleteExit();
-        var result = await launchTask;
-        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
-    }
-
-    [TestMethod]
-    public async Task OfficialLauncherExitReevaluatesGameAndModHealth()
-    {
-        using var temporaryDirectory = new TemporaryDirectory();
-        var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var fixture = CreateFixture(temporaryDirectory);
-        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
-
-        var launchTask = fixture.Coordinator.LaunchAsync(gameDirectory);
-        await fixture.LauncherService.WaitUntilStartedAsync();
-        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [0, 0, 0]);
-        fixture.LauncherService.CompleteExit();
-        var result = await launchTask;
-
-        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
-        Assert.AreEqual("Repair required", result.Presentation.Status);
-        Assert.IsFalse(result.Presentation.CanExecute);
-    }
-
-    [TestMethod]
-    public async Task RunningGameBlocksAnotherLaunch()
+    public async Task RunningGameBlocksPrimeWithoutBlockingScopely()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
         var fixture = CreateFixture(temporaryDirectory, isGameRunning: true);
         await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
 
-        var presentation = fixture.Coordinator.CapturePresentation(gameDirectory);
-        var result = await fixture.Coordinator.LaunchAsync(gameDirectory);
+        var prime = fixture.Coordinator.CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
+        var scopely = fixture.Coordinator.CapturePresentation(gameDirectory, LauncherLaunchTarget.ScopelyLauncher);
 
-        Assert.AreEqual("Running", presentation.Status);
-        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
-        Assert.AreEqual(0, fixture.LauncherService.StartCount);
+        Assert.AreEqual("Running", prime.Status);
+        Assert.IsFalse(prime.CanExecute);
+        Assert.IsTrue(scopely.CanExecute);
+    }
+
+    [TestMethod]
+    public async Task MissingTargetsReportDiagnosticRecoveryWithoutStartingAnything()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory, gameAvailable: false, scopelyAvailable: false);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+
+        var prime = fixture.Coordinator.CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
+        var scopely = fixture.Coordinator.CapturePresentation(gameDirectory, LauncherLaunchTarget.ScopelyLauncher);
+
+        Assert.IsFalse(prime.CanExecute);
+        Assert.IsFalse(scopely.CanExecute);
+        StringAssert.Contains(prime.AutomationName, "Diagnostics");
+        StringAssert.Contains(scopely.AutomationName, "Diagnostics");
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+        Assert.AreEqual(0, fixture.ScopelyService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task LaunchFailuresAreReportedThroughTheSelectedTarget()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CreateFixture(temporaryDirectory, scopelyFailure: new IOException("blocked"));
+
+        var result = await fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+
+        Assert.AreEqual(GameLaunchHandoffState.Failed, result.State);
+        StringAssert.Contains(result.Message, "blocked");
+        Assert.AreEqual(1, fixture.ScopelyService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task PrimeLaunchReevaluatesHealthAfterStarting()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+        fixture.GameService.OnStart = () => File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [0, 0, 0]);
+
+        var result = await fixture.Coordinator.LaunchAsync(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual("Repair required", result.Presentation.Status);
     }
 
     private static Fixture CreateFixture(
         TemporaryDirectory temporaryDirectory,
-        bool launcherAvailable = true,
-        bool isGameRunning = false)
+        bool gameAvailable = true,
+        bool scopelyAvailable = true,
+        bool isGameRunning = false,
+        Exception? scopelyFailure = null)
     {
         var stateDirectory = temporaryDirectory.CreateDirectory("state");
         var deploymentService = new ModDeploymentService(
@@ -143,23 +119,20 @@ public sealed class GameLaunchHandoffTests
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
             () => false);
-        var launcherService = new FakeOfficialLauncherService(launcherAvailable);
+        var gameService = new FakeGameExecutableLaunchService(gameAvailable);
+        var scopelyService = new FakeOfficialLauncherService(scopelyAvailable, scopelyFailure);
         var coordinator = new GameLaunchHandoffCoordinator(
             stateDirectory,
             deploymentService,
-            launcherService,
+            gameService,
+            scopelyService,
             new FakeGameProcessInspector(isGameRunning));
-        return new(coordinator, deploymentService, launcherService);
+        return new(coordinator, deploymentService, gameService, scopelyService);
     }
 
-    private static async Task InstallManagedArtifactAsync(
-        ModDeploymentService deploymentService,
-        string gameDirectory)
+    private static async Task InstallManagedArtifactAsync(ModDeploymentService deploymentService, string gameDirectory)
     {
-        var result = await deploymentService.DeployAsync(
-            gameDirectory,
-            ReleaseArtifact(),
-            ExistingArtifactPolicy.Reject);
+        var result = await deploymentService.DeployAsync(gameDirectory, ReleaseArtifact(), ExistingArtifactPolicy.Reject);
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
     }
 
@@ -180,49 +153,49 @@ public sealed class GameLaunchHandoffTests
     private sealed record Fixture(
         GameLaunchHandoffCoordinator Coordinator,
         ModDeploymentService DeploymentService,
-        FakeOfficialLauncherService LauncherService);
+        FakeGameExecutableLaunchService GameService,
+        FakeOfficialLauncherService ScopelyService);
 
     private sealed class FakeGameProcessInspector(bool isRunning) : IGameProcessInspector
     {
         public bool IsGameRunning() => isRunning;
     }
 
-    private sealed class FakeOfficialLauncherService(bool isAvailable) : IOfficialLauncherService
+    private sealed class FakeGameExecutableLaunchService(bool isAvailable) : IGameExecutableLaunchService
     {
-        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int StartCount { get; private set; }
 
+        public Action? OnStart { get; set; }
+
+        public bool IsAvailable(string gameDirectory) => isAvailable;
+
+        public Task StartAsync(string gameDirectory, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartCount++;
+            OnStart?.Invoke();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeOfficialLauncherService(bool isAvailable, Exception? failure) : IOfficialLauncherService
+    {
         public bool IsAvailable { get; } = isAvailable;
 
         public int StartCount { get; private set; }
 
-        public Task<IOfficialLauncherProcess> StartAsync(CancellationToken cancellationToken)
+        public Task StartAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
-            started.TrySetResult();
-            return Task.FromResult<IOfficialLauncherProcess>(new FakeProcess(exited.Task));
-        }
-
-        public Task WaitUntilStartedAsync() => started.Task;
-
-        public void CompleteExit() => exited.TrySetResult();
-
-        private sealed class FakeProcess(Task exitTask) : IOfficialLauncherProcess
-        {
-            public Task WaitForExitAsync(CancellationToken cancellationToken) => exitTask.WaitAsync(cancellationToken);
-
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+            return failure is null ? Task.CompletedTask : Task.FromException(failure);
         }
     }
 
     private sealed class FakeDownloader : IModArtifactDownloader
     {
         public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken) =>
-            Task.FromResult(new ModArtifactDownload(
-                HttpStatusCode.OK,
-                ArtifactContents,
-                ArtifactContents.LongLength));
+            Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, ArtifactContents, ArtifactContents.LongLength));
     }
 
     private sealed class FakeVersionReader : IModArtifactVersionReader

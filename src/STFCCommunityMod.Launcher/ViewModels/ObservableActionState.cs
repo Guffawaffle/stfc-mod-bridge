@@ -47,6 +47,8 @@ public sealed class LauncherActionFeedbackChannels
 
     public ObservableActionState Mod { get; } = new();
 
+    public ObservableActionState Launch { get; } = new();
+
     public ObservableActionState LauncherUpdate { get; } = new();
 
     public bool CanStartModMaintenance(bool externallyAvailable, bool conflictingWork) =>

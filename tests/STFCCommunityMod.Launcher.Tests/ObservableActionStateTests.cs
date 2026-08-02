@@ -156,6 +156,21 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void LaunchFeedbackDoesNotOverwriteModOrLauncherUpdateFeedback()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        channels.Mod.Fail("Mod update failed.");
+        channels.LauncherUpdate.Complete(false, "Launcher is current.");
+
+        Assert.IsTrue(channels.Launch.TryBegin("Launch accepted."));
+        channels.Launch.Complete(true, "prime.exe started.");
+
+        Assert.AreEqual("prime.exe started.", channels.Launch.StatusText);
+        Assert.AreEqual("Mod update failed.", channels.Mod.StatusText);
+        Assert.AreEqual("Launcher is current.", channels.LauncherUpdate.StatusText);
+    }
+
+    [TestMethod]
     public void SuccessfulMaintenanceNoOpIsReportedAsUnchanged()
     {
         var channels = new LauncherActionFeedbackChannels();

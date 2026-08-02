@@ -518,12 +518,49 @@ try {
   Write-Host "PASS: launcher Home exposes community-mod state and action '$($modAction.Current.Name)'."
 
   $launchAction = $homeButtons | Where-Object {
-    $_.Current.Name -match '(?i)^launch (the )?(modded game|game)'
+    $_.Current.Name -match '(?i)^launch prime\.exe'
   } | Select-Object -First 1
   if ($null -eq $launchAction) {
     throw "Launcher Home did not expose an accessible game-launch action."
   }
-  Write-Host "PASS: launcher Home exposes explicit modded-launch state '$($launchAction.Current.Name)'."
+  $launchTargetMenu = Find-AutomationElement `
+    -Root $root `
+    -Name "Choose game launch target" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  if ($launchTargetMenu.Current.BoundingRectangle.Height -lt 43 -or
+      $launchTargetMenu.Current.BoundingRectangle.Width -lt 43) {
+    throw "The launch-target menu segment is smaller than the required 44-DIP target."
+  }
+  Invoke-AutomationElement -Element $launchTargetMenu
+  $menuDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  $desktop = [System.Windows.Automation.AutomationElement]::RootElement
+  $primeChoice = $null
+  $scopelyChoice = $null
+  while (($null -eq $primeChoice -or $null -eq $scopelyChoice) -and
+      [DateTimeOffset]::UtcNow -lt $menuDeadline) {
+    $launcherElements = $desktop.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+        $launcherProcess.Id))
+    $primeChoice = $launcherElements | Where-Object {
+      $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+      $_.Current.Name -match '^Launch prime\.exe'
+    } | Select-Object -First 1
+    $scopelyChoice = $launcherElements | Where-Object {
+      $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+      $_.Current.Name -match '^Open Scopely launcher'
+    } | Select-Object -First 1
+    if ($null -eq $primeChoice -or $null -eq $scopelyChoice) {
+      Start-Sleep -Milliseconds 50
+    }
+  }
+  if ($null -eq $primeChoice -or $null -eq $scopelyChoice) {
+    throw "The launch-target menu did not expose both explicit choices through UI Automation."
+  }
+  [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+  Write-Host "PASS: launcher Home exposes separate prime.exe and Scopely launch choices without invoking either target."
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `

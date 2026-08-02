@@ -16,14 +16,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly LauncherDiagnosticService diagnosticService;
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
+    private readonly ILauncherUiPreferencesStore uiPreferencesStore;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
     private GameLaunchPresentation launchPresentation;
     private string selectionFeedback = string.Empty;
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
-    private bool isLaunchInProgress;
-    private string launchFeedback = string.Empty;
+    private LauncherLaunchTarget selectedLaunchTarget;
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
@@ -31,7 +31,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         GameLaunchHandoffCoordinator gameLaunchCoordinator,
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
-        ILauncherReleaseDiscoveryClient releaseDiscoveryClient)
+        ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
+        ILauncherUiPreferencesStore uiPreferencesStore)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
@@ -39,21 +40,36 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         this.diagnosticService = diagnosticService;
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
+        this.uiPreferencesStore = uiPreferencesStore;
+        selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
-        launchPresentation = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory);
+        launchPresentation = gameLaunchCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            selectedLaunchTarget);
         actionFeedback.Refresh.PropertyChanged += RefreshActionState_PropertyChanged;
         actionFeedback.Mod.PropertyChanged += ModActionState_PropertyChanged;
+        actionFeedback.Launch.PropertyChanged += LaunchActionState_PropertyChanged;
         actionFeedback.LauncherUpdate.PropertyChanged += LauncherUpdateActionState_PropertyChanged;
         RefreshCommand = new ObservableActionCommand(
             actionFeedback.Refresh,
             "Refresh accepted. Checking launcher status…",
             RefreshStatusAsync,
             exception => $"Launcher status refresh failed: {exception.Message}");
+        LaunchPrimaryCommand = new ObservableActionCommand(
+            actionFeedback.Launch,
+            "Launch accepted. Starting the selected target…",
+            LaunchSelectedTargetAsync,
+            exception => $"The selected launch target failed: {exception.Message}");
+        SelectPrimeExecutableCommand = new RelayCommand(
+            () => SelectLaunchTarget(LauncherLaunchTarget.PrimeExecutable));
+        SelectScopelyLauncherCommand = new RelayCommand(
+            () => SelectLaunchTarget(LauncherLaunchTarget.ScopelyLauncher));
         UpdateModActionAvailability();
+        UpdateLaunchActionAvailability();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -90,25 +106,51 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         ? actionFeedback.Mod.AutomationAnnouncement
         : modPresentation.AutomationName;
 
-    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable && !isLaunchInProgress;
+    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable && !actionFeedback.Launch.IsWorking;
 
     public ModManagementActionKind ModActionKind => modPresentation.ActionKind;
 
     public bool CanRecoverMod =>
         modPresentation.ActionKind == ModManagementActionKind.Recover
-        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, isLaunchInProgress);
+        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
     public bool CanUninstallMod =>
         modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
-        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, isLaunchInProgress);
+        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
-    public string LaunchActionLabel => isLaunchInProgress ? "Official launcher open…" : launchPresentation.ActionLabel;
+    public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
 
-    public string LaunchActionAutomationName => isLaunchInProgress
-        ? "Official Star Trek Fleet Command launcher handoff in progress"
+    public string LaunchActionAutomationName => actionFeedback.Launch.IsWorking
+        ? actionFeedback.Launch.AutomationAnnouncement
         : launchPresentation.AutomationName;
 
-    public bool CanLaunchGame => launchPresentation.CanExecute && !isLaunchInProgress && !actionFeedback.Mod.IsWorking;
+    public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable && !actionFeedback.Mod.IsWorking;
+
+    public LauncherLaunchTarget SelectedLaunchTarget => selectedLaunchTarget;
+
+    public bool IsPrimeExecutableSelected => selectedLaunchTarget == LauncherLaunchTarget.PrimeExecutable;
+
+    public bool IsScopelyLauncherSelected => selectedLaunchTarget == LauncherLaunchTarget.ScopelyLauncher;
+
+    public string PrimeExecutableChoiceAutomationName => BuildChoiceAutomationName(
+        LauncherLaunchTarget.PrimeExecutable,
+        "Launch prime.exe");
+
+    public string ScopelyLauncherChoiceAutomationName => BuildChoiceAutomationName(
+        LauncherLaunchTarget.ScopelyLauncher,
+        "Open Scopely launcher");
+
+    public string PrimeExecutableChoiceStatus => BuildChoiceStatus(LauncherLaunchTarget.PrimeExecutable);
+
+    public string ScopelyLauncherChoiceStatus => BuildChoiceStatus(LauncherLaunchTarget.ScopelyLauncher);
+
+    public bool CanOpenLaunchTargetMenu => Enum.IsDefined(selectedLaunchTarget);
+
+    public ICommand LaunchPrimaryCommand { get; }
+
+    public ICommand SelectPrimeExecutableCommand { get; }
+
+    public ICommand SelectScopelyLauncherCommand { get; }
 
     public string ModOperationFeedback => actionFeedback.Mod.StatusText;
 
@@ -116,10 +158,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool IsModOperationInProgress => actionFeedback.Mod.IsWorking;
 
-    public bool IsLaunchInProgress => isLaunchInProgress;
+    public bool IsLaunchInProgress => actionFeedback.Launch.IsWorking;
 
-    public string HomeOperationFeedback => !string.IsNullOrWhiteSpace(launchFeedback)
-        ? launchFeedback
+    public string HomeOperationFeedback => actionFeedback.Launch.HasStatus
+        ? actionFeedback.Launch.StatusText
         : actionFeedback.Mod.StatusText;
 
     public bool HasHomeOperationFeedback => !string.IsNullOrWhiteSpace(HomeOperationFeedback);
@@ -173,12 +215,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         HttpClient httpClient,
         LauncherDistributionProvider distributionProvider,
         LauncherProviderReleaseChannel releaseChannel,
-        string? providerResolutionFailure = null)
+        string? providerResolutionFailure = null,
+        ILauncherUiPreferencesStore? uiPreferencesStore = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(distributionProvider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
+        uiPreferencesStore ??= new JsonLauncherUiPreferencesStore(installLayout.StateDirectory);
         var currentLauncherVersion = CurrentLauncherVersion();
         var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
@@ -218,6 +262,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
             deploymentService,
+            new WindowsGameExecutableLaunchService(),
             officialLauncherService,
             processInspector);
         return new(
@@ -243,7 +288,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 new HttpLauncherArchiveDownloader(httpClient),
                 new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
-            launcherReleaseClient);
+            launcherReleaseClient,
+            uiPreferencesStore);
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -279,7 +325,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         modPresentation = modManagementCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
-        launchPresentation = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory);
+        launchPresentation = gameLaunchCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            selectedLaunchTarget);
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
         OnPropertyChanged(nameof(GameFolderTone));
@@ -297,6 +345,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ConfigurationFilePath));
         OnPropertyChanged(nameof(SelectedGameDirectory));
         UpdateModActionAvailability();
+        UpdateLaunchActionAvailability();
     }
 
     public async Task<ModOperationPreparation?> PrepareModOperationAsync(
@@ -383,33 +432,18 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task<GameLaunchHandoffResult?> LaunchGameAsync(CancellationToken cancellationToken = default)
+    private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
     {
-        if (!CanLaunchGame || snapshot.SelectedGameDirectory is null)
+        var result = await gameLaunchCoordinator.LaunchAsync(
+            snapshot.SelectedGameDirectory,
+            selectedLaunchTarget);
+        RefreshCore();
+        return result.State switch
         {
-            return null;
-        }
-
-        SetLaunchState(true, "Opening the official Star Trek Fleet Command launcher…");
-        try
-        {
-            var result = await gameLaunchCoordinator.LaunchAsync(
-                snapshot.SelectedGameDirectory,
-                GameLaunchMode.Modded,
-                cancellationToken);
-            launchFeedback = result.Message;
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            launchFeedback = "The official-launcher handoff was canceled.";
-            return null;
-        }
-        finally
-        {
-            SetLaunchState(false, launchFeedback);
-            Refresh();
-        }
+            GameLaunchHandoffState.Completed => ObservableActionResult.Changed(result.Message),
+            GameLaunchHandoffState.Failed => ObservableActionResult.Failed(result.Message),
+            _ => ObservableActionResult.Unchanged(result.Message),
+        };
     }
 
     public LauncherDiagnosticPreview BuildDiagnosticPreview() =>
@@ -552,6 +586,58 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private void UpdateModActionAvailability() =>
         actionFeedback.Mod.SetAvailability(modPresentation.CanExecute, modPresentation.AutomationName);
 
+    private void UpdateLaunchActionAvailability() =>
+        actionFeedback.Launch.SetAvailability(
+            launchPresentation.CanExecute && !actionFeedback.Mod.IsWorking,
+            launchPresentation.AutomationName);
+
+    private void SelectLaunchTarget(LauncherLaunchTarget target)
+    {
+        if (selectedLaunchTarget == target)
+        {
+            return;
+        }
+
+        selectedLaunchTarget = target;
+        try
+        {
+            uiPreferencesStore.Save(uiPreferencesStore.Load() with { LaunchTarget = target });
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            // Launcher UI preferences are best-effort; selection remains valid for this session.
+        }
+        launchPresentation = gameLaunchCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            selectedLaunchTarget);
+        OnPropertyChanged(nameof(SelectedLaunchTarget));
+        OnPropertyChanged(nameof(IsPrimeExecutableSelected));
+        OnPropertyChanged(nameof(IsScopelyLauncherSelected));
+        OnPropertyChanged(nameof(PrimeExecutableChoiceAutomationName));
+        OnPropertyChanged(nameof(ScopelyLauncherChoiceAutomationName));
+        OnPropertyChanged(nameof(PrimeExecutableChoiceStatus));
+        OnPropertyChanged(nameof(ScopelyLauncherChoiceStatus));
+        NotifyLaunchPresentationChanged();
+        UpdateLaunchActionAvailability();
+    }
+
+    private string BuildChoiceAutomationName(LauncherLaunchTarget target, string label)
+    {
+        var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
+        var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
+        var availability = choice.CanExecute ? ", available" : $", unavailable, {choice.Status}";
+        return $"{label}{selected}{availability}";
+    }
+
+    private string BuildChoiceStatus(LauncherLaunchTarget target)
+    {
+        var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
+        return choice.CanExecute ? "Available" : $"Unavailable · {choice.Status} · See Diagnostics";
+    }
+
     private HomeState CaptureHomeState() => new(
         snapshot.HealthCode,
         snapshot.IsGameRunning,
@@ -635,19 +721,30 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private void SetLaunchState(bool isInProgress, string feedback)
+    private void LaunchActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        isLaunchInProgress = isInProgress;
-        launchFeedback = feedback;
-        OnPropertyChanged(nameof(IsLaunchInProgress));
-        OnPropertyChanged(nameof(LaunchActionLabel));
-        OnPropertyChanged(nameof(LaunchActionAutomationName));
-        OnPropertyChanged(nameof(CanLaunchGame));
-        OnPropertyChanged(nameof(CanManageMod));
-        OnPropertyChanged(nameof(CanRecoverMod));
-        OnPropertyChanged(nameof(CanUninstallMod));
-        OnPropertyChanged(nameof(HomeOperationFeedback));
-        OnPropertyChanged(nameof(HasHomeOperationFeedback));
+        _ = sender;
+        switch (e.PropertyName)
+        {
+            case nameof(ObservableActionState.IsWorking):
+                OnPropertyChanged(nameof(IsLaunchInProgress));
+                OnPropertyChanged(nameof(LaunchActionLabel));
+                OnPropertyChanged(nameof(CanManageMod));
+                OnPropertyChanged(nameof(CanRecoverMod));
+                OnPropertyChanged(nameof(CanUninstallMod));
+                break;
+            case nameof(ObservableActionState.AutomationAnnouncement):
+                OnPropertyChanged(nameof(LaunchActionAutomationName));
+                break;
+            case nameof(ObservableActionState.StatusText):
+            case nameof(ObservableActionState.HasStatus):
+                OnPropertyChanged(nameof(HomeOperationFeedback));
+                OnPropertyChanged(nameof(HasHomeOperationFeedback));
+                break;
+            case nameof(ObservableActionState.IsCommandAvailable):
+                OnPropertyChanged(nameof(CanLaunchGame));
+                break;
+        }
     }
 
     private void NotifyLaunchPresentationChanged()
@@ -655,6 +752,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(LaunchActionLabel));
         OnPropertyChanged(nameof(LaunchActionAutomationName));
         OnPropertyChanged(nameof(CanLaunchGame));
+        OnPropertyChanged(nameof(PrimeExecutableChoiceAutomationName));
+        OnPropertyChanged(nameof(ScopelyLauncherChoiceAutomationName));
+        OnPropertyChanged(nameof(PrimeExecutableChoiceStatus));
+        OnPropertyChanged(nameof(ScopelyLauncherChoiceStatus));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
