@@ -72,6 +72,43 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task PreparationPassesExactResolvedReleaseChannelToDiscovery()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var deploymentService = CreateDeploymentService(temporaryDirectory);
+        var discoveryClient = new RecordingReleaseDiscoveryClient(ReleaseDiscovery());
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            discoveryClient,
+            new Version(0, 1, 0),
+            "preview");
+
+        _ = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual("preview", discoveryClient.LastChannel);
+    }
+
+    [TestMethod]
+    public void UnresolvedProviderReasonDisablesProviderBoundMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var coordinator = new ModManagementCoordinator(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            providerUnavailableReason: "Selected provider was withdrawn.");
+
+        var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModManagementActionKind.None, presentation.ActionKind);
+        Assert.IsFalse(presentation.CanExecute);
+        Assert.AreEqual("Provider capabilities unknown", presentation.Status);
+        StringAssert.Contains(presentation.AutomationName, "withdrawn");
+    }
+
+    [TestMethod]
     public async Task ManagedArtifactShowsVersionAndDetectsUpToDateRelease()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -134,13 +171,25 @@ public sealed class ModManagementCoordinatorTests
     private static (ModManagementCoordinator Coordinator, ModDeploymentService DeploymentService) CreateCoordinator(
         TemporaryDirectory temporaryDirectory)
     {
-        var deploymentService = new ModDeploymentService(
+        var deploymentService = CreateDeploymentService(temporaryDirectory);
+        return (
+            new(
+                deploymentService,
+                new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+                new Version(0, 1, 0)),
+            deploymentService);
+    }
+
+    private static ModDeploymentService CreateDeploymentService(TemporaryDirectory temporaryDirectory) =>
+        new(
             temporaryDirectory.CreateDirectory("state"),
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
             () => false);
-        var discovery = new WindowsReleaseDiscovery(
+
+    private static WindowsReleaseDiscovery ReleaseDiscovery() =>
+        new(
             new WindowsReleaseManifest(
                 1,
                 "2.1.0-guffa.8",
@@ -152,13 +201,6 @@ public sealed class ModManagementCoordinatorTests
                 "none",
                 []),
             ReleaseArtifact());
-        return (
-            new(
-                deploymentService,
-                new FakeReleaseDiscoveryClient(discovery),
-                new Version(0, 1, 0)),
-            deploymentService);
-    }
 
     private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
     {
@@ -182,6 +224,23 @@ public sealed class ModManagementCoordinatorTests
             Version currentLauncherVersion,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(discovery);
+    }
+
+    private sealed class RecordingReleaseDiscoveryClient(WindowsReleaseDiscovery discovery)
+        : IWindowsReleaseDiscoveryClient
+    {
+        public string? LastChannel { get; private set; }
+
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+            string channel,
+            Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            _ = currentLauncherVersion;
+            _ = cancellationToken;
+            LastChannel = channel;
+            return Task.FromResult(discovery);
+        }
     }
 
     private sealed class FakeDownloader : IModArtifactDownloader

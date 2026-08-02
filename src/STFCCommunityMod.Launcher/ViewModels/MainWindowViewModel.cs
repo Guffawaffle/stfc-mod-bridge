@@ -139,10 +139,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public static MainWindowViewModel CreateDefault(
         HttpClient httpClient,
-        LauncherDistributionProvider distributionProvider)
+        LauncherDistributionProvider distributionProvider,
+        LauncherProviderReleaseChannel releaseChannel,
+        string? providerResolutionFailure = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(distributionProvider);
+        ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
         var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
@@ -152,18 +155,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 BoundedGameInstallCandidateProvider.FromCurrentMachine(),
             ]);
 
-        var providerUnavailableReason = ProviderUnavailableReason(distributionProvider);
+        var providerBinding = LauncherProviderModBinding.Resolve(
+            distributionProvider,
+            releaseChannel,
+            providerResolutionFailure);
         IModArtifactAuthenticityVerifier modArtifactVerifier =
-            distributionProvider.CanAuthenticateWindowsArtifact
-                ? new WindowsAuthenticodeVerifier(distributionProvider.ArtifactPolicy.WindowsPublisher!)
-                : new FailClosedModArtifactAuthenticityVerifier(providerUnavailableReason);
+            providerBinding.IsAvailable
+                ? new WindowsAuthenticodeVerifier(providerBinding.WindowsPublisher!)
+                : new FailClosedModArtifactAuthenticityVerifier(providerBinding.UnavailableReason);
         IWindowsReleaseDiscoveryClient modReleaseClient =
-            distributionProvider.CanUseManifestReleaseDiscovery
+            providerBinding.IsAvailable
                 ? new GitHubWindowsReleaseClient(
                     httpClient,
-                    distributionProvider.DefaultReleaseChannel.Repository,
-                    distributionProvider.DefaultReleaseChannel.ManifestAssetName!)
-                : new UnavailableWindowsReleaseDiscoveryClient(providerUnavailableReason);
+                    providerBinding.Repository,
+                    providerBinding.ManifestAssetName!)
+                : new UnavailableWindowsReleaseDiscoveryClient(providerBinding.UnavailableReason);
 
         var deploymentService = new ModDeploymentService(
             installLayout.StateDirectory,
@@ -190,7 +196,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 deploymentService,
                 modReleaseClient,
                 new Version(0, 1, 0),
-                providerUnavailableReason: providerUnavailableReason),
+                providerBinding.ReleaseChannelId,
+                providerUnavailableReason: providerBinding.UnavailableReason),
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
@@ -204,23 +211,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient);
-    }
-
-    private static string ProviderUnavailableReason(LauncherDistributionProvider provider)
-    {
-        var unavailable = new[]
-            {
-                LauncherProviderCapabilityIds.ReleaseDiscovery,
-                LauncherProviderCapabilityIds.ArtifactTrust,
-            }
-            .Where(capability =>
-                provider.GetCapabilityStatus(capability)
-                    != LauncherProviderCapabilityStatus.Supported)
-            .ToArray();
-        return unavailable.Length == 0
-            ? string.Empty
-            : $"{provider.DisplayName} provider capabilities are unknown or unsupported: "
-                + $"{string.Join(", ", unavailable)}. Mod download and installation fail closed.";
     }
 
     public void ConfirmManualSelection(string gameDirectory)

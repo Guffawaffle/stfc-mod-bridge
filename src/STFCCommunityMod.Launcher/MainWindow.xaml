@@ -28,6 +28,27 @@
   </shell:WindowChrome.WindowChrome>
 
   <Window.Resources>
+    <Style x:Key="ProviderConfirmationTextBoxStyle"
+           TargetType="TextBox">
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Style.Triggers>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource FocusOuterBrush}" />
+          <Setter Property="BorderThickness" Value="2" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
     <Style x:Key="TitleBarColorModeItemStyle"
            TargetType="ComboBoxItem">
       <Setter Property="MinHeight" Value="40" />
@@ -784,6 +805,19 @@
                    TextWrapping="Wrap"
                    automation:AutomationProperties.LiveSetting="Polite" />
       </Border>
+
+      <Border x:Name="ProviderRecoveryBanner"
+              Margin="0,8,0,0"
+              Padding="12,9"
+              Background="{DynamicResource WarningSoftBrush}"
+              CornerRadius="8"
+              Visibility="Collapsed">
+        <TextBlock x:Name="ProviderRecoveryMessage"
+                   FontSize="13"
+                   Foreground="{DynamicResource WarningBrush}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+      </Border>
     </StackPanel>
 
     <views:SettingsView x:Name="SettingsWorkspace"
@@ -981,6 +1015,18 @@
                      TextWrapping="Wrap"
                      automation:AutomationProperties.LiveSetting="Polite" />
         </Border>
+        <StackPanel x:Name="ProviderSwitchConfirmationPanel"
+                    Margin="0,14,0,0"
+                    Visibility="Collapsed">
+          <TextBlock x:Name="ProviderSwitchConfirmationPrompt"
+                     Margin="0,0,0,5"
+                     FontWeight="SemiBold"
+                     Text="Type the provider ID to confirm" />
+          <TextBox x:Name="ProviderSwitchConfirmationInput"
+                   Style="{StaticResource ProviderConfirmationTextBoxStyle}"
+                   TextChanged="ProviderSwitchConfirmationInput_TextChanged"
+                   automation:AutomationProperties.Name="Exact provider ID confirmation" />
+        </StackPanel>
         <WrapPanel Margin="0,18,0,0"
                    HorizontalAlignment="Right">
           <Button Margin="0,0,8,0"

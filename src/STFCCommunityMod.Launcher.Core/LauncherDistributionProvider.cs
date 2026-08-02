@@ -129,10 +129,13 @@ public sealed class LauncherDistributionProvider
         capabilities.GetValueOrDefault(capabilityId, LauncherProviderCapabilityStatus.Unknown);
 
     public bool CanUseManifestReleaseDiscovery =>
+        CanUseManifestReleaseDiscoveryFor(DefaultReleaseChannel);
+
+    public bool CanUseManifestReleaseDiscoveryFor(LauncherProviderReleaseChannel releaseChannel) =>
         GetCapabilityStatus(LauncherProviderCapabilityIds.ReleaseDiscovery)
             == LauncherProviderCapabilityStatus.Supported
-        && DefaultReleaseChannel.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
-        && !string.IsNullOrWhiteSpace(DefaultReleaseChannel.ManifestAssetName);
+        && releaseChannel.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
+        && !string.IsNullOrWhiteSpace(releaseChannel.ManifestAssetName);
 
     public bool CanAuthenticateWindowsArtifact =>
         GetCapabilityStatus(LauncherProviderCapabilityIds.ArtifactTrust)

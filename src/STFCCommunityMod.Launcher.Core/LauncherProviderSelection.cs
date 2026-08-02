@@ -146,6 +146,7 @@ public enum LauncherProviderSelectionResolutionState
     Selected,
     UnknownProvider,
     UnknownReleaseChannel,
+    InvalidSelection,
 }
 
 public sealed record LauncherProviderSelectionResolution(
@@ -158,8 +159,27 @@ public sealed record LauncherProviderSelectionResolution(
     public bool IsResolved => Provider is not null && ReleaseChannel is not null;
 }
 
+public sealed record LauncherProviderShellAccess(
+    bool CanUseProviderBoundModActions,
+    bool CanEditProviderSettings,
+    bool CanChangeProvider,
+    string RestrictionReason)
+{
+    public static LauncherProviderShellAccess From(
+        LauncherProviderSelectionResolution resolution)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+        return resolution.IsResolved
+            ? new(true, true, true, string.Empty)
+            : new(false, false, true, resolution.Message);
+    }
+}
+
 public static class LauncherProviderSelectionResolver
 {
+    private static readonly LauncherProviderSelection InvalidPlaceholder =
+        new("invalid", "invalid");
+
     public static LauncherProviderSelectionResolution Resolve(
         LauncherDistributionProviderCatalog catalog,
         LauncherProviderSelection? persistedSelection)
@@ -198,6 +218,14 @@ public static class LauncherProviderSelectionResolver
                 ? $"Using default provider '{provider.DisplayName}'."
                 : $"Using selected provider '{provider.DisplayName}'.");
     }
+
+    public static LauncherProviderSelectionResolution Invalid(string reason) =>
+        new(
+            LauncherProviderSelectionResolutionState.InvalidSelection,
+            InvalidPlaceholder,
+            null,
+            null,
+            $"The persisted provider selection is unreadable: {reason}");
 }
 
 public enum LauncherProviderCompatibilityKind
@@ -214,6 +242,7 @@ public sealed record LauncherProviderCompatibilityConcern(
 
 public sealed record LauncherProviderSwitchPreview(
     string TransactionId,
+    LauncherProviderSelectionResolutionState SourceResolutionState,
     LauncherProviderSelection Source,
     LauncherProviderSelection Target,
     string SourceDisplayName,
@@ -235,13 +264,33 @@ public sealed record LauncherProviderSwitchResult(
     string? ConfigurationBackupPath,
     string Message);
 
-public sealed class LauncherProviderSourceSwitchService(
-    LauncherDistributionProviderCatalog catalog,
-    ILauncherProviderSelectionStore selectionStore,
-    string stateDirectory)
+public sealed class LauncherProviderSourceSwitchService
 {
     private const long MaximumConfigurationBytes = 8 * 1024 * 1024;
-    private readonly string normalizedStateDirectory = Path.GetFullPath(stateDirectory);
+    private readonly LauncherDistributionProviderCatalog catalog;
+    private readonly ILauncherProviderSelectionStore selectionStore;
+    private readonly string normalizedStateDirectory;
+    private readonly Action<string?>? backupCompleted;
+
+    public LauncherProviderSourceSwitchService(
+        LauncherDistributionProviderCatalog catalog,
+        ILauncherProviderSelectionStore selectionStore,
+        string stateDirectory)
+        : this(catalog, selectionStore, stateDirectory, null)
+    {
+    }
+
+    internal LauncherProviderSourceSwitchService(
+        LauncherDistributionProviderCatalog catalog,
+        ILauncherProviderSelectionStore selectionStore,
+        string stateDirectory,
+        Action<string?>? backupCompleted)
+    {
+        this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        this.selectionStore = selectionStore ?? throw new ArgumentNullException(nameof(selectionStore));
+        normalizedStateDirectory = Path.GetFullPath(stateDirectory);
+        this.backupCompleted = backupCompleted;
+    }
 
     public LauncherProviderSwitchPreview Preview(
         string targetProviderId,
@@ -259,7 +308,7 @@ public sealed class LauncherProviderSourceSwitchService(
                 $"Release channel '{channelId}' is not registered for provider '{targetProvider.Id}'.");
         }
         var target = new LauncherProviderSelection(targetProvider.Id, channelId);
-        if (target == current.Selection)
+        if (current.IsResolved && target == current.Selection)
         {
             throw new InvalidOperationException("The requested provider and release channel are already selected.");
         }
@@ -268,12 +317,13 @@ public sealed class LauncherProviderSourceSwitchService(
         var configurationSha256 = normalizedConfigurationPath is null
             ? null
             : HashConfiguration(normalizedConfigurationPath);
-        var concerns = BuildConcerns(current.Provider!, targetProvider);
+        var concerns = BuildConcerns(current.Provider, targetProvider, current.Message);
         return new(
             Guid.NewGuid().ToString("N"),
+            current.State,
             current.Selection,
             target,
-            current.Provider!.DisplayName,
+            current.Provider?.DisplayName ?? current.Selection.ProviderId,
             targetProvider.DisplayName,
             concerns,
             normalizedConfigurationPath,
@@ -292,7 +342,8 @@ public sealed class LauncherProviderSourceSwitchService(
                 $"Provider switch requires confirmation text '{preview.ConfirmationText}'.");
         }
         var current = ResolveCurrent();
-        if (current.Selection != preview.Source)
+        if (current.State != preview.SourceResolutionState
+            || current.Selection != preview.Source)
         {
             throw new InvalidOperationException(
                 "Provider selection changed after the compatibility preview. Review the switch again.");
@@ -309,6 +360,20 @@ public sealed class LauncherProviderSourceSwitchService(
         }
 
         var backupPath = BackupConfiguration(preview);
+        backupCompleted?.Invoke(backupPath);
+        if (preview.ConfigurationPath is not null
+            && !string.Equals(
+                HashConfiguration(preview.ConfigurationPath),
+                preview.ConfigurationSha256,
+                StringComparison.Ordinal))
+        {
+            if (backupPath is not null && File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+            }
+            throw new InvalidOperationException(
+                "Configuration changed while its provider-switch backup was being prepared. Review the switch again.");
+        }
         try
         {
             selectionStore.Save(preview.Target);
@@ -321,7 +386,7 @@ public sealed class LauncherProviderSourceSwitchService(
         {
             try
             {
-                RestoreSelection(preview.Source);
+                RestoreSelection(preview.SourceResolutionState, preview.Source);
             }
             catch (Exception rollbackException) when (
                 rollbackException is IOException
@@ -345,22 +410,39 @@ public sealed class LauncherProviderSourceSwitchService(
 
     private LauncherProviderSelectionResolution ResolveCurrent()
     {
-        var resolution = LauncherProviderSelectionResolver.Resolve(catalog, selectionStore.Load());
-        if (!resolution.IsResolved)
+        try
         {
-            throw new InvalidDataException(resolution.Message);
+            return LauncherProviderSelectionResolver.Resolve(catalog, selectionStore.Load());
         }
-        return resolution;
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or JsonException
+                or NotSupportedException)
+        {
+            return LauncherProviderSelectionResolver.Invalid(exception.Message);
+        }
     }
 
     private static System.Collections.ObjectModel.ReadOnlyCollection<LauncherProviderCompatibilityConcern> BuildConcerns(
-        LauncherDistributionProvider source,
-        LauncherDistributionProvider target)
+        LauncherDistributionProvider? source,
+        LauncherDistributionProvider target,
+        string sourceResolutionMessage)
     {
         var concerns = new List<LauncherProviderCompatibilityConcern>();
+        if (source is null)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationMigration,
+                    LauncherProviderCompatibilityKind.Unknown,
+                    $"The current source cannot be resolved. {sourceResolutionMessage}"));
+        }
         foreach (var capabilityId in LauncherProviderCapabilityIds.ContractCapabilities)
         {
-            var sourceStatus = source.GetCapabilityStatus(capabilityId);
+            var sourceStatus = source?.GetCapabilityStatus(capabilityId)
+                ?? LauncherProviderCapabilityStatus.Unknown;
             var targetStatus = target.GetCapabilityStatus(capabilityId);
             if (targetStatus == LauncherProviderCapabilityStatus.Unknown)
             {
@@ -380,14 +462,16 @@ public sealed class LauncherProviderSourceSwitchService(
                         $"{target.DisplayName} does not support {capabilityId}."));
             }
         }
-        if (target.Migration.Status == LauncherProviderCapabilityStatus.Unknown
+        if (source is null
+            || target.Migration.Status == LauncherProviderCapabilityStatus.Unknown
             || !target.Migration.CompatibleProviderIds.Contains(source.Id))
         {
+            var sourceName = source?.DisplayName ?? "the unresolved source";
             concerns.Add(
                 new(
                     LauncherProviderCapabilityIds.ConfigurationMigration,
                     LauncherProviderCompatibilityKind.Unknown,
-                    $"Configuration compatibility from {source.DisplayName} to {target.DisplayName} is unknown; TOML will be preserved without normalization."));
+                    $"Configuration compatibility from {sourceName} to {target.DisplayName} is unknown; TOML will be preserved without normalization."));
         }
         if (concerns.Count == 0)
         {
@@ -418,8 +502,17 @@ public sealed class LauncherProviderSourceSwitchService(
         return backupPath;
     }
 
-    private void RestoreSelection(LauncherProviderSelection source)
+    private void RestoreSelection(
+        LauncherProviderSelectionResolutionState sourceState,
+        LauncherProviderSelection source)
     {
+        if (sourceState == LauncherProviderSelectionResolutionState.InvalidSelection)
+        {
+            // JsonLauncherProviderSelectionStore commits with replace/move. An
+            // exception cannot follow a successful replacement, so the corrupt
+            // source remains authoritative and must not be approximated.
+            return;
+        }
         var defaultSelection = new LauncherProviderSelection(
             catalog.DefaultProviderId,
             catalog.DefaultProvider.DefaultReleaseChannelId);
@@ -435,11 +528,17 @@ public sealed class LauncherProviderSourceSwitchService(
 
     private static string? NormalizeOptionalConfigurationPath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        if (string.IsNullOrWhiteSpace(path))
         {
             return null;
         }
         var normalized = Path.GetFullPath(path);
+        if (!File.Exists(normalized))
+        {
+            throw new FileNotFoundException(
+                "The explicitly selected configuration file does not exist.",
+                normalized);
+        }
         var length = new FileInfo(normalized).Length;
         if (length > MaximumConfigurationBytes)
         {

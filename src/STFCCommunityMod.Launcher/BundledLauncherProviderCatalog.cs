@@ -28,26 +28,23 @@ internal static class BundledLauncherProviderCatalog
             assembly.GetManifestResourceStream);
     }
 
-    public static LauncherDistributionProvider LoadDefault() => Load().DefaultProvider;
-
-    public static LauncherDistributionProvider LoadSelected(string stateDirectory)
-    {
-        var context = LoadStartupContext(stateDirectory);
-        if (context.Selection.Provider is null)
-        {
-            throw new InvalidDataException(context.Selection.Message);
-        }
-        return context.Selection.Provider;
-    }
-
     public static LauncherProviderStartupContext LoadStartupContext(string stateDirectory)
     {
         var catalog = Load();
         var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
-        var resolution = LauncherProviderSelectionResolver.Resolve(catalog, selectionStore.Load());
-        if (!resolution.IsResolved)
+        LauncherProviderSelectionResolution resolution;
+        try
         {
-            throw new InvalidDataException(resolution.Message);
+            resolution = LauncherProviderSelectionResolver.Resolve(catalog, selectionStore.Load());
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or System.Text.Json.JsonException
+                or NotSupportedException)
+        {
+            resolution = LauncherProviderSelectionResolver.Invalid(exception.Message);
         }
         return new(catalog, selectionStore, resolution);
     }

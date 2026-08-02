@@ -37,7 +37,26 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void SwitchRequiresExactConfirmationAndPreviewsUnknownCapabilities()
+    public void UnresolvedSelectionRestrictsProviderActionsButKeepsRecoveryAvailable()
+    {
+        var resolution = LauncherProviderSelectionResolver.Resolve(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            new("withdrawn-provider", "stable"));
+
+        var access = LauncherProviderShellAccess.From(resolution);
+
+        Assert.IsFalse(access.CanUseProviderBoundModActions);
+        Assert.IsFalse(access.CanEditProviderSettings);
+        Assert.IsTrue(access.CanChangeProvider);
+        StringAssert.Contains(access.RestrictionReason, "withdrawn-provider");
+    }
+
+    [DataTestMethod]
+    [DataRow("NetniV")]
+    [DataRow("netniv ")]
+    [DataRow("")]
+    public void SwitchRequiresExactStableIdConfirmationAndPreviewsUnknownCapabilities(
+        string incorrectConfirmation)
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
@@ -54,8 +73,20 @@ public sealed class LauncherProviderSelectionTests
             concern.CapabilityId == LauncherProviderCapabilityIds.ArtifactTrust
             && concern.Kind == LauncherProviderCompatibilityKind.Unknown));
         Assert.ThrowsException<InvalidOperationException>(
-            () => service.Execute(preview, "NetniV"));
+            () => service.Execute(preview, incorrectConfirmation));
         Assert.IsNull(store.Load());
+    }
+
+    [TestMethod]
+    public void NonDefaultReleaseChannelResolvesWithoutFallingBack()
+    {
+        var resolution = LauncherProviderSelectionResolver.Resolve(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            new("guffawaffle", "preview"));
+
+        Assert.IsTrue(resolution.IsResolved);
+        Assert.AreEqual("preview", resolution.ReleaseChannel?.Id);
+        Assert.AreEqual("Guffawaffle/stfc-mod", resolution.ReleaseChannel?.Repository);
     }
 
     [TestMethod]
@@ -98,6 +129,93 @@ public sealed class LauncherProviderSelectionTests
 
         Assert.IsNull(store.Load());
         Assert.IsFalse(Directory.Exists(Path.Combine(directory.Path, "provider-switch-backups")));
+    }
+
+    [TestMethod]
+    public void ConfigurationChangeAfterBackupAbortsBeforeSelectionMutation()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            directory.Path,
+            _ => File.AppendAllText(configurationPath, "changed_during_backup = true\n"));
+        var preview = service.Preview("netniv", null, configurationPath);
+
+        var exception = Assert.ThrowsException<InvalidOperationException>(
+            () => service.Execute(preview, preview.ConfirmationText));
+
+        Assert.IsNull(store.Load());
+        StringAssert.Contains(exception.Message, "while its provider-switch backup");
+        Assert.AreEqual(
+            0,
+            Directory.GetFiles(
+                Path.Combine(directory.Path, "provider-switch-backups"),
+                "*.toml").Length);
+    }
+
+    [TestMethod]
+    public void ExplicitMissingConfigurationPathIsRejected()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            directory.Path);
+
+        Assert.ThrowsException<FileNotFoundException>(
+            () => service.Preview(
+                "netniv",
+                null,
+                Path.Combine(directory.Path, "missing.toml")));
+    }
+
+    [TestMethod]
+    public void UnknownPersistedSelectionCanRecoverToKnownProvider()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("withdrawn-provider", "stable"));
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            directory.Path);
+
+        var preview = service.Preview("guffawaffle", "stable", configurationPath);
+        var result = service.Execute(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(
+            LauncherProviderSelectionResolutionState.UnknownProvider,
+            preview.SourceResolutionState);
+        Assert.IsTrue(preview.HasUnknownCompatibility);
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), result.Selection);
+        Assert.AreEqual(result.Selection, store.Load());
+    }
+
+    [TestMethod]
+    public void CorruptPersistedSelectionCanRecoverToKnownProvider()
+    {
+        using var directory = new TemporaryDirectory();
+        var selectionPath = Path.Combine(directory.Path, "provider-selection.json");
+        File.WriteAllText(selectionPath, "{ definitely-not-json");
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            directory.Path);
+
+        var preview = service.Preview("guffawaffle", "stable", null);
+        var result = service.Execute(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(
+            LauncherProviderSelectionResolutionState.InvalidSelection,
+            preview.SourceResolutionState);
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), result.Selection);
+        Assert.AreEqual(result.Selection, store.Load());
     }
 
     [TestMethod]

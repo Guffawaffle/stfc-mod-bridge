@@ -64,18 +64,32 @@ The selected `{ providerId, releaseChannelId }` is stored in
 `provider-selection.json` under launcher state. It is never written to
 `community_patch_settings.toml`. Startup resolves the persisted stable IDs;
 an unknown provider or channel does not silently fall back to the default.
+The resolved channel object—not the provider's default—is carried through
+startup into repository/manifest discovery and the coordinator's exact channel
+argument.
+
+An unknown, withdrawn, or malformed persisted selection starts a restricted
+recovery shell instead of terminating the launcher. Provider-bound mod and
+Settings actions are disabled, the resolution reason is visible, launcher
+self-update remains independent, and Source remains available so a known
+provider can be selected.
 
 Changing source is a small transaction:
 
 1. Resolve both providers and compare every contract capability.
 2. Report supported-to-unsupported loss and every unknown target capability.
-3. Hash the selected TOML and require a separate confirmation action.
+3. Hash the selected TOML and require the user to type the target provider's
+   exact, case-sensitive stable ID in the themed confirmation field.
+   An explicitly supplied configuration path that is missing is an error;
+   only an absent/unspecified path means there is nothing to back up.
 4. Verify the hash is still current and copy the exact bytes to
    `provider-switch-backups/<transaction>.toml`.
-5. Atomically replace only `provider-selection.json`.
-6. If the state write reports failure, restore the previous effective
+5. Rehash the source after the verified backup and immediately before commit,
+   closing the backup-to-selection time-of-check/time-of-use window.
+6. Atomically replace only `provider-selection.json`.
+7. If the state write reports failure, restore the previous effective
    selection. The active TOML is never normalized or rewritten.
-7. Require a launcher restart before the newly selected provider composes mod
+8. Require a launcher restart before the newly selected provider composes mod
    discovery, artifact trust, runtime activation, or configuration editing.
 
 Staged Settings edits block switch review. This avoids discarding an in-memory

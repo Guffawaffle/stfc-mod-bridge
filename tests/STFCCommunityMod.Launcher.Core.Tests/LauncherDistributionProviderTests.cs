@@ -82,6 +82,31 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
+    public void ProviderBindingUsesExactNonDefaultChannelCoordinates()
+    {
+        var contents = File.ReadAllText(FixturePath("guffawaffle-provider-pack.v1.json"));
+        var previewIndex = contents.IndexOf("\"id\": \"preview\"", StringComparison.Ordinal);
+        Assert.IsTrue(previewIndex > 0);
+        var repositoryIndex = contents.IndexOf(
+            "Guffawaffle/stfc-mod",
+            previewIndex,
+            StringComparison.Ordinal);
+        Assert.IsTrue(repositoryIndex > previewIndex);
+        contents = contents.Remove(repositoryIndex, "Guffawaffle/stfc-mod".Length)
+            .Insert(repositoryIndex, "PreviewOwner/stfc-mod-preview");
+        using var stream = JsonStream(contents);
+        var provider = LauncherDistributionProviderCatalogLoader.LoadPack(stream);
+        var preview = provider.ReleaseChannels["preview"];
+
+        var binding = LauncherProviderModBinding.Resolve(provider, preview);
+
+        Assert.IsTrue(binding.IsAvailable);
+        Assert.AreEqual("preview", binding.ReleaseChannelId);
+        Assert.AreEqual("PreviewOwner/stfc-mod-preview", binding.Repository);
+        Assert.AreEqual("stfc-community-mod-release-manifest.json", binding.ManifestAssetName);
+    }
+
+    [TestMethod]
     public void PortableProviderPackSchemaIsVersioned()
     {
         using var stream = File.OpenRead(FixturePath("provider-pack.schema.v1.json"));
