@@ -59,9 +59,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         actionFeedback.LauncherUpdate.PropertyChanged += LauncherUpdateActionState_PropertyChanged;
         RefreshCommand = new ObservableActionCommand(
             actionFeedback.Refresh,
-            "Refresh accepted. Checking launcher status…",
+            "Refresh accepted. Checking Mod Control status…",
             RefreshStatusAsync,
-            exception => $"Launcher status refresh failed: {exception.Message}");
+            exception => $"Mod Control status refresh failed: {exception.Message}");
         LaunchPrimaryCommand = new ObservableActionCommand(
             actionFeedback.Launch,
             "Launch accepted. Starting the selected target…",
@@ -179,19 +179,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public string RefreshActionAutomationName => actionFeedback.Refresh.IsWorking
         ? actionFeedback.Refresh.AutomationAnnouncement
-        : "Refresh launcher status";
+        : "Refresh Mod Control status";
 
     public string RefreshActionStatus => actionFeedback.Refresh.StatusText;
 
     public bool CanRefresh => actionFeedback.Refresh.IsCommandAvailable;
 
     public string LauncherUpdateActionLabel => actionFeedback.LauncherUpdate.IsWorking
-        ? "Checking for launcher update…"
-        : "Check launcher _update";
+        ? "Checking for Mod Control update…"
+        : "Check Mod Control _update";
 
     public string LauncherUpdateActionAutomationName => actionFeedback.LauncherUpdate.IsWorking
         ? actionFeedback.LauncherUpdate.AutomationAnnouncement
-        : "Check for a launcher self-update";
+        : "Check for a Mod Control self-update";
 
     public string LauncherUpdateFeedback => actionFeedback.LauncherUpdate.StatusText;
 
@@ -315,8 +315,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         RefreshCore();
         var changed = before != CaptureHomeState();
         return changed
-            ? ObservableActionResult.Changed("Launcher status refreshed. The displayed status changed.")
-            : ObservableActionResult.Unchanged("Launcher status is up to date. No changes were found.");
+            ? ObservableActionResult.Changed("Mod Control status refreshed. The displayed status changed.")
+            : ObservableActionResult.Unchanged("Mod Control status is up to date. No changes were found.");
     }
 
     private void RefreshCore()
@@ -466,7 +466,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public async Task<LauncherUpdatePreparation?> PrepareLauncherUpdateAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!actionFeedback.LauncherUpdate.TryBegin("Launcher update check accepted. Checking for an update…"))
+        if (!actionFeedback.LauncherUpdate.TryBegin("Mod Control update check accepted. Checking for an update…"))
         {
             return null;
         }
@@ -488,7 +488,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException)
         {
-            actionFeedback.LauncherUpdate.Cancel("The launcher update check was canceled or timed out.");
+            actionFeedback.LauncherUpdate.Cancel("The Mod Control update check was canceled or timed out.");
             return null;
         }
         catch (Exception exception) when (
@@ -498,7 +498,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 or IOException
                 or UnauthorizedAccessException)
         {
-            actionFeedback.LauncherUpdate.Fail($"The launcher update could not be prepared: {exception.Message}");
+            actionFeedback.LauncherUpdate.Fail($"The Mod Control update could not be prepared: {exception.Message}");
             return null;
         }
     }
@@ -517,7 +517,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private static Version CurrentLauncherVersion() =>
         Assembly.GetEntryAssembly()?.GetName().Version
-        ?? throw new InvalidOperationException("The launcher assembly version is unavailable.");
+        ?? throw new InvalidOperationException("The Mod Control assembly version is unavailable.");
 
     public async Task<ModDeploymentResult?> RecoverModAsync(CancellationToken cancellationToken = default)
     {
@@ -538,7 +538,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             return null;
         }
         return await ExecuteMaintenanceAsync(
-            "Removing the launcher-managed community mod…",
+            "Removing the Mod Control-managed community mod…",
             modManagementCoordinator.UninstallAsync,
             cancellationToken);
     }

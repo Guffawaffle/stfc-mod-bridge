@@ -233,7 +233,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string OpenRawTomlAvailability =>
         CanOpenRawToml
             ? "Open the active configuration as raw TOML."
-            : "Raw TOML becomes available after the launcher selects an active configuration.";
+            : "Raw TOML becomes available after Mod Control selects an active configuration.";
 
     public bool IsConfigurationReady => workspace is not null;
 
@@ -366,7 +366,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 LauncherSettingsSection.About,
                 "About",
                 "Release source, configuration ownership, and technical escape hatches.",
-                "About launcher settings",
+                "About Mod Control settings",
                 SelectSection));
         return sections.AsReadOnly();
     }
@@ -640,7 +640,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 "Changes saved. A backup of the previous TOML is available beside the configuration.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
-                "The TOML changed outside the launcher. Those external edits were preserved; reload before saving.",
+                "The TOML changed outside Mod Control. Those external edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid =>
                 $"Nothing was written because the TOML is not safe to update: {result.ValidationError?.Message}",
             AtomicTomlWriteState.NoConfigurationSelected =>

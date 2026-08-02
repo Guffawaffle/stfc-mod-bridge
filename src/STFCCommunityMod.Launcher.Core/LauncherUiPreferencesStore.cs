@@ -90,7 +90,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         ArgumentNullException.ThrowIfNull(preferences);
 
         var parentDirectory = Path.GetDirectoryName(preferencesPath)
-            ?? throw new InvalidOperationException("The launcher preferences file has no parent directory.");
+            ?? throw new InvalidOperationException("The Mod Control preferences file has no parent directory.");
         Directory.CreateDirectory(parentDirectory);
 
         var temporaryPath = Path.Combine(

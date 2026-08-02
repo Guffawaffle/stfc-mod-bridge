@@ -122,7 +122,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: STFC Mod Launcher
+          description: STFC Mod Control
           description-url: https://github.com/Guffawaffle/stfc-mod-launcher
 
       - name: Repackage signed payload and rebuild setup
@@ -147,7 +147,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: STFC Mod Launcher Setup
+          description: STFC Mod Control Setup
           description-url: https://github.com/Guffawaffle/stfc-mod-launcher
 
       - name: Verify every release PE and inspect package boundary
@@ -208,7 +208,7 @@ jobs:
             "$root/stfc-mod-launcher-release-manifest.json"
           )
           $notes = @"
-          Install STFC Mod Launcher with `STFCCommunityMod.Launcher.Setup.exe`.
+          Install STFC Mod Control with `STFCCommunityMod.Launcher.Setup.exe`.
 
           The ZIP and JSON assets are machine-consumed self-update inputs, not alternate installation packages.
           "@
@@ -218,7 +218,7 @@ jobs:
             "release", "create", $env:RELEASE_TAG,
             "--repo", $env:RELEASE_REPOSITORY,
             "--verify-tag",
-            "--title", "STFC Mod Launcher $env:RELEASE_VERSION",
+            "--title", "STFC Mod Control $env:RELEASE_VERSION",
             "--notes-file", $notesPath
           )
           if ($env:RELEASE_IS_PRERELEASE -eq "True") {

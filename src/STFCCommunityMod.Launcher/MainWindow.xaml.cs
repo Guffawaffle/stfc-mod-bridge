@@ -325,8 +325,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         var dialog = new SaveFileDialog
         {
-            Title = "Export redacted launcher diagnostics",
-            FileName = $"stfc-launcher-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            Title = "Export redacted Mod Control diagnostics",
+            FileName = $"stfc-mod-control-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
             DefaultExt = ".json",
             Filter = "JSON diagnostics (*.json)|*.json",
             AddExtension = true,
@@ -432,10 +432,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         pendingMaintenanceAction = action;
         MaintenanceDialog.DialogTitle = action == MaintenanceAction.Recover
             ? "Recover mod transaction?"
-            : "Remove launcher-managed mod?";
+            : "Remove Mod Control-managed mod?";
         MaintenanceSummary.Text = action == MaintenanceAction.Recover
             ? "Roll back the incomplete transaction using its persisted journal. Only version.dll and transaction-scoped allowlisted files can change."
-            : "Remove launcher-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
+            : "Remove Mod Control-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
         MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
         ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
         MaintenanceDialog.IsOpen = true;
@@ -497,7 +497,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ProviderSwitchConfirmationInput.Text = string.Empty;
         ProviderSwitchPreviewText.Text = providerSelectionPendingRestart is null
             ? "Choose another provider, then review compatibility before switching."
-            : "The selected source is saved. Restart the launcher before reviewing another switch.";
+            : "The selected source is saved. Restart Mod Control before reviewing another switch.";
         UpdateProviderCapabilityText();
         ProviderSwitchDialog.IsOpen = true;
         _ = Dispatcher.BeginInvoke(
@@ -519,7 +519,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));
         ProviderSwitchPreviewText.Text = ReviewProviderSwitchButton.IsEnabled
             ? "Review the compatibility evidence and backup boundary before switching."
-            : "This provider is active for the current launcher process.";
+            : "This provider is active for the current Mod Control process.";
         UpdateProviderCapabilityText();
     }
 
@@ -550,7 +550,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     concern => $"• {concern.Kind}: {concern.Message}"));
             var backup = pendingProviderSwitch.ConfigurationPath is null
                 ? "No configuration file is currently selected, so no TOML backup is needed."
-                : "The exact TOML bytes will be copied to launcher-owned rollback storage before the selection changes.";
+                : "The exact TOML bytes will be copied to Mod Control-owned rollback storage before the selection changes.";
             ProviderSwitchPreviewText.Text =
                 $"{pendingProviderSwitch.SourceDisplayName} → {pendingProviderSwitch.TargetDisplayName}"
                 + Environment.NewLine
@@ -765,7 +765,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.ToolTip = helpText;
         AutomationProperties.SetName(
             ColorModeSelector,
-            $"Launcher color mode, {selectedColorMode}");
+            $"Mod Control color mode, {selectedColorMode}");
         AutomationProperties.SetHelpText(ColorModeSelector, helpText);
     }
 
@@ -777,7 +777,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         MaximizeRestoreButton.ToolTip = isMaximized ? "Restore" : "Maximize";
         AutomationProperties.SetName(
             MaximizeRestoreButton,
-            isMaximized ? "Restore launcher" : "Maximize launcher");
+            isMaximized ? "Restore Mod Control" : "Maximize Mod Control");
     }
 
     private void SetSettingsWorkspaceOpen(bool isOpen)

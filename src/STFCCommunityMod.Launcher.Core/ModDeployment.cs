@@ -106,7 +106,7 @@ public sealed partial class ModDeploymentService
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
         }
 
         ModDeploymentJournal? incompleteJournal;
@@ -120,7 +120,7 @@ public sealed partial class ModDeploymentService
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Launcher deployment state could not be read: {exception.Message}");
+                $"Mod Control deployment state could not be read: {exception.Message}");
         }
         if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
         {
@@ -138,7 +138,7 @@ public sealed partial class ModDeploymentService
             {
                 return new(
                     ModDeploymentResultState.RecoveryRequired,
-                    "Launcher-managed mod state belongs to a different game installation; remove or repair it first.");
+                    "Mod Control-managed mod state belongs to a different game installation; remove or repair it first.");
             }
             if ((!hadExistingArtifact
                 || !string.Equals(
@@ -149,7 +149,7 @@ public sealed partial class ModDeploymentService
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
-                    "The installed version.dll no longer matches launcher-managed state; repair is required.");
+                    "The installed version.dll no longer matches Mod Control-managed state; repair is required.");
             }
             isManagedUpdate = true;
         }
@@ -160,7 +160,7 @@ public sealed partial class ModDeploymentService
         {
             return new(
                 ModDeploymentResultState.ExistingArtifactRequiresAdoption,
-                "An existing version.dll requires explicit adoption before the launcher can replace it.");
+                "An existing version.dll requires explicit adoption before Mod Control can replace it.");
         }
 
         Directory.CreateDirectory(stateDirectory);
@@ -272,7 +272,7 @@ public sealed partial class ModDeploymentService
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
         }
 
         ModDeploymentJournal? incompleteJournal;
@@ -286,7 +286,7 @@ public sealed partial class ModDeploymentService
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Launcher deployment state could not be read: {exception.Message}");
+                $"Mod Control deployment state could not be read: {exception.Message}");
         }
         if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
         {
@@ -297,7 +297,7 @@ public sealed partial class ModDeploymentService
 
         if (installedState is null)
         {
-            return new(ModDeploymentResultState.Succeeded, "No launcher-managed mod installation was found.");
+            return new(ModDeploymentResultState.Succeeded, "No Mod Control-managed mod installation was found.");
         }
 
         var validation = GameInstallValidator.Validate(installedState.GameDirectory);
@@ -312,7 +312,7 @@ public sealed partial class ModDeploymentService
         {
             return new(
                 ModDeploymentResultState.ManagedArtifactChanged,
-                "The installed version.dll no longer matches launcher-managed state; it was not removed.");
+                "The installed version.dll no longer matches Mod Control-managed state; it was not removed.");
         }
 
         var transactionId = Guid.NewGuid().ToString("N");
@@ -355,7 +355,7 @@ public sealed partial class ModDeploymentService
             DeleteIfExists(removedArtifactPath);
             return new(
                 ModDeploymentResultState.Succeeded,
-                "The launcher-managed mod was removed.",
+                "The Mod Control-managed mod was removed.",
                 Changed: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -384,7 +384,7 @@ public sealed partial class ModDeploymentService
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another launcher mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
         }
 
         ModDeploymentJournal? journal;
@@ -398,7 +398,7 @@ public sealed partial class ModDeploymentService
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Launcher deployment state could not be read: {exception.Message}");
+                $"Mod Control deployment state could not be read: {exception.Message}");
         }
         if (journal is null || IsTerminal(journal.Phase))
         {

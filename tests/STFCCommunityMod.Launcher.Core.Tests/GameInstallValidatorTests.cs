@@ -30,7 +30,7 @@ public sealed class GameInstallValidatorTests
 
         Assert.AreEqual(GameInstallValidationCode.OfficialLauncherDirectory, result.Code);
         Assert.IsFalse(result.IsValid);
-        StringAssert.Contains(result.Message, "official launcher");
+        StringAssert.Contains(result.Message, "Scopely launcher");
     }
 
     [TestMethod]

@@ -165,7 +165,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public string PendingChangesText => HasPendingChanges ? "Unsaved data sync changes" : "No unsaved data sync changes";
 
     public string SaveAvailability => IsStale
-        ? "The TOML changed outside the launcher. Reload before saving."
+        ? "The TOML changed outside Mod Control. Reload before saving."
         : hasSiblingPendingChanges()
             ? "Save or discard the pending non-sync settings before saving Data Sync."
         : !IsCommittable
@@ -469,7 +469,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         {
             AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
             AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
-            AtomicTomlWriteState.Conflict => "The TOML changed outside the launcher. External edits were preserved; reload before saving.",
+            AtomicTomlWriteState.Conflict => "The TOML changed outside Mod Control. External edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid => $"Nothing was written: {result.ValidationError?.Message ?? FirstPlanDiagnostic(result)}",
             _ => $"Data Sync could not be saved: {result.Error}",
         };

@@ -1246,7 +1246,7 @@
             <TextBlock Margin="0,8,0,0"
                        FontSize="13"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="The launcher stages sparse changes for the selected release source. Runtime defaults remain owned by the mod, and unknown TOML keys and comments are preserved." />
+                       Text="Mod Control stages sparse changes for the selected release source. Runtime defaults remain owned by the mod, and unknown TOML keys and comments are preserved." />
             <TextBlock Margin="0,18,0,0"
                        FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}"

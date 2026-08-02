@@ -46,7 +46,7 @@ public static class LauncherConfigurationSchemaLoader
         catch (JsonException exception)
         {
             throw new LauncherConfigurationSchemaException(
-                "The launcher configuration schema is not valid JSON.",
+                "The Mod Control configuration schema is not valid JSON.",
                 exception);
         }
     }
@@ -67,7 +67,7 @@ public static class LauncherConfigurationSchemaLoader
         {
             throw Invalid(
                 $"Unsupported schema version '{schemaVersionText}'. "
-                + $"This launcher supports {SupportedSchemaVersion}.");
+                + $"Mod Control supports {SupportedSchemaVersion}.");
         }
 
         var sourceElement = ReadRequiredProperty(root, "source", "schema root");

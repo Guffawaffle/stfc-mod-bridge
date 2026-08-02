@@ -57,7 +57,7 @@ public sealed class AdvancedPatchEditingGateViewModel : SettingsListItemViewMode
     public string StateTitle => IsUnlocked ? "Patch editing enabled" : "Patch editing locked";
 
     public string StateDescription => IsUnlocked
-        ? "Patch controls are available for this launcher session. Lock them again when you are finished editing."
+        ? "Patch controls are available for this Mod Control session. Lock them again when you are finished editing."
         : IsConfigurationAvailable
             ? "Review the current effective values below. A deliberate acknowledgement is required before editor controls are created."
             : "No editable configuration is selected. The values below are schema defaults, not effective configured values.";
@@ -73,7 +73,7 @@ public sealed class AdvancedPatchEditingGateViewModel : SettingsListItemViewMode
         : "Schema-default patch values (configuration unavailable)";
 
     public string EnableAvailability => IsConfigurationAvailable
-        ? "Acknowledge the warning to enable patch controls for this launcher session."
+        ? "Acknowledge the warning to enable patch controls for this Mod Control session."
         : "Select a game folder with a supported configuration before enabling patch editing.";
 
     public string EnableAutomationHelp => $"{WarningText} {EnableAvailability}";

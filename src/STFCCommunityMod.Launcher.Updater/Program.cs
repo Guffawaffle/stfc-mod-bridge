@@ -21,7 +21,7 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             ?? throw new InvalidDataException("Update plan is empty.");
         ValidatePlan(plan, planPath);
         await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
-            ?? throw new InvalidOperationException("Another launcher operation is already in progress.");
+            ?? throw new InvalidOperationException("Another Mod Control operation is already in progress.");
         try
         {
             using var parent = Process.GetProcessById(plan.ParentProcessId);
@@ -51,7 +51,7 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             {
                 UseShellExecute = true,
                 WorkingDirectory = plan.TargetDirectory,
-            }) ?? throw new InvalidOperationException("The updated launcher did not start.");
+            }) ?? throw new InvalidOperationException("The updated Mod Control did not start.");
             var deadline = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
             {
