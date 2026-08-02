@@ -42,7 +42,7 @@ public sealed record GameLaunchPresentation(
         LauncherLaunchRecoveryAction.RecoverModTransaction => "Recover the mod transaction",
         LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher => "Install or repair the Scopely launcher",
         LauncherLaunchRecoveryAction.OpenDiagnostics => "Open Diagnostics",
-        LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active launcher operation",
+        LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active Mod Control operation",
         _ => string.Empty,
     };
 }
@@ -137,7 +137,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsAvailable)
         {
-            throw new FileNotFoundException("The official Star Trek Fleet Command launcher is unavailable.", launcherPath);
+            throw new FileNotFoundException("The Scopely launcher is unavailable.", launcherPath);
         }
 
         var existingProcess = findRunningLauncher();
@@ -171,7 +171,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         });
         if (process is null)
         {
-            throw new InvalidOperationException("Windows did not start the official Star Trek Fleet Command launcher.");
+            throw new InvalidOperationException("Windows did not start the Scopely launcher.");
         }
         return new TrackedProcess(process);
     }
@@ -281,7 +281,7 @@ public sealed class GameLaunchHandoffCoordinator(
         {
             return officialLauncherService.IsAvailable
                 ? new(
-                    "Official launcher available",
+                    "Scopely launcher available",
                     LauncherHomeTone.Success,
                     "Open Scopely launcher",
                     true,
@@ -290,7 +290,7 @@ public sealed class GameLaunchHandoffCoordinator(
                     "The supported per-user Scopely launcher is available.",
                     LauncherLaunchRecoveryAction.None)
                 : Blocked(
-                    "Official launcher needed",
+                    "Scopely launcher needed",
                     "Open Scopely launcher",
                     "The supported per-user Scopely launcher could not be found.",
                     target,
@@ -327,13 +327,13 @@ public sealed class GameLaunchHandoffCoordinator(
             {
                 Status = "Operation in progress",
                 CanExecute = false,
-                Reason = "Another launcher operation currently owns the game-operation boundary.",
+                Reason = "Another Mod Control operation currently owns the game-operation boundary.",
                 NextAction = LauncherLaunchRecoveryAction.WaitForLauncherOperation,
-                AutomationName = $"{initial.ActionLabel} unavailable: another launcher operation is active.",
+                AutomationName = $"{initial.ActionLabel} unavailable: another Mod Control operation is active.",
             };
             return new(
                 GameLaunchHandoffState.Busy,
-                $"Another launcher operation is active. Wait for it to finish before using {initial.ActionLabel}.",
+                $"Another Mod Control operation is active. Wait for it to finish before using {initial.ActionLabel}.",
                 busyPresentation,
                 Changed: false);
         }
@@ -506,7 +506,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 return Blocked(
                     "Repair required",
                     "Launch prime.exe",
-                    "Repair the launcher-managed mod before launching.",
+                    "Repair the Mod Control-managed mod before launching.",
                     target,
                     LauncherLaunchRecoveryAction.RepairMod);
             }

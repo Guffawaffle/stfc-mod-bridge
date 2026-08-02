@@ -136,11 +136,11 @@ public sealed class LauncherDiagnosticService(
             ? Attention("Game process", "Star Trek Fleet Command is running.", "Close the game before repair or removal.")
             : Healthy("Game process", "Star Trek Fleet Command is not running."));
         health.Add(officialLauncherService.IsAvailable
-            ? Healthy("Official launcher", "The supported per-user official launcher is available.")
+            ? Healthy("Scopely launcher", "The supported per-user Scopely launcher is available.")
             : Attention(
-                "Official launcher",
-                "The supported per-user official launcher is unavailable.",
-                "Install or repair the official Star Trek Fleet Command launcher."));
+                "Scopely launcher",
+                "The supported per-user Scopely launcher is unavailable.",
+                "Install or repair the Scopely launcher."));
 
         AddDeploymentFacts(health, validGameDirectory);
         AddConfigurationFact(health, validGameDirectory);
@@ -211,14 +211,14 @@ public sealed class LauncherDiagnosticService(
             var state = deploymentService.ReadInstalledState();
             if (state is null)
             {
-                health.Add(Attention("Community mod", "No launcher-managed mod is installed.", "Install or adopt the mod."));
+                health.Add(Attention("Community mod", "No Mod Control-managed mod is installed.", "Install or adopt the mod."));
                 return;
             }
             if (gameDirectory is null || !PathEquals(state.GameDirectory, gameDirectory))
             {
                 health.Add(Attention(
                     "Community mod",
-                    "Launcher-managed state belongs to a different or unavailable game folder.",
+                    "Mod Control-managed state belongs to a different or unavailable game folder.",
                     "Select the managed game folder or review removal with support."));
                 return;
             }
@@ -233,17 +233,17 @@ public sealed class LauncherDiagnosticService(
             {
                 health.Add(Attention(
                     "Community mod",
-                    "version.dll exceeds the launcher verification limit.",
-                    "Use Repair; the launcher will not load the oversized file into diagnostics."));
+                    "version.dll exceeds the Mod Control verification limit.",
+                    "Use Repair; Mod Control will not load the oversized file into diagnostics."));
                 return;
             }
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(targetPath)));
             health.Add(string.Equals(hash, state.Sha256, StringComparison.OrdinalIgnoreCase)
-                ? Healthy("Community mod", $"Launcher-managed version {state.Version} matches its SHA-256 identity.")
+                ? Healthy("Community mod", $"Mod Control-managed version {state.Version} matches its SHA-256 identity.")
                 : Attention(
                     "Community mod",
-                    "version.dll differs from launcher-managed state.",
-                    "Use Repair; the launcher will not delete an unknown artifact."));
+                    "version.dll differs from Mod Control-managed state.",
+                    "Use Repair; Mod Control will not delete an unknown artifact."));
         }
         catch (Exception exception) when (
             exception is InvalidDataException or IOException or UnauthorizedAccessException)

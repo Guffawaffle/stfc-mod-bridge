@@ -6,7 +6,7 @@
         xmlns:core="clr-namespace:STFCCommunityMod.Launcher.Core;assembly=STFCCommunityMod.Launcher.Core"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
-        Title="STFC Community Mod Launcher"
+        Title="STFC Mod Control"
         Width="960"
         Height="680"
         MinWidth="960"
@@ -18,7 +18,7 @@
         WindowStyle="None"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True"
-        automation:AutomationProperties.Name="STFC Community Mod Launcher">
+        automation:AutomationProperties.Name="STFC Mod Control">
   <shell:WindowChrome.WindowChrome>
     <shell:WindowChrome CaptionHeight="56"
                         ResizeBorderThickness="6"
@@ -292,10 +292,10 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource QuietButtonStyle}"
                 Click="SettingsNavigationButton_Click"
-                ToolTip="Open launcher settings"
+                ToolTip="Open Mod Control settings"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open launcher settings"
-                automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and launcher settings.">
+                automation:AutomationProperties.Name="Open Mod Control settings"
+                automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and Mod Control settings.">
           <StackPanel Orientation="Horizontal">
             <controls:AppIcon Width="18"
                               Height="18"
@@ -318,11 +318,11 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource QuietButtonStyle}"
                 Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}"
-                ToolTip="Return to launcher home"
+                ToolTip="Return to Mod Control home"
                 Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Return to launcher home"
-                automation:AutomationProperties.HelpText="Return to the launcher home screen.">
+                automation:AutomationProperties.Name="Return to Mod Control home"
+                automation:AutomationProperties.HelpText="Return to the Mod Control home screen.">
           <StackPanel Orientation="Horizontal">
             <controls:AppIcon Width="18"
                               Height="18"
@@ -370,9 +370,9 @@
                 VerticalAlignment="Center"
                 Click="DiagnosticsButton_Click"
                 Content="Diagnostics"
-                ToolTip="Preview redacted launcher diagnostics"
+                ToolTip="Preview redacted Mod Control diagnostics"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open redacted launcher diagnostics"
+                automation:AutomationProperties.Name="Open redacted Mod Control diagnostics"
                 automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically.">
           <Button.Style>
             <Style BasedOn="{StaticResource QuietButtonStyle}"
@@ -494,10 +494,10 @@
                 Style="{StaticResource TitleBarColorModeComboBoxStyle}"
                 SelectedValuePath="Mode"
                 SelectionChanged="ColorModeSelector_SelectionChanged"
-                ToolTip="Choose how the launcher follows light and dark appearance."
+                ToolTip="Choose how Mod Control follows light and dark appearance."
                 Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Launcher color mode"
+                automation:AutomationProperties.Name="Mod Control color mode"
                 automation:AutomationProperties.HelpText="Choose System, Light, or Dark. System follows the Windows app theme." />
       <StackPanel Grid.Column="3"
                   Orientation="Horizontal">
@@ -505,7 +505,7 @@
                 Click="MinimizeButton_Click"
                 ToolTip="Minimize"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Minimize launcher">
+                automation:AutomationProperties.Name="Minimize Mod Control">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -523,7 +523,7 @@
                 Click="MaximizeRestoreButton_Click"
                 ToolTip="Maximize"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Maximize launcher">
+                automation:AutomationProperties.Name="Maximize Mod Control">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -546,7 +546,7 @@
                 Click="CloseButton_Click"
                 ToolTip="Close"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Close launcher">
+                automation:AutomationProperties.Name="Close Mod Control">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -893,7 +893,7 @@
                     Click="ReleaseSourceButton_Click"
                     Content="Source"
                     automation:AutomationProperties.Name="Review community mod release source"
-                    automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the launcher-owned mod release source." />
+                    automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the Mod Control-owned mod release source." />
             <Button MinHeight="44"
                     Style="{StaticResource QuietButtonStyle}"
                     Click="ModActionButton_Click"
@@ -987,8 +987,8 @@
     <controls:InAppDialog x:Name="DiagnosticsDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Launcher diagnostics"
-                          automation:AutomationProperties.Name="Redacted launcher diagnostics dialog">
+                          DialogTitle="Mod Control diagnostics"
+                          automation:AutomationProperties.Name="Redacted Mod Control diagnostics dialog">
       <StackPanel Width="388">
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="Preview before copying or exporting. Paths, tokens, cookies, and endpoints are redacted. Nothing is uploaded automatically."
@@ -1044,7 +1044,7 @@
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod"
                   IsEnabled="{Binding CanUninstallMod}"
-                  automation:AutomationProperties.Name="Remove launcher-managed community mod" />
+                  automation:AutomationProperties.Name="Remove Mod Control-managed community mod" />
           <Button Margin="0,0,0,8"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="CheckLauncherUpdateButton_Click"
@@ -1058,15 +1058,15 @@
     <controls:InAppDialog x:Name="LauncherUpdateDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Install launcher update?"
-                          automation:AutomationProperties.Name="Launcher self-update confirmation dialog">
+                          DialogTitle="Install Mod Control update?"
+                          automation:AutomationProperties.Name="Mod Control self-update confirmation dialog">
       <StackPanel>
         <TextBlock x:Name="LauncherUpdateSummary"
                    Foreground="{DynamicResource TextPrimaryBrush}"
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,0"
                    FontWeight="SemiBold"
-                   Text="Per-user launcher target" />
+                   Text="Per-user Mod Control target" />
         <TextBlock x:Name="LauncherUpdateTarget"
                    Margin="0,4,0,0"
                    FontFamily="Consolas"
@@ -1076,14 +1076,14 @@
         <TextBlock Margin="0,12,0,0"
                    FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="The launcher will exit. A copied helper verifies and swaps the signed payload, starts the update, and restores the previous launcher if startup is not acknowledged. No elevation is requested."
+                   Text="Mod Control will exit. A copied helper verifies and swaps the signed payload, starts the update, and restores the previous version if startup is not acknowledged. No elevation is requested."
                    TextWrapping="Wrap" />
         <Button Margin="0,20,0,0"
                 HorizontalAlignment="Right"
                 Style="{StaticResource UtilityActionButtonStyle}"
                 Click="ConfirmLauncherUpdateButton_Click"
                 Content="_Install and restart"
-                automation:AutomationProperties.Name="Install verified launcher update and restart" />
+                automation:AutomationProperties.Name="Install verified Mod Control update and restart" />
       </StackPanel>
     </controls:InAppDialog>
 
@@ -1122,7 +1122,7 @@
                           automation:AutomationProperties.Name="Community mod release source dialog">
       <StackPanel Width="440">
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Release source is launcher state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting the launcher."
+                   Text="Release source is Mod Control state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting Mod Control."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,4"
                    FontWeight="SemiBold"
@@ -1194,7 +1194,7 @@
                           automation:AutomationProperties.Name="Settings unavailable dialog">
       <TextBlock x:Name="SettingsUnavailableMessage"
                  Foreground="{DynamicResource TextSecondaryBrush}"
-                 Text="The launcher could not load its configuration catalog." />
+                 Text="Mod Control could not load its configuration catalog." />
     </controls:InAppDialog>
   </Grid>
 </Window>

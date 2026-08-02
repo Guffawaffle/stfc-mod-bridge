@@ -66,7 +66,7 @@ public static class GameInstallValidator
                 GameInstallValidationCode.OfficialLauncherDirectory,
                 normalizedDirectory,
                 null,
-                "This appears to be the official launcher folder, not the game folder that contains prime.exe.")
+                "This appears to be the Scopely launcher folder, not the game folder that contains prime.exe.")
             : new(
                 GameInstallValidationCode.PrimeExecutableMissing,
                 normalizedDirectory,

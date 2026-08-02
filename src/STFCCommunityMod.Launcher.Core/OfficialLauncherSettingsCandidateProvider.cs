@@ -51,7 +51,7 @@ public sealed class OfficialLauncherSettingsCandidateProvider(string settingsPat
                     new(
                         GameInstallCandidateSource.OfficialLauncherSettings,
                         GameInstallConfidence.OfficialLauncherMetadata,
-                        $"Official launcher setting {Path.GetFileName(settingsPath)} records this game path."),
+                        $"Scopely launcher setting {Path.GetFileName(settingsPath)} records this game path."),
                 ]);
         }
     }

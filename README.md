@@ -1,10 +1,15 @@
-# STFC Community Mod Launcher
+# STFC Mod Control
 
-Source-neutral Windows launcher, installer, configuration manager, and Data
-Sync workspace for STFC community mods.
+![STFC Mod Control portfolio banner](assets/portfolio/stfc-mod-control-banner.png)
 
-The launcher is a .NET 8 WPF application for Windows x64. It discovers and
-validates an STFC installation, launches the official client, manages verified
+**Install · Configure · Diagnose · Run**
+
+STFC Mod Control is a source-neutral Windows application for installing,
+updating, repairing, configuring, diagnosing, and running supported Star Trek
+Fleet Command community-mod distributions.
+
+Mod Control is a .NET 8 WPF application for Windows x64. It discovers and
+validates an STFC installation, opens the Scopely launcher, manages verified
 mod artifacts transactionally, edits configuration through staged Save/Discard
 sessions, and provides a destination-oriented Data Sync workspace.
 
@@ -18,7 +23,7 @@ than requiring a distribution-specific launcher build.
 
 Bundled Guffawaffle and NetniV packs coexist in one build. Capabilities without
 published evidence remain visibly unknown and their dependent operations fail
-closed; the launcher never infers support from a provider's display name.
+closed; Mod Control never infers support from a provider's display name.
 
 ## Projects
 
@@ -39,6 +44,11 @@ Double-click `run-launcher.cmd` to build and start the exact Release executable
 from this checkout. A failed build remains visible and never launches stale
 output.
 
+`scripts/smoke-settings.ps1` is an interactive UI Automation gate: it launches
+and focuses Mod Control to exercise keyboard behavior. Local runs must opt in
+with `-AllowInteractiveFocus`; ordinary tests and LexRunner branch gates remain
+headless. GitHub Actions may run the smoke on its isolated desktop.
+
 ## Package
 
 ```powershell
@@ -57,3 +67,13 @@ payload.
 - [UX direction](docs/windows-launcher/UX_DIRECTION.md)
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
+- [Product identity and compatibility inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)
+
+## Portfolio provenance
+
+![The Lex Toolchain · In Practice](assets/portfolio/stfc-mod-control-badge.png)
+
+STFC Mod Control is LexRunner Portfolio Project 001 under the SmarterGPT brand.
+During the active v1 lifecycle, its evidence label is **The Lex Toolchain · In
+Practice**. The completed-state label **Proven in Practice** is reserved for an
+evidence-backed release.

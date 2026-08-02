@@ -2,16 +2,20 @@
 param([switch]$RemoveState)
 
 $ErrorActionPreference = "Stop"
+$productName = "STFC Mod Control"
+$legacyProductName = "STFC Community Mod Launcher"
 if (Get-Process -Name "STFCCommunityMod.Launcher" -ErrorAction SilentlyContinue) {
-  throw "Close STFC Community Mod Launcher before uninstalling it."
+  throw "Close $productName before uninstalling it."
 }
 $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
 $target = Join-Path $localAppData "Programs\STFC Community Mod Launcher"
 $state = Join-Path $localAppData "STFC Community Mod Launcher"
 $shortcuts = @(
-  (Join-Path $programs "STFC Community Mod\STFC Community Mod Launcher.lnk"),
-  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "STFC Community Mod Launcher.lnk")
+  (Join-Path $programs "STFC Community Mod\$productName.lnk"),
+  (Join-Path $programs "STFC Community Mod\$legacyProductName.lnk"),
+  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$productName.lnk"),
+  (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$legacyProductName.lnk")
 )
 foreach ($shortcut in $shortcuts) {
   if (Test-Path -LiteralPath $shortcut) {
@@ -24,4 +28,8 @@ if (Test-Path -LiteralPath $target) {
 if ($RemoveState -and (Test-Path -LiteralPath $state)) {
   Remove-Item -LiteralPath $state -Recurse -Force
 }
-Write-Host "Launcher removed. The game installation and community mod files were not changed."
+$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModControl"
+if (Test-Path -LiteralPath $uninstallKey) {
+  Remove-Item -LiteralPath $uninstallKey -Recurse -Force
+}
+Write-Host "$productName removed. The game installation and community mod files were not changed."

@@ -6,10 +6,16 @@ param(
   [ValidateRange(5, 120)]
   [int]$TimeoutSeconds = 30,
 
-  [switch]$UseDisposableSyncFixture
+  [switch]$UseDisposableSyncFixture,
+
+  [switch]$AllowInteractiveFocus
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $AllowInteractiveFocus -and $env:CI -ne "true") {
+  throw "This UI Automation smoke launches and focuses Mod Control. Run it in CI or pass -AllowInteractiveFocus when the interactive desktop is available."
+}
 
 function Get-ActiveConfigurationPath {
   $localApplicationData = [Environment]::GetFolderPath(
@@ -479,18 +485,18 @@ try {
     throw "UI Automation did not attach to the exact launcher process that was started."
   }
 
-  if ($root.Current.Name -ne "STFC Community Mod Launcher") {
+  if ($root.Current.Name -ne "STFC Mod Control") {
     throw "Unexpected launcher window title '$($root.Current.Name)'."
   }
 
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Minimize launcher" `
+    -Name "Minimize Mod Control" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Close launcher" `
+    -Name "Close Mod Control" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if (Test-ColorModeSelectorPresent -Root $root) {
@@ -564,7 +570,7 @@ try {
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `
-    -Name "Open redacted launcher diagnostics" `
+    -Name "Open redacted Mod Control diagnostics" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $diagnosticsEntry
@@ -607,7 +613,7 @@ try {
 
   $settingsEntry = Find-AutomationElement `
     -Root $root `
-    -Name "Open launcher settings" `
+    -Name "Open Mod Control settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $settingsEntry
@@ -973,7 +979,7 @@ try {
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
-    -Name "About launcher settings" `
+    -Name "About Mod Control settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $aboutNavigation

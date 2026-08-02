@@ -91,12 +91,12 @@ public static class LauncherUpdateRecovery
 
             RejectReparsePoints(transactionRoot);
             var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
-                ?? throw new InvalidDataException("An abandoned launcher update plan is empty.");
+                ?? throw new InvalidDataException("An abandoned Mod Control update plan is empty.");
             ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
             if (Directory.Exists(Path.Combine(transactionRoot, "failed-target")))
             {
                 throw new InvalidDataException(
-                    "An abandoned launcher update contains an unexpected failed-target directory.");
+                    "An abandoned Mod Control update contains an unexpected failed-target directory.");
             }
             var hasBackup = Directory.Exists(plan.BackupDirectory);
             if (hasBackup)
@@ -111,7 +111,7 @@ public static class LauncherUpdateRecovery
         if (backups.Length > 1)
         {
             throw new InvalidDataException(
-                "Multiple abandoned launcher update backups require manual recovery.");
+                "Multiple abandoned Mod Control update backups require manual recovery.");
         }
 
         var restored = 0;
@@ -168,7 +168,7 @@ public static class LauncherUpdateRecovery
             || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
             || plan.LauncherRelativePath != "STFCCommunityMod.Launcher.exe")
         {
-            throw new InvalidDataException("An abandoned launcher update plan has invalid recovery paths.");
+            throw new InvalidDataException("An abandoned Mod Control update plan has invalid recovery paths.");
         }
     }
 
@@ -182,17 +182,17 @@ public static class LauncherUpdateRecovery
             .ToArray();
         if (actual.Length != expected.Count)
         {
-            throw new InvalidDataException("An abandoned launcher update backup changed file count.");
+            throw new InvalidDataException("An abandoned Mod Control update backup changed file count.");
         }
         foreach (var expectedFile in expected)
         {
             var actualFile = actual.SingleOrDefault(file =>
                 string.Equals(file.RelativePath, expectedFile.RelativePath, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidDataException("An abandoned launcher update backup changed file identity.");
+                ?? throw new InvalidDataException("An abandoned Mod Control update backup changed file identity.");
             if (actualFile.Size != expectedFile.Size
                 || !string.Equals(actualFile.Sha256, expectedFile.Sha256, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException("An abandoned launcher update backup failed verification.");
+                throw new InvalidDataException("An abandoned Mod Control update backup failed verification.");
             }
         }
     }
@@ -208,14 +208,14 @@ public static class LauncherUpdateRecovery
         {
             if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
             {
-                throw new InvalidDataException("Launcher update recovery refuses filesystem links or reparse points.");
+                throw new InvalidDataException("Mod Control update recovery refuses filesystem links or reparse points.");
             }
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
             {
                 var attributes = File.GetAttributes(entry);
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
-                    throw new InvalidDataException("Launcher update recovery refuses filesystem links or reparse points.");
+                    throw new InvalidDataException("Mod Control update recovery refuses filesystem links or reparse points.");
                 }
                 if ((attributes & FileAttributes.Directory) != 0)
                 {
@@ -237,12 +237,12 @@ public sealed class HttpLauncherArchiveDownloader(HttpClient httpClient) : ILaun
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttps)
         {
-            throw new InvalidDataException("Launcher updates require HTTPS.");
+            throw new InvalidDataException("Mod Control updates require HTTPS.");
         }
         using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.Content.Headers.ContentLength > maximumBytes)
         {
-            throw new InvalidDataException("The launcher archive exceeds its manifest bound.");
+            throw new InvalidDataException("The Mod Control archive exceeds its manifest bound.");
         }
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var destination = new MemoryStream();
@@ -256,7 +256,7 @@ public sealed class HttpLauncherArchiveDownloader(HttpClient httpClient) : ILaun
             }
             if (destination.Length + count > maximumBytes)
             {
-                throw new InvalidDataException("The launcher archive exceeds its manifest bound.");
+                throw new InvalidDataException("The Mod Control archive exceeds its manifest bound.");
             }
             await destination.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
         }
@@ -301,12 +301,12 @@ public sealed class LauncherSelfUpdateService(
     {
         ArgumentNullException.ThrowIfNull(discovery);
         var artifact = discovery.LauncherArtifact
-            ?? throw new InvalidDataException("The release does not provide a supported launcher artifact.");
+            ?? throw new InvalidDataException("The release does not provide a supported Mod Control artifact.");
         if (string.Equals(currentSourceCommit, artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
         {
             return new(
                 LauncherUpdatePreparationState.UpToDate,
-                $"Launcher {artifact.ReleaseVersion} is already current.",
+                $"Mod Control {artifact.ReleaseVersion} is already current.",
                 artifact.ReleaseVersion,
                 programDirectory,
                 string.Empty,
@@ -321,7 +321,7 @@ public sealed class LauncherSelfUpdateService(
                 SHA256.HashData(download.Contents),
                 Convert.FromHexString(artifact.Sha256)))
         {
-            throw new InvalidDataException("The launcher archive does not match the release manifest.");
+            throw new InvalidDataException("The Mod Control archive does not match the release manifest.");
         }
 
         var transactionId = Guid.NewGuid().ToString("N");
@@ -336,7 +336,7 @@ public sealed class LauncherSelfUpdateService(
         VerifySignedExecutable(updaterPath);
         if (!string.Equals(identityReader.ReadSourceCommit(launcherPath), artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("The signed launcher source identity does not match the release manifest.");
+            throw new InvalidDataException("The signed Mod Control source identity does not match the release manifest.");
         }
 
         var files = Directory.EnumerateFiles(stageDirectory, "*", SearchOption.AllDirectories)
@@ -364,7 +364,7 @@ public sealed class LauncherSelfUpdateService(
         File.Copy(updaterPath, runnerPath);
         return new(
             LauncherUpdatePreparationState.Ready,
-            $"Launcher {artifact.ReleaseVersion} is verified and ready to install after exit.",
+            $"Mod Control {artifact.ReleaseVersion} is verified and ready to install after exit.",
             artifact.ReleaseVersion,
             programDirectory,
             planPath,
@@ -375,26 +375,26 @@ public sealed class LauncherSelfUpdateService(
     {
         if (preparation.State != LauncherUpdatePreparationState.Ready)
         {
-            throw new InvalidOperationException("Only a ready launcher update can start.");
+            throw new InvalidOperationException("Only a ready Mod Control update can start.");
         }
         _ = Process.Start(new ProcessStartInfo(preparation.UpdaterPath, $"--plan \"{preparation.PlanPath}\"")
         {
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(preparation.UpdaterPath),
             CreateNoWindow = true,
-        }) ?? throw new InvalidOperationException("Windows did not start the launcher update helper.");
+        }) ?? throw new InvalidOperationException("Windows did not start the Mod Control update helper.");
     }
 
     private void VerifySignedExecutable(string path)
     {
         if (!File.Exists(path))
         {
-            throw new InvalidDataException($"Launcher archive is missing {Path.GetFileName(path)}.");
+            throw new InvalidDataException($"Mod Control archive is missing {Path.GetFileName(path)}.");
         }
         var result = authenticityVerifier.Verify(path);
         if (!result.IsTrusted)
         {
-            throw new InvalidDataException($"Launcher update signature verification failed: {result.Message}");
+            throw new InvalidDataException($"Mod Control update signature verification failed: {result.Message}");
         }
     }
 

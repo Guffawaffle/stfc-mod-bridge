@@ -121,8 +121,8 @@ public sealed class GitHubLauncherReleaseClient : ILauncherReleaseDiscoveryClien
         if (candidateVersion <= installedVersion)
         {
             throw new InvalidDataException(
-                $"No newer {channel} launcher release is eligible; {artifact.ReleaseVersion} does not advance "
-                + $"the installed launcher {currentLauncherVersion}.");
+                $"No newer {channel} Mod Control release is eligible; {artifact.ReleaseVersion} does not advance "
+                + $"the installed Mod Control {currentLauncherVersion}.");
         }
         return new(manifest, artifact);
     }
@@ -229,7 +229,7 @@ internal sealed class GitHubReleaseManifestClient
             throw new InvalidDataException("Release discovery permits HTTPS endpoints only.");
         }
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("STFC-Community-Mod-Launcher/0.1");
+        request.Headers.UserAgent.ParseAdd("STFC-Mod-Control/0.1");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
         return request;

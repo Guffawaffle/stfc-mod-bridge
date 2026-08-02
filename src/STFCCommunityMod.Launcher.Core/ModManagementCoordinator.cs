@@ -129,7 +129,7 @@ public sealed class ModManagementCoordinator(
             || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             return RepairRequired(
-                "The installed artifact no longer matches launcher-managed state.",
+                "The installed artifact no longer matches Mod Control-managed state.",
                 !isGameRunning);
         }
 

@@ -347,7 +347,7 @@ public static partial class WindowsReleaseSelectionPolicy
         if (currentLauncherVersion < manifest.MinimumLauncherVersion)
         {
             throw new InvalidDataException(
-                $"Launcher {manifest.MinimumLauncherVersion} or newer is required for this release.");
+                $"Mod Control {manifest.MinimumLauncherVersion} or newer is required for this release.");
         }
         if (!string.Equals(
                 manifest.Source.Repository,
@@ -401,7 +401,7 @@ public static partial class WindowsReleaseSelectionPolicy
         var matches = manifest.Artifacts.Where(artifact => artifact.Id == LauncherArtifactId).ToArray();
         if (matches.Length != 1)
         {
-            throw new InvalidDataException("The release must contain exactly one Windows launcher archive.");
+            throw new InvalidDataException("The release must contain exactly one Windows Mod Control archive.");
         }
         var artifact = matches[0];
         if (artifact.Kind != "windows-launcher"
@@ -416,7 +416,7 @@ public static partial class WindowsReleaseSelectionPolicy
             || artifact.Authenticity.SignedFiles[0] != "STFCCommunityMod.Launcher.exe"
             || artifact.Authenticity.SignedFiles[1] != "STFCCommunityMod.Launcher.Updater.exe")
         {
-            throw new InvalidDataException("The Windows launcher artifact contract is invalid or unsupported.");
+            throw new InvalidDataException("The Windows Mod Control artifact contract is invalid or unsupported.");
         }
         return new(
             new Uri($"https://github.com/{expectedRepository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{artifact.FileName}"),
@@ -438,7 +438,7 @@ public static partial class WindowsReleaseSelectionPolicy
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
         if (!IsEligibleRelease(manifest, selectedChannel, currentLauncherVersion, expectedRepository))
         {
-            throw new InvalidDataException("The release is not eligible for this launcher channel.");
+            throw new InvalidDataException("The release is not eligible for this Mod Control channel.");
         }
     }
 
