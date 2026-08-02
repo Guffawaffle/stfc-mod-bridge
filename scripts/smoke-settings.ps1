@@ -488,6 +488,15 @@ try {
     -Name "General settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline)
+  $unexpectedSyncWorkspace = $root.FindFirst(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::NameProperty,
+      "Sync setup workspace"))
+  if ($null -ne $unexpectedSyncWorkspace) {
+    throw "The typed Sync workspace is visible while General settings is selected."
+  }
+  Write-Host "PASS: typed Sync setup stays hidden outside the Data Sync section."
   $notificationsNavigation = Find-AutomationElement `
     -Root $root `
     -Name "Notification settings" `
