@@ -5,6 +5,7 @@ namespace STFCCommunityMod.Launcher.Core;
 
 public static class LauncherConfigurationSchemaLoader
 {
+    private const int MaximumSliderStepCount = 5000;
     private const string SupportedSchemaId = "stfc-community-mod.config-schema";
     private static readonly Version SupportedSchemaVersion = new(1, 0, 0);
 
@@ -138,6 +139,7 @@ public static class LauncherConfigurationSchemaLoader
             control,
             valueKind,
             valueType,
+            numericConstraints,
             applyBehavior,
             path);
         var platforms = ReadPlatforms(ReadRequiredProperty(element, "platforms", context), path);
@@ -176,6 +178,7 @@ public static class LauncherConfigurationSchemaLoader
         LauncherConfigurationControl control,
         LauncherConfigurationValueKind valueKind,
         JsonElement valueType,
+        LauncherConfigurationNumericConstraints? numericConstraints,
         LauncherConfigurationApplyBehavior applyBehavior,
         string path)
     {
@@ -191,6 +194,9 @@ public static class LauncherConfigurationSchemaLoader
             "enumOptions",
             "family",
             "unit",
+            "sliderMinimum",
+            "sliderMaximum",
+            "sliderStep",
             "editorWidth",
             "applyTiming",
             "accessibleName",
@@ -222,6 +228,69 @@ public static class LauncherConfigurationSchemaLoader
             throw Invalid($"{context}.unit is only valid for numeric scalar settings.");
         }
 
+        var sliderMinimum = ReadOptionalFiniteNumber(element, "sliderMinimum", context);
+        var sliderMaximum = ReadOptionalFiniteNumber(element, "sliderMaximum", context);
+        var sliderStep = ReadOptionalFiniteNumber(element, "sliderStep", context);
+        if (sliderMinimum.HasValue != sliderMaximum.HasValue)
+        {
+            throw Invalid($"{context}.sliderMinimum and sliderMaximum must be declared together.");
+        }
+
+        if ((sliderMinimum.HasValue || sliderMaximum.HasValue) && sliderStep is null)
+        {
+            throw Invalid($"{context}.sliderMinimum and sliderMaximum require sliderStep.");
+        }
+
+        if (sliderStep is not null)
+        {
+            if (control != LauncherConfigurationControl.Scalar
+                || valueKind is not LauncherConfigurationValueKind.Integer
+                    and not LauncherConfigurationValueKind.Number)
+            {
+                throw Invalid($"{context}.sliderStep is only valid for numeric scalar settings.");
+            }
+
+            sliderMinimum ??= numericConstraints?.Minimum;
+            sliderMaximum ??= numericConstraints?.Maximum;
+            if (sliderMinimum is null || sliderMaximum is null)
+            {
+                throw Invalid(
+                    $"{context}.sliderStep requires explicit slider bounds or finite minimum and maximum constraints.");
+            }
+
+            if (sliderStep <= 0)
+            {
+                throw Invalid($"{context}.sliderStep must be greater than zero.");
+            }
+
+            if (valueKind == LauncherConfigurationValueKind.Integer
+                && sliderStep != Math.Truncate(sliderStep.Value))
+            {
+                throw Invalid($"{context}.sliderStep must be a whole number for an integer setting.");
+            }
+
+            if (sliderMinimum >= sliderMaximum)
+            {
+                throw Invalid($"{context}.sliderMinimum must be less than sliderMaximum.");
+            }
+
+            if (numericConstraints is { } constraints
+                && (!constraints.Contains(sliderMinimum.Value)
+                    || !constraints.Contains(sliderMaximum.Value)))
+            {
+                throw Invalid($"{context} slider bounds must stay within the setting's hard numeric constraints.");
+            }
+
+            var stepCount = (sliderMaximum.Value - sliderMinimum.Value) / sliderStep.Value;
+            if (stepCount < 1
+                || stepCount > MaximumSliderStepCount
+                || Math.Abs(stepCount - Math.Round(stepCount)) > 1e-9)
+            {
+                throw Invalid(
+                    $"{context}.sliderStep must divide the bounded range into 1-{MaximumSliderStepCount} equal steps.");
+            }
+        }
+
         var editorWidth = ParseEditorWidth(
             ReadRequiredString(element, "editorWidth", context),
             path);
@@ -242,6 +311,9 @@ public static class LauncherConfigurationSchemaLoader
             enumOptions,
             family,
             unit,
+            sliderMinimum,
+            sliderMaximum,
+            sliderStep,
             editorWidth,
             applyTiming,
             ReadRequiredString(element, "accessibleName", context),

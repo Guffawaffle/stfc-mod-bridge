@@ -158,6 +158,46 @@ public sealed class SettingsRowViewModel :
 
     public bool IsNumericEditor { get; }
 
+    public bool HasNumericSlider =>
+        IsNumericEditor
+        && Setting.Presentation.SliderStep is > 0
+        && Setting.Presentation is { SliderMinimum: not null, SliderMaximum: not null };
+
+    public double NumericSliderMinimum =>
+        Setting.Presentation.SliderMinimum ?? 0;
+
+    public double NumericSliderMaximum =>
+        Setting.Presentation.SliderMaximum ?? 0;
+
+    public double NumericSliderStep =>
+        Setting.Presentation.SliderStep ?? 1;
+
+    public double NumericSliderLargeChange =>
+        Math.Min(NumericSliderStep * 10, NumericSliderMaximum - NumericSliderMinimum);
+
+    public bool NumericSliderAllowsExtendedEntry
+    {
+        get
+        {
+            if (!HasNumericSlider || Setting.NumericConstraints is not { } constraints)
+            {
+                return HasNumericSlider;
+            }
+
+            return constraints.Minimum is null
+                || constraints.Minimum < NumericSliderMinimum
+                || constraints.Maximum is null
+                || constraints.Maximum > NumericSliderMaximum;
+        }
+    }
+
+    public string NumericSliderRangeText =>
+        HasNumericSlider
+            ? NumericSliderAllowsExtendedEntry
+                ? $"Slider {FormatNumber(NumericSliderMinimum)}–{FormatNumber(NumericSliderMaximum)}; larger values may be entered directly."
+                : $"Slider {FormatNumber(NumericSliderMinimum)}–{FormatNumber(NumericSliderMaximum)}."
+            : string.Empty;
+
     public bool IsStringEditor { get; }
 
     public bool IsKeybindingEditor { get; }
@@ -309,6 +349,28 @@ public sealed class SettingsRowViewModel :
         }
     }
 
+    public double NumericSliderValue
+    {
+        get => ReadNumericSliderValue();
+        set
+        {
+            if (!CanEdit || !HasNumericSlider)
+            {
+                return;
+            }
+
+            var normalized = NormalizeSliderValue(value);
+            if (Math.Abs(normalized - ReadNumericSliderValue()) < 1e-9)
+            {
+                return;
+            }
+
+            NumericText = Setting.ValueKind == LauncherConfigurationValueKind.Integer
+                ? LauncherTomlValue.RenderInteger(checked((long)Math.Round(normalized)))
+                : LauncherTomlValue.RenderNumber(normalized);
+        }
+    }
+
     public bool NumericNeedsAttention =>
         numericValidationError is not null
         || (IsNumericEditor
@@ -319,7 +381,9 @@ public sealed class SettingsRowViewModel :
         numericValidationError
         ?? (NumericNeedsAttention
             ? $"The configured value is invalid or outside its supported range. {ReadDefaultNumericText()} is shown."
-            : $"{NumericConstraintText}. Press Enter, Tab, or click elsewhere to stage the value.");
+            : $"{NumericConstraintText}. "
+                + (HasNumericSlider ? $"{NumericSliderRangeText} " : string.Empty)
+                + "Press Enter, Tab, or click elsewhere to stage the value.");
 
     public string NumericConstraintText
     {
@@ -928,6 +992,36 @@ public sealed class SettingsRowViewModel :
             : string.Empty;
     }
 
+    private double ReadNumericSliderValue()
+    {
+        if (HasNumericSlider
+            && TryReadValidNumericValue(NumericText, out var displayedText)
+            && TryReadNumber(displayedText, out var displayed))
+        {
+            return Math.Clamp(displayed, NumericSliderMinimum, NumericSliderMaximum);
+        }
+
+        if (TryReadValidNumericValue(valueState.DraftValue, out var rendered)
+            && TryReadNumber(rendered, out var staged))
+        {
+            return Math.Clamp(staged, NumericSliderMinimum, NumericSliderMaximum);
+        }
+
+        return NumericSliderMinimum;
+    }
+
+    private double NormalizeSliderValue(double value)
+    {
+        var minimum = NumericSliderMinimum;
+        var maximum = NumericSliderMaximum;
+        var bounded = Math.Clamp(value, minimum, maximum);
+        var steps = Math.Round((bounded - minimum) / NumericSliderStep);
+        return Math.Clamp(
+            Math.Round(minimum + steps * NumericSliderStep, 12),
+            minimum,
+            maximum);
+    }
+
     private bool TryReadValidNumericValue(
         object? candidate,
         out string rendered)
@@ -1031,6 +1125,7 @@ public sealed class SettingsRowViewModel :
     private void NotifyNumericStateChanged()
     {
         OnPropertyChanged(nameof(NumericText));
+        OnPropertyChanged(nameof(NumericSliderValue));
         OnPropertyChanged(nameof(NumericNeedsAttention));
         OnPropertyChanged(nameof(NumericValidationMessage));
         OnPropertyChanged(nameof(NumericConstraintText));

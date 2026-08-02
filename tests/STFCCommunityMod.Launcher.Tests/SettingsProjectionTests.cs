@@ -58,6 +58,93 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void BoundedNumericSliderAndTextboxStaySynchronized()
+    {
+        using var fixture = SettingsFixture.Create();
+        const string path = "ui.extend_chest_purchase_max";
+        var setting = fixture.SettingsByPath[path];
+        fixture.Select(fixture.Layout.Place(setting).Section);
+        var row = fixture.Row(path);
+
+        Assert.IsTrue(row.HasNumericSlider);
+        Assert.AreEqual(0d, row.NumericSliderMinimum);
+        Assert.AreEqual(160d, row.NumericSliderMaximum);
+        Assert.AreEqual(1d, row.NumericSliderStep);
+        Assert.AreEqual(160d, row.NumericSliderValue);
+
+        row.NumericSliderValue = 123.6;
+        Assert.AreEqual("124", row.NumericText);
+        Assert.AreEqual(124d, row.NumericSliderValue);
+
+        row.NumericText = "45";
+        Assert.AreEqual(45d, row.NumericSliderValue);
+
+        row.NumericText = "not-a-number";
+        Assert.AreEqual("not-a-number", row.NumericText);
+        Assert.AreEqual(45d, row.NumericSliderValue);
+        Assert.IsTrue(row.NumericNeedsAttention);
+
+        row.NumericText = "161";
+        Assert.AreEqual("161", row.NumericText);
+        Assert.AreEqual(45d, row.NumericSliderValue);
+        Assert.IsTrue(row.NumericNeedsAttention);
+    }
+
+    [TestMethod]
+    public void NumericSettingWithoutSliderMetadataRemainsTextboxOnly()
+    {
+        using var fixture = SettingsFixture.Create();
+        var setting = fixture.SettingsByPath["graphics.ui_scale"];
+        fixture.Select(fixture.Layout.Place(setting).Section);
+
+        Assert.IsFalse(fixture.Row(setting.Path).HasNumericSlider);
+    }
+
+    [TestMethod]
+    public void LargeSystemZoomRangeRetainsSingleUnitSliderSteps()
+    {
+        using var fixture = SettingsFixture.Create();
+        var setting = fixture.SettingsByPath["graphics.default_system_zoom"];
+        fixture.Select(fixture.Layout.Place(setting).Section);
+        var row = fixture.Row(setting.Path);
+
+        Assert.IsTrue(row.HasNumericSlider);
+        Assert.AreEqual(0d, row.NumericSliderMinimum);
+        Assert.AreEqual(5000d, row.NumericSliderMaximum);
+        Assert.AreEqual(1d, row.NumericSliderStep);
+        Assert.AreEqual(1750d, row.NumericSliderValue);
+
+        row.NumericSliderValue = 4321.4;
+        Assert.AreEqual("4321.0", row.NumericText);
+        Assert.AreEqual(4321d, row.NumericSliderValue);
+    }
+
+    [TestMethod]
+    public void SoftSliderRangeKeepsAccessibleDirectEntryValid()
+    {
+        using var fixture = SettingsFixture.Create();
+        var setting = fixture.SettingsByPath["ui.escape_exit_timer"];
+        fixture.Select(fixture.Layout.Place(setting).Section);
+        var row = fixture.Row(setting.Path);
+
+        Assert.IsTrue(row.HasNumericSlider);
+        Assert.IsTrue(row.NumericSliderAllowsExtendedEntry);
+        Assert.AreEqual(0d, row.NumericSliderMinimum);
+        Assert.AreEqual(1000d, row.NumericSliderMaximum);
+        Assert.AreEqual(25d, row.NumericSliderStep);
+
+        row.NumericText = "1750";
+        Assert.AreEqual("1750", row.NumericText);
+        Assert.AreEqual(1000d, row.NumericSliderValue);
+        Assert.IsFalse(row.NumericNeedsAttention);
+        StringAssert.Contains(row.NumericValidationMessage, "larger values may be entered directly");
+
+        row.NumericSliderValue = 750;
+        Assert.AreEqual("750", row.NumericText);
+        Assert.AreEqual(750d, row.NumericSliderValue);
+    }
+
+    [TestMethod]
     public void SearchProjectionRetainsConflictsWithHiddenCommands()
     {
         using var fixture = SettingsFixture.Create();

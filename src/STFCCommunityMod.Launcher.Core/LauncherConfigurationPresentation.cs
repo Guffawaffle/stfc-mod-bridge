@@ -39,6 +39,9 @@ public sealed class LauncherConfigurationPresentation
         IReadOnlyList<LauncherConfigurationPresentationOption> enumOptions,
         LauncherConfigurationPresentationFamily? family,
         string? unit,
+        double? sliderMinimum,
+        double? sliderMaximum,
+        double? sliderStep,
         LauncherConfigurationEditorWidth editorWidth,
         string applyTiming,
         string accessibleName,
@@ -51,6 +54,9 @@ public sealed class LauncherConfigurationPresentation
         EnumOptions = enumOptions;
         Family = family;
         Unit = unit;
+        SliderMinimum = sliderMinimum;
+        SliderMaximum = sliderMaximum;
+        SliderStep = sliderStep;
         EditorWidth = editorWidth;
         ApplyTiming = applyTiming;
         AccessibleName = accessibleName;
@@ -70,6 +76,12 @@ public sealed class LauncherConfigurationPresentation
     public LauncherConfigurationPresentationFamily? Family { get; }
 
     public string? Unit { get; }
+
+    public double? SliderMinimum { get; }
+
+    public double? SliderMaximum { get; }
+
+    public double? SliderStep { get; }
 
     public LauncherConfigurationEditorWidth EditorWidth { get; }
 

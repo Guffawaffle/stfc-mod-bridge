@@ -85,6 +85,100 @@
       </Style.Triggers>
     </Style>
 
+    <Style x:Key="SettingsSliderTrackButtonStyle"
+           TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border Height="6"
+                    VerticalAlignment="Center"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="3" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SettingsSliderThumbStyle"
+           TargetType="Thumb">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Thumb">
+            <Ellipse x:Name="ThumbSurface"
+                     Fill="{TemplateBinding Background}"
+                     Stroke="{DynamicResource WindowBackgroundBrush}"
+                     StrokeThickness="2" />
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsDragging" Value="True">
+                <Setter TargetName="ThumbSurface" Property="StrokeThickness" Value="3" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SettingsNumericSliderStyle"
+           TargetType="Slider">
+      <Setter Property="Height" Value="34" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid>
+              <Track x:Name="PART_Track"
+                     Margin="1,0"
+                     IsDirectionReversed="False"
+                     Maximum="{TemplateBinding Maximum}"
+                     Minimum="{TemplateBinding Minimum}"
+                     Orientation="Horizontal"
+                     Value="{TemplateBinding Value}">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Background="{DynamicResource AccentBrush}"
+                                Command="{x:Static Slider.DecreaseLarge}"
+                                CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                                Style="{StaticResource SettingsSliderTrackButtonStyle}" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Style="{StaticResource SettingsSliderThumbStyle}" />
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Background="{DynamicResource SurfaceMutedBrush}"
+                                Command="{x:Static Slider.IncreaseLarge}"
+                                CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                                Style="{StaticResource SettingsSliderTrackButtonStyle}" />
+                </Track.IncreaseRepeatButton>
+              </Track>
+              <Border x:Name="SliderFocusBorder"
+                      Margin="-3,1"
+                      BorderBrush="{DynamicResource FocusOuterBrush}"
+                      BorderThickness="2"
+                      CornerRadius="8"
+                      IsHitTestVisible="False"
+                      Visibility="Collapsed" />
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="SliderFocusBorder" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="SettingsStringEditorStyle"
            BasedOn="{StaticResource SettingsSearchStyle}"
            TargetType="TextBox">
@@ -778,20 +872,36 @@
                       </StackPanel>
 
                       <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Grid HorizontalAlignment="Right">
+                        <Grid>
                           <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="124" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
+                          <Slider Margin="0,0,12,0"
+                                  Style="{StaticResource SettingsNumericSliderStyle}"
+                                  Minimum="{Binding NumericSliderMinimum}"
+                                  Maximum="{Binding NumericSliderMaximum}"
+                                  SmallChange="{Binding NumericSliderStep}"
+                                  LargeChange="{Binding NumericSliderLargeChange}"
+                                  TickFrequency="{Binding NumericSliderStep}"
+                                  IsSnapToTickEnabled="True"
+                                  Value="{Binding NumericSliderValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding CanEdit}"
+                                  ToolTip="{Binding NumericValidationMessage}"
+                                  Visibility="{Binding HasNumericSlider, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="{Binding Title, StringFormat=Adjust {0}}"
+                                  automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
+                          <TextBox Grid.Column="1"
+                                   Style="{StaticResource SettingsNumericEditorStyle}"
                                    Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                    IsEnabled="{Binding CanEdit}"
                                    ToolTip="{Binding NumericValidationMessage}"
                                    behaviors:TextInputCommitBehavior.CommitOnEnter="True"
                                    automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
                                    automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
-                          <TextBlock Grid.Column="1"
+                          <TextBlock Grid.Column="2"
                                      MinWidth="32"
                                      Margin="10,0,0,0"
                                      VerticalAlignment="Center"
@@ -799,7 +909,7 @@
                                      Foreground="{DynamicResource TextSecondaryBrush}"
                                      Text="{Binding Unit}"
                                      Visibility="{Binding HasUnit, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                          <controls:SettingsRowActions Grid.Column="2"
+                          <controls:SettingsRowActions Grid.Column="3"
                                                        Margin="8,0,0,0" />
                         </Grid>
                         <TextBlock Margin="0,4,52,0"

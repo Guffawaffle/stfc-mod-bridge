@@ -315,6 +315,7 @@ public sealed class LauncherConfigurationSchemaLoaderTests
             SchemaWithSettings(
                 numericSetting,
                 unit: "ms",
+                extraPresentationProperty: @"""sliderStep"": 1000",
                 editorWidth: "compact"));
         var constraints = catalog.Settings.Single().NumericConstraints;
 
@@ -324,6 +325,9 @@ public sealed class LauncherConfigurationSchemaLoaderTests
         Assert.IsTrue(constraints.Contains(5000));
         Assert.IsFalse(constraints.Contains(999));
         Assert.AreEqual("ms", catalog.Settings.Single().Presentation.Unit);
+        Assert.AreEqual(1000d, catalog.Settings.Single().Presentation.SliderMinimum);
+        Assert.AreEqual(60000d, catalog.Settings.Single().Presentation.SliderMaximum);
+        Assert.AreEqual(1000d, catalog.Settings.Single().Presentation.SliderStep);
         Assert.AreEqual(
             LauncherConfigurationEditorWidth.Compact,
             catalog.Settings.Single().Presentation.EditorWidth);
@@ -336,6 +340,44 @@ public sealed class LauncherConfigurationSchemaLoaderTests
             () => LoadJson(SchemaWithSettings(reversedRange)));
         Assert.ThrowsException<LauncherConfigurationSchemaException>(
             () => LoadJson(SchemaWithSettings(invalidDefault)));
+
+        var unbounded = numericSetting.Replace(
+            @"""constraints"": { ""minimum"": 1000, ""maximum"": 60000 },",
+            string.Empty,
+            StringComparison.Ordinal);
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(
+                SchemaWithSettings(
+                    unbounded,
+                    extraPresentationProperty: @"""sliderStep"": 1000")));
+
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(
+                SchemaWithSettings(
+                    numericSetting,
+                    extraPresentationProperty: @"""sliderStep"": 1")));
+
+        Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LoadJson(
+                SchemaWithSettings(
+                    numericSetting,
+                    extraPresentationProperty: @"""sliderStep"": 4000")));
+
+        var softRangeSetting = numericSetting
+            .Replace(
+                @"""constraints"": { ""minimum"": 1000, ""maximum"": 60000 },",
+                @"""constraints"": { ""minimum"": 0 },",
+                StringComparison.Ordinal)
+            .Replace(@"""default"": 5000", @"""default"": 500", StringComparison.Ordinal);
+        var softRangeCatalog = LoadJson(
+            SchemaWithSettings(
+                softRangeSetting,
+                extraPresentationProperty:
+                    @"""sliderMinimum"": 0, ""sliderMaximum"": 1000, ""sliderStep"": 25"));
+        var softPresentation = softRangeCatalog.Settings.Single().Presentation;
+        Assert.AreEqual(0d, softPresentation.SliderMinimum);
+        Assert.AreEqual(1000d, softPresentation.SliderMaximum);
+        Assert.AreEqual(25d, softPresentation.SliderStep);
     }
 
     [TestMethod]
@@ -482,8 +524,10 @@ public sealed class LauncherConfigurationSchemaLoaderTests
                 }
                 if (extraPresentationProperty is not null)
                 {
-                    var property = JsonNode.Parse($"{{{extraPresentationProperty}}}")!.AsObject().Single();
-                    presentation[property.Key] = property.Value?.DeepClone();
+                    foreach (var property in JsonNode.Parse($"{{{extraPresentationProperty}}}")!.AsObject())
+                    {
+                        presentation[property.Key] = property.Value?.DeepClone();
+                    }
                 }
                 setting["presentation"] = presentation;
             }
