@@ -16,3 +16,12 @@ public static class SelfUpdateArchitecture
         "rollback-on-failure",
     ];
 }
+
+public static class LauncherSelfUpdateAuthority
+{
+    // Kept on the currently shipped release feed until #4 moves launcher
+    // delivery. Provider selection cannot alter this launcher-owned authority.
+    public const string ReleaseRepository = "Guffawaffle/stfc-mod";
+    public const string ReleaseManifestAssetName = "stfc-community-mod-release-manifest.json";
+    public const string WindowsArtifactPublisher = "Joseph Gustavson";
+}

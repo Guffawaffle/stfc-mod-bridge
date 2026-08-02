@@ -16,4 +16,22 @@
   <ItemGroup>
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\providers\bundled-provider-catalog.v1.json"
+          Link="Fixtures\Providers\bundled-provider-catalog.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\guffawaffle\provider-pack.v1.json"
+          Link="Fixtures\Providers\guffawaffle-provider-pack.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\netniv\provider-pack.v1.json"
+          Link="Fixtures\Providers\netniv-provider-pack.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\provider-pack.schema.v1.json"
+          Link="Fixtures\Providers\provider-pack.schema.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\compatibility\source-switch-unknown-content.v1.toml"
+          Link="Fixtures\Providers\source-switch-unknown-content.v1.toml"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

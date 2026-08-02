@@ -16,8 +16,9 @@ supplies versioned provider data—release location, runtime manifest,
 configuration schema, capabilities, trust rules, and migration metadata—rather
 than requiring a distribution-specific launcher build.
 
-The first bundled provider is Guffawaffle. NetniV support is a provider-pack
-integration target, not a fork of this application.
+Bundled Guffawaffle and NetniV packs coexist in one build. Capabilities without
+published evidence remain visibly unknown and their dependent operations fail
+closed; the launcher never infers support from a provider's display name.
 
 ## Projects
 

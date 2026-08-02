@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "id": "guffawaffle",
+    "displayName": "Guffawaffle",
+    "description": "Community distribution with launcher-authenticated Windows release manifests.",
+    "runtimeDistributionId": "guffawaffle.stfc-community-mod",
+    "defaultReleaseChannelId": "stable",
+    "releaseChannels": [
+      {
+        "id": "stable",
+        "displayName": "Stable",
+        "repository": "Guffawaffle/stfc-mod",
+        "discoveryKind": "release-manifest",
+        "manifestAssetName": "stfc-community-mod-release-manifest.json",
+        "artifactAssetName": null
+      },
+      {
+        "id": "preview",
+        "displayName": "Preview",
+        "repository": "Guffawaffle/stfc-mod",
+        "discoveryKind": "release-manifest",
+        "manifestAssetName": "stfc-community-mod-release-manifest.json",
+        "artifactAssetName": null
+      }
+    ],
+    "configurationSchema": {
+      "status": "supported",
+      "resourceName": "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json"
+    },
+    "runtimeManifest": {
+      "status": "supported",
+      "resourceName": "STFCCommunityMod.Launcher.RuntimeManifests.Guffawaffle.v1.json"
+    },
+    "capabilities": [
+      { "id": "settings.catalog", "status": "supported" },
+      { "id": "runtime.manifest", "status": "supported" },
+      { "id": "mod.release-discovery", "status": "supported" },
+      { "id": "mod.artifact-trust", "status": "supported" },
+      { "id": "release.withdrawal", "status": "supported" },
+      { "id": "config.migration", "status": "supported" }
+    ],
+    "artifactPolicy": {
+      "status": "supported",
+      "requireSha256": true,
+      "windowsPublisher": "Joseph Gustavson"
+    },
+    "withdrawalPolicy": {
+      "status": "supported",
+      "mode": "signed-release-manifest"
+    },
+    "migration": {
+      "status": "supported",
+      "configurationFormat": "toml",
+      "preserveUnknownToml": true,
+      "compatibleProviderIds": [
+        "guffawaffle"
+      ]
+    }
+  }
+}

@@ -171,10 +171,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public static MainWindowViewModel CreateDefault(
         HttpClient httpClient,
-        LauncherDistributionProvider distributionProvider)
+        LauncherDistributionProvider distributionProvider,
+        LauncherProviderReleaseChannel releaseChannel,
+        string? providerResolutionFailure = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(distributionProvider);
+        ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
         var processInspector = new SystemGameProcessInspector();
         var installDiscovery = new GameInstallDiscovery(
@@ -184,16 +187,32 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 BoundedGameInstallCandidateProvider.FromCurrentMachine(),
             ]);
 
+        var providerBinding = LauncherProviderModBinding.Resolve(
+            distributionProvider,
+            releaseChannel,
+            providerResolutionFailure);
+        IModArtifactAuthenticityVerifier modArtifactVerifier =
+            providerBinding.IsAvailable
+                ? new WindowsAuthenticodeVerifier(providerBinding.WindowsPublisher!)
+                : new FailClosedModArtifactAuthenticityVerifier(providerBinding.UnavailableReason);
+        IWindowsReleaseDiscoveryClient modReleaseClient =
+            providerBinding.IsAvailable
+                ? new GitHubWindowsReleaseClient(
+                    httpClient,
+                    providerBinding.Repository,
+                    providerBinding.ManifestAssetName!)
+                : new UnavailableWindowsReleaseDiscoveryClient(providerBinding.UnavailableReason);
+
         var deploymentService = new ModDeploymentService(
             installLayout.StateDirectory,
             new HttpModArtifactDownloader(httpClient),
             new WindowsModArtifactVersionReader(),
-            new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
+            modArtifactVerifier,
             processInspector.IsGameRunning);
-        var releaseClient = new GitHubWindowsReleaseClient(
+        var launcherReleaseClient = new GitHubWindowsReleaseClient(
             httpClient,
-            distributionProvider.ModReleaseRepository,
-            distributionProvider.ModReleaseManifestAssetName);
+            LauncherSelfUpdateAuthority.ReleaseRepository,
+            LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
@@ -207,8 +226,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installDiscovery),
             new ModManagementCoordinator(
                 deploymentService,
-                releaseClient,
-                new Version(0, 1, 0)),
+                modReleaseClient,
+                new Version(0, 1, 0),
+                providerBinding.ReleaseChannelId,
+                providerUnavailableReason: providerBinding.UnavailableReason),
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
@@ -219,9 +240,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
                 new HttpLauncherArchiveDownloader(httpClient),
-                new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
+                new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
-            releaseClient);
+            launcherReleaseClient);
     }
 
     public void ConfirmManualSelection(string gameDirectory)
