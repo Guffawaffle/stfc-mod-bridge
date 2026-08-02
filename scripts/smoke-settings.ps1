@@ -901,6 +901,39 @@ try {
   Start-Sleep -Milliseconds 250
   Write-Host "PASS: Data Sync is source-bound, minimum-width safe, vertically scoped, capability-filtered, and keyboard-proven across overflow tabs and wizard cancellation/focus restoration."
 
+  $advancedNavigation = Find-AutomationElement `
+    -Root $root `
+    -Name "Advanced settings" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $settingsDeadline
+  Invoke-AutomationElement -Element $advancedNavigation
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Patch editing safety warning" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Read-only patch value summary" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $enablePatchEditing = Find-AutomationElement `
+    -Root $root `
+    -Name "Enable patch editing" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $enablePatchEditing
+  $lockPatchEditing = Find-AutomationElement `
+    -Root $root `
+    -Name "Lock patch editing" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $lockPatchEditing
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Enable patch editing" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  Write-Host "PASS: Advanced patch editing starts locked, exposes its warning and read-only summary, and supports unlock/relock through UI Automation."
+
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
     -Name "About launcher settings" `
