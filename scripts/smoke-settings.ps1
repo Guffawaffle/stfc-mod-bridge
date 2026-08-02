@@ -136,6 +136,25 @@ function Find-AutomationElement {
   throw "UI Automation could not find $typeDescription '$Name' within the timeout."
 }
 
+function Expand-AutomationElement {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Element
+  )
+
+  $pattern = $null
+  if (-not $Element.TryGetCurrentPattern(
+      [System.Windows.Automation.ExpandCollapsePattern]::Pattern,
+      [ref]$pattern)) {
+    throw "UI Automation element '$($Element.Current.Name)' does not expose ExpandCollapsePattern."
+  }
+
+  if ($pattern.Current.ExpandCollapseState -ne
+      [System.Windows.Automation.ExpandCollapseState]::Expanded) {
+    $pattern.Expand()
+  }
+}
+
 function Find-ColorModeSelector {
   param(
     [Parameter(Mandatory)]
@@ -1022,10 +1041,20 @@ try {
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
-    -Name "About Mod Control settings" `
+    -Name "About STFC Mod Control" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $aboutNavigation
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Open STFC Mod Control source repository" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $technicalDetails = Find-AutomationElement `
+    -Root $root `
+    -Name "Configuration ownership technical details" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Expand-AutomationElement -Element $technicalDetails
   foreach ($diagnosticValue in @(
       $expectedRuntimeIdentity,
       "Active",

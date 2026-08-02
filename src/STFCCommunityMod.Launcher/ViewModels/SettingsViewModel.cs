@@ -49,7 +49,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ILauncherSettingsLayoutProvider layoutProvider,
         LauncherSettingsActivationDiagnostics settingsDiagnostics,
         IConfigurationRepository? repository = null,
-        ILauncherUiPreferencesStore? uiPreferencesStore = null)
+        ILauncherUiPreferencesStore? uiPreferencesStore = null,
+        Action<Uri>? openExternalUri = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -65,6 +66,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
+        About = new(
+            BundledLauncherAboutCatalog.Load(),
+            catalog,
+            settingsDiagnostics,
+            openExternalUri);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
@@ -95,6 +101,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public string SourceIdentity { get; }
+
+    public LauncherAboutViewModel About { get; }
 
     public IReadOnlyList<SettingsSectionViewModel> Sections { get; }
 
@@ -196,6 +204,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool IsGeneralSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.General;
+
+    public bool IsAdvancedSelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.Advanced;
 
     public bool IsDataSyncSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.DataSync;
@@ -365,8 +376,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             new(
                 LauncherSettingsSection.About,
                 "About",
-                "Release source, configuration ownership, and technical escape hatches.",
-                "About Mod Control settings",
+                "Product identity, build provenance, credits, and third-party notices.",
+                "About STFC Mod Control",
                 SelectSection));
         return sections.AsReadOnly();
     }
@@ -391,6 +402,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(VisibleItemsSummary));
         OnPropertyChanged(nameof(IsAboutSelected));
         OnPropertyChanged(nameof(IsGeneralSelected));
+        OnPropertyChanged(nameof(IsAdvancedSelected));
         OnPropertyChanged(nameof(IsDataSyncSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
         OnPropertyChanged(nameof(IsSettingsFooterVisible));

@@ -1,0 +1,146 @@
+using System.Reflection;
+using System.Windows.Input;
+using STFCCommunityMod.Launcher.Core;
+
+namespace STFCCommunityMod.Launcher.ViewModels;
+
+public sealed class LauncherAboutViewModel
+{
+    private const string ProductRepository =
+        "https://github.com/Guffawaffle/stfc-mod-launcher";
+
+    public LauncherAboutViewModel(
+        LauncherAboutCatalog content,
+        LauncherConfigurationCatalog configurationCatalog,
+        LauncherSettingsActivationDiagnostics diagnostics,
+        Action<Uri>? openExternalUri)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(configurationCatalog);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        var assembly = typeof(LauncherAboutViewModel).Assembly;
+        var assemblyVersion = assembly.GetName().Version;
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        ProductName = ModControlProductIdentity.ProductName;
+        Descriptor = ModControlProductIdentity.Descriptor;
+        Description = ModControlProductIdentity.Description;
+        Version = assemblyVersion is null
+            ? "Unknown"
+            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
+        BuildProvenance = string.IsNullOrWhiteSpace(informationalVersion)
+            ? "No informational build identity is embedded."
+            : informationalVersion;
+        Provider = diagnostics.ProviderDisplayName
+            ?? configurationCatalog.Source.DisplayName;
+        ProviderId = diagnostics.ProviderId
+            ?? configurationCatalog.Source.StableId;
+        DetectedRuntime = diagnostics.DetectedRuntime;
+        ReleaseChannel = diagnostics.ReleaseChannelDisplayName
+            ?? "Not reported";
+        ReleaseRepository = diagnostics.ReleaseRepository
+            ?? configurationCatalog.Source.Repository;
+        RuntimeRepositoryUrl = BuildGitHubRepositoryUrl(ReleaseRepository);
+        RepositoryUrl = ProductRepository;
+        ReleasesUrl = $"{ProductRepository}/releases";
+        ProductLicenseUrl = $"{ProductRepository}/blob/main/LICENSE";
+        Contributors = content.Contributors;
+        Acknowledgements = content.Acknowledgements;
+        ThirdPartyNotices = content.ThirdPartyNotices;
+        GameAcknowledgement = content.GameAcknowledgement;
+        NoticeCoverageStatus = content.NoticeCoverageStatus;
+        LegalReviewStatus = content.LegalReviewStatus;
+        OpenExternalLinkCommand = new ExternalUriCommand(openExternalUri);
+    }
+
+    public string ProductName { get; }
+
+    public string Descriptor { get; }
+
+    public string Description { get; }
+
+    public string Version { get; }
+
+    public string BuildProvenance { get; }
+
+    public string Provider { get; }
+
+    public string ProviderId { get; }
+
+    public string DetectedRuntime { get; }
+
+    public string ReleaseChannel { get; }
+
+    public string ReleaseRepository { get; }
+
+    public string? RuntimeRepositoryUrl { get; }
+
+    public string RepositoryUrl { get; }
+
+    public string ReleasesUrl { get; }
+
+    public string ProductLicenseUrl { get; }
+
+    public IReadOnlyList<LauncherContributor> Contributors { get; }
+
+    public IReadOnlyList<LauncherAcknowledgement> Acknowledgements { get; }
+
+    public IReadOnlyList<LauncherThirdPartyNotice> ThirdPartyNotices { get; }
+
+    public string GameAcknowledgement { get; }
+
+    public string NoticeCoverageStatus { get; }
+
+    public string LegalReviewStatus { get; }
+
+    public ICommand OpenExternalLinkCommand { get; }
+
+    private static string? BuildGitHubRepositoryUrl(string repository)
+    {
+        var parts = repository.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2
+            && parts.All(part => part.All(character =>
+                char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.'))
+                ? $"https://github.com/{parts[0]}/{parts[1]}"
+                : null;
+    }
+
+    private sealed class ExternalUriCommand(Action<Uri>? openExternalUri) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool CanExecute(object? parameter) =>
+            openExternalUri is not null
+            && TryParseHttpsUri(parameter, out _);
+
+        public void Execute(object? parameter)
+        {
+            if (openExternalUri is not null
+                && TryParseHttpsUri(parameter, out var uri))
+            {
+                openExternalUri(uri);
+            }
+        }
+
+        private static bool TryParseHttpsUri(object? parameter, out Uri uri)
+        {
+            var parsed = parameter as Uri;
+            if (parsed is null
+                && parameter is string text)
+            {
+                _ = Uri.TryCreate(text, UriKind.Absolute, out parsed);
+            }
+
+            uri = parsed ?? new Uri("https://invalid.invalid");
+            return parsed is not null
+                && string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+}

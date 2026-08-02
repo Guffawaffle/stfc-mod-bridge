@@ -34,7 +34,11 @@ public sealed record LauncherSettingsActivationDiagnostics(
     string DetectedRuntime,
     string SemanticGroupingStatus,
     string SemanticGroupingReason,
-    string SettingsLayoutName);
+    string SettingsLayoutName,
+    string? ProviderId = null,
+    string? ProviderDisplayName = null,
+    string? ReleaseChannelDisplayName = null,
+    string? ReleaseRepository = null);
 
 public interface ILauncherSettingsLayoutProvider
 {

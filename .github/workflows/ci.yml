@@ -23,6 +23,10 @@ jobs:
       - name: Restore
         run: dotnet restore STFCCommunityMod.Launcher.sln
 
+      - name: Verify third-party notice inventory
+        shell: pwsh
+        run: ./scripts/generate-third-party-notices.ps1 -Check
+
       - name: Test
         run: dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
