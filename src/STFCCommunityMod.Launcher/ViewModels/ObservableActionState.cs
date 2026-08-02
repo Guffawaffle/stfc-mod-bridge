@@ -96,10 +96,13 @@ public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
     private ObservableActionState? Current =>
         mod.IsWorking ? mod
         : launch.IsWorking ? launch
-        : mostRecent is { HasStatus: true } ? mostRecent
+        : mostRecent is { HasStatus: true } recent && IsPersistentHomeFeedback(recent) ? recent
         : mod.HasStatus ? mod
-        : launch.HasStatus ? launch
+        : launch.HasStatus && IsPersistentHomeFeedback(launch) ? launch
         : null;
+
+    private bool IsPersistentHomeFeedback(ObservableActionState state) =>
+        !ReferenceEquals(state, launch) || state.Status != ObservableActionStatus.Unavailable;
 
     private void ActionState_PropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
     {

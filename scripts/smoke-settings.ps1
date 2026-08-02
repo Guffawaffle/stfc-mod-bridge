@@ -506,7 +506,12 @@ try {
 
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Community mod status" `
+    -Name "Star Trek Fleet Command" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
+    -Deadline $deadline)
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Community Mod status" `
     -ControlType ([System.Windows.Automation.ControlType]::Text) `
     -Deadline $deadline)
   $buttonCondition = [System.Windows.Automation.PropertyCondition]::new(
@@ -565,8 +570,21 @@ try {
   if ($null -eq $primeChoice -or $null -eq $scopelyChoice) {
     throw "The launch-target menu did not expose both explicit choices through UI Automation."
   }
+  $windowBounds = $root.Current.BoundingRectangle
+  $menuBounds = $launchTargetMenu.Current.BoundingRectangle
+  $choiceBounds = $primeChoice.Current.BoundingRectangle
+  if ($choiceBounds.Left -lt $windowBounds.Left -or
+      $choiceBounds.Right -gt $windowBounds.Right) {
+    throw "The launch-target menu opened outside the Mod Control window bounds."
+  }
+  if ([Math]::Abs($choiceBounds.Right - $menuBounds.Right) -gt 12) {
+    throw "The launch-target menu is not right-aligned with its split-button owner."
+  }
+  if ($choiceBounds.Width -ge ($windowBounds.Width * 0.8)) {
+    throw "The launch-target menu expanded into a page-width panel instead of a compact menu."
+  }
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
-  Write-Host "PASS: launcher Home exposes separate prime.exe and Scopely launch choices without invoking either target."
+  Write-Host "PASS: launcher Home exposes a compact, right-owned launch menu without invoking either target."
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `

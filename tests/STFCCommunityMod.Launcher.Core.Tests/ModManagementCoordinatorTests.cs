@@ -32,7 +32,7 @@ public sealed class ModManagementCoordinatorTests
         var blocked = coordinator.CapturePresentation(gameDirectory, isGameRunning: true);
 
         Assert.AreEqual(ModManagementActionKind.Install, ready.ActionKind);
-        Assert.AreEqual("Install mod", ready.ActionLabel);
+        Assert.AreEqual("Install", ready.ActionLabel);
         Assert.IsTrue(ready.CanExecute);
         Assert.IsFalse(blocked.CanExecute);
     }
@@ -48,8 +48,8 @@ public sealed class ModManagementCoordinatorTests
         var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
 
         Assert.AreEqual(ModManagementActionKind.AdoptAndInstall, presentation.ActionKind);
-        Assert.AreEqual("Manual install found", presentation.Status);
-        Assert.AreEqual("Adopt & update", presentation.ActionLabel);
+        Assert.AreEqual("Manual installation detected", presentation.Status);
+        Assert.AreEqual("Update", presentation.ActionLabel);
     }
 
     [TestMethod]

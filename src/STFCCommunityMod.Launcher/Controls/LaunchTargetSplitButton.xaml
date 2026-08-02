@@ -9,15 +9,15 @@
     <Style x:Key="SplitButtonSegmentStyle"
            BasedOn="{StaticResource {x:Type Button}}"
            TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Border x:Name="SegmentBorder"
                     Padding="{TemplateBinding Padding}"
                     Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}">
+                    CornerRadius="0">
               <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                 VerticalAlignment="Center"
                                 RecognizesAccessKey="True" />
@@ -39,18 +39,34 @@
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="LaunchChoiceStyle"
+           BasedOn="{StaticResource QuietButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="54" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Style.Triggers>
+        <Trigger Property="Tag" Value="True">
+          <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
   <Grid>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="44" />
-    </Grid.ColumnDefinitions>
+    <Border x:Name="SplitButtonSurface"
+            Background="{DynamicResource SurfaceMutedBrush}"
+            BorderBrush="{DynamicResource ControlBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource ControlCornerRadius}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="44" />
+        </Grid.ColumnDefinitions>
 
-    <Button x:Name="PrimaryButton"
-            MinWidth="150"
+        <Button x:Name="PrimaryButton"
             MinHeight="44"
             Padding="16,8"
-            Tag="6,0,0,6"
             HorizontalContentAlignment="Left"
             Style="{StaticResource SplitButtonSegmentStyle}"
             Command="{Binding PrimaryCommand, ElementName=Root}"
@@ -61,14 +77,11 @@
             automation:AutomationProperties.Name="{Binding PrimaryAutomationName, ElementName=Root}"
             automation:AutomationProperties.HelpText="Executes the selected game launch target." />
 
-    <Button x:Name="MenuButton"
+        <Button x:Name="MenuButton"
             Grid.Column="1"
-            MinWidth="44"
             Width="44"
             MinHeight="44"
-            Margin="-1,0,0,0"
             Padding="0"
-            Tag="0,6,6,0"
             Style="{StaticResource SplitButtonSegmentStyle}"
             Click="MenuButton_Click"
             IsEnabled="{Binding IsMenuEnabled, ElementName=Root}"
@@ -79,15 +92,27 @@
                  Text="⌄" />
     </Button>
 
+        <Border Grid.Column="1"
+              Width="1"
+              Height="24"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+              Background="{DynamicResource BorderBrush}"
+              IsHitTestVisible="False" />
+
+      </Grid>
+    </Border>
+
     <Popup x:Name="ChoicePopup"
            AllowsTransparency="True"
            Closed="ChoicePopup_Closed"
-           Placement="Bottom"
-           PlacementTarget="{Binding ElementName=Root}"
+           CustomPopupPlacementCallback="PlaceChoicePopup"
+           Placement="Custom"
+           PlacementTarget="{Binding ElementName=MenuButton}"
            PopupAnimation="Fade"
            StaysOpen="False">
-      <Border MinWidth="{Binding ActualWidth, ElementName=Root}"
-              Margin="0,4,0,0"
+      <Border x:Name="ChoiceMenuSurface"
+              Width="320"
               Padding="4"
               Background="{DynamicResource SurfaceBrush}"
               BorderBrush="{DynamicResource ControlBorderBrush}"
@@ -96,10 +121,8 @@
               PreviewKeyDown="ChoicePopup_PreviewKeyDown">
         <StackPanel KeyboardNavigation.TabNavigation="Cycle">
           <Button x:Name="PrimeChoiceButton"
-                  MinHeight="44"
-                  Padding="12,8"
-                  HorizontalContentAlignment="Stretch"
-                  Style="{StaticResource SecondaryButtonStyle}"
+                  Style="{StaticResource LaunchChoiceStyle}"
+                  Tag="{Binding IsPrimeSelected, ElementName=Root}"
                   Command="{Binding SelectPrimeCommand, ElementName=Root}"
                   Click="ChoiceButton_Click"
                   automation:AutomationProperties.Name="{Binding PrimeChoiceAutomationName, ElementName=Root}">
@@ -115,15 +138,14 @@
                 <TextBlock Text="Launch prime.exe" />
                 <TextBlock FontSize="11"
                            Foreground="{DynamicResource TextSecondaryBrush}"
-                           Text="{Binding PrimeChoiceStatus, ElementName=Root}" />
+                           Text="{Binding PrimeChoiceStatus, ElementName=Root}"
+                           TextWrapping="Wrap" />
               </StackPanel>
             </Grid>
           </Button>
           <Button x:Name="ScopelyChoiceButton"
-                  MinHeight="44"
-                  Padding="12,8"
-                  HorizontalContentAlignment="Stretch"
-                  Style="{StaticResource SecondaryButtonStyle}"
+                  Style="{StaticResource LaunchChoiceStyle}"
+                  Tag="{Binding IsScopelySelected, ElementName=Root}"
                   Command="{Binding SelectScopelyCommand, ElementName=Root}"
                   Click="ChoiceButton_Click"
                   automation:AutomationProperties.Name="{Binding ScopelyChoiceAutomationName, ElementName=Root}">
@@ -139,7 +161,8 @@
                 <TextBlock Text="Open Scopely launcher" />
                 <TextBlock FontSize="11"
                            Foreground="{DynamicResource TextSecondaryBrush}"
-                           Text="{Binding ScopelyChoiceStatus, ElementName=Root}" />
+                           Text="{Binding ScopelyChoiceStatus, ElementName=Root}"
+                           TextWrapping="Wrap" />
               </StackPanel>
             </Grid>
           </Button>
