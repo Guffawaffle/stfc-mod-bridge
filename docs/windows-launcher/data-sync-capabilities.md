@@ -135,6 +135,20 @@ and trackpad movement plus Left/Right/Home/End navigation, and brings programmat
 The supported application minimum is 960×620 logical pixels. Destination forms reflow without a page-level horizontal
 scrollbar, primary actions remain reachable, and the wizard fits within the Data Sync surface.
 
+### Standalone provider boundary
+
+The standalone launcher resolves a provider-owned configuration catalog before it constructs Settings or Data Sync.
+The catalog's stable source ID must exactly match the selected provider ID; an unknown capability, missing resource, or
+identity mismatch disables both editors instead of projecting Guffawaffle capabilities onto another distribution.
+The WPF Data Sync view then projects feed names and supported-feed sets from `SyncTargetTypeCatalog`; it does not carry
+a second feed-capability map.
+
+The provider-pack v1 contract does **not** contain an independently portable Data Sync catalog resource. Today the
+typed catalog documents the established Guffawaffle runtime contract and is reachable through the verified
+Guffawaffle configuration-catalog composition. NetniV's configuration and sync contracts remain unknown and fail
+closed. Supporting another provider's editable Data Sync topology therefore requires a reviewed provider-specific
+configuration/sync contract; the launcher must not infer compatibility from TOML shape or display names.
+
 ### Visual validation
 
 ![Global Data Sync defaults](images/data-sync/global-defaults.png)

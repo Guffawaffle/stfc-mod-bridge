@@ -6,6 +6,35 @@ namespace STFCCommunityMod.Launcher.Tests;
 public sealed class ProviderStartupContextTests
 {
     [TestMethod]
+    public void SupportedConfigurationCatalogIsBoundToItsOwningProviderIdentity()
+    {
+        var providerCatalog = BundledLauncherProviderCatalog.Load();
+
+        foreach (var provider in providerCatalog.Providers.Values.Where(provider =>
+                     provider.ConfigurationSchema.Status == LauncherProviderCapabilityStatus.Supported))
+        {
+            var configurationCatalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
+
+            Assert.AreEqual(
+                provider.Id,
+                configurationCatalog.Source.StableId,
+                $"Provider '{provider.Id}' must not project another provider's settings or Data Sync catalog.");
+        }
+    }
+
+    [TestMethod]
+    public void UnknownProviderConfigurationCannotProjectTheBundledSyncWorkspace()
+    {
+        var provider = BundledLauncherProviderCatalog.Load().GetProvider("netniv");
+
+        var exception = Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider));
+
+        StringAssert.Contains(exception.Message, "no verified configuration catalog");
+        StringAssert.Contains(exception.Message, "disabled rather than inferred");
+    }
+
+    [TestMethod]
     public void CorruptSelectionProducesRestrictedRecoveryContextInsteadOfThrowing()
     {
         using var directory = new TemporaryStateDirectory();

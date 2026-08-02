@@ -413,6 +413,15 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
+        var candidateErrors = update.Topology.Resolve().Diagnostics
+            .Where(item => item.TargetName == identity && item.Severity == SyncTopologyDiagnosticSeverity.Error)
+            .ToArray();
+        if (candidateErrors.Length > 0)
+        {
+            wizard.SetError(string.Join(" ", candidateErrors.Select(item => item.Message)));
+            return;
+        }
+
         Stage(update.Topology);
         AddWizard = null;
         SelectTab("destination:" + identity);
@@ -578,8 +587,11 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         ClearTokenCommand = new SettingsActionCommand(ClearToken);
         ReplaceTokenCommand = new SettingsActionCommand(ReplaceToken, () => !string.IsNullOrWhiteSpace(replacementToken));
         var definition = SyncTargetTypeCatalog.Get(Draft.Kind);
-        var supportedFeeds = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url)?.SupportedDataKinds
-            ?? definition.SupportedDataKinds;
+        var preset = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url);
+        var supportedFeeds = (preset?.TargetKind == Draft.Kind
+                ? preset.SupportedDataKinds
+                : definition.SupportedDataKinds)
+            .Where(definition.SupportedDataKinds.Contains);
         Feeds = supportedFeeds
             .OrderBy(kind => SyncTargetTypeCatalog.GetFeed(kind).DisplayName, StringComparer.Ordinal)
             .Select(kind => new SyncTargetFeedViewModel(owner, name, kind))

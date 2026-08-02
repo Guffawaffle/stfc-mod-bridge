@@ -34,6 +34,15 @@ jobs:
         shell: pwsh
         run: ./scripts/inspect-package.ps1
 
+      - name: Disposable packaged UI Automation smoke
+        shell: pwsh
+        timeout-minutes: 5
+        run: >-
+          ./scripts/smoke-settings.ps1
+          -LauncherPath ./artifacts/win-x64/app/STFCCommunityMod.Launcher.exe
+          -UseDisposableSyncFixture
+          -TimeoutSeconds 60
+
       - name: Upload installer evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

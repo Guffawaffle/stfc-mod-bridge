@@ -265,7 +265,7 @@
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <ToggleButton Style="{StaticResource TabButtonStyle}" Content="Global defaults"
+          <ToggleButton x:Name="GlobalTabButton" Style="{StaticResource TabButtonStyle}" Content="Global defaults"
                         IsChecked="{Binding IsGlobalTabSelected, Mode=OneWay}" Click="GlobalTab_Click"
                         automation:AutomationProperties.Name="Global Data Sync defaults tab" />
           <Button x:Name="ScrollTabsLeftButton" Grid.Column="1" Width="34" MinHeight="48" Padding="0" Margin="3,0"
@@ -274,7 +274,8 @@
           <ScrollViewer x:Name="DestinationTabScrollViewer" Grid.Column="2"
                         HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                         PanningMode="HorizontalOnly" PreviewMouseWheel="DestinationTabs_PreviewMouseWheel"
-                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged">
+                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged"
+                        automation:AutomationProperties.Name="Destination tab overflow">
             <ItemsControl x:Name="DestinationTabs" ItemsSource="{Binding Tabs}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemContainerStyle>
@@ -456,12 +457,17 @@
                 <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Feed overrides" /><Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Feeds}">
                   <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type viewModels:SyncTargetFeedViewModel}">
-                    <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid Margin="0,0,0,9"
+                          automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override'}">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                       <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Label}" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}" />
+                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, inherited'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, on'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, off'}" />
                       </StackPanel>
                       <TextBlock Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveSummary}" />
                     </Grid>
@@ -554,8 +560,8 @@
             <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource ErrorBrush}" Text="{Binding Error}" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Style="{StaticResource QuietButtonStyle}" Command="{Binding CancelCommand}" Content="Cancel" />
-              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" />
-              <Button Command="{Binding NextCommand}" Content="Next" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" Click="WizardStep_Click" />
+              <Button Command="{Binding NextCommand}" Content="Next" Click="WizardStep_Click" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
               <Button Command="{Binding FinishCommand}" Content="Finish" Visibility="{Binding IsLastStep, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
           </Grid>

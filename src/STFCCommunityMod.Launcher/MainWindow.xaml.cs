@@ -21,8 +21,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 680;
-    private const double SettingsMinWidth = 960;
-    private const double SettingsMinHeight = 620;
+    internal const double SettingsMinWidth = 960;
+    internal const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
     private static readonly IReadOnlyList<ColorModeChoice> ColorModeChoices =
@@ -829,26 +829,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     $"Settings are disabled until the release source is repaired. "
                     + providerSelectionResolution.Message);
             }
-            if (distributionProvider.GetCapabilityStatus(
-                    LauncherProviderCapabilityIds.ConfigurationCatalog)
-                    != LauncherProviderCapabilityStatus.Supported
-                || distributionProvider.ConfigurationSchema.Status
-                    != LauncherProviderCapabilityStatus.Supported
-                || string.IsNullOrWhiteSpace(distributionProvider.ConfigurationSchema.ResourceName))
-            {
-                throw new LauncherConfigurationSchemaException(
-                    $"{distributionProvider.DisplayName} has no verified configuration catalog. "
-                    + "Capability status is unknown, so settings editing is disabled rather than inferred.");
-            }
-            using var schemaStream = typeof(MainWindow).Assembly.GetManifestResourceStream(
-                distributionProvider.ConfigurationSchema.ResourceName);
-            if (schemaStream is null)
-            {
-                throw new LauncherConfigurationSchemaException(
-                    $"The packaged {distributionProvider.DisplayName} configuration catalog is missing.");
-            }
-
-            var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
+            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
             openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
             settingsViewModel = new SettingsViewModel(
                 catalog,
