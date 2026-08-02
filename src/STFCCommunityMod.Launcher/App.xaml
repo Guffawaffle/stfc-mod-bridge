@@ -76,6 +76,8 @@
     <Style TargetType="Button">
       <Setter Property="MinHeight" Value="44" />
       <Setter Property="Padding" Value="18,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="FontWeight" Value="SemiBold" />
@@ -113,8 +115,8 @@
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
                     CornerRadius="{StaticResource ControlCornerRadius}">
-              <ContentPresenter HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                 RecognizesAccessKey="True" />
             </Border>
             <ControlTemplate.Triggers>
@@ -136,6 +138,8 @@
       <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
@@ -145,8 +149,8 @@
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
                     CornerRadius="{StaticResource ControlCornerRadius}">
-              <ContentPresenter HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                 RecognizesAccessKey="True" />
             </Border>
             <ControlTemplate.Triggers>

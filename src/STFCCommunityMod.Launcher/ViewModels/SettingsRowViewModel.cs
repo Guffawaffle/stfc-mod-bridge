@@ -247,10 +247,10 @@ public sealed class SettingsRowViewModel :
         IsDirty
             ? DraftHasOverride
                 ? "Unsaved value"
-                : IsCompatibilityResolved ? "Unsaved compatibility value" : "Unsaved default"
+                : IsCompatibilityResolved ? "Unsaved compatibility value" : "Unsaved initial value"
             : DraftHasOverride
                 ? "Configured"
-                : IsCompatibilityResolved ? "Compatibility value" : "Default";
+                : IsCompatibilityResolved ? "Compatibility value" : "Initial value";
 
     public string EffectiveValue =>
         IsCompatibilityResolved
@@ -261,15 +261,17 @@ public sealed class SettingsRowViewModel :
     {
         get
         {
-            var providerDefault =
-                $"Default: {DefaultValueText} · Provider source: {Setting.Provenance.DefaultSource}. "
-                + $"Runtime path: {Setting.Provenance.RuntimePath}. ";
+            var initialValue = IsNumericEditor || IsEnumEditor
+                ? $"Default: {DefaultValueText}. "
+                : string.Empty;
+            var runtimePath = $"Runtime path: {Setting.Provenance.RuntimePath}. ";
             if (IsCompatibilityResolved)
             {
                 var canonicalEditBehavior = IsNotificationEditor
                     ? "A canonical notification edit replaces the whole compatibility policy; "
                     : "A canonical edit takes precedence over compatibility input; ";
-                return providerDefault
+                return initialValue
+                    + runtimePath
                     + "Compatibility input detected at "
                     + string.Join(", ", valueState.CompatibilitySourcePaths)
                     + ". The provider schema does not define enough compatibility merge metadata "
@@ -284,17 +286,15 @@ public sealed class SettingsRowViewModel :
                         + string.Join(", ", valueState.CompatibilitySourcePaths)
                         + "; those keys remain preserved."
                     : string.Empty;
-            return providerDefault
-                + $"Effective: {EffectiveValue}. {EffectiveValueSource}. "
-                + (DraftHasOverride
-                    ? "An explicit value is configured; use Reset to default to remove it."
-                    : "No explicit value is configured; the runtime/provider default is effective.")
+            return initialValue
+                + runtimePath
+                + $"Current value: {EffectiveValue}. "
                 + ignoredAliases;
         }
     }
 
     public string DefaultAndEffectiveAutomationName =>
-        $"Default and effective value for {Title}";
+        $"Setting details for {Title}";
 
     public string SavedValueText =>
         FormatStateValue(valueState.SavedValue, SavedHasOverride);
@@ -308,7 +308,7 @@ public sealed class SettingsRowViewModel :
         $"Revert {Title} to saved value {SavedValueText}";
 
     public string RevertDraftAutomationHelp =>
-        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "default")} state.";
+        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "initial")} state.";
 
     public string UseDefaultAvailability =>
         DraftHasOverride

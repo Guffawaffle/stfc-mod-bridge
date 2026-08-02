@@ -164,18 +164,17 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
-    public void SharedProvenanceAndResetContractSpansInterfaceAndGraphicsPages()
+    public void NumericAndDropdownHelpKeepsDefaultsOutOfThePermanentRowChrome()
     {
         using var fixture = SettingsFixture.Create();
 
         fixture.Select(LauncherSettingsSection.Interface);
         var interfaceRow = fixture.Row("ui.extend_chest_purchase_max");
         StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Effective: 160");
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "No explicit value");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Current value: 160");
         interfaceRow.NumericText = "120";
         Assert.IsTrue(interfaceRow.DraftHasOverride);
-        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "explicit value");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Current value: 120");
         Assert.IsTrue(interfaceRow.UseDefaultCommand.CanExecute(null));
         interfaceRow.UseDefaultCommand.Execute(null);
         Assert.IsFalse(interfaceRow.DraftHasOverride);
@@ -183,9 +182,12 @@ public sealed class SettingsProjectionTests
         fixture.Select(LauncherSettingsSection.Graphics);
         var graphicsRow = fixture.Row("graphics.default_system_zoom");
         Assert.AreEqual(
-            "Default and effective value for Default system zoom",
+            "Setting details for Default system zoom",
             graphicsRow.DefaultAndEffectiveAutomationName);
         StringAssert.Contains(graphicsRow.DefaultAndEffectiveHelp, "Default: 1750");
+
+        var booleanRow = fixture.Row("graphics.free_resize");
+        Assert.IsFalse(booleanRow.DefaultAndEffectiveHelp.Contains("Default:", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -477,7 +479,7 @@ public sealed class SettingsProjectionTests
             .ToArray();
         Assert.AreEqual(expected, rows.Length);
         Assert.IsTrue(rows.All(row => row.IsNotificationEditor));
-        Assert.IsTrue(rows.All(row => row.EffectiveState == "Default"));
+        Assert.IsTrue(rows.All(row => row.EffectiveState == "Initial value"));
         Assert.IsTrue(rows.All(row => row.EffectiveValueSource.Contains("Provider default", StringComparison.Ordinal)));
         Assert.IsTrue(rows.All(row => !string.IsNullOrWhiteSpace(row.AccessibleName)));
         Assert.IsTrue(rows.All(row => !string.IsNullOrWhiteSpace(row.AccessibleHelp)));

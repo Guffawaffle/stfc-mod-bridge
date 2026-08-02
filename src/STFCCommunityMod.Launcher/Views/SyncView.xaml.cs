@@ -260,11 +260,17 @@ public partial class SyncView : UserControl
         }
     }
 
-    private void InformationButton_StateChanged(object sender, RoutedEventArgs e)
+    private void DestinationActionsButton_Click(object sender, RoutedEventArgs e)
     {
-        InformationPopup.IsOpen = InformationButton.IsChecked == true
-            || InformationButton.IsKeyboardFocusWithin
-            || InformationButton.IsMouseOver;
+        if (sender is not Button { ContextMenu: { } menu } button)
+        {
+            return;
+        }
+
+        menu.PlacementTarget = button;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+        e.Handled = true;
     }
 
     private void ProxySegment_Click(object sender, RoutedEventArgs e)

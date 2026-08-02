@@ -331,7 +331,8 @@ public static class SyncTopologyResolver
                     "SYNC_CAPABILITY_UNSUPPORTED",
                     target.Name,
                     kind.ToString(),
-                    "This data capability is not supported by the selected target kind."));
+                    $"{SyncTargetTypeCatalog.GetFeed(kind).DisplayName} is not supported by "
+                    + $"the {definition.DisplayName} target type."));
             }
         }
 

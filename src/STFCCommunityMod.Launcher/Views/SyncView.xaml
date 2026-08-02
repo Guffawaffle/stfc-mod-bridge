@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
              xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
@@ -233,22 +234,9 @@
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock FontSize="22" FontWeight="SemiBold" Text="Data Sync" />
-            <ToggleButton x:Name="InformationButton" Width="30" Height="30" Margin="8,0,0,0"
-                          Content="?" FontSize="15" FontWeight="Bold"
-                          Style="{StaticResource SegmentButtonStyle}"
-                          ToolTip="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart."
-                          automation:AutomationProperties.Name="About Data Sync editing"
-                          automation:AutomationProperties.HelpText="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart."
-                          GotKeyboardFocus="InformationButton_StateChanged" LostKeyboardFocus="InformationButton_StateChanged"
-                          MouseEnter="InformationButton_StateChanged" MouseLeave="InformationButton_StateChanged"
-                          Click="InformationButton_StateChanged" />
-            <Popup x:Name="InformationPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=InformationButton}"
-                   AllowsTransparency="True" StaysOpen="False">
-              <Border Width="390" Margin="0,6,0,0" Padding="14" Background="{DynamicResource SurfaceMutedBrush}"
-                      BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1" CornerRadius="8">
-                <TextBlock Text="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart." />
-              </Border>
-            </Popup>
+            <controls:HelpFlyoutButton Margin="8,0,0,0"
+                                       AutomationName="About Data Sync editing"
+                                       HelpText="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart." />
           </StackPanel>
           <Button x:Name="AddDestinationButton" Grid.Column="1" Command="{Binding OpenAddDestinationCommand}" Content="Add destination"
                   automation:AutomationProperties.Name="Add Data Sync destination" />
@@ -384,8 +372,14 @@
                       <CheckBox Style="{StaticResource SyncSwitchStyle}" IsChecked="{Binding IsEnabled}"
                                 automation:AutomationProperties.Name="Destination enabled" />
                     </StackPanel>
-                    <Button Width="44" MinHeight="38" Padding="0" Style="{StaticResource SecondaryButtonStyle}" Content="⋯" automation:AutomationProperties.Name="Destination actions">
+                    <Button x:Name="DestinationActionsButton" Width="44" MinHeight="38" Padding="0"
+                            Style="{StaticResource SecondaryButtonStyle}" Click="DestinationActionsButton_Click"
+                            automation:AutomationProperties.Name="Destination actions">
+                      <controls:AppIcon Kind="More" />
                       <Button.ContextMenu><ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource ControlBorderBrush}">
+                        <MenuItem Header="Remove unsupported settings" Command="{Binding RemoveUnsupportedCapabilitiesCommand}"
+                                  Visibility="{Binding HasUnsupportedCapabilities, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  Style="{StaticResource DarkMenuItemStyle}" />
                         <MenuItem Header="Duplicate" Command="{Binding DuplicateCommand}" Style="{StaticResource DarkMenuItemStyle}" />
                         <Separator />
                         <MenuItem Header="Remove" Command="{Binding RemoveCommand}" Style="{StaticResource DarkMenuItemStyle}" />

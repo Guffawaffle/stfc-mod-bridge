@@ -315,6 +315,37 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void UnsupportedExistingCapabilityIsNamedAndCanBeRemovedBeforeSave()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync]
+            jobs = true
+
+            [sync.targets.nextspocksclub]
+            url = "https://next.spocks.club/sync/ingress/"
+            token = "fixture-secret"
+            fleet_runtime = true
+            jobs = false
+            """);
+        var viewModel = fixture.CreateViewModel();
+        var target = viewModel.Targets.Single();
+
+        Assert.IsTrue(target.HasUnsupportedCapabilities);
+        StringAssert.Contains(target.ValidationSummary, "Fleet runtime");
+        StringAssert.Contains(target.ValidationSummary, "remove unsupported settings");
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        Assert.IsFalse(viewModel.CanSave);
+        StringAssert.Contains(viewModel.SaveAvailability, "Fleet runtime");
+
+        Assert.IsTrue(target.RemoveUnsupportedCapabilitiesCommand.CanExecute(null));
+        target.RemoveUnsupportedCapabilitiesCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+        Assert.IsTrue(viewModel.HasPendingChanges);
+    }
+
+    [TestMethod]
     public void LegacyRootEditRequiresExplicitMigrationConfirmation()
     {
         using var fixture = SyncFixture.Create(

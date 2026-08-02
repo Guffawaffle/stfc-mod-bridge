@@ -169,10 +169,14 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         : hasSiblingPendingChanges()
             ? "Save or discard the pending non-sync settings before saving Data Sync."
         : !IsCommittable
-            ? "Fix the target validation errors before saving."
+            ? $"Fix the target validation errors before saving. {BlockingValidationSummary}"
             : CanSave
                 ? "Save all staged Data Sync changes atomically."
                 : "Stage a valid Data Sync change before saving.";
+
+    private string BlockingValidationSummary => workspace?.Desired.Resolve().Diagnostics
+        .FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)?.Message
+        ?? string.Empty;
 
     public string OperationStatus
     {
@@ -584,6 +588,9 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         DuplicateCommand = new SettingsActionCommand(
             () => owner.DuplicateTarget(name),
             () => Definition.MaximumInstances > 1);
+        RemoveUnsupportedCapabilitiesCommand = new SettingsActionCommand(
+            RemoveUnsupportedCapabilities,
+            () => HasUnsupportedCapabilities);
         ClearTokenCommand = new SettingsActionCommand(ClearToken);
         ReplaceTokenCommand = new SettingsActionCommand(ReplaceToken, () => !string.IsNullOrWhiteSpace(replacementToken));
         var definition = SyncTargetTypeCatalog.Get(Draft.Kind);
@@ -726,15 +733,21 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         get
         {
             var errors = owner.GetDiagnostics(name).Where(item => item.Severity == SyncTopologyDiagnosticSeverity.Error).ToArray();
-            return errors.Length == 0 ? "Ready" : string.Join(" ", errors.Select(item => item.Message));
+            var summary = errors.Length == 0 ? "Ready" : string.Join(" ", errors.Select(item => item.Message));
+            return HasUnsupportedCapabilities
+                ? summary + " Open destination actions and remove unsupported settings to continue."
+                : summary;
         }
     }
     public bool HasValidationError => owner.GetDiagnostics(name).Any(item => item.Severity == SyncTopologyDiagnosticSeverity.Error);
+    public bool HasUnsupportedCapabilities => owner.GetDiagnostics(name).Any(item =>
+        item.Code == "SYNC_CAPABILITY_UNSUPPORTED");
     public string ReadinessLabel => HasValidationError ? "Needs attention" : "Ready";
     public string EffectiveFeeds => string.Join(", ", Feeds.Where(feed => feed.EffectiveEnabled).Select(feed => feed.Label).DefaultIfEmpty("None"));
     public IReadOnlyList<SyncTargetFeedViewModel> Feeds { get; }
     public ICommand RemoveCommand { get; }
     public ICommand DuplicateCommand { get; }
+    public ICommand RemoveUnsupportedCapabilitiesCommand { get; }
     public ICommand ClearTokenCommand { get; }
     public ICommand ReplaceTokenCommand { get; }
 
@@ -756,6 +769,35 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         owner.UpdateTarget(name, target => target.WithConnection(target.Url, SyncSecret.Missing));
         replacementToken = string.Empty;
         NotifyAll();
+    }
+
+    private void RemoveUnsupportedCapabilities()
+    {
+        var definition = Definition;
+        owner.UpdateTarget(
+            name,
+            target =>
+            {
+                var changed = target;
+                foreach (var kind in target.DataOverrides.Keys
+                             .Where(kind => !definition.SupportedDataKinds.Contains(kind))
+                             .ToArray())
+                {
+                    changed = changed.WithDataOverride(kind, SyncOverride.Inherited<bool>());
+                }
+
+                if (target.BattlelogEnrichment.IsExplicit && !definition.SupportsBattlelogEnrichment)
+                {
+                    changed = changed.WithBattlelogEnrichment(SyncOverride.Inherited<bool>());
+                }
+
+                if (target.FleetRuntimeMode.IsExplicit && !definition.SupportsFleetRuntimeMode)
+                {
+                    changed = changed.WithFleetRuntimeMode(SyncOverride.Inherited<string>());
+                }
+
+                return changed;
+            });
     }
 
     private void NotifyAll() => PropertyChanged?.Invoke(this, new(string.Empty));

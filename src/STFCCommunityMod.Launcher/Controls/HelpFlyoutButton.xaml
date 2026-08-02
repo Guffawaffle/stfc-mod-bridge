@@ -42,7 +42,7 @@
            Placement="Bottom"
            HorizontalOffset="-12"
            AllowsTransparency="True"
-           StaysOpen="False"
+           StaysOpen="True"
            Closed="Flyout_Closed"
            PopupAnimation="Fade">
       <Border x:Name="FlyoutContent"

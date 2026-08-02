@@ -22,11 +22,16 @@ public partial class HelpFlyoutButton : UserControl
             new PropertyMetadata("More information"));
 
     private bool isPinned;
-    private DispatcherOperation? pendingCloseOperation;
+    private readonly DispatcherTimer closeTimer;
 
     public HelpFlyoutButton()
     {
         InitializeComponent();
+        closeTimer = new(DispatcherPriority.Background, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(250),
+        };
+        closeTimer.Tick += CloseTimer_Tick;
     }
 
     public string HelpText
@@ -47,6 +52,7 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
+        closeTimer.Stop();
         isPinned = !isPinned;
         Flyout.IsOpen = isPinned;
     }
@@ -55,6 +61,7 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
+        closeTimer.Stop();
         Flyout.IsOpen = true;
     }
 
@@ -76,6 +83,7 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
+        closeTimer.Stop();
         Flyout.IsOpen = true;
     }
 
@@ -101,9 +109,11 @@ public partial class HelpFlyoutButton : UserControl
         Keyboard.Focus(FlyoutButton);
     }
 
-    private void CloseIfUnowned()
+    private void CloseTimer_Tick(object? sender, EventArgs e)
     {
-        pendingCloseOperation = null;
+        _ = sender;
+        _ = e;
+        closeTimer.Stop();
         if (!IsLoaded)
         {
             return;
@@ -128,18 +138,15 @@ public partial class HelpFlyoutButton : UserControl
             return;
         }
 
-        pendingCloseOperation?.Abort();
-        pendingCloseOperation = Dispatcher.BeginInvoke(
-            CloseIfUnowned,
-            DispatcherPriority.Background);
+        closeTimer.Stop();
+        closeTimer.Start();
     }
 
     private void HelpFlyoutButton_Unloaded(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
-        pendingCloseOperation?.Abort();
-        pendingCloseOperation = null;
+        closeTimer.Stop();
         isPinned = false;
         Flyout.IsOpen = false;
     }

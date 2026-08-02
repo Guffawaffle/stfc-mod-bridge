@@ -155,6 +155,21 @@ public sealed class SyncViewInteractionTests
         }
     }
 
+    [TestMethod]
+    public void DataSyncUsesSharedHelpAndClickableDestinationActions()
+    {
+        var sync = LoadXaml("src/STFCCommunityMod.Launcher/Views/SyncView.xaml");
+        var help = sync.Descendants().Single(element =>
+            element.Name.LocalName == "HelpFlyoutButton"
+            && (string?)element.Attribute("AutomationName") == "About Data Sync editing");
+        var actions = Named(sync.Descendants(Presentation + "Button"), "DestinationActionsButton");
+
+        Assert.IsNotNull(help);
+        Assert.AreEqual("DestinationActionsButton_Click", (string?)actions.Attribute("Click"));
+        Assert.IsTrue(actions.Descendants(Presentation + "MenuItem").Any(item =>
+            (string?)item.Attribute("Command") == "{Binding RemoveUnsupportedCapabilitiesCommand}"));
+    }
+
     private static XElement Named(IEnumerable<XElement> elements, string name) =>
         elements.Single(element => (string?)element.Attribute(Xaml + "Name") == name);
 

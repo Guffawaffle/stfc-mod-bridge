@@ -376,7 +376,9 @@ public sealed class SyncDesiredTopologyTests
 
         var blocked = topology.Resolve();
         Assert.IsFalse(blocked.IsCommittable);
-        Assert.IsTrue(blocked.Diagnostics.Any(item => item.Code == "SYNC_CAPABILITY_UNSUPPORTED"));
+        var unsupported = blocked.Diagnostics.First(item => item.Code == "SYNC_CAPABILITY_UNSUPPORTED");
+        StringAssert.Contains(unsupported.Message, "Fleet runtime");
+        StringAssert.Contains(unsupported.Message, "Sync target type");
         Assert.IsTrue(blocked.Diagnostics.Any(item => item.Code == "SYNC_UNSAFE_TLS_PAIR_REQUIRED"));
 
         topology = RequireSuccess(

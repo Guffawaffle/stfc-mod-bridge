@@ -978,7 +978,7 @@
                         <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
                                    Foreground="{DynamicResource WarningBrush}"
-                                   Text="Invalid override · Default shown"
+                                   Text="Invalid override · Initial value shown"
                                    Visibility="{Binding EnumNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
                       </StackPanel>
 

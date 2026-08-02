@@ -62,17 +62,32 @@ public sealed class SettingsShellAccessibilityTests
         Assert.AreEqual(
             "HelpFlyoutButton_Unloaded",
             (string?)root.Attribute("Unloaded"));
+        var popup = document.Descendants(Presentation + "Popup").Single();
+        Assert.AreEqual("True", (string?)popup.Attribute("StaysOpen"));
     }
 
     [TestMethod]
-    public void DefaultActionUsesAccessTextMnemonic()
+    public void HelpFlyoutAllowsPointerTransferIntoItsPopup()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/Controls/HelpFlyoutButton.xaml.cs"));
+
+        StringAssert.Contains(source, "TimeSpan.FromMilliseconds(250)");
+        StringAssert.Contains(source, "closeTimer.Stop();");
+        StringAssert.Contains(source, "closeTimer.Start();");
+    }
+
+    [TestMethod]
+    public void SettingRowsDoNotExposeDefaultAsAPeerAction()
     {
         var document = LoadXaml(
             "src/STFCCommunityMod.Launcher/Controls/SettingsRowActions.xaml");
-        var accessText = document.Descendants(Presentation + "AccessText")
-            .SingleOrDefault(element => (string?)element.Attribute("Text") == "_Default");
 
-        Assert.IsNotNull(accessText);
+        Assert.IsFalse(document.Descendants().Any(element =>
+            element.Attributes().Any(attribute =>
+                attribute.Name.LocalName is "Text" or "Content"
+                && attribute.Value.TrimStart('_').Equals("Default", StringComparison.OrdinalIgnoreCase))));
     }
 
     [TestMethod]
@@ -175,5 +190,18 @@ public sealed class SettingsShellAccessibilityTests
 
         Assert.IsNotNull(directory, "Could not locate the launcher repository root.");
         return XDocument.Load(Path.Combine(directory.FullName, relativePath));
+    }
+
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null
+               && !File.Exists(Path.Combine(directory.FullName, "STFCCommunityMod.Launcher.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate the launcher repository root.");
     }
 }

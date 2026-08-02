@@ -51,21 +51,6 @@
       <controls:AppIcon Kind="RevertDraft" />
     </Button>
 
-    <Button MinWidth="72"
-            Height="44"
-            MinHeight="44"
-            Margin="4,0,0,0"
-            Padding="0"
-            Style="{StaticResource QuietButtonStyle}"
-            Command="{Binding UseDefaultCommand}"
-            ToolTip="{Binding UseDefaultAvailability}"
-            Visibility="{Binding DraftHasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
-            automation:AutomationProperties.Name="{Binding Title, StringFormat=Reset {0} to default}"
-            automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}">
-      <AccessText FontSize="12"
-                  Text="_Default" />
-    </Button>
-
     <Button x:Name="MoreActionsButton"
             Width="44"
             Height="44"

@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              MinHeight="44"
              automation:AutomationProperties.Name="Game launch target">
   <UserControl.Resources>
@@ -87,9 +88,9 @@
             IsEnabled="{Binding IsMenuEnabled, ElementName=Root}"
             automation:AutomationProperties.Name="Choose game launch target"
             automation:AutomationProperties.HelpText="Opens the launch target menu without launching anything.">
-      <TextBlock FontFamily="Segoe UI Symbol"
-                 FontSize="13"
-                 Text="⌄" />
+      <controls:AppIcon Width="16"
+                        Height="16"
+                        Kind="ChevronDown" />
     </Button>
 
         <Border Grid.Column="1"

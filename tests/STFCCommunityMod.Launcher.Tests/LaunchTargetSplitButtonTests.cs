@@ -25,6 +25,11 @@ public sealed class LaunchTargetSplitButtonTests
         Assert.AreEqual("{Binding PrimaryCommand, ElementName=Root}", (string?)primary.Attribute("Command"));
         Assert.AreEqual("Choose game launch target", (string?)menu.Attribute(Automation + "AutomationProperties.Name"));
         Assert.AreEqual("MenuButton_Click", (string?)menu.Attribute("Click"));
+        Assert.IsTrue(menu.Descendants().Any(element =>
+            element.Name.LocalName == "AppIcon"
+            && (string?)element.Attribute("Kind") == "ChevronDown"));
+        Assert.IsFalse(menu.Descendants(Presentation + "TextBlock")
+            .Any(element => (string?)element.Attribute("Text") == "⌄"));
     }
 
     [TestMethod]
@@ -57,6 +62,23 @@ public sealed class LaunchTargetSplitButtonTests
             (string?)element.Attribute("Style") == "{StaticResource LaunchChoiceStyle}"));
         Assert.IsTrue(choiceButtons.All(element => element.Attribute("BorderThickness") is null));
         Assert.AreEqual(0, popupSurface.Descendants(Presentation + "Border").Count());
+    }
+
+    [TestMethod]
+    public void SharedButtonTemplateHonorsRequestedContentAlignment()
+    {
+        var app = LoadXaml("src/STFCCommunityMod.Launcher/App.xaml");
+        var secondaryStyle = app.Descendants(Presentation + "Style")
+            .Single(style => style.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Key" && attribute.Value == "SecondaryButtonStyle"));
+        var presenter = secondaryStyle.Descendants(Presentation + "ContentPresenter").Single();
+
+        Assert.AreEqual(
+            "{TemplateBinding HorizontalContentAlignment}",
+            (string?)presenter.Attribute("HorizontalAlignment"));
+        Assert.AreEqual(
+            "{TemplateBinding VerticalContentAlignment}",
+            (string?)presenter.Attribute("VerticalAlignment"));
     }
 
     [TestMethod]
