@@ -52,6 +52,33 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void CompletedStatusCanBeClearedWithoutInterruptingWorkingState()
+    {
+        var state = new ObservableActionState();
+        Assert.IsTrue(state.TryBegin("Checking."));
+
+        state.ClearStatus();
+
+        Assert.IsTrue(state.IsWorking);
+        Assert.AreEqual("Checking.", state.StatusText);
+
+        state.Complete(false, "Already current.");
+        state.ClearStatus();
+
+        Assert.AreEqual(ObservableActionStatus.Idle, state.Status);
+        Assert.IsFalse(state.HasStatus);
+        Assert.AreEqual(string.Empty, state.AutomationAnnouncement);
+    }
+
+    [TestMethod]
+    public void RefreshResultFeedbackUsesThreeSecondLifetime()
+    {
+        Assert.AreEqual(
+            TimeSpan.FromSeconds(3),
+            MainWindowViewModel.RefreshActionStatusLifetime);
+    }
+
+    [TestMethod]
     public async Task ObservableCommandKeepsCanExecuteTrueWhileSuppressingDuplicateExecution()
     {
         var state = new ObservableActionState();

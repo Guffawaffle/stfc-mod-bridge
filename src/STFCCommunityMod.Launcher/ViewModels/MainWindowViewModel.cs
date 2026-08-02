@@ -4,13 +4,16 @@ using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Reflection;
 using System.Windows.Input;
+using System.Windows.Threading;
 using STFCCommunityMod.Launcher.Core;
 using STFCCommunityMod.Launcher.Services;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
-internal sealed class MainWindowViewModel : INotifyPropertyChanged
+internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 {
+    internal static readonly TimeSpan RefreshActionStatusLifetime = TimeSpan.FromSeconds(3);
+
     private readonly LauncherEnvironmentProbe environmentProbe;
     private readonly ModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
@@ -32,6 +35,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private LauncherLaunchTarget selectedLaunchTarget;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private string diagnosticActionStatus = string.Empty;
+    private readonly DispatcherTimer refreshActionStatusTimer;
+    private bool isDisposed;
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
@@ -56,6 +61,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
+        refreshActionStatusTimer = new(DispatcherPriority.Background)
+        {
+            Interval = RefreshActionStatusLifetime,
+        };
+        refreshActionStatusTimer.Tick += RefreshActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
@@ -89,6 +99,24 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void Dispose()
+    {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        isDisposed = true;
+        refreshActionStatusTimer.Stop();
+        refreshActionStatusTimer.Tick -= RefreshActionStatusTimer_Tick;
+        actionFeedback.Refresh.PropertyChanged -= RefreshActionState_PropertyChanged;
+        actionFeedback.Mod.PropertyChanged -= ModActionState_PropertyChanged;
+        actionFeedback.Launch.PropertyChanged -= LaunchActionState_PropertyChanged;
+        actionFeedback.LauncherUpdate.PropertyChanged -= LauncherUpdateActionState_PropertyChanged;
+        homeFeedback.PropertyChanged -= HomeFeedback_PropertyChanged;
+        GC.SuppressFinalize(this);
+    }
 
     public string GameSectionStatus => presentation.GameSectionStatus;
 
@@ -830,12 +858,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             case nameof(ObservableActionState.IsWorking):
                 OnPropertyChanged(nameof(RefreshActionLabel));
+                UpdateRefreshActionStatusLifetime();
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(RefreshActionAutomationName));
                 break;
             case nameof(ObservableActionState.StatusText):
                 OnPropertyChanged(nameof(RefreshActionStatus));
+                UpdateRefreshActionStatusLifetime();
                 break;
             case nameof(ObservableActionState.HasStatus):
                 OnPropertyChanged(nameof(HasRefreshActionStatus));
@@ -844,6 +874,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CanRefresh));
                 break;
         }
+    }
+
+    private void UpdateRefreshActionStatusLifetime()
+    {
+        refreshActionStatusTimer.Stop();
+        if (actionFeedback.Refresh.HasStatus && !actionFeedback.Refresh.IsWorking)
+        {
+            refreshActionStatusTimer.Start();
+        }
+    }
+
+    private void RefreshActionStatusTimer_Tick(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        refreshActionStatusTimer.Stop();
+        actionFeedback.Refresh.ClearStatus();
     }
 
     private void ModActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)

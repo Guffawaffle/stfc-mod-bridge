@@ -174,6 +174,14 @@ public sealed class ObservableActionState : INotifyPropertyChanged
     public void Cancel(string message) =>
         SetStatus(ObservableActionStatus.Idle, message);
 
+    public void ClearStatus()
+    {
+        if (!IsWorking)
+        {
+            SetStatusCore(ObservableActionStatus.Idle, string.Empty);
+        }
+    }
+
     public void SetAvailability(bool available, string unavailableMessage)
     {
         if (isCommandAvailable != available)

@@ -176,6 +176,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
+        if (DataContext is IDisposable disposableViewModel)
+        {
+            disposableViewModel.Dispose();
+        }
+
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
         httpClient.Dispose();
