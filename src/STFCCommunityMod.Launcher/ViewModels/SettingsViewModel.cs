@@ -71,7 +71,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
         enablePatchEditingCommand = new SettingsActionCommand(
             EnablePatchEditing,
-            () => !IsPatchEditingUnlocked && PatchSettings.Count > 0);
+            () => IsConfigurationReady && !IsPatchEditingUnlocked && PatchSettings.Count > 0);
         lockPatchEditingCommand = new SettingsActionCommand(
             LockPatchEditing,
             () => IsPatchEditingUnlocked);
@@ -449,6 +449,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         if (load.State == ConfigurationRepositoryReadState.NoConfigurationSelected)
         {
             OperationStatus = string.Empty;
+            RefreshPatchEditingAvailability();
             return;
         }
 
@@ -457,11 +458,25 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
                 ? $"Editing is unavailable because the TOML could not be loaded safely: {load.ValidationError?.Message}"
                 : $"Editing is unavailable: {load.Error}";
+            RefreshPatchEditingAvailability();
             return;
         }
 
         workspace = loadedWorkspace;
         OperationStatus = string.Empty;
+        RefreshPatchEditingAvailability();
+    }
+
+    private void RefreshPatchEditingAvailability()
+    {
+        if (workspace is null && IsPatchEditingUnlocked)
+        {
+            IsPatchEditingUnlocked = false;
+            return;
+        }
+
+        enablePatchEditingCommand.RaiseCanExecuteChanged();
+        lockPatchEditingCommand.RaiseCanExecuteChanged();
     }
 
     private SettingsValueState GetValueState(LauncherConfigurationSetting setting)
@@ -893,11 +908,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 return new AdvancedPatchSummaryItemViewModel(
                     setting.Presentation.Label,
                     FormatPatchSummaryValue(state.DraftValue ?? setting.DefaultValue),
-                    state.IsDirty);
+                    state.IsDirty,
+                    IsConfigurationReady,
+                    state.DraftHasOverride);
             })
             .ToArray();
         return new(
             IsPatchEditingUnlocked,
+            IsConfigurationReady,
             summaries,
             EnablePatchEditingCommand,
             LockPatchEditingCommand);

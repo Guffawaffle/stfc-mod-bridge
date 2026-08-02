@@ -373,6 +373,97 @@ public sealed class SettingsProjectionTests
         Assert.IsFalse(relaunched.IsPatchEditingUnlocked);
     }
 
+    [TestMethod]
+    public void PatchGateRequiresEditableConfigurationAndRefreshesAvailability()
+    {
+        using var fixture = SettingsFixture.Create();
+        string? selectedPath = null;
+        var viewModel = fixture.CreateAdditionalViewModel(() => selectedPath);
+        SettingsFixture.Select(viewModel, LauncherSettingsSection.Advanced);
+
+        var unavailableGate = viewModel.FilteredSettings
+            .OfType<AdvancedPatchEditingGateViewModel>()
+            .Single();
+        Assert.IsFalse(viewModel.IsConfigurationReady);
+        Assert.IsFalse(viewModel.EnablePatchEditingCommand.CanExecute(null));
+        Assert.IsFalse(unavailableGate.IsConfigurationAvailable);
+        StringAssert.Contains(unavailableGate.SummaryTitle, "Schema-default");
+        Assert.IsTrue(
+            unavailableGate.Summaries.All(
+                summary =>
+                    !summary.IsConfigurationAvailable
+                    && summary.ValueSource.Contains("Configuration unavailable", StringComparison.Ordinal)));
+        viewModel.EnablePatchEditingCommand.Execute(null);
+        Assert.IsFalse(viewModel.IsPatchEditingUnlocked);
+
+        selectedPath = fixture.ConfigurationPath;
+        viewModel.ReloadConfiguration();
+        Assert.IsTrue(viewModel.IsConfigurationReady);
+        Assert.IsTrue(viewModel.EnablePatchEditingCommand.CanExecute(null));
+        Assert.IsTrue(
+            viewModel.FilteredSettings
+                .OfType<AdvancedPatchEditingGateViewModel>()
+                .Single()
+                .IsConfigurationAvailable);
+
+        viewModel.EnablePatchEditingCommand.Execute(null);
+        Assert.IsTrue(viewModel.IsPatchEditingUnlocked);
+        selectedPath = null;
+        viewModel.ReloadConfiguration();
+        Assert.IsFalse(viewModel.IsConfigurationReady);
+        Assert.IsFalse(viewModel.IsPatchEditingUnlocked);
+        Assert.IsFalse(viewModel.EnablePatchEditingCommand.CanExecute(null));
+    }
+
+    [TestMethod]
+    public async Task SaveWhileUnlockedPreservesUnrelatedSparseToml()
+    {
+        const string original = "# keep this comment\n[custom]\nkeep = \"verbatim\"\n";
+        using var fixture = SettingsFixture.Create(original);
+        fixture.Select(LauncherSettingsSection.Advanced);
+        var patch = fixture.Catalog.VisibleSettings.First(
+            setting =>
+                IsPatchSetting(setting)
+                && setting.Control == LauncherConfigurationControl.Scalar
+                && setting.ValueKind == LauncherConfigurationValueKind.Boolean);
+
+        fixture.ViewModel.EnablePatchEditingCommand.Execute(null);
+        var originalValue = fixture.Row(patch.Path).BooleanValue;
+        fixture.Row(patch.Path).BooleanValue = !originalValue;
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+
+        var persisted = File.ReadAllText(fixture.ConfigurationPath);
+        Assert.IsTrue(fixture.ViewModel.IsPatchEditingUnlocked);
+        StringAssert.Contains(persisted, "# keep this comment");
+        StringAssert.Contains(persisted, "[custom]\nkeep = \"verbatim\"");
+        StringAssert.Contains(persisted, $"{patch.Path.Split('.')[1]} = {!originalValue}".ToLowerInvariant());
+    }
+
+    [TestMethod]
+    public void DiscardWhileUnlockedPreservesUnrelatedSparseToml()
+    {
+        const string original = "# keep this comment\n[custom]\nkeep = \"verbatim\"\n";
+        using var fixture = SettingsFixture.Create(original);
+        fixture.Select(LauncherSettingsSection.Advanced);
+        var patch = fixture.Catalog.VisibleSettings.First(
+            setting =>
+                IsPatchSetting(setting)
+                && setting.Control == LauncherConfigurationControl.Scalar
+                && setting.ValueKind == LauncherConfigurationValueKind.Boolean);
+
+        fixture.ViewModel.EnablePatchEditingCommand.Execute(null);
+        var originalValue = fixture.Row(patch.Path).BooleanValue;
+        fixture.Row(patch.Path).BooleanValue = !originalValue;
+        Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        fixture.ViewModel.DiscardCommand.Execute(null);
+
+        Assert.IsTrue(fixture.ViewModel.IsPatchEditingUnlocked);
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.AreEqual(original, File.ReadAllText(fixture.ConfigurationPath));
+        Assert.AreEqual(originalValue, fixture.Row(patch.Path).BooleanValue);
+    }
+
     private static bool IsPatchSetting(LauncherConfigurationSetting setting) =>
         string.Equals(setting.Category, "patches", StringComparison.OrdinalIgnoreCase);
 
@@ -420,7 +511,8 @@ public sealed class SettingsProjectionTests
 
         public IReadOnlyDictionary<string, LauncherConfigurationSetting> SettingsByPath { get; }
 
-        public static SettingsFixture Create()
+        public static SettingsFixture Create(
+            string contents = "# disposable launcher projection fixture\n")
         {
             using var schema = typeof(SettingsViewModel).Assembly
                 .GetManifestResourceStream(SchemaResource);
@@ -432,7 +524,7 @@ public sealed class SettingsProjectionTests
                 $"stfc-launcher-projection-{Guid.NewGuid():N}.toml");
             File.WriteAllText(
                 configurationPath,
-                "# disposable launcher projection fixture\n",
+                contents,
                 new UTF8Encoding(false));
             var command = new TestCommand();
             var viewModel = new SettingsViewModel(
@@ -457,14 +549,15 @@ public sealed class SettingsProjectionTests
                 .OfType<SettingsRowViewModel>()
                 .Single(row => string.Equals(row.Path, path, StringComparison.OrdinalIgnoreCase));
 
-        public SettingsViewModel CreateAdditionalViewModel()
+        public SettingsViewModel CreateAdditionalViewModel(
+            Func<string?>? configurationPathProvider = null)
         {
             var command = new TestCommand();
             return new SettingsViewModel(
                 Catalog,
                 command,
                 command,
-                () => ConfigurationPath,
+                configurationPathProvider ?? (() => ConfigurationPath),
                 Layout,
                 new("Guffawaffle test", "Active", "Test fixture", Layout.DisplayName));
         }

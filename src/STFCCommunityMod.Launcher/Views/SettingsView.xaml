@@ -761,10 +761,11 @@
                                 HorizontalAlignment="Left"
                                 Style="{StaticResource UtilityActionButtonStyle}"
                                 Command="{Binding EnableCommand}"
+                                ToolTip="{Binding EnableAvailability}"
                                 Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}}"
                                 automation:AutomationProperties.Name="Enable patch editing"
                                 automation:AutomationProperties.LabeledBy="{Binding ElementName=PatchEditingWarning}"
-                                automation:AutomationProperties.HelpText="{Binding WarningText}">
+                                automation:AutomationProperties.HelpText="{Binding EnableAutomationHelp}">
                           <AccessText Text="_Enable patch editing" />
                         </Button>
 
@@ -776,7 +777,7 @@
                           <StackPanel>
                             <TextBlock FontSize="12"
                                        FontWeight="SemiBold"
-                                       Text="Current effective patch values (read only)"
+                                       Text="{Binding SummaryTitle}"
                                        automation:AutomationProperties.HeadingLevel="Level3" />
                             <ItemsControl Margin="0,8,0,0"
                                           ItemsSource="{Binding Summaries}"

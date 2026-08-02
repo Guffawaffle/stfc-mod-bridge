@@ -101,7 +101,7 @@ public sealed class SettingsShellAccessibilityTests
                     (string?)element.Attribute(Automation + "AutomationProperties.Name")
                     == "Enable patch editing");
         Assert.AreEqual(
-            "{Binding WarningText}",
+            "{Binding EnableAutomationHelp}",
             (string?)enable.Attribute(Automation + "AutomationProperties.HelpText"));
         Assert.AreEqual(
             "{Binding ElementName=PatchEditingWarning}",
