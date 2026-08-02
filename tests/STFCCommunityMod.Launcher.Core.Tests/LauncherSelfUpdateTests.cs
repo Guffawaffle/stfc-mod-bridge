@@ -72,7 +72,8 @@ public sealed class LauncherSelfUpdateTests
         var selected = WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
             Discovery(Artifact(archive)).Manifest,
             "stable",
-            new Version(0, 1, 0));
+            new Version(0, 1, 0),
+            "Guffawaffle/stfc-mod");
 
         Assert.AreEqual(TargetCommit, selected.TargetCommit);
         Assert.AreEqual("stfc-community-mod-launcher-win-x64.zip", selected.FileName);

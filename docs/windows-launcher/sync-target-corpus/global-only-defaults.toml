@@ -1,0 +1,7 @@
+# Defaults without a target are valid desired state and create no runnable target.
+[sync]
+proxy = "http://proxy.example.invalid:8080"
+verify_ssl = true
+allow_unsafe_tls_without_certificate_validation = false
+battlelogs = true
+jobs = false

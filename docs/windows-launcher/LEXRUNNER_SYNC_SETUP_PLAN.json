@@ -1,0 +1,180 @@
+{
+  "schemaVersion": "1.0.0",
+  "campaign": {
+    "id": "launcher-sync-setup",
+    "repository": "Guffawaffle/stfc-mod",
+    "epicIssue": 221,
+    "milestone": "Windows Launcher: Sync Setup",
+    "label": "campaign:launcher-sync",
+    "portableDistribution": "deferred"
+  },
+  "target": "agent/launcher-artifact-surface",
+  "policy": {
+    "requiredGates": [
+      "diff-check",
+      "dotnet-test"
+    ],
+    "optionalGates": [
+      "schema-tests",
+      "schema-current",
+      "release-manifest-tests",
+      "wpf-build",
+      "windows-proxy-build",
+      "package",
+      "packaged-ui-smoke"
+    ],
+    "maxWorkers": 2,
+    "blockOn": [
+      "fail",
+      "blocked"
+    ],
+    "mergeRule": {
+      "type": "strict-required",
+      "strategy": "merge-weave"
+    }
+  },
+  "items": [
+    {
+      "name": "LS-001-delivery-polish",
+      "issue": 222,
+      "deps": [],
+      "gates": [
+        {
+          "name": "release-manifest-tests",
+          "run": "py -m unittest tests.test_generate_release_manifest -v"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "package",
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/publish.ps1"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "LS-002-sync-contract-corpus",
+      "issue": 223,
+      "deps": [
+        "LS-001-delivery-polish"
+      ],
+      "gates": [
+        {
+          "name": "schema-tests",
+          "run": "node --test scripts/test_config_schema.mjs"
+        },
+        {
+          "name": "schema-current",
+          "run": "node scripts/generate_config_schema.mjs --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "windows-proxy-build",
+          "run": "xmake f -p windows -m release -y && xmake -y stfc-community-mod"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "LS-003-topology-domain",
+      "issue": 224,
+      "deps": [
+        "LS-002-sync-contract-corpus"
+      ],
+      "gates": [
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "LS-004-topology-persistence",
+      "issue": 225,
+      "deps": [
+        "LS-002-sync-contract-corpus",
+        "LS-003-topology-domain"
+      ],
+      "gates": [
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "schema-tests",
+          "run": "node --test scripts/test_config_schema.mjs"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "LS-005-sync-workspace-acceptance",
+      "issue": 226,
+      "deps": [
+        "LS-001-delivery-polish",
+        "LS-003-topology-domain",
+        "LS-004-topology-persistence"
+      ],
+      "gates": [
+        {
+          "name": "schema-tests",
+          "run": "node --test scripts/test_config_schema.mjs"
+        },
+        {
+          "name": "schema-current",
+          "run": "node scripts/generate_config_schema.mjs --check"
+        },
+        {
+          "name": "release-manifest-tests",
+          "run": "py -m unittest tests.test_generate_release_manifest -v"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "wpf-build",
+          "run": "dotnet build windows-launcher/src/STFCCommunityMod.Launcher/STFCCommunityMod.Launcher.csproj -c Release"
+        },
+        {
+          "name": "windows-proxy-build",
+          "run": "xmake f -p windows -m release -y && xmake -y stfc-community-mod"
+        },
+        {
+          "name": "package",
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/publish.ps1"
+        },
+        {
+          "name": "packaged-ui-smoke",
+          "run": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-launcher/scripts/smoke-settings.ps1 -LauncherPath windows-launcher/artifacts/win-x64/app/STFCCommunityMod.Launcher.exe"
+        },
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    }
+  ]
+}

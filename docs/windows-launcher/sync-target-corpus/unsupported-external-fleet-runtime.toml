@@ -1,0 +1,4 @@
+[sync.targets.external]
+url = "https://community.example.invalid/sync"
+token = "fixture-redacted-external"
+fleet_runtime = true

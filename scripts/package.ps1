@@ -1,11 +1,11 @@
 [CmdletBinding()]
 param(
-  [string]$OutputDirectory = "windows-launcher/artifacts/win-x64"
+  [string]$OutputDirectory = "artifacts/win-x64"
 )
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
   [System.IO.Path]::GetFullPath($OutputDirectory)
 } else {

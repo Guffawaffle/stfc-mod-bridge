@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "1.0.0",
+  "target": "main",
+  "policy": {
+    "requiredGates": [
+      "diff-check"
+    ],
+    "optionalGates": [
+      "dotnet-test",
+      "windows-proxy-build"
+    ],
+    "maxWorkers": 3,
+    "blockOn": [
+      "fail",
+      "blocked"
+    ],
+    "mergeRule": {
+      "type": "strict-required"
+    }
+  },
+  "items": [
+    {
+      "name": "WL-001",
+      "deps": [],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "windows-proxy-build",
+          "run": "xmake f -p windows -m release -y && xmake -y stfc-community-mod"
+        }
+      ]
+    },
+    {
+      "name": "WL-002",
+      "deps": [
+        "WL-001"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-003",
+      "deps": [
+        "WL-001"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        }
+      ]
+    },
+    {
+      "name": "WL-005",
+      "deps": [
+        "WL-001"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "windows-proxy-build",
+          "run": "xmake f -p windows -m release -y && xmake -y stfc-community-mod"
+        }
+      ]
+    },
+    {
+      "name": "WL-004",
+      "deps": [
+        "WL-002",
+        "WL-003"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-006",
+      "deps": [
+        "WL-002",
+        "WL-005"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-007",
+      "deps": [
+        "WL-002",
+        "WL-004"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-008",
+      "deps": [
+        "WL-002",
+        "WL-004",
+        "WL-006"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-009",
+      "deps": [
+        "WL-003",
+        "WL-004"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        }
+      ]
+    },
+    {
+      "name": "WL-010",
+      "deps": [
+        "WL-006",
+        "WL-007",
+        "WL-008",
+        "WL-009"
+      ],
+      "gates": [
+        {
+          "name": "diff-check",
+          "run": "git diff --check"
+        },
+        {
+          "name": "dotnet-test",
+          "run": "dotnet test windows-launcher/STFCCommunityMod.Launcher.sln -c Release"
+        },
+        {
+          "name": "windows-proxy-build",
+          "run": "xmake f -p windows -m release -y && xmake -y stfc-community-mod"
+        }
+      ]
+    }
+  ]
+}

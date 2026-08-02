@@ -1,0 +1,13 @@
+{
+  "manifestSchema": 1,
+  "distributionId": "guffawaffle.stfc-community-mod",
+  "runtimeVersion": "2.1.0.0",
+  "sourceRevision": "source-tree",
+  "capabilities": [
+    "settings.principal-taxonomy.v1"
+  ],
+  "settingsCatalog": {
+    "schemaVersion": 1,
+    "revision": "guffawaffle-taxonomy-2026-07-29"
+  }
+}

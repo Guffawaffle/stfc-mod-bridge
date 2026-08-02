@@ -1,0 +1,7 @@
+[sync]
+battlelogs = true
+
+[sync.targets.optout]
+url = "https://community.example.invalid/sync"
+token = "fixture-redacted-optout"
+battlelogs = false

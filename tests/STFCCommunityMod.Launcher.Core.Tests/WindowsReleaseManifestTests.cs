@@ -1,10 +1,13 @@
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
 public sealed class WindowsReleaseManifestTests
 {
+    private const string Repository = "Guffawaffle/stfc-mod";
+
     [TestMethod]
     public void ActiveStableManifestSelectsPinnedWindowsDll()
     {
@@ -14,7 +17,8 @@ public sealed class WindowsReleaseManifestTests
         var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
             manifest,
             "stable",
-            new Version(0, 1, 0));
+            new Version(0, 1, 0),
+            Repository);
 
         Assert.AreEqual("2.1.0-guffa.8", manifest.ReleaseVersion);
         Assert.AreEqual("2.1.0.8", artifact.ExpectedVersion);
@@ -79,7 +83,8 @@ public sealed class WindowsReleaseManifestTests
             WindowsReleaseSelectionPolicy.SelectModArtifact(
                 manifest,
                 selectedChannel,
-                Version.Parse(launcherVersion)));
+                Version.Parse(launcherVersion),
+                Repository));
     }
 
     [TestMethod]
@@ -95,17 +100,17 @@ public sealed class WindowsReleaseManifestTests
             WindowsReleaseSelectionPolicy.SelectModArtifact(
                 manifest,
                 "stable",
-                new Version(0, 1, 0)));
+                new Version(0, 1, 0),
+                Repository));
     }
 
     [TestMethod]
     public void DuplicateArtifactIdentityFailsClosed()
     {
-        var duplicate = Manifest().Replace(
-            "]\n}",
-            ",\n" + ArtifactJson() + "\n  ]\n}",
-            StringComparison.Ordinal);
-        using var stream = JsonStream(duplicate);
+        var duplicate = JsonNode.Parse(Manifest())!.AsObject();
+        var artifacts = duplicate["artifacts"]!.AsArray();
+        artifacts.Add(artifacts[0]!.DeepClone());
+        using var stream = JsonStream(duplicate.ToJsonString());
 
         Assert.ThrowsException<InvalidDataException>(() => WindowsReleaseManifestParser.Parse(stream));
     }

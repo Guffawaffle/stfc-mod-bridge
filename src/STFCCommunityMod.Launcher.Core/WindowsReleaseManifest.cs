@@ -289,7 +289,6 @@ public static partial class WindowsReleaseManifestParser
 
 public static partial class WindowsReleaseSelectionPolicy
 {
-    private const string Repository = "Guffawaffle/stfc-mod";
     private const string ModArtifactId = "windows-mod-dll-x64";
     private const long MaximumModArtifactSize = 128L * 1024L * 1024L;
     private const string LauncherArtifactId = "windows-launcher-archive-x64";
@@ -303,10 +302,12 @@ public static partial class WindowsReleaseSelectionPolicy
     public static ModReleaseArtifact SelectModArtifact(
         WindowsReleaseManifest manifest,
         string selectedChannel,
-        Version currentLauncherVersion)
+        Version currentLauncherVersion,
+        string expectedRepository)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(currentLauncherVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
         if (manifest.ReleaseState != "active")
         {
             throw new InvalidDataException("The selected release is withdrawn and cannot be newly installed.");
@@ -320,7 +321,10 @@ public static partial class WindowsReleaseSelectionPolicy
             throw new InvalidDataException(
                 $"Launcher {manifest.MinimumLauncherVersion} or newer is required for this release.");
         }
-        if (!string.Equals(manifest.Source.Repository, Repository, StringComparison.Ordinal))
+        if (!string.Equals(
+                manifest.Source.Repository,
+                expectedRepository,
+                StringComparison.Ordinal))
         {
             throw new InvalidDataException("The release manifest belongs to an unexpected repository.");
         }
@@ -346,7 +350,7 @@ public static partial class WindowsReleaseSelectionPolicy
 
         var expectedFileVersion = DeriveEmbeddedFileVersion(manifest.ReleaseVersion);
         var downloadUri = new Uri(
-            $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{Uri.EscapeDataString(artifact.FileName)}");
+            $"https://github.com/{expectedRepository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{Uri.EscapeDataString(artifact.FileName)}");
         return new(
             downloadUri,
             artifact.FileName,
@@ -358,9 +362,14 @@ public static partial class WindowsReleaseSelectionPolicy
     public static LauncherReleaseArtifact SelectLauncherArtifact(
         WindowsReleaseManifest manifest,
         string selectedChannel,
-        Version currentLauncherVersion)
+        Version currentLauncherVersion,
+        string expectedRepository)
     {
-        ValidateRelease(manifest, selectedChannel, currentLauncherVersion);
+        ValidateRelease(
+            manifest,
+            selectedChannel,
+            currentLauncherVersion,
+            expectedRepository);
         var matches = manifest.Artifacts.Where(artifact => artifact.Id == LauncherArtifactId).ToArray();
         if (matches.Length != 1)
         {
@@ -382,7 +391,7 @@ public static partial class WindowsReleaseSelectionPolicy
             throw new InvalidDataException("The Windows launcher artifact contract is invalid or unsupported.");
         }
         return new(
-            new Uri($"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{artifact.FileName}"),
+            new Uri($"https://github.com/{expectedRepository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{artifact.FileName}"),
             artifact.FileName,
             artifact.Size,
             artifact.Sha256,
@@ -393,14 +402,19 @@ public static partial class WindowsReleaseSelectionPolicy
     private static void ValidateRelease(
         WindowsReleaseManifest manifest,
         string selectedChannel,
-        Version currentLauncherVersion)
+        Version currentLauncherVersion,
+        string expectedRepository)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(currentLauncherVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
         if (manifest.ReleaseState != "active"
             || !string.Equals(manifest.Channel, selectedChannel, StringComparison.Ordinal)
             || currentLauncherVersion < manifest.MinimumLauncherVersion
-            || !string.Equals(manifest.Source.Repository, Repository, StringComparison.Ordinal))
+            || !string.Equals(
+                manifest.Source.Repository,
+                expectedRepository,
+                StringComparison.Ordinal))
         {
             throw new InvalidDataException("The release is not eligible for this launcher channel.");
         }

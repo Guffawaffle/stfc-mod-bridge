@@ -8,17 +8,16 @@ internal sealed record LauncherStartupComposition(
     ILauncherSettingsLayoutProvider SettingsLayout,
     LauncherSettingsActivationDiagnostics SettingsDiagnostics)
 {
-    private const string GuffawaffleRuntimeManifestResource =
-        "STFCCommunityMod.Launcher.RuntimeManifests.Guffawaffle.v1.json";
-
-    public static LauncherStartupComposition CreateDefault()
+    public static LauncherStartupComposition Create(
+        LauncherDistributionProvider provider)
     {
+        ArgumentNullException.ThrowIfNull(provider);
         using var manifest = typeof(LauncherStartupComposition)
             .Assembly
-            .GetManifestResourceStream(GuffawaffleRuntimeManifestResource);
+            .GetManifestResourceStream(provider.RuntimeManifestResourceName);
         var runtimeProfile = LauncherRuntimeManifestDetector.Detect(
             manifest,
-            $"embedded:{GuffawaffleRuntimeManifestResource}");
+            $"embedded:{provider.RuntimeManifestResourceName}");
         var activationPlan = LauncherFeatureResolver.Resolve(
             runtimeProfile,
             LauncherFeatureCatalog.All);
@@ -26,9 +25,15 @@ internal sealed record LauncherStartupComposition(
             activationPlan);
         var semanticGrouping = activationPlan.GetDecision(
             LauncherFeatureIds.SemanticSettingsGrouping);
+        var detectedDistributionName = string.Equals(
+            runtimeProfile.DistributionId,
+            provider.RuntimeDistributionId,
+            StringComparison.Ordinal)
+            ? provider.DisplayName
+            : runtimeProfile.DistributionDisplayName;
         var detectedRuntime = runtimeProfile.RuntimeVersion is null
-            ? runtimeProfile.DistributionDisplayName
-            : $"{runtimeProfile.DistributionDisplayName} {runtimeProfile.RuntimeVersion}";
+            ? detectedDistributionName
+            : $"{detectedDistributionName} {runtimeProfile.RuntimeVersion}";
         var settingsDiagnostics = new LauncherSettingsActivationDiagnostics(
             detectedRuntime,
             semanticGrouping.IsActive ? "Active" : "Inactive",

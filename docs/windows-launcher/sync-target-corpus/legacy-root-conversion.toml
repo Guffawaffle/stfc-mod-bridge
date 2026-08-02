@@ -1,0 +1,4 @@
+[sync]
+url = "https://legacy.example.invalid/sync"
+token = "fixture-redacted-legacy"
+battlelogs = true

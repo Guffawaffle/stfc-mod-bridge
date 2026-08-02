@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
-  [string]$OutputDirectory = "windows-launcher/artifacts/win-x64"
+  [string]$OutputDirectory = "artifacts/win-x64"
 )
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$project = Join-Path $repoRoot "windows-launcher\src\STFCCommunityMod.Launcher\STFCCommunityMod.Launcher.csproj"
-$updaterProject = Join-Path $repoRoot "windows-launcher\src\STFCCommunityMod.Launcher.Updater\STFCCommunityMod.Launcher.Updater.csproj"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$project = Join-Path $repoRoot "src\STFCCommunityMod.Launcher\STFCCommunityMod.Launcher.csproj"
+$updaterProject = Join-Path $repoRoot "src\STFCCommunityMod.Launcher.Updater\STFCCommunityMod.Launcher.Updater.csproj"
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
   [System.IO.Path]::GetFullPath($OutputDirectory)
 } else {

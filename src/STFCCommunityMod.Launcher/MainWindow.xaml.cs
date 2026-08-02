@@ -23,8 +23,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
-    private const string GuffawaffleSchemaResource =
-        "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json";
     private static readonly IReadOnlyList<ColorModeChoice> ColorModeChoices =
     [
         new(LauncherColorMode.System, "System", AppIconKind.SystemAppearance),
@@ -36,6 +34,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly IGameProcessStateMonitor processStateMonitor;
     private readonly HttpClient httpClient;
     private readonly CancellationTokenSource lifetimeCancellation = new();
+    private readonly LauncherDistributionProvider distributionProvider;
     private readonly LauncherStartupComposition startupComposition;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
@@ -54,18 +53,19 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     public MainWindow()
         : this(
             new WindowsGameProcessStateMonitor(),
-            LauncherStartupComposition.CreateDefault())
+            BundledLauncherProviderCatalog.LoadDefault())
     {
     }
 
     internal MainWindow(
         IGameProcessStateMonitor processStateMonitor,
-        LauncherStartupComposition startupComposition)
+        LauncherDistributionProvider distributionProvider)
     {
         this.processStateMonitor =
             processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
-        this.startupComposition =
-            startupComposition ?? throw new ArgumentNullException(nameof(startupComposition));
+        this.distributionProvider =
+            distributionProvider ?? throw new ArgumentNullException(nameof(distributionProvider));
+        startupComposition = LauncherStartupComposition.Create(distributionProvider);
         httpClient = new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
@@ -83,7 +83,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.SelectedValue = selectedColorMode;
         isColorModeSelectorReady = true;
         UpdateColorModeSelectorAccessibility();
-        DataContext = MainWindowViewModel.CreateDefault(httpClient);
+        DataContext = MainWindowViewModel.CreateDefault(httpClient, distributionProvider);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -545,11 +545,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         try
         {
             using var schemaStream = typeof(MainWindow).Assembly.GetManifestResourceStream(
-                GuffawaffleSchemaResource);
+                distributionProvider.ConfigurationSchemaResourceName);
             if (schemaStream is null)
             {
                 throw new LauncherConfigurationSchemaException(
-                    "The packaged Guffawaffle configuration catalog is missing.");
+                    $"The packaged {distributionProvider.DisplayName} configuration catalog is missing.");
             }
 
             var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
