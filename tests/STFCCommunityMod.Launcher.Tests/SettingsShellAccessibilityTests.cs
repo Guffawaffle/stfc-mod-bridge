@@ -75,6 +75,39 @@ public sealed class SettingsShellAccessibilityTests
         Assert.IsNotNull(accessText);
     }
 
+    [TestMethod]
+    public void PatchGatePublishesWarningStateAndKeyboardActions()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/Views/SettingsView.xaml");
+        var names = document.Descendants()
+            .Select(element => (string?)element.Attribute(Automation + "AutomationProperties.Name"))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+
+        CollectionAssert.Contains(names, "Patch editing safety warning");
+        CollectionAssert.Contains(names, "Enable patch editing");
+        CollectionAssert.Contains(names, "Lock patch editing");
+        CollectionAssert.Contains(names, "Read-only patch value summary");
+
+        var accessTextValues = document.Descendants(Presentation + "AccessText")
+            .Select(element => (string?)element.Attribute("Text"))
+            .ToArray();
+        CollectionAssert.Contains(accessTextValues, "_Enable patch editing");
+        CollectionAssert.Contains(accessTextValues, "_Lock patch editing");
+
+        var enable = document.Descendants(Presentation + "Button")
+            .Single(
+                element =>
+                    (string?)element.Attribute(Automation + "AutomationProperties.Name")
+                    == "Enable patch editing");
+        Assert.AreEqual(
+            "{Binding WarningText}",
+            (string?)enable.Attribute(Automation + "AutomationProperties.HelpText"));
+        Assert.AreEqual(
+            "{Binding ElementName=PatchEditingWarning}",
+            (string?)enable.Attribute(Automation + "AutomationProperties.LabeledBy"));
+    }
+
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)
     {
         var element = document.Descendants()

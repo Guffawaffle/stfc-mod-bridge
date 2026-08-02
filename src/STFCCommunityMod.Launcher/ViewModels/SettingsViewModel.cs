@@ -31,11 +31,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private readonly SettingsActionCommand searchClearCommand;
+    private readonly SettingsActionCommand enablePatchEditingCommand;
+    private readonly SettingsActionCommand lockPatchEditingCommand;
     private ConfigurationWorkspace? workspace;
     private string searchText = string.Empty;
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
     private bool isSearchVisible;
+    private bool isPatchEditingUnlocked;
     private int projectionRevision;
 
     public SettingsViewModel(
@@ -66,6 +69,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
+        enablePatchEditingCommand = new SettingsActionCommand(
+            EnablePatchEditing,
+            () => !IsPatchEditingUnlocked && PatchSettings.Count > 0);
+        lockPatchEditingCommand = new SettingsActionCommand(
+            LockPatchEditing,
+            () => IsPatchEditingUnlocked);
 
         SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges, () => workspace);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
@@ -109,6 +118,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public ICommand SearchClearCommand => searchClearCommand;
 
+    public ICommand EnablePatchEditingCommand => enablePatchEditingCommand;
+
+    public ICommand LockPatchEditingCommand => lockPatchEditingCommand;
+
     public SyncWorkspaceViewModel SyncWorkspace { get; }
 
     public string SearchText
@@ -150,6 +163,24 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsPatchEditingUnlocked
+    {
+        get => isPatchEditingUnlocked;
+        private set
+        {
+            if (isPatchEditingUnlocked == value)
+            {
+                return;
+            }
+
+            isPatchEditingUnlocked = value;
+            OnPropertyChanged();
+            enablePatchEditingCommand.RaiseCanExecuteChanged();
+            lockPatchEditingCommand.RaiseCanExecuteChanged();
+            RebuildProjection();
+        }
+    }
+
     public LauncherSettingsSection SelectedSection => selectedSection;
 
     public string WorkspaceTitle =>
@@ -174,7 +205,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsSettingsFooterVisible => HasPendingChanges && !IsDataSyncSelected;
 
     public int VisibleSettingCount =>
-        projectedItems.OfType<SettingsRowViewModel>().Count();
+        projectedItems.OfType<SettingsRowViewModel>().Count()
+        + projectedItems.OfType<AdvancedPatchEditingGateViewModel>()
+            .Where(gate => gate.IsLocked)
+            .Sum(gate => gate.SettingCount);
 
     public string VisibleItemsSummary
     {
@@ -296,6 +330,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private SettingsSectionViewModel SelectedSectionItem =>
         Sections.Single(section => section.Id == selectedSection);
 
+    private IReadOnlyList<LauncherConfigurationSetting> PatchSettings =>
+        catalog.VisibleSettings.Where(IsPatchSetting).ToArray();
+
     private ReadOnlyCollection<SettingsSectionViewModel> CreateSections()
     {
         if (layoutProvider.Sections.Count == 0
@@ -373,6 +410,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ClearSearch();
         IsSearchVisible = false;
     }
+
+    private void EnablePatchEditing() => IsPatchEditingUnlocked = true;
+
+    private void LockPatchEditing() => IsPatchEditingUnlocked = false;
 
     private void SaveUiPreferences()
     {
@@ -462,7 +503,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
-        if (workspace is null)
+        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -482,7 +523,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool StageRemove(LauncherConfigurationSetting setting)
     {
-        if (workspace is null)
+        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -502,7 +543,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
-        if (workspace is null)
+        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -602,12 +643,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RefreshAllStates()
     {
+        var hasPatchGate = projectedItems.OfType<AdvancedPatchEditingGateViewModel>().Any();
         foreach (var setting in projectedRowsByPath.Values)
         {
             setting.UpdateState(GetValueState(setting.Setting), workspace is not null);
         }
 
         RefreshKeybindingConflicts();
+        if (hasPatchGate)
+        {
+            RebuildProjection();
+        }
     }
 
     private void RefreshState(LauncherConfigurationSetting setting)
@@ -772,24 +818,41 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         var constructedPaths = new List<string>();
         var groupHeaderCount = 0;
         var familyHeaderCount = 0;
+        var pendingDecorators = new List<LauncherSettingsProjectionItem>();
+        var projectedPatchSettings = projection
+            .OfType<LauncherSettingRowProjection>()
+            .Select(row => row.Setting)
+            .Where(IsPatchSetting)
+            .ToArray();
+        if (projectedPatchSettings.Length > 0)
+        {
+            items.Add(CreatePatchGate(projectedPatchSettings));
+        }
+
         foreach (var item in projection)
         {
+            if (item is LauncherSettingsGroupHeaderProjection
+                or LauncherSettingsFamilyHeaderProjection)
+            {
+                pendingDecorators.Add(item);
+                continue;
+            }
+
+            if (item is not LauncherSettingRowProjection settingProjection)
+            {
+                continue;
+            }
+
+            var isPatchSetting = IsPatchSetting(settingProjection.Setting);
+            if (isPatchSetting && !IsPatchEditingUnlocked)
+            {
+                pendingDecorators.Clear();
+                continue;
+            }
+
+            AddDecorators(pendingDecorators, items, ref groupHeaderCount, ref familyHeaderCount);
             switch (item)
             {
-                case LauncherSettingsGroupHeaderProjection group:
-                    items.Add(new SettingsGroupHeaderViewModel(group.Label));
-                    ++groupHeaderCount;
-                    break;
-
-                case LauncherSettingsFamilyHeaderProjection family:
-                    items.Add(
-                        new SettingsFamilyHeaderViewModel(
-                            family.Id,
-                            family.Label,
-                            family.Description));
-                    ++familyHeaderCount;
-                    break;
-
                 case LauncherSettingRowProjection setting:
                     var row = new SettingsRowViewModel(
                         setting.Setting,
@@ -819,6 +882,70 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ProjectionSnapshot));
         NotifyFilterSummaryChanged();
     }
+
+    private AdvancedPatchEditingGateViewModel CreatePatchGate(
+        IReadOnlyList<LauncherConfigurationSetting> patchSettings)
+    {
+        var summaries = patchSettings
+            .Select(setting =>
+            {
+                var state = GetValueState(setting);
+                return new AdvancedPatchSummaryItemViewModel(
+                    setting.Presentation.Label,
+                    FormatPatchSummaryValue(state.DraftValue ?? setting.DefaultValue),
+                    state.IsDirty);
+            })
+            .ToArray();
+        return new(
+            IsPatchEditingUnlocked,
+            summaries,
+            EnablePatchEditingCommand,
+            LockPatchEditingCommand);
+    }
+
+    private static void AddDecorators(
+        List<LauncherSettingsProjectionItem> pendingDecorators,
+        List<SettingsListItemViewModel> items,
+        ref int groupHeaderCount,
+        ref int familyHeaderCount)
+    {
+        foreach (var decorator in pendingDecorators)
+        {
+            if (decorator is LauncherSettingsGroupHeaderProjection group)
+            {
+                items.Add(new SettingsGroupHeaderViewModel(group.Label));
+                ++groupHeaderCount;
+            }
+            else if (decorator is LauncherSettingsFamilyHeaderProjection family)
+            {
+                items.Add(
+                    new SettingsFamilyHeaderViewModel(
+                        family.Id,
+                        family.Label,
+                        family.Description));
+                ++familyHeaderCount;
+            }
+        }
+
+        pendingDecorators.Clear();
+    }
+
+    private static bool IsPatchSetting(LauncherConfigurationSetting setting) =>
+        string.Equals(setting.Category, "patches", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatPatchSummaryValue(object? value) =>
+        value switch
+        {
+            null => "Not specified",
+            JsonElement element when element.ValueKind == JsonValueKind.True => "On",
+            JsonElement element when element.ValueKind == JsonValueKind.False => "Off",
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? "(empty)",
+            JsonElement element => element.GetRawText(),
+            bool boolean => boolean ? "On" : "Off",
+            string text when bool.TryParse(text, out var boolean) => boolean ? "On" : "Off",
+            string text when LauncherTomlValue.TryReadString(text, out var parsed) => parsed,
+            _ => value.ToString() ?? "Not specified",
+        };
 
     private void ClearEditorDrafts()
     {
