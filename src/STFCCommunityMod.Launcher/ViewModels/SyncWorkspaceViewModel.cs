@@ -413,6 +413,15 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
+        var candidateErrors = update.Topology.Resolve().Diagnostics
+            .Where(item => item.TargetName == identity && item.Severity == SyncTopologyDiagnosticSeverity.Error)
+            .ToArray();
+        if (candidateErrors.Length > 0)
+        {
+            wizard.SetError(string.Join(" ", candidateErrors.Select(item => item.Message)));
+            return;
+        }
+
         Stage(update.Topology);
         AddWizard = null;
         SelectTab("destination:" + identity);

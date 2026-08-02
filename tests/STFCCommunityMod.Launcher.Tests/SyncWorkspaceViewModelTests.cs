@@ -376,6 +376,30 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void InvalidWizardDestinationStaysInReviewWithoutMutatingTopology()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "invalid-endpoint";
+        wizard.Endpoint = "not-a-valid-ingest-url";
+        wizard.Token = "fixture-secret";
+        wizard.NextCommand.Execute(null);
+        wizard.FinishCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.IsAddWizardOpen);
+        Assert.IsTrue(wizard.HasError);
+        StringAssert.Contains(wizard.Error, "absolute HTTP or HTTPS");
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
     public void WizardPresetStagesOrdinaryDestinationWithCanonicalEndpointAndDocumentedFeeds()
     {
         using var fixture = SyncFixture.Create("# empty\n");

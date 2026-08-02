@@ -53,6 +53,14 @@ public sealed record LauncherConfigurationSource(
     LauncherConfigurationSourceId Id,
     string Repository)
 {
+    public string StableId =>
+        Id switch
+        {
+            LauncherConfigurationSourceId.Guffawaffle => "guffawaffle",
+            LauncherConfigurationSourceId.Netniv => "netniv",
+            _ => throw new InvalidOperationException($"Configuration source '{Id}' has no stable provider ID."),
+        };
+
     public string DisplayName =>
         Id switch
         {

@@ -48,4 +48,38 @@ internal static class BundledLauncherProviderCatalog
         }
         return new(catalog, selectionStore, resolution);
     }
+
+    public static LauncherConfigurationCatalog LoadConfigurationCatalog(
+        LauncherDistributionProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        if (provider.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog)
+                != LauncherProviderCapabilityStatus.Supported
+            || provider.ConfigurationSchema.Status != LauncherProviderCapabilityStatus.Supported
+            || string.IsNullOrWhiteSpace(provider.ConfigurationSchema.ResourceName))
+        {
+            throw new LauncherConfigurationSchemaException(
+                $"{provider.DisplayName} has no verified configuration catalog. "
+                + "Capability status is unknown, so settings editing is disabled rather than inferred.");
+        }
+
+        using var schemaStream = typeof(BundledLauncherProviderCatalog).Assembly.GetManifestResourceStream(
+            provider.ConfigurationSchema.ResourceName);
+        if (schemaStream is null)
+        {
+            throw new LauncherConfigurationSchemaException(
+                $"The packaged {provider.DisplayName} configuration catalog is missing.");
+        }
+
+        var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
+        if (!string.Equals(catalog.Source.StableId, provider.Id, StringComparison.Ordinal))
+        {
+            throw new LauncherConfigurationSchemaException(
+                $"The packaged configuration catalog belongs to provider '{catalog.Source.StableId}', "
+                + $"not the selected provider '{provider.Id}'. Settings and Data Sync editing "
+                + "are disabled rather than projecting capabilities from the wrong source.");
+        }
+
+        return catalog;
+    }
 }

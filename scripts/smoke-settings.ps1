@@ -130,6 +130,41 @@ function Find-AutomationElement {
   throw "UI Automation could not find $typeDescription '$Name' within the timeout."
 }
 
+function Find-AutomationElementByNamePattern {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Root,
+
+    [Parameter(Mandatory)]
+    [string]$NamePattern,
+
+    [System.Windows.Automation.ControlType]$ControlType,
+
+    [Parameter(Mandatory)]
+    [DateTimeOffset]$Deadline
+  )
+
+  while ([DateTimeOffset]::UtcNow -lt $Deadline) {
+    $elements = $Root.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($element in $elements) {
+      if ($element.Current.Name -notmatch $NamePattern) {
+        continue
+      }
+
+      if ($null -eq $ControlType -or
+          $element.Current.ControlType -eq $ControlType) {
+        return $element
+      }
+    }
+
+    Start-Sleep -Milliseconds 100
+  }
+
+  throw "UI Automation could not find an element matching '$NamePattern' within the timeout."
+}
+
 function Find-ColorModeSelector {
   param(
     [Parameter(Mandatory)]
@@ -196,6 +231,32 @@ function Invoke-AutomationElement {
   }
 
   $pattern.Invoke()
+}
+
+function Activate-AutomationElement {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Element
+  )
+
+  $invokePattern = $null
+  if ($Element.TryGetCurrentPattern(
+      [System.Windows.Automation.InvokePattern]::Pattern,
+      [ref]$invokePattern)) {
+    $invokePattern.Invoke()
+    return
+  }
+
+  $togglePattern = $null
+  if ($Element.TryGetCurrentPattern(
+      [System.Windows.Automation.TogglePattern]::Pattern,
+      [ref]$togglePattern)) {
+    $Element.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait(" ")
+    return
+  }
+
+  throw "UI Automation element '$($Element.Current.Name)' cannot be activated."
 }
 
 function Stop-OwnedProcess {
@@ -269,6 +330,7 @@ $expectedRuntimeIdentity = "Guffawaffle $($runtimeManifest.runtimeVersion)"
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
 
 $originalWindir = [Environment]::GetEnvironmentVariable("WINDIR", "Process")
 $windirWasRestored = $false
@@ -313,6 +375,30 @@ enabled = false
 [sync.targets.community]
 url = "https://community.example.invalid/sync"
 token = "disposable-smoke-secret"
+
+[sync.targets.alpha]
+url = "https://alpha.example.invalid/sync"
+token = "disposable-alpha-secret"
+
+[sync.targets.bravo]
+url = "https://bravo.example.invalid/sync"
+token = "disposable-bravo-secret"
+
+[sync.targets.charlie]
+url = "https://charlie.example.invalid/sync"
+token = "disposable-charlie-secret"
+
+[sync.targets.delta]
+url = "https://delta.example.invalid/sync"
+token = "disposable-delta-secret"
+
+[sync.targets.echo]
+url = "https://echo.example.invalid/sync"
+token = "disposable-echo-secret"
+
+[sync.targets.foxtrot]
+url = "https://foxtrot.example.invalid/sync"
+token = "disposable-foxtrot-secret"
 "@,
       [System.Text.UTF8Encoding]::new($false))
     [void](New-Item -ItemType Directory -Path (Split-Path -Parent $selectionPath) -Force)
@@ -627,11 +713,117 @@ try {
     -Name "Global defaults" `
     -ControlType ([System.Windows.Automation.ControlType]::Text) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
-  [void](Find-AutomationElement `
+  $dataSyncPage = Find-AutomationElement `
     -Root $root `
     -Name "Data Sync page content" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $scrollPattern = $null
+  if (-not $dataSyncPage.TryGetCurrentPattern(
+      [System.Windows.Automation.ScrollPattern]::Pattern,
+      [ref]$scrollPattern)) {
+    throw "The Data Sync page does not expose its styled vertical scroll surface to UI Automation."
+  }
+  if ($scrollPattern.Current.HorizontallyScrollable) {
+    throw "The Data Sync page exposed horizontal scrolling at the supported viewport."
+  }
+
+  $transformPattern = $null
+  if (-not $root.TryGetCurrentPattern(
+      [System.Windows.Automation.TransformPattern]::Pattern,
+      [ref]$transformPattern) -or
+      -not $transformPattern.Current.CanResize) {
+    throw "The launcher window does not expose resize support for minimum-width validation."
+  }
+  $transformPattern.Resize(960, 620)
+  Start-Sleep -Milliseconds 250
+  $bounds = $root.Current.BoundingRectangle
+  if ($bounds.Width -lt 959 -or $bounds.Height -lt 619) {
+    throw "The launcher did not retain its supported 960x620 minimum after resize."
+  }
+  if ($scrollPattern.Current.HorizontallyScrollable) {
+    throw "The Data Sync page exposed horizontal scrolling at 960x620."
+  }
+
+  $infoButton = Find-AutomationElement `
+    -Root $root `
+    -Name "About Data Sync editing" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  if ([string]::IsNullOrWhiteSpace($infoButton.Current.HelpText)) {
+    throw "The Data Sync information button has no keyboard-readable help text."
+  }
+
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Scroll destination tabs left" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
-  Write-Host "PASS: typed Data Sync, global defaults, and destination collection are UI Automation accessible."
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Scroll destination tabs right" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+
+  $sidecarTab = Find-AutomationElementByNamePattern `
+    -Root $root `
+    -NamePattern '^local-sidecar, Sidecar, (Ready|Needs attention)$' `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Activate-AutomationElement -Element $sidecarTab
+  Start-Sleep -Milliseconds 250
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Destination Realtime battlelogs feed override, inherited" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Destination Fleet runtime feed override, inherited" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $unsupportedSidecarFeed = $root.FindFirst(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::NameProperty,
+      "Destination Jobs feed override, inherited"))
+  if ($null -ne $unsupportedSidecarFeed) {
+    throw "The Sidecar editor exposed an unsupported Jobs feed override."
+  }
+
+  $globalTab = Find-AutomationElement `
+    -Root $root `
+    -Name "Global Data Sync defaults tab" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Activate-AutomationElement -Element $globalTab
+
+  $addDestination = Find-AutomationElement `
+    -Root $root `
+    -Name "Add Data Sync destination" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $addDestination
+  foreach ($choice in @("Custom sync", "Spock's Club", "Next Spock's Club")) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name $choice `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  }
+  $cancelWizard = Find-AutomationElement `
+    -Root $root `
+    -Name "Cancel" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $cancelWizard
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Add Data Sync destination" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  $transformPattern.Resize(1120, 740)
+  Start-Sleep -Milliseconds 250
+  Write-Host "PASS: Data Sync is source-bound, minimum-width safe, vertically scoped, tab-overflow accessible, capability-filtered, and wizard cancellation is non-mutating."
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `

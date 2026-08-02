@@ -2,6 +2,7 @@ using System.Globalization;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,7 +20,11 @@ public partial class SyncView : UserControl
         InitializeComponent();
         DataContextChanged += SyncView_DataContextChanged;
         Unloaded += (_, _) => SubscribeToViewModel(null);
-        Loaded += (_, _) => UpdateTabOverflowControls();
+        Loaded += (_, _) =>
+        {
+            SubscribeToViewModel(ViewModel);
+            UpdateTabOverflowControls();
+        };
     }
 
     private SyncWorkspaceViewModel? ViewModel => DataContext as SyncWorkspaceViewModel;
@@ -79,6 +84,11 @@ public partial class SyncView : UserControl
 
     private void DestinationTabs_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (DestinationTabScrollViewer.ScrollableWidth <= 0.5)
+        {
+            return;
+        }
+
         DestinationTabScrollViewer.ScrollToHorizontalOffset(
             Math.Clamp(
                 DestinationTabScrollViewer.HorizontalOffset - e.Delta,
@@ -105,8 +115,55 @@ public partial class SyncView : UserControl
         };
         viewModel.SelectedTab = viewModel.Tabs[next];
         EnsureSelectedTabVisible();
+        FocusSelectedTab();
         PageScrollViewer.ScrollToTop();
         e.Handled = true;
+    }
+
+    private void FocusSelectedTab()
+    {
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (ViewModel?.SelectedTab is not { } selected)
+                {
+                    return;
+                }
+
+                if (selected.IsGlobal)
+                {
+                    GlobalTabButton.Focus();
+                    return;
+                }
+
+                var container = DestinationTabs.ItemContainerGenerator.ContainerFromItem(selected) as DependencyObject;
+                FindVisualChild<ToggleButton>(container)?.Focus();
+            });
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject? parent)
+        where T : DependencyObject
+    {
+        if (parent is null)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); ++index)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindVisualChild<T>(child) is { } descendant)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
     }
 
     private void EnsureSelectedTabVisible()

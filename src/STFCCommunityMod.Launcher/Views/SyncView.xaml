@@ -265,7 +265,7 @@
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <ToggleButton Style="{StaticResource TabButtonStyle}" Content="Global defaults"
+          <ToggleButton x:Name="GlobalTabButton" Style="{StaticResource TabButtonStyle}" Content="Global defaults"
                         IsChecked="{Binding IsGlobalTabSelected, Mode=OneWay}" Click="GlobalTab_Click"
                         automation:AutomationProperties.Name="Global Data Sync defaults tab" />
           <Button x:Name="ScrollTabsLeftButton" Grid.Column="1" Width="34" MinHeight="48" Padding="0" Margin="3,0"
@@ -456,12 +456,17 @@
                 <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Feed overrides" /><Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Feeds}">
                   <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type viewModels:SyncTargetFeedViewModel}">
-                    <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid Margin="0,0,0,9"
+                          automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override'}">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                       <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Label}" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}" />
+                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, inherited'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, on'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, off'}" />
                       </StackPanel>
                       <TextBlock Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveSummary}" />
                     </Grid>
