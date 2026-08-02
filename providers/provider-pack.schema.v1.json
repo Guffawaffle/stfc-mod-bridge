@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Guffawaffle/stfc-mod-launcher/providers/provider-pack.schema.v1.json",
+  "title": "STFC Mod Launcher provider pack v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "provider"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "description",
+        "runtimeDistributionId",
+        "defaultReleaseChannelId",
+        "releaseChannels",
+        "configurationSchema",
+        "runtimeManifest",
+        "capabilities",
+        "artifactPolicy",
+        "withdrawalPolicy",
+        "migration"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "displayName": { "$ref": "#/$defs/nonEmptyString" },
+        "description": { "$ref": "#/$defs/nonEmptyString" },
+        "runtimeDistributionId": { "$ref": "#/$defs/stableId" },
+        "defaultReleaseChannelId": { "$ref": "#/$defs/stableId" },
+        "releaseChannels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "displayName",
+              "repository",
+              "discoveryKind",
+              "manifestAssetName",
+              "artifactAssetName"
+            ],
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "displayName": { "$ref": "#/$defs/nonEmptyString" },
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "discoveryKind": {
+                "enum": ["release-manifest", "github-release-asset"]
+              },
+              "manifestAssetName": { "$ref": "#/$defs/nullableFileName" },
+              "artifactAssetName": { "$ref": "#/$defs/nullableFileName" }
+            }
+          }
+        },
+        "configurationSchema": { "$ref": "#/$defs/resource" },
+        "runtimeManifest": { "$ref": "#/$defs/resource" },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/stableId" },
+              "status": { "$ref": "#/$defs/status" }
+            }
+          }
+        },
+        "artifactPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "requireSha256", "windowsPublisher"],
+          "properties": {
+            "status": { "$ref": "#/$defs/status" },
+            "requireSha256": { "type": "boolean" },
+            "windowsPublisher": {
+              "type": ["string", "null"],
+              "minLength": 1
+            }
+          }
+        },
+        "withdrawalPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "mode"],
+          "properties": {
+            "status": { "$ref": "#/$defs/status" },
+            "mode": {
+              "type": ["string", "null"],
+              "minLength": 1
+            }
+          }
+        },
+        "migration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "configurationFormat",
+            "preserveUnknownToml",
+            "compatibleProviderIds"
+          ],
+          "properties": {
+            "status": { "$ref": "#/$defs/status" },
+            "configurationFormat": { "$ref": "#/$defs/nonEmptyString" },
+            "preserveUnknownToml": { "type": "boolean" },
+            "compatibleProviderIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/stableId" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": ["unknown", "unsupported", "supported"]
+    },
+    "nullableFileName": {
+      "type": ["string", "null"],
+      "pattern": "^[^/\\\\]+$",
+      "minLength": 1
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "resourceName"],
+      "properties": {
+        "status": { "$ref": "#/$defs/status" },
+        "resourceName": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

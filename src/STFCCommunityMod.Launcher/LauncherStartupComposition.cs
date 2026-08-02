@@ -12,12 +12,22 @@ internal sealed record LauncherStartupComposition(
         LauncherDistributionProvider provider)
     {
         ArgumentNullException.ThrowIfNull(provider);
-        using var manifest = typeof(LauncherStartupComposition)
-            .Assembly
-            .GetManifestResourceStream(provider.RuntimeManifestResourceName);
+        var manifestResourceName = provider.GetCapabilityStatus(
+                LauncherProviderCapabilityIds.RuntimeManifest)
+                == LauncherProviderCapabilityStatus.Supported
+            && provider.RuntimeManifest.Status == LauncherProviderCapabilityStatus.Supported
+            ? provider.RuntimeManifest.ResourceName
+            : null;
+        using var manifest = manifestResourceName is null
+            ? null
+            : typeof(LauncherStartupComposition)
+                .Assembly
+                .GetManifestResourceStream(manifestResourceName);
         var runtimeProfile = LauncherRuntimeManifestDetector.Detect(
             manifest,
-            $"embedded:{provider.RuntimeManifestResourceName}");
+            manifestResourceName is null
+                ? $"provider:{provider.Id}:runtime-manifest-unknown"
+                : $"embedded:{manifestResourceName}");
         var activationPlan = LauncherFeatureResolver.Resolve(
             runtimeProfile,
             LauncherFeatureCatalog.All);

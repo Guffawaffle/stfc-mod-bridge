@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "id": "netniv",
+    "displayName": "NetniV",
+    "description": "Upstream distribution. Unpublished launcher contracts remain explicitly unknown.",
+    "runtimeDistributionId": "netniv.stfc-community-mod",
+    "defaultReleaseChannelId": "stable",
+    "releaseChannels": [
+      {
+        "id": "stable",
+        "displayName": "Stable",
+        "repository": "netniV/stfc-mod",
+        "discoveryKind": "github-release-asset",
+        "manifestAssetName": null,
+        "artifactAssetName": "stfc-community-mod.zip"
+      }
+    ],
+    "configurationSchema": {
+      "status": "unknown",
+      "resourceName": null
+    },
+    "runtimeManifest": {
+      "status": "unknown",
+      "resourceName": null
+    },
+    "capabilities": [
+      { "id": "settings.catalog", "status": "unknown" },
+      { "id": "runtime.manifest", "status": "unknown" },
+      { "id": "mod.release-discovery", "status": "unknown" },
+      { "id": "mod.artifact-trust", "status": "unknown" },
+      { "id": "release.withdrawal", "status": "unknown" },
+      { "id": "config.migration", "status": "unknown" }
+    ],
+    "artifactPolicy": {
+      "status": "unknown",
+      "requireSha256": true,
+      "windowsPublisher": null
+    },
+    "withdrawalPolicy": {
+      "status": "unknown",
+      "mode": null
+    },
+    "migration": {
+      "status": "unknown",
+      "configurationFormat": "toml",
+      "preserveUnknownToml": true,
+      "compatibleProviderIds": []
+    }
+  }
+}

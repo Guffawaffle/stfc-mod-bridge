@@ -152,16 +152,29 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 BoundedGameInstallCandidateProvider.FromCurrentMachine(),
             ]);
 
+        var providerUnavailableReason = ProviderUnavailableReason(distributionProvider);
+        IModArtifactAuthenticityVerifier modArtifactVerifier =
+            distributionProvider.CanAuthenticateWindowsArtifact
+                ? new WindowsAuthenticodeVerifier(distributionProvider.ArtifactPolicy.WindowsPublisher!)
+                : new FailClosedModArtifactAuthenticityVerifier(providerUnavailableReason);
+        IWindowsReleaseDiscoveryClient modReleaseClient =
+            distributionProvider.CanUseManifestReleaseDiscovery
+                ? new GitHubWindowsReleaseClient(
+                    httpClient,
+                    distributionProvider.DefaultReleaseChannel.Repository,
+                    distributionProvider.DefaultReleaseChannel.ManifestAssetName!)
+                : new UnavailableWindowsReleaseDiscoveryClient(providerUnavailableReason);
+
         var deploymentService = new ModDeploymentService(
             installLayout.StateDirectory,
             new HttpModArtifactDownloader(httpClient),
             new WindowsModArtifactVersionReader(),
-            new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
+            modArtifactVerifier,
             processInspector.IsGameRunning);
-        var releaseClient = new GitHubWindowsReleaseClient(
+        var launcherReleaseClient = new GitHubWindowsReleaseClient(
             httpClient,
-            distributionProvider.ModReleaseRepository,
-            distributionProvider.ModReleaseManifestAssetName);
+            LauncherSelfUpdateAuthority.ReleaseRepository,
+            LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
@@ -175,8 +188,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installDiscovery),
             new ModManagementCoordinator(
                 deploymentService,
-                releaseClient,
-                new Version(0, 1, 0)),
+                modReleaseClient,
+                new Version(0, 1, 0),
+                providerUnavailableReason: providerUnavailableReason),
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
@@ -187,9 +201,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
                 new HttpLauncherArchiveDownloader(httpClient),
-                new WindowsAuthenticodeVerifier(distributionProvider.WindowsArtifactPublisher),
+                new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
-            releaseClient);
+            launcherReleaseClient);
+    }
+
+    private static string ProviderUnavailableReason(LauncherDistributionProvider provider)
+    {
+        var unavailable = new[]
+            {
+                LauncherProviderCapabilityIds.ReleaseDiscovery,
+                LauncherProviderCapabilityIds.ArtifactTrust,
+            }
+            .Where(capability =>
+                provider.GetCapabilityStatus(capability)
+                    != LauncherProviderCapabilityStatus.Supported)
+            .ToArray();
+        return unavailable.Length == 0
+            ? string.Empty
+            : $"{provider.DisplayName} provider capabilities are unknown or unsupported: "
+                + $"{string.Join(", ", unavailable)}. Mod download and installation fail closed.";
     }
 
     public void ConfirmManualSelection(string gameDirectory)

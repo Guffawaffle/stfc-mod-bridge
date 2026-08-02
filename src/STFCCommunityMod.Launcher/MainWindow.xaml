@@ -743,6 +743,13 @@
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        Text="{Binding ModStatus}"
                        automation:AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="ReleaseSourceButton"
+                    Margin="0,0,8,0"
+                    Style="{StaticResource QuietButtonStyle}"
+                    Click="ReleaseSourceButton_Click"
+                    Content="Source"
+                    automation:AutomationProperties.Name="Review community mod release source"
+                    automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the launcher-owned mod release source." />
             <Button Style="{StaticResource QuietButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
@@ -934,6 +941,66 @@
                 Click="ConfirmMaintenanceButton_Click"
                 Content="_Confirm"
                 automation:AutomationProperties.Name="Confirm community mod maintenance" />
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="ProviderSwitchDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Community mod release source"
+                          automation:AutomationProperties.Name="Community mod release source dialog">
+      <StackPanel Width="440">
+        <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Release source is launcher state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting the launcher."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,4"
+                   FontWeight="SemiBold"
+                   Text="Provider" />
+        <ComboBox x:Name="ProviderSourceSelector"
+                  MinWidth="260"
+                  HorizontalAlignment="Left"
+                  Style="{StaticResource TitleBarColorModeComboBoxStyle}"
+                  DisplayMemberPath="DisplayName"
+                  ItemTemplate="{x:Null}"
+                  SelectedValuePath="Id"
+                  SelectionChanged="ProviderSourceSelector_SelectionChanged"
+                  automation:AutomationProperties.Name="Community mod provider" />
+        <TextBlock x:Name="ProviderCapabilityText"
+                   Margin="0,12,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+        <Border Margin="0,14,0,0"
+                Padding="12"
+                Background="{DynamicResource SurfaceMutedBrush}"
+                CornerRadius="7">
+          <TextBlock x:Name="ProviderSwitchPreviewText"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="Choose another provider, then review compatibility before switching."
+                     TextWrapping="Wrap"
+                     automation:AutomationProperties.LiveSetting="Polite" />
+        </Border>
+        <WrapPanel Margin="0,18,0,0"
+                   HorizontalAlignment="Right">
+          <Button Margin="0,0,8,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="CancelProviderSwitchButton_Click"
+                  Content="_Cancel"
+                  automation:AutomationProperties.Name="Cancel provider source review" />
+          <Button x:Name="ReviewProviderSwitchButton"
+                  Margin="0,0,8,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="ReviewProviderSwitchButton_Click"
+                  Content="_Review switch"
+                  automation:AutomationProperties.Name="Review provider compatibility" />
+          <Button x:Name="ConfirmProviderSwitchButton"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ConfirmProviderSwitchButton_Click"
+                  Content="_Switch source"
+                  IsEnabled="False"
+                  automation:AutomationProperties.Name="Confirm provider source switch" />
+        </WrapPanel>
       </StackPanel>
     </controls:InAppDialog>
 

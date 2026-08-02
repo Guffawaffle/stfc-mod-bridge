@@ -39,7 +39,8 @@ public sealed class ModManagementCoordinator(
     ModDeploymentService deploymentService,
     IWindowsReleaseDiscoveryClient releaseDiscoveryClient,
     Version launcherVersion,
-    string channel = "stable")
+    string channel = "stable",
+    string? providerUnavailableReason = null)
 {
     public ModManagementPresentation CapturePresentation(
         string? gameDirectory,
@@ -95,6 +96,17 @@ public sealed class ModManagementCoordinator(
             exception is InvalidDataException or IOException or UnauthorizedAccessException)
         {
             return RepairRequired(exception.Message);
+        }
+
+        if (!string.IsNullOrWhiteSpace(providerUnavailableReason))
+        {
+            return new(
+                "Provider capabilities unknown",
+                LauncherHomeTone.Warning,
+                "Unavailable",
+                ModManagementActionKind.None,
+                false,
+                providerUnavailableReason);
         }
 
         var targetPath = Path.Combine(normalizedGameDirectory, "version.dll");

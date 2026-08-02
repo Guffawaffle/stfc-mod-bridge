@@ -10,10 +10,11 @@ is the catalog authority; the mod runtime remains the TOML parser and default
 authority.
 
 The selected release source chooses the matching schema and capabilities.
-Guffawaffle is the only packaged source in this slice. NetniV support retains
-TOML as a hard compatibility boundary and must not reuse Guffawaffle-only
-capabilities without matching source metadata. Runtime facts, capabilities,
-feature policy, and startup activation are kept separate by the
+Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV's
+configuration schema remains explicitly unknown, so its settings editor fails
+closed instead of reusing Guffawaffle metadata. TOML remains the compatibility
+boundary. Runtime facts, capabilities, feature policy, and startup activation
+are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
 
 ## Accepted modular architecture boundary
@@ -237,9 +238,10 @@ shared bindings in `ConflictGroup::None` remain valid. Invalid configured
 bindings show the runtime default rather than presenting an unusable shortcut
 as active.
 
-NetniV schema selection is not yet packaged; the current
-session uses the Guffawaffle catalog while source-preserving tests prove that
-legacy NetniV notification families survive unrelated edits.
+NetniV provider selection is packaged, while NetniV schema capability remains
+unknown until a NetniV-published schema or reviewed compatibility adapter is
+available. Source-preserving tests prove provider switching and unrelated
+edits retain legacy/unknown TOML without applying the Guffawaffle catalog.
 
 ## Accepted destination
 

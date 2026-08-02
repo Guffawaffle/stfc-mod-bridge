@@ -6,79 +6,153 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherDistributionProviderTests
 {
     [TestMethod]
-    public void CatalogResolvesDefaultProviderFromStableId()
+    public void NeutralFixturesResolveBothProvidersFromStableIds()
     {
-        using var stream = JsonStream(Catalog());
-
-        var catalog = LauncherDistributionProviderCatalogLoader.Load(stream);
+        var catalog = LoadFixtureCatalog();
 
         Assert.AreEqual("guffawaffle", catalog.DefaultProviderId);
-        Assert.AreEqual("Guffawaffle", catalog.DefaultProvider.DisplayName);
-        Assert.AreEqual("Guffawaffle/stfc-mod", catalog.DefaultProvider.ModReleaseRepository);
+        Assert.AreEqual(2, catalog.Providers.Count);
+        var guffawaffle = catalog.GetProvider("guffawaffle");
+        var netniv = catalog.GetProvider("netniv");
+        Assert.AreEqual("Guffawaffle/stfc-mod", guffawaffle.DefaultReleaseChannel.Repository);
+        Assert.AreEqual("netniV/stfc-mod", netniv.DefaultReleaseChannel.Repository);
         Assert.AreEqual(
-            "guffawaffle.stfc-community-mod",
-            catalog.DefaultProvider.RuntimeDistributionId);
+            LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset,
+            netniv.DefaultReleaseChannel.DiscoveryKind);
+        Assert.AreEqual("stfc-community-mod.zip", netniv.DefaultReleaseChannel.ArtifactAssetName);
     }
 
     [TestMethod]
     public void DisplayNameDoesNotDefineProviderIdentity()
     {
-        using var stream = JsonStream(Catalog().Replace(
+        var contents = File.ReadAllText(FixturePath("guffawaffle-provider-pack.v1.json"));
+        using var stream = JsonStream(contents.Replace(
             "\"displayName\": \"Guffawaffle\"",
             "\"displayName\": \"Any localized title\"",
             StringComparison.Ordinal));
 
-        var catalog = LauncherDistributionProviderCatalogLoader.Load(stream);
+        var provider = LauncherDistributionProviderCatalogLoader.LoadPack(stream);
 
-        Assert.AreEqual("guffawaffle", catalog.DefaultProvider.Id);
-        Assert.AreEqual("Any localized title", catalog.DefaultProvider.DisplayName);
+        Assert.AreEqual("guffawaffle", provider.Id);
+        Assert.AreEqual("Any localized title", provider.DisplayName);
+    }
+
+    [TestMethod]
+    public void MissingCapabilityFailsClosedAsUnknown()
+    {
+        var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
+        using var stream = JsonStream(contents.Replace(
+            "      { \"id\": \"settings.catalog\", \"status\": \"unknown\" },\r\n",
+            string.Empty,
+            StringComparison.Ordinal).Replace(
+            "      { \"id\": \"settings.catalog\", \"status\": \"unknown\" },\n",
+            string.Empty,
+            StringComparison.Ordinal));
+
+        var provider = LauncherDistributionProviderCatalogLoader.LoadPack(stream);
+
+        Assert.AreEqual(
+            LauncherProviderCapabilityStatus.Unknown,
+            provider.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog));
+    }
+
+    [TestMethod]
+    public void UnknownNetnivTrustAndConfigurationRemainVisibleAndFailClosed()
+    {
+        var netniv = LoadFixtureCatalog().GetProvider("netniv");
+
+        Assert.AreEqual(
+            LauncherProviderCapabilityStatus.Unknown,
+            netniv.GetCapabilityStatus(LauncherProviderCapabilityIds.ArtifactTrust));
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, netniv.ConfigurationSchema.Status);
+        Assert.IsFalse(netniv.CanAuthenticateWindowsArtifact);
+        Assert.IsFalse(netniv.CanUseManifestReleaseDiscovery);
+        StringAssert.Contains(netniv.CapabilitySummary, "mod.artifact-trust: unknown");
+    }
+
+    [TestMethod]
+    public void ProviderCannotRedefineLauncherSelfUpdateAuthority()
+    {
+        var netniv = LoadFixtureCatalog().GetProvider("netniv");
+
+        Assert.AreNotEqual(
+            netniv.DefaultReleaseChannel.Repository,
+            LauncherSelfUpdateAuthority.ReleaseRepository);
+        Assert.AreEqual("Joseph Gustavson", LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+    }
+
+    [TestMethod]
+    public void PortableProviderPackSchemaIsVersioned()
+    {
+        using var stream = File.OpenRead(FixturePath("provider-pack.schema.v1.json"));
+        using var document = System.Text.Json.JsonDocument.Parse(stream);
+
+        Assert.AreEqual(
+            "https://json-schema.org/draft/2020-12/schema",
+            document.RootElement.GetProperty("$schema").GetString());
+        Assert.AreEqual(
+            "STFC Mod Launcher provider pack v1",
+            document.RootElement.GetProperty("title").GetString());
+    }
+
+    [TestMethod]
+    public void SupportedCapabilityWithoutEvidenceIsRejected()
+    {
+        var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
+        using var stream = JsonStream(contents.Replace(
+            "{ \"id\": \"mod.artifact-trust\", \"status\": \"unknown\" }",
+            "{ \"id\": \"mod.artifact-trust\", \"status\": \"supported\" }",
+            StringComparison.Ordinal));
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherDistributionProviderCatalogLoader.LoadPack(stream));
     }
 
     [DataTestMethod]
     [DataRow("\"schemaVersion\": 1", "\"schemaVersion\": 2")]
-    [DataRow("\"defaultProviderId\": \"guffawaffle\"", "\"defaultProviderId\": \"missing\"")]
-    [DataRow("\"modReleaseRepository\": \"Guffawaffle/stfc-mod\"", "\"modReleaseRepository\": \"not-a-repository\"")]
-    [DataRow("\"modReleaseManifestAssetName\": \"stfc-community-mod-release-manifest.json\"", "\"modReleaseManifestAssetName\": \"../manifest.json\"")]
-    public void InvalidCatalogIdentityFailsClosed(string oldValue, string newValue)
+    [DataRow("\"id\": \"guffawaffle\"", "\"id\": \"Not Stable\"")]
+    [DataRow("\"repository\": \"Guffawaffle/stfc-mod\"", "\"repository\": \"not-a-repository\"")]
+    [DataRow("\"manifestAssetName\": \"stfc-community-mod-release-manifest.json\"", "\"manifestAssetName\": \"../manifest.json\"")]
+    public void InvalidPackIdentityFailsClosed(string oldValue, string newValue)
     {
-        using var stream = JsonStream(Catalog().Replace(oldValue, newValue, StringComparison.Ordinal));
+        var contents = File.ReadAllText(FixturePath("guffawaffle-provider-pack.v1.json"));
+        using var stream = JsonStream(contents.Replace(oldValue, newValue, StringComparison.Ordinal));
 
         Assert.ThrowsException<InvalidDataException>(
-            () => LauncherDistributionProviderCatalogLoader.Load(stream));
+            () => LauncherDistributionProviderCatalogLoader.LoadPack(stream));
     }
 
     [TestMethod]
     public void UnknownProviderPropertyFailsClosed()
     {
-        using var stream = JsonStream(Catalog().Replace(
+        var contents = File.ReadAllText(FixturePath("guffawaffle-provider-pack.v1.json"));
+        using var stream = JsonStream(contents.Replace(
             "\"id\": \"guffawaffle\"",
             "\"id\": \"guffawaffle\", \"surprise\": true",
             StringComparison.Ordinal));
 
         Assert.ThrowsException<InvalidDataException>(
-            () => LauncherDistributionProviderCatalogLoader.Load(stream));
+            () => LauncherDistributionProviderCatalogLoader.LoadPack(stream));
     }
+
+    internal static LauncherDistributionProviderCatalog LoadFixtureCatalog()
+    {
+        using var index = File.OpenRead(FixturePath("bundled-provider-catalog.v1.json"));
+        return LauncherDistributionProviderCatalogLoader.Load(
+            index,
+            resourceName => resourceName switch
+            {
+                "STFCCommunityMod.Launcher.ProviderPacks.Guffawaffle.v1.json" =>
+                    File.OpenRead(FixturePath("guffawaffle-provider-pack.v1.json")),
+                "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json" =>
+                    File.OpenRead(FixturePath("netniv-provider-pack.v1.json")),
+                _ => null,
+            });
+    }
+
+    private static string FixturePath(string fileName) =>
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "Providers", fileName);
 
     private static MemoryStream JsonStream(string json) =>
         new(Encoding.UTF8.GetBytes(json), writable: false);
-
-    private static string Catalog() =>
-        """
-        {
-          "schemaVersion": 1,
-          "defaultProviderId": "guffawaffle",
-          "providers": [
-            {
-              "id": "guffawaffle",
-              "displayName": "Guffawaffle",
-              "runtimeDistributionId": "guffawaffle.stfc-community-mod",
-              "modReleaseRepository": "Guffawaffle/stfc-mod",
-              "modReleaseManifestAssetName": "stfc-community-mod-release-manifest.json",
-              "configurationSchemaResourceName": "Schemas.Guffawaffle.v1.json",
-              "runtimeManifestResourceName": "RuntimeManifests.Guffawaffle.v1.json",
-              "windowsArtifactPublisher": "Joseph Gustavson"
-            }
-          ]
-        }
-        """;
 }
