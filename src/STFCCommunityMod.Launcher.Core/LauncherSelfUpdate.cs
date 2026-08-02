@@ -46,6 +46,11 @@ public sealed record LauncherUpdateRecoveryResult(int ExaminedTransactions, int 
 
 public static class LauncherUpdateRecovery
 {
+    private sealed record RecoveryTransaction(
+        string TransactionRoot,
+        LauncherUpdatePlan Plan,
+        bool HasBackup);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -53,8 +58,15 @@ public static class LauncherUpdateRecovery
 
     public static LauncherUpdateRecoveryResult RecoverBeforeSetup(
         string stateDirectory,
-        string programDirectory)
+        string programDirectory) =>
+        RecoverBeforeSetup(stateDirectory, programDirectory, Directory.Move);
+
+    internal static LauncherUpdateRecoveryResult RecoverBeforeSetup(
+        string stateDirectory,
+        string programDirectory,
+        Action<string, string> moveDirectory)
     {
+        ArgumentNullException.ThrowIfNull(moveDirectory);
         var stateRoot = Path.GetFullPath(stateDirectory);
         var targetRoot = Path.GetFullPath(programDirectory);
         var updateRoot = Path.Combine(stateRoot, "self-update");
@@ -63,9 +75,8 @@ public static class LauncherUpdateRecovery
             return new(0, 0);
         }
 
-        var examined = 0;
-        var restored = 0;
-        foreach (var transactionRoot in Directory.EnumerateDirectories(updateRoot))
+        var transactions = new List<RecoveryTransaction>();
+        foreach (var transactionRoot in Directory.EnumerateDirectories(updateRoot).Order(StringComparer.Ordinal))
         {
             var transactionId = Path.GetFileName(transactionRoot);
             if (!Guid.TryParseExact(transactionId, "N", out _))
@@ -78,26 +89,67 @@ public static class LauncherUpdateRecovery
                 continue;
             }
 
-            examined++;
             RejectReparsePoints(transactionRoot);
             var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
                 ?? throw new InvalidDataException("An abandoned launcher update plan is empty.");
             ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
-            if (Directory.Exists(plan.BackupDirectory))
+            if (Directory.Exists(Path.Combine(transactionRoot, "failed-target")))
+            {
+                throw new InvalidDataException(
+                    "An abandoned launcher update contains an unexpected failed-target directory.");
+            }
+            var hasBackup = Directory.Exists(plan.BackupDirectory);
+            if (hasBackup)
             {
                 RejectReparsePoints(plan.BackupDirectory);
                 VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
-                if (Directory.Exists(targetRoot))
-                {
-                    RejectReparsePoints(targetRoot);
-                    Directory.Delete(targetRoot, recursive: true);
-                }
-                Directory.Move(plan.BackupDirectory, targetRoot);
-                restored++;
             }
-            Directory.Delete(transactionRoot, recursive: true);
+            transactions.Add(new(transactionRoot, plan, hasBackup));
         }
-        return new(examined, restored);
+
+        var backups = transactions.Where(transaction => transaction.HasBackup).ToArray();
+        if (backups.Length > 1)
+        {
+            throw new InvalidDataException(
+                "Multiple abandoned launcher update backups require manual recovery.");
+        }
+
+        var restored = 0;
+        if (backups.Length == 1)
+        {
+            var recovery = backups[0];
+            var failedTarget = Path.Combine(recovery.TransactionRoot, "failed-target");
+            var movedCurrent = false;
+            if (Directory.Exists(targetRoot))
+            {
+                RejectReparsePoints(targetRoot);
+                moveDirectory(targetRoot, failedTarget);
+                movedCurrent = true;
+            }
+            try
+            {
+                moveDirectory(recovery.Plan.BackupDirectory, targetRoot);
+            }
+            catch
+            {
+                if (movedCurrent && Directory.Exists(failedTarget) && !Directory.Exists(targetRoot))
+                {
+                    Directory.Move(failedTarget, targetRoot);
+                }
+                throw;
+            }
+            if (movedCurrent)
+            {
+                Directory.Delete(failedTarget, recursive: true);
+            }
+            restored = 1;
+        }
+
+        foreach (var transaction in transactions)
+        {
+            Directory.Delete(transaction.TransactionRoot, recursive: true);
+        }
+        return new(transactions.Count, restored);
     }
 
     private static void ValidateRecoveryPlan(

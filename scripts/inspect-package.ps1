@@ -17,19 +17,43 @@ $archive = Join-Path $outputRoot "stfc-community-mod-launcher-win-x64.zip"
 $setupDirectory = Join-Path $outputRoot "setup"
 $setup = Join-Path $setupDirectory "STFCCommunityMod.Launcher.Setup.exe"
 
-function Assert-PortableExecutable {
+function Test-PortableExecutable {
   param([string]$Path)
 
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    throw "Expected PE file was not found: $Path"
+    return $false
   }
   $stream = [System.IO.File]::OpenRead($Path)
   try {
-    if ($stream.Length -lt 2 -or $stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) {
-      throw "File does not have a Windows PE header: $Path"
+    if ($stream.Length -lt 64 -or $stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) {
+      return $false
     }
+    $stream.Position = 0x3c
+    $offsetBytes = [byte[]]::new(4)
+    if ($stream.Read($offsetBytes, 0, 4) -ne 4) {
+      return $false
+    }
+    $peOffset = [BitConverter]::ToInt32($offsetBytes, 0)
+    if ($peOffset -lt 0 -or $peOffset -gt ($stream.Length - 4)) {
+      return $false
+    }
+    $stream.Position = $peOffset
+    $signature = [byte[]]::new(4)
+    return $stream.Read($signature, 0, 4) -eq 4 `
+      -and $signature[0] -eq 0x50 `
+      -and $signature[1] -eq 0x45 `
+      -and $signature[2] -eq 0 `
+      -and $signature[3] -eq 0
   } finally {
     $stream.Dispose()
+  }
+}
+
+function Assert-PortableExecutable {
+  param([string]$Path)
+
+  if (-not (Test-PortableExecutable $Path)) {
+    throw "File does not have a Windows PE header: $Path"
   }
 
   if ($RequireSignatures) {
@@ -63,9 +87,12 @@ try {
     [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
   })
   $requiredExecutables = @("STFCCommunityMod.Launcher.exe", "STFCCommunityMod.Launcher.Updater.exe")
-  $packagedExecutables = @($relativeFiles | Where-Object { $_.EndsWith('.exe', [System.StringComparison]::OrdinalIgnoreCase) })
-  if ($packagedExecutables.Count -ne $requiredExecutables.Count) {
-    throw "Launcher archive contains an executable outside the reviewed signing allowlist."
+  $portableExecutables = @($files | Where-Object { Test-PortableExecutable $_.FullName } | ForEach-Object {
+    [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
+  })
+  $unexpectedPortableExecutables = @($portableExecutables | Where-Object { $_ -cnotin $requiredExecutables })
+  if ($unexpectedPortableExecutables.Count -gt 0) {
+    throw "Launcher archive contains a portable executable outside the reviewed signing allowlist: $($unexpectedPortableExecutables -join ', ')"
   }
   foreach ($required in $requiredExecutables) {
     if (@($relativeFiles | Where-Object { $_ -eq $required }).Count -ne 1) {

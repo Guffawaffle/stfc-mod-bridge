@@ -5,35 +5,33 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
-    timeout-minutes: 30
-    environment:
-      name: windows-release
-    env:
-      WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
-      AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-      AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
-      AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 
       - name: Resolve and validate tag identity
         id: release
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if ("${{ github.ref_name }}" -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
+          if ($env:RELEASE_TAG -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
             throw "Launcher release tags must use vX.Y.Z or vX.Y.Z-rc.N."
           }
           "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
@@ -47,10 +45,47 @@ jobs:
 
       - name: Build unsigned release payload
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_REVISION_ID: ${{ github.sha }}
         run: >-
           ./scripts/publish.ps1
-          -Version "${{ steps.release.outputs.version }}"
-          -SourceRevisionId "${{ github.sha }}"
+          -Version "$env:RELEASE_VERSION"
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
+
+      - name: Upload unsigned launcher payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-launcher-payload
+          path: artifacts/win-x64/app
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    environment:
+      name: windows-release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
+      AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+      AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
+      AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+
+      - name: Download unsigned launcher payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-launcher-payload
+          path: artifacts/win-x64/app
 
       - name: Validate protected signing configuration
         shell: pwsh
@@ -70,14 +105,14 @@ jobs:
           }
 
       - name: Azure login with GitHub OIDC
-        uses: azure/login@v3
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign launcher and updater
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
@@ -92,14 +127,17 @@ jobs:
 
       - name: Repackage signed payload and rebuild setup
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_REVISION_ID: ${{ github.sha }}
         run: |
           ./scripts/package.ps1
           ./scripts/publish-bootstrapper.ps1 `
-            -Version "${{ steps.release.outputs.version }}" `
-            -SourceRevisionId "${{ github.sha }}"
+            -Version "$env:RELEASE_VERSION" `
+            -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
       - name: Sign setup
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
@@ -121,16 +159,47 @@ jobs:
 
       - name: Generate repository-owned launcher manifest
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_COMMIT: ${{ github.sha }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: >-
           ./scripts/generate-launcher-release-manifest.ps1
-          -Tag "${{ github.ref_name }}"
-          -TargetCommit "${{ github.sha }}"
-          -Repository "${{ github.repository }}"
+          -Tag "$env:RELEASE_TAG"
+          -TargetCommit "$env:TARGET_COMMIT"
+          -Repository "$env:RELEASE_REPOSITORY"
+
+      - name: Upload signed release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-launcher-release-assets
+          path: |
+            artifacts/win-x64/setup/STFCCommunityMod.Launcher.Setup.exe
+            artifacts/win-x64/stfc-community-mod-launcher-win-x64.zip
+            artifacts/win-x64/stfc-mod-launcher-release-manifest.json
+          if-no-files-found: error
+
+  publish:
+    needs: [build, sign]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-launcher-release-assets
+          path: artifacts/win-x64
 
       - name: Publish setup and machine-consumed update inputs
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_IS_PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
           $root = "artifacts/win-x64"
           $assets = @(
@@ -146,13 +215,13 @@ jobs:
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM
           $arguments = @(
-            "release", "create", "${{ github.ref_name }}",
-            "--repo", "${{ github.repository }}",
+            "release", "create", $env:RELEASE_TAG,
+            "--repo", $env:RELEASE_REPOSITORY,
             "--verify-tag",
-            "--title", "STFC Mod Launcher ${{ steps.release.outputs.version }}",
+            "--title", "STFC Mod Launcher $env:RELEASE_VERSION",
             "--notes-file", $notesPath
           )
-          if ("${{ steps.release.outputs.prerelease }}" -eq "True") {
+          if ($env:RELEASE_IS_PRERELEASE -eq "True") {
             $arguments += "--prerelease"
           }
           $arguments += $assets

@@ -65,7 +65,12 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
         Version currentLauncherVersion,
         CancellationToken cancellationToken = default)
     {
-        var manifest = await manifestClient.DiscoverLatestAsync(channel, cancellationToken);
+        var manifests = await manifestClient.DiscoverCandidatesAsync(channel, cancellationToken);
+        var manifest = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
+            manifests,
+            channel,
+            currentLauncherVersion,
+            repository);
         var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
             manifest,
             channel,
@@ -95,7 +100,12 @@ public sealed class GitHubLauncherReleaseClient : ILauncherReleaseDiscoveryClien
         Version currentLauncherVersion,
         CancellationToken cancellationToken = default)
     {
-        var manifest = await manifestClient.DiscoverLatestAsync(channel, cancellationToken);
+        var manifests = await manifestClient.DiscoverCandidatesAsync(channel, cancellationToken);
+        var manifest = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
+            manifests,
+            channel,
+            currentLauncherVersion,
+            repository);
         var artifact = WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
             manifest,
             channel,
@@ -149,7 +159,7 @@ internal sealed class GitHubReleaseManifestClient
         releasesUri = new($"https://api.github.com/repos/{repository}/releases?per_page=30");
     }
 
-    public async Task<WindowsReleaseManifest> DiscoverLatestAsync(
+    public async Task<IReadOnlyList<WindowsReleaseManifest>> DiscoverCandidatesAsync(
         string channel,
         CancellationToken cancellationToken)
     {
@@ -179,6 +189,7 @@ internal sealed class GitHubReleaseManifestClient
             throw new InvalidDataException("GitHub releases response must be an array.");
         }
 
+        var manifests = new List<WindowsReleaseManifest>();
         foreach (var release in releasesDocument.RootElement.EnumerateArray())
         {
             if (!TrySelectManifestAsset(release, channel, out var tag, out var manifestUri))
@@ -202,11 +213,13 @@ internal sealed class GitHubReleaseManifestClient
             {
                 throw new InvalidDataException("GitHub release tag and release manifest tag do not match.");
             }
-            return manifest;
+            manifests.Add(manifest);
         }
 
-        throw new InvalidDataException(
-            $"No {channel} GitHub release contains the required manifest asset.");
+        return manifests.Count > 0
+            ? manifests
+            : throw new InvalidDataException(
+                $"No {channel} GitHub release contains the required manifest asset.");
     }
 
     private static HttpRequestMessage CreateRequest(Uri uri)

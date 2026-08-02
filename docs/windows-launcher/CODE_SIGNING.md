@@ -24,7 +24,8 @@ The GitHub environment is `windows-release`.
 - Allowed release tags: `v*`
 - OIDC subject:
   `repo:Guffawaffle/stfc-mod-launcher:environment:windows-release`
-- GitHub job permissions: `contents: write` and `id-token: write`
+- Signing job permission: `id-token: write` with `contents: read`
+- Publication job permission: `contents: write` without `id-token`
 
 Pull requests and ordinary branch builds remain unsigned. Only a tag build can
 enter the signing job, and the protected environment requires approval before
@@ -39,7 +40,9 @@ The standalone tag workflow signs and verifies:
 - `STFCCommunityMod.Launcher.Setup.exe`
 
 Future executable release components must be added to an explicit signing
-allowlist before release.
+allowlist before release. Package inspection identifies PE files by their
+actual `MZ`/`PE\0\0` headers rather than file extension, so a DLL or renamed PE
+cannot evade that allowlist.
 
 The release order is:
 
@@ -69,6 +72,8 @@ expectations for each PE artifact or signed archive member. The complete
 producer and consumer contract is in
 `docs/windows-launcher/RELEASE_MANIFEST.md`.
 
+The workflow pins every external action to a reviewed commit and passes tag,
+commit, and repository contexts into PowerShell through environment variables.
 The workflow contains no PFX or client secret. A successful protected tag run,
 package inspection, and manual clean-machine install/update/rollback/uninstall
 receipt are still required evidence; this document does not claim that those

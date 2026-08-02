@@ -55,6 +55,57 @@ public sealed class GitHubWindowsReleaseClientTests
     }
 
     [TestMethod]
+    public async Task DiscoverySelectsHighestEligibleReleaseInsteadOfFirstApiEntry()
+    {
+        var releases = $$"""
+            [
+              {{ReleaseJson("v2.1.0-guffa.7", false, false, true)}},
+              {{ReleaseJson("v2.1.0-guffa.8", false, false, true)}}
+            ]
+            """;
+        var handler = new RouteHandler(
+            releases,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["v2.1.0-guffa.7"] = Manifest("2.1.0-guffa.7"),
+                ["v2.1.0-guffa.8"] = Manifest("2.1.0-guffa.8"),
+            });
+        using var client = new HttpClient(handler);
+
+        var result = await CreateDiscoveryClient(client).DiscoverLatestAsync(
+            "stable",
+            new Version(0, 1, 0));
+
+        Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
+        Assert.AreEqual("2.1.0.8", result.ModArtifact.ExpectedVersion);
+    }
+
+    [TestMethod]
+    public async Task WithdrawnReleaseDoesNotBlockLaterActiveCandidate()
+    {
+        var releases = $$"""
+            [
+              {{ReleaseJson("v2.1.0-guffa.9", false, false, true)}},
+              {{ReleaseJson("v2.1.0-guffa.8", false, false, true)}}
+            ]
+            """;
+        var handler = new RouteHandler(
+            releases,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["v2.1.0-guffa.9"] = Manifest("2.1.0-guffa.9", releaseState: "withdrawn"),
+                ["v2.1.0-guffa.8"] = Manifest("2.1.0-guffa.8"),
+            });
+        using var client = new HttpClient(handler);
+
+        var result = await CreateDiscoveryClient(client).DiscoverLatestAsync(
+            "stable",
+            new Version(0, 1, 0));
+
+        Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
+    }
+
+    [TestMethod]
     public async Task ArbitraryManifestAssetUrlIsNeverFollowed()
     {
         var release = ReleaseJson(
@@ -234,13 +285,16 @@ public sealed class GitHubWindowsReleaseClientTests
     private static GitHubWindowsReleaseClient CreateDiscoveryClient(HttpClient client) =>
         new(client, Repository, ManifestFileName);
 
-    private static string Manifest(string releaseVersion, string channel = "stable") => $$"""
+    private static string Manifest(
+        string releaseVersion,
+        string channel = "stable",
+        string releaseState = "active") => $$"""
         {
           "schemaVersion": 1,
           "releaseVersion": "{{releaseVersion}}",
           "tag": "v{{releaseVersion}}",
           "channel": "{{channel}}",
-          "releaseState": "active",
+          "releaseState": "{{releaseState}}",
           "minimumLauncherVersion": "0.1.0",
           "source": {
             "repository": "Guffawaffle/stfc-mod",
@@ -266,8 +320,24 @@ public sealed class GitHubWindowsReleaseClientTests
         }
         """;
 
-    private sealed class RouteHandler(string releasesJson, string manifestJson) : HttpMessageHandler
+    private sealed class RouteHandler : HttpMessageHandler
     {
+        private readonly string releasesJson;
+        private readonly string? manifestJson;
+        private readonly IReadOnlyDictionary<string, string>? manifestsByTag;
+
+        public RouteHandler(string releasesJson, string manifestJson)
+        {
+            this.releasesJson = releasesJson;
+            this.manifestJson = manifestJson;
+        }
+
+        public RouteHandler(string releasesJson, IReadOnlyDictionary<string, string> manifestsByTag)
+        {
+            this.releasesJson = releasesJson;
+            this.manifestsByTag = manifestsByTag;
+        }
+
         public HttpStatusCode ReleasesStatusCode { get; init; } = HttpStatusCode.OK;
 
         public List<(Uri Uri, string UserAgent)> Requests { get; } = [];
@@ -281,7 +351,12 @@ public sealed class GitHubWindowsReleaseClientTests
                 request.Headers.UserAgent.ToString()));
             var isReleasesRequest = request.RequestUri!.Host == "api.github.com";
             var status = isReleasesRequest ? ReleasesStatusCode : HttpStatusCode.OK;
-            var body = isReleasesRequest ? releasesJson : manifestJson;
+            var body = isReleasesRequest
+                ? releasesJson
+                : manifestJson ?? manifestsByTag!.Single(pair =>
+                    request.RequestUri.AbsolutePath.Contains(
+                        $"/{pair.Key}/",
+                        StringComparison.Ordinal)).Value;
             return Task.FromResult(new HttpResponseMessage(status)
             {
                 RequestMessage = request,

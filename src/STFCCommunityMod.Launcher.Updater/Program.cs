@@ -20,6 +20,8 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             jsonOptions)
             ?? throw new InvalidDataException("Update plan is empty.");
         ValidatePlan(plan, planPath);
+        await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
+            ?? throw new InvalidOperationException("Another launcher operation is already in progress.");
         try
         {
             using var parent = Process.GetProcessById(plan.ParentProcessId);
