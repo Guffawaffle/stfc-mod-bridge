@@ -18,6 +18,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
     private LauncherEnvironmentSnapshot snapshot;
+    private LauncherHealthSnapshot localHealth;
+    private HomeHealthProjection homeHealth;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
     private GameLaunchPresentation launchPresentation;
@@ -47,9 +49,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
-        modPresentation = modManagementCoordinator.CapturePresentation(
+        localHealth = modManagementCoordinator.CaptureHealth(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
+        homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
+        modPresentation = localHealth.ModManagement;
         launchPresentation = gameLaunchCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             selectedLaunchTarget);
@@ -99,7 +103,30 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool IsGameRunning => presentation.IsGameRunning;
 
-    public string ModStatus => modPresentation.Status;
+    public LauncherProviderCompatibilityState ModProviderCompatibility =>
+        localHealth.ProviderCompatibility;
+
+    public string ModProviderCompatibilityStatus => homeHealth.ProviderCompatibilityStatus;
+
+    public ModUpdateEvidenceState ModUpdateAvailability => localHealth.UpdateAvailability;
+
+    public string ModUpdateAvailabilityStatus => homeHealth.UpdateAvailabilityStatus;
+
+    public LauncherNativeEvidenceState ModGameCompatibility => localHealth.GameCompatibility;
+
+    public string ModGameCompatibilityStatus => homeHealth.GameCompatibilityStatus;
+
+    public LauncherNativeEvidenceState ModRuntimeActivation => localHealth.RuntimeActivation;
+
+    public string ModRuntimeActivationStatus => homeHealth.RuntimeActivationStatus;
+
+    public LauncherNativeEvidenceState ModNativeSupport => localHealth.NativeSupport;
+
+    public string ModNativeSupportStatus => homeHealth.NativeSupportStatus;
+
+    public IReadOnlyList<LauncherHealthDimension> ModHealthDimensions => localHealth.Dimensions;
+
+    public string ModStatus => homeHealth.InstallationStatus;
 
     public LauncherHomeTone ModTone => modPresentation.Tone;
 
@@ -254,7 +281,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             new HttpModArtifactDownloader(httpClient),
             new WindowsModArtifactVersionReader(),
             modArtifactVerifier,
-            processInspector.IsGameRunning);
+            processInspector.IsGameRunning,
+            installationAttribution: new(
+                providerBinding.ProviderId,
+                providerBinding.ReleaseChannelId,
+                distributionProvider.RuntimeDistributionId));
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(
+                deploymentService,
+                new SystemModInstallationFileSystem()),
+            new LauncherProviderHealthContext(
+                providerBinding.ProviderId,
+                providerBinding.ReleaseChannelId,
+                distributionProvider.RuntimeDistributionId,
+                providerBinding.IsAvailable,
+                providerBinding.UnavailableReason));
         var launcherReleaseClient = new GitHubLauncherReleaseClient(
             httpClient,
             LauncherSelfUpdateAuthority.ReleaseRepository,
@@ -276,7 +317,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 modReleaseClient,
                 currentLauncherVersion,
                 providerBinding.ReleaseChannelId,
-                providerUnavailableReason: providerBinding.UnavailableReason),
+                providerUnavailableReason: providerBinding.UnavailableReason,
+                healthService: healthService),
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
@@ -323,9 +365,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
-        modPresentation = modManagementCoordinator.CapturePresentation(
+        localHealth = modManagementCoordinator.CaptureHealth(
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
+        homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
+        modPresentation = localHealth.ModManagement;
         launchPresentation = gameLaunchCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             selectedLaunchTarget);
@@ -340,6 +384,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(GameClientTone));
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
+        OnPropertyChanged(nameof(ModProviderCompatibility));
+        OnPropertyChanged(nameof(ModProviderCompatibilityStatus));
+        OnPropertyChanged(nameof(ModUpdateAvailability));
+        OnPropertyChanged(nameof(ModUpdateAvailabilityStatus));
+        OnPropertyChanged(nameof(ModGameCompatibility));
+        OnPropertyChanged(nameof(ModGameCompatibilityStatus));
+        OnPropertyChanged(nameof(ModRuntimeActivation));
+        OnPropertyChanged(nameof(ModRuntimeActivationStatus));
+        OnPropertyChanged(nameof(ModNativeSupport));
+        OnPropertyChanged(nameof(ModNativeSupportStatus));
+        OnPropertyChanged(nameof(ModHealthDimensions));
         NotifyModPresentationChanged();
         NotifyLaunchPresentationChanged();
         OnPropertyChanged(nameof(InitialBrowseDirectory));

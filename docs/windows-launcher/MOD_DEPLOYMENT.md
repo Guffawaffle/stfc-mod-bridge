@@ -68,6 +68,33 @@ Explicit repair may replace a missing or changed launcher-managed DLL only
 after the same release verification and transaction checks; the changed bytes
 remain available for rollback until repair commits.
 
+## Launcher-local health contract
+
+Home and Diagnostics consume the same composable `LauncherHealthSnapshot`.
+The installation inspector distinguishes no target, invalid target, missing,
+manual/unmanaged, verified managed, externally changed, recovery-required,
+and unreadable state. DLL presence alone is never reported as healthy managed.
+
+New deployments persist stable provider, release-channel, and runtime-
+distribution IDs beside the verified version and SHA-256. Existing schema-1
+records without those optional IDs remain valid but resolve as `Unattributed`;
+the launcher never guesses their provider from the current selection.
+
+Update availability is a separate, time-bounded observation. It is accepted
+only when the observation matches the installed artifact hash plus the
+selected provider, channel, and runtime-distribution identities. Missing,
+stale, or mismatched observations resolve to `Unknown` and do not override a
+verified local installation, so an offline launcher can still report truthful
+local readiness.
+
+Game compatibility, runtime activation, and native-hook support are distinct
+dimensions behind an evidence-source contract. The v1 source reports live
+states as explicit `Unknown`; it does not infer loaded or healthy hooks from a
+DLL, process, or log. The resolver can project authoritative `Healthy`,
+`Degraded`, or `Incompatible` evidence when a future identity-bound native or
+provider contract supplies it. Live dimensions are `NotApplicable` while the
+game is closed.
+
 ## Automated evidence
 
 The core test suite covers:
@@ -81,6 +108,11 @@ The core test suite covers:
 - injected failure after every persisted deployment boundary;
 - concurrent mutation denial;
 - corrupt persisted state;
+- legacy unattributed installed state and attributed deployment persistence;
+- missing, manual, verified, damaged, incompatible, update-available, running
+  healthy, running degraded, and explicit-unknown local-health states;
+- provider/channel/runtime identity and update-observation freshness;
+- provider-unavailable offline health that preserves local readiness;
 - startup recovery from an interrupted commit;
 - allowlist-only uninstall, adopted-artifact restoration, external-change
   refusal, and uninstall rollback.
