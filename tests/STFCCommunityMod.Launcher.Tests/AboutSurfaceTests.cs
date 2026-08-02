@@ -40,7 +40,7 @@ public sealed class AboutSurfaceTests
         Assert.AreEqual("Stable", about.ReleaseChannel);
         Assert.AreEqual("Guffawaffle/stfc-mod", about.ReleaseRepository);
         Assert.AreEqual("https://github.com/Guffawaffle/stfc-mod", about.RuntimeRepositoryUrl);
-        Assert.IsTrue(about.Contributors.Any(item => item.Name.Contains("NetniV", StringComparison.Ordinal)));
+        Assert.IsTrue(about.Contributors.Any(item => item.Name == "NetniV"));
         Assert.IsTrue(about.ThirdPartyNotices.Count >= 3);
         StringAssert.Contains(about.NoticeCoverageStatus, "does not claim legal completeness");
         StringAssert.Contains(about.NoticeCoverageStatus, "issue #30");

@@ -84,7 +84,7 @@ public sealed class LauncherAboutCatalogTests
         StringAssert.Contains(catalog.GameAcknowledgement, "independently developed");
         StringAssert.Contains(catalog.GameAcknowledgement, "does not extend");
         StringAssert.Contains(catalog.LegalReviewStatus, "issue #30");
-        Assert.IsTrue(catalog.Contributors.Any(item => item.Name.Contains("NetniV", StringComparison.Ordinal)));
+        Assert.IsTrue(catalog.Contributors.Any(item => item.Name == "NetniV"));
     }
 
     [TestMethod]
