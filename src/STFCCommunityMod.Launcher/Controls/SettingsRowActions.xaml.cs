@@ -21,11 +21,8 @@ public partial class SettingsRowActions : UserControl
             Dispatcher.BeginInvoke(
                 () =>
                 {
-                    var target = AddBindingAction.IsVisible
-                        ? AddBindingAction
-                        : UseDefaultAction;
-                    target.Focus();
-                    Keyboard.Focus(target);
+                    AddBindingAction.Focus();
+                    Keyboard.Focus(AddBindingAction);
                 },
                 DispatcherPriority.Input);
         }
@@ -38,11 +35,6 @@ public partial class SettingsRowActions : UserControl
         Dispatcher.BeginInvoke(
             CaptureButton.StartCapture,
             DispatcherPriority.Input);
-    }
-
-    private void UseDefault_Click(object sender, RoutedEventArgs e)
-    {
-        ActionPopup.IsOpen = false;
     }
 
     private void CaptureButton_CaptureFinished(object? sender, EventArgs e)

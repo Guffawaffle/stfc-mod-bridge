@@ -8,6 +8,13 @@ using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
+public enum SettingsInputWidth
+{
+    Small,
+    Medium,
+    Large,
+}
+
 public sealed class SettingsRowViewModel :
     SettingsListItemViewModel,
     INotifyPropertyChanged
@@ -175,6 +182,8 @@ public sealed class SettingsRowViewModel :
     public double NumericSliderLargeChange =>
         Math.Min(NumericSliderStep * 10, NumericSliderMaximum - NumericSliderMinimum);
 
+    public SettingsInputWidth NumericInputWidth => ResolveNumericInputWidth();
+
     public bool NumericSliderAllowsExtendedEntry
     {
         get
@@ -216,7 +225,7 @@ public sealed class SettingsRowViewModel :
 
     public bool IsDirty => valueState.IsDirty;
 
-    public bool HasOverflowActions => IsKeybindingEditor || DraftHasOverride;
+    public bool HasOverflowActions => IsKeybindingEditor;
 
     public bool IsExperimental =>
         Setting.Stability == LauncherConfigurationStability.Experimental;
@@ -227,6 +236,15 @@ public sealed class SettingsRowViewModel :
             : DraftHasOverride ? "Configured" : "Default";
 
     public string EffectiveValue => FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
+
+    public string DefaultAndEffectiveHelp =>
+        $"Default: {DefaultValueText}. Effective: {EffectiveValue}. "
+        + (DraftHasOverride
+            ? "An explicit value is configured; use Reset to default to remove it."
+            : "No explicit value is configured; the runtime/provider default is effective.");
+
+    public string DefaultAndEffectiveAutomationName =>
+        $"Default and effective value for {Title}";
 
     public string SavedValueText =>
         FormatStateValue(valueState.SavedValue, SavedHasOverride);
@@ -241,8 +259,6 @@ public sealed class SettingsRowViewModel :
 
     public string RevertDraftAutomationHelp =>
         $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "default")} state.";
-
-    public string UseDefaultLabel => $"Use default: {DefaultValueText}";
 
     public string UseDefaultAvailability =>
         DraftHasOverride
@@ -636,6 +652,7 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
+        OnPropertyChanged(nameof(DefaultAndEffectiveHelp));
         OnPropertyChanged(nameof(BooleanValue));
         OnPropertyChanged(nameof(BooleanStateText));
         OnPropertyChanged(nameof(EnumValue));
@@ -658,8 +675,32 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(RevertDraftAvailability));
         OnPropertyChanged(nameof(RevertDraftAutomationName));
         OnPropertyChanged(nameof(RevertDraftAutomationHelp));
-        OnPropertyChanged(nameof(UseDefaultLabel));
         OnPropertyChanged(nameof(UseDefaultAvailability));
+    }
+
+    private SettingsInputWidth ResolveNumericInputWidth()
+    {
+        if (!IsNumericEditor)
+        {
+            return SettingsInputWidth.Medium;
+        }
+
+        var minimum = Setting.NumericConstraints?.Minimum
+            ?? (HasNumericSlider ? NumericSliderMinimum : null);
+        var maximum = Setting.NumericConstraints?.Maximum
+            ?? (HasNumericSlider ? NumericSliderMaximum : null);
+        if (minimum is null || maximum is null)
+        {
+            return SettingsInputWidth.Large;
+        }
+
+        var magnitude = Math.Max(Math.Abs(minimum.Value), Math.Abs(maximum.Value));
+        return magnitude switch
+        {
+            <= 999 => SettingsInputWidth.Small,
+            <= 999_999 => SettingsInputWidth.Medium,
+            _ => SettingsInputWidth.Large,
+        };
     }
 
     private bool ReadBooleanValue()

@@ -104,16 +104,16 @@
 
     <Style x:Key="TitleBarColorModeComboBoxStyle"
            TargetType="ComboBox">
-      <Setter Property="MinWidth" Value="142" />
-      <Setter Property="Height" Value="40" />
-      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinWidth" Value="118" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="8,5" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="ItemContainerStyle" Value="{StaticResource TitleBarColorModeItemStyle}" />
       <Setter Property="ItemTemplate" Value="{StaticResource TitleBarColorModeItemTemplate}" />
       <Setter Property="Template">
@@ -132,7 +132,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="7">
+                            CornerRadius="{StaticResource ControlCornerRadius}">
                       <Grid>
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="*" />
@@ -217,6 +217,27 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+
+    <Style x:Key="TitleBarSettingsSearchStyle"
+           TargetType="TextBox">
+      <Setter Property="Height" Value="40" />
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="{StaticResource ControlBorderThickness}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Style.Triggers>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource FocusOuterBrush}" />
+          <Setter Property="BorderThickness" Value="2" />
+        </Trigger>
+      </Style.Triggers>
     </Style>
   </Window.Resources>
 
@@ -322,56 +343,104 @@
                 automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically." />
       </Grid>
 
-      <Button x:Name="SettingsSearchToggleButton"
-              Grid.Column="1"
-              Width="44"
-              MinWidth="44"
-              Margin="0,0,6,0"
-              Padding="0"
-              VerticalAlignment="Center"
-              Style="{StaticResource UtilityActionButtonStyle}"
-              Command="{Binding DataContext.SearchToggleCommand, ElementName=SettingsWorkspace}"
-              Click="SettingsSearchToggleButton_Click"
-              ToolTip="{Binding DataContext.SearchToggleHelp, ElementName=SettingsWorkspace}"
-              Visibility="Collapsed"
-              shell:WindowChrome.IsHitTestVisibleInChrome="True"
-              automation:AutomationProperties.Name="{Binding DataContext.SearchToggleHelp, ElementName=SettingsWorkspace}"
-              automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
-        <Grid Width="18" Height="18">
+      <Grid x:Name="SettingsSearchHost"
+            Grid.Column="1"
+            Margin="0,0,6,0"
+            VerticalAlignment="Center"
+            Visibility="Collapsed"
+            PreviewKeyDown="SettingsSearchHost_PreviewKeyDown"
+            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+        <Button x:Name="SettingsSearchOpenButton"
+                Width="44"
+                MinWidth="44"
+                Padding="0"
+                HorizontalAlignment="Right"
+                Command="{Binding DataContext.SearchOpenCommand, ElementName=SettingsWorkspace}"
+                Click="SettingsSearchOpenButton_Click"
+                ToolTip="Search all settings"
+                automation:AutomationProperties.Name="Open settings search"
+                automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key.">
           <controls:AppIcon Width="18"
                             Height="18"
                             FontSize="18"
-                            Kind="Search">
-            <controls:AppIcon.Style>
-              <Style TargetType="controls:AppIcon">
-                <Setter Property="Visibility" Value="Visible" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
-                               Value="True">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </controls:AppIcon.Style>
-          </controls:AppIcon>
-          <controls:AppIcon Width="18"
-                            Height="18"
-                            FontSize="18"
-                            Kind="Remove">
-            <controls:AppIcon.Style>
-              <Style TargetType="controls:AppIcon">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
-                               Value="True">
-                    <Setter Property="Visibility" Value="Visible" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </controls:AppIcon.Style>
-          </controls:AppIcon>
+                            Kind="Search" />
+          <Button.Style>
+            <Style BasedOn="{StaticResource QuietButtonStyle}"
+                   TargetType="Button">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace}"
+                             Value="True">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+        </Button>
+
+        <Grid Visibility="{Binding DataContext.IsSearchVisible, ElementName=SettingsWorkspace, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="238" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="40" />
+          </Grid.ColumnDefinitions>
+          <Grid>
+            <TextBox x:Name="TitleBarSettingsSearchBox"
+                     Style="{StaticResource TitleBarSettingsSearchStyle}"
+                     Text="{Binding DataContext.SearchText, ElementName=SettingsWorkspace, UpdateSourceTrigger=PropertyChanged}"
+                     automation:AutomationProperties.Name="Search settings"
+                     automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key." />
+            <TextBlock Margin="13,0,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       IsHitTestVisible="False"
+                       Text="Search settings">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding DataContext.SearchText, ElementName=SettingsWorkspace}"
+                                 Value="">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Grid>
+          <Button Grid.Column="1"
+                  Width="36"
+                  Height="36"
+                  MinHeight="36"
+                  Margin="4,0,0,0"
+                  Padding="0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Command="{Binding DataContext.SearchClearCommand, ElementName=SettingsWorkspace}"
+                  ToolTip="Clear search query"
+                  automation:AutomationProperties.Name="Clear settings search query"
+                  automation:AutomationProperties.HelpText="Clears the query and keeps settings search open.">
+            <controls:AppIcon Width="16"
+                              Height="16"
+                              FontSize="16"
+                              Kind="Remove" />
+          </Button>
+          <Button Grid.Column="2"
+                  Width="36"
+                  Height="36"
+                  MinHeight="36"
+                  Margin="4,0,0,0"
+                  Padding="0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Command="{Binding DataContext.SearchCloseCommand, ElementName=SettingsWorkspace}"
+                  Click="SettingsSearchCloseButton_Click"
+                  ToolTip="Close settings search"
+                  automation:AutomationProperties.Name="Close settings search"
+                  automation:AutomationProperties.HelpText="Closes search and returns focus to the search command.">
+            <TextBlock FontSize="17"
+                       FontWeight="Normal"
+                       Text="×" />
+          </Button>
         </Grid>
-      </Button>
+      </Grid>
 
       <ComboBox x:Name="ColorModeSelector"
                 Grid.Column="2"

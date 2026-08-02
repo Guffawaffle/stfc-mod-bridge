@@ -8,7 +8,7 @@
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
              xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
-             MinWidth="760"
+             MinWidth="0"
              Background="{DynamicResource WindowBackgroundBrush}"
              Foreground="{DynamicResource TextPrimaryBrush}"
              Focusable="False"
@@ -72,12 +72,19 @@
     <Style x:Key="SettingsNumericEditorStyle"
            BasedOn="{StaticResource SettingsSearchStyle}"
            TargetType="TextBox">
+      <Setter Property="Width" Value="{StaticResource SettingsInputWidthSmall}" />
       <Setter Property="MinHeight" Value="42" />
       <Setter Property="Padding" Value="12,8" />
       <Setter Property="HorizontalContentAlignment" Value="Right" />
       <Setter Property="TextAlignment" Value="Right" />
       <Setter Property="MaxLength" Value="64" />
       <Style.Triggers>
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Medium">
+          <Setter Property="Width" Value="{StaticResource SettingsInputWidthMedium}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Large">
+          <Setter Property="Width" Value="{StaticResource SettingsInputWidthLarge}" />
+        </DataTrigger>
         <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
           <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
           <Setter Property="BorderThickness" Value="2" />
@@ -609,39 +616,10 @@
           Margin="24,0,24,12">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Grid MaxWidth="650"
-            Margin="0,8,0,0"
-            HorizontalAlignment="Stretch"
-            Visibility="{Binding IsSearchVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <TextBox x:Name="SearchBox"
-                 HorizontalAlignment="Stretch"
-                 Style="{StaticResource SettingsSearchStyle}"
-                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                 automation:AutomationProperties.Name="Search settings"
-                 automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key." />
-        <TextBlock Margin="15,0,0,0"
-                   VerticalAlignment="Center"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   IsHitTestVisible="False"
-                   Text="Search settings">
-          <TextBlock.Style>
-            <Style TargetType="TextBlock">
-              <Setter Property="Visibility" Value="Collapsed" />
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding SearchText}" Value="">
-                  <Setter Property="Visibility" Value="Visible" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </TextBlock.Style>
-        </TextBlock>
-      </Grid>
-
-      <Grid Grid.Row="1"
+      <Grid Grid.Row="0"
             Margin="0,8,0,8"
             Visibility="{Binding IsSettingsListVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid.ColumnDefinitions>
@@ -683,7 +661,7 @@
         </StackPanel>
       </Grid>
 
-      <Grid Grid.Row="2">
+      <Grid Grid.Row="1">
         <ListBox x:Name="SettingsList"
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  ItemsSource="{Binding FilteredSettings}"
@@ -768,8 +746,8 @@
                         automation:AutomationProperties.HelpText="{Binding AccessibleHelp}">
                   <Grid>
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="420" />
+                      <ColumnDefinition Width="5*" MinWidth="220" />
+                      <ColumnDefinition Width="4*" MinWidth="300" MaxWidth="420" />
                     </Grid.ColumnDefinitions>
 
                     <Grid Margin="0,0,28,0"
@@ -795,7 +773,7 @@
                                 Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource QuietHoverBrush}"
-                                CornerRadius="4"
+                                CornerRadius="{StaticResource BadgeCornerRadius}"
                                 Visibility="{Binding IsDirty, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
                                      Foreground="{DynamicResource AccentBrush}"
@@ -804,7 +782,7 @@
                         <Border Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource SurfaceMutedBrush}"
-                                CornerRadius="4"
+                                CornerRadius="{StaticResource BadgeCornerRadius}"
                                 Visibility="{Binding IsExperimental, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
                                      Foreground="{DynamicResource TextSecondaryBrush}"
@@ -851,7 +829,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <ComboBox Width="220"
+                          <ComboBox Width="{StaticResource SettingsInputWidthLarge}"
                                     HorizontalAlignment="Right"
                                     Style="{StaticResource SettingsEnumComboBoxStyle}"
                                     ItemsSource="{Binding EnumOptions}"
@@ -875,7 +853,7 @@
                         <Grid>
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="124" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
@@ -928,7 +906,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBox Width="280"
+                          <TextBox Width="{StaticResource SettingsInputWidthLarge}"
                                    HorizontalAlignment="Right"
                                    Style="{StaticResource SettingsStringEditorStyle}"
                                    Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
@@ -1152,11 +1130,9 @@
           </StackPanel>
         </Border>
 
-        <Border Padding="22"
-                Background="{DynamicResource SurfaceBrush}"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="10"
+        <Border Padding="4,22"
+                Background="Transparent"
+                BorderThickness="0"
                 Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
           <StackPanel>
             <TextBlock FontSize="18"

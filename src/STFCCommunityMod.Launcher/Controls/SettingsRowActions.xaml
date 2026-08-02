@@ -35,6 +35,9 @@
   </UserControl.Resources>
 
   <StackPanel Orientation="Horizontal">
+    <controls:HelpFlyoutButton HelpText="{Binding DefaultAndEffectiveHelp}"
+                               AutomationName="{Binding DefaultAndEffectiveAutomationName}" />
+
     <Button Width="44"
             Height="44"
             MinHeight="44"
@@ -46,6 +49,21 @@
             automation:AutomationProperties.Name="{Binding RevertDraftAutomationName}"
             automation:AutomationProperties.HelpText="{Binding RevertDraftAutomationHelp}">
       <controls:AppIcon Kind="RevertDraft" />
+    </Button>
+
+    <Button MinWidth="72"
+            Height="44"
+            MinHeight="44"
+            Margin="4,0,0,0"
+            Padding="0"
+            Style="{StaticResource QuietButtonStyle}"
+            Command="{Binding UseDefaultCommand}"
+            ToolTip="{Binding UseDefaultAvailability}"
+            Visibility="{Binding DraftHasOverride, Converter={StaticResource BooleanToVisibilityConverter}}"
+            automation:AutomationProperties.Name="{Binding Title, StringFormat=Reset {0} to default}"
+            automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}">
+      <TextBlock FontSize="12"
+                 Text="_Default" />
     </Button>
 
     <Button x:Name="MoreActionsButton"
@@ -94,18 +112,6 @@
               <TextBlock VerticalAlignment="Center"
                          Text="Add binding" />
             </StackPanel>
-          </Button>
-          <Button x:Name="UseDefaultAction"
-                  Style="{StaticResource RowMenuActionStyle}"
-                  Command="{Binding UseDefaultCommand}"
-                  Click="UseDefault_Click"
-                  ToolTip="{Binding UseDefaultAvailability}"
-                  ToolTipService.ShowOnDisabled="True"
-                  automation:AutomationProperties.Name="{Binding UseDefaultLabel}"
-                  automation:AutomationProperties.HelpText="{Binding UseDefaultAvailability}">
-            <TextBlock Margin="28,0,0,0"
-                       VerticalAlignment="Center"
-                       Text="{Binding UseDefaultLabel}" />
           </Button>
         </StackPanel>
       </Border>

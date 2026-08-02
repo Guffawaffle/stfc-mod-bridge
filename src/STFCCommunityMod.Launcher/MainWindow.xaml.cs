@@ -5,6 +5,7 @@ using System.Net.Http;
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Shell;
 using System.Windows.Threading;
@@ -442,9 +443,44 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateColorModeSelectorAccessibility();
     }
 
-    private void SettingsSearchToggleButton_Click(object sender, RoutedEventArgs e)
+    private void SettingsSearchOpenButton_Click(object sender, RoutedEventArgs e)
     {
-        SettingsWorkspace.FocusSearchBoxWhenVisible();
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                TitleBarSettingsSearchBox.Focus();
+                TitleBarSettingsSearchBox.SelectAll();
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchCloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                SettingsSearchOpenButton.Focus();
+                Keyboard.Focus(SettingsSearchOpenButton);
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchHost_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        _ = sender;
+        if (e.Key != Key.Escape
+            || SettingsWorkspace.DataContext is not SettingsViewModel settings)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        settings.SearchCloseCommand.Execute(null);
+        SettingsSearchCloseButton_Click(this, new RoutedEventArgs());
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -517,7 +553,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
 
         MinWidth = isOpen ? SettingsMinWidth : 560;

@@ -145,6 +145,71 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void NumericEditorsUseSharedRangeBasedWidthClasses()
+    {
+        using var fixture = SettingsFixture.Create();
+
+        fixture.Select(LauncherSettingsSection.Interface);
+        Assert.AreEqual(
+            SettingsInputWidth.Small,
+            fixture.Row("ui.extend_chest_purchase_max").NumericInputWidth);
+
+        fixture.Select(LauncherSettingsSection.Graphics);
+        Assert.AreEqual(
+            SettingsInputWidth.Medium,
+            fixture.Row("graphics.default_system_zoom").NumericInputWidth);
+        Assert.AreEqual(
+            SettingsInputWidth.Large,
+            fixture.Row("graphics.zoom").NumericInputWidth);
+    }
+
+    [TestMethod]
+    public void SharedProvenanceAndResetContractSpansInterfaceAndGraphicsPages()
+    {
+        using var fixture = SettingsFixture.Create();
+
+        fixture.Select(LauncherSettingsSection.Interface);
+        var interfaceRow = fixture.Row("ui.extend_chest_purchase_max");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Effective: 160");
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "No explicit value");
+        interfaceRow.NumericText = "120";
+        Assert.IsTrue(interfaceRow.DraftHasOverride);
+        StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "explicit value");
+        Assert.IsTrue(interfaceRow.UseDefaultCommand.CanExecute(null));
+        interfaceRow.UseDefaultCommand.Execute(null);
+        Assert.IsFalse(interfaceRow.DraftHasOverride);
+
+        fixture.Select(LauncherSettingsSection.Graphics);
+        var graphicsRow = fixture.Row("graphics.default_system_zoom");
+        Assert.AreEqual(
+            "Default and effective value for Default system zoom",
+            graphicsRow.DefaultAndEffectiveAutomationName);
+        StringAssert.Contains(graphicsRow.DefaultAndEffectiveHelp, "Default: 1750");
+    }
+
+    [TestMethod]
+    public void SearchOpenClearAndCloseRemainDistinctCommands()
+    {
+        using var fixture = SettingsFixture.Create();
+
+        fixture.ViewModel.SearchOpenCommand.Execute(null);
+        Assert.IsTrue(fixture.ViewModel.IsSearchVisible);
+        fixture.ViewModel.SearchText = "zoom";
+        Assert.IsTrue(fixture.ViewModel.SearchClearCommand.CanExecute(null));
+
+        fixture.ViewModel.SearchClearCommand.Execute(null);
+        Assert.IsTrue(fixture.ViewModel.IsSearchVisible);
+        Assert.AreEqual(string.Empty, fixture.ViewModel.SearchText);
+        Assert.IsFalse(fixture.ViewModel.SearchClearCommand.CanExecute(null));
+
+        fixture.ViewModel.SearchText = "notification";
+        fixture.ViewModel.SearchCloseCommand.Execute(null);
+        Assert.IsFalse(fixture.ViewModel.IsSearchVisible);
+        Assert.AreEqual(string.Empty, fixture.ViewModel.SearchText);
+    }
+
+    [TestMethod]
     public void SearchProjectionRetainsConflictsWithHiddenCommands()
     {
         using var fixture = SettingsFixture.Create();

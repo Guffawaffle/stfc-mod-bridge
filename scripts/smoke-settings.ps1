@@ -488,6 +488,75 @@ try {
     -Name "General settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline)
+
+  $openSettingsSearch = $root.FindFirst(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.AndCondition]::new(
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        "Open settings search"),
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Button)))
+  if ($null -eq $openSettingsSearch) {
+    $initialCloseSettingsSearch = Find-AutomationElement `
+      -Root $root `
+      -Name "Close settings search" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline $settingsDeadline
+    Invoke-AutomationElement -Element $initialCloseSettingsSearch
+    $openSettingsSearch = Find-AutomationElement `
+      -Root $root `
+      -Name "Open settings search" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  }
+  Invoke-AutomationElement -Element $openSettingsSearch
+  $settingsSearch = Find-AutomationElement `
+    -Root $root `
+    -Name "Search settings" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  $searchValuePattern = $settingsSearch.GetCurrentPattern(
+    [System.Windows.Automation.ValuePattern]::Pattern)
+  $searchValuePattern.SetValue("zoom")
+  $clearSettingsSearch = Find-AutomationElement `
+    -Root $root `
+    -Name "Clear settings search query" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $clearSettingsSearch
+  if ($searchValuePattern.Current.Value -ne "") {
+    throw "Clear settings search did not clear the query."
+  }
+  $closeSettingsSearch = Find-AutomationElement `
+    -Root $root `
+    -Name "Close settings search" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Invoke-AutomationElement -Element $closeSettingsSearch
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Open settings search" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  Write-Host "PASS: settings search exposes distinct open, clear-query, and close actions."
+
+  $provenanceSurface = $root.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition) |
+    Where-Object {
+      $_.Current.Name.StartsWith(
+        "Default and effective value for ",
+        [StringComparison]::Ordinal)
+    } |
+    Select-Object -First 1
+  if ($null -eq $provenanceSurface -or
+      [string]::IsNullOrWhiteSpace($provenanceSurface.Current.HelpText)) {
+    throw "Settings rows do not expose default/effective provenance through UI Automation."
+  }
+  Write-Host "PASS: settings rows expose a stable default/effective provenance help surface."
+
   $unexpectedSyncWorkspace = $root.FindFirst(
     [System.Windows.Automation.TreeScope]::Descendants,
     [System.Windows.Automation.PropertyCondition]::new(
