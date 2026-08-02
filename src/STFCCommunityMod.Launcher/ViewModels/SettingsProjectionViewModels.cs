@@ -27,6 +27,86 @@ public sealed class SettingsFamilyHeaderViewModel(
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 }
 
+public sealed class AdvancedPatchEditingGateViewModel : SettingsListItemViewModel
+{
+    public const string Warning =
+        "Patch changes can alter runtime behavior, and invalid combinations may make the mod or game unstable. "
+        + "Prefer ordinary settings when they are available. Changes remain staged until you save them.";
+
+    public AdvancedPatchEditingGateViewModel(
+        bool isUnlocked,
+        bool isConfigurationAvailable,
+        IReadOnlyList<AdvancedPatchSummaryItemViewModel> summaries,
+        System.Windows.Input.ICommand enableCommand,
+        System.Windows.Input.ICommand lockCommand)
+    {
+        IsUnlocked = isUnlocked;
+        IsConfigurationAvailable = isConfigurationAvailable;
+        Summaries = summaries;
+        EnableCommand = enableCommand;
+        LockCommand = lockCommand;
+        WarningText = Warning;
+    }
+
+    public bool IsUnlocked { get; }
+
+    public bool IsLocked => !IsUnlocked;
+
+    public bool IsConfigurationAvailable { get; }
+
+    public string StateTitle => IsUnlocked ? "Patch editing enabled" : "Patch editing locked";
+
+    public string StateDescription => IsUnlocked
+        ? "Patch controls are available for this launcher session. Lock them again when you are finished editing."
+        : IsConfigurationAvailable
+            ? "Review the current effective values below. A deliberate acknowledgement is required before editor controls are created."
+            : "No editable configuration is selected. The values below are schema defaults, not effective configured values.";
+
+    public string StateAutomationName =>
+        $"{StateTitle}. {Summaries.Count} provider-supported patch settings. "
+        + (IsConfigurationAvailable ? "Configuration available." : "Configuration unavailable; schema defaults shown.");
+
+    public string WarningText { get; }
+
+    public string SummaryTitle => IsConfigurationAvailable
+        ? "Current effective patch values (read only)"
+        : "Schema-default patch values (configuration unavailable)";
+
+    public string EnableAvailability => IsConfigurationAvailable
+        ? "Acknowledge the warning to enable patch controls for this launcher session."
+        : "Select a game folder with a supported configuration before enabling patch editing.";
+
+    public string EnableAutomationHelp => $"{WarningText} {EnableAvailability}";
+
+    public IReadOnlyList<AdvancedPatchSummaryItemViewModel> Summaries { get; }
+
+    public int SettingCount => Summaries.Count;
+
+    public System.Windows.Input.ICommand EnableCommand { get; }
+
+    public System.Windows.Input.ICommand LockCommand { get; }
+}
+
+public sealed record AdvancedPatchSummaryItemViewModel(
+    string Title,
+    string EffectiveValue,
+    bool IsDirty,
+    bool IsConfigurationAvailable,
+    bool HasConfiguredOverride)
+{
+    public string ValueSource => !IsConfigurationAvailable
+        ? "Schema default · Configuration unavailable"
+        : HasConfiguredOverride
+            ? "Configured override"
+            : "Schema default";
+
+    public string StateText => IsConfigurationAvailable
+        ? $"Effective: {EffectiveValue} · {(IsDirty ? "Unsaved · " : string.Empty)}{ValueSource}"
+        : $"{EffectiveValue} · {ValueSource}";
+
+    public string AutomationName => $"{Title}, {StateText}";
+}
+
 public sealed record SettingsProjectionSnapshot(
     int Revision,
     int ConstructedRowCount,
