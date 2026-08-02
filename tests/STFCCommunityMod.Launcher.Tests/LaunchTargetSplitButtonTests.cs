@@ -72,6 +72,17 @@ public sealed class LaunchTargetSplitButtonTests
                 && attribute.Value == "{Binding HomeOperationFeedback}"));
     }
 
+    [TestMethod]
+    public void ChoiceAvailabilityProjectsStructuredCoreReasonAndNextAction()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/ViewModels/MainWindowViewModel.cs"));
+
+        StringAssert.Contains(source, "choice.Reason");
+        StringAssert.Contains(source, "choice.NextActionLabel");
+        Assert.IsFalse(source.Contains("See Diagnostics", StringComparison.Ordinal));
+    }
+
     private static XDocument LoadXaml(string relativePath) =>
         XDocument.Load(Path.Combine(RepositoryRoot(), relativePath));
 

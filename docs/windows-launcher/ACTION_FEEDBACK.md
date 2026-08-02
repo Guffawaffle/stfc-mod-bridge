@@ -26,6 +26,9 @@ The initial consumers are:
   removal is reported as unchanged without inspecting display text.
 - **Launcher self-update**: has an independent feedback channel, so its availability and status cannot disable or
   overwrite community-mod operations.
+- **Selected game launch**: reports accepted, newly-started/changed, already-running/no-change, blocked, canceled, and
+  failed results without inferring outcome from display text. Home shows an active Mod or Launch operation first and
+  otherwise the most recently changed channel, so an older launch completion cannot mask later mod feedback.
 
 Action targets remain at least 44 DIPs and retain the shared focus visual. These consumers use no motion, so Windows
 reduced-motion preferences need no alternate rendering. A future animated consumer must make motion optional while

@@ -12,10 +12,10 @@ public enum LauncherColorMode
 public sealed record LauncherUiPreferences(
     bool SettingsSearchVisible,
     LauncherColorMode ColorMode = LauncherColorMode.System,
-    LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.PrimeExecutable)
+    LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher)
 {
     public static LauncherUiPreferences Default { get; } =
-        new(false, LauncherColorMode.System, LauncherLaunchTarget.PrimeExecutable);
+        new(false, LauncherColorMode.System, LauncherLaunchTarget.ScopelyLauncher);
 }
 
 public interface ILauncherUiPreferencesStore
@@ -71,7 +71,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                     ? parsedColorMode
                     : LauncherColorMode.System;
             var launchTarget = document.SchemaVersion == 2
-                ? LauncherLaunchTarget.PrimeExecutable
+                ? LauncherLaunchTarget.ScopelyLauncher
                 : ParseLaunchTarget(document.LaunchTarget);
             return new(document.SettingsSearchVisible, colorMode, launchTarget);
         }
@@ -135,5 +135,5 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         Enum.TryParse<LauncherLaunchTarget>(value, ignoreCase: true, out var parsed)
         && Enum.IsDefined(parsed)
             ? parsed
-            : LauncherLaunchTarget.PrimeExecutable;
+            : LauncherLaunchTarget.ScopelyLauncher;
 }

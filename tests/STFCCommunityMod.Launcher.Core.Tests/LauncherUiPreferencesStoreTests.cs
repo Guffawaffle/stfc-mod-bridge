@@ -16,7 +16,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsFalse(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
-        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -31,6 +31,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -60,14 +61,14 @@ public sealed class LauncherUiPreferencesStoreTests
             .Save(
                 new LauncherUiPreferences(
                     SettingsSearchVisible: false,
-                    LaunchTarget: LauncherLaunchTarget.ScopelyLauncher));
+                    LaunchTarget: LauncherLaunchTarget.PrimeExecutable));
 
         var result = new JsonLauncherUiPreferencesStore(stateDirectory).Load();
 
-        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
+        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
         StringAssert.Contains(
             File.ReadAllText(Path.Combine(stateDirectory, "ui-preferences.json")),
-            "ScopelyLauncher");
+            "PrimeExecutable");
     }
 
     [TestMethod]
@@ -88,6 +89,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -130,7 +132,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
-        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -153,7 +155,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.Light, result.ColorMode);
-        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]

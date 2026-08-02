@@ -23,6 +23,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private GameLaunchPresentation launchPresentation;
     private string selectionFeedback = string.Empty;
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
+    private readonly HomeActionFeedbackArbiter homeFeedback;
     private LauncherLaunchTarget selectedLaunchTarget;
 
     private MainWindowViewModel(
@@ -42,6 +43,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.uiPreferencesStore = uiPreferencesStore;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
+        homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
+        homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
@@ -160,11 +163,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool IsLaunchInProgress => actionFeedback.Launch.IsWorking;
 
-    public string HomeOperationFeedback => actionFeedback.Launch.HasStatus
-        ? actionFeedback.Launch.StatusText
-        : actionFeedback.Mod.StatusText;
+    public string HomeOperationFeedback => homeFeedback.Text;
 
-    public bool HasHomeOperationFeedback => !string.IsNullOrWhiteSpace(HomeOperationFeedback);
+    public bool HasHomeOperationFeedback => homeFeedback.HasFeedback;
 
     public string? SelectedGameDirectory => snapshot.SelectedGameDirectory;
 
@@ -438,9 +439,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             snapshot.SelectedGameDirectory,
             selectedLaunchTarget);
         RefreshCore();
+        return ProjectLaunchResult(result);
+    }
+
+    internal static ObservableActionResult ProjectLaunchResult(GameLaunchHandoffResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
         return result.State switch
         {
-            GameLaunchHandoffState.Completed => ObservableActionResult.Changed(result.Message),
+            GameLaunchHandoffState.Completed when result.Changed => ObservableActionResult.Changed(result.Message),
+            GameLaunchHandoffState.Completed => ObservableActionResult.Unchanged(result.Message),
             GameLaunchHandoffState.Failed => ObservableActionResult.Failed(result.Message),
             _ => ObservableActionResult.Unchanged(result.Message),
         };
@@ -628,14 +636,18 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
         var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
-        var availability = choice.CanExecute ? ", available" : $", unavailable, {choice.Status}";
+        var availability = choice.CanExecute
+            ? $", available, {choice.Reason}"
+            : $", unavailable, {choice.Reason}, {choice.NextActionLabel}";
         return $"{label}{selected}{availability}";
     }
 
     private string BuildChoiceStatus(LauncherLaunchTarget target)
     {
         var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
-        return choice.CanExecute ? "Available" : $"Unavailable · {choice.Status} · See Diagnostics";
+        return choice.CanExecute
+            ? choice.Reason
+            : $"Unavailable · {choice.Reason} · {choice.NextActionLabel}";
     }
 
     private HomeState CaptureHomeState() => new(
@@ -687,8 +699,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 break;
             case nameof(ObservableActionState.StatusText):
                 OnPropertyChanged(nameof(ModOperationFeedback));
-                OnPropertyChanged(nameof(HomeOperationFeedback));
-                OnPropertyChanged(nameof(HasHomeOperationFeedback));
                 break;
             case nameof(ObservableActionState.HasStatus):
                 OnPropertyChanged(nameof(HasModOperationFeedback));
@@ -736,14 +746,22 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(LaunchActionAutomationName));
                 break;
-            case nameof(ObservableActionState.StatusText):
-            case nameof(ObservableActionState.HasStatus):
-                OnPropertyChanged(nameof(HomeOperationFeedback));
-                OnPropertyChanged(nameof(HasHomeOperationFeedback));
-                break;
             case nameof(ObservableActionState.IsCommandAvailable):
                 OnPropertyChanged(nameof(CanLaunchGame));
                 break;
+        }
+    }
+
+    private void HomeFeedback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        _ = sender;
+        if (e.PropertyName == nameof(HomeActionFeedbackArbiter.Text))
+        {
+            OnPropertyChanged(nameof(HomeOperationFeedback));
+        }
+        else if (e.PropertyName == nameof(HomeActionFeedbackArbiter.HasFeedback))
+        {
+            OnPropertyChanged(nameof(HasHomeOperationFeedback));
         }
     }
 

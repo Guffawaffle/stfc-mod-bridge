@@ -22,6 +22,7 @@ public sealed class GameLaunchHandoffTests
         Assert.AreEqual("Launch prime.exe", presentation.ActionLabel);
         Assert.IsTrue(presentation.CanExecute);
         Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.IsTrue(result.Changed);
         Assert.AreEqual(1, fixture.GameService.StartCount);
         Assert.AreEqual(0, fixture.ScopelyService.StartCount);
     }
@@ -33,11 +34,15 @@ public sealed class GameLaunchHandoffTests
         var fixture = CreateFixture(temporaryDirectory, isGameRunning: true);
 
         var presentation = fixture.Coordinator.CapturePresentation(null, LauncherLaunchTarget.ScopelyLauncher);
-        var result = await fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+        var launchTask = fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+        await fixture.ScopelyService.WaitUntilStartedAsync();
+        fixture.ScopelyService.CompleteExit();
+        var result = await launchTask;
 
         Assert.IsTrue(presentation.CanExecute);
         Assert.AreEqual("Open Scopely launcher", presentation.ActionLabel);
         Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.IsTrue(result.Changed);
         Assert.AreEqual(1, fixture.ScopelyService.StartCount);
         Assert.AreEqual(0, fixture.GameService.StartCount);
     }
@@ -71,8 +76,10 @@ public sealed class GameLaunchHandoffTests
 
         Assert.IsFalse(prime.CanExecute);
         Assert.IsFalse(scopely.CanExecute);
-        StringAssert.Contains(prime.AutomationName, "Diagnostics");
-        StringAssert.Contains(scopely.AutomationName, "Diagnostics");
+        Assert.AreEqual(LauncherLaunchRecoveryAction.SelectGameFolder, prime.NextAction);
+        Assert.AreEqual(LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher, scopely.NextAction);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(prime.Reason));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(scopely.Reason));
         Assert.AreEqual(0, fixture.GameService.StartCount);
         Assert.AreEqual(0, fixture.ScopelyService.StartCount);
     }
@@ -105,12 +112,68 @@ public sealed class GameLaunchHandoffTests
         Assert.AreEqual("Repair required", result.Presentation.Status);
     }
 
+    [TestMethod]
+    public async Task ScopelyLaunchHoldsOperationLockUntilTrackedProcessExits()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+
+        var launchTask = fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+        await fixture.ScopelyService.WaitUntilStartedAsync();
+        var concurrentDeployment = await fixture.DeploymentService.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Busy, concurrentDeployment.State);
+        fixture.ScopelyService.CompleteExit();
+        Assert.AreEqual(GameLaunchHandoffState.Completed, (await launchTask).State);
+    }
+
+    [TestMethod]
+    public async Task ScopelyAvailabilityIsRevalidatedInsideOperationLock()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CreateFixture(temporaryDirectory, scopelyAvailabilityReadsBeforeMissing: 1);
+
+        var result = await fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.ScopelyService.StartCount);
+        Assert.AreEqual(
+            LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher,
+            result.Presentation.NextAction);
+    }
+
+    [TestMethod]
+    public async Task AlreadyRunningScopelyLauncherReportsTruthfulNoChange()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CreateFixture(
+            temporaryDirectory,
+            scopelyStartKind: OfficialLauncherStartKind.ReusedRunning);
+
+        var launchTask = fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+        await fixture.ScopelyService.WaitUntilStartedAsync();
+        fixture.ScopelyService.CompleteExit();
+        var result = await launchTask;
+
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.IsFalse(result.Changed);
+        StringAssert.Contains(result.Message, "already running");
+        StringAssert.Contains(result.Message, "no new process");
+    }
+
     private static Fixture CreateFixture(
         TemporaryDirectory temporaryDirectory,
         bool gameAvailable = true,
         bool scopelyAvailable = true,
         bool isGameRunning = false,
-        Exception? scopelyFailure = null)
+        Exception? scopelyFailure = null,
+        OfficialLauncherStartKind scopelyStartKind = OfficialLauncherStartKind.StartedNew,
+        int? scopelyAvailabilityReadsBeforeMissing = null)
     {
         var stateDirectory = temporaryDirectory.CreateDirectory("state");
         var deploymentService = new ModDeploymentService(
@@ -120,7 +183,11 @@ public sealed class GameLaunchHandoffTests
             new FakeAuthenticityVerifier(),
             () => false);
         var gameService = new FakeGameExecutableLaunchService(gameAvailable);
-        var scopelyService = new FakeOfficialLauncherService(scopelyAvailable, scopelyFailure);
+        var scopelyService = new FakeOfficialLauncherService(
+            scopelyAvailable,
+            scopelyFailure,
+            scopelyStartKind,
+            scopelyAvailabilityReadsBeforeMissing);
         var coordinator = new GameLaunchHandoffCoordinator(
             stateDirectory,
             deploymentService,
@@ -178,17 +245,45 @@ public sealed class GameLaunchHandoffTests
         }
     }
 
-    private sealed class FakeOfficialLauncherService(bool isAvailable, Exception? failure) : IOfficialLauncherService
+    private sealed class FakeOfficialLauncherService(
+        bool isAvailable,
+        Exception? failure,
+        OfficialLauncherStartKind startKind,
+        int? availabilityReadsBeforeMissing) : IOfficialLauncherService
     {
-        public bool IsAvailable { get; } = isAvailable;
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int availabilityReadCount;
+
+        public bool IsAvailable =>
+            isAvailable
+            && (availabilityReadsBeforeMissing is null
+                || availabilityReadCount++ < availabilityReadsBeforeMissing.Value);
 
         public int StartCount { get; private set; }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
-            return failure is null ? Task.CompletedTask : Task.FromException(failure);
+            started.TrySetResult();
+            return failure is null
+                ? Task.FromResult(
+                    new OfficialLauncherStartResult(
+                        startKind,
+                        new FakeOfficialLauncherProcess(exited.Task)))
+                : Task.FromException<OfficialLauncherStartResult>(failure);
+        }
+
+        public Task WaitUntilStartedAsync() => started.Task;
+
+        public void CompleteExit() => exited.TrySetResult();
+
+        private sealed class FakeOfficialLauncherProcess(Task exitTask) : IOfficialLauncherProcess
+        {
+            public Task WaitForExitAsync(CancellationToken cancellationToken) => exitTask.WaitAsync(cancellationToken);
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 

@@ -518,7 +518,7 @@ try {
   Write-Host "PASS: launcher Home exposes community-mod state and action '$($modAction.Current.Name)'."
 
   $launchAction = $homeButtons | Where-Object {
-    $_.Current.Name -match '(?i)^launch prime\.exe'
+    $_.Current.Name -match '(?i)^(launch prime\.exe|open Scopely launcher)'
   } | Select-Object -First 1
   if ($null -eq $launchAction) {
     throw "Launcher Home did not expose an accessible game-launch action."

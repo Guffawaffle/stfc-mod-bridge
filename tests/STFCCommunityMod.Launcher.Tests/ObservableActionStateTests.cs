@@ -171,6 +171,77 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void HomeFeedbackUsesActiveAndMostRecentActionInsteadOfPermanentLaunchPriority()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        var arbiter = new HomeActionFeedbackArbiter(channels.Mod, channels.Launch);
+        var visibleTransitions = new List<string>();
+        arbiter.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(HomeActionFeedbackArbiter.Text))
+            {
+                visibleTransitions.Add(arbiter.Text);
+            }
+        };
+        channels.Launch.Complete(true, "prime.exe started.");
+        Assert.AreEqual("prime.exe started.", arbiter.Text);
+
+        Assert.IsTrue(channels.Mod.TryBegin("Mod update accepted."));
+        Assert.AreEqual("Mod update accepted.", arbiter.Text);
+        channels.Mod.Complete(false, "The mod is current.");
+
+        Assert.AreEqual("The mod is current.", arbiter.Text);
+        Assert.IsTrue(arbiter.HasFeedback);
+        CollectionAssert.Contains(visibleTransitions, "prime.exe started.");
+        CollectionAssert.Contains(visibleTransitions, "Mod update accepted.");
+        CollectionAssert.Contains(visibleTransitions, "The mod is current.");
+    }
+
+    [TestMethod]
+    public void ActiveLaunchTemporarilyWinsThenReturnsToNewestCompletion()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        var arbiter = new HomeActionFeedbackArbiter(channels.Mod, channels.Launch);
+        channels.Mod.Fail("Mod failed.");
+        Assert.IsTrue(channels.Launch.TryBegin("Opening Scopely launcher…"));
+
+        Assert.AreEqual("Opening Scopely launcher…", arbiter.Text);
+        channels.Launch.Complete(false, "Scopely was already running.");
+
+        Assert.AreEqual("Scopely was already running.", arbiter.Text);
+    }
+
+    [TestMethod]
+    public void LaunchProjectionPreservesChangedAndNoChangeSemantics()
+    {
+        var presentation = new GameLaunchPresentation(
+            "Official launcher available",
+            LauncherHomeTone.Success,
+            "Open Scopely launcher",
+            true,
+            "Open Scopely launcher",
+            LauncherLaunchTarget.ScopelyLauncher,
+            "Available.",
+            LauncherLaunchRecoveryAction.None);
+
+        var changed = MainWindowViewModel.ProjectLaunchResult(
+            new GameLaunchHandoffResult(
+                GameLaunchHandoffState.Completed,
+                "Started.",
+                presentation,
+                Changed: true));
+        var unchanged = MainWindowViewModel.ProjectLaunchResult(
+            new GameLaunchHandoffResult(
+                GameLaunchHandoffState.Completed,
+                "Already running.",
+                presentation,
+                Changed: false));
+
+        Assert.AreEqual(ObservableActionResultKind.Changed, changed.Kind);
+        Assert.AreEqual(ObservableActionResultKind.Unchanged, unchanged.Kind);
+    }
+
+    [TestMethod]
     public void SuccessfulMaintenanceNoOpIsReportedAsUnchanged()
     {
         var channels = new LauncherActionFeedbackChannels();
