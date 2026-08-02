@@ -79,7 +79,7 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
-    public void HelpFlyoutMakesItsExclusivePinnedStateVisible()
+    public void HelpFlyoutIsTransientAndClosesWhenItsWindowDeactivates()
     {
         var document = LoadXaml(
             "src/STFCCommunityMod.Launcher/Controls/HelpFlyoutButton.xaml");
@@ -87,15 +87,14 @@ public sealed class SettingsShellAccessibilityTests
             RepositoryRoot(),
             "src/STFCCommunityMod.Launcher/Controls/HelpFlyoutButton.xaml.cs"));
 
-        var pinnedTriggers = document.Descendants(Presentation + "DataTrigger")
-            .Where(trigger =>
-                (string?)trigger.Attribute("Binding") == "{Binding IsPinned, ElementName=Root}"
-                && (string?)trigger.Attribute("Value") == "True")
-            .ToArray();
-        Assert.AreEqual(2, pinnedTriggers.Length);
-        StringAssert.Contains(source, "OpenFlyout(pin: true)");
+        var root = document.Root;
+        Assert.IsNotNull(root);
+        Assert.AreEqual("HelpFlyoutButton_Loaded", (string?)root.Attribute("Loaded"));
+        Assert.IsFalse(source.Contains("IsPinned", StringComparison.Ordinal));
         StringAssert.Contains(source, "previous.CloseFromPeer();");
-        StringAssert.Contains(source, "IsPinned = false;");
+        StringAssert.Contains(source, "ownerWindow.Deactivated += OwnerWindow_Deactivated;");
+        StringAssert.Contains(source, "ownerWindow.Deactivated -= OwnerWindow_Deactivated;");
+        StringAssert.Contains(source, "CloseFromPeer();");
     }
 
     [TestMethod]
