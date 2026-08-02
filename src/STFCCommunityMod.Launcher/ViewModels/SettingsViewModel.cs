@@ -30,6 +30,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
+    private readonly SettingsActionCommand searchClearCommand;
     private ConfigurationWorkspace? workspace;
     private string searchText = string.Empty;
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
@@ -74,7 +75,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         projectionQuery = new(catalog, layoutProvider);
         RefreshKeybindingConflicts();
 
-        SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
+        SearchOpenCommand = new SettingsActionCommand(OpenSearch);
+        SearchCloseCommand = new SettingsActionCommand(CloseSearch);
+        searchClearCommand = new SettingsActionCommand(
+            ClearSearch,
+            () => IsSearchActive);
         SelectSection(layoutProvider.Sections[0].Id);
     }
 
@@ -98,7 +103,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public ICommand SaveCommand => saveCommand;
 
-    public ICommand SearchToggleCommand { get; }
+    public ICommand SearchOpenCommand { get; }
+
+    public ICommand SearchCloseCommand { get; }
+
+    public ICommand SearchClearCommand => searchClearCommand;
 
     public SyncWorkspaceViewModel SyncWorkspace { get; }
 
@@ -118,6 +127,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSearchActive));
             OnPropertyChanged(nameof(WorkspaceTitle));
             OnPropertyChanged(nameof(WorkspaceDescription));
+            searchClearCommand.RaiseCanExecuteChanged();
             RebuildProjection();
         }
     }
@@ -136,13 +146,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
             isSearchVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(SearchToggleHelp));
             SaveUiPreferences();
         }
     }
-
-    public string SearchToggleHelp =>
-        IsSearchVisible ? "Close settings search" : "Search all settings";
 
     public LauncherSettingsSection SelectedSection => selectedSection;
 
@@ -331,6 +337,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
+        if (section is LauncherSettingsSection.About or LauncherSettingsSection.DataSync
+            && !IsSearchActive)
+        {
+            IsSearchVisible = false;
+        }
+
         foreach (var item in Sections)
         {
             item.IsSelected = item.Id == section;
@@ -352,16 +364,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         RebuildProjection();
     }
 
-    private void ToggleSearch()
-    {
-        if (IsSearchVisible)
-        {
-            SearchText = string.Empty;
-            IsSearchVisible = false;
-            return;
-        }
+    private void OpenSearch() => IsSearchVisible = true;
 
-        IsSearchVisible = true;
+    private void ClearSearch() => SearchText = string.Empty;
+
+    private void CloseSearch()
+    {
+        ClearSearch();
+        IsSearchVisible = false;
     }
 
     private void SaveUiPreferences()

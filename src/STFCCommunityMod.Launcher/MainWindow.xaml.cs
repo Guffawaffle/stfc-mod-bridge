@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Shell;
 using System.Windows.Threading;
@@ -291,8 +292,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             diagnosticPreview = viewModel.BuildDiagnosticPreview();
             DiagnosticPreviewText.Text = diagnosticPreview.RedactedJson;
-            DiagnosticsRecoverButton.IsEnabled = viewModel.CanRecoverMod;
-            DiagnosticsUninstallButton.IsEnabled = viewModel.CanUninstallMod;
             DiagnosticsDialog.IsOpen = true;
         }
         catch (Exception exception) when (
@@ -391,13 +390,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        DiagnosticsDialog.IsOpen = false;
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null
             || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
         {
             return;
         }
+        DiagnosticsDialog.IsOpen = false;
         LauncherUpdateSummary.Text = pendingLauncherUpdate.Message;
         LauncherUpdateTarget.Text = pendingLauncherUpdate.TargetDirectory;
         LauncherUpdateDialog.IsOpen = true;
@@ -432,7 +431,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void ShowMaintenanceConfirmation(MaintenanceAction action, MainWindowViewModel viewModel)
     {
-        if (viewModel.SelectedGameDirectory is null)
+        var canStart = action == MaintenanceAction.Recover
+            ? viewModel.CanRecoverMod
+            : viewModel.CanUninstallMod;
+        if (!canStart || viewModel.SelectedGameDirectory is null)
         {
             return;
         }
@@ -684,9 +686,44 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateColorModeSelectorAccessibility();
     }
 
-    private void SettingsSearchToggleButton_Click(object sender, RoutedEventArgs e)
+    private void SettingsSearchOpenButton_Click(object sender, RoutedEventArgs e)
     {
-        SettingsWorkspace.FocusSearchBoxWhenVisible();
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                TitleBarSettingsSearchBox.Focus();
+                TitleBarSettingsSearchBox.SelectAll();
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchCloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                SettingsSearchOpenButton.Focus();
+                Keyboard.Focus(SettingsSearchOpenButton);
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchHost_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        _ = sender;
+        if (e.Key != Key.Escape
+            || SettingsWorkspace.DataContext is not SettingsViewModel settings)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        settings.SearchCloseCommand.Execute(null);
+        SettingsSearchCloseButton_Click(this, new RoutedEventArgs());
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -759,7 +796,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
 
         MinWidth = isOpen ? SettingsMinWidth : 560;

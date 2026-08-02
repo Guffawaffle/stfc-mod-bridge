@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Reflection;
+using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
@@ -20,8 +21,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private ModManagementPresentation modPresentation;
     private GameLaunchPresentation launchPresentation;
     private string selectionFeedback = string.Empty;
-    private string modOperationFeedback = string.Empty;
-    private bool isModOperationInProgress;
+    private readonly LauncherActionFeedbackChannels actionFeedback = new();
     private bool isLaunchInProgress;
     private string launchFeedback = string.Empty;
 
@@ -45,6 +45,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             snapshot.SelectedGameDirectory,
             snapshot.IsGameRunning);
         launchPresentation = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory);
+        actionFeedback.Refresh.PropertyChanged += RefreshActionState_PropertyChanged;
+        actionFeedback.Mod.PropertyChanged += ModActionState_PropertyChanged;
+        actionFeedback.LauncherUpdate.PropertyChanged += LauncherUpdateActionState_PropertyChanged;
+        RefreshCommand = new ObservableActionCommand(
+            actionFeedback.Refresh,
+            "Refresh accepted. Checking launcher status…",
+            RefreshStatusAsync,
+            exception => $"Launcher status refresh failed: {exception.Message}");
+        UpdateModActionAvailability();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -75,24 +84,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public LauncherHomeTone ModTone => modPresentation.Tone;
 
-    public string ModActionLabel => isModOperationInProgress ? "Working…" : modPresentation.ActionLabel;
+    public string ModActionLabel => actionFeedback.Mod.IsWorking ? "Working…" : modPresentation.ActionLabel;
 
-    public string ModActionAutomationName => isModOperationInProgress
-        ? "Community mod operation in progress"
+    public string ModActionAutomationName => actionFeedback.Mod.IsWorking
+        ? actionFeedback.Mod.AutomationAnnouncement
         : modPresentation.AutomationName;
 
-    public bool CanManageMod => modPresentation.CanExecute && !isModOperationInProgress && !isLaunchInProgress;
+    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable && !isLaunchInProgress;
 
     public ModManagementActionKind ModActionKind => modPresentation.ActionKind;
 
     public bool CanRecoverMod =>
-        modPresentation.ActionKind == ModManagementActionKind.Recover && CanManageMod;
+        modPresentation.ActionKind == ModManagementActionKind.Recover
+        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, isLaunchInProgress);
 
     public bool CanUninstallMod =>
         modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
-        && modPresentation.CanExecute
-        && !isModOperationInProgress
-        && !isLaunchInProgress;
+        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, isLaunchInProgress);
 
     public string LaunchActionLabel => isLaunchInProgress ? "Official launcher open…" : launchPresentation.ActionLabel;
 
@@ -100,19 +108,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         ? "Official Star Trek Fleet Command launcher handoff in progress"
         : launchPresentation.AutomationName;
 
-    public bool CanLaunchGame => launchPresentation.CanExecute && !isLaunchInProgress && !isModOperationInProgress;
+    public bool CanLaunchGame => launchPresentation.CanExecute && !isLaunchInProgress && !actionFeedback.Mod.IsWorking;
 
-    public string ModOperationFeedback => modOperationFeedback;
+    public string ModOperationFeedback => actionFeedback.Mod.StatusText;
 
-    public bool HasModOperationFeedback => !string.IsNullOrWhiteSpace(modOperationFeedback);
+    public bool HasModOperationFeedback => actionFeedback.Mod.HasStatus;
 
-    public bool IsModOperationInProgress => isModOperationInProgress;
+    public bool IsModOperationInProgress => actionFeedback.Mod.IsWorking;
 
     public bool IsLaunchInProgress => isLaunchInProgress;
 
     public string HomeOperationFeedback => !string.IsNullOrWhiteSpace(launchFeedback)
         ? launchFeedback
-        : modOperationFeedback;
+        : actionFeedback.Mod.StatusText;
 
     public bool HasHomeOperationFeedback => !string.IsNullOrWhiteSpace(HomeOperationFeedback);
 
@@ -121,6 +129,30 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public string SelectionFeedback => selectionFeedback;
 
     public bool HasSelectionFeedback => !string.IsNullOrWhiteSpace(selectionFeedback);
+
+    public ICommand RefreshCommand { get; }
+
+    public string RefreshActionLabel => actionFeedback.Refresh.IsWorking ? "_Refreshing…" : "_Refresh status";
+
+    public string RefreshActionAutomationName => actionFeedback.Refresh.IsWorking
+        ? actionFeedback.Refresh.AutomationAnnouncement
+        : "Refresh launcher status";
+
+    public string RefreshActionStatus => actionFeedback.Refresh.StatusText;
+
+    public bool CanRefresh => actionFeedback.Refresh.IsCommandAvailable;
+
+    public string LauncherUpdateActionLabel => actionFeedback.LauncherUpdate.IsWorking
+        ? "Checking for launcher update…"
+        : "Check launcher _update";
+
+    public string LauncherUpdateActionAutomationName => actionFeedback.LauncherUpdate.IsWorking
+        ? actionFeedback.LauncherUpdate.AutomationAnnouncement
+        : "Check for a launcher self-update";
+
+    public string LauncherUpdateFeedback => actionFeedback.LauncherUpdate.StatusText;
+
+    public bool CanCheckLauncherUpdate => actionFeedback.LauncherUpdate.IsCommandAvailable;
 
     public string? InitialBrowseDirectory
     {
@@ -225,6 +257,22 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void Refresh()
     {
+        RefreshCore();
+    }
+
+    private async Task<ObservableActionResult> RefreshStatusAsync()
+    {
+        var before = CaptureHomeState();
+        await Task.Yield();
+        RefreshCore();
+        var changed = before != CaptureHomeState();
+        return changed
+            ? ObservableActionResult.Changed("Launcher status refreshed. The displayed status changed.")
+            : ObservableActionResult.Unchanged("Launcher status is up to date. No changes were found.");
+    }
+
+    private void RefreshCore()
+    {
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         modPresentation = modManagementCoordinator.CapturePresentation(
@@ -247,6 +295,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(InitialBrowseDirectory));
         OnPropertyChanged(nameof(ConfigurationFilePath));
         OnPropertyChanged(nameof(SelectedGameDirectory));
+        UpdateModActionAvailability();
     }
 
     public async Task<ModOperationPreparation?> PrepareModOperationAsync(
@@ -257,7 +306,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             return null;
         }
 
-        SetModOperationState(true, "Checking the selected release…");
+        if (!actionFeedback.Mod.TryBegin("Release check accepted. Checking the selected release…"))
+        {
+            return null;
+        }
         try
         {
             var preparation = await modManagementCoordinator.PrepareLatestAsync(
@@ -266,19 +318,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 cancellationToken);
             if (preparation.State == ModOperationPreparationState.UpToDate)
             {
-                modOperationFeedback = preparation.Message;
-                OnPropertyChanged(nameof(ModOperationFeedback));
-                OnPropertyChanged(nameof(HasModOperationFeedback));
+                actionFeedback.Mod.Complete(false, preparation.Message);
             }
             else
             {
-                modOperationFeedback = $"Community mod {preparation.ReleaseVersion} is ready for confirmation.";
+                actionFeedback.Mod.Complete(
+                    true,
+                    $"Community mod {preparation.ReleaseVersion} is ready for confirmation.");
             }
             return preparation;
         }
         catch (OperationCanceledException)
         {
-            modOperationFeedback = "The release check was canceled or timed out.";
+            actionFeedback.Mod.Cancel("The release check was canceled or timed out.");
             return null;
         }
         catch (Exception exception) when (
@@ -288,14 +340,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 or IOException
                 or UnauthorizedAccessException)
         {
-            modOperationFeedback = $"Could not prepare the mod operation: {exception.Message}";
-            OnPropertyChanged(nameof(ModOperationFeedback));
-            OnPropertyChanged(nameof(HasModOperationFeedback));
+            actionFeedback.Mod.Fail($"Could not prepare the mod operation: {exception.Message}");
             return null;
-        }
-        finally
-        {
-            SetModOperationState(false, modOperationFeedback);
         }
     }
 
@@ -304,21 +350,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preparation);
-        if (isModOperationInProgress)
+        if (!actionFeedback.Mod.TryBegin("Installation accepted. Installing the verified community mod…"))
         {
             return null;
         }
 
-        SetModOperationState(true, "Installing the verified community mod…");
         try
         {
             var result = await modManagementCoordinator.ExecuteAsync(preparation, cancellationToken);
-            modOperationFeedback = result.Message;
+            actionFeedback.CompleteModDeployment(result);
             return result;
         }
         catch (OperationCanceledException)
         {
-            modOperationFeedback = "The mod operation was canceled.";
+            actionFeedback.Mod.Cancel("The mod operation was canceled.");
             return null;
         }
         catch (Exception exception) when (
@@ -328,12 +373,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 or UnauthorizedAccessException
                 or HttpRequestException)
         {
-            modOperationFeedback = $"The mod operation failed: {exception.Message}";
+            actionFeedback.Mod.Fail($"The mod operation failed: {exception.Message}");
             return null;
         }
         finally
         {
-            SetModOperationState(false, modOperationFeedback);
             Refresh();
         }
     }
@@ -379,7 +423,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public async Task<LauncherUpdatePreparation?> PrepareLauncherUpdateAsync(
         CancellationToken cancellationToken = default)
     {
-        SetModOperationState(true, "Checking for a launcher update…");
+        if (!actionFeedback.LauncherUpdate.TryBegin("Launcher update check accepted. Checking for an update…"))
+        {
+            return null;
+        }
         try
         {
             var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
@@ -391,12 +438,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 CurrentSourceCommit(),
                 Environment.ProcessId,
                 cancellationToken);
-            modOperationFeedback = preparation.Message;
+            actionFeedback.LauncherUpdate.Complete(
+                preparation.State == LauncherUpdatePreparationState.Ready,
+                preparation.Message);
             return preparation;
         }
         catch (OperationCanceledException)
         {
-            modOperationFeedback = "The launcher update check was canceled or timed out.";
+            actionFeedback.LauncherUpdate.Cancel("The launcher update check was canceled or timed out.");
             return null;
         }
         catch (Exception exception) when (
@@ -406,12 +455,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 or IOException
                 or UnauthorizedAccessException)
         {
-            modOperationFeedback = $"The launcher update could not be prepared: {exception.Message}";
+            actionFeedback.LauncherUpdate.Fail($"The launcher update could not be prepared: {exception.Message}");
             return null;
-        }
-        finally
-        {
-            SetModOperationState(false, modOperationFeedback);
         }
     }
 
@@ -456,16 +501,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         Func<CancellationToken, Task<ModDeploymentResult>> operation,
         CancellationToken cancellationToken)
     {
-        SetModOperationState(true, progress);
+        if (!actionFeedback.Mod.TryBegin(progress))
+        {
+            return null;
+        }
         try
         {
             var result = await operation(cancellationToken);
-            modOperationFeedback = result.Message;
+            actionFeedback.CompleteModDeployment(result);
             return result;
         }
         catch (OperationCanceledException)
         {
-            modOperationFeedback = "The maintenance operation was canceled.";
+            actionFeedback.Mod.Cancel("The maintenance operation was canceled.");
             return null;
         }
         catch (Exception exception) when (
@@ -474,32 +522,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 or IOException
                 or UnauthorizedAccessException)
         {
-            modOperationFeedback = $"The maintenance operation failed: {exception.Message}";
+            actionFeedback.Mod.Fail($"The maintenance operation failed: {exception.Message}");
             return null;
         }
         finally
         {
-            SetModOperationState(false, modOperationFeedback);
             Refresh();
         }
-    }
-
-    private void SetModOperationState(bool isInProgress, string feedback)
-    {
-        isModOperationInProgress = isInProgress;
-        modOperationFeedback = feedback;
-        OnPropertyChanged(nameof(IsModOperationInProgress));
-        OnPropertyChanged(nameof(ModActionLabel));
-        OnPropertyChanged(nameof(ModActionAutomationName));
-        OnPropertyChanged(nameof(CanManageMod));
-        OnPropertyChanged(nameof(ModActionKind));
-        OnPropertyChanged(nameof(CanRecoverMod));
-        OnPropertyChanged(nameof(CanUninstallMod));
-        OnPropertyChanged(nameof(ModOperationFeedback));
-        OnPropertyChanged(nameof(HasModOperationFeedback));
-        OnPropertyChanged(nameof(HomeOperationFeedback));
-        OnPropertyChanged(nameof(HasHomeOperationFeedback));
-        OnPropertyChanged(nameof(CanLaunchGame));
     }
 
     private void NotifyModPresentationChanged()
@@ -512,6 +541,93 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ModActionKind));
         OnPropertyChanged(nameof(CanRecoverMod));
         OnPropertyChanged(nameof(CanUninstallMod));
+        UpdateModActionAvailability();
+    }
+
+    private void UpdateModActionAvailability() =>
+        actionFeedback.Mod.SetAvailability(modPresentation.CanExecute, modPresentation.AutomationName);
+
+    private HomeState CaptureHomeState() => new(
+        snapshot.HealthCode,
+        snapshot.IsGameRunning,
+        snapshot.SelectedGameDirectory,
+        presentation.GameFolderStatus,
+        presentation.GameClientStatus,
+        modPresentation.Status,
+        modPresentation.ActionKind,
+        modPresentation.CanExecute,
+        launchPresentation.ActionLabel,
+        launchPresentation.CanExecute);
+
+    private void RefreshActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        _ = sender;
+        switch (e.PropertyName)
+        {
+            case nameof(ObservableActionState.IsWorking):
+                OnPropertyChanged(nameof(RefreshActionLabel));
+                break;
+            case nameof(ObservableActionState.AutomationAnnouncement):
+                OnPropertyChanged(nameof(RefreshActionAutomationName));
+                break;
+            case nameof(ObservableActionState.StatusText):
+                OnPropertyChanged(nameof(RefreshActionStatus));
+                break;
+            case nameof(ObservableActionState.IsCommandAvailable):
+                OnPropertyChanged(nameof(CanRefresh));
+                break;
+        }
+    }
+
+    private void ModActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        _ = sender;
+        switch (e.PropertyName)
+        {
+            case nameof(ObservableActionState.IsWorking):
+                OnPropertyChanged(nameof(IsModOperationInProgress));
+                OnPropertyChanged(nameof(ModActionLabel));
+                OnPropertyChanged(nameof(CanRecoverMod));
+                OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanLaunchGame));
+                break;
+            case nameof(ObservableActionState.AutomationAnnouncement):
+                OnPropertyChanged(nameof(ModActionAutomationName));
+                break;
+            case nameof(ObservableActionState.StatusText):
+                OnPropertyChanged(nameof(ModOperationFeedback));
+                OnPropertyChanged(nameof(HomeOperationFeedback));
+                OnPropertyChanged(nameof(HasHomeOperationFeedback));
+                break;
+            case nameof(ObservableActionState.HasStatus):
+                OnPropertyChanged(nameof(HasModOperationFeedback));
+                break;
+            case nameof(ObservableActionState.IsCommandAvailable):
+                OnPropertyChanged(nameof(CanManageMod));
+                OnPropertyChanged(nameof(CanRecoverMod));
+                OnPropertyChanged(nameof(CanUninstallMod));
+                break;
+        }
+    }
+
+    private void LauncherUpdateActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        _ = sender;
+        switch (e.PropertyName)
+        {
+            case nameof(ObservableActionState.IsWorking):
+                OnPropertyChanged(nameof(LauncherUpdateActionLabel));
+                break;
+            case nameof(ObservableActionState.AutomationAnnouncement):
+                OnPropertyChanged(nameof(LauncherUpdateActionAutomationName));
+                break;
+            case nameof(ObservableActionState.StatusText):
+                OnPropertyChanged(nameof(LauncherUpdateFeedback));
+                break;
+            case nameof(ObservableActionState.IsCommandAvailable):
+                OnPropertyChanged(nameof(CanCheckLauncherUpdate));
+                break;
+        }
     }
 
     private void SetLaunchState(bool isInProgress, string feedback)
@@ -540,4 +656,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    private sealed record HomeState(
+        LauncherHealthCode HealthCode,
+        bool IsGameRunning,
+        string? SelectedGameDirectory,
+        string GameFolderStatus,
+        string GameClientStatus,
+        string ModStatus,
+        ModManagementActionKind ModActionKind,
+        bool CanExecuteModAction,
+        string LaunchActionLabel,
+        bool CanExecuteLaunchAction);
 }

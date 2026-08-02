@@ -347,6 +347,7 @@ public sealed class ModDeploymentServiceTests
         var result = await service.UninstallAsync();
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        Assert.IsTrue(result.Changed);
         Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
         Assert.AreEqual("user-owned", File.ReadAllText(unrelatedPath));
         Assert.IsNull(service.ReadInstalledState());
@@ -474,8 +475,24 @@ public sealed class ModDeploymentServiceTests
         var result = await service.RecoverAsync();
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        Assert.IsTrue(result.Changed);
         CollectionAssert.AreEqual(previous, File.ReadAllBytes(targetPath));
         Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
+    public async Task SuccessfulMaintenanceNoOpsReportNoChange()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+
+        var uninstall = await service.UninstallAsync();
+        var recovery = await service.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, uninstall.State);
+        Assert.IsFalse(uninstall.Changed);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, recovery.State);
+        Assert.IsFalse(recovery.Changed);
     }
 
     [TestMethod]
