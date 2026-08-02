@@ -130,6 +130,20 @@ public sealed class SettingsShellAccessibilityTests
                 .Any(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticsDialog"));
     }
 
+    [TestMethod]
+    public void DiagnosticTechnicalReportUsesOneWayBinding()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var report = document.Descendants(Presentation + "TextBox")
+            .Single(element =>
+                (string?)element.Attribute(Automation + "AutomationProperties.Name")
+                    == "Exact redacted diagnostic JSON preview");
+
+        Assert.AreEqual(
+            "{Binding DiagnosticTechnicalReport, Mode=OneWay}",
+            (string?)report.Attribute("Text"));
+    }
+
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)
     {
         var element = document.Descendants()

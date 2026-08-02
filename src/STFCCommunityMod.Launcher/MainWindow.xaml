@@ -1162,7 +1162,7 @@
                      Foreground="{DynamicResource TextPrimaryBrush}"
                      HorizontalScrollBarVisibility="Auto"
                      IsReadOnly="True"
-                     Text="{Binding DiagnosticTechnicalReport}"
+                     Text="{Binding DiagnosticTechnicalReport, Mode=OneWay}"
                      TextWrapping="NoWrap"
                      VerticalScrollBarVisibility="Auto"
                      automation:AutomationProperties.Name="Exact redacted diagnostic JSON preview" />
