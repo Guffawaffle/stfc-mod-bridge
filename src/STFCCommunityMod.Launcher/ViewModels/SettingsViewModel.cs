@@ -66,6 +66,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
 
+        SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges);
+        SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
+        SyncWorkspace.Committed += SyncWorkspace_Committed;
+
         TryLoadConfiguration();
         projectionQuery = new(catalog, layoutProvider);
         RefreshKeybindingConflicts();
@@ -95,6 +99,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public ICommand SaveCommand => saveCommand;
 
     public ICommand SearchToggleCommand { get; }
+
+    public SyncWorkspaceViewModel SyncWorkspace { get; }
 
     public string SearchText
     {
@@ -154,7 +160,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsGeneralSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.General;
 
-    public bool IsSettingsListVisible => !IsAboutSelected;
+    public bool IsDataSyncSelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.DataSync;
+
+    public bool IsSettingsListVisible => !IsAboutSelected && !IsDataSyncSelected;
+
+    public bool IsSettingsFooterVisible => HasPendingChanges && !IsDataSyncSelected;
 
     public int VisibleSettingCount =>
         projectedItems.OfType<SettingsRowViewModel>().Count();
@@ -228,10 +239,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         IsConfigurationReady
         && HasPendingChanges
         && !HasInvalidInput
+        && !SyncWorkspace.HasPendingChanges
         && ConfigurationPathMatchesLoadedSession();
 
     public string SaveAvailability =>
-        HasInvalidInput
+        SyncWorkspace.HasPendingChanges
+            ? "Save or discard the pending sync setup before saving other settings."
+            : HasInvalidInput
             ? "Fix the highlighted setting before saving."
             : CanSave
                 ? "Save all staged configuration changes."
@@ -268,6 +282,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         ClearEditorDrafts();
         TryLoadConfiguration();
+        SyncWorkspace.Reload();
         RefreshAllStates();
         NotifySessionChanged();
     }
@@ -327,7 +342,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(VisibleItemsSummary));
         OnPropertyChanged(nameof(IsAboutSelected));
         OnPropertyChanged(nameof(IsGeneralSelected));
+        OnPropertyChanged(nameof(IsDataSyncSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
+        OnPropertyChanged(nameof(IsSettingsFooterVisible));
+        if (section == LauncherSettingsSection.DataSync)
+        {
+            SyncWorkspace.Reload();
+        }
         RebuildProjection();
     }
 
@@ -519,6 +540,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         if (selectedConfigurationChanged)
         {
             TryLoadConfiguration();
+            SyncWorkspace.Reload();
         }
 
         ClearEditorDrafts();
@@ -526,6 +548,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? "Unsaved changes discarded and the selected configuration reloaded."
             : "Unsaved changes discarded.";
         RefreshAllStates();
+        SyncWorkspace.Reload();
         NotifySessionChanged();
     }
 
@@ -560,6 +583,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         };
 
         RefreshAllStates();
+        if (result.IsSuccess)
+        {
+            SyncWorkspace.Reload();
+        }
         NotifySessionChanged();
     }
 
@@ -670,6 +697,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ConfigurationStatus));
         OnPropertyChanged(nameof(PendingChangeCount));
         OnPropertyChanged(nameof(HasPendingChanges));
+        OnPropertyChanged(nameof(IsSettingsFooterVisible));
         OnPropertyChanged(nameof(PendingChangesText));
         OnPropertyChanged(nameof(PendingApplyTimingText));
         OnPropertyChanged(nameof(HasInvalidInput));
@@ -702,6 +730,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             return false;
         }
+    }
+
+    private void SyncWorkspace_StateChanged(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        NotifySessionChanged();
+    }
+
+    private void SyncWorkspace_Committed(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (!HasPendingChanges)
+        {
+            TryLoadConfiguration();
+            RefreshAllStates();
+        }
+
+        NotifySessionChanged();
     }
 
     private void RebuildProjection()

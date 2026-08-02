@@ -1,0 +1,281 @@
+<UserControl x:Class="STFCCommunityMod.Launcher.Views.SyncView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
+             Background="{DynamicResource WindowBackgroundBrush}"
+             Foreground="{DynamicResource TextPrimaryBrush}"
+             automation:AutomationProperties.Name="Sync setup workspace">
+  <UserControl.Resources>
+    <Style x:Key="SyncTextBox" TargetType="TextBox">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="9,6" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    </Style>
+    <Style x:Key="SyncComboBox" TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Margin="24,10,24,0">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <StackPanel>
+        <TextBlock FontSize="22" FontWeight="SemiBold" Text="Sync setup" />
+        <TextBlock Margin="0,4,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Set shared defaults, then connect one or more typed destinations."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding ConfigurationStatus}"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+        <CheckBox Margin="0,7,0,0"
+                  Content="Migrate legacy root sync credentials to a named default target when saving"
+                  IsChecked="{Binding MigrateLegacyRoot}"
+                  Visibility="{Binding HasLegacyRootTarget, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  automation:AutomationProperties.Name="Confirm legacy sync target migration"
+                  automation:AutomationProperties.HelpText="This moves sync.url and sync.token into sync.targets.default in the same atomic save." />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Margin="20,0,0,0" HorizontalAlignment="Right">
+        <TextBlock HorizontalAlignment="Right" FontSize="11"
+                   Foreground="{DynamicResource TextSecondaryBrush}" Text="Add destination" />
+        <StackPanel Margin="0,5,0,0" Orientation="Horizontal">
+          <TextBox Width="145" Style="{StaticResource SyncTextBox}"
+                   Text="{Binding NewTargetName, UpdateSourceTrigger=PropertyChanged}"
+                   ToolTip="Optional custom target name"
+                   automation:AutomationProperties.Name="New sync target name" />
+          <Button Margin="6,0,0,0" Command="{Binding AddLegacyCommand}" Content="Community"
+                  automation:AutomationProperties.Name="Add community sync target" />
+          <Button Margin="6,0,0,0" Command="{Binding AddMajelCommand}" Content="Majel"
+                  automation:AutomationProperties.Name="Add Majel sync target" />
+          <Button Margin="6,0,0,0" Command="{Binding AddSpocksClubCommand}" Content="Spocks Club"
+                  automation:AutomationProperties.Name="Add Spocks Club preset" />
+          <Button Margin="6,0,0,0" Command="{Binding AddSidecarCommand}" Content="Sidecar"
+                  automation:AutomationProperties.Name="Add local Sidecar target" />
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+
+    <Border Grid.Row="1" Margin="0,12,0,10" Padding="14"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8"
+            automation:AutomationProperties.Name="Global sync defaults">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock FontSize="17" FontWeight="SemiBold" Text="Global defaults" />
+        <Grid Grid.Row="1" Margin="0,9,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock VerticalAlignment="Center" Text="Proxy" />
+          <TextBox Grid.Column="1" Style="{StaticResource SyncTextBox}"
+                   Text="{Binding GlobalProxy, UpdateSourceTrigger=LostFocus}"
+                   automation:AutomationProperties.Name="Global sync proxy" />
+          <CheckBox Grid.Column="2" Margin="18,0,0,0" VerticalAlignment="Center"
+                    Content="Verify TLS" IsChecked="{Binding GlobalVerifySsl}"
+                    automation:AutomationProperties.Name="Verify TLS by default" />
+          <CheckBox Grid.Column="3" Margin="18,0,0,0" VerticalAlignment="Center"
+                    Content="Acknowledge unsafe TLS" IsChecked="{Binding GlobalUnsafeTls}"
+                    automation:AutomationProperties.Name="Acknowledge unsafe TLS without certificate validation" />
+        </Grid>
+        <ItemsControl Grid.Row="2" Margin="0,10,0,0" ItemsSource="{Binding GlobalFeeds}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type viewModels:SyncGlobalFeedViewModel}">
+              <CheckBox MinWidth="120" Margin="0,3,14,3" Content="{Binding Label}"
+                        IsChecked="{Binding IsEnabled}"
+                        automation:AutomationProperties.Name="{Binding Label, StringFormat='Global {0} feed'}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="2">
+      <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                 FontSize="15" Foreground="{DynamicResource TextSecondaryBrush}"
+                 Text="No sync destinations yet. Add Sidecar, Majel, a provider preset, or a custom community target.">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers><DataTrigger Binding="{Binding Targets.Count}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <ListBox ItemsSource="{Binding Targets}" Background="Transparent" BorderThickness="0"
+               ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto"
+               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+               KeyboardNavigation.TabNavigation="Continue"
+               automation:AutomationProperties.Name="Configured sync targets">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.ItemContainerStyle>
+          <Style TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+          </Style>
+        </ListBox.ItemContainerStyle>
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="{x:Type viewModels:SyncTargetCardViewModel}">
+            <Border Padding="15" Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8"
+                    automation:AutomationProperties.Name="{Binding Name, StringFormat='Sync target {0}'}"
+                    automation:AutomationProperties.HelpText="{Binding ValidationSummary}">
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <Border Margin="10,0,0,0" Padding="7,2" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="4">
+                      <TextBlock FontSize="11" Text="{Binding KindLabel}" />
+                    </Border>
+                    <TextBlock Margin="10,2,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding WireContract}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <CheckBox Margin="0,0,12,0" VerticalAlignment="Center" Content="Enabled"
+                              IsChecked="{Binding IsEnabled}" IsEnabled="{Binding CanDisable}"
+                              ToolTip="External targets are active when present; remove one to disable it." />
+                    <Button Command="{Binding RemoveCommand}" Content="Remove"
+                            automation:AutomationProperties.Name="{Binding Name, StringFormat='Remove sync target {0}'}" />
+                  </StackPanel>
+                </Grid>
+
+                <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding EffectiveFeeds, StringFormat='Effective feeds: {0}'}" TextWrapping="Wrap" />
+                <TextBlock Margin="0,4,0,0" FontSize="12" Text="{Binding ValidationSummary}"
+                           TextWrapping="Wrap" automation:AutomationProperties.LiveSetting="Polite" />
+
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBlock VerticalAlignment="Center" Text="Endpoint" />
+                  <TextBox Grid.Column="1" Style="{StaticResource SyncTextBox}"
+                           Text="{Binding Url, UpdateSourceTrigger=LostFocus}"
+                           automation:AutomationProperties.Name="{Binding Name, StringFormat='Endpoint for {0}'}" />
+                </Grid>
+
+                <Grid Margin="0,8,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="220" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBlock VerticalAlignment="Center" Text="Token" />
+                  <PasswordBox Grid.Column="1" MinHeight="34" Padding="9,6"
+                               PasswordChanged="ReplacementToken_PasswordChanged"
+                               automation:AutomationProperties.Name="{Binding Name, StringFormat='Replacement token for {0}'}"
+                               automation:AutomationProperties.HelpText="Saved tokens are never displayed. Enter a new token, then choose Replace." />
+                  <Button Grid.Column="2" Margin="7,0,0,0" Command="{Binding ReplaceTokenCommand}" Content="Replace" />
+                  <Button Grid.Column="3" Margin="7,0,0,0" Command="{Binding ClearTokenCommand}" Content="Clear" />
+                  <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center"
+                             FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding TokenStatus}" />
+                </Grid>
+
+                <Grid Margin="0,8,0,0">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="240" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                  <TextBlock VerticalAlignment="Center" Text="Proxy" />
+                  <TextBox Grid.Column="1" Style="{StaticResource SyncTextBox}"
+                           Text="{Binding ProxyText, UpdateSourceTrigger=LostFocus}"
+                           automation:AutomationProperties.Name="{Binding Name, StringFormat='Proxy override for {0}'}"
+                           automation:AutomationProperties.HelpText="An empty saved value explicitly clears the inherited proxy." />
+                  <Button Grid.Column="2" Margin="7,0,14,0" Command="{Binding UseInheritedProxyCommand}" Content="Use inherited" />
+                  <ComboBox Grid.Column="3" Margin="0,0,8,0" Style="{StaticResource SyncComboBox}"
+                            ItemsSource="{Binding BooleanChoices}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                            SelectedValue="{Binding VerifySslChoice, UpdateSourceTrigger=PropertyChanged}"
+                            automation:AutomationProperties.Name="TLS verification override" />
+                  <ComboBox Grid.Column="4" Style="{StaticResource SyncComboBox}"
+                            ItemsSource="{Binding BooleanChoices}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                            SelectedValue="{Binding UnsafeTlsChoice, UpdateSourceTrigger=PropertyChanged}"
+                            automation:AutomationProperties.Name="Unsafe TLS acknowledgement override" />
+                </Grid>
+                <TextBlock Margin="70,3,0,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding ProxySummary}" />
+
+                <Grid Margin="70,8,0,0"
+                      Visibility="{Binding ShowSidecarControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="255" /><ColumnDefinition Width="300" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="Battle-log enrichment" />
+                    <ComboBox Margin="0,3,8,0" Style="{StaticResource SyncComboBox}"
+                              ItemsSource="{Binding BooleanChoices}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                              SelectedValue="{Binding BattlelogEnrichmentChoice, UpdateSourceTrigger=PropertyChanged}"
+                              automation:AutomationProperties.Name="Sidecar battle-log enrichment override" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="Fleet runtime mode" />
+                    <ComboBox Margin="0,3,8,0" Style="{StaticResource SyncComboBox}"
+                              ItemsSource="{Binding FleetRuntimeModeChoices}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                              SelectedValue="{Binding FleetRuntimeModeChoice, UpdateSourceTrigger=PropertyChanged}"
+                              automation:AutomationProperties.Name="Sidecar fleet runtime mode" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Margin="8,15,0,0" VerticalAlignment="Center"
+                             FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                             Text="These controls exist only for the local Sidecar wire contract." TextWrapping="Wrap" />
+                </Grid>
+
+                <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Feeds}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type viewModels:SyncTargetFeedViewModel}">
+                      <Border Width="255" Margin="0,0,8,8" Padding="9"
+                              Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="6">
+                        <Grid>
+                          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="112" /></Grid.ColumnDefinitions>
+                          <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="{Binding Label}" />
+                            <TextBlock Margin="0,3,0,0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveSummary}" />
+                          </StackPanel>
+                          <ComboBox Grid.Column="1" Style="{StaticResource SyncComboBox}"
+                                    ItemsSource="{Binding Choices}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                    SelectedValue="{Binding Choice, UpdateSourceTrigger=PropertyChanged}"
+                                    automation:AutomationProperties.Name="{Binding Label}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+
+    <Border Grid.Row="3" Margin="0,8,0,0" Padding="0,8,0,8" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <StackPanel>
+          <TextBlock FontWeight="SemiBold" Text="{Binding PendingChangesText}" />
+          <TextBlock Margin="0,3,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="{Binding OperationStatus}" automation:AutomationProperties.LiveSetting="Polite" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button Margin="0,0,8,0" Command="{Binding DiscardCommand}" Content="Discard" />
+          <Button Command="{Binding SaveCommand}" Content="Save sync setup" ToolTip="{Binding SaveAvailability}"
+                  automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

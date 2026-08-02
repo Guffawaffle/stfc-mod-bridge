@@ -4,7 +4,9 @@ param(
   [string]$LauncherPath,
 
   [ValidateRange(5, 120)]
-  [int]$TimeoutSeconds = 30
+  [int]$TimeoutSeconds = 30,
+
+  [switch]$UseDisposableSyncFixture
 )
 
 $ErrorActionPreference = "Stop"
@@ -222,6 +224,33 @@ function Stop-OwnedProcess {
   }
 }
 
+function Restore-DisposableFixture {
+  param(
+    [bool]$SelectionExisted,
+    [AllowNull()][byte[]]$SelectionBytes,
+    [string]$SelectionPath,
+    [AllowNull()][string]$DisposableGameDirectory
+  )
+
+  if ($SelectionExisted) {
+    [System.IO.File]::WriteAllBytes($SelectionPath, $SelectionBytes)
+  }
+  elseif (Test-Path -LiteralPath $SelectionPath -PathType Leaf) {
+    [System.IO.File]::Delete($SelectionPath)
+  }
+
+  if ($null -ne $DisposableGameDirectory -and
+      $DisposableGameDirectory.StartsWith(
+        [System.IO.Path]::GetTempPath(),
+        [StringComparison]::OrdinalIgnoreCase) -and
+      (Split-Path -Leaf $DisposableGameDirectory).StartsWith(
+        "stfc-launcher-sync-smoke-",
+        [StringComparison]::Ordinal) -and
+      (Test-Path -LiteralPath $DisposableGameDirectory -PathType Container)) {
+    [System.IO.Directory]::Delete($DisposableGameDirectory, $true)
+  }
+}
+
 $resolvedLauncherPath = (Resolve-Path -LiteralPath $LauncherPath).Path
 if (-not (Test-Path -LiteralPath $resolvedLauncherPath -PathType Leaf) -or
     [System.IO.Path]::GetExtension($resolvedLauncherPath) -ne ".exe") {
@@ -253,16 +282,73 @@ if ([string]::IsNullOrWhiteSpace($originalWindir)) {
   Write-Verbose "Restored process WINDIR from SystemRoot for the launcher smoke."
 }
 
-$configurationPath = Get-ActiveConfigurationPath
-$configurationHashBefore = $null
-if ($null -ne $configurationPath) {
-  $configurationHashBefore = (
-    Get-FileHash -LiteralPath $configurationPath -Algorithm SHA256
-  ).Hash
-  Write-Host "Guarding active TOML: $configurationPath"
+$selectionPath = Join-Path `
+  ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
+  "STFC Community Mod Launcher\install-selection.json"
+$selectionExisted = Test-Path -LiteralPath $selectionPath -PathType Leaf
+$selectionBytes = if ($selectionExisted) {
+  [System.IO.File]::ReadAllBytes($selectionPath)
+} else {
+  $null
 }
-else {
-  Write-Host "No active game TOML was discoverable; continuing with read-only UI checks."
+$disposableGameDirectory = $null
+try {
+  if ($UseDisposableSyncFixture) {
+    $disposableGameDirectory = Join-Path `
+      ([System.IO.Path]::GetTempPath()) `
+      "stfc-launcher-sync-smoke-$([Guid]::NewGuid().ToString('N'))"
+    [void](New-Item -ItemType Directory -Path $disposableGameDirectory)
+    [System.IO.File]::WriteAllBytes(
+      (Join-Path $disposableGameDirectory "prime.exe"),
+      [byte[]]::new(0))
+    [System.IO.File]::WriteAllText(
+      (Join-Path $disposableGameDirectory "community_patch_settings.toml"),
+      @"
+[sync]
+jobs = true
+
+[sidecar.sync]
+enabled = false
+
+[sync.targets.community]
+url = "https://community.example.invalid/sync"
+token = "disposable-smoke-secret"
+"@,
+      [System.Text.UTF8Encoding]::new($false))
+    [void](New-Item -ItemType Directory -Path (Split-Path -Parent $selectionPath) -Force)
+    $selectionDocument = [ordered]@{
+      schemaVersion = 1
+      gameDirectory = $disposableGameDirectory
+      confirmedAtUtc = [DateTimeOffset]::UtcNow
+    }
+    [System.IO.File]::WriteAllText(
+      $selectionPath,
+      ($selectionDocument | ConvertTo-Json),
+      [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Using disposable Sync fixture: $disposableGameDirectory"
+  }
+
+  $configurationPath = Get-ActiveConfigurationPath
+  $configurationHashBefore = $null
+  if ($null -ne $configurationPath) {
+    $configurationHashBefore = (
+      Get-FileHash -LiteralPath $configurationPath -Algorithm SHA256
+    ).Hash
+    Write-Host "Guarding active TOML: $configurationPath"
+  }
+  else {
+    Write-Host "No active game TOML was discoverable; continuing with read-only UI checks."
+  }
+}
+catch {
+  if ($UseDisposableSyncFixture) {
+    Restore-DisposableFixture `
+      -SelectionExisted $selectionExisted `
+      -SelectionBytes $selectionBytes `
+      -SelectionPath $selectionPath `
+      -DisposableGameDirectory $disposableGameDirectory
+  }
+  throw
 }
 
 $launcherProcess = $null
@@ -412,6 +498,11 @@ try {
     -Name "Hotkey settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
+  $syncNavigation = Find-AutomationElement `
+    -Root $root `
+    -Name "Data Sync settings" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $settingsDeadline
 
   Invoke-AutomationElement -Element $notificationsNavigation
   [void](Find-AutomationElement `
@@ -436,6 +527,22 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
 
+  Invoke-AutomationElement -Element $syncNavigation
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Sync setup workspace" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Global defaults" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Configured sync targets" `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  Write-Host "PASS: typed Sync setup, global defaults, and virtualized target collection are UI Automation accessible."
+
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
     -Name "About launcher settings" `
@@ -455,7 +562,7 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: launcher chrome, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  Write-Host "PASS: launcher chrome, typed Sync setup, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_
@@ -482,6 +589,14 @@ finally {
 
   if ($windirWasRestored) {
     [Environment]::SetEnvironmentVariable("WINDIR", $null, "Process")
+  }
+
+  if ($UseDisposableSyncFixture) {
+    Restore-DisposableFixture `
+      -SelectionExisted $selectionExisted `
+      -SelectionBytes $selectionBytes `
+      -SelectionPath $selectionPath `
+      -DisposableGameDirectory $disposableGameDirectory
   }
 }
 

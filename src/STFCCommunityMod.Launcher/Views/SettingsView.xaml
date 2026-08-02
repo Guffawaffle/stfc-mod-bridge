@@ -6,6 +6,7 @@
              xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
+             xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
              MinWidth="760"
              Background="{DynamicResource WindowBackgroundBrush}"
              Foreground="{DynamicResource TextPrimaryBrush}"
@@ -1138,13 +1139,18 @@
       </Grid>
     </Grid>
 
+    <views:SyncView Grid.Row="0"
+                    Grid.Column="1"
+                    DataContext="{Binding SyncWorkspace}"
+                    Visibility="{Binding IsDataSyncSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
     <Border Grid.Row="1"
             Grid.Column="1"
             Padding="20,8,24,8"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,1,0,0"
-            Visibility="{Binding HasPendingChanges, Converter={StaticResource BooleanToVisibilityConverter}}"
+            Visibility="{Binding IsSettingsFooterVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
             automation:AutomationProperties.Name="{Binding PendingChangesText}">
       <Grid>
         <Grid.ColumnDefinitions>

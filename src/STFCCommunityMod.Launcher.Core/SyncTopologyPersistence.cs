@@ -510,6 +510,16 @@ public sealed class SyncTopologyPersistenceWorkspace
 
     public ConfigurationDocumentRevision BaselineRevision => snapshot.Revision;
 
+    public bool HasLegacyRootTarget => baseline.HasLegacyRootTarget;
+
+    public SyncTopologyPersistencePlan PreparePlan(bool migrateLegacyRoot = false) =>
+        SyncTopologyPersistencePlanner.Build(
+            baseline,
+            Desired,
+            renames,
+            kindChangeDecisions,
+            migrateLegacyRoot);
+
     public static SyncTopologyTomlLoadResult Load(
         ConfigurationDocumentSnapshot snapshot,
         out SyncTopologyPersistenceWorkspace? workspace,
@@ -556,12 +566,7 @@ public sealed class SyncTopologyPersistenceWorkspace
         bool migrateLegacyRoot = false,
         CancellationToken cancellationToken = default)
     {
-        var plan = SyncTopologyPersistencePlanner.Build(
-            baseline,
-            Desired,
-            renames,
-            kindChangeDecisions,
-            migrateLegacyRoot);
+        var plan = PreparePlan(migrateLegacyRoot);
         if (!plan.IsValid)
         {
             return new(AtomicTomlWriteState.Invalid, Plan: plan);
