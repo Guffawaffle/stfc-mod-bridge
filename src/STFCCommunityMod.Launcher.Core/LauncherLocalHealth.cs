@@ -404,86 +404,86 @@ public static class LauncherHealthResolver
 
     private static LauncherHealthDimension ResolveProviderDimension(
         LauncherProviderCompatibilityState compatibility) => compatibility switch
-    {
-        LauncherProviderCompatibilityState.MatchesSelectedProvider => new(
-            LauncherHealthDimensionCategory.ProviderCompatibility,
-            LauncherHealthSeverity.Healthy,
-            "Installed provider matches selection",
-            "Stable provider and runtime-distribution identities match."),
-        LauncherProviderCompatibilityState.DifferentProvider => new(
-            LauncherHealthDimensionCategory.ProviderCompatibility,
-            LauncherHealthSeverity.ActionRequired,
-            "Installed provider differs from selection",
-            "Review provider migration before replacing the installed artifact."),
-        LauncherProviderCompatibilityState.Unattributed => UnknownDimension(
-            LauncherHealthDimensionCategory.ProviderCompatibility,
-            "Installed provider unknown",
-            "Older managed state and manual installations are never attributed by guesswork."),
-        _ => UnknownDimension(
-            LauncherHealthDimensionCategory.ProviderCompatibility,
-            "Provider compatibility not established",
-            "No attributed installed artifact is available for comparison."),
-    };
+        {
+            LauncherProviderCompatibilityState.MatchesSelectedProvider => new(
+                LauncherHealthDimensionCategory.ProviderCompatibility,
+                LauncherHealthSeverity.Healthy,
+                "Installed provider matches selection",
+                "Stable provider and runtime-distribution identities match."),
+            LauncherProviderCompatibilityState.DifferentProvider => new(
+                LauncherHealthDimensionCategory.ProviderCompatibility,
+                LauncherHealthSeverity.ActionRequired,
+                "Installed provider differs from selection",
+                "Review provider migration before replacing the installed artifact."),
+            LauncherProviderCompatibilityState.Unattributed => UnknownDimension(
+                LauncherHealthDimensionCategory.ProviderCompatibility,
+                "Installed provider unknown",
+                "Older managed state and manual installations are never attributed by guesswork."),
+            _ => UnknownDimension(
+                LauncherHealthDimensionCategory.ProviderCompatibility,
+                "Provider compatibility not established",
+                "No attributed installed artifact is available for comparison."),
+        };
 
     private static LauncherHealthDimension ResolveUpdateDimension(
         ModUpdateEvidenceState state,
         string? availableVersion) => state switch
-    {
-        ModUpdateEvidenceState.UpToDate => new(
-            LauncherHealthDimensionCategory.UpdateAvailability,
-            LauncherHealthSeverity.Healthy,
-            "Installed release is current",
-            "The latest identity-bound provider observation matches the installed artifact."),
-        ModUpdateEvidenceState.UpdateAvailable => new(
-            LauncherHealthDimensionCategory.UpdateAvailability,
-            LauncherHealthSeverity.ActionRequired,
-            "Community mod update available",
-            string.IsNullOrWhiteSpace(availableVersion)
-                ? "A newer trusted provider artifact is available."
-                : $"Community mod {availableVersion} is available."),
-        ModUpdateEvidenceState.NotApplicable => new(
-            LauncherHealthDimensionCategory.UpdateAvailability,
-            LauncherHealthSeverity.Informational,
-            "Update availability not applicable",
-            "A verified, attributed managed installation is required before comparing releases."),
-        _ => UnknownDimension(
-            LauncherHealthDimensionCategory.UpdateAvailability,
-            "Update availability unknown",
-            "No current identity-bound provider observation is available; local health does not depend on network discovery."),
-    };
+        {
+            ModUpdateEvidenceState.UpToDate => new(
+                LauncherHealthDimensionCategory.UpdateAvailability,
+                LauncherHealthSeverity.Healthy,
+                "Installed release is current",
+                "The latest identity-bound provider observation matches the installed artifact."),
+            ModUpdateEvidenceState.UpdateAvailable => new(
+                LauncherHealthDimensionCategory.UpdateAvailability,
+                LauncherHealthSeverity.ActionRequired,
+                "Community mod update available",
+                string.IsNullOrWhiteSpace(availableVersion)
+                    ? "A newer trusted provider artifact is available."
+                    : $"Community mod {availableVersion} is available."),
+            ModUpdateEvidenceState.NotApplicable => new(
+                LauncherHealthDimensionCategory.UpdateAvailability,
+                LauncherHealthSeverity.Informational,
+                "Update availability not applicable",
+                "A verified, attributed managed installation is required before comparing releases."),
+            _ => UnknownDimension(
+                LauncherHealthDimensionCategory.UpdateAvailability,
+                "Update availability unknown",
+                "No current identity-bound provider observation is available; local health does not depend on network discovery."),
+        };
 
     private static LauncherHealthDimension ResolveNativeDimension(
         LauncherHealthDimensionCategory category,
         LauncherNativeEvidenceState state,
         string label) => state switch
-    {
-        LauncherNativeEvidenceState.Healthy => new(
-            category,
-            LauncherHealthSeverity.Healthy,
-            $"{label} healthy",
-            "Authoritative identity-bound evidence reports a healthy state."),
-        LauncherNativeEvidenceState.Degraded => new(
-            category,
-            LauncherHealthSeverity.ActionRequired,
-            $"{label} degraded",
-            "Authoritative identity-bound evidence reports degraded operation."),
-        LauncherNativeEvidenceState.Incompatible => new(
-            category,
-            LauncherHealthSeverity.ActionRequired,
-            $"{label} incompatible",
-            "Authoritative identity-bound evidence reports an incompatible state."),
-        LauncherNativeEvidenceState.NotApplicable => new(
-            category,
-            LauncherHealthSeverity.Informational,
-            $"{label} not applicable",
-            "Live runtime evidence is not applicable while the game is not running."),
-        _ => UnknownDimension(
-            category,
-            $"{label} unknown",
-            category == LauncherHealthDimensionCategory.GameCompatibility
-                ? "No identity-bound game compatibility contract is available."
-                : "DLL, log, or process presence is not evidence that native hooks loaded successfully."),
-    };
+        {
+            LauncherNativeEvidenceState.Healthy => new(
+                category,
+                LauncherHealthSeverity.Healthy,
+                $"{label} healthy",
+                "Authoritative identity-bound evidence reports a healthy state."),
+            LauncherNativeEvidenceState.Degraded => new(
+                category,
+                LauncherHealthSeverity.ActionRequired,
+                $"{label} degraded",
+                "Authoritative identity-bound evidence reports degraded operation."),
+            LauncherNativeEvidenceState.Incompatible => new(
+                category,
+                LauncherHealthSeverity.ActionRequired,
+                $"{label} incompatible",
+                "Authoritative identity-bound evidence reports an incompatible state."),
+            LauncherNativeEvidenceState.NotApplicable => new(
+                category,
+                LauncherHealthSeverity.Informational,
+                $"{label} not applicable",
+                "Live runtime evidence is not applicable while the game is not running."),
+            _ => UnknownDimension(
+                category,
+                $"{label} unknown",
+                category == LauncherHealthDimensionCategory.GameCompatibility
+                    ? "No identity-bound game compatibility contract is available."
+                    : "DLL, log, or process presence is not evidence that native hooks loaded successfully."),
+        };
 
     private static ModManagementPresentation ResolveManagement(
         ModInstallationEvidence installation,
