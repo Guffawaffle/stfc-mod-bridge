@@ -30,23 +30,120 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
-    public void AddSurfaceSupportsMixedTypedTargetsAndSidecarSingleton()
+    public void AddSurfaceOffersOnlyOrdinarySyncPresetsAndCustomDestination()
     {
         using var fixture = SyncFixture.Create("# empty\n");
         var viewModel = fixture.CreateViewModel();
 
-        viewModel.AddSidecarCommand.Execute(null);
-        viewModel.NewTargetName = "majel-vip";
-        viewModel.AddMajelCommand.Execute(null);
-        viewModel.AddSpocksClubCommand.Execute(null);
+        FinishWizard(
+            viewModel,
+            SyncTargetKind.LegacyCommunity,
+            presetId: "spocks_club",
+            identity: "spocksclub",
+            endpoint: "https://spocks.example.invalid/sync");
 
-        Assert.AreEqual(3, viewModel.Targets.Count);
-        Assert.IsTrue(viewModel.Targets.Any(target => target.Name == "local-sidecar"));
-        Assert.IsTrue(viewModel.Targets.Any(target => target.Name == "majel-vip"));
-        Assert.IsTrue(viewModel.Targets.Any(target => target.Name == "spocksclub"));
-        Assert.IsFalse(viewModel.AddSidecarCommand.CanExecute(null));
-        Assert.AreEqual("Local Sidecar", viewModel.Targets.Single(target => target.Name == "local-sidecar").KindLabel);
-        Assert.AreEqual("Majel", viewModel.Targets.Single(target => target.Name == "majel-vip").KindLabel);
+        Assert.AreEqual(1, viewModel.Targets.Count);
+        Assert.AreEqual("spocksclub", viewModel.Targets.Single().Name);
+        Assert.AreEqual(string.Empty, viewModel.Targets.Single().KindLabel);
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        Assert.IsTrue(viewModel.AddWizard!.Choices.All(choice => choice.Kind == SyncTargetKind.LegacyCommunity));
+        Assert.IsTrue(viewModel.AddWizard.Choices.Any(choice => choice.Title == "Custom sync"));
+        Assert.IsFalse(viewModel.AddWizard.Choices.Any(choice =>
+            choice.Kind is SyncTargetKind.LocalSidecar or SyncTargetKind.MajelIngest));
+        viewModel.AddWizard.CancelCommand.Execute(null);
+    }
+
+    [TestMethod]
+    public void SidecarTabAppearsOnlyWhenSidecarExistsInToml()
+    {
+        using var ordinaryFixture = SyncFixture.Create(
+            """
+            [sync]
+            jobs = true
+
+            [sync.targets.community]
+            url = "https://community.example.invalid/sync"
+            token = "fixture-secret"
+            """);
+        using var sidecarFixture = SyncFixture.Create(
+            """
+            [sync.targets.community]
+            url = "https://community.example.invalid/sync"
+            token = "fixture-secret"
+
+            [sidecar.sync]
+            enabled = true
+            url = "http://127.0.0.1:43127/api/sidecar/ingest"
+            token = "fixture-sidecar-secret"
+            """);
+
+        Assert.IsFalse(ordinaryFixture.CreateViewModel().Targets.Any(target => target.Name == "local-sidecar"));
+        var sidecar = sidecarFixture.CreateViewModel().Targets.Single(target => target.Name == "local-sidecar");
+        Assert.AreEqual("Sidecar", sidecar.KindLabel);
+    }
+
+    [TestMethod]
+    public async Task SavingOrdinaryDefaultsDoesNotSynthesizeSidecarConfiguration()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync]
+            jobs = true
+
+            [sync.targets.community]
+            url = "https://community.example.invalid/sync"
+            token = "fixture-secret"
+            """);
+        var viewModel = fixture.CreateViewModel();
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.HasPendingChanges);
+
+        Assert.IsFalse(File.ReadAllText(fixture.Path).Contains("[sidecar.sync]", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task SavingOrdinaryDefaultsPreservesExistingSidecarAndAdvancedMajelValues()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync]
+            jobs = true
+
+            [sidecar.sync]
+            enabled = true
+            url = "http://127.0.0.1:43127/api/sidecar/ingest"
+            token = "fixture-sidecar-secret"
+            fleet_runtime_mode = "request_only"
+            future_sidecar_value = "preserve"
+
+            [sync.targets.advanced]
+            mode = "majel"
+            url = "https://advanced.example.invalid/ingest"
+            token = "fixture-majel-secret"
+            battlelogs_realtime = true
+            future_majel_value = "preserve"
+            """);
+        var viewModel = fixture.CreateViewModel();
+        Assert.AreEqual(1, viewModel.Targets.Count);
+        Assert.AreEqual("local-sidecar", viewModel.Targets.Single().Name);
+        Assert.IsFalse(viewModel.Targets.Any(target => target.Name == "advanced"));
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.HasPendingChanges);
+        var updated = File.ReadAllText(fixture.Path);
+
+        StringAssert.Contains(updated, "[sidecar.sync]");
+        StringAssert.Contains(updated, "fleet_runtime_mode = \"request_only\"");
+        StringAssert.Contains(updated, "future_sidecar_value = \"preserve\"");
+        StringAssert.Contains(updated, "[sync.targets.advanced]");
+        StringAssert.Contains(updated, "mode = \"majel\"");
+        StringAssert.Contains(updated, "battlelogs_realtime = true");
+        StringAssert.Contains(updated, "future_majel_value = \"preserve\"");
     }
 
     [TestMethod]
@@ -114,13 +211,38 @@ public sealed class SyncWorkspaceViewModelTests
         StringAssert.Contains(target.ProxySummary, "Inherited");
         Assert.AreEqual(SyncBooleanOverrideChoice.UseGlobal, target.VerifySslChoice);
 
-        target.ProxyText = string.Empty;
+        target.ProxyChoice = SyncProxyOverrideChoice.NoProxy;
         target.VerifySslChoice = SyncBooleanOverrideChoice.Disabled;
         target.UnsafeTlsChoice = SyncBooleanOverrideChoice.Enabled;
 
         Assert.AreEqual("Explicitly cleared", target.ProxySummary);
         Assert.AreEqual(SyncBooleanOverrideChoice.Disabled, target.VerifySslChoice);
         Assert.AreEqual(SyncBooleanOverrideChoice.Enabled, target.UnsafeTlsChoice);
+    }
+
+    [TestMethod]
+    public void ChoosingCustomProxyDoesNotPersistAPlaceholderValue()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync.targets.community]
+            url = "https://community.example.invalid/sync"
+            token = "fixture-secret"
+            """);
+        var viewModel = fixture.CreateViewModel();
+        var target = viewModel.Targets.Single();
+
+        target.ProxyChoice = SyncProxyOverrideChoice.Custom;
+
+        Assert.IsTrue(target.IsCustomProxy);
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.AreEqual(string.Empty, target.ProxyText);
+        StringAssert.Contains(target.ProxySummary, "Enter");
+
+        target.ProxyText = "http://proxy.example.invalid:8080";
+
+        Assert.IsTrue(viewModel.HasPendingChanges);
+        Assert.AreEqual("http://proxy.example.invalid:8080", viewModel.Targets.Single().ProxyText);
     }
 
     [TestMethod]
@@ -141,8 +263,8 @@ public sealed class SyncWorkspaceViewModelTests
         var sidecar = viewModel.Targets.Single(target => target.Name == "local-sidecar");
         var community = viewModel.Targets.Single(target => target.Name == "community");
 
-        Assert.IsTrue(sidecar.ShowSidecarControls);
-        Assert.IsFalse(community.ShowSidecarControls);
+        Assert.IsTrue(sidecar.ShowTypeSpecificControls);
+        Assert.IsFalse(community.ShowTypeSpecificControls);
         sidecar.BattlelogEnrichmentChoice = SyncBooleanOverrideChoice.Enabled;
         sidecar.FleetRuntimeModeChoice = "request_only";
         Assert.AreEqual(SyncBooleanOverrideChoice.Enabled, sidecar.BattlelogEnrichmentChoice);
@@ -214,6 +336,120 @@ public sealed class SyncWorkspaceViewModelTests
         StringAssert.Contains(viewModel.OperationStatus, "Restart the game");
     }
 
+    [TestMethod]
+    public void CatalogSeparatesPersistenceKindsFromUiExposureAndProviderPresets()
+    {
+        Assert.AreEqual(
+            "legacy,majel,sidecar",
+            string.Join(',', SyncTargetTypeCatalog.All.Values.Select(type => type.Id).Order(StringComparer.Ordinal)));
+        Assert.IsTrue(SyncTargetTypeCatalog.Presets.All(preset => preset.TargetKind == SyncTargetKind.LegacyCommunity));
+        Assert.AreEqual(
+            SyncTargetExposurePolicy.Creatable,
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LegacyCommunity).ExposurePolicy);
+        Assert.AreEqual(
+            SyncTargetExposurePolicy.Hidden,
+            SyncTargetTypeCatalog.Get(SyncTargetKind.MajelIngest).ExposurePolicy);
+        Assert.AreEqual(
+            SyncTargetExposurePolicy.ExistingConfigurationOnly,
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).ExposurePolicy);
+        Assert.AreEqual(
+            "next_spocks_club,spocks_club",
+            string.Join(',', SyncTargetTypeCatalog.Presets.Select(preset => preset.Id).Order(StringComparer.Ordinal)));
+    }
+
+    [TestMethod]
+    public void CancellingAddWizardLeavesTopologyUnchanged()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.Endpoint = "https://custom.example.invalid/ingest";
+        wizard.CancelCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
+    public void WizardPresetStagesOrdinaryDestinationWithCanonicalEndpointAndDocumentedFeeds()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice => choice.Preset?.Id == "spocks_club");
+        Assert.AreEqual("https://spocks.club/sync/ingress/", wizard.Endpoint);
+        CollectionAssert.AreEquivalent(
+            SyncTargetTypeCatalog.GetPreset("spocks_club").SupportedDataKinds.ToArray(),
+            wizard.Feeds.Select(feed => feed.Kind).ToArray());
+        Assert.IsFalse(wizard.Feeds.Single(feed => feed.Kind == SyncDataKind.Battlelogs).IsEnabled);
+        Assert.IsTrue(wizard.Feeds.Single(feed => feed.Kind == SyncDataKind.Resources).IsEnabled);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "vip-spocks";
+        wizard.Token = "fixture-secret";
+        wizard.NextCommand.Execute(null);
+        wizard.FinishCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.IsTrue(viewModel.HasPendingChanges);
+        var target = viewModel.Targets.Single();
+        Assert.AreEqual("vip-spocks", target.Name);
+        Assert.AreEqual(string.Empty, target.KindLabel);
+        Assert.AreEqual("https://spocks.club/sync/ingress/", target.Url);
+        CollectionAssert.AreEquivalent(
+            SyncTargetTypeCatalog.GetPreset("spocks_club").SupportedDataKinds.ToArray(),
+            target.Feeds.Select(feed => feed.Kind).ToArray());
+    }
+
+    [TestMethod]
+    public void NextSpocksPresetUsesCanonicalIdentityEndpointAndFeedDefaults()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice => choice.Preset?.Id == "next_spocks_club");
+
+        Assert.AreEqual("spocksclub-next", wizard.Identity);
+        Assert.AreEqual("https://next.spocks.club/sync/ingress/", wizard.Endpoint);
+        Assert.AreEqual(13, wizard.Feeds.Count);
+        Assert.IsFalse(wizard.Feeds.Single(feed => feed.Kind == SyncDataKind.Battlelogs).IsEnabled);
+        Assert.IsFalse(wizard.Feeds.Single(feed => feed.Kind == SyncDataKind.Jobs).IsEnabled);
+        Assert.IsTrue(wizard.Feeds.Where(feed =>
+            feed.Kind is not SyncDataKind.Battlelogs and not SyncDataKind.Jobs).All(feed => feed.IsEnabled));
+    }
+
+    [TestMethod]
+    public void SwitchingTabsPreservesDraftAndDiscardRestoresWholeSyncSession()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync.targets.community]
+            url = "https://community.example.invalid/sync"
+            token = "fixture-secret"
+            """);
+        var viewModel = fixture.CreateViewModel();
+        var destinationTab = viewModel.Tabs.Single(tab => !tab.IsGlobal);
+        viewModel.SelectedTab = destinationTab;
+        destinationTab.Destination!.Feeds.Single(feed => feed.Kind == SyncDataKind.Jobs).Choice =
+            SyncBooleanOverrideChoice.Disabled;
+        viewModel.SelectedTab = viewModel.Tabs.Single(tab => tab.IsGlobal);
+        viewModel.SelectedTab = viewModel.Tabs.Single(tab => !tab.IsGlobal);
+
+        Assert.AreEqual(
+            SyncBooleanOverrideChoice.Disabled,
+            viewModel.SelectedDestination!.Feeds.Single(feed => feed.Kind == SyncDataKind.Jobs).Choice);
+        viewModel.DiscardCommand.Execute(null);
+        Assert.AreEqual(
+            SyncBooleanOverrideChoice.UseGlobal,
+            viewModel.Targets.Single().Feeds.Single(feed => feed.Kind == SyncDataKind.Jobs).Choice);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         for (var attempt = 0; attempt < 100 && !condition(); ++attempt)
@@ -222,6 +458,28 @@ public sealed class SyncWorkspaceViewModelTests
         }
 
         Assert.IsTrue(condition(), "The asynchronous view-model action did not finish.");
+    }
+
+    private static void FinishWizard(
+        SyncWorkspaceViewModel viewModel,
+        SyncTargetKind kind,
+        string identity,
+        string? endpoint = null,
+        string? presetId = null)
+    {
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == kind && choice.Preset?.Id == presetId);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = identity;
+        if (endpoint is not null)
+        {
+            wizard.Endpoint = endpoint;
+        }
+        wizard.Token = "fixture-secret";
+        wizard.NextCommand.Execute(null);
+        wizard.FinishCommand.Execute(null);
     }
 
     private sealed class SyncFixture : IDisposable

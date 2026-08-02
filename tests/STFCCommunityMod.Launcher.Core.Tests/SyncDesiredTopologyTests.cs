@@ -12,12 +12,65 @@ public sealed class SyncDesiredTopologyTests
         Assert.AreEqual("sidecar.sync", SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).PersistencePattern);
         Assert.AreEqual("sidecar_local_ingest", SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).WireContract);
         Assert.IsFalse(SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).InheritsGlobalSync);
+        Assert.AreEqual(
+            SyncTargetExposurePolicy.ExistingConfigurationOnly,
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).ExposurePolicy);
         Assert.AreEqual("sync.targets.*", SyncTargetTypeCatalog.Get(SyncTargetKind.MajelIngest).PersistencePattern);
         Assert.AreEqual("majel.ingest.v1", SyncTargetTypeCatalog.Get(SyncTargetKind.MajelIngest).WireContract);
+        Assert.AreEqual(
+            SyncTargetExposurePolicy.Hidden,
+            SyncTargetTypeCatalog.Get(SyncTargetKind.MajelIngest).ExposurePolicy);
+        Assert.AreEqual("Sync", SyncTargetTypeCatalog.Get(SyncTargetKind.LegacyCommunity).DisplayName);
 
         var spocks = SyncTargetTypeCatalog.GetPreset("spocks_club");
         Assert.AreEqual(SyncTargetKind.LegacyCommunity, spocks.TargetKind);
         Assert.AreEqual("spocksclub", spocks.SuggestedIdentity);
+        Assert.AreEqual("https://spocks.club/sync/ingress/", spocks.DefaultUrl);
+        AssertPresetFeeds(
+            spocks,
+            (SyncDataKind.Resources, true),
+            (SyncDataKind.Battlelogs, false),
+            (SyncDataKind.Officer, true),
+            (SyncDataKind.Missions, false),
+            (SyncDataKind.Research, true),
+            (SyncDataKind.Tech, false),
+            (SyncDataKind.Traits, false),
+            (SyncDataKind.Buildings, true),
+            (SyncDataKind.Ships, false));
+
+        var next = SyncTargetTypeCatalog.GetPreset("next_spocks_club");
+        Assert.AreEqual("spocksclub-next", next.SuggestedIdentity);
+        Assert.AreEqual("https://next.spocks.club/sync/ingress/", next.DefaultUrl);
+        AssertPresetFeeds(
+            next,
+            (SyncDataKind.Battlelogs, false),
+            (SyncDataKind.Buffs, true),
+            (SyncDataKind.Buildings, true),
+            (SyncDataKind.Inventory, true),
+            (SyncDataKind.Jobs, false),
+            (SyncDataKind.Missions, true),
+            (SyncDataKind.Officer, true),
+            (SyncDataKind.Research, true),
+            (SyncDataKind.Resources, true),
+            (SyncDataKind.Ships, true),
+            (SyncDataKind.Slots, true),
+            (SyncDataKind.Tech, true),
+            (SyncDataKind.Traits, true));
+        Assert.AreSame(next, SyncTargetTypeCatalog.FindPresetByUrl("https://next.spocks.club/sync/ingress"));
+    }
+
+    private static void AssertPresetFeeds(
+        SyncTargetPreset preset,
+        params (SyncDataKind Kind, bool Enabled)[] expected)
+    {
+        Assert.AreEqual(expected.Length, preset.FeedDefaults.Count);
+        CollectionAssert.AreEquivalent(
+            expected.Select(item => item.Kind).ToArray(),
+            preset.SupportedDataKinds.ToArray());
+        foreach (var (kind, enabled) in expected)
+        {
+            Assert.AreEqual(enabled, preset.FeedDefaults[kind], $"Unexpected {preset.Id} default for {kind}.");
+        }
     }
 
     [TestMethod]

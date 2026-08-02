@@ -100,6 +100,36 @@ public sealed class TomlConfigurationRepository(
             write.BackupPath);
     }
 
+    public async Task<ConfigurationRepositoryCommitResult> CommitDocumentAsync(
+        ConfigurationDocumentCommitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var baselineContents = request.BaselineContents;
+        if (ConfigurationDocumentRevision.FromContents(baselineContents) != request.ExpectedRevision)
+        {
+            return new(
+                AtomicTomlWriteState.Invalid,
+                Error: "The expected configuration revision does not match its baseline contents.");
+        }
+
+        var load = SparseTomlDocument.Load(request.DesiredContents, out var document);
+        var validation = load.IsValid && document is not null ? document.ValidateForMutation() : load;
+        if (!validation.IsValid)
+        {
+            return new(AtomicTomlWriteState.Invalid, ValidationError: validation.Error);
+        }
+
+        var write = await store.SaveDocumentAsync(
+            request.Path,
+            baselineContents,
+            request.DesiredContents,
+            cancellationToken).ConfigureAwait(false);
+        return write.IsSuccess
+            ? new(write.State, new ConfigurationDocumentSnapshot(request.Path, request.DesiredContents), write.BackupPath)
+            : new(write.State, BackupPath: write.BackupPath, ValidationError: write.ValidationError, Error: write.Error);
+    }
+
     private static SparseTomlEditResult ApplyChanges(
         byte[] baselineContents,
         ConfigurationChangeSet changeSet)

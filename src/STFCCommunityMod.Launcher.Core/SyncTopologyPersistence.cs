@@ -185,7 +185,7 @@ public static class SyncTopologyPersistencePlanner
                         "SYNC_LEGACY_MIGRATION_REQUIRED",
                         desiredName,
                         null,
-                        "Editing or renaming the virtual legacy target requires explicit migration confirmation."));
+                        "Editing or renaming the virtual root destination requires explicit migration confirmation."));
                     continue;
                 }
 
@@ -480,7 +480,7 @@ public sealed record SyncTopologyPersistenceCommitResult(
     SparseTomlError? ValidationError = null,
     string? Error = null);
 
-public sealed class SyncTopologyPersistenceWorkspace
+public sealed class SyncTopologyEditSession
 {
     private readonly AtomicTomlStore store;
     private SyncTopologyTomlLoadResult baseline;
@@ -491,7 +491,7 @@ public sealed class SyncTopologyPersistenceWorkspace
         new ReadOnlyDictionary<string, SyncTargetKindChangePolicy>(
             new Dictionary<string, SyncTargetKindChangePolicy>(StringComparer.Ordinal));
 
-    private SyncTopologyPersistenceWorkspace(
+    private SyncTopologyEditSession(
         ConfigurationDocumentSnapshot snapshot,
         SyncTopologyTomlLoadResult baseline,
         AtomicTomlStore store)
@@ -522,7 +522,7 @@ public sealed class SyncTopologyPersistenceWorkspace
 
     public static SyncTopologyTomlLoadResult Load(
         ConfigurationDocumentSnapshot snapshot,
-        out SyncTopologyPersistenceWorkspace? workspace,
+        out SyncTopologyEditSession? workspace,
         AtomicTomlStore? store = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -608,4 +608,37 @@ public sealed class SyncTopologyPersistenceWorkspace
         IsStale = false;
         return new(write.State, snapshot, plan, write.BackupPath);
     }
+
+    internal SyncTopologyTomlLoadResult AcceptCommittedSnapshot(ConfigurationDocumentSnapshot committedSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(committedSnapshot);
+        var load = SyncTopologyTomlAdapter.Load(committedSnapshot.Contents);
+        if (!load.IsValid || load.Topology is null)
+        {
+            return load;
+        }
+
+        snapshot = committedSnapshot;
+        baseline = load;
+        Desired = load.Topology;
+        renames = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(StringComparer.Ordinal));
+        kindChangeDecisions = new ReadOnlyDictionary<string, SyncTargetKindChangePolicy>(
+            new Dictionary<string, SyncTargetKindChangePolicy>(StringComparer.Ordinal));
+        HasPendingChanges = false;
+        IsStale = false;
+        return load;
+    }
+
+    internal void MarkStale() => IsStale = true;
+}
+
+// Compatibility entry point for callers compiled against the original spike name. New code should
+// depend on SyncTopologyEditSession: it owns the complete staged Data Sync transaction.
+public static class SyncTopologyPersistenceWorkspace
+{
+    public static SyncTopologyTomlLoadResult Load(
+        ConfigurationDocumentSnapshot snapshot,
+        out SyncTopologyEditSession? workspace,
+        AtomicTomlStore? store = null) =>
+        SyncTopologyEditSession.Load(snapshot, out workspace, store);
 }

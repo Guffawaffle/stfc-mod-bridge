@@ -145,6 +145,30 @@ public sealed record ConfigurationRepositoryCommitResult(
         && CommittedSnapshot is not null;
 }
 
+public sealed class ConfigurationDocumentCommitRequest
+{
+    private readonly byte[] baselineContents;
+    private readonly byte[] desiredContents;
+
+    public ConfigurationDocumentCommitRequest(
+        string path,
+        ConfigurationDocumentRevision expectedRevision,
+        byte[] baselineContents,
+        byte[] desiredContents)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        Path = System.IO.Path.GetFullPath(path);
+        ExpectedRevision = expectedRevision ?? throw new ArgumentNullException(nameof(expectedRevision));
+        this.baselineContents = [.. baselineContents];
+        this.desiredContents = [.. desiredContents];
+    }
+
+    public string Path { get; }
+    public ConfigurationDocumentRevision ExpectedRevision { get; }
+    public byte[] BaselineContents => [.. baselineContents];
+    public byte[] DesiredContents => [.. desiredContents];
+}
+
 public interface IConfigurationRepository
 {
     ConfigurationRepositoryReadResult Read(string? configurationPath);
@@ -152,4 +176,11 @@ public interface IConfigurationRepository
     Task<ConfigurationRepositoryCommitResult> CommitAsync(
         ConfigurationCommitRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<ConfigurationRepositoryCommitResult> CommitDocumentAsync(
+        ConfigurationDocumentCommitRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ConfigurationRepositoryCommitResult(
+            AtomicTomlWriteState.Invalid,
+            Error: "This configuration repository does not support document transactions."));
 }

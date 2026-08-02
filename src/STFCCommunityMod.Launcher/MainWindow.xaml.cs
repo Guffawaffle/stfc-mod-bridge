@@ -19,6 +19,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 680;
+    private const double SettingsMinWidth = 960;
+    private const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
     private const string GuffawaffleSchemaResource =
@@ -518,8 +520,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
 
-        MinWidth = isOpen ? SettingsWidth : 560;
-        MinHeight = isOpen ? 680 : 620;
+        MinWidth = isOpen ? SettingsMinWidth : 560;
+        MinHeight = isOpen ? SettingsMinHeight : 620;
         if (WindowState != WindowState.Normal)
         {
             return;

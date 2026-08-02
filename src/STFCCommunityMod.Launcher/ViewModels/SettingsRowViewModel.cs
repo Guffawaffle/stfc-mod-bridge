@@ -176,8 +176,6 @@ public sealed class SettingsRowViewModel :
 
     public bool IsDirty => valueState.IsDirty;
 
-    public bool IsCustom => DraftHasOverride;
-
     public bool HasOverflowActions => IsKeybindingEditor || DraftHasOverride;
 
     public bool IsExperimental =>
@@ -185,8 +183,8 @@ public sealed class SettingsRowViewModel :
 
     public string EffectiveState =>
         IsDirty
-            ? DraftHasOverride ? "Unsaved custom value" : "Unsaved default"
-            : DraftHasOverride ? "Custom" : "Default";
+            ? DraftHasOverride ? "Unsaved value" : "Unsaved default"
+            : DraftHasOverride ? "Configured" : "Default";
 
     public string EffectiveValue => FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
 
@@ -202,7 +200,7 @@ public sealed class SettingsRowViewModel :
         $"Revert {Title} to saved value {SavedValueText}";
 
     public string RevertDraftAutomationHelp =>
-        $"Restores both the saved value and its saved {(SavedHasOverride ? "custom override" : "default")} state.";
+        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "default")} state.";
 
     public string UseDefaultLabel => $"Use default: {DefaultValueText}";
 
@@ -571,7 +569,6 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(SavedHasOverride));
         OnPropertyChanged(nameof(DraftHasOverride));
         OnPropertyChanged(nameof(IsDirty));
-        OnPropertyChanged(nameof(IsCustom));
         OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));

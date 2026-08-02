@@ -198,7 +198,7 @@ public static class SyncTopologyTomlAdapter
                 diagnostics.Add(new(
                     "SYNC_TARGET_MODE_INVALID",
                     SyncTopologyDiagnosticSeverity.Warning,
-                    "The target mode is unknown and resolves as legacy until explicitly corrected.",
+                    "The target mode is unknown and resolves as ordinary sync until explicitly corrected.",
                     name,
                     "mode"));
             }
@@ -243,7 +243,7 @@ public static class SyncTopologyTomlAdapter
             diagnostics.Add(new(
                 "SYNC_LEGACY_ROOT_INCOMPLETE",
                 SyncTopologyDiagnosticSeverity.Warning,
-                "Legacy root sync credentials are incomplete and do not create a target."));
+                "Older root sync credentials are incomplete and do not create a destination."));
             return false;
         }
 
@@ -252,7 +252,7 @@ public static class SyncTopologyTomlAdapter
             diagnostics.Add(new(
                 "SYNC_LEGACY_ROOT_CONFLICT",
                 SyncTopologyDiagnosticSeverity.Error,
-                "Legacy root credentials conflict with the named default target.",
+                "Older root sync credentials conflict with the named default destination.",
                 "default"));
             return false;
         }
@@ -264,7 +264,7 @@ public static class SyncTopologyTomlAdapter
         diagnostics.Add(new(
             "SYNC_LEGACY_ROOT_CONVERTED",
             SyncTopologyDiagnosticSeverity.Info,
-            "Legacy root credentials are represented as a virtual default target without changing the source.",
+            "Older root sync credentials are represented as a virtual default destination without changing the source.",
             "default"));
         return true;
     }

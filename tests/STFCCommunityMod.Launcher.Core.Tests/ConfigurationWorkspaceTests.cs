@@ -61,6 +61,51 @@ public sealed class ConfigurationWorkspaceTests
     }
 
     [TestMethod]
+    public async Task DataSyncCommitUsesConfigurationWorkspaceDocumentTransaction()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"workspace-sync-{Guid.NewGuid():N}.toml");
+        await File.WriteAllTextAsync(path, "# shared transaction fixture\n", new UTF8Encoding(false));
+        try
+        {
+            var load = ConfigurationWorkspace.Load(
+                path,
+                LoadCatalog(),
+                new TomlConfigurationRepository(),
+                out var workspace);
+            Assert.IsTrue(load.IsSuccess, load.Error);
+            var syncLoad = workspace!.CreateSyncTopologyEditSession(out var session);
+            Assert.IsTrue(syncLoad.IsValid, syncLoad.Error?.Message);
+
+            var added = session!.Desired.AddTarget("community", SyncTargetKind.LegacyCommunity);
+            var enabled = added.Topology.SetTargetEnabled("community", true);
+            var configured = enabled.Topology.UpdateTarget(
+                "community",
+                target => target.WithConnection(
+                    "https://community.example.invalid/sync",
+                    SyncSecret.FromPlainText("fixture-secret")));
+            session.Stage(configured.Topology);
+
+            var result = await workspace.CommitSyncAsync(session);
+
+            Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+            Assert.IsFalse(session.HasPendingChanges);
+            Assert.AreEqual(workspace.BaselineRevision, session.BaselineRevision);
+            StringAssert.Contains(await File.ReadAllTextAsync(path), "[sync.targets.community]");
+            Assert.IsTrue(File.Exists(path + ".bak"));
+        }
+        finally
+        {
+            foreach (var candidate in new[] { path, path + ".bak" })
+            {
+                if (File.Exists(candidate))
+                {
+                    File.Delete(candidate);
+                }
+            }
+        }
+    }
+
+    [TestMethod]
     public void DiscardPublishesOneBatchedStructuralTransition()
     {
         var catalog = LoadCatalog();

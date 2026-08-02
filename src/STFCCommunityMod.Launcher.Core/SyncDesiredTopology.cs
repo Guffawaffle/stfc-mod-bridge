@@ -34,7 +34,8 @@ public sealed class SyncDesiredTopology
 
     public SyncTopologyTransitionResult AddTarget(string name, SyncTargetKind kind)
     {
-        var identity = kind == SyncTargetKind.LocalSidecar ? LocalSidecarIdentity : name;
+        var definition = SyncTargetTypeCatalog.Get(kind);
+        var identity = definition.FixedIdentity ?? name;
         var nameDiagnostic = ValidateIdentity(identity, kind);
         if (nameDiagnostic is not null)
         {
@@ -46,7 +47,6 @@ public sealed class SyncDesiredTopology
             return Failed(Error("SYNC_TARGET_NAME_DUPLICATE", identity, "identity", "A sync target already uses this name."));
         }
 
-        var definition = SyncTargetTypeCatalog.Get(kind);
         if (targets.Values.Count(target => target.Kind == kind) >= definition.MaximumInstances)
         {
             return Failed(Error("SYNC_TARGET_CARDINALITY", identity, "kind", "This target kind has reached its instance limit."));
@@ -95,7 +95,7 @@ public sealed class SyncDesiredTopology
             return Failed(Error("SYNC_TARGET_NOT_FOUND", currentName, null, "The sync target no longer exists."));
         }
 
-        if (target.Kind == SyncTargetKind.LocalSidecar)
+        if (SyncTargetTypeCatalog.Get(target.Kind).FixedIdentity is not null)
         {
             return Failed(Error(
                 "SYNC_SIDECAR_IDENTITY_FIXED",
@@ -128,7 +128,7 @@ public sealed class SyncDesiredTopology
             return Failed(Error("SYNC_TARGET_NOT_FOUND", sourceName, null, "The sync target no longer exists."));
         }
 
-        if (source.Kind == SyncTargetKind.LocalSidecar)
+        if (SyncTargetTypeCatalog.Get(source.Kind).MaximumInstances == 1)
         {
             return Failed(Error(
                 "SYNC_TARGET_CARDINALITY",
@@ -172,7 +172,8 @@ public sealed class SyncDesiredTopology
             return Succeeded(this);
         }
 
-        if (target.Kind == SyncTargetKind.LocalSidecar || newKind == SyncTargetKind.LocalSidecar)
+        if (SyncTargetTypeCatalog.Get(target.Kind).FixedIdentity is not null
+            || SyncTargetTypeCatalog.Get(newKind).FixedIdentity is not null)
         {
             return Failed(Error(
                 "SYNC_KIND_CHANGE_UNSUPPORTED",
@@ -217,9 +218,9 @@ public sealed class SyncDesiredTopology
 
     internal static SyncTopologyDiagnostic? ValidateIdentity(string name, SyncTargetKind kind)
     {
-        if (kind == SyncTargetKind.LocalSidecar)
+        if (SyncTargetTypeCatalog.Get(kind).FixedIdentity is { } fixedIdentity)
         {
-            return string.Equals(name, LocalSidecarIdentity, StringComparison.Ordinal)
+            return string.Equals(name, fixedIdentity, StringComparison.Ordinal)
                 ? null
                 : Error("SYNC_SIDECAR_IDENTITY_FIXED", name, "identity", "The local Sidecar identity is fixed.");
         }
@@ -308,7 +309,7 @@ public static class SyncTopologyResolver
         var definition = SyncTargetTypeCatalog.Get(target.Kind);
         if (target.Enabled
             && definition.RequiresUrl
-            && !TryValidateEndpoint(target.Url, target.Kind, out var endpointCode, out var endpointMessage))
+            && !TryValidateEndpoint(target.Url, definition.EndpointPolicy, out var endpointCode, out var endpointMessage))
         {
             diagnostics.Add(SyncDesiredTopology.Error(endpointCode, target.Name, "url", endpointMessage));
         }
@@ -441,7 +442,7 @@ public static class SyncTopologyResolver
 
     private static bool TryValidateEndpoint(
         string value,
-        SyncTargetKind kind,
+        SyncEndpointPolicy endpointPolicy,
         out string code,
         out string message)
     {
@@ -461,14 +462,14 @@ public static class SyncTopologyResolver
             return false;
         }
 
-        if (kind == SyncTargetKind.LocalSidecar && !uri.IsLoopback)
+        if (endpointPolicy == SyncEndpointPolicy.LoopbackOnly && !uri.IsLoopback)
         {
             code = "SYNC_SIDECAR_ENDPOINT_NOT_LOOPBACK";
             message = "The local Sidecar endpoint must use a loopback host.";
             return false;
         }
 
-        if (kind != SyncTargetKind.LocalSidecar && uri.IsLoopback)
+        if (endpointPolicy == SyncEndpointPolicy.NonLoopback && uri.IsLoopback)
         {
             code = "SYNC_LOOPBACK_TARGET_INVALID";
             message = "Loopback Sidecar endpoints belong to the local Sidecar target.";

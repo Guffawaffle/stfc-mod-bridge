@@ -14,6 +14,13 @@ public enum SyncBooleanOverrideChoice
     Disabled,
 }
 
+public enum SyncProxyOverrideChoice
+{
+    UseGlobal,
+    NoProxy,
+    Custom,
+}
+
 public sealed record SyncOverrideChoice(SyncBooleanOverrideChoice Value, string Label);
 
 public sealed record SyncFleetRuntimeModeOption(string Value, string Label);
@@ -30,28 +37,31 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private readonly Func<string?> configurationPathProvider;
     private readonly Func<bool> hasSiblingPendingChanges;
     private readonly IConfigurationRepository repository;
+    private readonly Func<ConfigurationWorkspace?> configurationWorkspaceProvider;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
-    private SyncTopologyPersistenceWorkspace? workspace;
+    private readonly HashSet<string> customProxyEditors = new(StringComparer.Ordinal);
+    private SyncTopologyEditSession? workspace;
     private string operationStatus = string.Empty;
-    private string newTargetName = string.Empty;
     private bool migrateLegacyRoot;
+    private SyncWorkspaceTabViewModel? selectedTab;
+    private SyncAddDestinationWizardViewModel? addWizard;
+    private bool restartRequired;
 
     public SyncWorkspaceViewModel(
         Func<string?> configurationPathProvider,
         IConfigurationRepository repository,
-        Func<bool>? hasSiblingPendingChanges = null)
+        Func<bool>? hasSiblingPendingChanges = null,
+        Func<ConfigurationWorkspace?>? configurationWorkspaceProvider = null)
     {
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
         this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
         this.hasSiblingPendingChanges = hasSiblingPendingChanges ?? (() => false);
+        this.configurationWorkspaceProvider = configurationWorkspaceProvider ?? (() => null);
         discardCommand = new(Discard, () => HasPendingChanges);
         saveCommand = new(SaveAsync, () => CanSave);
-        AddSidecarCommand = new SettingsActionCommand(AddSidecar, () => CanAddSidecar);
-        AddMajelCommand = new SettingsActionCommand(() => AddExternal(SyncTargetKind.MajelIngest));
-        AddLegacyCommand = new SettingsActionCommand(() => AddExternal(SyncTargetKind.LegacyCommunity));
-        AddSpocksClubCommand = new SettingsActionCommand(() => AddPreset("spocks_club"));
+        OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => IsConfigurationReady);
         Reload();
     }
 
@@ -65,15 +75,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     public ObservableCollection<SyncGlobalFeedViewModel> GlobalFeeds { get; } = [];
 
+    public ObservableCollection<SyncWorkspaceTabViewModel> Tabs { get; } = [];
+
     internal static IReadOnlyList<SyncOverrideChoice> BooleanOverrideChoices => OverrideChoices;
 
-    public ICommand AddSidecarCommand { get; }
-
-    public ICommand AddMajelCommand { get; }
-
-    public ICommand AddLegacyCommand { get; }
-
-    public ICommand AddSpocksClubCommand { get; }
+    public ICommand OpenAddDestinationCommand { get; }
 
     public ICommand DiscardCommand => discardCommand;
 
@@ -84,6 +90,47 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public bool HasPendingChanges => workspace?.HasPendingChanges ?? false;
 
     public bool IsStale => workspace?.IsStale ?? false;
+
+    public SyncWorkspaceTabViewModel? SelectedTab
+    {
+        get => selectedTab;
+        set
+        {
+            if (SetField(ref selectedTab, value))
+            {
+                foreach (var tab in Tabs)
+                {
+                    tab.IsSelected = ReferenceEquals(tab, value);
+                }
+                OnPropertyChanged(nameof(IsGlobalTabSelected));
+                OnPropertyChanged(nameof(SelectedDestination));
+            }
+        }
+    }
+
+    public bool IsGlobalTabSelected => SelectedTab?.IsGlobal ?? true;
+
+    public SyncTargetCardViewModel? SelectedDestination => SelectedTab?.Destination;
+
+    public SyncAddDestinationWizardViewModel? AddWizard
+    {
+        get => addWizard;
+        private set
+        {
+            if (SetField(ref addWizard, value))
+            {
+                OnPropertyChanged(nameof(IsAddWizardOpen));
+            }
+        }
+    }
+
+    public bool IsAddWizardOpen => AddWizard is not null;
+
+    public bool RestartRequired
+    {
+        get => restartRequired;
+        private set => SetField(ref restartRequired, value);
+    }
 
     public bool IsCommittable =>
         workspace is not null
@@ -111,36 +158,26 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         && !IsStale
         && !hasSiblingPendingChanges();
 
-    public bool CanAddSidecar =>
-        workspace is not null
-        && !workspace.Desired.Targets.Values.Any(target => target.Kind == SyncTargetKind.LocalSidecar);
-
     public string ConfigurationStatus => IsConfigurationReady
         ? "Changes are staged until Save. The running game keeps its startup topology until restart."
-        : "Select a game folder with a supported configuration to set up sync.";
+        : "Select a game folder with a supported configuration to set up Data Sync.";
 
-    public string PendingChangesText => HasPendingChanges ? "Unsaved sync changes" : "No unsaved sync changes";
+    public string PendingChangesText => HasPendingChanges ? "Unsaved data sync changes" : "No unsaved data sync changes";
 
     public string SaveAvailability => IsStale
         ? "The TOML changed outside the launcher. Reload before saving."
         : hasSiblingPendingChanges()
-            ? "Save or discard the pending non-sync settings before saving sync setup."
+            ? "Save or discard the pending non-sync settings before saving Data Sync."
         : !IsCommittable
             ? "Fix the target validation errors before saving."
             : CanSave
-                ? "Save all staged sync changes atomically."
-                : "Stage a valid sync change before saving.";
+                ? "Save all staged Data Sync changes atomically."
+                : "Stage a valid Data Sync change before saving.";
 
     public string OperationStatus
     {
         get => operationStatus;
         private set => SetField(ref operationStatus, value);
-    }
-
-    public string NewTargetName
-    {
-        get => newTargetName;
-        set => SetField(ref newTargetName, value?.Trim() ?? string.Empty);
     }
 
     public string GlobalProxy
@@ -193,22 +230,33 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
 
         workspace = null;
+        if (configurationWorkspaceProvider() is { } configurationWorkspace)
+        {
+            var sharedLoad = configurationWorkspace.CreateSyncTopologyEditSession(out workspace);
+            OperationStatus = sharedLoad.IsValid && workspace is not null
+                ? sharedLoad.Diagnostics.FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)?.Message
+                    ?? string.Empty
+                : $"Data Sync is unavailable because the topology could not be loaded: {sharedLoad.Error?.Message}";
+            Rebuild();
+            return;
+        }
+
         var read = repository.Read(configurationPathProvider());
         if (!read.IsSuccess || read.Snapshot is null)
         {
             OperationStatus = read.State == ConfigurationRepositoryReadState.Invalid
-                ? $"Sync setup is unavailable because the TOML is unsafe to edit: {read.ValidationError?.Message}"
+                ? $"Data Sync is unavailable because the TOML is unsafe to edit: {read.ValidationError?.Message}"
                 : read.State == ConfigurationRepositoryReadState.IoFailure
-                    ? $"Sync setup is unavailable: {read.Error}"
+                    ? $"Data Sync is unavailable: {read.Error}"
                     : string.Empty;
             Rebuild();
             return;
         }
 
-        var load = SyncTopologyPersistenceWorkspace.Load(read.Snapshot, out workspace);
+        var load = SyncTopologyEditSession.Load(read.Snapshot, out workspace);
         if (!load.IsValid || workspace is null)
         {
-            OperationStatus = $"Sync setup is unavailable because the topology could not be loaded: {load.Error?.Message}";
+            OperationStatus = $"Data Sync is unavailable because the topology could not be loaded: {load.Error?.Message}";
         }
         else
         {
@@ -235,6 +283,20 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     internal bool GetGlobalUnsafeTls() =>
         workspace?.Desired.GlobalDefaults.AllowUnsafeTlsWithoutCertificateValidation ?? false;
 
+    internal bool IsCustomProxyEditor(string name) => customProxyEditors.Contains(name);
+
+    internal void SetCustomProxyEditor(string name, bool enabled)
+    {
+        if (enabled)
+        {
+            customProxyEditors.Add(name);
+        }
+        else
+        {
+            customProxyEditors.Remove(name);
+        }
+    }
+
     internal IReadOnlyList<SyncTopologyDiagnostic> GetDiagnostics(string name) =>
         workspace?.Desired.Resolve().Diagnostics.Where(item => item.TargetName == name).ToArray() ?? [];
 
@@ -256,6 +318,29 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
     }
 
+    internal void DuplicateTarget(string name)
+    {
+        if (workspace is null)
+        {
+            return;
+        }
+
+        var baseName = name + "-copy";
+        var candidate = baseName;
+        for (var suffix = 2; workspace.Desired.Targets.ContainsKey(candidate); ++suffix)
+        {
+            candidate = $"{baseName}-{suffix}";
+        }
+
+        var duplicate = workspace.Desired.DuplicateTarget(name, candidate);
+        if (duplicate.Succeeded)
+        {
+            duplicate = duplicate.Topology.SetTargetEnabled(candidate, true);
+        }
+        Apply(duplicate);
+        SelectTab("destination:" + candidate);
+    }
+
     internal void SetGlobalFeed(SyncDataKind kind, bool enabled)
     {
         if (workspace is null)
@@ -266,38 +351,74 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Stage(workspace.Desired.WithGlobalDefaults(workspace.Desired.GlobalDefaults.WithDataKind(kind, enabled)));
     }
 
-    private void AddSidecar()
-    {
-        if (workspace is not null)
-        {
-            Apply(workspace.Desired.AddTarget(SyncDesiredTopology.LocalSidecarIdentity, SyncTargetKind.LocalSidecar));
-        }
-    }
-
-    private void AddPreset(string preset)
+    private void OpenAddDestination()
     {
         if (workspace is null)
         {
             return;
         }
 
-        Apply(workspace.Desired.AddPreset(preset), enableExternal: true);
+        AddWizard = new SyncAddDestinationWizardViewModel(this, workspace.Desired);
     }
 
-    private void AddExternal(SyncTargetKind kind)
+    internal void CancelAddDestination() => AddWizard = null;
+
+    internal void CompleteAddDestination(SyncAddDestinationWizardViewModel wizard)
     {
-        if (workspace is null)
+        if (workspace is null || !ReferenceEquals(AddWizard, wizard))
         {
             return;
         }
 
-        var name = string.IsNullOrWhiteSpace(NewTargetName)
-            ? kind == SyncTargetKind.MajelIngest ? "majel" : "community"
-            : NewTargetName;
-        Apply(workspace.Desired.AddTarget(name, kind), enableExternal: true);
+        // Presets only prefill ordinary destination fields. They never create a distinct runtime type
+        // or lock the user to the preset's suggested identity.
+        var transition = workspace.Desired.AddTarget(wizard.Identity, wizard.Kind);
+        if (!transition.Succeeded)
+        {
+            wizard.SetError(transition.Diagnostic?.Message ?? "The destination could not be staged.");
+            return;
+        }
+
+        var identity = transition.Topology.Targets.Keys.Except(workspace.Desired.Targets.Keys, StringComparer.Ordinal).Single();
+        var desired = transition.Topology.SetTargetEnabled(identity, true).Topology;
+        var update = desired.UpdateTarget(
+            identity,
+            target =>
+            {
+                var changed = target.WithConnection(
+                    wizard.Endpoint,
+                    string.IsNullOrWhiteSpace(wizard.Token)
+                        ? target.Token
+                        : SyncSecret.FromPlainText(wizard.Token));
+                foreach (var feed in wizard.Feeds)
+                {
+                    changed = changed.WithDataOverride(feed.Kind, SyncOverride.Explicit(feed.IsEnabled));
+                }
+
+                if (wizard.PresetId is not null)
+                {
+                    var documentedFeeds = wizard.Feeds.Select(feed => feed.Kind).ToHashSet();
+                    foreach (var kind in SyncTargetTypeCatalog.Get(wizard.Kind).SupportedDataKinds
+                                 .Where(kind => !documentedFeeds.Contains(kind)))
+                    {
+                        changed = changed.WithDataOverride(kind, SyncOverride.Explicit(false));
+                    }
+                }
+
+                return changed;
+            });
+        if (!update.Succeeded)
+        {
+            wizard.SetError(update.Diagnostic?.Message ?? "The destination could not be configured.");
+            return;
+        }
+
+        Stage(update.Topology);
+        AddWizard = null;
+        SelectTab("destination:" + identity);
     }
 
-    private void Apply(SyncTopologyTransitionResult transition, bool enableExternal = false)
+    private void Apply(SyncTopologyTransitionResult transition)
     {
         if (!transition.Succeeded)
         {
@@ -305,15 +426,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
-        var desired = transition.Topology;
-        if (enableExternal)
-        {
-            var added = desired.Targets.Values.ExceptBy(workspace!.Desired.Targets.Keys, target => target.Name).Single();
-            desired = desired.SetTargetEnabled(added.Name, true).Topology;
-            NewTargetName = string.Empty;
-        }
-
-        Stage(desired);
+        Stage(transition.Topology);
     }
 
     private void Stage(SyncDesiredTopology desired)
@@ -326,7 +439,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private void Discard()
     {
         workspace?.Discard();
-        OperationStatus = "Unsaved sync changes discarded.";
+        customProxyEditors.Clear();
+        OperationStatus = "Unsaved Data Sync changes discarded.";
         Rebuild();
     }
 
@@ -337,19 +451,23 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
-        OperationStatus = "Saving sync setup…";
-        var result = await workspace.CommitAsync(MigrateLegacyRoot);
+        OperationStatus = "Saving Data Sync…";
+        var configurationWorkspace = configurationWorkspaceProvider();
+        var result = configurationWorkspace is null
+            ? await workspace.CommitAsync(MigrateLegacyRoot)
+            : await configurationWorkspace.CommitSyncAsync(workspace, MigrateLegacyRoot);
         OperationStatus = result.State switch
         {
-            AtomicTomlWriteState.Succeeded => "Sync setup saved. Restart the game to activate the new topology.",
-            AtomicTomlWriteState.NoChange => "No sync changes were needed.",
+            AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
+            AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
             AtomicTomlWriteState.Conflict => "The TOML changed outside the launcher. External edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid => $"Nothing was written: {result.ValidationError?.Message ?? FirstPlanDiagnostic(result)}",
-            _ => $"Sync setup could not be saved: {result.Error}",
+            _ => $"Data Sync could not be saved: {result.Error}",
         };
         if (result.State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange)
         {
             migrateLegacyRoot = false;
+            RestartRequired = result.State == AtomicTomlWriteState.Succeeded;
             Committed?.Invoke(this, EventArgs.Empty);
         }
         Rebuild();
@@ -357,27 +475,47 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     private void Rebuild()
     {
+        var selectedId = SelectedTab?.Id ?? "global";
         Targets.Clear();
         GlobalFeeds.Clear();
+        Tabs.Clear();
+        customProxyEditors.RemoveWhere(name => workspace is null || !workspace.Desired.Targets.ContainsKey(name));
+        Tabs.Add(SyncWorkspaceTabViewModel.Global());
         if (workspace is not null)
         {
-            foreach (var kind in Enum.GetValues<SyncDataKind>().Where(kind => kind != SyncDataKind.FleetRuntime))
+            foreach (var kind in SyncTargetTypeCatalog.Feeds.Keys
+                         .Where(kind => SyncTargetTypeCatalog.All.Values.Any(type =>
+                             type.ExposurePolicy == SyncTargetExposurePolicy.Creatable
+                             && type.InheritsGlobalSync
+                             && type.SupportedDataKinds.Contains(kind)))
+                         .OrderBy(kind => SyncTargetTypeCatalog.GetFeed(kind).DisplayName, StringComparer.Ordinal))
             {
                 GlobalFeeds.Add(new(this, kind));
             }
 
             foreach (var target in workspace.Desired.Targets.Values.OrderBy(target => target.Name, StringComparer.Ordinal))
             {
-                Targets.Add(new(this, target.Name));
+                if (SyncTargetTypeCatalog.Get(target.Kind).ExposurePolicy == SyncTargetExposurePolicy.Hidden)
+                {
+                    continue;
+                }
+
+                var destination = new SyncTargetCardViewModel(this, target.Name);
+                Targets.Add(destination);
+                Tabs.Add(SyncWorkspaceTabViewModel.ForDestination(destination));
             }
         }
+
+        SelectedTab = Tabs.FirstOrDefault(tab => tab.Id == selectedId) ?? Tabs[0];
 
         OnPropertyChanged(string.Empty);
         discardCommand.RaiseCanExecuteChanged();
         saveCommand.RaiseCanExecuteChanged();
-        (AddSidecarCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    private void SelectTab(string id) => SelectedTab = Tabs.FirstOrDefault(tab => tab.Id == id) ?? SelectedTab;
 
     private static string? FirstPlanDiagnostic(SyncTopologyPersistenceCommitResult result) =>
         result.Plan is { Diagnostics.Count: > 0 } plan ? plan.Diagnostics[0].Message : null;
@@ -401,7 +539,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 public sealed class SyncGlobalFeedViewModel(SyncWorkspaceViewModel owner, SyncDataKind kind) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string Label => SyncPresentation.FeedLabel(kind);
+    public string Label => SyncTargetTypeCatalog.GetFeed(kind).DisplayName;
+    public string Description => SyncTargetTypeCatalog.GetFeed(kind).Description;
     public bool IsEnabled
     {
         get => owner.IsConfigurationReady && owner.GetGlobalFeed(kind);
@@ -433,23 +572,33 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         this.owner = owner;
         this.name = name;
         RemoveCommand = new SettingsActionCommand(() => owner.RemoveTarget(name));
-        UseInheritedProxyCommand = new SettingsActionCommand(
-            () => owner.UpdateTarget(name, target => target.WithProxy(SyncOverride.Inherited<string>())));
+        DuplicateCommand = new SettingsActionCommand(
+            () => owner.DuplicateTarget(name),
+            () => Definition.MaximumInstances > 1);
         ClearTokenCommand = new SettingsActionCommand(ClearToken);
         ReplaceTokenCommand = new SettingsActionCommand(ReplaceToken, () => !string.IsNullOrWhiteSpace(replacementToken));
-        Feeds = SyncTargetTypeCatalog.Get(Draft.Kind).SupportedDataKinds
-            .OrderBy(SyncPresentation.FeedLabel, StringComparer.Ordinal)
+        var definition = SyncTargetTypeCatalog.Get(Draft.Kind);
+        var supportedFeeds = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url)?.SupportedDataKinds
+            ?? definition.SupportedDataKinds;
+        Feeds = supportedFeeds
+            .OrderBy(kind => SyncTargetTypeCatalog.GetFeed(kind).DisplayName, StringComparer.Ordinal)
             .Select(kind => new SyncTargetFeedViewModel(owner, name, kind))
             .ToArray();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private SyncTargetDraft Draft => owner.GetTarget(name)!;
+    public SyncTargetTypeDefinition Definition => SyncTargetTypeCatalog.Get(Draft.Kind);
     public string Name => name;
-    public string KindLabel => SyncPresentation.KindLabel(Draft.Kind);
-    public string WireContract => SyncTargetTypeCatalog.Get(Draft.Kind).WireContract;
-    public bool CanDisable => Draft.Kind == SyncTargetKind.LocalSidecar;
-    public bool ShowSidecarControls => Draft.Kind == SyncTargetKind.LocalSidecar;
+    public string KindLabel => Definition.Kind == SyncTargetKind.LocalSidecar ? Definition.DisplayName : string.Empty;
+    public bool ShowKindLabel => !string.IsNullOrEmpty(KindLabel);
+    public string AdapterDescription => Definition.Description;
+    public string InheritanceLabel => Definition.InheritsGlobalSync ? "Global" : "Default";
+    public string WireContract => Definition.WireContract;
+    public bool CanDisable => Definition.SupportsDisabledState;
+    public bool ShowTypeSpecificControls => Definition.SupportsBattlelogEnrichment || Definition.SupportsFleetRuntimeMode;
+    public bool ShowBattlelogEnrichment => Definition.SupportsBattlelogEnrichment;
+    public bool ShowFleetRuntimeMode => Definition.SupportsFleetRuntimeMode;
     public bool IsEnabled
     {
         get => Draft.Enabled;
@@ -464,12 +613,53 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     public string ProxyText
     {
         get => Draft.Proxy.IsExplicit ? Draft.Proxy.Value : string.Empty;
-        set { owner.UpdateTarget(name, target => target.WithProxy(SyncOverride.Explicit(value ?? string.Empty))); NotifyAll(); }
+        set
+        {
+            owner.SetCustomProxyEditor(name, true);
+            owner.UpdateTarget(name, target => target.WithProxy(SyncOverride.Explicit(value ?? string.Empty)));
+            NotifyAll();
+        }
     }
+    public SyncProxyOverrideChoice ProxyChoice
+    {
+        get => owner.IsCustomProxyEditor(name)
+            ? SyncProxyOverrideChoice.Custom
+            : !Draft.Proxy.IsExplicit
+            ? SyncProxyOverrideChoice.UseGlobal
+            : string.IsNullOrEmpty(Draft.Proxy.Value)
+                ? SyncProxyOverrideChoice.NoProxy
+                : SyncProxyOverrideChoice.Custom;
+        set
+        {
+            if (value == SyncProxyOverrideChoice.Custom)
+            {
+                owner.SetCustomProxyEditor(name, true);
+                NotifyAll();
+                return;
+            }
+
+            owner.SetCustomProxyEditor(name, false);
+            owner.UpdateTarget(
+                name,
+                target => value switch
+                {
+                    SyncProxyOverrideChoice.UseGlobal => target.WithProxy(SyncOverride.Inherited<string>()),
+                    SyncProxyOverrideChoice.NoProxy => target.WithProxy(SyncOverride.Explicit(string.Empty)),
+                    _ => target,
+                });
+            NotifyAll();
+        }
+    }
+    public bool IsCustomProxy => ProxyChoice == SyncProxyOverrideChoice.Custom;
     public string ProxySummary
     {
         get
         {
+            if (owner.IsCustomProxyEditor(name) && (!Draft.Proxy.IsExplicit || string.IsNullOrEmpty(Draft.Proxy.Value)))
+            {
+                return "Enter a custom proxy URL.";
+            }
+
             if (!Draft.Proxy.IsExplicit)
             {
                 var inherited = SyncTargetTypeCatalog.Get(Draft.Kind).InheritsGlobalSync ? owner.GetGlobalProxy() : string.Empty;
@@ -488,6 +678,14 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     {
         get => ToChoice(Draft.AllowUnsafeTlsWithoutCertificateValidation);
         set { owner.UpdateTarget(name, target => target.WithUnsafeTls(FromChoice(value))); NotifyAll(); }
+    }
+    public bool EffectiveVerifySsl
+    {
+        get
+        {
+            var inherited = Definition.InheritsGlobalSync ? owner.GetGlobalVerifySsl() : true;
+            return Draft.VerifySsl.IsExplicit ? Draft.VerifySsl.Value : inherited;
+        }
     }
     public SyncBooleanOverrideChoice BattlelogEnrichmentChoice
     {
@@ -520,10 +718,11 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         }
     }
     public bool HasValidationError => owner.GetDiagnostics(name).Any(item => item.Severity == SyncTopologyDiagnosticSeverity.Error);
+    public string ReadinessLabel => HasValidationError ? "Needs attention" : "Ready";
     public string EffectiveFeeds => string.Join(", ", Feeds.Where(feed => feed.EffectiveEnabled).Select(feed => feed.Label).DefaultIfEmpty("None"));
     public IReadOnlyList<SyncTargetFeedViewModel> Feeds { get; }
     public ICommand RemoveCommand { get; }
-    public ICommand UseInheritedProxyCommand { get; }
+    public ICommand DuplicateCommand { get; }
     public ICommand ClearTokenCommand { get; }
     public ICommand ReplaceTokenCommand { get; }
 
@@ -568,7 +767,11 @@ public sealed class SyncTargetFeedViewModel(
     SyncDataKind kind) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string Label => SyncPresentation.FeedLabel(kind);
+    public SyncDataKind Kind => kind;
+    public string Label => SyncTargetTypeCatalog.GetFeed(kind).DisplayName;
+    public string InheritanceLabel => SyncTargetTypeCatalog.Get(owner.GetTarget(targetName)!.Kind).InheritsGlobalSync
+        ? "Global"
+        : "Default";
     [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "WPF binds this property through each feed row instance.")]
     public IReadOnlyList<SyncOverrideChoice> Choices => SyncWorkspaceViewModel.BooleanOverrideChoices;
     public SyncBooleanOverrideChoice Choice
@@ -607,15 +810,313 @@ public sealed class SyncTargetFeedViewModel(
     public string EffectiveSummary => $"Effective: {(EffectiveEnabled ? "On" : "Off")} · {(Choice == SyncBooleanOverrideChoice.UseGlobal ? "inherited" : "target override")}";
 }
 
-internal static class SyncPresentation
+public sealed class SyncWorkspaceTabViewModel : INotifyPropertyChanged
 {
-    public static string KindLabel(SyncTargetKind kind) => kind switch
+    private bool isSelected;
+    private SyncWorkspaceTabViewModel(string id, string displayName, SyncTargetCardViewModel? destination)
     {
-        SyncTargetKind.LocalSidecar => "Local Sidecar",
-        SyncTargetKind.MajelIngest => "Majel",
-        _ => "Community / legacy",
-    };
+        Id = id;
+        DisplayName = displayName;
+        Destination = destination;
+    }
 
-    public static string FeedLabel(SyncDataKind kind) => string.Concat(
-        kind.ToString().SelectMany((character, index) => index > 0 && char.IsUpper(character) ? new[] { ' ', character } : new[] { character }));
+    public string Id { get; }
+    public string DisplayName { get; }
+    public SyncTargetCardViewModel? Destination { get; }
+    public bool IsGlobal => Destination is null;
+    public string AdapterLabel => Destination?.KindLabel ?? string.Empty;
+    public string StatusLabel => Destination?.ReadinessLabel ?? string.Empty;
+    public string SecondaryLabel => string.IsNullOrEmpty(AdapterLabel)
+        ? StatusLabel
+        : $"{AdapterLabel} · {StatusLabel}";
+    public string AutomationName => IsGlobal
+        ? "Global Data Sync defaults"
+        : string.IsNullOrEmpty(AdapterLabel)
+            ? $"{DisplayName}, {StatusLabel}"
+            : $"{DisplayName}, {AdapterLabel}, {StatusLabel}";
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public bool IsSelected
+    {
+        get => isSelected;
+        internal set
+        {
+            if (isSelected == value)
+            {
+                return;
+            }
+
+            isSelected = value;
+            PropertyChanged?.Invoke(this, new(nameof(IsSelected)));
+        }
+    }
+
+    public static SyncWorkspaceTabViewModel Global() => new("global", "Global defaults", null);
+
+    public static SyncWorkspaceTabViewModel ForDestination(SyncTargetCardViewModel destination) =>
+        new("destination:" + destination.Name, destination.Name, destination);
+}
+
+public enum SyncAddDestinationStep
+{
+    Choose,
+    Configure,
+    FeedsAndReview,
+}
+
+public sealed class SyncAddChoiceViewModel : INotifyPropertyChanged
+{
+    private bool isSelected;
+    public SyncAddChoiceViewModel(SyncTargetTypeDefinition definition, SyncTargetPreset? preset = null)
+    {
+        Definition = definition;
+        Preset = preset;
+    }
+
+    public SyncTargetTypeDefinition Definition { get; }
+    public SyncTargetPreset? Preset { get; }
+    public SyncTargetKind Kind => Definition.Kind;
+    public string Title => Preset?.DisplayName ?? "Custom sync";
+    public string Eyebrow => Preset is null ? "Custom destination" : "Known preset";
+    public string Description => Preset?.Description ?? "Configure an ordinary sync destination from scratch.";
+    public string CapabilitySummary => Preset is null
+        ? Definition.CapabilitySummary
+        : $"{Preset.SupportedDataKinds.Count} documented feeds";
+    public bool IsAvailable { get; init; } = true;
+    public string Availability => IsAvailable ? string.Empty : "Already configured";
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public bool IsSelected
+    {
+        get => isSelected;
+        internal set
+        {
+            if (isSelected == value)
+            {
+                return;
+            }
+
+            isSelected = value;
+            PropertyChanged?.Invoke(this, new(nameof(IsSelected)));
+        }
+    }
+}
+
+public sealed class SyncWizardFeedViewModel : INotifyPropertyChanged
+{
+    private bool isEnabled;
+
+    public SyncWizardFeedViewModel(SyncDataKind kind, bool isEnabled)
+    {
+        Kind = kind;
+        this.isEnabled = isEnabled;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public SyncDataKind Kind { get; }
+    public string Label => SyncTargetTypeCatalog.GetFeed(Kind).DisplayName;
+    public bool IsEnabled
+    {
+        get => isEnabled;
+        set
+        {
+            if (isEnabled == value)
+            {
+                return;
+            }
+
+            isEnabled = value;
+            PropertyChanged?.Invoke(this, new(nameof(IsEnabled)));
+        }
+    }
+}
+
+public sealed class SyncWizardFieldViewModel : INotifyPropertyChanged
+{
+    private string value;
+
+    public SyncWizardFieldViewModel(SyncConnectionFieldDefinition definition, string value = "")
+    {
+        Definition = definition;
+        this.value = value;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public SyncConnectionFieldDefinition Definition { get; }
+    public string Id => Definition.Id;
+    public string DisplayName => Definition.DisplayName;
+    public string Description => Definition.Description;
+    public bool IsRequired => Definition.IsRequired;
+    public bool IsSecret => Definition.IsSecret;
+    public bool IsPlainText => !Definition.IsSecret;
+    public string Value
+    {
+        get => value;
+        set
+        {
+            if (this.value == value)
+            {
+                return;
+            }
+
+            this.value = value ?? string.Empty;
+            PropertyChanged?.Invoke(this, new(nameof(Value)));
+        }
+    }
+}
+
+public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
+{
+    private readonly SyncWorkspaceViewModel owner;
+    private readonly SyncDesiredTopology baseline;
+    private SyncAddChoiceViewModel? selectedChoice;
+    private SyncAddDestinationStep step;
+    private string identity = string.Empty;
+    private string error = string.Empty;
+
+    internal SyncAddDestinationWizardViewModel(SyncWorkspaceViewModel owner, SyncDesiredTopology baseline)
+    {
+        this.owner = owner;
+        this.baseline = baseline;
+        var choices = new List<SyncAddChoiceViewModel>();
+        foreach (var definition in SyncTargetTypeCatalog.All.Values
+                     .Where(type => type.ExposurePolicy == SyncTargetExposurePolicy.Creatable)
+                     .OrderBy(type => type.DisplayName, StringComparer.Ordinal))
+        {
+            var available = baseline.Targets.Values.Count(target => target.Kind == definition.Kind) < definition.MaximumInstances;
+            choices.Add(new(definition) { IsAvailable = available });
+            choices.AddRange(SyncTargetTypeCatalog.GetPresets(definition.Kind).Select(
+                preset => new SyncAddChoiceViewModel(definition, preset) { IsAvailable = available }));
+        }
+
+        Choices = choices;
+        BackCommand = new SettingsActionCommand(Back, () => Step != SyncAddDestinationStep.Choose);
+        NextCommand = new SettingsActionCommand(Next, CanContinue);
+        CancelCommand = new SettingsActionCommand(owner.CancelAddDestination);
+        FinishCommand = new SettingsActionCommand(() => owner.CompleteAddDestination(this), CanFinish);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public IReadOnlyList<SyncAddChoiceViewModel> Choices { get; }
+    public ObservableCollection<SyncWizardFeedViewModel> Feeds { get; } = [];
+    public ObservableCollection<SyncWizardFieldViewModel> Fields { get; } = [];
+    public ICommand BackCommand { get; }
+    public ICommand NextCommand { get; }
+    public ICommand CancelCommand { get; }
+    public ICommand FinishCommand { get; }
+
+    public SyncAddChoiceViewModel? SelectedChoice
+    {
+        get => selectedChoice;
+        set
+        {
+            if (selectedChoice == value || value is { IsAvailable: false })
+            {
+                return;
+            }
+
+            selectedChoice = value;
+            foreach (var choice in Choices)
+            {
+                choice.IsSelected = ReferenceEquals(choice, value);
+            }
+            if (value is not null)
+            {
+                Identity = value.Preset?.SuggestedIdentity
+                    ?? value.Definition.FixedIdentity
+                    ?? value.Definition.Id;
+                Fields.Clear();
+                foreach (var definition in value.Definition.ConnectionFields)
+                {
+                    var field = new SyncWizardFieldViewModel(
+                        definition,
+                        definition.Id == "endpoint"
+                            ? value.Preset?.DefaultUrl ?? value.Definition.DefaultUrl
+                            : string.Empty);
+                    field.PropertyChanged += (_, _) => NotifyAll();
+                    Fields.Add(field);
+                }
+                Feeds.Clear();
+                var supportedFeeds = value.Preset?.SupportedDataKinds ?? value.Definition.SupportedDataKinds;
+                foreach (var kind in supportedFeeds.OrderBy(kind => SyncTargetTypeCatalog.GetFeed(kind).DisplayName))
+                {
+                    var initial = value.Preset?.FeedDefaults.GetValueOrDefault(kind)
+                        ?? (value.Definition.InheritsGlobalSync && baseline.GlobalDefaults.DataKinds.GetValueOrDefault(kind));
+                    Feeds.Add(new(kind, initial));
+                }
+            }
+
+            NotifyAll();
+        }
+    }
+
+    public SyncAddDestinationStep Step
+    {
+        get => step;
+        private set { step = value; NotifyAll(); }
+    }
+    public bool IsChooseStep => Step == SyncAddDestinationStep.Choose;
+    public bool IsConfigureStep => Step == SyncAddDestinationStep.Configure;
+    public bool IsFeedsStep => Step == SyncAddDestinationStep.FeedsAndReview;
+    public bool IsLastStep => IsFeedsStep;
+    public string StepTitle => Step switch
+    {
+        SyncAddDestinationStep.Choose => "Choose a preset or custom destination",
+        SyncAddDestinationStep.Configure => "Configure destination",
+        _ => "Choose feeds and review",
+    };
+    public string Identity { get => identity; set { identity = value?.Trim() ?? string.Empty; NotifyAll(); } }
+    public string Endpoint { get => FieldValue("endpoint"); set => SetFieldValue("endpoint", value?.Trim() ?? string.Empty); }
+    public string Token { get => FieldValue("token"); set => SetFieldValue("token", value ?? string.Empty); }
+    public string Error { get => error; private set { error = value; NotifyAll(); } }
+    public bool HasError => !string.IsNullOrEmpty(Error);
+    public SyncTargetKind Kind => SelectedChoice!.Kind;
+    public string? PresetId => SelectedChoice?.Preset?.Id;
+    public string ReviewSummary => SelectedChoice is null
+        ? string.Empty
+        : $"{Identity} · {Feeds.Count(feed => feed.IsEnabled)} of {Feeds.Count} feeds on";
+
+    internal void SetError(string message) => Error = message;
+
+    private void Back()
+    {
+        Error = string.Empty;
+        Step--;
+    }
+
+    private void Next()
+    {
+        Error = string.Empty;
+        if (Step == SyncAddDestinationStep.Configure
+            && (string.IsNullOrWhiteSpace(Identity) || !RequiredFieldsComplete()))
+        {
+            Error = "Display name and every required connection field must be completed.";
+            return;
+        }
+
+        Step++;
+    }
+
+    private bool CanContinue() => Step != SyncAddDestinationStep.FeedsAndReview && SelectedChoice is not null;
+    private bool CanFinish() => IsFeedsStep && SelectedChoice is not null
+        && !string.IsNullOrWhiteSpace(Identity) && RequiredFieldsComplete();
+
+    private bool RequiredFieldsComplete() =>
+        Fields.Where(field => field.IsRequired).All(field => !string.IsNullOrWhiteSpace(field.Value));
+
+    private string FieldValue(string id) => Fields.FirstOrDefault(field => field.Id == id)?.Value ?? string.Empty;
+
+    private void SetFieldValue(string id, string value)
+    {
+        if (Fields.FirstOrDefault(field => field.Id == id) is { } field)
+        {
+            field.Value = value;
+        }
+    }
+
+    private void NotifyAll()
+    {
+        PropertyChanged?.Invoke(this, new(string.Empty));
+        (BackCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        (NextCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        (FinishCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+    }
 }

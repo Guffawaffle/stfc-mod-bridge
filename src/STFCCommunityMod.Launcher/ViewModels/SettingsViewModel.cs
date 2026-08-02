@@ -66,7 +66,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
 
-        SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges);
+        SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges, () => workspace);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
         SyncWorkspace.Committed += SyncWorkspace_Committed;
 

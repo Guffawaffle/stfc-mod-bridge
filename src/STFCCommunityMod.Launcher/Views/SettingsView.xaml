@@ -697,12 +697,6 @@
                                   Margin="12,0,0,0"
                                   VerticalAlignment="Center"
                                   Orientation="Horizontal">
-                        <TextBlock Margin="0,0,9,0"
-                                   VerticalAlignment="Center"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Text="Custom"
-                                   Visibility="{Binding IsCustom, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <Border Margin="0,0,7,0"
                                 Padding="7,2"
                                 VerticalAlignment="Center"

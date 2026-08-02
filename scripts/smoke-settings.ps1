@@ -492,11 +492,11 @@ try {
     [System.Windows.Automation.TreeScope]::Descendants,
     [System.Windows.Automation.PropertyCondition]::new(
       [System.Windows.Automation.AutomationElement]::NameProperty,
-      "Sync setup workspace"))
+      "Data Sync workspace"))
   if ($null -ne $unexpectedSyncWorkspace) {
     throw "The typed Sync workspace is visible while General settings is selected."
   }
-  Write-Host "PASS: typed Sync setup stays hidden outside the Data Sync section."
+  Write-Host "PASS: typed Data Sync stays hidden outside the Data Sync section."
   $notificationsNavigation = Find-AutomationElement `
     -Root $root `
     -Name "Notification settings" `
@@ -539,7 +539,7 @@ try {
   Invoke-AutomationElement -Element $syncNavigation
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Sync setup workspace" `
+    -Name "Data Sync workspace" `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   [void](Find-AutomationElement `
     -Root $root `
@@ -548,9 +548,9 @@ try {
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Configured sync targets" `
+    -Name "Data Sync page content" `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
-  Write-Host "PASS: typed Sync setup, global defaults, and virtualized target collection are UI Automation accessible."
+  Write-Host "PASS: typed Data Sync, global defaults, and destination collection are UI Automation accessible."
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
@@ -571,7 +571,7 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: launcher chrome, typed Sync setup, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  Write-Host "PASS: launcher chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_

@@ -202,6 +202,76 @@ public sealed class ConfigurationWorkspace
     public ConfigurationChangeSet PrepareChangeSet() =>
         settingsSession.BuildChangeSet();
 
+    public SyncTopologyTomlLoadResult CreateSyncTopologyEditSession(out SyncTopologyEditSession? session) =>
+        SyncTopologyEditSession.Load(baseline, out session);
+
+    public async Task<SyncTopologyPersistenceCommitResult> CommitSyncAsync(
+        SyncTopologyEditSession session,
+        bool migrateLegacyRoot = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (session.BaselineRevision != baseline.Revision)
+        {
+            session.MarkStale();
+            return new(AtomicTomlWriteState.Conflict, Error: "The Data Sync session is based on an older configuration revision.");
+        }
+
+        if (settingsSession.HasPendingChanges)
+        {
+            return new(AtomicTomlWriteState.Invalid, Error: "Other configuration edits must be saved or discarded first.");
+        }
+
+        var plan = session.PreparePlan(migrateLegacyRoot);
+        if (!plan.IsValid)
+        {
+            return new(AtomicTomlWriteState.Invalid, Plan: plan);
+        }
+
+        var edit = plan.Apply(baseline.Contents);
+        if (!edit.IsValid || edit.Contents is null)
+        {
+            return new(AtomicTomlWriteState.Invalid, Plan: plan, ValidationError: edit.Error);
+        }
+
+        var result = await repository.CommitDocumentAsync(
+            new(baseline.Path, baseline.Revision, baseline.Contents, edit.Contents),
+            cancellationToken).ConfigureAwait(false);
+        if (!result.IsSuccess || result.CommittedSnapshot is null)
+        {
+            if (result.State == AtomicTomlWriteState.Conflict)
+            {
+                session.MarkStale();
+                ExternalState = ConfigurationWorkspaceExternalState.Stale;
+            }
+
+            return new(
+                result.State,
+                Plan: plan,
+                BackupPath: result.BackupPath,
+                ValidationError: result.ValidationError,
+                Error: result.Error);
+        }
+
+        var acceptedSettings = settingsSession.AcceptCommittedBaseline(result.CommittedSnapshot.Contents);
+        var acceptedSync = session.AcceptCommittedSnapshot(result.CommittedSnapshot);
+        if (!acceptedSettings.IsValid || !acceptedSync.IsValid)
+        {
+            return new(
+                AtomicTomlWriteState.Invalid,
+                Plan: plan,
+                ValidationError: acceptedSettings.Error ?? acceptedSync.Error);
+        }
+
+        baseline = result.CommittedSnapshot;
+        ExternalState = ConfigurationWorkspaceExternalState.Current;
+        Publish(
+            ConfigurationWorkspaceTransitionReason.Committed,
+            plan.Mutations.Select(mutation => mutation.Path),
+            DraftInvalidations | ConfigurationWorkspaceInvalidation.ExternalState);
+        return new(result.State, result.CommittedSnapshot, plan, result.BackupPath);
+    }
+
     public async Task<ConfigurationRepositoryCommitResult> CommitAsync(
         CancellationToken cancellationToken = default)
     {

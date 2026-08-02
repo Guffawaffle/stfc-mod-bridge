@@ -57,6 +57,24 @@ public enum SyncTargetKindChangePolicy
     ResetOverrides,
 }
 
+public enum SyncAuthenticationCapability
+{
+    OpaqueToken,
+}
+
+public enum SyncEndpointPolicy
+{
+    LoopbackOnly,
+    NonLoopback,
+}
+
+public enum SyncTargetExposurePolicy
+{
+    Hidden,
+    ExistingConfigurationOnly,
+    Creatable,
+}
+
 public readonly record struct SyncOverride<T>(bool IsExplicit, T Value)
 {
     public SyncResolvedValue<T> Resolve(T inheritedValue, SyncValueSource inheritedSource)
@@ -126,50 +144,133 @@ public sealed class SyncSecret : IEquatable<SyncSecret>
 
 public sealed record SyncTargetTypeDefinition(
     SyncTargetKind Kind,
+    SyncTargetExposurePolicy ExposurePolicy,
+    string Id,
+    string DisplayName,
+    string Description,
+    string CapabilitySummary,
     string PersistencePattern,
     string WireContract,
     int MaximumInstances,
+    bool SupportsDisabledState,
+    string? FixedIdentity,
     bool InheritsGlobalSync,
     bool RequiresUrl,
     bool RequiresToken,
     bool SupportsBattlelogEnrichment,
     bool SupportsFleetRuntimeMode,
+    bool SupportsProxy,
+    bool SupportsTls,
+    SyncEndpointPolicy EndpointPolicy,
+    SyncAuthenticationCapability Authentication,
+    IReadOnlyList<SyncConnectionFieldDefinition> ConnectionFields,
     IReadOnlySet<SyncDataKind> SupportedDataKinds,
-    string DefaultUrl);
+    string DefaultUrl,
+    string TypeSpecificContent);
+
+public sealed record SyncConnectionFieldDefinition(
+    string Id,
+    string DisplayName,
+    string Description,
+    bool IsRequired,
+    bool IsSecret);
+
+public sealed record SyncFeedDefinition(
+    SyncDataKind Kind,
+    string Id,
+    string DisplayName,
+    string Description);
 
 public sealed record SyncTargetPreset(
     string Id,
     string DisplayName,
     SyncTargetKind TargetKind,
-    string SuggestedIdentity);
+    string SuggestedIdentity,
+    string Description,
+    string DefaultUrl,
+    IReadOnlyDictionary<SyncDataKind, bool> FeedDefaults)
+{
+    public IReadOnlySet<SyncDataKind> SupportedDataKinds { get; } =
+        FeedDefaults.Keys.ToFrozenSet();
+}
 
 public static class SyncTargetTypeCatalog
 {
+    private static readonly IReadOnlyList<SyncConnectionFieldDefinition> EndpointAndTokenFields =
+    [
+        new("endpoint", "Endpoint", "Destination ingest endpoint.", true, false),
+        new("token", "Token", "Opaque authentication token. Saved values are never displayed.", true, true),
+    ];
+
+    private static readonly ReadOnlyDictionary<SyncDataKind, SyncFeedDefinition> FeedDefinitions =
+        new(
+            new Dictionary<SyncDataKind, SyncFeedDefinition>
+            {
+                [SyncDataKind.Battlelogs] = Feed(SyncDataKind.Battlelogs, "battlelogs", "Battlelogs"),
+                [SyncDataKind.BattlelogsRealtime] = Feed(SyncDataKind.BattlelogsRealtime, "battlelogs_realtime", "Realtime battlelogs"),
+                [SyncDataKind.Buffs] = Feed(SyncDataKind.Buffs, "buffs", "Buffs"),
+                [SyncDataKind.Buildings] = Feed(SyncDataKind.Buildings, "buildings", "Buildings"),
+                [SyncDataKind.Inventory] = Feed(SyncDataKind.Inventory, "inventory", "Inventory"),
+                [SyncDataKind.Jobs] = Feed(SyncDataKind.Jobs, "jobs", "Jobs"),
+                [SyncDataKind.Missions] = Feed(SyncDataKind.Missions, "missions", "Missions"),
+                [SyncDataKind.Officer] = Feed(SyncDataKind.Officer, "officer", "Officers"),
+                [SyncDataKind.Research] = Feed(SyncDataKind.Research, "research", "Research"),
+                [SyncDataKind.Resources] = Feed(SyncDataKind.Resources, "resources", "Resources"),
+                [SyncDataKind.Ships] = Feed(SyncDataKind.Ships, "ships", "Ships"),
+                [SyncDataKind.Slots] = Feed(SyncDataKind.Slots, "slots", "Slots"),
+                [SyncDataKind.Tech] = Feed(SyncDataKind.Tech, "tech", "Tech"),
+                [SyncDataKind.Traits] = Feed(SyncDataKind.Traits, "traits", "Traits"),
+                [SyncDataKind.FleetRuntime] = Feed(SyncDataKind.FleetRuntime, "fleet_runtime", "Fleet runtime"),
+            });
+
     private static readonly ReadOnlyDictionary<SyncTargetKind, SyncTargetTypeDefinition> Definitions =
         new(
             new Dictionary<SyncTargetKind, SyncTargetTypeDefinition>
             {
                 [SyncTargetKind.LocalSidecar] = new(
                     SyncTargetKind.LocalSidecar,
+                    SyncTargetExposurePolicy.ExistingConfigurationOnly,
+                    "sidecar",
+                    "Sidecar",
+                    "Sends realtime battle and fleet-runtime data to a local companion process.",
+                    "2 feeds · local endpoint · token authentication",
                     "sidecar.sync",
                     "sidecar_local_ingest",
                     1,
+                    true,
+                    "local-sidecar",
                     false,
                     true,
                     true,
                     true,
                     true,
+                    true,
+                    true,
+                    SyncEndpointPolicy.LoopbackOnly,
+                    SyncAuthenticationCapability.OpaqueToken,
+                    EndpointAndTokenFields,
                     new[]
                     {
                         SyncDataKind.BattlelogsRealtime,
                         SyncDataKind.FleetRuntime,
                     }.ToFrozenSet(),
-                    "http://127.0.0.1:43127/api/sidecar/ingest"),
+                    "http://127.0.0.1:43127/api/sidecar/ingest",
+                    "Supports battle-log enrichment and fleet-runtime delivery modes."),
                 [SyncTargetKind.LegacyCommunity] = External(
                     SyncTargetKind.LegacyCommunity,
+                    SyncTargetExposurePolicy.Creatable,
+                    "legacy",
+                    "Sync",
+                    "Sends the standard sync payloads to a remote service.",
+                    "14 feeds · remote endpoint · token authentication",
                     "legacy_sync_json"),
                 [SyncTargetKind.MajelIngest] = External(
                     SyncTargetKind.MajelIngest,
+                    SyncTargetExposurePolicy.Hidden,
+                    "majel",
+                    "Sync (advanced)",
+                    "Advanced TOML-only wrapper around the standard sync mechanism.",
+                    "14 feeds · remote endpoint · token authentication",
                     "majel.ingest.v1"),
             });
 
@@ -177,36 +278,108 @@ public static class SyncTargetTypeCatalog
         Array.AsReadOnly(
         new SyncTargetPreset[]
         {
-            new("spocks_club", "Spocks Club", SyncTargetKind.LegacyCommunity, "spocksclub"),
-            new("next_spocks_club", "Next Spocks Club", SyncTargetKind.LegacyCommunity, "nextspocksclub"),
+            new("spocks_club", "Spock's Club", SyncTargetKind.LegacyCommunity, "spocksclub",
+                "Prefills the canonical Spock's Club endpoint and its documented feed defaults.",
+                "https://spocks.club/sync/ingress/",
+                PresetFeeds(
+                    (SyncDataKind.Resources, true),
+                    (SyncDataKind.Battlelogs, false),
+                    (SyncDataKind.Officer, true),
+                    (SyncDataKind.Missions, false),
+                    (SyncDataKind.Research, true),
+                    (SyncDataKind.Tech, false),
+                    (SyncDataKind.Traits, false),
+                    (SyncDataKind.Buildings, true),
+                    (SyncDataKind.Ships, false))),
+            new("next_spocks_club", "Next Spock's Club", SyncTargetKind.LegacyCommunity, "spocksclub-next",
+                "Prefills the canonical Next Spock's Club endpoint and its documented feed defaults.",
+                "https://next.spocks.club/sync/ingress/",
+                PresetFeeds(
+                    (SyncDataKind.Battlelogs, false),
+                    (SyncDataKind.Buffs, true),
+                    (SyncDataKind.Buildings, true),
+                    (SyncDataKind.Inventory, true),
+                    (SyncDataKind.Jobs, false),
+                    (SyncDataKind.Missions, true),
+                    (SyncDataKind.Officer, true),
+                    (SyncDataKind.Research, true),
+                    (SyncDataKind.Resources, true),
+                    (SyncDataKind.Ships, true),
+                    (SyncDataKind.Slots, true),
+                    (SyncDataKind.Tech, true),
+                    (SyncDataKind.Traits, true))),
         });
 
     public static IReadOnlyDictionary<SyncTargetKind, SyncTargetTypeDefinition> All => Definitions;
 
     public static IReadOnlyList<SyncTargetPreset> Presets => PresetDefinitions;
 
+    public static IReadOnlyDictionary<SyncDataKind, SyncFeedDefinition> Feeds => FeedDefinitions;
+
     public static SyncTargetTypeDefinition Get(SyncTargetKind kind) => Definitions[kind];
 
     public static SyncTargetPreset GetPreset(string id) =>
         PresetDefinitions.Single(preset => string.Equals(preset.Id, id, StringComparison.Ordinal));
 
-    private static SyncTargetTypeDefinition External(SyncTargetKind kind, string wireContract)
+    public static SyncFeedDefinition GetFeed(SyncDataKind kind) => FeedDefinitions[kind];
+
+    public static IReadOnlyList<SyncTargetPreset> GetPresets(SyncTargetKind kind) =>
+        PresetDefinitions.Where(preset => preset.TargetKind == kind).ToArray();
+
+    public static SyncTargetPreset? FindPresetByUrl(string url) =>
+        PresetDefinitions.FirstOrDefault(preset =>
+            string.Equals(
+                NormalizeEndpoint(preset.DefaultUrl),
+                NormalizeEndpoint(url),
+                StringComparison.OrdinalIgnoreCase));
+
+    private static SyncTargetTypeDefinition External(
+        SyncTargetKind kind,
+        SyncTargetExposurePolicy exposurePolicy,
+        string id,
+        string displayName,
+        string description,
+        string capabilitySummary,
+        string wireContract)
     {
         return new(
             kind,
+            exposurePolicy,
+            id,
+            displayName,
+            description,
+            capabilitySummary,
             "sync.targets.*",
             wireContract,
             int.MaxValue,
+            false,
+            null,
             true,
             true,
             true,
             false,
             false,
+            true,
+            true,
+            SyncEndpointPolicy.NonLoopback,
+            SyncAuthenticationCapability.OpaqueToken,
+            EndpointAndTokenFields,
             Enum.GetValues<SyncDataKind>()
                 .Where(value => value != SyncDataKind.FleetRuntime)
                 .ToFrozenSet(),
-            string.Empty);
+            string.Empty,
+            "No additional adapter-specific fields are established by the current implementation.");
     }
+
+    private static SyncFeedDefinition Feed(SyncDataKind kind, string id, string displayName) =>
+        new(kind, id, displayName, $"Synchronize {displayName.ToLowerInvariant()} data.");
+
+    private static FrozenDictionary<SyncDataKind, bool> PresetFeeds(
+        params (SyncDataKind Kind, bool Enabled)[] values) =>
+        values.ToFrozenDictionary(value => value.Kind, value => value.Enabled);
+
+    private static string NormalizeEndpoint(string value) =>
+        (value ?? string.Empty).Trim().TrimEnd('/');
 }
 
 public sealed class SyncGlobalDefaults
