@@ -5,7 +5,9 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>STFCCommunityMod.Launcher</RootNamespace>
-    <AssemblyName>STFCCommunityMod.Launcher</AssemblyName>
+    <AssemblyName>STFCModControl</AssemblyName>
+    <AssemblyTitle>STFC Mod Control</AssemblyTitle>
+    <FileDescription>STFC Mod Control</FileDescription>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\stfc-community-mod.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -29,11 +31,17 @@
     <Resource Include="Assets\stfc-community-mod.ico" />
     <Resource Include="..\..\assets\launcher.png"
               Link="Assets\stfc-community-mod.png" />
-    <EmbeddedResource Include="..\..\providers\bundled-providers.v1.json"
+    <EmbeddedResource Include="..\..\providers\bundled-provider-catalog.v1.json"
                       LogicalName="STFCCommunityMod.Launcher.ProviderCatalog.v1.json" />
+    <EmbeddedResource Include="..\..\providers\guffawaffle\provider-pack.v1.json"
+                      LogicalName="STFCCommunityMod.Launcher.ProviderPacks.Guffawaffle.v1.json" />
+    <EmbeddedResource Include="..\..\providers\netniv\provider-pack.v1.json"
+                      LogicalName="STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json" />
     <EmbeddedResource Include="..\..\docs\windows-launcher\config-schema.guffawaffle.v1.json"
                       LogicalName="STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json" />
     <EmbeddedResource Include="..\..\docs\windows-launcher\runtime-manifest.guffawaffle.v1.json"
                       LogicalName="STFCCommunityMod.Launcher.RuntimeManifests.Guffawaffle.v1.json" />
+    <EmbeddedResource Include="..\..\docs\windows-launcher\about-content.v1.json"
+                      LogicalName="STFCCommunityMod.Launcher.AboutContent.v1.json" />
   </ItemGroup>
 </Project>

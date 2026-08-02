@@ -95,7 +95,7 @@ public sealed class SyncTopologyPersistenceTests
     }
 
     [TestMethod]
-    public void EmptyTargetTableIsDiscoveredAndRejectedAsMalformed()
+    public void EmptyTargetTableIsDiscoveredAndReportedWithoutBlockingPersistence()
     {
         var load = Load(
             """
@@ -105,9 +105,13 @@ public sealed class SyncTopologyPersistenceTests
 
         Assert.IsTrue(load.Topology!.Targets.ContainsKey("empty"));
         var plan = SyncTopologyPersistencePlanner.Build(load, load.Topology);
-        Assert.IsFalse(plan.IsValid);
-        Assert.IsTrue(plan.Diagnostics.Any(item => item.Code == "SYNC_ENDPOINT_INVALID"));
-        Assert.IsTrue(plan.Diagnostics.Any(item => item.Code == "SYNC_CREDENTIALS_INCOMPLETE"));
+        Assert.IsTrue(plan.IsValid);
+        Assert.IsTrue(plan.Diagnostics.Any(item =>
+            item.Code == "SYNC_ENDPOINT_INVALID"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
+        Assert.IsTrue(plan.Diagnostics.Any(item =>
+            item.Code == "SYNC_CREDENTIALS_INCOMPLETE"
+            && item.Severity == SyncTopologyDiagnosticSeverity.Warning));
     }
 
     [TestMethod]

@@ -179,11 +179,19 @@ public sealed partial class SparseTomlDocument
                 var tableCollision = FindNewTableDeclarationCollision(tablePath, analysis);
                 if (tableCollision is not null)
                 {
-                    return SparseTomlEditResult.Invalid(tableCollision);
+                    var dottedAssignmentText = $"{string.Join('.', path)} = {renderedTomlValue}";
+                    var firstHeader = analysis.Sections.FirstOrDefault();
+                    appendedText = firstHeader is null
+                        ? AppendLine(text, dottedAssignmentText, lineEnding)
+                        : text.Insert(
+                            firstHeader.HeaderLine.Start,
+                            dottedAssignmentText + lineEnding);
                 }
-
-                var newSection = $"[{string.Join('.', tablePath)}]{lineEnding}{assignmentText}";
-                appendedText = AppendBlock(text, newSection, lineEnding);
+                else
+                {
+                    var newSection = $"[{string.Join('.', tablePath)}]{lineEnding}{assignmentText}";
+                    appendedText = AppendBlock(text, newSection, lineEnding);
+                }
             }
         }
 

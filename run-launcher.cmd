@@ -4,7 +4,7 @@ setlocal
 set "REPO_ROOT=%~dp0"
 set "LAUNCHER_PROJECT=%REPO_ROOT%src\STFCCommunityMod.Launcher\STFCCommunityMod.Launcher.csproj"
 set "LAUNCHER_DIRECTORY=%REPO_ROOT%src\STFCCommunityMod.Launcher\bin\Release\net8.0-windows\win-x64"
-set "LAUNCHER_EXE=%LAUNCHER_DIRECTORY%\STFCCommunityMod.Launcher.exe"
+set "LAUNCHER_EXE=%LAUNCHER_DIRECTORY%\STFCModControl.exe"
 
 if not defined WINDIR (
   if not defined SystemRoot (

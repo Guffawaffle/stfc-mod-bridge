@@ -11,10 +11,11 @@ public enum LauncherColorMode
 
 public sealed record LauncherUiPreferences(
     bool SettingsSearchVisible,
-    LauncherColorMode ColorMode = LauncherColorMode.System)
+    LauncherColorMode ColorMode = LauncherColorMode.System,
+    LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher)
 {
     public static LauncherUiPreferences Default { get; } =
-        new(false, LauncherColorMode.System);
+        new(false, LauncherColorMode.System, LauncherLaunchTarget.ScopelyLauncher);
 }
 
 public interface ILauncherUiPreferencesStore
@@ -26,7 +27,7 @@ public interface ILauncherUiPreferencesStore
 
 public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILauncherUiPreferencesStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -57,7 +58,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                 return new(document.SettingsSearchVisible, LauncherColorMode.System);
             }
 
-            if (document.SchemaVersion != CurrentSchemaVersion)
+            if (document.SchemaVersion is not (2 or CurrentSchemaVersion))
             {
                 return LauncherUiPreferences.Default;
             }
@@ -69,7 +70,10 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                 && Enum.IsDefined(parsedColorMode)
                     ? parsedColorMode
                     : LauncherColorMode.System;
-            return new(document.SettingsSearchVisible, colorMode);
+            var launchTarget = document.SchemaVersion == 2
+                ? LauncherLaunchTarget.ScopelyLauncher
+                : ParseLaunchTarget(document.LaunchTarget);
+            return new(document.SettingsSearchVisible, colorMode, launchTarget);
         }
         catch (Exception exception) when (
             exception is IOException
@@ -86,7 +90,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         ArgumentNullException.ThrowIfNull(preferences);
 
         var parentDirectory = Path.GetDirectoryName(preferencesPath)
-            ?? throw new InvalidOperationException("The launcher preferences file has no parent directory.");
+            ?? throw new InvalidOperationException("The Mod Control preferences file has no parent directory.");
         Directory.CreateDirectory(parentDirectory);
 
         var temporaryPath = Path.Combine(
@@ -95,7 +99,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         var document = new PreferencesDocument(
             CurrentSchemaVersion,
             preferences.SettingsSearchVisible,
-            preferences.ColorMode.ToString());
+            preferences.ColorMode.ToString(),
+            preferences.LaunchTarget.ToString());
 
         try
         {
@@ -123,5 +128,12 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
     private sealed record PreferencesDocument(
         int SchemaVersion,
         bool SettingsSearchVisible,
-        string? ColorMode = null);
+        string? ColorMode = null,
+        string? LaunchTarget = null);
+
+    private static LauncherLaunchTarget ParseLaunchTarget(string? value) =>
+        Enum.TryParse<LauncherLaunchTarget>(value, ignoreCase: true, out var parsed)
+        && Enum.IsDefined(parsed)
+            ? parsed
+            : LauncherLaunchTarget.ScopelyLauncher;
 }

@@ -19,7 +19,10 @@ public sealed class ModDeploymentServiceTests
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        var service = CreateService(
+            temporaryDirectory,
+            SuccessfulDownload(),
+            installationAttribution: new("guffawaffle", "stable", "guffawaffle.windows"));
 
         var result = await service.DeployAsync(
             gameDirectory,
@@ -29,9 +32,47 @@ public sealed class ModDeploymentServiceTests
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
         CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
         Assert.AreEqual(ModDeploymentPhase.Committed, service.ReadJournal()!.Phase);
-        Assert.AreEqual(ReleaseArtifact().Sha256, service.ReadInstalledState()!.Sha256);
+        var installedState = service.ReadInstalledState()!;
+        Assert.AreEqual(ReleaseArtifact().Sha256, installedState.Sha256);
+        Assert.AreEqual("guffawaffle", installedState.ProviderId);
+        Assert.AreEqual("stable", installedState.ReleaseChannelId);
+        Assert.AreEqual("guffawaffle.windows", installedState.RuntimeDistributionId);
         Assert.IsFalse(Directory.EnumerateFiles(gameDirectory, "*.stage").Any());
         Assert.IsFalse(Directory.EnumerateFiles(gameDirectory, "*.rollback").Any());
+    }
+
+    [TestMethod]
+    public void LegacyInstalledStateRemainsValidButUnattributed()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var legacyState = new
+        {
+            schemaVersion = 1,
+            gameDirectory = Path.GetFullPath(gameDirectory),
+            fileName = "version.dll",
+            version = "2.1.0.8",
+            size = ArtifactContents.LongLength,
+            sha256 = ReleaseArtifact().Sha256,
+            installedAtUtc = DateTimeOffset.UtcNow,
+            previousArtifactBackupPath = (string?)null,
+        };
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "installed-mod.json"),
+            JsonSerializer.Serialize(legacyState, JournalJsonOptions));
+        var service = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            () => false);
+
+        var installedState = service.ReadInstalledState();
+
+        Assert.IsNotNull(installedState);
+        Assert.IsFalse(installedState.HasCompleteAttribution);
+        Assert.IsNull(installedState.ProviderId);
     }
 
     [TestMethod]
@@ -347,6 +388,7 @@ public sealed class ModDeploymentServiceTests
         var result = await service.UninstallAsync();
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        Assert.IsTrue(result.Changed);
         Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
         Assert.AreEqual("user-owned", File.ReadAllText(unrelatedPath));
         Assert.IsNull(service.ReadInstalledState());
@@ -474,8 +516,24 @@ public sealed class ModDeploymentServiceTests
         var result = await service.RecoverAsync();
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        Assert.IsTrue(result.Changed);
         CollectionAssert.AreEqual(previous, File.ReadAllBytes(targetPath));
         Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
+    public async Task SuccessfulMaintenanceNoOpsReportNoChange()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+
+        var uninstall = await service.UninstallAsync();
+        var recovery = await service.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, uninstall.State);
+        Assert.IsFalse(uninstall.Changed);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, recovery.State);
+        Assert.IsFalse(recovery.Changed);
     }
 
     [TestMethod]
@@ -607,14 +665,16 @@ public sealed class ModDeploymentServiceTests
         Func<bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
+        ModInstallationAttribution? installationAttribution = null) =>
         CreateService(
             temporaryDirectory,
             new FakeDownloader(download),
             isGameRunning,
             versionReader,
             authenticityVerifier,
-            afterPhasePersisted);
+            afterPhasePersisted,
+            installationAttribution);
 
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
@@ -622,14 +682,16 @@ public sealed class ModDeploymentServiceTests
         Func<bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
+        ModInstallationAttribution? installationAttribution = null) =>
         new(
             temporaryDirectory.CreateDirectory("state"),
             downloader,
             versionReader ?? new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             authenticityVerifier ?? new FakeAuthenticityVerifier(true),
             isGameRunning ?? (() => false),
-            afterPhasePersisted: afterPhasePersisted);
+            afterPhasePersisted: afterPhasePersisted,
+            installationAttribution: installationAttribution);
 
     private static ModReleaseArtifact ReleaseArtifact() => new(
         new Uri("https://example.invalid/version.dll"),

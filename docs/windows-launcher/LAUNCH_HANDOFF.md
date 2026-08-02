@@ -1,49 +1,78 @@
 # Windows Launcher Game Handoff
 
-Status: WL-007 supported official-launcher handoff is implemented; installed-client launch smoke remains pending.
+Status: selected-target split launch is implemented; installed-client dogfood and screenshots remain pending.
 
-## Supported path
+## Player-facing targets
 
-The launcher starts the per-user official STFC launcher at
-`%LOCALAPPDATA%\Star Trek Fleet Command\launcher.exe`. Authentication,
-base-game update, repair, and first-time sign-in remain owned by that launcher.
-The community launcher does not reproduce the Xsolla protocol and does not
-start `prime.exe` directly.
+Home exposes one compound split button with two ordinary launcher-owned targets:
 
-The action is explicitly a modded launch. An existing manual `version.dll` is
-eligible without first being adopted into launcher ownership. Adoption remains
-an explicit mod-management action. A missing mod or a launcher-managed install
-whose recorded bytes no longer match still blocks launch. An unmodded mode is
-represented as a distinct blocked state; v1 does not claim it because safely
-disabling and restoring the proxy across an official-launcher handoff has not
-been accepted.
+- `Open Scopely launcher` starts or safely reuses the exact per-user official launcher at
+  `%LOCALAPPDATA%\Star Trek Fleet Command\launcher.exe`;
+- `Launch prime.exe` starts the validated executable in the confirmed game directory directly.
+
+The selected target is persisted in `ui-preferences.json`, never mod TOML. New, migrated, malformed, and unknown
+preference documents default to `Open Scopely launcher`, preserving the pre-split behavior. Selecting an unavailable target
+does not rewrite the preference; its structured reason and next action remain visible.
+
+The Scopely path owns authentication, base-game update, repair, and first-time sign-in. Direct launch does not add any of
+those responsibilities to the community launcher. It is intended for an already healthy installation and mod deployment.
+
+## Eligibility
+
+The two targets deliberately resolve health independently.
+
+`Open Scopely launcher` requires only the exact supported official launcher. It remains available while the game is running
+and when a game directory has not been selected.
+
+`Launch prime.exe` requires:
+
+- a confirmed valid directory containing `prime.exe`;
+- no running STFC game process;
+- no incomplete mod transaction;
+- a locally present manual mod, or a launcher-managed `version.dll` whose recorded bytes still match.
+
+Each Core presentation carries a stable target, reason, and `LauncherLaunchRecoveryAction`. WPF projects those fields; it
+does not infer recovery guidance from display text. Home and UI Automation reasons are stable and path-free; raw filesystem
+and deployment exception detail belongs only in the redacted Diagnostics workflow.
 
 ## Operation boundary
 
-Launch and deployment use the same per-user process/file operation lease. The
-lease is revalidated after acquisition and held until the tracked official
-launcher process exits. If that launcher was already running, the supported
-executable is invoked to surface it while the exact existing process is
-tracked. A concurrent install, update, repair, or uninstall therefore receives
-a busy result instead of racing the handoff.
+Both targets share the per-user launcher operation lease with install, update, repair, recovery, and uninstall. Eligibility
+is revalidated after lease acquisition.
 
-The existing shell/process monitor independently refreshes Home when
-`prime.exe` starts or exits. Official-launcher exit also refreshes game and mod
-health and yields visible action feedback. Failures never silently reset the
-action.
+For Scopely handoff, the lease is held until the exact tracked launcher process exits. The application service first looks
+for a safely inspectable running process whose executable path exactly matches the supported launcher:
 
-## Offline behavior
+- a newly started process produces a changed result;
+- an exact already-running process is reused and produces a truthful no-change result; the executable is still invoked to
+  surface its UI, the newly returned activation handle is released immediately, and the exact pre-existing process remains
+  the tracked lifetime boundary;
+- a process that cannot be inspected or does not match is never adopted as the lifetime boundary.
 
-Launch eligibility depends only on local game, deployment, process, and
-official-launcher health. It does not call release discovery, so a network or
-manifest failure cannot remove launch from an already healthy installation.
-Whether a particular account session can authenticate offline remains an
-official-launcher behavior.
+For direct launch, the lease is held through final validation and successful `prime.exe` process creation, then released.
+The game-process monitor owns subsequent running-state transitions. A concurrent launcher mutation receives a busy result
+instead of racing either handoff boundary.
 
-## Automated evidence
+## Feedback and failure behavior
 
-The fake-process suite covers explicit modded/unmodded states, locally healthy
-offline eligibility, missing official launcher, running-game denial,
-cross-operation exclusion, and health re-evaluation after official-launcher
-exit. Packaged UI Automation verifies that Home exposes an accessible launch
-state without invoking the installed client.
+Launch has an observable action-feedback channel independent from mod mutation and launcher self-update. Accepted,
+changed, no-change, failed, unavailable, and duplicate-activation behavior follows `ACTION_FEEDBACK.md`.
+
+Home displays the active action first and otherwise the most recently changed Mod or Launch feedback. A persistent launch
+completion therefore cannot mask a later mod operation. Failures and transient unavailability never silently change the
+selected target.
+
+## Automated evidence and manual residuals
+
+Core tests cover both targets, Scopely changed/no-change identity, post-lock revalidation, cross-operation exclusion,
+running-game independence, direct-launch health, failures, and preference migration. WPF tests cover split geometry,
+keyboard/focus behavior, non-color selection state, structured availability projection, and feedback arbitration.
+
+Packaged UI Automation opens the target menu, accepts either persisted primary target, and finds both exact choices without
+invoking either executable. The disposable smoke also proves the active TOML hash is unchanged.
+
+Still manual:
+
+- launch a real detected `prime.exe`;
+- open and reuse the real Scopely launcher;
+- capture both selections, the open menu, running-game state, and unavailable state.

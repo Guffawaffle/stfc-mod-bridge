@@ -47,7 +47,7 @@ Validation is read-only. It does not open, hash, execute, or modify
 Only a valid user-selected folder is persisted. The launcher stores it at:
 
 ```text
-%LOCALAPPDATA%\STFC Community Mod Launcher\install-selection.json
+%LOCALAPPDATA%\STFC Mod Control\install-selection.json
 ```
 
 The document is versioned and written through a same-directory temporary file.

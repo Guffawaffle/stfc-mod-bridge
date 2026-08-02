@@ -252,6 +252,9 @@ public sealed class SyncDesiredTopology
 
     internal static SyncTopologyDiagnostic Error(string code, string? targetName, string? field, string message) =>
         new(code, SyncTopologyDiagnosticSeverity.Error, message, targetName, field);
+
+    internal static SyncTopologyDiagnostic Warning(string code, string? targetName, string? field, string message) =>
+        new(code, SyncTopologyDiagnosticSeverity.Warning, message, targetName, field);
 }
 
 public static class SyncTopologyResolver
@@ -311,12 +314,12 @@ public static class SyncTopologyResolver
             && definition.RequiresUrl
             && !TryValidateEndpoint(target.Url, definition.EndpointPolicy, out var endpointCode, out var endpointMessage))
         {
-            diagnostics.Add(SyncDesiredTopology.Error(endpointCode, target.Name, "url", endpointMessage));
+            diagnostics.Add(SyncDesiredTopology.Warning(endpointCode, target.Name, "url", endpointMessage));
         }
 
         if (target.Enabled && definition.RequiresToken && !target.Token.IsConfigured)
         {
-            diagnostics.Add(SyncDesiredTopology.Error(
+            diagnostics.Add(SyncDesiredTopology.Warning(
                 "SYNC_CREDENTIALS_INCOMPLETE",
                 target.Name,
                 "token",
@@ -327,17 +330,18 @@ public static class SyncTopologyResolver
         {
             if (value.IsExplicit && !definition.SupportedDataKinds.Contains(kind))
             {
-                diagnostics.Add(SyncDesiredTopology.Error(
+                diagnostics.Add(SyncDesiredTopology.Warning(
                     "SYNC_CAPABILITY_UNSUPPORTED",
                     target.Name,
                     kind.ToString(),
-                    "This data capability is not supported by the selected target kind."));
+                    $"{SyncTargetTypeCatalog.GetFeed(kind).DisplayName} is not supported by "
+                    + $"the {definition.DisplayName} target type and may be rejected by the destination server."));
             }
         }
 
         if (target.BattlelogEnrichment.IsExplicit && !definition.SupportsBattlelogEnrichment)
         {
-            diagnostics.Add(SyncDesiredTopology.Error(
+            diagnostics.Add(SyncDesiredTopology.Warning(
                 "SYNC_CAPABILITY_UNSUPPORTED",
                 target.Name,
                 "battlelog_enrichment",
@@ -346,7 +350,7 @@ public static class SyncTopologyResolver
 
         if (target.FleetRuntimeMode.IsExplicit && !definition.SupportsFleetRuntimeMode)
         {
-            diagnostics.Add(SyncDesiredTopology.Error(
+            diagnostics.Add(SyncDesiredTopology.Warning(
                 "SYNC_CAPABILITY_UNSUPPORTED",
                 target.Name,
                 "fleet_runtime_mode",
@@ -354,7 +358,7 @@ public static class SyncTopologyResolver
         }
         else if (target.FleetRuntimeMode.IsExplicit && !IsFleetRuntimeModeSupported(target.FleetRuntimeMode.Value))
         {
-            diagnostics.Add(SyncDesiredTopology.Error(
+            diagnostics.Add(SyncDesiredTopology.Warning(
                 "SYNC_FLEET_RUNTIME_MODE_INVALID",
                 target.Name,
                 "fleet_runtime_mode",

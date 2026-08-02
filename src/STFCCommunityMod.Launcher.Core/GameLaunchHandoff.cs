@@ -3,10 +3,23 @@ using System.Security.Cryptography;
 
 namespace STFCCommunityMod.Launcher.Core;
 
-public enum GameLaunchMode
+public enum LauncherLaunchTarget
 {
-    Modded,
-    Unmodded,
+    PrimeExecutable,
+    ScopelyLauncher,
+}
+
+public enum LauncherLaunchRecoveryAction
+{
+    None,
+    SelectGameFolder,
+    CloseRunningGame,
+    InstallMod,
+    RepairMod,
+    RecoverModTransaction,
+    InstallOrRepairScopelyLauncher,
+    OpenDiagnostics,
+    WaitForLauncherOperation,
 }
 
 public sealed record GameLaunchPresentation(
@@ -15,7 +28,24 @@ public sealed record GameLaunchPresentation(
     string ActionLabel,
     bool CanExecute,
     string AutomationName,
-    GameLaunchMode Mode);
+    LauncherLaunchTarget Target,
+    string Reason,
+    LauncherLaunchRecoveryAction NextAction)
+{
+    public string NextActionLabel => NextAction switch
+    {
+        LauncherLaunchRecoveryAction.None => string.Empty,
+        LauncherLaunchRecoveryAction.SelectGameFolder => "Select the game folder",
+        LauncherLaunchRecoveryAction.CloseRunningGame => "Close the running game",
+        LauncherLaunchRecoveryAction.InstallMod => "Install the community mod",
+        LauncherLaunchRecoveryAction.RepairMod => "Repair the community mod",
+        LauncherLaunchRecoveryAction.RecoverModTransaction => "Recover the mod transaction",
+        LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher => "Install or repair the Scopely launcher",
+        LauncherLaunchRecoveryAction.OpenDiagnostics => "Open Diagnostics",
+        LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active Mod Control operation",
+        _ => string.Empty,
+    };
+}
 
 public enum GameLaunchHandoffState
 {
@@ -28,31 +58,69 @@ public enum GameLaunchHandoffState
 public sealed record GameLaunchHandoffResult(
     GameLaunchHandoffState State,
     string Message,
-    GameLaunchPresentation Presentation);
+    GameLaunchPresentation Presentation,
+    bool Changed);
+
+public enum OfficialLauncherStartKind
+{
+    StartedNew,
+    ReusedRunning,
+}
 
 public interface IOfficialLauncherProcess : IAsyncDisposable
 {
     Task WaitForExitAsync(CancellationToken cancellationToken);
 }
 
+public sealed record OfficialLauncherStartResult(
+    OfficialLauncherStartKind Kind,
+    IOfficialLauncherProcess Process)
+{
+    public bool Changed => Kind == OfficialLauncherStartKind.StartedNew;
+}
+
 public interface IOfficialLauncherService
 {
     bool IsAvailable { get; }
 
-    Task<IOfficialLauncherProcess> StartAsync(CancellationToken cancellationToken);
+    Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken);
+}
+
+public interface IGameExecutableLaunchService
+{
+    bool IsAvailable(string gameDirectory);
+
+    Task StartAsync(string gameDirectory, CancellationToken cancellationToken);
 }
 
 public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
 {
     private readonly string launcherPath;
+    private readonly Func<bool> isAvailable;
+    private readonly Func<IOfficialLauncherProcess?> findRunningLauncher;
+    private readonly Func<IOfficialLauncherProcess> startLauncher;
 
     public WindowsOfficialLauncherService(string launcherPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(launcherPath);
         this.launcherPath = Path.GetFullPath(launcherPath);
+        isAvailable = () => File.Exists(this.launcherPath);
+        findRunningLauncher = TryFindRunningLauncher;
+        startLauncher = StartLauncher;
     }
 
-    public bool IsAvailable => File.Exists(launcherPath);
+    internal WindowsOfficialLauncherService(
+        Func<bool> isAvailable,
+        Func<IOfficialLauncherProcess?> findRunningLauncher,
+        Func<IOfficialLauncherProcess> startLauncher)
+    {
+        launcherPath = "launcher.exe";
+        this.isAvailable = isAvailable ?? throw new ArgumentNullException(nameof(isAvailable));
+        this.findRunningLauncher = findRunningLauncher ?? throw new ArgumentNullException(nameof(findRunningLauncher));
+        this.startLauncher = startLauncher ?? throw new ArgumentNullException(nameof(startLauncher));
+    }
+
+    public bool IsAvailable => isAvailable();
 
     public static WindowsOfficialLauncherService FromCurrentUser()
     {
@@ -64,15 +132,38 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         return new(Path.Combine(localApplicationData, "Star Trek Fleet Command", "launcher.exe"));
     }
 
-    public Task<IOfficialLauncherProcess> StartAsync(CancellationToken cancellationToken)
+    public async Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsAvailable)
         {
-            throw new FileNotFoundException("The official Star Trek Fleet Command launcher is unavailable.", launcherPath);
+            throw new FileNotFoundException("The Scopely launcher is unavailable.", launcherPath);
         }
 
-        var existingProcess = TryFindRunningLauncher();
+        var existingProcess = findRunningLauncher();
+        if (existingProcess is not null)
+        {
+            try
+            {
+                await using var activationProcess = startLauncher();
+            }
+            catch
+            {
+                await existingProcess.DisposeAsync();
+                throw;
+            }
+            return new OfficialLauncherStartResult(
+                OfficialLauncherStartKind.ReusedRunning,
+                existingProcess);
+        }
+
+        return new OfficialLauncherStartResult(
+            OfficialLauncherStartKind.StartedNew,
+            startLauncher());
+    }
+
+    private TrackedProcess StartLauncher()
+    {
         var process = Process.Start(new ProcessStartInfo(launcherPath)
         {
             UseShellExecute = true,
@@ -80,17 +171,12 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
         });
         if (process is null)
         {
-            throw new InvalidOperationException("Windows did not start the official Star Trek Fleet Command launcher.");
+            throw new InvalidOperationException("Windows did not start the Scopely launcher.");
         }
-        if (existingProcess is not null)
-        {
-            process.Dispose();
-            return Task.FromResult<IOfficialLauncherProcess>(new TrackedProcess(existingProcess));
-        }
-        return Task.FromResult<IOfficialLauncherProcess>(new TrackedProcess(process));
+        return new TrackedProcess(process);
     }
 
-    private Process? TryFindRunningLauncher()
+    private TrackedProcess? TryFindRunningLauncher()
     {
         var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(launcherPath));
         Process? match = null;
@@ -113,7 +199,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
                     or NotSupportedException
                     or ArgumentException)
             {
-                // A process outside this exact install is not a supported handoff target.
+                // Only an exact, safely inspected executable is a reusable launcher process.
             }
         }
         foreach (var process in processes)
@@ -123,7 +209,7 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
                 process.Dispose();
             }
         }
-        return match;
+        return match is null ? null : new TrackedProcess(match);
     }
 
     private sealed class TrackedProcess(Process process) : IOfficialLauncherProcess
@@ -138,9 +224,50 @@ public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
     }
 }
 
+public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchService
+{
+    public bool IsAvailable(string gameDirectory) =>
+        TryResolvePrimePath(gameDirectory, out var primePath) && File.Exists(primePath);
+
+    public Task StartAsync(string gameDirectory, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!TryResolvePrimePath(gameDirectory, out var primePath) || !File.Exists(primePath))
+        {
+            throw new FileNotFoundException("The selected game folder does not contain prime.exe.", primePath);
+        }
+
+        using var process = Process.Start(new ProcessStartInfo(primePath)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = Path.GetDirectoryName(primePath),
+        });
+        if (process is null)
+        {
+            throw new InvalidOperationException("Windows did not start prime.exe.");
+        }
+        return Task.CompletedTask;
+    }
+
+    private static bool TryResolvePrimePath(string gameDirectory, out string primePath)
+    {
+        try
+        {
+            primePath = Path.Combine(Path.GetFullPath(gameDirectory), "prime.exe");
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            primePath = string.Empty;
+            return false;
+        }
+    }
+}
+
 public sealed class GameLaunchHandoffCoordinator(
     string stateDirectory,
     ModDeploymentService deploymentService,
+    IGameExecutableLaunchService gameExecutableLaunchService,
     IOfficialLauncherService officialLauncherService,
     IGameProcessInspector gameProcessInspector)
 {
@@ -148,137 +275,101 @@ public sealed class GameLaunchHandoffCoordinator(
 
     public GameLaunchPresentation CapturePresentation(
         string? gameDirectory,
-        GameLaunchMode mode = GameLaunchMode.Modded)
+        LauncherLaunchTarget target)
     {
-        if (mode == GameLaunchMode.Unmodded)
+        if (target == LauncherLaunchTarget.ScopelyLauncher)
         {
-            return new(
-                "Unmodded unavailable",
-                LauncherHomeTone.Warning,
-                "Launch unmodded",
-                false,
-                "Launch unmodded unavailable: the launcher cannot safely disable and restore version.dll yet",
-                mode);
+            return officialLauncherService.IsAvailable
+                ? new(
+                    "Scopely launcher available",
+                    LauncherHomeTone.Success,
+                    "Open Scopely launcher",
+                    true,
+                    "Open Scopely launcher",
+                    target,
+                    "The supported per-user Scopely launcher is available.",
+                    LauncherLaunchRecoveryAction.None)
+                : Blocked(
+                    "Scopely launcher needed",
+                    "Open Scopely launcher",
+                    "The supported per-user Scopely launcher could not be found.",
+                    target,
+                    LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher);
         }
 
-        if (string.IsNullOrWhiteSpace(gameDirectory))
-        {
-            return Blocked("Game folder needed", "Select a valid game folder before launching.", mode);
-        }
-
-        GameInstallValidation validation;
-        try
-        {
-            validation = GameInstallValidator.Validate(gameDirectory);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
-        {
-            return Blocked("Game folder needed", exception.Message, mode);
-        }
-        if (!validation.IsValid)
-        {
-            return Blocked("Game folder needed", validation.Message, mode);
-        }
-
-        if (gameProcessInspector.IsGameRunning())
-        {
-            return new(
-                "Running",
-                LauncherHomeTone.Success,
-                "Game running",
-                false,
-                "Launch game unavailable: Star Trek Fleet Command is already running",
-                mode);
-        }
-
-        try
-        {
-            var journal = deploymentService.ReadJournal();
-            if (journal is not null
-                && journal.Phase is not (ModDeploymentPhase.Committed
-                    or ModDeploymentPhase.RolledBack
-                    or ModDeploymentPhase.Failed))
-            {
-                return Blocked("Recovery required", "Recover the incomplete mod transaction before launching.", mode);
-            }
-
-            var state = deploymentService.ReadInstalledState();
-            var targetPath = Path.Combine(validation.GameDirectory, "version.dll");
-            if (state is null)
-            {
-                if (!File.Exists(targetPath))
-                {
-                    return Blocked("Mod required", "Install the community mod before a modded launch.", mode);
-                }
-            }
-            else if (!PathEquals(state.GameDirectory, validation.GameDirectory)
-                || !File.Exists(targetPath)
-                || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                return Blocked("Repair required", "Repair the launcher-managed mod before launching.", mode);
-            }
-        }
-        catch (Exception exception) when (
-            exception is InvalidDataException or IOException or UnauthorizedAccessException)
-        {
-            return Blocked("Repair required", exception.Message, mode);
-        }
-
-        if (!officialLauncherService.IsAvailable)
-        {
-            return Blocked(
-                "Official launcher needed",
-                "Install or repair the official Star Trek Fleet Command launcher before launching.",
-                mode);
-        }
-
-        return new(
+        var health = CapturePrimeHealth(gameDirectory, target);
+        return health ?? new(
             "Ready to play",
             LauncherHomeTone.Success,
-            "Launch game",
+            "Launch prime.exe",
             true,
-            "Launch the modded game through the official Star Trek Fleet Command launcher",
-            mode);
+            "Launch prime.exe directly with the community mod",
+            target,
+            "The selected game and community mod are ready for a direct launch.",
+            LauncherLaunchRecoveryAction.None);
     }
 
     public async Task<GameLaunchHandoffResult> LaunchAsync(
-        string gameDirectory,
-        GameLaunchMode mode = GameLaunchMode.Modded,
+        string? gameDirectory,
+        LauncherLaunchTarget target,
         CancellationToken cancellationToken = default)
     {
-        var initial = CapturePresentation(gameDirectory, mode);
+        var initial = CapturePresentation(gameDirectory, target);
         if (!initial.CanExecute)
         {
-            return new(GameLaunchHandoffState.Blocked, initial.AutomationName, initial);
+            return new(GameLaunchHandoffState.Blocked, initial.AutomationName, initial, Changed: false);
         }
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
+            var busyPresentation = initial with
+            {
+                Status = "Operation in progress",
+                CanExecute = false,
+                Reason = "Another Mod Control operation currently owns the game-operation boundary.",
+                NextAction = LauncherLaunchRecoveryAction.WaitForLauncherOperation,
+                AutomationName = $"{initial.ActionLabel} unavailable: another Mod Control operation is active.",
+            };
             return new(
                 GameLaunchHandoffState.Busy,
-                "Another launcher operation is active. Wait for it to finish before launching.",
-                initial with { Status = "Operation in progress", CanExecute = false });
+                $"Another Mod Control operation is active. Wait for it to finish before using {initial.ActionLabel}.",
+                busyPresentation,
+                Changed: false);
         }
 
-        var revalidated = CapturePresentation(gameDirectory, mode);
+        var revalidated = CapturePresentation(gameDirectory, target);
         if (!revalidated.CanExecute)
         {
-            return new(GameLaunchHandoffState.Blocked, revalidated.AutomationName, revalidated);
+            return new(GameLaunchHandoffState.Blocked, revalidated.AutomationName, revalidated, Changed: false);
         }
 
+        return target == LauncherLaunchTarget.ScopelyLauncher
+            ? await LaunchScopelyAsync(gameDirectory, cancellationToken)
+            : await LaunchPrimeAsync(
+                gameDirectory
+                    ?? throw new InvalidOperationException("The revalidated prime.exe target has no game directory."),
+                cancellationToken);
+    }
+
+    private async Task<GameLaunchHandoffResult> LaunchScopelyAsync(
+        string? gameDirectory,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            await using var process = await officialLauncherService.StartAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var startResult = await officialLauncherService.StartAsync(cancellationToken);
+            await using var process = startResult.Process;
             await process.WaitForExitAsync(cancellationToken);
-            var refreshed = CapturePresentation(gameDirectory, mode);
+            var message = startResult.Kind == OfficialLauncherStartKind.StartedNew
+                ? "The Scopely launcher opened and was tracked until it closed."
+                : "The Scopely launcher was already running and was tracked until it closed; no new process was started.";
             return new(
                 GameLaunchHandoffState.Completed,
-                gameProcessInspector.IsGameRunning()
-                    ? "The official launcher handed off to Star Trek Fleet Command."
-                    : "The official launcher closed; game and mod health were refreshed.",
-                refreshed);
+                message,
+                CapturePresentation(gameDirectory, LauncherLaunchTarget.ScopelyLauncher),
+                startResult.Changed);
         }
         catch (OperationCanceledException)
         {
@@ -290,21 +381,165 @@ public sealed class GameLaunchHandoffCoordinator(
                 or InvalidOperationException
                 or System.ComponentModel.Win32Exception)
         {
-            var refreshed = CapturePresentation(gameDirectory, mode);
             return new(
                 GameLaunchHandoffState.Failed,
-                $"The official launcher could not be started: {exception.Message}",
-                refreshed);
+                $"The Scopely launcher could not be opened or tracked safely: {exception.Message}",
+                CapturePresentation(gameDirectory, LauncherLaunchTarget.ScopelyLauncher),
+                Changed: false);
         }
     }
 
-    private static GameLaunchPresentation Blocked(string status, string explanation, GameLaunchMode mode) => new(
-        status,
-        LauncherHomeTone.Warning,
-        "Launch game",
-        false,
-        $"Launch game unavailable: {explanation}",
-        mode);
+    private async Task<GameLaunchHandoffResult> LaunchPrimeAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await gameExecutableLaunchService.StartAsync(gameDirectory, cancellationToken);
+            return new(
+                GameLaunchHandoffState.Completed,
+                "prime.exe started.",
+                CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable),
+                Changed: true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            return new(
+                GameLaunchHandoffState.Failed,
+                $"prime.exe could not be started: {exception.Message}",
+                CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable),
+                Changed: false);
+        }
+    }
+
+    private GameLaunchPresentation? CapturePrimeHealth(string? gameDirectory, LauncherLaunchTarget target)
+    {
+        if (string.IsNullOrWhiteSpace(gameDirectory))
+        {
+            return Blocked(
+                "Game folder needed",
+                "Launch prime.exe",
+                "No valid game folder is selected.",
+                target,
+                LauncherLaunchRecoveryAction.SelectGameFolder);
+        }
+
+        GameInstallValidation validation;
+        try
+        {
+            validation = GameInstallValidator.Validate(gameDirectory);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
+        {
+            return Blocked(
+                "Game folder needed",
+                "Launch prime.exe",
+                "The selected game folder could not be validated safely.",
+                target,
+                LauncherLaunchRecoveryAction.OpenDiagnostics);
+        }
+        if (!validation.IsValid || !gameExecutableLaunchService.IsAvailable(validation.GameDirectory))
+        {
+            return Blocked(
+                "Game folder needed",
+                "Launch prime.exe",
+                validation.Message,
+                target,
+                LauncherLaunchRecoveryAction.SelectGameFolder);
+        }
+
+        if (gameProcessInspector.IsGameRunning())
+        {
+            return Blocked(
+                "Running",
+                "Launch prime.exe",
+                "Star Trek Fleet Command is already running.",
+                target,
+                LauncherLaunchRecoveryAction.CloseRunningGame,
+                LauncherHomeTone.Success);
+        }
+
+        try
+        {
+            var journal = deploymentService.ReadJournal();
+            if (journal is not null
+                && journal.Phase is not (ModDeploymentPhase.Committed
+                    or ModDeploymentPhase.RolledBack
+                    or ModDeploymentPhase.Failed))
+            {
+                return Blocked(
+                    "Recovery required",
+                    "Launch prime.exe",
+                    "Recover the incomplete mod transaction before launching.",
+                    target,
+                    LauncherLaunchRecoveryAction.RecoverModTransaction);
+            }
+
+            var state = deploymentService.ReadInstalledState();
+            var targetPath = Path.Combine(validation.GameDirectory, "version.dll");
+            if (state is null)
+            {
+                if (!File.Exists(targetPath))
+                {
+                    return Blocked(
+                        "Mod required",
+                        "Launch prime.exe",
+                        "Install the community mod before a direct modded launch.",
+                        target,
+                        LauncherLaunchRecoveryAction.InstallMod);
+                }
+            }
+            else if (!PathEquals(state.GameDirectory, validation.GameDirectory)
+                || !File.Exists(targetPath)
+                || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return Blocked(
+                    "Repair required",
+                    "Launch prime.exe",
+                    "Repair the Mod Control-managed mod before launching.",
+                    target,
+                    LauncherLaunchRecoveryAction.RepairMod);
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return Blocked(
+                "Repair required",
+                "Launch prime.exe",
+                "The community mod deployment state could not be validated safely.",
+                target,
+                LauncherLaunchRecoveryAction.OpenDiagnostics);
+        }
+
+        return null;
+    }
+
+    private static GameLaunchPresentation Blocked(
+        string status,
+        string actionLabel,
+        string explanation,
+        LauncherLaunchTarget target,
+        LauncherLaunchRecoveryAction nextAction,
+        LauncherHomeTone tone = LauncherHomeTone.Warning) => new(
+            status,
+            tone,
+            actionLabel,
+            false,
+            $"{actionLabel} unavailable: {explanation}",
+            target,
+            explanation,
+            nextAction);
 
     private static string ComputeSha256(string path)
     {

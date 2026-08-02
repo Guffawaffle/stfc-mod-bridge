@@ -9,15 +9,34 @@ internal sealed record LauncherStartupComposition(
     LauncherSettingsActivationDiagnostics SettingsDiagnostics)
 {
     public static LauncherStartupComposition Create(
-        LauncherDistributionProvider provider)
+        LauncherDistributionProvider provider,
+        LauncherProviderReleaseChannel releaseChannel)
     {
         ArgumentNullException.ThrowIfNull(provider);
-        using var manifest = typeof(LauncherStartupComposition)
-            .Assembly
-            .GetManifestResourceStream(provider.RuntimeManifestResourceName);
+        ArgumentNullException.ThrowIfNull(releaseChannel);
+        if (!provider.ReleaseChannels.TryGetValue(releaseChannel.Id, out var registeredChannel)
+            || registeredChannel != releaseChannel)
+        {
+            throw new ArgumentException(
+                $"Release channel '{releaseChannel.Id}' does not belong to provider '{provider.Id}'.",
+                nameof(releaseChannel));
+        }
+        var manifestResourceName = provider.GetCapabilityStatus(
+                LauncherProviderCapabilityIds.RuntimeManifest)
+                == LauncherProviderCapabilityStatus.Supported
+            && provider.RuntimeManifest.Status == LauncherProviderCapabilityStatus.Supported
+            ? provider.RuntimeManifest.ResourceName
+            : null;
+        using var manifest = manifestResourceName is null
+            ? null
+            : typeof(LauncherStartupComposition)
+                .Assembly
+                .GetManifestResourceStream(manifestResourceName);
         var runtimeProfile = LauncherRuntimeManifestDetector.Detect(
             manifest,
-            $"embedded:{provider.RuntimeManifestResourceName}");
+            manifestResourceName is null
+                ? $"provider:{provider.Id}:runtime-manifest-unknown"
+                : $"embedded:{manifestResourceName}");
         var activationPlan = LauncherFeatureResolver.Resolve(
             runtimeProfile,
             LauncherFeatureCatalog.All);
@@ -38,7 +57,11 @@ internal sealed record LauncherStartupComposition(
             detectedRuntime,
             semanticGrouping.IsActive ? "Active" : "Inactive",
             semanticGrouping.Reason,
-            settingsLayout.DisplayName);
+            settingsLayout.DisplayName,
+            provider.Id,
+            provider.DisplayName,
+            releaseChannel.DisplayName,
+            releaseChannel.Repository);
         return new(
             runtimeProfile,
             activationPlan,

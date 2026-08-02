@@ -1,0 +1,174 @@
+<UserControl x:Class="STFCCommunityMod.Launcher.Controls.LaunchTargetSplitButton"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
+             MinHeight="44"
+             automation:AutomationProperties.Name="Game launch target">
+  <UserControl.Resources>
+    <Style x:Key="SplitButtonSegmentStyle"
+           BasedOn="{StaticResource {x:Type Button}}"
+           TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="SegmentBorder"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="0">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center"
+                                RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="SegmentBorder"
+                        Property="Background"
+                        Value="{DynamicResource AccentHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="SegmentBorder" Property="Opacity" Value="0.82" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="LaunchChoiceStyle"
+           BasedOn="{StaticResource QuietButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="54" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Style.Triggers>
+        <Trigger Property="Tag" Value="True">
+          <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+  <Grid>
+    <Border x:Name="SplitButtonSurface"
+            Background="{DynamicResource SurfaceMutedBrush}"
+            BorderBrush="{DynamicResource ControlBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource ControlCornerRadius}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="44" />
+        </Grid.ColumnDefinitions>
+
+        <Button x:Name="PrimaryButton"
+            MinHeight="44"
+            Padding="16,8"
+            HorizontalContentAlignment="Left"
+            Style="{StaticResource SplitButtonSegmentStyle}"
+            Command="{Binding PrimaryCommand, ElementName=Root}"
+            Content="{Binding PrimaryLabel, ElementName=Root}"
+            IsEnabled="{Binding IsPrimaryEnabled, ElementName=Root}"
+            ToolTip="{Binding PrimaryAutomationName, ElementName=Root}"
+            ToolTipService.ShowOnDisabled="True"
+            automation:AutomationProperties.Name="{Binding PrimaryAutomationName, ElementName=Root}"
+            automation:AutomationProperties.HelpText="Executes the selected game launch target." />
+
+        <Button x:Name="MenuButton"
+            Grid.Column="1"
+            Width="44"
+            MinHeight="44"
+            Padding="0"
+            Style="{StaticResource SplitButtonSegmentStyle}"
+            Click="MenuButton_Click"
+            IsEnabled="{Binding IsMenuEnabled, ElementName=Root}"
+            automation:AutomationProperties.Name="Choose game launch target"
+            automation:AutomationProperties.HelpText="Opens the launch target menu without launching anything.">
+      <controls:AppIcon Width="16"
+                        Height="16"
+                        Kind="ChevronDown" />
+    </Button>
+
+        <Border Grid.Column="1"
+              Width="1"
+              Height="24"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+              Background="{DynamicResource BorderBrush}"
+              IsHitTestVisible="False" />
+
+      </Grid>
+    </Border>
+
+    <Popup x:Name="ChoicePopup"
+           AllowsTransparency="True"
+           Closed="ChoicePopup_Closed"
+           CustomPopupPlacementCallback="PlaceChoicePopup"
+           Placement="Custom"
+           PlacementTarget="{Binding ElementName=MenuButton}"
+           PopupAnimation="Fade"
+           StaysOpen="False">
+      <Border x:Name="ChoiceMenuSurface"
+              Width="320"
+              Padding="4"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource ControlBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="{StaticResource PopupCornerRadius}"
+              PreviewKeyDown="ChoicePopup_PreviewKeyDown">
+        <StackPanel KeyboardNavigation.TabNavigation="Cycle">
+          <Button x:Name="PrimeChoiceButton"
+                  Style="{StaticResource LaunchChoiceStyle}"
+                  Tag="{Binding IsPrimeSelected, ElementName=Root}"
+                  Command="{Binding SelectPrimeCommand, ElementName=Root}"
+                  Click="ChoiceButton_Click"
+                  automation:AutomationProperties.Name="{Binding PrimeChoiceAutomationName, ElementName=Root}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="✓"
+                         Visibility="{Binding IsPrimeSelected, ElementName=Root, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         automation:AutomationProperties.Name="Selected" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Launch prime.exe" />
+                <TextBlock FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding PrimeChoiceStatus, ElementName=Root}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Button x:Name="ScopelyChoiceButton"
+                  Style="{StaticResource LaunchChoiceStyle}"
+                  Tag="{Binding IsScopelySelected, ElementName=Root}"
+                  Command="{Binding SelectScopelyCommand, ElementName=Root}"
+                  Click="ChoiceButton_Click"
+                  automation:AutomationProperties.Name="{Binding ScopelyChoiceAutomationName, ElementName=Root}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="✓"
+                         Visibility="{Binding IsScopelySelected, ElementName=Root, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         automation:AutomationProperties.Name="Selected" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Open Scopely launcher" />
+                <TextBlock FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding ScopelyChoiceStatus, ElementName=Root}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+          </Button>
+        </StackPanel>
+      </Border>
+    </Popup>
+  </Grid>
+</UserControl>

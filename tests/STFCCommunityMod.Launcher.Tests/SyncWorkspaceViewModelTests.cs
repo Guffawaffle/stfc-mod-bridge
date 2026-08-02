@@ -272,6 +272,27 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void PresetEndpointCannotProjectLegacyFeedsOntoSidecarKind()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sidecar.sync]
+            enabled = false
+            url = "https://spocks.club/sync/ingress/"
+            token = "fixture-sidecar-secret"
+            """);
+
+        var sidecar = fixture.CreateViewModel().Targets.Single();
+
+        Assert.AreEqual(SyncTargetKind.LocalSidecar, sidecar.Definition.Kind);
+        CollectionAssert.AreEquivalent(
+            SyncTargetTypeCatalog.Get(SyncTargetKind.LocalSidecar).SupportedDataKinds.ToArray(),
+            sidecar.Feeds.Select(feed => feed.Kind).ToArray());
+        Assert.IsFalse(sidecar.Feeds.Any(feed =>
+            SyncTargetTypeCatalog.GetPreset("spocks_club").SupportedDataKinds.Contains(feed.Kind)));
+    }
+
+    [TestMethod]
     public void SiblingDraftBlocksSyncSaveWithoutDiscardingEitherDraft()
     {
         using var fixture = SyncFixture.Create(
@@ -291,6 +312,36 @@ public sealed class SyncWorkspaceViewModelTests
         Assert.IsFalse(viewModel.CanSave);
         Assert.IsTrue(viewModel.HasPendingChanges);
         StringAssert.Contains(viewModel.SaveAvailability, "non-sync settings");
+    }
+
+    [TestMethod]
+    public void UnsupportedExistingCapabilityIsAdvisoryAndCanBeRemovedBeforeSave()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync]
+            jobs = true
+
+            [sync.targets.nextspocksclub]
+            url = "https://next.spocks.club/sync/ingress/"
+            token = "fixture-secret"
+            fleet_runtime = true
+            jobs = false
+            """);
+        var viewModel = fixture.CreateViewModel();
+        var target = viewModel.Targets.Single();
+
+        Assert.IsTrue(target.HasUnsupportedCapabilities);
+        StringAssert.Contains(target.ValidationSummary, "Fleet runtime");
+        StringAssert.Contains(target.ValidationSummary, "remove unsupported settings");
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+
+        Assert.IsTrue(target.RemoveUnsupportedCapabilitiesCommand.CanExecute(null));
+        target.RemoveUnsupportedCapabilitiesCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+        Assert.IsTrue(viewModel.HasPendingChanges);
     }
 
     [TestMethod]
@@ -373,6 +424,31 @@ public sealed class SyncWorkspaceViewModelTests
         Assert.IsFalse(viewModel.IsAddWizardOpen);
         Assert.IsFalse(viewModel.HasPendingChanges);
         Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
+    public void InvalidWizardDestinationStagesWithAdvisoryAttentionState()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "invalid-endpoint";
+        wizard.Endpoint = "not-a-valid-ingest-url";
+        wizard.Token = "fixture-secret";
+        wizard.NextCommand.Execute(null);
+        wizard.FinishCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.IsTrue(viewModel.HasPendingChanges);
+        var target = viewModel.Targets.Single();
+        Assert.IsTrue(target.NeedsAttention);
+        StringAssert.Contains(target.ValidationSummary, "absolute HTTP or HTTPS");
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
     }
 
     [TestMethod]

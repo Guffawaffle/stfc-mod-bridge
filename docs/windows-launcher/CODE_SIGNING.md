@@ -23,8 +23,9 @@ The GitHub environment is `windows-release`.
 - Allowed branch for manual release work: `main`
 - Allowed release tags: `v*`
 - OIDC subject:
-  `repo:Guffawaffle/stfc-mod:environment:windows-release`
-- GitHub job permissions: `contents: read` and `id-token: write`
+  `repo:Guffawaffle/stfc-mod-launcher:environment:windows-release`
+- Signing job permission: `id-token: write` with `contents: read`
+- Publication job permission: `contents: write` without `id-token`
 
 Pull requests and ordinary branch builds remain unsigned. Only a tag build can
 enter the signing job, and the protected environment requires approval before
@@ -32,29 +33,30 @@ GitHub issues the environment-scoped OIDC token.
 
 ## Signed artifacts
 
-The tag workflow signs and verifies:
+The standalone tag workflow signs and verifies:
 
-- `version.dll`
-- `STFCCommunityMod.Launcher.exe`
-- `STFCCommunityMod.Launcher.Updater.exe`
-- `STFCCommunityMod.Launcher.Setup.exe`
+- `STFCModControl.exe`
+- `STFCModControl.Updater.exe`
+- `STFCModControl.Setup.exe`
 
 Future executable release components must be added to an explicit signing
-allowlist before release.
+allowlist before release. Package inspection identifies PE files by their
+actual `MZ`/`PE\0\0` headers rather than file extension, so a DLL or renamed PE
+cannot evade that allowlist.
 
 The release order is:
 
 ```text
-build -> approve protected environment -> OIDC login -> sign inner executables
+test -> build -> approve protected environment -> OIDC login -> sign inner executables
       -> verify -> package -> embed package -> sign setup -> verify -> hash -> publish
 ```
 
 Packaging and checksums must occur after signing because Authenticode modifies
 the PE file. The setup must be built only after the signed launcher ZIP exists,
 because that exact ZIP is embedded in its PE; the setup is then signed as the
-outermost artifact. The workflow verifies the executables with
-`Get-AuthenticodeSignature` (and the inner release files with `signtool verify
-/pa /v`), including the expected certificate subject.
+outermost artifact. The workflow verifies every executable with
+`Get-AuthenticodeSignature`, including valid status and the expected
+certificate subject, before manifest generation or release publication.
 
 ## Release manifest boundary
 
@@ -70,18 +72,9 @@ expectations for each PE artifact or signed archive member. The complete
 producer and consumer contract is in
 `docs/windows-launcher/RELEASE_MANIFEST.md`.
 
-## Rollback and credential retirement
-
-The previous sidecar client-secret identity remains available only as a
-temporary rollback path while the OIDC migration is validated. It is not used
-by this repository.
-
-After both repositories complete a successful protected OIDC signing run:
-
-1. Remove the sidecar `AZURE_CLIENT_SECRET` GitHub environment secret.
-2. Delete the corresponding Entra application password credential.
-3. Replace the sidecar's signing-account-scoped RBAC assignment with a
-   certificate-profile-scoped assignment.
-4. Re-run signed artifact verification and record the workflow runs.
-
-Do not retire the rollback credential before both signed runs succeed.
+The workflow pins every external action to a reviewed commit and passes tag,
+commit, and repository contexts into PowerShell through environment variables.
+The workflow contains no PFX or client secret. A successful protected tag run,
+package inspection, and manual clean-machine install/update/rollback/uninstall
+receipt are still required evidence; this document does not claim that those
+external gates have occurred.

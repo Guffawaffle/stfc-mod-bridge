@@ -25,6 +25,7 @@ public enum AppIconKind
     Sync,
     Save,
     Checkmark,
+    ChevronDown,
 }
 
 public sealed class AppIcon : SymbolIcon
@@ -102,6 +103,7 @@ public sealed class AppIcon : SymbolIcon
             AppIconKind.Sync => Symbol.CloudSync,
             AppIconKind.Save => Symbol.Save,
             AppIconKind.Checkmark => Symbol.Checkmark,
+            AppIconKind.ChevronDown => Symbol.ChevronDown,
             _ => Symbol.Settings,
         };
     }

@@ -46,7 +46,7 @@ public static class LauncherConfigurationSchemaLoader
         catch (JsonException exception)
         {
             throw new LauncherConfigurationSchemaException(
-                "The launcher configuration schema is not valid JSON.",
+                "The Mod Control configuration schema is not valid JSON.",
                 exception);
         }
     }
@@ -67,7 +67,7 @@ public static class LauncherConfigurationSchemaLoader
         {
             throw Invalid(
                 $"Unsupported schema version '{schemaVersionText}'. "
-                + $"This launcher supports {SupportedSchemaVersion}.");
+                + $"Mod Control supports {SupportedSchemaVersion}.");
         }
 
         var sourceElement = ReadRequiredProperty(root, "source", "schema root");
@@ -80,16 +80,16 @@ public static class LauncherConfigurationSchemaLoader
         RequireKind(settingsElement, JsonValueKind.Array, "settings");
 
         var settings = new List<LauncherConfigurationSetting>();
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paths = new List<(string Path, string Owner)>();
         var index = 0;
         foreach (var settingElement in settingsElement.EnumerateArray())
         {
             var setting = ParseSetting(settingElement, index, sourceId);
-            if (!paths.Add(setting.Path))
+            RegisterOwnedPath(paths, setting.Path, setting.Path, "canonical path");
+            foreach (var alias in setting.Aliases)
             {
-                throw Invalid($"Duplicate setting path '{setting.Path}'.");
+                RegisterOwnedPath(paths, alias.Path, setting.Path, "alias");
             }
-
             settings.Add(setting);
             ++index;
         }
@@ -146,6 +146,8 @@ public static class LauncherConfigurationSchemaLoader
         var sourceSupport = ReadSourceSupport(
             ReadRequiredProperty(element, "sourceSupport", context),
             path);
+        var aliases = ReadAliases(element, path);
+        var provenance = ReadProvenance(element, path);
 
         if (!sourceSupport.Contains(schemaSource))
         {
@@ -161,6 +163,7 @@ public static class LauncherConfigurationSchemaLoader
             category,
             control,
             valueKind,
+            element.Clone(),
             valueType.Clone(),
             numericConstraints,
             keybindingMetadata,
@@ -169,8 +172,112 @@ public static class LauncherConfigurationSchemaLoader
             platforms,
             sourceSupport,
             sensitivity,
+            aliases,
+            provenance,
             applyBehavior,
             presentation);
+    }
+
+    private static ReadOnlyCollection<LauncherConfigurationAlias> ReadAliases(
+        JsonElement setting,
+        string canonicalPath)
+    {
+        if (!setting.TryGetProperty("aliases", out var element))
+        {
+            return Array.AsReadOnly(Array.Empty<LauncherConfigurationAlias>());
+        }
+
+        RequireKind(element, JsonValueKind.Array, $"aliases for '{canonicalPath}'");
+        var aliases = new List<LauncherConfigurationAlias>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var alias in element.EnumerateArray())
+        {
+            var context = $"alias for '{canonicalPath}'";
+            RequireKind(alias, JsonValueKind.Object, context);
+            RejectUnknownProperties(alias, context, "path", "status", "precedence", "removal");
+            var path = ReadRequiredString(alias, "path", context);
+            if (string.Equals(path, canonicalPath, StringComparison.OrdinalIgnoreCase)
+                || !paths.Add(path))
+            {
+                throw Invalid($"Setting '{canonicalPath}' contains duplicate or self-owned alias '{path}'.");
+            }
+
+            aliases.Add(
+                new(
+                    path,
+                    ParseAliasStatus(ReadRequiredString(alias, "status", context), canonicalPath),
+                    ParseAliasPrecedence(ReadRequiredString(alias, "precedence", context), canonicalPath),
+                    ReadOptionalString(alias, "removal", context)));
+        }
+
+        return aliases.AsReadOnly();
+    }
+
+    private static LauncherConfigurationProvenance ReadProvenance(
+        JsonElement setting,
+        string canonicalPath)
+    {
+        if (!setting.TryGetProperty("provenance", out var element))
+        {
+            return new(canonicalPath, null);
+        }
+
+        var context = $"provenance for '{canonicalPath}'";
+        RequireKind(element, JsonValueKind.Object, context);
+        RejectUnknownProperties(element, context, "runtimePath", "defaultSource");
+        return new(
+            ReadRequiredString(element, "runtimePath", context),
+            ReadOptionalString(element, "defaultSource", context));
+    }
+
+    private static LauncherConfigurationAliasStatus ParseAliasStatus(string token, string path) =>
+        token switch
+        {
+            "compatibility" => LauncherConfigurationAliasStatus.Compatibility,
+            "deprecated" => LauncherConfigurationAliasStatus.Deprecated,
+            _ => throw Invalid($"Setting '{path}' uses unsupported alias status '{token}'."),
+        };
+
+    private static LauncherConfigurationAliasPrecedence ParseAliasPrecedence(string token, string path) =>
+        token switch
+        {
+            "canonical-wins" => LauncherConfigurationAliasPrecedence.CanonicalWins,
+            "canonical-replaces-whole-policy" =>
+                LauncherConfigurationAliasPrecedence.CanonicalReplacesWholePolicy,
+            _ => throw Invalid($"Setting '{path}' uses unsupported alias precedence '{token}'."),
+        };
+
+    private static void RegisterOwnedPath(
+        List<(string Path, string Owner)> registry,
+        string path,
+        string owner,
+        string kind)
+    {
+        foreach (var registered in registry)
+        {
+            if (PathsOverlap(registered.Path, path))
+            {
+                throw Invalid(
+                    $"Configuration {kind} '{path}' is ambiguously owned by "
+                    + $"'{registered.Owner}' and '{owner}'.");
+            }
+        }
+
+        registry.Add((path, owner));
+    }
+
+    private static bool PathsOverlap(string first, string second)
+    {
+        var firstSegments = first.Split('.');
+        var secondSegments = second.Split('.');
+        return firstSegments.Length == secondSegments.Length
+            && firstSegments.Zip(
+                    secondSegments,
+                    (left, right) =>
+                        left == "*"
+                        || right == "*"
+                        || string.Equals(left, right, StringComparison.OrdinalIgnoreCase))
+                .All(matches => matches);
     }
 
     private static LauncherConfigurationPresentation ReadPresentation(

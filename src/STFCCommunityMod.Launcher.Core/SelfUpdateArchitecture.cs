@@ -16,3 +16,10 @@ public static class SelfUpdateArchitecture
         "rollback-on-failure",
     ];
 }
+
+public static class LauncherSelfUpdateAuthority
+{
+    public const string ReleaseRepository = "Guffawaffle/stfc-mod-launcher";
+    public const string ReleaseManifestAssetName = ModControlProductIdentity.ReleaseManifestName;
+    public const string WindowsArtifactPublisher = "Joseph Gustavson";
+}

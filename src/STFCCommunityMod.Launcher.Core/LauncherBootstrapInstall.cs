@@ -20,11 +20,12 @@ public sealed class LauncherBootstrapInstaller(
         ArgumentNullException.ThrowIfNull(archive);
         if (isLauncherRunning())
         {
-            throw new InvalidOperationException("Close STFC Community Mod Launcher before installing or updating it.");
+            throw new InvalidOperationException($"Close {ModControlProductIdentity.ProductName} before installing or updating it.");
         }
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Another launcher operation is already in progress.");
+            ?? throw new InvalidOperationException("Another Mod Control operation is already in progress.");
+        LauncherUpdateRecovery.RecoverBeforeSetup(stateDirectory, programDirectory);
         var transactionRoot = Path.Combine(stateDirectory, "bootstrap", Guid.NewGuid().ToString("N"));
         var stageDirectory = Path.Combine(transactionRoot, "stage");
         var backupDirectory = Path.Combine(transactionRoot, "backup");
@@ -35,8 +36,8 @@ public sealed class LauncherBootstrapInstaller(
         try
         {
             LauncherArchiveExtractor.Extract(archive, stageDirectory);
-            VerifyExecutable(Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.exe"));
-            VerifyExecutable(Path.Combine(stageDirectory, "STFCCommunityMod.Launcher.Updater.exe"));
+            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.ExecutableName));
+            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.UpdaterExecutableName));
 
             Directory.CreateDirectory(Path.GetDirectoryName(programDirectory)!);
             if (hadPrevious)
@@ -54,7 +55,7 @@ public sealed class LauncherBootstrapInstaller(
             }
 
             return new(
-                Path.Combine(programDirectory, "STFCCommunityMod.Launcher.exe"),
+                Path.Combine(programDirectory, ModControlProductIdentity.ExecutableName),
                 hadPrevious);
         }
         catch
@@ -93,12 +94,12 @@ public sealed class LauncherBootstrapInstaller(
     {
         if (!File.Exists(path))
         {
-            throw new InvalidDataException($"Launcher package is missing {Path.GetFileName(path)}.");
+            throw new InvalidDataException($"Mod Control package is missing {Path.GetFileName(path)}.");
         }
         var result = authenticityVerifier.Verify(path);
         if (!result.IsTrusted)
         {
-            throw new InvalidDataException($"Launcher package signature verification failed: {result.Message}");
+            throw new InvalidDataException($"Mod Control package signature verification failed: {result.Message}");
         }
     }
 }

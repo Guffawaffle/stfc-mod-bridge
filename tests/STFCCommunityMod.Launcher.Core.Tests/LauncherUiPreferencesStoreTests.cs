@@ -16,6 +16,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsFalse(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -30,6 +31,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -50,6 +52,26 @@ public sealed class LauncherUiPreferencesStoreTests
     }
 
     [TestMethod]
+    public void LaunchTargetRoundTripsAcrossStoreInstances()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+
+        new JsonLauncherUiPreferencesStore(stateDirectory)
+            .Save(
+                new LauncherUiPreferences(
+                    SettingsSearchVisible: false,
+                    LaunchTarget: LauncherLaunchTarget.PrimeExecutable));
+
+        var result = new JsonLauncherUiPreferencesStore(stateDirectory).Load();
+
+        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        StringAssert.Contains(
+            File.ReadAllText(Path.Combine(stateDirectory, "ui-preferences.json")),
+            "PrimeExecutable");
+    }
+
+    [TestMethod]
     public void VersionOnePreferencesKeepSearchAndDefaultToSystemColorMode()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -67,6 +89,7 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]
@@ -88,6 +111,51 @@ public sealed class LauncherUiPreferencesStoreTests
 
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
+    }
+
+    [TestMethod]
+    public void VersionTwoPreferencesDefaultLaunchTargetWithoutDroppingExistingValues()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "ui-preferences.json"),
+            """
+            {
+              "schemaVersion": 2,
+              "settingsSearchVisible": true,
+              "colorMode": "Dark"
+            }
+            """);
+
+        var result = new JsonLauncherUiPreferencesStore(stateDirectory).Load();
+
+        Assert.IsTrue(result.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
+    }
+
+    [TestMethod]
+    public void UnknownLaunchTargetFallsBackWithoutDroppingExistingValues()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "ui-preferences.json"),
+            """
+            {
+              "schemaVersion": 3,
+              "settingsSearchVisible": true,
+              "colorMode": "Light",
+              "launchTarget": "FerengiShuttle"
+            }
+            """);
+
+        var result = new JsonLauncherUiPreferencesStore(stateDirectory).Load();
+
+        Assert.IsTrue(result.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Light, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
     }
 
     [TestMethod]

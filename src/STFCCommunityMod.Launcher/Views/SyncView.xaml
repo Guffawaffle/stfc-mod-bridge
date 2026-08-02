@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
              xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
@@ -233,22 +234,9 @@
           <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <TextBlock FontSize="22" FontWeight="SemiBold" Text="Data Sync" />
-            <ToggleButton x:Name="InformationButton" Width="30" Height="30" Margin="8,0,0,0"
-                          Content="?" FontSize="15" FontWeight="Bold"
-                          Style="{StaticResource SegmentButtonStyle}"
-                          ToolTip="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart."
-                          automation:AutomationProperties.Name="About Data Sync editing"
-                          automation:AutomationProperties.HelpText="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart."
-                          GotKeyboardFocus="InformationButton_StateChanged" LostKeyboardFocus="InformationButton_StateChanged"
-                          MouseEnter="InformationButton_StateChanged" MouseLeave="InformationButton_StateChanged"
-                          Click="InformationButton_StateChanged" />
-            <Popup x:Name="InformationPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=InformationButton}"
-                   AllowsTransparency="True" StaysOpen="False">
-              <Border Width="390" Margin="0,6,0,0" Padding="14" Background="{DynamicResource SurfaceMutedBrush}"
-                      BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1" CornerRadius="8">
-                <TextBlock Text="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart." />
-              </Border>
-            </Popup>
+            <controls:HelpFlyoutButton Margin="8,0,0,0"
+                                       AutomationName="About Data Sync editing"
+                                       HelpText="Shared defaults apply across configured destinations. Edits remain staged until Save. The running game keeps its startup topology until restart." />
           </StackPanel>
           <Button x:Name="AddDestinationButton" Grid.Column="1" Command="{Binding OpenAddDestinationCommand}" Content="Add destination"
                   automation:AutomationProperties.Name="Add Data Sync destination" />
@@ -265,7 +253,7 @@
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <ToggleButton Style="{StaticResource TabButtonStyle}" Content="Global defaults"
+          <ToggleButton x:Name="GlobalTabButton" Style="{StaticResource TabButtonStyle}" Content="Global defaults"
                         IsChecked="{Binding IsGlobalTabSelected, Mode=OneWay}" Click="GlobalTab_Click"
                         automation:AutomationProperties.Name="Global Data Sync defaults tab" />
           <Button x:Name="ScrollTabsLeftButton" Grid.Column="1" Width="34" MinHeight="48" Padding="0" Margin="3,0"
@@ -274,7 +262,8 @@
           <ScrollViewer x:Name="DestinationTabScrollViewer" Grid.Column="2"
                         HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                         PanningMode="HorizontalOnly" PreviewMouseWheel="DestinationTabs_PreviewMouseWheel"
-                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged">
+                        ScrollChanged="DestinationTabs_ScrollChanged" SizeChanged="DestinationTabs_SizeChanged"
+                        automation:AutomationProperties.Name="Destination tab overflow">
             <ItemsControl x:Name="DestinationTabs" ItemsSource="{Binding Tabs}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemContainerStyle>
@@ -292,7 +281,7 @@
                       <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                       <TextBlock Margin="0,2,0,0" FontSize="10" Text="{Binding SecondaryLabel}">
                         <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                          <Style.Triggers><DataTrigger Binding="{Binding Destination.HasValidationError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
+                          <Style.Triggers><DataTrigger Binding="{Binding Destination.NeedsAttention}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
                         </Style></TextBlock.Style>
                       </TextBlock>
                     </StackPanel>
@@ -372,7 +361,7 @@
                       <Border Margin="10,1,0,0" Padding="8,3" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="5"
                               Visibility="{Binding ShowKindLabel, Converter={StaticResource BooleanToVisibilityConverter}}"><TextBlock FontSize="11" Text="{Binding KindLabel}" /></Border>
                       <TextBlock Margin="10,4,0,0" Text="{Binding ReadinessLabel}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                        <Style.Triggers><DataTrigger Binding="{Binding HasValidationError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
+                        <Style.Triggers><DataTrigger Binding="{Binding NeedsAttention}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}" /></DataTrigger></Style.Triggers>
                       </Style></TextBlock.Style></TextBlock></StackPanel>
                     <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveFeeds, StringFormat='Effective feeds: {0}'}" />
                     <TextBlock Margin="0,4,0,0" FontSize="12" Text="{Binding ValidationSummary}" automation:AutomationProperties.LiveSetting="Polite" /></StackPanel>
@@ -383,8 +372,14 @@
                       <CheckBox Style="{StaticResource SyncSwitchStyle}" IsChecked="{Binding IsEnabled}"
                                 automation:AutomationProperties.Name="Destination enabled" />
                     </StackPanel>
-                    <Button Width="44" MinHeight="38" Padding="0" Style="{StaticResource SecondaryButtonStyle}" Content="⋯" automation:AutomationProperties.Name="Destination actions">
+                    <Button x:Name="DestinationActionsButton" Width="44" MinHeight="38" Padding="0"
+                            Style="{StaticResource SecondaryButtonStyle}" Click="DestinationActionsButton_Click"
+                            automation:AutomationProperties.Name="Destination actions">
+                      <controls:AppIcon Kind="More" />
                       <Button.ContextMenu><ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource ControlBorderBrush}">
+                        <MenuItem Header="Remove unsupported settings" Command="{Binding RemoveUnsupportedCapabilitiesCommand}"
+                                  Visibility="{Binding HasUnsupportedCapabilities, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  Style="{StaticResource DarkMenuItemStyle}" />
                         <MenuItem Header="Duplicate" Command="{Binding DuplicateCommand}" Style="{StaticResource DarkMenuItemStyle}" />
                         <Separator />
                         <MenuItem Header="Remove" Command="{Binding RemoveCommand}" Style="{StaticResource DarkMenuItemStyle}" />
@@ -456,12 +451,17 @@
                 <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Feed overrides" /><Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Feeds}">
                   <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type viewModels:SyncTargetFeedViewModel}">
-                    <Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid Margin="0,0,0,9"
+                          automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override'}">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="180" /><ColumnDefinition Width="230" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                       <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Label}" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}" />
-                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}" />
+                        <ToggleButton Style="{StaticResource SegmentButtonStyle}" Content="{Binding InheritanceLabel}" Tag="UseGlobal" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=UseGlobal}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, inherited'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="On" Tag="Enabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Enabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, on'}" />
+                        <ToggleButton Margin="5,0,0,0" Style="{StaticResource SegmentButtonStyle}" Content="Off" Tag="Disabled" Click="FeedSegment_Click" IsChecked="{Binding Choice, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Disabled}"
+                                      automation:AutomationProperties.Name="{Binding Label, StringFormat='Destination {0} feed override, off'}" />
                       </StackPanel>
                       <TextBlock Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding EffectiveSummary}" />
                     </Grid>
@@ -554,8 +554,8 @@
             <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource ErrorBrush}" Text="{Binding Error}" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
               <Button Margin="0,0,8,0" Style="{StaticResource QuietButtonStyle}" Command="{Binding CancelCommand}" Content="Cancel" />
-              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" />
-              <Button Command="{Binding NextCommand}" Content="Next" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+              <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackCommand}" Content="Back" Click="WizardStep_Click" />
+              <Button Command="{Binding NextCommand}" Content="Next" Click="WizardStep_Click" Visibility="{Binding IsLastStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
               <Button Command="{Binding FinishCommand}" Content="Finish" Visibility="{Binding IsLastStep, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
           </Grid>

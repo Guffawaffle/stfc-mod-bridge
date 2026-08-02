@@ -165,14 +165,18 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public string PendingChangesText => HasPendingChanges ? "Unsaved data sync changes" : "No unsaved data sync changes";
 
     public string SaveAvailability => IsStale
-        ? "The TOML changed outside the launcher. Reload before saving."
+        ? "The TOML changed outside Mod Control. Reload before saving."
         : hasSiblingPendingChanges()
             ? "Save or discard the pending non-sync settings before saving Data Sync."
         : !IsCommittable
-            ? "Fix the target validation errors before saving."
+            ? $"Fix the target validation errors before saving. {BlockingValidationSummary}"
             : CanSave
                 ? "Save all staged Data Sync changes atomically."
                 : "Stage a valid Data Sync change before saving.";
+
+    private string BlockingValidationSummary => workspace?.Desired.Resolve().Diagnostics
+        .FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)?.Message
+        ?? string.Empty;
 
     public string OperationStatus
     {
@@ -413,6 +417,15 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
+        var candidateErrors = update.Topology.Resolve().Diagnostics
+            .Where(item => item.TargetName == identity && item.Severity == SyncTopologyDiagnosticSeverity.Error)
+            .ToArray();
+        if (candidateErrors.Length > 0)
+        {
+            wizard.SetError(string.Join(" ", candidateErrors.Select(item => item.Message)));
+            return;
+        }
+
         Stage(update.Topology);
         AddWizard = null;
         SelectTab("destination:" + identity);
@@ -460,7 +473,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         {
             AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
             AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
-            AtomicTomlWriteState.Conflict => "The TOML changed outside the launcher. External edits were preserved; reload before saving.",
+            AtomicTomlWriteState.Conflict => "The TOML changed outside Mod Control. External edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid => $"Nothing was written: {result.ValidationError?.Message ?? FirstPlanDiagnostic(result)}",
             _ => $"Data Sync could not be saved: {result.Error}",
         };
@@ -575,11 +588,17 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         DuplicateCommand = new SettingsActionCommand(
             () => owner.DuplicateTarget(name),
             () => Definition.MaximumInstances > 1);
+        RemoveUnsupportedCapabilitiesCommand = new SettingsActionCommand(
+            RemoveUnsupportedCapabilities,
+            () => HasUnsupportedCapabilities);
         ClearTokenCommand = new SettingsActionCommand(ClearToken);
         ReplaceTokenCommand = new SettingsActionCommand(ReplaceToken, () => !string.IsNullOrWhiteSpace(replacementToken));
         var definition = SyncTargetTypeCatalog.Get(Draft.Kind);
-        var supportedFeeds = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url)?.SupportedDataKinds
-            ?? definition.SupportedDataKinds;
+        var preset = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url);
+        var supportedFeeds = (preset?.TargetKind == Draft.Kind
+                ? preset.SupportedDataKinds
+                : definition.SupportedDataKinds)
+            .Where(definition.SupportedDataKinds.Contains);
         Feeds = supportedFeeds
             .OrderBy(kind => SyncTargetTypeCatalog.GetFeed(kind).DisplayName, StringComparer.Ordinal)
             .Select(kind => new SyncTargetFeedViewModel(owner, name, kind))
@@ -713,16 +732,25 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     {
         get
         {
-            var errors = owner.GetDiagnostics(name).Where(item => item.Severity == SyncTopologyDiagnosticSeverity.Error).ToArray();
-            return errors.Length == 0 ? "Ready" : string.Join(" ", errors.Select(item => item.Message));
+            var findings = owner.GetDiagnostics(name)
+                .Where(item => item.Severity is SyncTopologyDiagnosticSeverity.Warning or SyncTopologyDiagnosticSeverity.Error)
+                .ToArray();
+            var summary = findings.Length == 0 ? "Ready" : string.Join(" ", findings.Select(item => item.Message));
+            return HasUnsupportedCapabilities
+                ? summary + " Open destination actions to remove unsupported settings if you want to clean up this destination."
+                : summary;
         }
     }
-    public bool HasValidationError => owner.GetDiagnostics(name).Any(item => item.Severity == SyncTopologyDiagnosticSeverity.Error);
-    public string ReadinessLabel => HasValidationError ? "Needs attention" : "Ready";
+    public bool NeedsAttention => owner.GetDiagnostics(name).Any(item =>
+        item.Severity is SyncTopologyDiagnosticSeverity.Warning or SyncTopologyDiagnosticSeverity.Error);
+    public bool HasUnsupportedCapabilities => owner.GetDiagnostics(name).Any(item =>
+        item.Code == "SYNC_CAPABILITY_UNSUPPORTED");
+    public string ReadinessLabel => NeedsAttention ? "Needs attention" : "Ready";
     public string EffectiveFeeds => string.Join(", ", Feeds.Where(feed => feed.EffectiveEnabled).Select(feed => feed.Label).DefaultIfEmpty("None"));
     public IReadOnlyList<SyncTargetFeedViewModel> Feeds { get; }
     public ICommand RemoveCommand { get; }
     public ICommand DuplicateCommand { get; }
+    public ICommand RemoveUnsupportedCapabilitiesCommand { get; }
     public ICommand ClearTokenCommand { get; }
     public ICommand ReplaceTokenCommand { get; }
 
@@ -744,6 +772,35 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         owner.UpdateTarget(name, target => target.WithConnection(target.Url, SyncSecret.Missing));
         replacementToken = string.Empty;
         NotifyAll();
+    }
+
+    private void RemoveUnsupportedCapabilities()
+    {
+        var definition = Definition;
+        owner.UpdateTarget(
+            name,
+            target =>
+            {
+                var changed = target;
+                foreach (var kind in target.DataOverrides.Keys
+                             .Where(kind => !definition.SupportedDataKinds.Contains(kind))
+                             .ToArray())
+                {
+                    changed = changed.WithDataOverride(kind, SyncOverride.Inherited<bool>());
+                }
+
+                if (target.BattlelogEnrichment.IsExplicit && !definition.SupportsBattlelogEnrichment)
+                {
+                    changed = changed.WithBattlelogEnrichment(SyncOverride.Inherited<bool>());
+                }
+
+                if (target.FleetRuntimeMode.IsExplicit && !definition.SupportsFleetRuntimeMode)
+                {
+                    changed = changed.WithFleetRuntimeMode(SyncOverride.Inherited<string>());
+                }
+
+                return changed;
+            });
     }
 
     private void NotifyAll() => PropertyChanged?.Invoke(this, new(string.Empty));

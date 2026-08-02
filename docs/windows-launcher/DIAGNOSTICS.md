@@ -1,41 +1,59 @@
-# Windows Launcher Diagnostics and Repair
+# Diagnostics workspace
 
-Status: WL-008 redacted preview/export and allowlisted recovery, repair, and removal UX are implemented; installed-client maintenance smoke remains pending.
+Diagnostics is the canonical Mod Control support surface. Its default view is a
+set of readable, stable-ID checks; the machine-readable JSON is secondary and
+collapsed. The workspace does not infer native hook health from a DLL, log, or
+process. Missing authoritative evidence is shown as **Unknown**.
 
-## Health and next actions
+## Evidence contributors
 
-The explicit Diagnostics dialog resolves game selection, local mutation
-preconditions, game process state, official-launcher availability,
-launcher-managed `version.dll` identity, transaction state, TOML structure,
-and recent mod-log presence. Every attention or unavailable fact includes a
-bounded next action. Normal Home remains path-free; the exact game target is
-shown only in the destructive maintenance confirmation.
+| Contributor | Evidence | Failure behavior |
+| --- | --- | --- |
+| Environment probe | selected game target and game process | Attention or Unknown |
+| Scopely launcher service | supported per-user installation availability | Attention |
+| Mod deployment service | persisted journal, allowlisted target, installed identity | Unknown; never guess ownership |
+| Launcher-local health (#7) | provider compatibility, bounded update observation, native contract | explicit Unknown when unproven |
+| Configuration analyzer (#29) | revision-bound, provider-catalog-bound read-only diagnosis | Unknown for unsupported provider or syntax |
+| Mod log tail | at most 64 KiB / 200 lines from `community_patch.log` | Unknown or Attention |
 
-Repair reuses canonical release discovery and the full size, SHA-256,
-Authenticode publisher, and embedded-version transaction checks. Recovery
-rolls back only the paths recorded by a validated incomplete journal. Removal
-accepts only a matching launcher-managed DLL and restores the originally
-adopted manual artifact after any number of managed updates. Unknown or
-externally changed artifacts are never guessed at or deleted.
+Configuration diagnosis reads a snapshot and does not create a mutation plan.
+Provider behavior is selected by stable provider identity and catalog support,
+never display-name matching.
 
-## Preview and export
+## Privacy contract
 
-Diagnostics are generated locally and shown before copy or export. Export
-writes exactly the previewed UTF-8 JSON through an atomic same-directory
-replacement. There is no network or automatic-upload path.
+The structured report is generated locally and is never uploaded by Mod
+Control. Copy and export use immutable strings from the same
+`LauncherDiagnosticPreview` that the user reviews:
 
-The document contains bounded health facts and at most 64 KiB / 200 lines from
-the end of `community_patch.log`. It never includes TOML values, arbitrary
-environment variables, authentication stores, or unrelated files. The
-redactor replaces the selected game root and user profile, keyed token/secret/
-cookie values, bearer authorization, and every HTTP(S) endpoint.
+- **Copy diagnostic summary** copies the displayed redacted summary.
+- **Export report** writes the exact redacted JSON shown under Technical report.
+- Known user/game paths, credential assignments, bearer tokens, cookies, and
+  HTTP endpoints are scrubbed before either string is exposed.
+- Configuration findings structurally omit values and private paths before
+  serialization.
+- Recent raw log lines are bounded and scrubbed as defense in depth. Their
+  redaction is explicitly described as best effort, not perfect.
 
-## Evidence
+## Action and ownership boundaries
 
-Fixture tests prove token, bearer value, private path, private endpoint, and
-private TOML value exclusion; bounded local fact generation; and exact export.
-Deployment tests prove explicit repair, operation locking, allowlist-only
-uninstall, adopted-artifact restoration across managed updates, and failure
-rollback. Packaged UI Automation opens the preview, reads its health facts,
-asserts that raw profile/game paths are absent, closes it, and verifies that
-the active TOML remains byte-for-byte unchanged.
+Folder actions are routed through the Windows folder application service; WPF
+does not mutate game files. Recovery and removal reuse the single existing
+`ModManagementCoordinator` / `ModDeploymentService` transaction owner:
+
+- journaled and allowlisted targets only;
+- the game-running exclusion remains enforced;
+- provider ownership continues to fail closed;
+- removal requires the existing confirmation dialog;
+- removal affects the managed `version.dll`, or restores an explicitly adopted
+  predecessor, while preserving configuration, logs, and Mod Control state.
+
+Launcher self-update remains a separate trust and transaction domain from mod
+repair/removal. Automatic self-update residue recovery remains setup/helper
+owned; Diagnostics does not invent a second recovery implementation.
+
+## Deferred evidence
+
+Packaged screenshots, scaling, keyboard/UI Automation dogfood, folder opening,
+clipboard/export, and a safe recovery exercise are consolidated under v1
+qualification issue #30. This implementation branch runs headless tests only.

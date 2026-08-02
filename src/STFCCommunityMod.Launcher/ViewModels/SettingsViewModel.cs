@@ -30,11 +30,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
+    private readonly SettingsActionCommand searchClearCommand;
+    private readonly SettingsActionCommand enablePatchEditingCommand;
+    private readonly SettingsActionCommand lockPatchEditingCommand;
     private ConfigurationWorkspace? workspace;
     private string searchText = string.Empty;
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
     private bool isSearchVisible;
+    private bool isPatchEditingUnlocked;
     private int projectionRevision;
 
     public SettingsViewModel(
@@ -45,7 +49,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ILauncherSettingsLayoutProvider layoutProvider,
         LauncherSettingsActivationDiagnostics settingsDiagnostics,
         IConfigurationRepository? repository = null,
-        ILauncherUiPreferencesStore? uiPreferencesStore = null)
+        ILauncherUiPreferencesStore? uiPreferencesStore = null,
+        Action<Uri>? openExternalUri = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -61,10 +66,21 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
+        About = new(
+            BundledLauncherAboutCatalog.Load(),
+            catalog,
+            settingsDiagnostics,
+            openExternalUri);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
+        enablePatchEditingCommand = new SettingsActionCommand(
+            EnablePatchEditing,
+            () => IsConfigurationReady && !IsPatchEditingUnlocked && PatchSettings.Count > 0);
+        lockPatchEditingCommand = new SettingsActionCommand(
+            LockPatchEditing,
+            () => IsPatchEditingUnlocked);
 
         SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges, () => workspace);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
@@ -74,13 +90,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         projectionQuery = new(catalog, layoutProvider);
         RefreshKeybindingConflicts();
 
-        SearchToggleCommand = new SettingsActionCommand(ToggleSearch);
+        SearchOpenCommand = new SettingsActionCommand(OpenSearch);
+        SearchCloseCommand = new SettingsActionCommand(CloseSearch);
+        searchClearCommand = new SettingsActionCommand(
+            ClearSearch,
+            () => IsSearchActive);
         SelectSection(layoutProvider.Sections[0].Id);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public string SourceIdentity { get; }
+
+    public LauncherAboutViewModel About { get; }
 
     public IReadOnlyList<SettingsSectionViewModel> Sections { get; }
 
@@ -98,7 +120,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public ICommand SaveCommand => saveCommand;
 
-    public ICommand SearchToggleCommand { get; }
+    public ICommand SearchOpenCommand { get; }
+
+    public ICommand SearchCloseCommand { get; }
+
+    public ICommand SearchClearCommand => searchClearCommand;
+
+    public ICommand EnablePatchEditingCommand => enablePatchEditingCommand;
+
+    public ICommand LockPatchEditingCommand => lockPatchEditingCommand;
 
     public SyncWorkspaceViewModel SyncWorkspace { get; }
 
@@ -118,6 +148,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSearchActive));
             OnPropertyChanged(nameof(WorkspaceTitle));
             OnPropertyChanged(nameof(WorkspaceDescription));
+            searchClearCommand.RaiseCanExecuteChanged();
             RebuildProjection();
         }
     }
@@ -136,13 +167,27 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
             isSearchVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(SearchToggleHelp));
             SaveUiPreferences();
         }
     }
 
-    public string SearchToggleHelp =>
-        IsSearchVisible ? "Close settings search" : "Search all settings";
+    public bool IsPatchEditingUnlocked
+    {
+        get => isPatchEditingUnlocked;
+        private set
+        {
+            if (isPatchEditingUnlocked == value)
+            {
+                return;
+            }
+
+            isPatchEditingUnlocked = value;
+            OnPropertyChanged();
+            enablePatchEditingCommand.RaiseCanExecuteChanged();
+            lockPatchEditingCommand.RaiseCanExecuteChanged();
+            RebuildProjection();
+        }
+    }
 
     public LauncherSettingsSection SelectedSection => selectedSection;
 
@@ -160,6 +205,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsGeneralSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.General;
 
+    public bool IsAdvancedSelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.Advanced;
+
     public bool IsDataSyncSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.DataSync;
 
@@ -168,7 +216,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsSettingsFooterVisible => HasPendingChanges && !IsDataSyncSelected;
 
     public int VisibleSettingCount =>
-        projectedItems.OfType<SettingsRowViewModel>().Count();
+        projectedItems.OfType<SettingsRowViewModel>().Count()
+        + projectedItems.OfType<AdvancedPatchEditingGateViewModel>()
+            .Where(gate => gate.IsLocked)
+            .Sum(gate => gate.SettingCount);
 
     public string VisibleItemsSummary
     {
@@ -193,7 +244,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string OpenRawTomlAvailability =>
         CanOpenRawToml
             ? "Open the active configuration as raw TOML."
-            : "Raw TOML becomes available after the launcher selects an active configuration.";
+            : "Raw TOML becomes available after Mod Control selects an active configuration.";
 
     public bool IsConfigurationReady => workspace is not null;
 
@@ -290,6 +341,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private SettingsSectionViewModel SelectedSectionItem =>
         Sections.Single(section => section.Id == selectedSection);
 
+    private IReadOnlyList<LauncherConfigurationSetting> PatchSettings =>
+        catalog.VisibleSettings.Where(IsPatchSetting).ToArray();
+
     private ReadOnlyCollection<SettingsSectionViewModel> CreateSections()
     {
         if (layoutProvider.Sections.Count == 0
@@ -322,8 +376,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             new(
                 LauncherSettingsSection.About,
                 "About",
-                "Release source, configuration ownership, and technical escape hatches.",
-                "About launcher settings",
+                "Product identity, build provenance, credits, and third-party notices.",
+                "About STFC Mod Control",
                 SelectSection));
         return sections.AsReadOnly();
     }
@@ -331,6 +385,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
+        if (section is LauncherSettingsSection.About or LauncherSettingsSection.DataSync
+            && !IsSearchActive)
+        {
+            IsSearchVisible = false;
+        }
+
         foreach (var item in Sections)
         {
             item.IsSelected = item.Id == section;
@@ -342,6 +402,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(VisibleItemsSummary));
         OnPropertyChanged(nameof(IsAboutSelected));
         OnPropertyChanged(nameof(IsGeneralSelected));
+        OnPropertyChanged(nameof(IsAdvancedSelected));
         OnPropertyChanged(nameof(IsDataSyncSelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
         OnPropertyChanged(nameof(IsSettingsFooterVisible));
@@ -352,17 +413,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         RebuildProjection();
     }
 
-    private void ToggleSearch()
-    {
-        if (IsSearchVisible)
-        {
-            SearchText = string.Empty;
-            IsSearchVisible = false;
-            return;
-        }
+    private void OpenSearch() => IsSearchVisible = true;
 
-        IsSearchVisible = true;
+    private void ClearSearch() => SearchText = string.Empty;
+
+    private void CloseSearch()
+    {
+        ClearSearch();
+        IsSearchVisible = false;
     }
+
+    private void EnablePatchEditing() => IsPatchEditingUnlocked = true;
+
+    private void LockPatchEditing() => IsPatchEditingUnlocked = false;
 
     private void SaveUiPreferences()
     {
@@ -398,6 +461,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         if (load.State == ConfigurationRepositoryReadState.NoConfigurationSelected)
         {
             OperationStatus = string.Empty;
+            RefreshPatchEditingAvailability();
             return;
         }
 
@@ -406,11 +470,25 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
                 ? $"Editing is unavailable because the TOML could not be loaded safely: {load.ValidationError?.Message}"
                 : $"Editing is unavailable: {load.Error}";
+            RefreshPatchEditingAvailability();
             return;
         }
 
         workspace = loadedWorkspace;
         OperationStatus = string.Empty;
+        RefreshPatchEditingAvailability();
+    }
+
+    private void RefreshPatchEditingAvailability()
+    {
+        if (workspace is null && IsPatchEditingUnlocked)
+        {
+            IsPatchEditingUnlocked = false;
+            return;
+        }
+
+        enablePatchEditingCommand.RaiseCanExecuteChanged();
+        lockPatchEditingCommand.RaiseCanExecuteChanged();
     }
 
     private SettingsValueState GetValueState(LauncherConfigurationSetting setting)
@@ -424,7 +502,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 false,
                 defaultValue,
                 false,
-                false);
+                false,
+                LauncherConfigurationValueOrigin.ProviderDefault,
+                LauncherConfigurationValueOrigin.ProviderDefault,
+                []);
         }
 
         var state = workspace.GetState(setting);
@@ -434,7 +515,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             state.SavedHasOverride,
             state.DraftEffectiveValue,
             state.DraftHasOverride,
-            state.IsDirty);
+            state.IsDirty,
+            state.SavedOrigin,
+            state.DraftOrigin,
+            state.CompatibilitySourcePaths);
     }
 
     private static object? SettingsRowViewModelValue(JsonElement defaultValue) =>
@@ -452,7 +536,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
-        if (workspace is null)
+        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -470,29 +554,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         return true;
     }
 
-    private bool StageRemove(LauncherConfigurationSetting setting)
-    {
-        if (workspace is null)
-        {
-            return false;
-        }
-
-        var result = workspace.StageRemove(setting);
-        OperationStatus = result.IsValid ? string.Empty : result.Error?.Message ?? "The override could not be removed.";
-        if (!result.IsValid)
-        {
-            return false;
-        }
-
-        RefreshState(setting);
-        RefreshKeybindingConflicts();
-        NotifySessionChanged();
-        return true;
-    }
-
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
-        if (workspace is null)
+        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -574,7 +638,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 "Changes saved. A backup of the previous TOML is available beside the configuration.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
-                "The TOML changed outside the launcher. Those external edits were preserved; reload before saving.",
+                "The TOML changed outside Mod Control. Those external edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid =>
                 $"Nothing was written because the TOML is not safe to update: {result.ValidationError?.Message}",
             AtomicTomlWriteState.NoConfigurationSelected =>
@@ -592,12 +656,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RefreshAllStates()
     {
+        var hasPatchGate = projectedItems.OfType<AdvancedPatchEditingGateViewModel>().Any();
         foreach (var setting in projectedRowsByPath.Values)
         {
             setting.UpdateState(GetValueState(setting.Setting), workspace is not null);
         }
 
         RefreshKeybindingConflicts();
+        if (hasPatchGate)
+        {
+            RebuildProjection();
+        }
     }
 
     private void RefreshState(LauncherConfigurationSetting setting)
@@ -762,31 +831,47 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         var constructedPaths = new List<string>();
         var groupHeaderCount = 0;
         var familyHeaderCount = 0;
+        var pendingDecorators = new List<LauncherSettingsProjectionItem>();
+        var projectedPatchSettings = projection
+            .OfType<LauncherSettingRowProjection>()
+            .Select(row => row.Setting)
+            .Where(IsPatchSetting)
+            .ToArray();
+        if (projectedPatchSettings.Length > 0)
+        {
+            items.Add(CreatePatchGate(projectedPatchSettings));
+        }
+
         foreach (var item in projection)
         {
+            if (item is LauncherSettingsGroupHeaderProjection
+                or LauncherSettingsFamilyHeaderProjection)
+            {
+                pendingDecorators.Add(item);
+                continue;
+            }
+
+            if (item is not LauncherSettingRowProjection settingProjection)
+            {
+                continue;
+            }
+
+            var isPatchSetting = IsPatchSetting(settingProjection.Setting);
+            if (isPatchSetting && !IsPatchEditingUnlocked)
+            {
+                pendingDecorators.Clear();
+                continue;
+            }
+
+            AddDecorators(pendingDecorators, items, ref groupHeaderCount, ref familyHeaderCount);
             switch (item)
             {
-                case LauncherSettingsGroupHeaderProjection group:
-                    items.Add(new SettingsGroupHeaderViewModel(group.Label));
-                    ++groupHeaderCount;
-                    break;
-
-                case LauncherSettingsFamilyHeaderProjection family:
-                    items.Add(
-                        new SettingsFamilyHeaderViewModel(
-                            family.Id,
-                            family.Label,
-                            family.Description));
-                    ++familyHeaderCount;
-                    break;
-
                 case LauncherSettingRowProjection setting:
                     var row = new SettingsRowViewModel(
                         setting.Setting,
                         GetValueState(setting.Setting),
                         workspace is not null,
                         StageValue,
-                        StageRemove,
                         RevertDraft,
                         SetInputValidity,
                         editorDraftStore);
@@ -809,6 +894,73 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ProjectionSnapshot));
         NotifyFilterSummaryChanged();
     }
+
+    private AdvancedPatchEditingGateViewModel CreatePatchGate(
+        IReadOnlyList<LauncherConfigurationSetting> patchSettings)
+    {
+        var summaries = patchSettings
+            .Select(setting =>
+            {
+                var state = GetValueState(setting);
+                return new AdvancedPatchSummaryItemViewModel(
+                    setting.Presentation.Label,
+                    FormatPatchSummaryValue(state.DraftValue ?? setting.DefaultValue),
+                    state.IsDirty,
+                    IsConfigurationReady,
+                    state.DraftHasOverride);
+            })
+            .ToArray();
+        return new(
+            IsPatchEditingUnlocked,
+            IsConfigurationReady,
+            summaries,
+            EnablePatchEditingCommand,
+            LockPatchEditingCommand);
+    }
+
+    private static void AddDecorators(
+        List<LauncherSettingsProjectionItem> pendingDecorators,
+        List<SettingsListItemViewModel> items,
+        ref int groupHeaderCount,
+        ref int familyHeaderCount)
+    {
+        foreach (var decorator in pendingDecorators)
+        {
+            if (decorator is LauncherSettingsGroupHeaderProjection group)
+            {
+                items.Add(new SettingsGroupHeaderViewModel(group.Label));
+                ++groupHeaderCount;
+            }
+            else if (decorator is LauncherSettingsFamilyHeaderProjection family)
+            {
+                items.Add(
+                    new SettingsFamilyHeaderViewModel(
+                        family.Id,
+                        family.Label,
+                        family.Description));
+                ++familyHeaderCount;
+            }
+        }
+
+        pendingDecorators.Clear();
+    }
+
+    private static bool IsPatchSetting(LauncherConfigurationSetting setting) =>
+        string.Equals(setting.Category, "patches", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatPatchSummaryValue(object? value) =>
+        value switch
+        {
+            null => "Not specified",
+            JsonElement element when element.ValueKind == JsonValueKind.True => "On",
+            JsonElement element when element.ValueKind == JsonValueKind.False => "Off",
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? "(empty)",
+            JsonElement element => element.GetRawText(),
+            bool boolean => boolean ? "On" : "Off",
+            string text when bool.TryParse(text, out var boolean) => boolean ? "On" : "Off",
+            string text when LauncherTomlValue.TryReadString(text, out var parsed) => parsed,
+            _ => value.ToString() ?? "Not specified",
+        };
 
     private void ClearEditorDrafts()
     {

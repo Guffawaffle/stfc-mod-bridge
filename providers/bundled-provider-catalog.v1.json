@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "defaultProviderId": "guffawaffle",
+  "packResourceNames": [
+    "STFCCommunityMod.Launcher.ProviderPacks.Guffawaffle.v1.json",
+    "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json"
+  ]
+}

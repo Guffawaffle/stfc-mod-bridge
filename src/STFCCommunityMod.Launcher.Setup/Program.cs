@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.Setup;
@@ -23,7 +24,7 @@ internal static class Program
         {
             MessageBox.Show(
                 exception.Message,
-                "STFC Community Mod Launcher setup",
+                $"{ModControlProductIdentity.ProductName} setup",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             Environment.ExitCode = 1;
@@ -33,22 +34,21 @@ internal static class Program
     private static async Task InstallAndLaunchAsync()
     {
         VerifySetupSignature();
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var stateDirectory = Path.Combine(localAppData, "STFC Community Mod Launcher");
-        var programDirectory = Path.Combine(localAppData, "Programs", "STFC Community Mod Launcher");
+        var layout = PerUserInstallLayout.FromCurrentUser();
         var installer = new LauncherBootstrapInstaller(
-            stateDirectory,
-            programDirectory,
+            layout.StateDirectory,
+            layout.ProgramDirectory,
             new WindowsAuthenticodeVerifier(Publisher),
             IsLauncherRunning);
         var result = await installer.InstallAsync(ReadEmbeddedPayload());
         CreateStartMenuShortcut(result.LauncherPath);
+        RegisterInstalledProduct(result.LauncherPath);
 
         _ = Process.Start(new ProcessStartInfo(result.LauncherPath)
         {
             UseShellExecute = true,
             WorkingDirectory = Path.GetDirectoryName(result.LauncherPath),
-        }) ?? throw new InvalidOperationException("Windows did not start STFC Community Mod Launcher.");
+        }) ?? throw new InvalidOperationException($"Windows did not start {ModControlProductIdentity.ProductName}.");
     }
 
     private static void VerifySetupSignature()
@@ -65,10 +65,10 @@ internal static class Program
     private static byte[] ReadEmbeddedPayload()
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadResource)
-            ?? throw new InvalidDataException("This setup executable does not contain a launcher payload.");
+            ?? throw new InvalidDataException("This setup executable does not contain a Mod Control payload.");
         if (stream.Length is <= 0 or > 768L * 1024L * 1024L)
         {
-            throw new InvalidDataException("The embedded launcher payload has an invalid size.");
+            throw new InvalidDataException("The embedded Mod Control payload has an invalid size.");
         }
         using var destination = new MemoryStream((int)stream.Length);
         stream.CopyTo(destination);
@@ -77,7 +77,7 @@ internal static class Program
 
     private static bool IsLauncherRunning()
     {
-        var processes = Process.GetProcessesByName("STFCCommunityMod.Launcher");
+        var processes = Process.GetProcessesByName(ModControlProductIdentity.ProcessName);
         try
         {
             return processes.Length > 0;
@@ -95,7 +95,7 @@ internal static class Program
     {
         var startMenuDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Programs),
-            "STFC Community Mod");
+            ModControlProductIdentity.StartMenuGroupName);
         Directory.CreateDirectory(startMenuDirectory);
         var shellType = Type.GetTypeFromProgID("WScript.Shell")
             ?? throw new InvalidOperationException("Windows shortcut support is unavailable.");
@@ -110,10 +110,10 @@ internal static class Program
                 BindingFlags.InvokeMethod,
                 binder: null,
                 target: shell,
-                [Path.Combine(startMenuDirectory, "STFC Community Mod Launcher.lnk")],
+                [Path.Combine(startMenuDirectory, ModControlProductIdentity.ShortcutFileName)],
                 CultureInfo.InvariantCulture);
             var shortcutType = shortcut?.GetType()
-                ?? throw new InvalidOperationException("Windows did not create the launcher shortcut.");
+                ?? throw new InvalidOperationException("Windows did not create the Mod Control shortcut.");
             shortcutType.InvokeMember(
                 "TargetPath",
                 BindingFlags.SetProperty,
@@ -154,5 +154,27 @@ internal static class Program
                 Marshal.FinalReleaseComObject(shell);
             }
         }
+    }
+
+    private static void RegisterInstalledProduct(string productPath)
+    {
+        var programDirectory = Path.GetDirectoryName(productPath)
+            ?? throw new InvalidOperationException("The installed product path has no parent directory.");
+        var uninstallScript = Path.Combine(programDirectory, "Uninstall-Launcher.ps1");
+        var uninstallCommand =
+            $"\"{Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")}\" "
+            + $"-NoProfile -ExecutionPolicy Bypass -File \"{uninstallScript}\"";
+        var keyPath = $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{ModControlProductIdentity.UninstallRegistryKeyName}";
+        using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true)
+            ?? throw new InvalidOperationException("Windows did not create the uninstall registration.");
+        key.SetValue("DisplayName", ModControlProductIdentity.ProductName, RegistryValueKind.String);
+        key.SetValue("DisplayIcon", $"{productPath},0", RegistryValueKind.String);
+        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0", RegistryValueKind.String);
+        key.SetValue("Publisher", Publisher, RegistryValueKind.String);
+        key.SetValue("InstallLocation", programDirectory, RegistryValueKind.String);
+        key.SetValue("UninstallString", uninstallCommand, RegistryValueKind.String);
+        key.SetValue("QuietUninstallString", uninstallCommand, RegistryValueKind.String);
+        key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+        key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
 }

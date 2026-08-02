@@ -3,13 +3,23 @@ using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core;
 
+public enum LauncherConfigurationValueOrigin
+{
+    ProviderDefault,
+    CanonicalOverride,
+    CompatibilityAlias,
+}
+
 public sealed record LauncherConfigurationEntryState(
     object? DefaultValue,
     string? SavedRenderedOverride,
     bool SavedHasOverride,
     string? DraftRenderedOverride,
     bool DraftHasOverride,
-    bool IsDirty)
+    bool IsDirty,
+    LauncherConfigurationValueOrigin SavedOrigin,
+    LauncherConfigurationValueOrigin DraftOrigin,
+    IReadOnlyList<string> CompatibilitySourcePaths)
 {
     public object? SavedEffectiveValue =>
         SavedHasOverride ? SavedRenderedOverride : DefaultValue;
@@ -84,6 +94,15 @@ public sealed class LauncherConfigurationEditSession
         EnsureKnownSetting(setting.Path);
 
         baselineOverrides.TryGetValue(setting.Path, out var baseline);
+        var compatibilitySources = setting.Aliases
+            .Where(alias => baselineOverrides.ContainsKey(alias.Path))
+            .Select(alias => alias.Path)
+            .ToArray();
+        var baselineOrigin = baseline is not null
+            ? LauncherConfigurationValueOrigin.CanonicalOverride
+            : compatibilitySources.Length > 0
+                ? LauncherConfigurationValueOrigin.CompatibilityAlias
+                : LauncherConfigurationValueOrigin.ProviderDefault;
         if (!stagedChanges.TryGetValue(setting.Path, out var staged))
         {
             return new(
@@ -92,8 +111,17 @@ public sealed class LauncherConfigurationEditSession
                 baseline is not null,
                 baseline?.RenderedValue,
                 baseline is not null,
-                false);
+                false,
+                baselineOrigin,
+                baselineOrigin,
+                compatibilitySources);
         }
+
+        var draftOrigin = staged.IsRemoval
+            ? compatibilitySources.Length > 0
+                ? LauncherConfigurationValueOrigin.CompatibilityAlias
+                : LauncherConfigurationValueOrigin.ProviderDefault
+            : LauncherConfigurationValueOrigin.CanonicalOverride;
 
         return new(
             ConvertJsonValue(setting.DefaultValue),
@@ -101,7 +129,10 @@ public sealed class LauncherConfigurationEditSession
             baseline is not null,
             staged.IsRemoval ? null : staged.RenderedValue,
             !staged.IsRemoval,
-            true);
+            true,
+            baselineOrigin,
+            draftOrigin,
+            compatibilitySources);
     }
 
     public SparseTomlEditResult StageSet(
@@ -327,7 +358,7 @@ public sealed class LauncherConfigurationEditSession
         }
     }
 
-    private static SparseTomlError? ValidateSettingValue(
+    internal static SparseTomlError? ValidateSettingValue(
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
@@ -492,7 +523,7 @@ public sealed class LauncherConfigurationEditSession
                 candidate.ValueKind == JsonValueKind.String
                 && string.Equals(candidate.GetString(), value, StringComparison.Ordinal));
 
-    private static bool AreEquivalentSettingValues(
+    internal static bool AreEquivalentSettingValues(
         LauncherConfigurationSetting setting,
         string first,
         string second)

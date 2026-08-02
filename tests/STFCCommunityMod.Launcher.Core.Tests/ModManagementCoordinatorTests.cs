@@ -32,7 +32,7 @@ public sealed class ModManagementCoordinatorTests
         var blocked = coordinator.CapturePresentation(gameDirectory, isGameRunning: true);
 
         Assert.AreEqual(ModManagementActionKind.Install, ready.ActionKind);
-        Assert.AreEqual("Install mod", ready.ActionLabel);
+        Assert.AreEqual("Install", ready.ActionLabel);
         Assert.IsTrue(ready.CanExecute);
         Assert.IsFalse(blocked.CanExecute);
     }
@@ -48,8 +48,8 @@ public sealed class ModManagementCoordinatorTests
         var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
 
         Assert.AreEqual(ModManagementActionKind.AdoptAndInstall, presentation.ActionKind);
-        Assert.AreEqual("Manual install found", presentation.Status);
-        Assert.AreEqual("Adopt & update", presentation.ActionLabel);
+        Assert.AreEqual("Manual installation detected", presentation.Status);
+        Assert.AreEqual("Update", presentation.ActionLabel);
     }
 
     [TestMethod]
@@ -72,6 +72,43 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task PreparationPassesExactResolvedReleaseChannelToDiscovery()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var deploymentService = CreateDeploymentService(temporaryDirectory);
+        var discoveryClient = new RecordingReleaseDiscoveryClient(ReleaseDiscovery());
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            discoveryClient,
+            new Version(0, 1, 0),
+            "preview");
+
+        _ = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual("preview", discoveryClient.LastChannel);
+    }
+
+    [TestMethod]
+    public void UnresolvedProviderReasonDisablesProviderBoundMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var coordinator = new ModManagementCoordinator(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            providerUnavailableReason: "Selected provider was withdrawn.");
+
+        var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModManagementActionKind.None, presentation.ActionKind);
+        Assert.IsFalse(presentation.CanExecute);
+        Assert.AreEqual("Not installed", presentation.Status);
+        StringAssert.Contains(presentation.AutomationName, "withdrawn");
+    }
+
+    [TestMethod]
     public async Task ManagedArtifactShowsVersionAndDetectsUpToDateRelease()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -91,6 +128,38 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(LauncherHomeTone.Success, presentation.Tone);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, presentation.ActionKind);
         Assert.AreEqual(ModOperationPreparationState.UpToDate, preparation.State);
+    }
+
+    [TestMethod]
+    public async Task ReleaseCheckRecordsIdentityBoundUpdateObservation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        Assert.AreEqual(
+            ModUpdateEvidenceState.Unknown,
+            coordinator.CaptureHealth(gameDirectory, false).UpdateAvailability);
+
+        _ = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(
+            ModUpdateEvidenceState.UpToDate,
+            coordinator.CaptureHealth(gameDirectory, false).UpdateAvailability);
     }
 
     [TestMethod]
@@ -134,13 +203,28 @@ public sealed class ModManagementCoordinatorTests
     private static (ModManagementCoordinator Coordinator, ModDeploymentService DeploymentService) CreateCoordinator(
         TemporaryDirectory temporaryDirectory)
     {
-        var deploymentService = new ModDeploymentService(
+        var deploymentService = CreateDeploymentService(temporaryDirectory);
+        return (
+            new(
+                deploymentService,
+                new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+                new Version(0, 1, 0)),
+            deploymentService);
+    }
+
+    private static ModDeploymentService CreateDeploymentService(
+        TemporaryDirectory temporaryDirectory,
+        ModInstallationAttribution? installationAttribution = null) =>
+        new(
             temporaryDirectory.CreateDirectory("state"),
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
-            () => false);
-        var discovery = new WindowsReleaseDiscovery(
+            () => false,
+            installationAttribution: installationAttribution);
+
+    private static WindowsReleaseDiscovery ReleaseDiscovery() =>
+        new(
             new WindowsReleaseManifest(
                 1,
                 "2.1.0-guffa.8",
@@ -152,13 +236,6 @@ public sealed class ModManagementCoordinatorTests
                 "none",
                 []),
             ReleaseArtifact());
-        return (
-            new(
-                deploymentService,
-                new FakeReleaseDiscoveryClient(discovery),
-                new Version(0, 1, 0)),
-            deploymentService);
-    }
 
     private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
     {
@@ -182,6 +259,23 @@ public sealed class ModManagementCoordinatorTests
             Version currentLauncherVersion,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(discovery);
+    }
+
+    private sealed class RecordingReleaseDiscoveryClient(WindowsReleaseDiscovery discovery)
+        : IWindowsReleaseDiscoveryClient
+    {
+        public string? LastChannel { get; private set; }
+
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+            string channel,
+            Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            _ = currentLauncherVersion;
+            _ = cancellationToken;
+            LastChannel = channel;
+            return Task.FromResult(discovery);
+        }
     }
 
     private sealed class FakeDownloader : IModArtifactDownloader

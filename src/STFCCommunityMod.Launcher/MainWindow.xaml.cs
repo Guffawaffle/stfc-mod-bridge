@@ -5,6 +5,8 @@ using System.Net.Http;
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Shell;
 using System.Windows.Threading;
@@ -19,8 +21,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 680;
-    private const double SettingsMinWidth = 960;
-    private const double SettingsMinHeight = 620;
+    internal const double SettingsMinWidth = 960;
+    internal const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
     private const double SettingsHeight = 740;
     private static readonly IReadOnlyList<ColorModeChoice> ColorModeChoices =
@@ -35,9 +37,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly HttpClient httpClient;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly LauncherDistributionProvider distributionProvider;
+    private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
+    private readonly LauncherProviderSelectionResolution providerSelectionResolution;
+    private readonly LauncherProviderShellAccess providerShellAccess;
+    private readonly LauncherProviderReleaseChannel distributionReleaseChannel;
+    private readonly LauncherProviderSourceSwitchService providerSourceSwitchService;
     private readonly LauncherStartupComposition startupComposition;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
+    private readonly WorkspaceFocusTransition diagnosticsFocusTransition = new();
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
     private LauncherColorMode selectedColorMode = LauncherColorMode.System;
@@ -49,23 +57,47 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private LauncherDiagnosticPreview? diagnosticPreview;
     private MaintenanceAction pendingMaintenanceAction;
     private LauncherUpdatePreparation? pendingLauncherUpdate;
+    private LauncherProviderSwitchPreview? pendingProviderSwitch;
+    private LauncherProviderSelection? providerSelectionPendingRestart;
 
     public MainWindow()
         : this(
             new WindowsGameProcessStateMonitor(),
-            BundledLauncherProviderCatalog.LoadDefault())
+            BundledLauncherProviderCatalog.LoadStartupContext(
+                PerUserInstallLayout.FromCurrentUser().StateDirectory))
     {
     }
 
     internal MainWindow(
         IGameProcessStateMonitor processStateMonitor,
         LauncherDistributionProvider distributionProvider)
+        : this(
+            processStateMonitor,
+            CreateInjectedProviderContext(distributionProvider))
+    {
+    }
+
+    private MainWindow(
+        IGameProcessStateMonitor processStateMonitor,
+        LauncherProviderStartupContext providerContext)
     {
         this.processStateMonitor =
             processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
-        this.distributionProvider =
-            distributionProvider ?? throw new ArgumentNullException(nameof(distributionProvider));
-        startupComposition = LauncherStartupComposition.Create(distributionProvider);
+        ArgumentNullException.ThrowIfNull(providerContext);
+        distributionProviderCatalog = providerContext.Catalog;
+        providerSelectionResolution = providerContext.Selection;
+        providerShellAccess = LauncherProviderShellAccess.From(providerSelectionResolution);
+        distributionProvider = providerSelectionResolution.Provider
+            ?? distributionProviderCatalog.DefaultProvider;
+        distributionReleaseChannel = providerSelectionResolution.ReleaseChannel
+            ?? distributionProvider.DefaultReleaseChannel;
+        providerSourceSwitchService = new(
+            distributionProviderCatalog,
+            providerContext.SelectionStore,
+            PerUserInstallLayout.FromCurrentUser().StateDirectory);
+        startupComposition = LauncherStartupComposition.Create(
+            distributionProvider,
+            distributionReleaseChannel);
         httpClient = new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
@@ -83,7 +115,39 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.SelectedValue = selectedColorMode;
         isColorModeSelectorReady = true;
         UpdateColorModeSelectorAccessibility();
-        DataContext = MainWindowViewModel.CreateDefault(httpClient, distributionProvider);
+        DataContext = MainWindowViewModel.CreateDefault(
+            httpClient,
+            distributionProvider,
+            distributionReleaseChannel,
+            providerShellAccess.CanUseProviderBoundModActions
+                ? null
+                : providerShellAccess.RestrictionReason,
+            uiPreferencesStore);
+        if (!providerShellAccess.CanEditProviderSettings)
+        {
+            HomeSettingsTitleBarButton.IsEnabled = false;
+            HomeSettingsTitleBarButton.ToolTip = providerShellAccess.RestrictionReason;
+            ProviderRecoveryMessage.Text =
+                $"Release source needs attention. {providerShellAccess.RestrictionReason} "
+                + "Choose Source needs attention to select a known provider.";
+            ProviderRecoveryBanner.Visibility = Visibility.Visible;
+        }
+    }
+
+    private static LauncherProviderStartupContext CreateInjectedProviderContext(
+        LauncherDistributionProvider distributionProvider)
+    {
+        ArgumentNullException.ThrowIfNull(distributionProvider);
+        var catalog = BundledLauncherProviderCatalog.Load();
+        var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+        var store = new JsonLauncherProviderSelectionStore(stateDirectory);
+        var selection = new LauncherProviderSelection(
+            distributionProvider.Id,
+            distributionProvider.DefaultReleaseChannelId);
+        return new(
+            catalog,
+            store,
+            LauncherProviderSelectionResolver.Resolve(catalog, selection));
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -112,6 +176,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
+        if (DataContext is IDisposable disposableViewModel)
+        {
+            disposableViewModel.Dispose();
+        }
+
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
         httpClient.Dispose();
@@ -207,16 +276,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             () => ConfirmModOperationButton.Focus());
     }
 
-    private async void LaunchGameButton_Click(object sender, RoutedEventArgs e)
-    {
-        _ = sender;
-        _ = e;
-        if (DataContext is MainWindowViewModel viewModel)
-        {
-            await viewModel.LaunchGameAsync(lifetimeCancellation.Token);
-        }
-    }
-
     private void DiagnosticsButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -227,11 +286,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         try
         {
+            var focusReturnTarget = sender as IInputElement ?? Keyboard.FocusedElement;
             diagnosticPreview = viewModel.BuildDiagnosticPreview();
-            DiagnosticPreviewText.Text = diagnosticPreview.RedactedJson;
-            DiagnosticsRecoverButton.IsEnabled = viewModel.CanRecoverMod;
-            DiagnosticsUninstallButton.IsEnabled = viewModel.CanUninstallMod;
-            DiagnosticsDialog.IsOpen = true;
+            SetDiagnosticsWorkspaceOpen(true);
+            diagnosticsFocusTransition.Enter(
+                () => ScheduleFocus(RefreshDiagnosticsButton),
+                () => ScheduleFocus(focusReturnTarget ?? SettingsDiagnosticsTitleBarButton));
         }
         catch (Exception exception) when (
             exception is InvalidDataException
@@ -244,6 +304,45 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
+    private void RefreshDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.Refresh();
+            diagnosticPreview = viewModel.BuildDiagnosticPreview();
+            viewModel.ReportDiagnosticAction(true, "Diagnostics checks refreshed from current local evidence.");
+        }
+    }
+
+    private void OpenGameFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.OpenGameFolder();
+        }
+    }
+
+    private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.OpenLogsFolder();
+        }
+    }
+
+    private void DiagnosticsHomeButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        SetDiagnosticsWorkspaceOpen(false);
+    }
+
     private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -252,12 +351,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             try
             {
-                Clipboard.SetText(diagnosticPreview.RedactedJson);
-                DiagnosticExportStatus.Text = "Copied the redacted preview. Nothing was uploaded.";
+                Clipboard.SetText(diagnosticPreview.RedactedSummary);
+                if (DataContext is MainWindowViewModel viewModel)
+                {
+                    viewModel.ReportDiagnosticAction(
+                        true,
+                        "Copied the displayed redacted summary. Nothing was uploaded.");
+                }
             }
             catch (System.Runtime.InteropServices.ExternalException exception)
             {
-                DiagnosticExportStatus.Text = $"Windows could not access the clipboard: {exception.Message}";
+                if (DataContext is MainWindowViewModel viewModel)
+                {
+                    viewModel.ReportDiagnosticAction(
+                        false,
+                        $"Windows could not access the clipboard: {exception.Message}");
+                }
             }
         }
     }
@@ -266,15 +375,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         _ = sender;
         _ = e;
-        if (diagnosticPreview is null || DataContext is not MainWindowViewModel)
+        if (diagnosticPreview is null || DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
 
         var dialog = new SaveFileDialog
         {
-            Title = "Export redacted launcher diagnostics",
-            FileName = $"stfc-launcher-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            Title = "Export redacted Mod Control diagnostics",
+            FileName = $"stfc-mod-control-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
             DefaultExt = ".json",
             Filter = "JSON diagnostics (*.json)|*.json",
             AddExtension = true,
@@ -290,12 +399,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 diagnosticPreview,
                 dialog.FileName,
                 lifetimeCancellation.Token);
-            DiagnosticExportStatus.Text = "Saved the exact redacted preview. Nothing was uploaded.";
+            viewModel.ReportDiagnosticAction(
+                true,
+                "Saved the exact previewed redacted report. Nothing was uploaded.");
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
-            DiagnosticExportStatus.Text = $"The diagnostic export failed: {exception.Message}";
+            viewModel.ReportDiagnosticAction(false, $"The diagnostic export failed: {exception.Message}");
         }
     }
 
@@ -305,7 +416,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanRecoverMod)
         {
-            DiagnosticsDialog.IsOpen = false;
+            SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
         }
     }
@@ -316,7 +427,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanUninstallMod)
         {
-            DiagnosticsDialog.IsOpen = false;
+            SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Uninstall, viewModel);
         }
     }
@@ -329,13 +440,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        DiagnosticsDialog.IsOpen = false;
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null
             || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
         {
             return;
         }
+        SetDiagnosticsWorkspaceOpen(false);
         LauncherUpdateSummary.Text = pendingLauncherUpdate.Message;
         LauncherUpdateTarget.Text = pendingLauncherUpdate.TargetDirectory;
         LauncherUpdateDialog.IsOpen = true;
@@ -370,17 +481,20 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void ShowMaintenanceConfirmation(MaintenanceAction action, MainWindowViewModel viewModel)
     {
-        if (viewModel.SelectedGameDirectory is null)
+        var canStart = action == MaintenanceAction.Recover
+            ? viewModel.CanRecoverMod
+            : viewModel.CanUninstallMod;
+        if (!canStart || viewModel.SelectedGameDirectory is null)
         {
             return;
         }
         pendingMaintenanceAction = action;
         MaintenanceDialog.DialogTitle = action == MaintenanceAction.Recover
             ? "Recover mod transaction?"
-            : "Remove launcher-managed mod?";
+            : "Remove Mod Control-managed mod?";
         MaintenanceSummary.Text = action == MaintenanceAction.Recover
             ? "Roll back the incomplete transaction using its persisted journal. Only version.dll and transaction-scoped allowlisted files can change."
-            : "Remove launcher-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
+            : "Remove Mod Control-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
         MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
         ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
         MaintenanceDialog.IsOpen = true;
@@ -424,6 +538,187 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         await viewModel.ExecuteModOperationAsync(preparation, lifetimeCancellation.Token);
     }
 
+    private void ReleaseSourceButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pendingProviderSwitch = null;
+        ProviderSourceSelector.IsEnabled = true;
+        ProviderSourceSelector.ItemsSource = distributionProviderCatalog.Providers.Values
+            .OrderBy(provider => provider.DisplayName, StringComparer.Ordinal)
+            .ToArray();
+        ProviderSourceSelector.SelectedValue = providerSelectionPendingRestart?.ProviderId
+            ?? (providerSelectionResolution.IsResolved ? distributionProvider.Id : null);
+        ProviderSourceSelector.IsEnabled = providerSelectionPendingRestart is null;
+        ReviewProviderSwitchButton.IsEnabled = false;
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProviderSwitchConfirmationInput.Text = string.Empty;
+        ProviderSwitchPreviewText.Text = providerSelectionPendingRestart is null
+            ? "Choose another provider, then review compatibility before switching."
+            : "The selected source is saved. Restart Mod Control before reviewing another switch.";
+        UpdateProviderCapabilityText();
+        ProviderSwitchDialog.IsOpen = true;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () => ProviderSourceSelector.Focus());
+    }
+
+    private void ProviderSourceSelector_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pendingProviderSwitch = null;
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+        ProviderSwitchConfirmationInput.Text = string.Empty;
+        ReviewProviderSwitchButton.IsEnabled =
+            ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
+            && (!providerSelectionResolution.IsResolved
+                || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));
+        ProviderSwitchPreviewText.Text = ReviewProviderSwitchButton.IsEnabled
+            ? "Review the compatibility evidence and backup boundary before switching."
+            : "This provider is active for the current Mod Control process.";
+        UpdateProviderCapabilityText();
+    }
+
+    private void ReviewProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (ProviderSourceSelector.SelectedItem is not LauncherDistributionProvider targetProvider)
+        {
+            return;
+        }
+        if (settingsViewModel?.HasPendingChanges == true)
+        {
+            ProviderSwitchPreviewText.Text =
+                "Save or discard staged mod-setting changes before reviewing a provider switch.";
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            return;
+        }
+        try
+        {
+            pendingProviderSwitch = providerSourceSwitchService.Preview(
+                targetProvider.Id,
+                targetProvider.DefaultReleaseChannelId,
+                GetConfigurationFilePath());
+            var concerns = string.Join(
+                Environment.NewLine,
+                pendingProviderSwitch.Concerns.Select(
+                    concern => $"• {concern.Kind}: {concern.Message}"));
+            var backup = pendingProviderSwitch.ConfigurationPath is null
+                ? "No configuration file is currently selected, so no TOML backup is needed."
+                : "The exact TOML bytes will be copied to Mod Control-owned rollback storage before the selection changes.";
+            ProviderSwitchPreviewText.Text =
+                $"{pendingProviderSwitch.SourceDisplayName} → {pendingProviderSwitch.TargetDisplayName}"
+                + Environment.NewLine
+                + Environment.NewLine
+                + concerns
+                + Environment.NewLine
+                + Environment.NewLine
+                + backup;
+            ConfirmProviderSwitchButton.Content = $"_Switch to {targetProvider.DisplayName}";
+            ProviderSwitchConfirmationPrompt.Text =
+                $"Type {pendingProviderSwitch.ConfirmationText} to confirm";
+            ProviderSwitchConfirmationInput.Text = string.Empty;
+            ProviderSwitchConfirmationPanel.Visibility = Visibility.Visible;
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            ProviderSwitchConfirmationInput.Focus();
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException
+                or KeyNotFoundException)
+        {
+            pendingProviderSwitch = null;
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            ProviderSwitchPreviewText.Text = $"The provider switch could not be prepared: {exception.Message}";
+        }
+    }
+
+    private void ProviderSwitchConfirmationInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (ConfirmProviderSwitchButton is null)
+        {
+            return;
+        }
+        ConfirmProviderSwitchButton.IsEnabled = pendingProviderSwitch is not null
+            && string.Equals(
+                ProviderSwitchConfirmationInput.Text,
+                pendingProviderSwitch.ConfirmationText,
+                StringComparison.Ordinal);
+    }
+
+    private void ConfirmProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (pendingProviderSwitch is null)
+        {
+            return;
+        }
+        try
+        {
+            var result = providerSourceSwitchService.Execute(
+                pendingProviderSwitch,
+                ProviderSwitchConfirmationInput.Text);
+            var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
+            ProviderSwitchPreviewText.Text = result.ConfigurationBackupPath is null
+                ? result.Message
+                : $"{result.Message} Configuration backup: {result.ConfigurationBackupPath}";
+            ReleaseSourceButton.Content =
+                $"Next: {selectedProvider.DisplayName} · {selectedProvider.DefaultReleaseChannel.DisplayName}";
+            providerSelectionPendingRestart = result.Selection;
+            HomeSettingsTitleBarButton.IsEnabled = false;
+            HomeSettingsTitleBarButton.ToolTip = result.Message;
+            ProviderRecoveryMessage.Text = result.Message;
+            ProviderRecoveryBanner.Visibility = Visibility.Visible;
+            ProviderSourceSelector.IsEnabled = false;
+            ReviewProviderSwitchButton.IsEnabled = false;
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            pendingProviderSwitch = null;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException)
+        {
+            ProviderSwitchPreviewText.Text = $"The provider switch failed: {exception.Message}";
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            pendingProviderSwitch = null;
+        }
+    }
+
+    private void CancelProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pendingProviderSwitch = null;
+        ProviderSwitchDialog.IsOpen = false;
+    }
+
+    private void UpdateProviderCapabilityText()
+    {
+        if (ProviderSourceSelector.SelectedItem is not LauncherDistributionProvider provider)
+        {
+            ProviderCapabilityText.Text = providerSelectionResolution.IsResolved
+                ? string.Empty
+                : providerSelectionResolution.Message;
+            return;
+        }
+        ProviderCapabilityText.Text =
+            $"{provider.Description}{Environment.NewLine}{provider.CapabilitySummary}";
+    }
+
     private void ColorModeSelector_SelectionChanged(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -442,9 +737,44 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateColorModeSelectorAccessibility();
     }
 
-    private void SettingsSearchToggleButton_Click(object sender, RoutedEventArgs e)
+    private void SettingsSearchOpenButton_Click(object sender, RoutedEventArgs e)
     {
-        SettingsWorkspace.FocusSearchBoxWhenVisible();
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                TitleBarSettingsSearchBox.Focus();
+                TitleBarSettingsSearchBox.SelectAll();
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchCloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                SettingsSearchOpenButton.Focus();
+                Keyboard.Focus(SettingsSearchOpenButton);
+            },
+            DispatcherPriority.Input);
+    }
+
+    private void SettingsSearchHost_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        _ = sender;
+        if (e.Key != Key.Escape
+            || SettingsWorkspace.DataContext is not SettingsViewModel settings)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        settings.SearchCloseCommand.Execute(null);
+        SettingsSearchCloseButton_Click(this, new RoutedEventArgs());
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -495,7 +825,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.ToolTip = helpText;
         AutomationProperties.SetName(
             ColorModeSelector,
-            $"Launcher color mode, {selectedColorMode}");
+            $"Mod Control color mode, {selectedColorMode}");
         AutomationProperties.SetHelpText(ColorModeSelector, helpText);
     }
 
@@ -507,18 +837,28 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         MaximizeRestoreButton.ToolTip = isMaximized ? "Restore" : "Maximize";
         AutomationProperties.SetName(
             MaximizeRestoreButton,
-            isMaximized ? "Restore launcher" : "Maximize launcher");
+            isMaximized ? "Restore Mod Control" : "Maximize Mod Control");
     }
 
     private void SetSettingsWorkspaceOpen(bool isOpen)
     {
+        if (isOpen)
+        {
+            DiagnosticsWorkspace.Visibility = Visibility.Collapsed;
+            DiagnosticsHomeTitleBarButton.Visibility = Visibility.Collapsed;
+            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
+        }
         isSettingsWorkspaceOpen = isOpen;
         HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
         SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSearchToggleButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (!isOpen && DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.Refresh();
+        }
 
         MinWidth = isOpen ? SettingsMinWidth : 560;
         MinHeight = isOpen ? SettingsMinHeight : 620;
@@ -535,6 +875,62 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SystemParameters.WorkArea.Height);
     }
 
+    private void SetDiagnosticsWorkspaceOpen(bool isOpen)
+    {
+        if (isOpen)
+        {
+            isSettingsWorkspaceOpen = false;
+        }
+        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsWorkspace.Visibility = Visibility.Collapsed;
+        DiagnosticsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
+        SettingsHomeTitleBarButton.Visibility = Visibility.Collapsed;
+        DiagnosticsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (isOpen)
+        {
+            SettingsDiagnosticsTitleBarButton.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
+        }
+        SettingsSearchHost.Visibility = Visibility.Collapsed;
+        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (!isOpen)
+        {
+            diagnosticsFocusTransition.Exit();
+        }
+
+        MinWidth = isOpen ? SettingsMinWidth : 560;
+        MinHeight = SettingsMinHeight;
+        if (WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        Width = Math.Min(
+            isOpen ? Math.Max(ActualWidth, SettingsWidth) : HomeWidth,
+            SystemParameters.WorkArea.Width);
+        Height = Math.Min(
+            isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
+            SystemParameters.WorkArea.Height);
+    }
+
+    private void ScheduleFocus(IInputElement target)
+    {
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () =>
+            {
+                if (target is UIElement { IsVisible: true, IsEnabled: true } element)
+                {
+                    element.Focus();
+                    Keyboard.Focus(target);
+                }
+            });
+    }
+
     private bool EnsureSettingsWorkspaceInitialized()
     {
         if (isSettingsWorkspaceInitialized)
@@ -544,15 +940,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         try
         {
-            using var schemaStream = typeof(MainWindow).Assembly.GetManifestResourceStream(
-                distributionProvider.ConfigurationSchemaResourceName);
-            if (schemaStream is null)
+            if (!providerSelectionResolution.IsResolved)
             {
                 throw new LauncherConfigurationSchemaException(
-                    $"The packaged {distributionProvider.DisplayName} configuration catalog is missing.");
+                    $"Settings are disabled until the release source is repaired. "
+                    + providerSelectionResolution.Message);
             }
-
-            var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
+            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
             openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
             settingsViewModel = new SettingsViewModel(
                 catalog,
@@ -561,7 +955,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 GetConfigurationFilePath,
                 startupComposition.SettingsLayout,
                 startupComposition.SettingsDiagnostics,
-                uiPreferencesStore: uiPreferencesStore);
+                uiPreferencesStore: uiPreferencesStore,
+                openExternalUri: OpenExternalUri);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -577,6 +972,28 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool CanOpenRawConfiguration()
     {
         return TryGetConfigurationFilePath(out var path) && File.Exists(path);
+    }
+
+    private void OpenExternalUri(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Mod Control opens HTTPS links only.");
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                $"Windows could not open this link: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
     }
 
     private void OpenRawConfiguration()

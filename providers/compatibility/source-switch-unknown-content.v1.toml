@@ -1,0 +1,9 @@
+# Compatibility corpus: source switching must preserve this file byte-for-byte.
+
+[notifications.events.armada_battle_won]
+system = true
+audio = false
+sound = "info"
+
+[future.provider]
+unknown_inline = { nested = true, values = [1, 2, 3] }

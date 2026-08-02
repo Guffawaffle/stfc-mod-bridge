@@ -560,7 +560,7 @@ Expanding the row exposes the complete event policy:
 - system notification;
 - audio notification;
 - sound selection and preview when supported;
-- runtime default/effective value;
+- catalog default and runtime path;
 - reset/remove override;
 - migration or validation warning.
 
@@ -728,3 +728,30 @@ The save bar remains absent when the session is clean. Decorative per-event
 icons, drag handles without a real ordering feature, category-wide restore,
 and a split Save button require their own behavior and accessibility case
 before implementation; they are not inferred from the artwork.
+
+## Shared settings-shell interaction contract
+
+Settings search is a settings-only surface. It is anchored in the title bar
+command that opens it and searches the resolved configuration catalog across
+settings sections. It is not displayed over About, Diagnostics, Home, or Data
+Sync as a generic application search. A clear-query command keeps the search
+surface open; close-search clears the query, collapses the surface, and returns
+keyboard focus to the command that opened it.
+
+Setting rows expose the catalog default and runtime path through one stable,
+focusable circled-help surface. Current values remain visible in their editors
+and are not repeated in help text. Reverting an unsaved edit to the saved value
+remains the row-level transaction action.
+
+Shared geometry follows component role:
+
+- numeric inputs use small, medium, or large width tokens selected from their
+  supported range instead of stretching to fill the editor column;
+- ordinary controls, popups, dialogs, and badges use progressively distinct
+  radius roles;
+- separators and spacing group settings content, while borders remain on
+  actual inputs, focus surfaces, popups, and dialogs.
+
+The settings workspace must reflow at the supported 960-by-620 minimum window
+without a horizontal scrollbar. The setting description and editor columns
+share available width; no editor owns a fixed page-width column.

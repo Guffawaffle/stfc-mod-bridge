@@ -31,7 +31,7 @@ public sealed class GitHubWindowsReleaseClientTests
         Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
         Assert.AreEqual("2.1.0.8", result.ModArtifact.ExpectedVersion);
         Assert.AreEqual(2, handler.Requests.Count);
-        Assert.IsTrue(handler.Requests.All(request => request.UserAgent.Contains("STFC-Community-Mod-Launcher/0.1")));
+        Assert.IsTrue(handler.Requests.All(request => request.UserAgent.Contains("STFC-Mod-Control/0.1")));
     }
 
     [TestMethod]
@@ -52,6 +52,57 @@ public sealed class GitHubWindowsReleaseClientTests
 
         Assert.AreEqual("v2.1.0-guffa.rc9", result.Manifest.Tag);
         Assert.AreEqual("2.1.0.9", result.ModArtifact.ExpectedVersion);
+    }
+
+    [TestMethod]
+    public async Task DiscoverySelectsHighestEligibleReleaseInsteadOfFirstApiEntry()
+    {
+        var releases = $$"""
+            [
+              {{ReleaseJson("v2.1.0-guffa.7", false, false, true)}},
+              {{ReleaseJson("v2.1.0-guffa.8", false, false, true)}}
+            ]
+            """;
+        var handler = new RouteHandler(
+            releases,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["v2.1.0-guffa.7"] = Manifest("2.1.0-guffa.7"),
+                ["v2.1.0-guffa.8"] = Manifest("2.1.0-guffa.8"),
+            });
+        using var client = new HttpClient(handler);
+
+        var result = await CreateDiscoveryClient(client).DiscoverLatestAsync(
+            "stable",
+            new Version(0, 1, 0));
+
+        Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
+        Assert.AreEqual("2.1.0.8", result.ModArtifact.ExpectedVersion);
+    }
+
+    [TestMethod]
+    public async Task WithdrawnReleaseDoesNotBlockLaterActiveCandidate()
+    {
+        var releases = $$"""
+            [
+              {{ReleaseJson("v2.1.0-guffa.9", false, false, true)}},
+              {{ReleaseJson("v2.1.0-guffa.8", false, false, true)}}
+            ]
+            """;
+        var handler = new RouteHandler(
+            releases,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["v2.1.0-guffa.9"] = Manifest("2.1.0-guffa.9", releaseState: "withdrawn"),
+                ["v2.1.0-guffa.8"] = Manifest("2.1.0-guffa.8"),
+            });
+        using var client = new HttpClient(handler);
+
+        var result = await CreateDiscoveryClient(client).DiscoverLatestAsync(
+            "stable",
+            new Version(0, 1, 0));
+
+        Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
     }
 
     [TestMethod]
@@ -107,6 +158,106 @@ public sealed class GitHubWindowsReleaseClientTests
         Assert.AreEqual(HttpStatusCode.Forbidden, exception.StatusCode);
     }
 
+    [TestMethod]
+    public async Task LauncherDiscoveryUsesStandaloneAuthorityWithoutRequiringModArtifact()
+    {
+        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string manifestName = "stfc-mod-control-release-manifest.json";
+        const string tag = "v0.2.0";
+        var releases = $$"""
+            [{
+              "tag_name": "{{tag}}",
+              "draft": false,
+              "prerelease": false,
+              "assets": [{
+                "name": "{{manifestName}}",
+                "browser_download_url": "https://github.com/{{repository}}/releases/download/{{tag}}/{{manifestName}}"
+              }]
+            }]
+            """;
+        var manifest = $$"""
+            {
+              "schemaVersion": 1,
+              "releaseVersion": "0.2.0",
+              "tag": "{{tag}}",
+              "channel": "stable",
+              "releaseState": "active",
+              "minimumLauncherVersion": "0.1.0",
+              "source": {
+                "repository": "{{repository}}",
+                "targetCommit": "0123456789abcdef0123456789abcdef01234567"
+              },
+              "manifestAuthenticity": { "scheme": "none" },
+              "artifacts": [{
+                "id": "windows-mod-control-archive-x64",
+                "kind": "windows-mod-control",
+                "platform": "windows",
+                "architecture": "x64",
+                "fileName": "stfc-mod-control-win-x64.zip",
+                "mediaType": "application/zip",
+                "size": 123,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "authenticity": {
+                  "scheme": "authenticode",
+                  "scope": "contents",
+                  "signedFiles": [
+                    "STFCModControl.exe",
+                    "STFCModControl.Updater.exe"
+                  ]
+                }
+              }]
+            }
+            """;
+        var handler = new RouteHandler(releases, manifest);
+        using var httpClient = new HttpClient(handler);
+        var client = new GitHubLauncherReleaseClient(httpClient, repository, manifestName);
+
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+
+        Assert.AreEqual(repository, result.Manifest.Source.Repository);
+        Assert.AreEqual("0.2.0", result.LauncherArtifact.ReleaseVersion);
+        Assert.IsTrue(handler.Requests.All(request =>
+            request.Uri.Host is "api.github.com" or "github.com"));
+    }
+
+    [TestMethod]
+    public async Task LauncherDiscoveryRejectsReplayAtOrBelowInstalledVersion()
+    {
+        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string manifestName = "stfc-mod-control-release-manifest.json";
+        var releases = $$"""
+            [{
+              "tag_name": "v0.2.0",
+              "draft": false,
+              "prerelease": false,
+              "assets": [{
+                "name": "{{manifestName}}",
+                "browser_download_url": "https://github.com/{{repository}}/releases/download/v0.2.0/{{manifestName}}"
+              }]
+            }]
+            """;
+        var manifest = """
+            {
+              "schemaVersion": 1, "releaseVersion": "0.2.0", "tag": "v0.2.0",
+              "channel": "stable", "releaseState": "active", "minimumLauncherVersion": "0.1.0",
+              "source": { "repository": "Guffawaffle/stfc-mod-launcher", "targetCommit": "0123456789abcdef0123456789abcdef01234567" },
+              "manifestAuthenticity": { "scheme": "none" },
+              "artifacts": [{
+                "id": "windows-mod-control-archive-x64", "kind": "windows-mod-control",
+                "platform": "windows", "architecture": "x64",
+                "fileName": "stfc-mod-control-win-x64.zip", "mediaType": "application/zip",
+                "size": 123, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "authenticity": { "scheme": "authenticode", "scope": "contents", "signedFiles": ["STFCModControl.exe", "STFCModControl.Updater.exe"] }
+              }]
+            }
+            """;
+        using var httpClient = new HttpClient(new RouteHandler(releases, manifest));
+        var client = new GitHubLauncherReleaseClient(httpClient, repository, manifestName);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 2, 0)));
+    }
+
     private static string ReleaseJson(
         string tag,
         bool draft,
@@ -134,13 +285,16 @@ public sealed class GitHubWindowsReleaseClientTests
     private static GitHubWindowsReleaseClient CreateDiscoveryClient(HttpClient client) =>
         new(client, Repository, ManifestFileName);
 
-    private static string Manifest(string releaseVersion, string channel = "stable") => $$"""
+    private static string Manifest(
+        string releaseVersion,
+        string channel = "stable",
+        string releaseState = "active") => $$"""
         {
           "schemaVersion": 1,
           "releaseVersion": "{{releaseVersion}}",
           "tag": "v{{releaseVersion}}",
           "channel": "{{channel}}",
-          "releaseState": "active",
+          "releaseState": "{{releaseState}}",
           "minimumLauncherVersion": "0.1.0",
           "source": {
             "repository": "Guffawaffle/stfc-mod",
@@ -166,8 +320,24 @@ public sealed class GitHubWindowsReleaseClientTests
         }
         """;
 
-    private sealed class RouteHandler(string releasesJson, string manifestJson) : HttpMessageHandler
+    private sealed class RouteHandler : HttpMessageHandler
     {
+        private readonly string releasesJson;
+        private readonly string? manifestJson;
+        private readonly IReadOnlyDictionary<string, string>? manifestsByTag;
+
+        public RouteHandler(string releasesJson, string manifestJson)
+        {
+            this.releasesJson = releasesJson;
+            this.manifestJson = manifestJson;
+        }
+
+        public RouteHandler(string releasesJson, IReadOnlyDictionary<string, string> manifestsByTag)
+        {
+            this.releasesJson = releasesJson;
+            this.manifestsByTag = manifestsByTag;
+        }
+
         public HttpStatusCode ReleasesStatusCode { get; init; } = HttpStatusCode.OK;
 
         public List<(Uri Uri, string UserAgent)> Requests { get; } = [];
@@ -181,7 +351,12 @@ public sealed class GitHubWindowsReleaseClientTests
                 request.Headers.UserAgent.ToString()));
             var isReleasesRequest = request.RequestUri!.Host == "api.github.com";
             var status = isReleasesRequest ? ReleasesStatusCode : HttpStatusCode.OK;
-            var body = isReleasesRequest ? releasesJson : manifestJson;
+            var body = isReleasesRequest
+                ? releasesJson
+                : manifestJson ?? manifestsByTag!.Single(pair =>
+                    request.RequestUri.AbsolutePath.Contains(
+                        $"/{pair.Key}/",
+                        StringComparison.Ordinal)).Value;
             return Task.FromResult(new HttpResponseMessage(status)
             {
                 RequestMessage = request,

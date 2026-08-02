@@ -5,6 +5,13 @@ public enum LauncherHealthDimensionCategory
     ProcessSafety,
     InstallationSelection,
     Discovery,
+    ModInstallation,
+    ProviderCompatibility,
+    UpdateAvailability,
+    GameCompatibility,
+    RuntimeActivation,
+    NativeSupport,
+    ProviderAvailability,
 }
 
 public enum LauncherHealthSeverity
@@ -12,6 +19,7 @@ public enum LauncherHealthSeverity
     Healthy,
     Informational,
     ActionRequired,
+    Unknown,
 }
 
 public sealed record LauncherHealthDimension(

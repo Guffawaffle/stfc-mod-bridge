@@ -8,7 +8,7 @@
              xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:viewModels="clr-namespace:STFCCommunityMod.Launcher.ViewModels"
              xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
-             MinWidth="760"
+             MinWidth="0"
              Background="{DynamicResource WindowBackgroundBrush}"
              Foreground="{DynamicResource TextPrimaryBrush}"
              Focusable="False"
@@ -72,12 +72,19 @@
     <Style x:Key="SettingsNumericEditorStyle"
            BasedOn="{StaticResource SettingsSearchStyle}"
            TargetType="TextBox">
+      <Setter Property="Width" Value="{StaticResource SettingsInputWidthSmall}" />
       <Setter Property="MinHeight" Value="42" />
       <Setter Property="Padding" Value="12,8" />
       <Setter Property="HorizontalContentAlignment" Value="Right" />
       <Setter Property="TextAlignment" Value="Right" />
       <Setter Property="MaxLength" Value="64" />
       <Style.Triggers>
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Medium">
+          <Setter Property="Width" Value="{StaticResource SettingsInputWidthMedium}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Large">
+          <Setter Property="Width" Value="{StaticResource SettingsInputWidthLarge}" />
+        </DataTrigger>
         <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
           <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
           <Setter Property="BorderThickness" Value="2" />
@@ -571,6 +578,23 @@
         </Setter.Value>
       </Setter>
     </Style>
+
+    <Style x:Key="AboutSectionHeadingStyle"
+           TargetType="TextBlock">
+      <Setter Property="Margin" Value="0,24,0,8" />
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="AboutLinkButtonStyle"
+           BasedOn="{StaticResource QuietButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Margin" Value="0,0,8,8" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
   </UserControl.Resources>
 
   <Grid>
@@ -609,39 +633,10 @@
           Margin="24,0,24,12">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
-      <Grid MaxWidth="650"
-            Margin="0,8,0,0"
-            HorizontalAlignment="Stretch"
-            Visibility="{Binding IsSearchVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <TextBox x:Name="SearchBox"
-                 HorizontalAlignment="Stretch"
-                 Style="{StaticResource SettingsSearchStyle}"
-                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                 automation:AutomationProperties.Name="Search settings"
-                 automation:AutomationProperties.HelpText="Search every setting by name, description, category, or canonical key." />
-        <TextBlock Margin="15,0,0,0"
-                   VerticalAlignment="Center"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   IsHitTestVisible="False"
-                   Text="Search settings">
-          <TextBlock.Style>
-            <Style TargetType="TextBlock">
-              <Setter Property="Visibility" Value="Collapsed" />
-              <Style.Triggers>
-                <DataTrigger Binding="{Binding SearchText}" Value="">
-                  <Setter Property="Visibility" Value="Visible" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </TextBlock.Style>
-        </TextBlock>
-      </Grid>
-
-      <Grid Grid.Row="1"
+      <Grid Grid.Row="0"
             Margin="0,8,0,8"
             Visibility="{Binding IsSettingsListVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid.ColumnDefinitions>
@@ -681,9 +676,20 @@
                      Text="{Binding SourceIdentity}"
                      automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}" />
         </StackPanel>
+        <Button Grid.Column="1"
+                Margin="20,0,0,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Command="{Binding OpenRawTomlCommand}"
+                Content="Open raw _TOML"
+                ToolTip="{Binding OpenRawTomlAvailability}"
+                Visibility="{Binding IsAdvancedSelected, Converter={StaticResource BooleanToVisibilityConverter}}"
+                automation:AutomationProperties.Name="Open active configuration as raw TOML"
+                automation:AutomationProperties.HelpText="{Binding OpenRawTomlAvailability}" />
       </Grid>
 
-      <Grid Grid.Row="2">
+      <Grid Grid.Row="1">
         <ListBox x:Name="SettingsList"
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  ItemsSource="{Binding FilteredSettings}"
@@ -730,6 +736,111 @@
               <ContentControl HorizontalContentAlignment="Stretch"
                               Content="{Binding}">
                 <ContentControl.Resources>
+                  <DataTemplate DataType="{x:Type viewModels:AdvancedPatchEditingGateViewModel}">
+                    <Border Margin="18,14,18,8"
+                            Padding="18"
+                            Background="{DynamicResource WarningSoftBrush}"
+                            BorderBrush="{DynamicResource WarningBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            automation:AutomationProperties.Name="{Binding StateAutomationName}"
+                            automation:AutomationProperties.HelpText="{Binding WarningText}">
+                      <StackPanel>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <StackPanel>
+                            <TextBlock FontSize="17"
+                                       FontWeight="SemiBold"
+                                       Text="{Binding StateTitle}" />
+                            <TextBlock MaxWidth="700"
+                                       Margin="0,5,0,0"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Text="{Binding StateDescription}"
+                                       TextWrapping="Wrap" />
+                          </StackPanel>
+                          <Button Grid.Column="1"
+                                  Margin="18,0,0,0"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Top"
+                                  Style="{StaticResource UtilityActionButtonStyle}"
+                                  Command="{Binding LockCommand}"
+                                  Visibility="{Binding IsUnlocked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  automation:AutomationProperties.Name="Lock patch editing"
+                                  automation:AutomationProperties.HelpText="Relock patch controls while preserving staged configuration changes.">
+                            <AccessText Text="_Lock patch editing" />
+                          </Button>
+                        </Grid>
+
+                        <TextBlock x:Name="PatchEditingWarning"
+                                   MaxWidth="760"
+                                   Margin="0,14,0,0"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   Text="{Binding WarningText}"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                   automation:AutomationProperties.Name="Patch editing safety warning" />
+
+                        <Button Margin="0,16,0,0"
+                                HorizontalAlignment="Left"
+                                Style="{StaticResource UtilityActionButtonStyle}"
+                                Command="{Binding EnableCommand}"
+                                ToolTip="{Binding EnableAvailability}"
+                                Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                automation:AutomationProperties.Name="Enable patch editing"
+                                automation:AutomationProperties.LabeledBy="{Binding ElementName=PatchEditingWarning}"
+                                automation:AutomationProperties.HelpText="{Binding EnableAutomationHelp}">
+                          <AccessText Text="_Enable patch editing" />
+                        </Button>
+
+                        <Border Margin="0,18,0,0"
+                                Padding="0,12,0,0"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="0,1,0,0"
+                                Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <StackPanel>
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Text="{Binding SummaryTitle}"
+                                       automation:AutomationProperties.HeadingLevel="Level3" />
+                            <ItemsControl Margin="0,8,0,0"
+                                          ItemsSource="{Binding Summaries}"
+                                          automation:AutomationProperties.Name="Read-only patch value summary">
+                              <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                  <WrapPanel />
+                                </ItemsPanelTemplate>
+                              </ItemsControl.ItemsPanel>
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type viewModels:AdvancedPatchSummaryItemViewModel}">
+                                  <Grid Width="320"
+                                        Margin="0,3,18,3"
+                                        automation:AutomationProperties.Name="{Binding AutomationName}">
+                                    <Grid.ColumnDefinitions>
+                                      <ColumnDefinition Width="*" />
+                                      <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontSize="12"
+                                               Text="{Binding Title}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               Margin="12,0,0,0"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding StateText}" />
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </Border>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
                   <DataTemplate DataType="{x:Type viewModels:SettingsGroupHeaderViewModel}">
                     <Border Margin="18,22,18,6"
                             Padding="0,0,0,8"
@@ -768,8 +879,8 @@
                         automation:AutomationProperties.HelpText="{Binding AccessibleHelp}">
                   <Grid>
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="420" />
+                      <ColumnDefinition Width="5*" MinWidth="220" />
+                      <ColumnDefinition Width="4*" MinWidth="300" MaxWidth="420" />
                     </Grid.ColumnDefinitions>
 
                     <Grid Margin="0,0,28,0"
@@ -795,7 +906,7 @@
                                 Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource QuietHoverBrush}"
-                                CornerRadius="4"
+                                CornerRadius="{StaticResource BadgeCornerRadius}"
                                 Visibility="{Binding IsDirty, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
                                      Foreground="{DynamicResource AccentBrush}"
@@ -804,7 +915,7 @@
                         <Border Padding="7,2"
                                 VerticalAlignment="Center"
                                 Background="{DynamicResource SurfaceMutedBrush}"
-                                CornerRadius="4"
+                                CornerRadius="{StaticResource BadgeCornerRadius}"
                                 Visibility="{Binding IsExperimental, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
                                      Foreground="{DynamicResource TextSecondaryBrush}"
@@ -851,7 +962,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <ComboBox Width="220"
+                          <ComboBox Width="{StaticResource SettingsInputWidthLarge}"
                                     HorizontalAlignment="Right"
                                     Style="{StaticResource SettingsEnumComboBoxStyle}"
                                     ItemsSource="{Binding EnumOptions}"
@@ -867,7 +978,7 @@
                         <TextBlock Margin="0,4,52,0"
                                    FontSize="11"
                                    Foreground="{DynamicResource WarningBrush}"
-                                   Text="Invalid override · Default shown"
+                                   Text="Invalid override · Initial value shown"
                                    Visibility="{Binding EnumNeedsAttention, Converter={StaticResource BooleanToVisibilityConverter}}" />
                       </StackPanel>
 
@@ -875,7 +986,7 @@
                         <Grid>
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="124" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
@@ -928,7 +1039,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBox Width="280"
+                          <TextBox Width="{StaticResource SettingsInputWidthLarge}"
                                    HorizontalAlignment="Right"
                                    Style="{StaticResource SettingsStringEditorStyle}"
                                    Text="{Binding StringText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
@@ -1152,33 +1263,39 @@
           </StackPanel>
         </Border>
 
-        <Border Padding="22"
-                Background="{DynamicResource SurfaceBrush}"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="10"
-                Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <StackPanel>
-            <TextBlock FontSize="18"
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly"
+                      Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      automation:AutomationProperties.Name="About STFC Mod Control">
+          <ScrollViewer.Resources>
+            <Style BasedOn="{StaticResource SettingsScrollBarStyle}"
+                   TargetType="{x:Type ScrollBar}" />
+          </ScrollViewer.Resources>
+          <StackPanel Margin="4,18,14,28">
+            <TextBlock FontSize="26"
                        FontWeight="SemiBold"
-                       Text="Configuration ownership" />
-            <TextBlock Margin="0,8,0,0"
+                       Text="{Binding About.ProductName}" />
+            <TextBlock Margin="0,4,0,0"
+                       FontSize="15"
+                       Foreground="{DynamicResource AccentBrush}"
+                       Text="{Binding About.Descriptor}" />
+            <TextBlock MaxWidth="720"
+                       Margin="0,10,0,0"
+                       HorizontalAlignment="Left"
                        FontSize="13"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="The launcher stages sparse changes for the selected release source. Runtime defaults remain owned by the mod, and unknown TOML keys and comments are preserved." />
-            <TextBlock Margin="0,18,0,0"
-                       FontSize="12"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="Active release source" />
-            <TextBlock Margin="0,3,0,0"
-                       FontSize="15"
-                       FontWeight="SemiBold"
-                       Text="{Binding SourceIdentity}" />
-            <Grid MaxWidth="620"
-                  Margin="0,18,0,0"
-                  HorizontalAlignment="Left">
+                       Text="{Binding About.Description}"
+                       TextWrapping="Wrap" />
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Application" />
+            <Border Height="1"
+                    Margin="0,0,0,12"
+                    Background="{DynamicResource BorderBrush}" />
+            <Grid MaxWidth="760" HorizontalAlignment="Stretch">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="150" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <Grid.RowDefinitions>
@@ -1186,61 +1303,161 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
-              <TextBlock FontSize="12"
-                         Foreground="{DynamicResource TextSecondaryBrush}"
-                         Text="Detected runtime" />
-              <TextBlock Grid.Column="1"
-                         FontSize="12"
-                         Text="{Binding DetectedRuntime}" />
-              <TextBlock Grid.Row="1"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Foreground="{DynamicResource TextSecondaryBrush}"
-                         Text="Semantic grouping" />
-              <TextBlock Grid.Row="1"
-                         Grid.Column="1"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Text="{Binding SemanticGroupingStatus}" />
-              <TextBlock Grid.Row="2"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Foreground="{DynamicResource TextSecondaryBrush}"
-                         Text="Settings layout" />
-              <TextBlock Grid.Row="2"
-                         Grid.Column="1"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Text="{Binding SettingsLayoutName}" />
-              <TextBlock Grid.Row="3"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Foreground="{DynamicResource TextSecondaryBrush}"
-                         Text="Reason" />
-              <TextBlock Grid.Row="3"
-                         Grid.Column="1"
-                         MaxWidth="430"
-                         Margin="0,7,0,0"
-                         FontSize="12"
-                         Foreground="{DynamicResource TextSecondaryBrush}"
-                         Text="{Binding SemanticGroupingReason}" />
+              <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Text="Version" />
+              <TextBlock Grid.Column="1" Text="{Binding About.Version}" TextWrapping="Wrap"
+                         automation:AutomationProperties.Name="{Binding About.Version, StringFormat='Mod Control version {0}'}" />
+              <TextBlock Grid.Row="1" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Build" />
+              <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.BuildProvenance}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="2" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Mod provider" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.Provider}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="3" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Detected runtime" />
+              <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.DetectedRuntime}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="4" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Release channel" />
+              <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.ReleaseChannel}" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="5" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Runtime repository" />
+              <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.ReleaseRepository}" TextWrapping="Wrap" />
             </Grid>
-            <Button Margin="0,20,0,0"
-                    HorizontalAlignment="Left"
-                    Style="{StaticResource UtilityActionButtonStyle}"
-                    Command="{Binding OpenRawTomlCommand}"
-                    Content="Open raw _TOML"
-                    ToolTip="{Binding OpenRawTomlAvailability}"
-                    automation:AutomationProperties.Name="Open active configuration as raw TOML"
-                    automation:AutomationProperties.HelpText="{Binding OpenRawTomlAvailability}" />
-            <TextBlock MaxWidth="520"
-                       Margin="0,7,0,0"
-                       FontSize="11"
+            <WrapPanel Margin="0,16,0,0">
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenExternalLinkCommand}"
+                      CommandParameter="{Binding About.RepositoryUrl}"
+                      Content="View _source"
+                      automation:AutomationProperties.Name="Open STFC Mod Control source repository" />
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenExternalLinkCommand}"
+                      CommandParameter="{Binding About.ReleasesUrl}"
+                      Content="View _releases"
+                      automation:AutomationProperties.Name="Open STFC Mod Control releases" />
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenExternalLinkCommand}"
+                      CommandParameter="{Binding About.ProductLicenseUrl}"
+                      Content="Product _license"
+                      automation:AutomationProperties.Name="Open STFC Mod Control license" />
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenExternalLinkCommand}"
+                      CommandParameter="{Binding About.RuntimeRepositoryUrl}"
+                      Content="Runtime source"
+                      automation:AutomationProperties.Name="Open active mod provider repository" />
+            </WrapPanel>
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Credits and acknowledgements" />
+            <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource BorderBrush}" />
+            <ItemsControl ItemsSource="{Binding About.Contributors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,5,0,10">
+                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding Name}" />
+                    <TextBlock MaxWidth="720" Margin="0,3,0,0" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding Contribution}" TextWrapping="Wrap" />
+                    <Button Margin="-10,2,0,0" HorizontalAlignment="Left"
+                            Style="{StaticResource AboutLinkButtonStyle}"
+                            Command="{Binding DataContext.About.OpenExternalLinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding Url}" Content="View contribution source"
+                            Visibility="{Binding HasUrl, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            automation:AutomationProperties.Name="{Binding Name, StringFormat='Open contribution source for {0}'}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ItemsControl ItemsSource="{Binding About.Acknowledgements}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,5,0,10">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+                    <TextBlock MaxWidth="720" Margin="0,3,0,0" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding Text}" TextWrapping="Wrap" />
+                    <Button Margin="-10,2,0,0" HorizontalAlignment="Left"
+                            Style="{StaticResource AboutLinkButtonStyle}"
+                            Command="{Binding DataContext.About.OpenExternalLinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding Url}" Content="Learn more"
+                            automation:AutomationProperties.Name="{Binding Title, StringFormat='Open acknowledgement source for {0}'}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Game and publisher acknowledgement" />
+            <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource BorderBrush}" />
+            <TextBlock MaxWidth="720" HorizontalAlignment="Left"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="{Binding OpenRawTomlAvailability}" />
+                       Text="{Binding About.GameAcknowledgement}" TextWrapping="Wrap" />
+            <TextBlock MaxWidth="720" Margin="0,8,0,0" HorizontalAlignment="Left"
+                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding About.LegalReviewStatus}" TextWrapping="Wrap" />
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Third-party notices" />
+            <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource BorderBrush}" />
+            <TextBlock MaxWidth="720" Margin="0,0,0,8" HorizontalAlignment="Left"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="Expand a component to read its bundled notice and follow its authoritative source and license links."
+                       TextWrapping="Wrap" />
+            <TextBlock MaxWidth="720" Margin="0,0,0,10" HorizontalAlignment="Left"
+                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding About.NoticeCoverageStatus}" TextWrapping="Wrap"
+                       automation:AutomationProperties.Name="Third-party notice coverage status" />
+            <ItemsControl ItemsSource="{Binding About.ThirdPartyNotices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Expander Margin="0,2,0,4" Padding="0,6"
+                            Foreground="{DynamicResource TextPrimaryBrush}"
+                            automation:AutomationProperties.Name="{Binding Name, StringFormat='Third-party notice for {0}'}">
+                    <Expander.Header>
+                      <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                        <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}">
+                          <Run Text="{Binding Version}" /><Run Text=" · " /><Run Text="{Binding License}" />
+                        </TextBlock>
+                      </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="24,8,0,8">
+                      <TextBlock MaxWidth="690" FontFamily="Consolas" FontSize="11"
+                                 Foreground="{DynamicResource TextSecondaryBrush}"
+                                 Text="{Binding NoticeText}" TextWrapping="Wrap" />
+                      <WrapPanel Margin="0,10,0,0">
+                        <Button Style="{StaticResource AboutLinkButtonStyle}"
+                                Command="{Binding DataContext.About.OpenExternalLinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding SourceUrl}" Content="View source"
+                                automation:AutomationProperties.Name="{Binding Name, StringFormat='Open source for {0}'}" />
+                        <Button Style="{StaticResource AboutLinkButtonStyle}"
+                                Command="{Binding DataContext.About.OpenExternalLinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding LicenseUrl}" Content="View license"
+                                automation:AutomationProperties.Name="{Binding Name, StringFormat='Open license for {0}'}" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Expander>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Expander Margin="0,22,0,0" Padding="0,6"
+                      Foreground="{DynamicResource TextPrimaryBrush}"
+                      automation:AutomationProperties.Name="Configuration ownership technical details">
+              <Expander.Header>
+                <StackPanel>
+                  <TextBlock FontSize="16" FontWeight="SemiBold" Text="Technical configuration details" />
+                  <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                             Text="Provider identity, schema projection, and ownership." />
+                </StackPanel>
+              </Expander.Header>
+              <StackPanel Margin="24,10,0,8">
+                <TextBlock MaxWidth="700" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="Mod Control stages sparse changes for the selected provider. Runtime defaults remain owned by the mod; unknown TOML keys and comments are preserved. Raw TOML editing belongs to Advanced."
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,10,0,0" Text="{Binding About.ProviderId, StringFormat='Provider ID: {0}'}" />
+                <TextBlock Margin="0,4,0,0" Text="{Binding SemanticGroupingStatus, StringFormat='Semantic grouping: {0}'}" />
+                <TextBlock Margin="0,4,0,0" Text="{Binding SettingsLayoutName, StringFormat='Settings layout: {0}'}" />
+                <TextBlock MaxWidth="700" Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding SemanticGroupingReason}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Expander>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
       </Grid>
     </Grid>
 

@@ -8,16 +8,21 @@ using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
+public enum SettingsInputWidth
+{
+    Small,
+    Medium,
+    Large,
+}
+
 public sealed class SettingsRowViewModel :
     SettingsListItemViewModel,
     INotifyPropertyChanged
 {
     private readonly Func<LauncherConfigurationSetting, string, bool> stageValue;
-    private readonly Func<LauncherConfigurationSetting, bool> stageRemove;
     private readonly Func<LauncherConfigurationSetting, bool> revertDraft;
     private readonly Action<LauncherConfigurationSetting, bool> setInputValidity;
     private readonly SettingsEditorDraftStore editorDraftStore;
-    private readonly SettingsActionCommand useDefaultCommand;
     private readonly SettingsActionCommand revertDraftCommand;
     private readonly SettingsValueCommand<string> addKeybindingCommand;
     private readonly SettingsValueCommand<string> removeKeybindingCommand;
@@ -34,7 +39,6 @@ public sealed class SettingsRowViewModel :
         SettingsValueState valueState,
         bool editingAvailable,
         Func<LauncherConfigurationSetting, string, bool> stageValue,
-        Func<LauncherConfigurationSetting, bool> stageRemove,
         Func<LauncherConfigurationSetting, bool> revertDraft,
         Action<LauncherConfigurationSetting, bool> setInputValidity,
         SettingsEditorDraftStore editorDraftStore)
@@ -42,7 +46,6 @@ public sealed class SettingsRowViewModel :
         Setting = setting;
         this.valueState = valueState;
         this.stageValue = stageValue;
-        this.stageRemove = stageRemove;
         this.revertDraft = revertDraft;
         this.setInputValidity = setInputValidity;
         this.editorDraftStore =
@@ -97,9 +100,6 @@ public sealed class SettingsRowViewModel :
         RefreshNotificationPolicy();
         RestoreEditorDraft();
 
-        useDefaultCommand = new SettingsActionCommand(
-            UseDefault,
-            () => CanEdit && DraftHasOverride);
         revertDraftCommand = new SettingsActionCommand(
             RevertDraft,
             () => CanEdit && IsDirty);
@@ -175,6 +175,8 @@ public sealed class SettingsRowViewModel :
     public double NumericSliderLargeChange =>
         Math.Min(NumericSliderStep * 10, NumericSliderMaximum - NumericSliderMinimum);
 
+    public SettingsInputWidth NumericInputWidth => ResolveNumericInputWidth();
+
     public bool NumericSliderAllowsExtendedEntry
     {
         get
@@ -216,17 +218,73 @@ public sealed class SettingsRowViewModel :
 
     public bool IsDirty => valueState.IsDirty;
 
-    public bool HasOverflowActions => IsKeybindingEditor || DraftHasOverride;
+    public bool IsCompatibilityResolved =>
+        valueState.DraftOrigin == LauncherConfigurationValueOrigin.CompatibilityAlias;
+
+    public string EffectiveValueSource =>
+        valueState.DraftOrigin switch
+        {
+            LauncherConfigurationValueOrigin.CanonicalOverride =>
+                $"Canonical TOML · {Path}",
+            LauncherConfigurationValueOrigin.CompatibilityAlias =>
+                "Compatibility alias · runtime-resolved",
+            _ => $"Provider default · {Setting.Provenance.DefaultSource}",
+        };
+
+    public bool HasOverflowActions => IsKeybindingEditor;
 
     public bool IsExperimental =>
         Setting.Stability == LauncherConfigurationStability.Experimental;
 
     public string EffectiveState =>
         IsDirty
-            ? DraftHasOverride ? "Unsaved value" : "Unsaved default"
-            : DraftHasOverride ? "Configured" : "Default";
+            ? DraftHasOverride
+                ? "Unsaved value"
+                : IsCompatibilityResolved ? "Unsaved compatibility value" : "Unsaved initial value"
+            : DraftHasOverride
+                ? "Configured"
+                : IsCompatibilityResolved ? "Compatibility value" : "Initial value";
 
-    public string EffectiveValue => FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
+    public string EffectiveValue =>
+        IsCompatibilityResolved
+            ? "Unknown"
+            : FormatValue(valueState.DraftValue ?? Setting.DefaultValue);
+
+    public string SettingDetailsHelp
+    {
+        get
+        {
+            var initialValue = $"Default: {DefaultValueText}{Environment.NewLine}";
+            var runtimePath = $"Runtime path: {Setting.Provenance.RuntimePath}. ";
+            if (IsCompatibilityResolved)
+            {
+                var canonicalEditBehavior = IsNotificationEditor
+                    ? "A canonical notification edit replaces the whole compatibility policy; "
+                    : "A canonical edit takes precedence over compatibility input; ";
+                return initialValue
+                    + runtimePath
+                    + "Compatibility input detected at "
+                    + string.Join(", ", valueState.CompatibilitySourcePaths)
+                    + ". The provider schema does not define enough compatibility merge metadata "
+                    + "to reproduce the exact effective value, so the effective value is Unknown. "
+                    + canonicalEditBehavior
+                    + "ordinary Save preserves compatibility keys.";
+            }
+
+            var ignoredAliases =
+                valueState.CompatibilitySourcePaths.Count > 0
+                    ? " Canonical precedence replaces compatibility inputs at "
+                        + string.Join(", ", valueState.CompatibilitySourcePaths)
+                        + "; those keys remain preserved."
+                    : string.Empty;
+            return initialValue
+                + runtimePath
+                + ignoredAliases;
+        }
+    }
+
+    public string SettingDetailsAutomationName =>
+        $"Setting details for {Title}";
 
     public string SavedValueText =>
         FormatStateValue(valueState.SavedValue, SavedHasOverride);
@@ -240,14 +298,7 @@ public sealed class SettingsRowViewModel :
         $"Revert {Title} to saved value {SavedValueText}";
 
     public string RevertDraftAutomationHelp =>
-        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "default")} state.";
-
-    public string UseDefaultLabel => $"Use default: {DefaultValueText}";
-
-    public string UseDefaultAvailability =>
-        DraftHasOverride
-            ? $"Remove the explicit override and use the application default {DefaultValueText}."
-            : $"This setting already uses the application default {DefaultValueText}.";
+        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "initial")} state.";
 
     public string DefaultValueText
     {
@@ -255,7 +306,7 @@ public sealed class SettingsRowViewModel :
         {
             if (!IsKeybindingEditor)
             {
-                return DefaultValue;
+                return string.IsNullOrEmpty(DefaultValue) ? "(blank)" : DefaultValue;
             }
 
             var parsed = LauncherKeybindingValue.Parse(DefaultValue);
@@ -556,6 +607,11 @@ public sealed class SettingsRowViewModel :
                 return "Policy unavailable";
             }
 
+            if (IsCompatibilityResolved)
+            {
+                return "Compatibility policy · Runtime-resolved";
+            }
+
             if (!notificationPolicy.IsValid)
             {
                 return "Invalid value · Using event default";
@@ -585,7 +641,9 @@ public sealed class SettingsRowViewModel :
         notificationPolicy is { IsValid: false };
 
     public string NotificationPolicyHelp =>
-        notificationPolicy is { IsValid: false }
+        IsCompatibilityResolved
+            ? "A deprecated compatibility policy is active. Its exact effective value is Unknown; editing creates a canonical whole-policy override."
+            : notificationPolicy is { IsValid: false }
             ? notificationPolicy.Error ?? "The canonical policy is invalid; the event default is shown."
             : "Toggle Windows or audio delivery and choose the in-game sound.";
 
@@ -609,8 +667,6 @@ public sealed class SettingsRowViewModel :
     public string SpecializedEditorMessage =>
         $"This {Control.ToLowerInvariant()} value is catalogued and awaits its typed editor.";
 
-    public ICommand UseDefaultCommand => useDefaultCommand;
-
     public ICommand RevertDraftCommand => revertDraftCommand;
 
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
@@ -625,7 +681,6 @@ public sealed class SettingsRowViewModel :
                 || IsStringEditor
                 || IsKeybindingEditor
                 || IsNotificationEditor);
-        useDefaultCommand.RaiseCanExecuteChanged();
         revertDraftCommand.RaiseCanExecuteChanged();
         addKeybindingCommand.RaiseCanExecuteChanged();
         removeKeybindingCommand.RaiseCanExecuteChanged();
@@ -633,9 +688,12 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(SavedHasOverride));
         OnPropertyChanged(nameof(DraftHasOverride));
         OnPropertyChanged(nameof(IsDirty));
+        OnPropertyChanged(nameof(IsCompatibilityResolved));
+        OnPropertyChanged(nameof(EffectiveValueSource));
         OnPropertyChanged(nameof(HasOverflowActions));
         OnPropertyChanged(nameof(EffectiveState));
         OnPropertyChanged(nameof(EffectiveValue));
+        OnPropertyChanged(nameof(SettingDetailsHelp));
         OnPropertyChanged(nameof(BooleanValue));
         OnPropertyChanged(nameof(BooleanStateText));
         OnPropertyChanged(nameof(EnumValue));
@@ -658,8 +716,31 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(RevertDraftAvailability));
         OnPropertyChanged(nameof(RevertDraftAutomationName));
         OnPropertyChanged(nameof(RevertDraftAutomationHelp));
-        OnPropertyChanged(nameof(UseDefaultLabel));
-        OnPropertyChanged(nameof(UseDefaultAvailability));
+    }
+
+    private SettingsInputWidth ResolveNumericInputWidth()
+    {
+        if (!IsNumericEditor)
+        {
+            return SettingsInputWidth.Medium;
+        }
+
+        var minimum = Setting.NumericConstraints?.Minimum
+            ?? (HasNumericSlider ? NumericSliderMinimum : null);
+        var maximum = Setting.NumericConstraints?.Maximum
+            ?? (HasNumericSlider ? NumericSliderMaximum : null);
+        if (minimum is null || maximum is null)
+        {
+            return SettingsInputWidth.Large;
+        }
+
+        var magnitude = Math.Max(Math.Abs(minimum.Value), Math.Abs(maximum.Value));
+        return magnitude switch
+        {
+            <= 999 => SettingsInputWidth.Small,
+            <= 999_999 => SettingsInputWidth.Medium,
+            _ => SettingsInputWidth.Large,
+        };
     }
 
     private bool ReadBooleanValue()
@@ -743,21 +824,6 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(NotificationNeedsAttention));
         OnPropertyChanged(nameof(NotificationPolicyHelp));
         OnPropertyChanged(nameof(EditorAutomationName));
-    }
-
-    private void UseDefault()
-    {
-        if (RunWithClearedEditorDraft(() => stageRemove(Setting)))
-        {
-            OnPropertyChanged(nameof(BooleanValue));
-            OnPropertyChanged(nameof(BooleanStateText));
-            OnPropertyChanged(nameof(EnumValue));
-            OnPropertyChanged(nameof(EnumNeedsAttention));
-            OnPropertyChanged(nameof(EnumValidationMessage));
-            NotifyNumericStateChanged();
-            NotifyStringStateChanged();
-            NotifyKeybindingStateChanged();
-        }
     }
 
     private void RevertDraft()

@@ -1,3 +1,5 @@
+using STFCCommunityMod.Launcher.Core;
+
 namespace STFCCommunityMod.Launcher.ViewModels;
 
 public sealed record SettingsValueState(
@@ -6,4 +8,7 @@ public sealed record SettingsValueState(
     bool SavedHasOverride,
     object? DraftValue,
     bool DraftHasOverride,
-    bool IsDirty);
+    bool IsDirty,
+    LauncherConfigurationValueOrigin SavedOrigin,
+    LauncherConfigurationValueOrigin DraftOrigin,
+    IReadOnlyList<string> CompatibilitySourcePaths);
