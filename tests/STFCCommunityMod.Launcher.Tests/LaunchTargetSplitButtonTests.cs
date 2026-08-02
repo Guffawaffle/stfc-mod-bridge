@@ -1,4 +1,7 @@
+using System.Runtime.ExceptionServices;
+using System.Windows;
 using System.Xml.Linq;
+using STFCCommunityMod.Launcher.Controls;
 
 namespace STFCCommunityMod.Launcher.Tests;
 
@@ -183,6 +186,57 @@ public sealed class LaunchTargetSplitButtonTests
         StringAssert.Contains(source, "targetSize.Width - popupSize.Width");
         StringAssert.Contains(source, "targetSize.Height + 4");
         StringAssert.Contains(source, "-popupSize.Height - 4");
+    }
+
+    [TestMethod]
+    public void ControlBamlConstructsWithCustomPopupPlacementCallback()
+    {
+        var originalWindir = Environment.GetEnvironmentVariable("WINDIR", EnvironmentVariableTarget.Process);
+        if (string.IsNullOrWhiteSpace(originalWindir))
+        {
+            Environment.SetEnvironmentVariable(
+                "WINDIR",
+                Environment.GetEnvironmentVariable("SystemRoot", EnvironmentVariableTarget.Process),
+                EnvironmentVariableTarget.Process);
+        }
+
+        Exception? failure = null;
+        try
+        {
+            var thread = new Thread(
+                () =>
+                {
+                    try
+                    {
+                        var application = Application.Current ?? new App();
+                        if (application is App app)
+                        {
+                            app.InitializeComponent();
+                        }
+
+                        _ = new LaunchTargetSplitButton();
+                    }
+                    catch (Exception exception)
+                    {
+                        failure = exception;
+                    }
+                });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(10)), "The WPF construction test timed out.");
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+        }
+        finally
+        {
+            if (string.IsNullOrWhiteSpace(originalWindir))
+            {
+                Environment.SetEnvironmentVariable("WINDIR", null, EnvironmentVariableTarget.Process);
+            }
+        }
     }
 
     private static XDocument LoadXaml(string relativePath) =>

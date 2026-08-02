@@ -62,7 +62,11 @@ public partial class LaunchTargetSplitButton : UserControl
             () => (IsPrimeSelected ? PrimeChoiceButton : ScopelyChoiceButton).Focus());
     }
 
-    private static CustomPopupPlacement[] PlaceChoicePopup(
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "WPF XAML callback binding requires an instance method.")]
+    private CustomPopupPlacement[] PlaceChoicePopup(
         Size popupSize,
         Size targetSize,
         Point offset) =>
