@@ -24,16 +24,37 @@
             automation:AutomationProperties.HelpText="{Binding HelpText, ElementName=Root}">
       <Border Width="18"
               Height="18"
-              BorderBrush="{DynamicResource TextSecondaryBrush}"
               BorderThickness="1.5"
               CornerRadius="9">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsPinned, ElementName=Root}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
         <TextBlock HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    FontSize="12"
                    FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="?"
-                   TextAlignment="Center" />
+                   TextAlignment="Center">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPinned, ElementName=Root}" Value="True">
+                  <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
       </Border>
     </Button>
 

@@ -171,6 +171,9 @@ public sealed class SettingsProjectionTests
         fixture.Select(LauncherSettingsSection.Interface);
         var interfaceRow = fixture.Row("ui.extend_chest_purchase_max");
         StringAssert.Contains(interfaceRow.DefaultAndEffectiveHelp, "Default: 160");
+        StringAssert.Contains(
+            interfaceRow.DefaultAndEffectiveHelp,
+            $"Default: 160{Environment.NewLine}Runtime path:");
         Assert.IsFalse(interfaceRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
         interfaceRow.NumericText = "120";
         Assert.IsTrue(interfaceRow.DraftHasOverride);
@@ -189,6 +192,12 @@ public sealed class SettingsProjectionTests
         var booleanRow = fixture.Row("graphics.free_resize");
         StringAssert.Contains(booleanRow.DefaultAndEffectiveHelp, "Default:");
         Assert.IsFalse(booleanRow.DefaultAndEffectiveHelp.Contains("Current value:", StringComparison.Ordinal));
+
+        fixture.ViewModel.SearchText = "config.assets_url_override";
+        var blankDefaultRow = fixture.Row("config.assets_url_override");
+        StringAssert.Contains(
+            blankDefaultRow.DefaultAndEffectiveHelp,
+            $"Default: (blank){Environment.NewLine}Runtime path: config.assets_url_override");
     }
 
     [TestMethod]

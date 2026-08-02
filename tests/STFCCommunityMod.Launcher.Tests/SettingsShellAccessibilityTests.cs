@@ -79,6 +79,26 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
+    public void HelpFlyoutMakesItsExclusivePinnedStateVisible()
+    {
+        var document = LoadXaml(
+            "src/STFCCommunityMod.Launcher/Controls/HelpFlyoutButton.xaml");
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/Controls/HelpFlyoutButton.xaml.cs"));
+
+        var pinnedTriggers = document.Descendants(Presentation + "DataTrigger")
+            .Where(trigger =>
+                (string?)trigger.Attribute("Binding") == "{Binding IsPinned, ElementName=Root}"
+                && (string?)trigger.Attribute("Value") == "True")
+            .ToArray();
+        Assert.AreEqual(2, pinnedTriggers.Length);
+        StringAssert.Contains(source, "OpenFlyout(pin: true)");
+        StringAssert.Contains(source, "previous.CloseFromPeer();");
+        StringAssert.Contains(source, "IsPinned = false;");
+    }
+
+    [TestMethod]
     public void SettingRowsDoNotExposeDefaultAsAPeerAction()
     {
         var document = LoadXaml(

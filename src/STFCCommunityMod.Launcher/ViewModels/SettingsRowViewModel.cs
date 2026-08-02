@@ -261,7 +261,7 @@ public sealed class SettingsRowViewModel :
     {
         get
         {
-            var initialValue = $"Default: {DefaultValueText}. ";
+            var initialValue = $"Default: {DefaultValueText}{Environment.NewLine}";
             var runtimePath = $"Runtime path: {Setting.Provenance.RuntimePath}. ";
             if (IsCompatibilityResolved)
             {
@@ -318,7 +318,7 @@ public sealed class SettingsRowViewModel :
         {
             if (!IsKeybindingEditor)
             {
-                return DefaultValue;
+                return string.IsNullOrEmpty(DefaultValue) ? "(blank)" : DefaultValue;
             }
 
             var parsed = LauncherKeybindingValue.Parse(DefaultValue);

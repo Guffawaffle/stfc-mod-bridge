@@ -7,6 +7,8 @@ namespace STFCCommunityMod.Launcher.Controls;
 
 public partial class HelpFlyoutButton : UserControl
 {
+    private static WeakReference<HelpFlyoutButton>? activeFlyout;
+
     public static readonly DependencyProperty HelpTextProperty =
         DependencyProperty.Register(
             nameof(HelpText),
@@ -21,7 +23,16 @@ public partial class HelpFlyoutButton : UserControl
             typeof(HelpFlyoutButton),
             new PropertyMetadata("More information"));
 
-    private bool isPinned;
+    private static readonly DependencyPropertyKey IsPinnedPropertyKey =
+        DependencyProperty.RegisterReadOnly(
+            nameof(IsPinned),
+            typeof(bool),
+            typeof(HelpFlyoutButton),
+            new PropertyMetadata(false));
+
+    public static readonly DependencyProperty IsPinnedProperty =
+        IsPinnedPropertyKey.DependencyProperty;
+
     private readonly DispatcherTimer closeTimer;
 
     public HelpFlyoutButton()
@@ -46,23 +57,33 @@ public partial class HelpFlyoutButton : UserControl
         set => SetValue(AutomationNameProperty, value);
     }
 
+    public bool IsPinned
+    {
+        get => (bool)GetValue(IsPinnedProperty);
+        private set => SetValue(IsPinnedPropertyKey, value);
+    }
+
     public bool IsFlyoutOpen => Flyout.IsOpen;
 
     private void FlyoutButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
-        closeTimer.Stop();
-        isPinned = !isPinned;
-        Flyout.IsOpen = isPinned;
+        if (IsPinned)
+        {
+            IsPinned = false;
+            Flyout.IsOpen = false;
+            return;
+        }
+
+        OpenFlyout(pin: true);
     }
 
     private void FlyoutButton_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         _ = sender;
         _ = e;
-        closeTimer.Stop();
-        Flyout.IsOpen = true;
+        OpenFlyout(pin: false);
     }
 
     private void FlyoutButton_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -76,15 +97,15 @@ public partial class HelpFlyoutButton : UserControl
     {
         _ = sender;
         _ = e;
-        isPinned = false;
+        IsPinned = false;
+        ClearActiveFlyout();
     }
 
     private void FlyoutSurface_MouseEnter(object sender, MouseEventArgs e)
     {
         _ = sender;
         _ = e;
-        closeTimer.Stop();
-        Flyout.IsOpen = true;
+        OpenFlyout(pin: false);
     }
 
     private void FlyoutSurface_MouseLeave(object sender, MouseEventArgs e)
@@ -103,7 +124,7 @@ public partial class HelpFlyoutButton : UserControl
         }
 
         e.Handled = true;
-        isPinned = false;
+        IsPinned = false;
         Flyout.IsOpen = false;
         FlyoutButton.Focus();
         Keyboard.Focus(FlyoutButton);
@@ -119,7 +140,7 @@ public partial class HelpFlyoutButton : UserControl
             return;
         }
 
-        if (isPinned
+        if (IsPinned
             || FlyoutButton.IsMouseOver
             || FlyoutContent.IsMouseOver
             || FlyoutButton.IsKeyboardFocusWithin
@@ -129,6 +150,36 @@ public partial class HelpFlyoutButton : UserControl
         }
 
         Flyout.IsOpen = false;
+    }
+
+    private void OpenFlyout(bool pin)
+    {
+        closeTimer.Stop();
+        if (activeFlyout?.TryGetTarget(out var previous) == true
+            && !ReferenceEquals(previous, this))
+        {
+            previous.CloseFromPeer();
+        }
+
+        activeFlyout = new(this);
+        IsPinned = IsPinned || pin;
+        Flyout.IsOpen = true;
+    }
+
+    private void CloseFromPeer()
+    {
+        closeTimer.Stop();
+        IsPinned = false;
+        Flyout.IsOpen = false;
+    }
+
+    private void ClearActiveFlyout()
+    {
+        if (activeFlyout?.TryGetTarget(out var active) == true
+            && ReferenceEquals(active, this))
+        {
+            activeFlyout = null;
+        }
     }
 
     private void ScheduleCloseIfUnowned()
@@ -147,7 +198,8 @@ public partial class HelpFlyoutButton : UserControl
         _ = sender;
         _ = e;
         closeTimer.Stop();
-        isPinned = false;
+        IsPinned = false;
         Flyout.IsOpen = false;
+        ClearActiveFlyout();
     }
 }
