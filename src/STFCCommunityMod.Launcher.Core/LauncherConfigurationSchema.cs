@@ -49,6 +49,28 @@ public enum LauncherConfigurationSensitivity
     Secret,
 }
 
+public enum LauncherConfigurationAliasStatus
+{
+    Compatibility,
+    Deprecated,
+}
+
+public enum LauncherConfigurationAliasPrecedence
+{
+    CanonicalWins,
+    CanonicalReplacesWholePolicy,
+}
+
+public sealed record LauncherConfigurationAlias(
+    string Path,
+    LauncherConfigurationAliasStatus Status,
+    LauncherConfigurationAliasPrecedence Precedence,
+    string? RemovalVersion);
+
+public sealed record LauncherConfigurationProvenance(
+    string RuntimePath,
+    string? DefaultSource);
+
 public sealed record LauncherConfigurationSource(
     LauncherConfigurationSourceId Id,
     string Repository)
@@ -104,6 +126,8 @@ public sealed class LauncherConfigurationSetting
         IReadOnlyList<LauncherConfigurationPlatform> platforms,
         IReadOnlyList<LauncherConfigurationSourceId> sourceSupport,
         LauncherConfigurationSensitivity sensitivity,
+        IReadOnlyList<LauncherConfigurationAlias> aliases,
+        LauncherConfigurationProvenance provenance,
         LauncherConfigurationApplyBehavior applyBehavior,
         LauncherConfigurationPresentation presentation)
     {
@@ -121,12 +145,20 @@ public sealed class LauncherConfigurationSetting
         Platforms = platforms;
         SourceSupport = sourceSupport;
         Sensitivity = sensitivity;
+        Aliases = aliases;
+        Provenance = provenance;
         ApplyBehavior = applyBehavior;
         Presentation = presentation;
         IsTemplate = path.Split('.').Contains("*", StringComparer.Ordinal);
     }
 
     public string Path { get; }
+
+    /// <summary>
+    /// Durable setting identity within the provider-owned catalog. Canonical paths
+    /// are the runtime contract's stable IDs; display copy never participates in identity.
+    /// </summary>
+    public string StableId => Path;
 
     public string Title { get; }
 
@@ -161,6 +193,10 @@ public sealed class LauncherConfigurationSetting
     public IReadOnlyList<LauncherConfigurationSourceId> SourceSupport { get; }
 
     public LauncherConfigurationSensitivity Sensitivity { get; }
+
+    public IReadOnlyList<LauncherConfigurationAlias> Aliases { get; }
+
+    public LauncherConfigurationProvenance Provenance { get; }
 
     public LauncherConfigurationApplyBehavior ApplyBehavior { get; }
 

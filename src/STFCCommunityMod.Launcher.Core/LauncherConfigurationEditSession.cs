@@ -327,7 +327,7 @@ public sealed class LauncherConfigurationEditSession
         }
     }
 
-    private static SparseTomlError? ValidateSettingValue(
+    internal static SparseTomlError? ValidateSettingValue(
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
@@ -492,7 +492,7 @@ public sealed class LauncherConfigurationEditSession
                 candidate.ValueKind == JsonValueKind.String
                 && string.Equals(candidate.GetString(), value, StringComparison.Ordinal));
 
-    private static bool AreEquivalentSettingValues(
+    internal static bool AreEquivalentSettingValues(
         LauncherConfigurationSetting setting,
         string first,
         string second)

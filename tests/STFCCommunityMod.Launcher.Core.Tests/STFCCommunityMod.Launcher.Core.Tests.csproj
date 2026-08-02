@@ -18,6 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\docs\windows-launcher\config-schema.guffawaffle.v1.json"
+          Link="Fixtures\Configuration\config-schema.guffawaffle.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\providers\bundled-provider-catalog.v1.json"
           Link="Fixtures\Providers\bundled-provider-catalog.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
