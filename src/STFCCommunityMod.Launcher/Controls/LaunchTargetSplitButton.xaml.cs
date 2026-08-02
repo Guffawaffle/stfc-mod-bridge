@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 
 namespace STFCCommunityMod.Launcher.Controls;
@@ -60,6 +61,19 @@ public partial class LaunchTargetSplitButton : UserControl
         Dispatcher.BeginInvoke(
             () => (IsPrimeSelected ? PrimeChoiceButton : ScopelyChoiceButton).Focus());
     }
+
+    private static CustomPopupPlacement[] PlaceChoicePopup(
+        Size popupSize,
+        Size targetSize,
+        Point offset) =>
+    [
+        new(
+            new Point(targetSize.Width - popupSize.Width + offset.X, targetSize.Height + 4 + offset.Y),
+            PopupPrimaryAxis.Horizontal),
+        new(
+            new Point(targetSize.Width - popupSize.Width + offset.X, -popupSize.Height - 4 + offset.Y),
+            PopupPrimaryAxis.Horizontal),
+    ];
 
     private void ChoiceButton_Click(object sender, RoutedEventArgs e)
     {

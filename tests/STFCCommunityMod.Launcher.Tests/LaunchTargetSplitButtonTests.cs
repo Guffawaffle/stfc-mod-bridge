@@ -25,7 +25,7 @@ public sealed class LaunchTargetSplitButtonTests
     }
 
     [TestMethod]
-    public void PopupIsLeftAlignedAndOffersExactTargetCopyWithSelectionState()
+    public void PopupIsRightOwnedCompactAndOffersExactTargetCopyWithSelectionState()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/Controls/LaunchTargetSplitButton.xaml");
         var popup = document.Descendants(Presentation + "Popup").Single();
@@ -34,8 +34,12 @@ public sealed class LaunchTargetSplitButtonTests
             .Where(value => value is not null)
             .ToArray();
 
-        Assert.AreEqual("Bottom", (string?)popup.Attribute("Placement"));
-        Assert.AreEqual("{Binding ElementName=Root}", (string?)popup.Attribute("PlacementTarget"));
+        Assert.AreEqual("Custom", (string?)popup.Attribute("Placement"));
+        Assert.AreEqual("PlaceChoicePopup", (string?)popup.Attribute("CustomPopupPlacementCallback"));
+        Assert.AreEqual("{Binding ElementName=MenuButton}", (string?)popup.Attribute("PlacementTarget"));
+        var popupSurface = document.Descendants(Presentation + "Border")
+            .Single(element => GetName(element) == "ChoiceMenuSurface");
+        Assert.AreEqual("320", (string?)popupSurface.Attribute("Width"));
         CollectionAssert.Contains(text, "Launch prime.exe");
         CollectionAssert.Contains(text, "Open Scopely launcher");
         Assert.AreEqual(2, text.Count(value => value == "✓"));
@@ -43,6 +47,13 @@ public sealed class LaunchTargetSplitButtonTests
             document.Descendants(Presentation + "TextBlock")
                 .Any(element => (string?)element.Attribute("Text")
                     == "{Binding PrimeChoiceStatus, ElementName=Root}"));
+        var choiceButtons = document.Descendants(Presentation + "Button")
+            .Where(element => GetName(element) is "PrimeChoiceButton" or "ScopelyChoiceButton")
+            .ToArray();
+        Assert.IsTrue(choiceButtons.All(element =>
+            (string?)element.Attribute("Style") == "{StaticResource LaunchChoiceStyle}"));
+        Assert.IsTrue(choiceButtons.All(element => element.Attribute("BorderThickness") is null));
+        Assert.AreEqual(0, popupSurface.Descendants(Presentation + "Border").Count());
     }
 
     [TestMethod]
@@ -83,11 +94,75 @@ public sealed class LaunchTargetSplitButtonTests
         Assert.IsFalse(source.Contains("See Diagnostics", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void HomeUsesResponsiveSemanticSectionsWithNaturalActionMeasurement()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var workspace = document.Descendants(Presentation + "StackPanel")
+            .Single(element => GetName(element) == "HomeWorkspace");
+        var statusSurface = document.Descendants(Presentation + "Border")
+            .Single(element => GetName(element) == "HomeStatusSurface");
+        var gameSection = statusSurface.Descendants(Presentation + "Grid")
+            .Single(element => GetName(element) == "GameStatusSection");
+        var modSection = statusSurface.Descendants(Presentation + "Grid")
+            .Single(element => GetName(element) == "CommunityModStatusSection");
+
+        Assert.IsNull(workspace.Attribute("Width"));
+        Assert.AreEqual("680", (string?)workspace.Attribute("MaxWidth"));
+        Assert.AreEqual("Stretch", (string?)workspace.Attribute("HorizontalAlignment"));
+        Assert.IsTrue(HasText(gameSection, "Star Trek Fleet Command"));
+        Assert.IsTrue(HasText(modSection, "Community Mod"));
+        Assert.IsTrue(gameSection.Descendants(Presentation + "TextBlock")
+            .Any(element => (string?)element.Attribute("Text") == "{Binding GameSectionStatus}"));
+        Assert.IsTrue(modSection.Descendants(Presentation + "TextBlock")
+            .Any(element => (string?)element.Attribute("Text") == "{Binding ModStatus}"));
+        Assert.IsTrue(gameSection.Descendants(Presentation + "Button")
+            .Any(element => (string?)element.Attribute("Click") == "ChooseGameFolderButton_Click"));
+        Assert.IsTrue(gameSection.Descendants()
+            .Any(element => element.Name.LocalName == "LaunchTargetSplitButton"));
+        Assert.IsTrue(modSection.Descendants(Presentation + "Button")
+            .Any(element => (string?)element.Attribute("Click") == "ModActionButton_Click"));
+        Assert.IsTrue(modSection.Descendants(Presentation + "Button")
+            .Any(element => GetName(element) == "ReleaseSourceButton"));
+        Assert.IsTrue(gameSection.Descendants(Presentation + "Button")
+            .Concat(modSection.Descendants(Presentation + "Button"))
+            .All(element => element.Attribute("Width") is null));
+    }
+
+    [TestMethod]
+    public void RefreshLivesInStatusHeaderAndProviderMetadataHasNoSourcePrefix()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var refresh = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute("Command") == "{Binding RefreshCommand}");
+        var source = document.Descendants(Presentation + "Button")
+            .Single(element => GetName(element) == "ReleaseSourceButton");
+
+        Assert.AreEqual("36", (string?)refresh.Attribute("Width"));
+        Assert.AreEqual("{Binding ModSourceMetadata}", (string?)source.Attribute("Content"));
+        Assert.IsFalse(document.ToString().Contains("Source: {", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void PopupPlacementAlignsRightAndFallsBackAboveItsOwner()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/Controls/LaunchTargetSplitButton.xaml.cs"));
+
+        StringAssert.Contains(source, "targetSize.Width - popupSize.Width");
+        StringAssert.Contains(source, "targetSize.Height + 4");
+        StringAssert.Contains(source, "-popupSize.Height - 4");
+    }
+
     private static XDocument LoadXaml(string relativePath) =>
         XDocument.Load(Path.Combine(RepositoryRoot(), relativePath));
 
     private static string? GetName(XElement element) =>
         element.Attributes().SingleOrDefault(attribute => attribute.Name.LocalName == "Name")?.Value;
+
+    private static bool HasText(XElement element, string text) =>
+        element.Descendants(Presentation + "TextBlock")
+            .Any(candidate => (string?)candidate.Attribute("Text") == text);
 
     private static string RepositoryRoot()
     {

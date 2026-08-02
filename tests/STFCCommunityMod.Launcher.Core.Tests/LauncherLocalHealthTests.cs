@@ -128,7 +128,8 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(ModManagementActionKind.Install, missing.ModManagement.ActionKind);
         Assert.AreEqual("Not installed", missing.ModManagement.Status);
         Assert.AreEqual(ModManagementActionKind.AdoptAndInstall, manual.ModManagement.ActionKind);
-        Assert.AreEqual("Manual install found", manual.ModManagement.Status);
+        Assert.AreEqual("Manual installation detected", manual.ModManagement.Status);
+        Assert.AreEqual("Update", manual.ModManagement.ActionLabel);
         Assert.AreEqual(ModManagementActionKind.Repair, damaged.ModManagement.ActionKind);
         Assert.AreEqual("Repair required", damaged.ModManagement.Status);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, healthy.ModManagement.ActionKind);
@@ -159,7 +160,7 @@ public sealed class LauncherLocalHealthTests
 
         Assert.AreEqual(ModUpdateEvidenceState.UpdateAvailable, available.UpdateAvailability);
         Assert.AreEqual("Update available", available.ModManagement.Status);
-        Assert.AreEqual("Update mod", available.ModManagement.ActionLabel);
+        Assert.AreEqual("Update", available.ModManagement.ActionLabel);
         Assert.AreEqual(ModUpdateEvidenceState.Unknown, stale.UpdateAvailability);
         Assert.AreEqual(ModUpdateEvidenceState.Unknown, wrongArtifact.UpdateAvailability);
     }

@@ -569,9 +569,9 @@
 
     <StackPanel x:Name="HomeWorkspace"
                 Grid.Row="1"
-                Width="520"
-                MaxWidth="520"
-                HorizontalAlignment="Center"
+                MaxWidth="680"
+                Margin="24,0"
+                HorizontalAlignment="Stretch"
                 VerticalAlignment="Center">
       <TextBlock HorizontalAlignment="Center"
                  FontSize="32"
@@ -585,323 +585,210 @@
                  Text="Install, update, and configure the community mod in one place."
                  TextAlignment="Center" />
 
-      <Button MinWidth="132"
-              MinHeight="44"
-              Margin="0,16,0,0"
-              HorizontalAlignment="Center"
-              Style="{StaticResource UtilityActionButtonStyle}"
-              Command="{Binding RefreshCommand}"
-              Content="{Binding RefreshActionLabel}"
-              IsEnabled="{Binding CanRefresh}"
-              automation:AutomationProperties.Name="{Binding RefreshActionAutomationName}"
-              automation:AutomationProperties.HelpText="Checks the game folder, running game, and community mod status. Repeated activation is ignored while the check is working." />
+      <Grid Margin="0,18,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="Status" />
+        <Button Grid.Column="1"
+                Width="36"
+                Height="36"
+                MinHeight="36"
+                Padding="0"
+                Style="{StaticResource QuietButtonStyle}"
+                Command="{Binding RefreshCommand}"
+                IsEnabled="{Binding CanRefresh}"
+                ToolTip="{Binding RefreshActionAutomationName}"
+                automation:AutomationProperties.Name="{Binding RefreshActionAutomationName}"
+                automation:AutomationProperties.HelpText="Checks the game installation, running process, and community mod status.">
+          <TextBlock FontSize="18" Text="↻" />
+        </Button>
+      </Grid>
 
-      <TextBlock MinHeight="20"
-                 Margin="24,8,24,0"
-                 HorizontalAlignment="Center"
-                 FontSize="13"
+      <TextBlock Margin="0,4,0,0"
+                 FontSize="12"
                  Foreground="{DynamicResource TextSecondaryBrush}"
                  Text="{Binding RefreshActionStatus}"
-                 TextAlignment="Center"
                  TextWrapping="Wrap"
+                 Visibility="{Binding HasRefreshActionStatus, Converter={StaticResource BooleanToVisibilityConverter}}"
                  automation:AutomationProperties.LiveSetting="Polite"
                  controls:LiveRegionBehavior.Announcement="{Binding RefreshActionStatus}" />
 
-      <Border Margin="0,20,0,0"
-              Padding="22,6"
+      <Border x:Name="HomeStatusSurface"
+              Margin="0,8,0,0"
+              Padding="20,4"
               Background="{DynamicResource SurfaceBrush}"
               BorderBrush="{DynamicResource BorderBrush}"
               BorderThickness="1"
               CornerRadius="12">
         <Grid>
           <Grid.RowDefinitions>
-            <RowDefinition Height="76" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="1" />
-            <RowDefinition Height="76" />
-            <RowDefinition Height="1" />
-            <RowDefinition Height="76" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
 
-          <Border Grid.Row="0"
-                  Width="34"
-                  Height="34"
-                  Margin="0,0,14,0"
-                  VerticalAlignment="Center"
-                  CornerRadius="17">
-            <Border.Style>
-              <Style TargetType="Border">
-                <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding GameFolderTone}"
-                               Value="{x:Static core:LauncherHomeTone.Success}">
-                    <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding GameFolderTone}"
-                               Value="{x:Static core:LauncherHomeTone.Error}">
-                    <Setter Property="Background" Value="{DynamicResource ErrorSoftBrush}" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </Border.Style>
-            <TextBlock HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="20"
-                       FontWeight="Bold"
-                       Text="{Binding GameFolderIcon}"
-                       TextAlignment="Center"
-                       automation:AutomationProperties.Name="{Binding GameFolderStatusAutomationName}">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+          <Grid x:Name="GameStatusSection" MinHeight="108" Margin="0,4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Width="34" Height="34" Margin="0,0,14,0" VerticalAlignment="Center" CornerRadius="17">
+              <Border.Style>
+                <Style TargetType="Border">
+                  <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding GameFolderTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Success}">
-                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                    <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                      <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
                     </DataTrigger>
-                    <DataTrigger Binding="{Binding GameFolderTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Error}">
-                      <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                    <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                      <Setter Property="Background" Value="{DynamicResource ErrorSoftBrush}" />
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
-              </TextBlock.Style>
-            </TextBlock>
-          </Border>
+              </Border.Style>
+              <TextBlock HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         FontSize="20"
+                         FontWeight="Bold"
+                         Text="{Binding GameFolderIcon}"
+                         TextAlignment="Center"
+                         automation:AutomationProperties.Name="{Binding GameSectionStatus}">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding GameFolderTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
+              <TextBlock FontSize="16" FontWeight="SemiBold" Text="Star Trek Fleet Command" TextWrapping="Wrap" />
+              <TextBlock Margin="0,5,0,0"
+                         FontSize="13"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding GameSectionStatus}"
+                         TextWrapping="Wrap"
+                         automation:AutomationProperties.Name="{Binding GameSectionStatus}" />
+            </StackPanel>
+            <Grid Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <Button HorizontalAlignment="Right"
+                      Style="{StaticResource QuietButtonStyle}"
+                      Click="ChooseGameFolderButton_Click"
+                      Content="{Binding GameFolderActionLabel}"
+                      automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
+              <controls:LaunchTargetSplitButton Grid.Row="1"
+                                                Margin="0,6,0,0"
+                                                HorizontalAlignment="Right"
+                                                PrimaryLabel="{Binding LaunchActionLabel}"
+                                                PrimaryAutomationName="{Binding LaunchActionAutomationName}"
+                                                PrimaryCommand="{Binding LaunchPrimaryCommand}"
+                                                IsPrimaryEnabled="{Binding CanLaunchGame}"
+                                                IsMenuEnabled="{Binding CanOpenLaunchTargetMenu}"
+                                                IsPrimeSelected="{Binding IsPrimeExecutableSelected}"
+                                                IsScopelySelected="{Binding IsScopelyLauncherSelected}"
+                                                PrimeChoiceAutomationName="{Binding PrimeExecutableChoiceAutomationName}"
+                                                ScopelyChoiceAutomationName="{Binding ScopelyLauncherChoiceAutomationName}"
+                                                PrimeChoiceStatus="{Binding PrimeExecutableChoiceStatus}"
+                                                ScopelyChoiceStatus="{Binding ScopelyLauncherChoiceStatus}"
+                                                SelectPrimeCommand="{Binding SelectPrimeExecutableCommand}"
+                                                SelectScopelyCommand="{Binding SelectScopelyLauncherCommand}" />
+            </Grid>
+          </Grid>
 
-          <TextBlock Grid.Row="0"
-                     Grid.Column="1"
-                     VerticalAlignment="Center"
-                     FontSize="16"
-                     FontWeight="SemiBold"
-                     Text="Game folder" />
+          <Border Grid.Row="1" Background="{DynamicResource BorderBrush}" />
 
-          <StackPanel Grid.Row="0"
-                      Grid.Column="2"
-                      Orientation="Horizontal"
-                      HorizontalAlignment="Right"
-                      VerticalAlignment="Center">
-            <TextBlock Margin="0,0,14,0"
-                       VerticalAlignment="Center"
-                       FontSize="15"
-                       FontWeight="SemiBold"
-                       Text="{Binding GameFolderStatus}">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                  <Setter Property="Visibility" Value="Visible" />
+          <Grid x:Name="CommunityModStatusSection" Grid.Row="2" MinHeight="96" Margin="0,4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Width="34" Height="34" Margin="0,0,14,0" VerticalAlignment="Center" CornerRadius="17">
+              <Border.Style>
+                <Style TargetType="Border">
+                  <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding GameFolderTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Success}">
-                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                      <Setter Property="Visibility" Value="Collapsed" />
+                    <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                      <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
                     </DataTrigger>
-                    <DataTrigger Binding="{Binding GameFolderTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Error}">
-                      <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                    <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Warning}">
+                      <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                      <Setter Property="Background" Value="{DynamicResource ErrorSoftBrush}" />
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
-              </TextBlock.Style>
-            </TextBlock>
-            <Button Style="{StaticResource QuietButtonStyle}"
-                    Click="ChooseGameFolderButton_Click"
-                    Content="{Binding GameFolderActionLabel}"
-                    automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
-          </StackPanel>
-
-          <Border Grid.Row="1"
-                  Grid.ColumnSpan="3"
-                  Background="{DynamicResource BorderBrush}" />
-
-          <Border Grid.Row="2"
-                  Width="34"
-                  Height="34"
-                  Margin="0,0,14,0"
-                  VerticalAlignment="Center"
-                  CornerRadius="17">
-            <Border.Style>
-              <Style TargetType="Border">
-                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding GameClientTone}"
-                               Value="{x:Static core:LauncherHomeTone.Success}">
-                    <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding GameClientTone}"
-                               Value="{x:Static core:LauncherHomeTone.Warning}">
-                    <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </Border.Style>
-            <TextBlock HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="14"
-                       FontWeight="Bold"
-                       Text="{Binding GameClientIcon}"
-                       TextAlignment="Center"
-                       automation:AutomationProperties.Name="{Binding GameClientStatusAutomationName}">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding GameClientTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Success}">
-                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding GameClientTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Warning}">
-                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </TextBlock.Style>
-            </TextBlock>
-          </Border>
-          <TextBlock Grid.Row="2"
-                     Grid.Column="1"
-                     VerticalAlignment="Center"
-                     FontSize="16"
-                     FontWeight="SemiBold"
-                     Text="Game client" />
-          <StackPanel Grid.Row="2"
-                      Grid.Column="2"
-                      HorizontalAlignment="Right"
-                      VerticalAlignment="Center"
-                      Orientation="Horizontal">
-            <TextBlock Margin="0,0,14,0"
-                       VerticalAlignment="Center"
-                       FontSize="15"
-                       Text="{Binding GameClientStatus}"
-                       TextAlignment="Right">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding GameClientTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Success}">
-                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding GameClientTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Warning}">
-                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </TextBlock.Style>
-            </TextBlock>
-            <controls:LaunchTargetSplitButton MinWidth="238"
-                                              PrimaryLabel="{Binding LaunchActionLabel}"
-                                              PrimaryAutomationName="{Binding LaunchActionAutomationName}"
-                                              PrimaryCommand="{Binding LaunchPrimaryCommand}"
-                                              IsPrimaryEnabled="{Binding CanLaunchGame}"
-                                              IsMenuEnabled="{Binding CanOpenLaunchTargetMenu}"
-                                              IsPrimeSelected="{Binding IsPrimeExecutableSelected}"
-                                              IsScopelySelected="{Binding IsScopelyLauncherSelected}"
-                                              PrimeChoiceAutomationName="{Binding PrimeExecutableChoiceAutomationName}"
-                                              ScopelyChoiceAutomationName="{Binding ScopelyLauncherChoiceAutomationName}"
-                                              PrimeChoiceStatus="{Binding PrimeExecutableChoiceStatus}"
-                                              ScopelyChoiceStatus="{Binding ScopelyLauncherChoiceStatus}"
-                                              SelectPrimeCommand="{Binding SelectPrimeExecutableCommand}"
-                                              SelectScopelyCommand="{Binding SelectScopelyLauncherCommand}" />
-          </StackPanel>
-
-          <Border Grid.Row="3"
-                  Grid.ColumnSpan="3"
-                  Background="{DynamicResource BorderBrush}" />
-
-          <Border Grid.Row="4"
-                  Width="34"
-                  Height="34"
-                  Margin="0,0,14,0"
-                  VerticalAlignment="Center"
-                  CornerRadius="17">
-            <Border.Style>
-              <Style TargetType="Border">
-                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding ModTone}"
-                               Value="{x:Static core:LauncherHomeTone.Success}">
-                    <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding ModTone}"
-                               Value="{x:Static core:LauncherHomeTone.Warning}">
-                    <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}" />
-                  </DataTrigger>
-                  <DataTrigger Binding="{Binding ModTone}"
-                               Value="{x:Static core:LauncherHomeTone.Error}">
-                    <Setter Property="Background" Value="{DynamicResource ErrorSoftBrush}" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </Border.Style>
-            <TextBlock HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="13"
-                       FontWeight="Bold"
-                       Text="MOD"
-                       TextAlignment="Center"
-                       automation:AutomationProperties.Name="Community mod status">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding ModTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Success}">
-                      <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding ModTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Warning}">
-                      <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding ModTone}"
-                                 Value="{x:Static core:LauncherHomeTone.Error}">
-                      <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </TextBlock.Style>
-            </TextBlock>
-          </Border>
-
-          <TextBlock Grid.Row="4"
-                     Grid.Column="1"
-                     VerticalAlignment="Center"
-                     FontSize="16"
-                     FontWeight="SemiBold"
-                     Text="Community mod" />
-
-          <StackPanel Grid.Row="4"
-                      Grid.Column="2"
-                      HorizontalAlignment="Right"
-                      VerticalAlignment="Center"
-                      Orientation="Horizontal">
-            <TextBlock Margin="0,0,14,0"
-                       VerticalAlignment="Center"
-                       FontSize="15"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="{Binding ModStatus}"
-                       automation:AutomationProperties.LiveSetting="Polite" />
-            <Button x:Name="ReleaseSourceButton"
-                    Margin="0,0,8,0"
-                    Style="{StaticResource QuietButtonStyle}"
-                    Click="ReleaseSourceButton_Click"
-                    Content="Source"
-                    automation:AutomationProperties.Name="Review community mod release source"
-                    automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the Mod Control-owned mod release source." />
-            <Button MinHeight="44"
+              </Border.Style>
+              <TextBlock HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         FontSize="13"
+                         FontWeight="Bold"
+                         Text="MOD"
+                         TextAlignment="Center"
+                         automation:AutomationProperties.Name="Community Mod status">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Success}">
+                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Warning}">
+                        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding ModTone}" Value="{x:Static core:LauncherHomeTone.Error}">
+                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
+              <TextBlock FontSize="16" FontWeight="SemiBold" Text="Community Mod" />
+              <TextBlock Margin="0,5,0,0"
+                         FontSize="13"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding ModStatus}"
+                         TextWrapping="Wrap"
+                         automation:AutomationProperties.LiveSetting="Polite" />
+              <Button x:Name="ReleaseSourceButton"
+                      MinHeight="24"
+                      Padding="0,2"
+                      HorizontalAlignment="Left"
+                      Style="{StaticResource QuietButtonStyle}"
+                      Click="ReleaseSourceButton_Click"
+                      Content="{Binding ModSourceMetadata}"
+                      Foreground="{DynamicResource TextSecondaryBrush}"
+                      automation:AutomationProperties.Name="Review community mod release source"
+                      automation:AutomationProperties.HelpText="Review provider capabilities and safely switch the Mod Control-owned mod release source." />
+            </StackPanel>
+            <Button Grid.Column="2"
+                    MinHeight="44"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
                     Style="{StaticResource QuietButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
                     IsEnabled="{Binding CanManageMod}"
                     automation:AutomationProperties.Name="{Binding ModActionAutomationName}"
                     automation:AutomationProperties.HelpText="Downloads and verifies the selected community mod release before asking for confirmation." />
-          </StackPanel>
+          </Grid>
         </Grid>
       </Border>
 

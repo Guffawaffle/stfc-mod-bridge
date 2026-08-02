@@ -26,6 +26,7 @@ public sealed class LauncherHomePresentationTests
         var result = LauncherHomePresentation.FromSnapshot(snapshot);
 
         Assert.AreEqual(string.Empty, result.GameFolderStatus);
+        Assert.AreEqual("Installation found · Not running", result.GameSectionStatus);
         Assert.AreEqual("✓", result.GameFolderIcon);
         Assert.AreEqual(LauncherHomeTone.Success, result.GameFolderTone);
         Assert.AreEqual("Game folder set", result.GameFolderStatusAutomationName);
@@ -48,6 +49,7 @@ public sealed class LauncherHomePresentationTests
         var result = LauncherHomePresentation.FromSnapshot(snapshot);
 
         Assert.AreEqual("Needs attention", result.GameFolderStatus);
+        Assert.AreEqual("Installation needs attention · Not running", result.GameSectionStatus);
         Assert.AreEqual("×", result.GameFolderIcon);
         Assert.AreEqual(LauncherHomeTone.Error, result.GameFolderTone);
         Assert.IsFalse(
@@ -74,6 +76,7 @@ public sealed class LauncherHomePresentationTests
         var result = LauncherHomePresentation.FromSnapshot(snapshot);
 
         Assert.AreEqual("Found", result.GameFolderStatus);
+        Assert.AreEqual("Installation found; confirmation needed · Not running", result.GameSectionStatus);
         Assert.AreEqual(LauncherHomeTone.Warning, result.GameFolderTone);
         StringAssert.Contains(result.GameFolderActionAutomationName, "Confirm");
         Assert.IsFalse(
@@ -103,6 +106,7 @@ public sealed class LauncherHomePresentationTests
 
         Assert.AreEqual(string.Empty, result.GameFolderStatus);
         Assert.AreEqual("Running", result.GameClientStatus);
+        Assert.AreEqual("Installation found · Running", result.GameSectionStatus);
         Assert.AreEqual("●", result.GameClientIcon);
         Assert.AreEqual(LauncherHomeTone.Success, result.GameClientTone);
         Assert.AreEqual("STFC game client is running", result.GameClientStatusAutomationName);

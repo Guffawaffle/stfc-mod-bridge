@@ -17,6 +17,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
+    private readonly string modSourceMetadata;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHealthSnapshot localHealth;
     private HomeHealthProjection homeHealth;
@@ -35,7 +36,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
-        ILauncherUiPreferencesStore uiPreferencesStore)
+        ILauncherUiPreferencesStore uiPreferencesStore,
+        string modSourceMetadata)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
@@ -44,6 +46,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.uiPreferencesStore = uiPreferencesStore;
+        this.modSourceMetadata = modSourceMetadata;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
@@ -80,6 +83,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string GameSectionStatus => presentation.GameSectionStatus;
 
     public string GameFolderStatus => presentation.GameFolderStatus;
 
@@ -127,6 +132,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<LauncherHealthDimension> ModHealthDimensions => localHealth.Dimensions;
 
     public string ModStatus => homeHealth.InstallationStatus;
+
+    public string ModSourceMetadata => modSourceMetadata;
 
     public LauncherHomeTone ModTone => modPresentation.Tone;
 
@@ -209,6 +216,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
         : "Refresh Mod Control status";
 
     public string RefreshActionStatus => actionFeedback.Refresh.StatusText;
+
+    public bool HasRefreshActionStatus => actionFeedback.Refresh.HasStatus;
 
     public bool CanRefresh => actionFeedback.Refresh.IsCommandAvailable;
 
@@ -332,7 +341,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient,
-            uiPreferencesStore);
+            uiPreferencesStore,
+            string.IsNullOrWhiteSpace(providerResolutionFailure)
+                ? $"{distributionProvider.DisplayName} · {releaseChannel.DisplayName}"
+                : "Source needs attention");
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -374,6 +386,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
             snapshot.SelectedGameDirectory,
             selectedLaunchTarget);
         OnPropertyChanged(nameof(GameFolderStatus));
+        OnPropertyChanged(nameof(GameSectionStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
         OnPropertyChanged(nameof(GameFolderTone));
         OnPropertyChanged(nameof(GameFolderStatusAutomationName));
@@ -730,6 +743,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged
                 break;
             case nameof(ObservableActionState.StatusText):
                 OnPropertyChanged(nameof(RefreshActionStatus));
+                break;
+            case nameof(ObservableActionState.HasStatus):
+                OnPropertyChanged(nameof(HasRefreshActionStatus));
                 break;
             case nameof(ObservableActionState.IsCommandAvailable):
                 OnPropertyChanged(nameof(CanRefresh));

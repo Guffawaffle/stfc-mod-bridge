@@ -120,9 +120,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 ? null
                 : providerShellAccess.RestrictionReason,
             uiPreferencesStore);
-        ReleaseSourceButton.Content = providerSelectionResolution.IsResolved
-            ? $"Source: {distributionProvider.DisplayName} · {distributionReleaseChannel.DisplayName}"
-            : "Source needs attention";
         if (!providerShellAccess.CanEditProviderSettings)
         {
             HomeSettingsTitleBarButton.IsEnabled = false;
@@ -613,7 +610,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderSwitchPreviewText.Text = result.ConfigurationBackupPath is null
                 ? result.Message
                 : $"{result.Message} Configuration backup: {result.ConfigurationBackupPath}";
-            ReleaseSourceButton.Content = $"Next source: {selectedProvider.DisplayName}";
+            ReleaseSourceButton.Content =
+                $"Next: {selectedProvider.DisplayName} · {selectedProvider.DefaultReleaseChannel.DisplayName}";
             providerSelectionPendingRestart = result.Selection;
             HomeSettingsTitleBarButton.IsEnabled = false;
             HomeSettingsTitleBarButton.ToolTip = result.Message;
@@ -789,6 +787,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (!isOpen && DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.Refresh();
+        }
 
         MinWidth = isOpen ? SettingsMinWidth : 560;
         MinHeight = isOpen ? SettingsMinHeight : 620;

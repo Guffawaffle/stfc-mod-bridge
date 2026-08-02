@@ -389,7 +389,7 @@ public static class LauncherHealthResolver
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Unknown,
                 "Installation health unavailable",
-                "Launcher-owned state could not be validated safely."),
+                "Mod Control-owned state could not be validated safely."),
             ModInstallationEvidenceState.NotInstalled => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Informational,
@@ -503,7 +503,7 @@ public static class LauncherHealthResolver
             ModInstallationEvidenceState.NoGameTarget => new(
                 "Select a game folder",
                 LauncherHomeTone.Warning,
-                "Install mod",
+                "Install",
                 ModManagementActionKind.None,
                 false,
                 "Community mod unavailable until a game folder is selected"),
@@ -531,9 +531,9 @@ public static class LauncherHealthResolver
                 canMutate,
                 providerReason),
             ModInstallationEvidenceState.ManualInstallation => new(
-                "Manual install found",
+                "Manual installation detected",
                 LauncherHomeTone.Warning,
-                provider.CanMutate ? "Adopt & update" : "Unavailable",
+                provider.CanMutate ? "Update" : "Unavailable",
                 provider.CanMutate ? ModManagementActionKind.AdoptAndInstall : ModManagementActionKind.None,
                 canMutate,
                 provider.CanMutate
@@ -544,7 +544,7 @@ public static class LauncherHealthResolver
             ModInstallationEvidenceState.NotInstalled => new(
                 "Not installed",
                 LauncherHomeTone.Neutral,
-                provider.CanMutate ? "Install mod" : "Unavailable",
+                provider.CanMutate ? "Install" : "Unavailable",
                 provider.CanMutate ? ModManagementActionKind.Install : ModManagementActionKind.None,
                 canMutate,
                 provider.CanMutate
@@ -599,7 +599,7 @@ public static class LauncherHealthResolver
                 when updateAvailability == ModUpdateEvidenceState.UpdateAvailable => new(
                     "Update available",
                     LauncherHomeTone.Warning,
-                    provider.CanMutate ? "Update mod" : "Unavailable",
+                    provider.CanMutate ? "Update" : "Unavailable",
                     provider.CanMutate ? ModManagementActionKind.CheckForUpdate : ModManagementActionKind.None,
                     provider.CanMutate,
                     provider.CanMutate

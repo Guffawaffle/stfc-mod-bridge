@@ -212,6 +212,18 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void DisabledLaunchExplanationDoesNotBecomePersistentHomeStatus()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        var arbiter = new HomeActionFeedbackArbiter(channels.Mod, channels.Launch);
+
+        channels.Launch.SetAvailability(false, "The game is already running.");
+
+        Assert.IsFalse(arbiter.HasFeedback);
+        Assert.AreEqual(string.Empty, arbiter.Text);
+    }
+
+    [TestMethod]
     public void LaunchProjectionPreservesChangedAndNoChangeSemantics()
     {
         var presentation = new GameLaunchPresentation(

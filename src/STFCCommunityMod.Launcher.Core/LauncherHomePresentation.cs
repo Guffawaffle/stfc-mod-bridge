@@ -9,6 +9,7 @@ public enum LauncherHomeTone
 }
 
 public sealed record LauncherHomePresentation(
+    string GameSectionStatus,
     string GameFolderStatus,
     string GameFolderIcon,
     LauncherHomeTone GameFolderTone,
@@ -80,7 +81,16 @@ public sealed record LauncherHomePresentation(
                     LauncherHomeTone.Neutral,
                     "STFC game client is not running");
 
+        var installationStatus = gameFolderIsSet
+            ? "Installation found"
+            : savedSelectionNeedsAttention
+                ? "Installation needs attention"
+                : boundedCandidateFound
+                    ? "Installation found; confirmation needed"
+                    : "Installation not set";
+
         return new(
+            $"{installationStatus} · {clientStatus}",
             folderStatus,
             folderIcon,
             folderTone,
