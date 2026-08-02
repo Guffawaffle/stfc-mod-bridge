@@ -153,7 +153,7 @@ function Find-ColorModeSelector {
       if ($element.Current.ControlType -eq
           [System.Windows.Automation.ControlType]::ComboBox -and
           $element.Current.Name -match
-          '^Launcher color mode, (System|Light|Dark)$') {
+          '^Mod Control color mode, (System|Light|Dark)$') {
         return [pscustomobject]@{
           Element = $element
           SelectedMode = $Matches[1]
@@ -164,7 +164,7 @@ function Find-ColorModeSelector {
     Start-Sleep -Milliseconds 100
   }
 
-  throw "UI Automation did not expose a Launcher color mode ComboBox with a selected System, Light, or Dark value."
+  throw "UI Automation did not expose a Mod Control color mode ComboBox with a selected System, Light, or Dark value."
 }
 
 function Test-ColorModeSelectorPresent {
@@ -180,7 +180,7 @@ function Test-ColorModeSelectorPresent {
     if ($element.Current.ControlType -eq
         [System.Windows.Automation.ControlType]::ComboBox -and
         $element.Current.Name -match
-        '^Launcher color mode, (System|Light|Dark)$') {
+        '^Mod Control color mode, (System|Light|Dark)$') {
       return $true
     }
   }
@@ -591,7 +591,7 @@ try {
   }
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Check for a launcher self-update" `
+    -Name "Check for a Mod Control self-update" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if ($diagnosticText.IndexOf($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
@@ -621,7 +621,7 @@ try {
   $settingsDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Return to launcher home" `
+    -Name "Return to Mod Control home" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline)
   $appearance = Find-ColorModeSelector -Root $root -Deadline $settingsDeadline
