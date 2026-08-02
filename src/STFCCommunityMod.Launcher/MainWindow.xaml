@@ -4,6 +4,7 @@
         xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
         xmlns:core="clr-namespace:STFCCommunityMod.Launcher.Core;assembly=STFCCommunityMod.Launcher.Core"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
         Title="STFC Mod Control"
@@ -28,6 +29,86 @@
   </shell:WindowChrome.WindowChrome>
 
   <Window.Resources>
+    <Style x:Key="DiagnosticsScrollPageButtonStyle"
+           TargetType="{x:Type primitives:RepeatButton}">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type primitives:RepeatButton}">
+            <Border Background="Transparent" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="DiagnosticsScrollThumbStyle"
+           TargetType="{x:Type primitives:Thumb}">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Background" Value="{DynamicResource ControlBorderBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type primitives:Thumb}">
+            <Border x:Name="ThumbSurface"
+                    Width="6"
+                    Margin="0,2"
+                    HorizontalAlignment="Center"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="3" />
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ThumbSurface" Property="Width" Value="8" />
+                <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsDragging" Value="True">
+                <Setter TargetName="ThumbSurface" Property="Width" Value="8" />
+                <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="DiagnosticsScrollBarStyle"
+           TargetType="{x:Type ScrollBar}">
+      <Setter Property="Width" Value="12" />
+      <Setter Property="MinWidth" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ScrollBar}">
+            <Grid Background="{TemplateBinding Background}">
+              <Border Width="4"
+                      Margin="0,4"
+                      HorizontalAlignment="Center"
+                      Background="{DynamicResource SurfaceMutedBrush}"
+                      CornerRadius="2" />
+              <Track x:Name="PART_Track"
+                     Margin="0,4"
+                     IsDirectionReversed="True"
+                     Focusable="False"
+                     Maximum="{TemplateBinding Maximum}"
+                     Minimum="{TemplateBinding Minimum}"
+                     Orientation="{TemplateBinding Orientation}"
+                     Value="{TemplateBinding Value}"
+                     ViewportSize="{TemplateBinding ViewportSize}">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}"
+                                Style="{StaticResource DiagnosticsScrollPageButtonStyle}" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Style="{StaticResource DiagnosticsScrollThumbStyle}" />
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}"
+                                Style="{StaticResource DiagnosticsScrollPageButtonStyle}" />
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="ProviderConfirmationTextBoxStyle"
            TargetType="TextBox">
       <Setter Property="MinHeight" Value="40" />
@@ -338,6 +419,28 @@
           </StackPanel>
         </Button>
 
+        <Button x:Name="DiagnosticsHomeTitleBarButton"
+                Grid.Column="0"
+                Padding="10,6"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                Style="{StaticResource QuietButtonStyle}"
+                Click="DiagnosticsHomeButton_Click"
+                ToolTip="Return to Mod Control home"
+                Visibility="Collapsed"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                automation:AutomationProperties.Name="Return to Mod Control home from Diagnostics">
+          <StackPanel Orientation="Horizontal">
+            <controls:AppIcon Width="18" Height="18" FontSize="18" Kind="Back" />
+            <TextBlock Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource AccentBrush}"
+                       Text="Home" />
+          </StackPanel>
+        </Button>
+
         <Border Grid.Column="1"
                 Width="1"
                 Height="28"
@@ -370,10 +473,10 @@
                 VerticalAlignment="Center"
                 Click="DiagnosticsButton_Click"
                 Content="Diagnostics"
-                ToolTip="Preview redacted Mod Control diagnostics"
+                ToolTip="Open the Mod Control Diagnostics workspace"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open redacted Mod Control diagnostics"
-                automation:AutomationProperties.HelpText="Preview health and redacted support information. Diagnostics are never uploaded automatically.">
+                automation:AutomationProperties.Name="Open Mod Control Diagnostics"
+                automation:AutomationProperties.HelpText="Review structured local health, support actions, and redacted report previews. Nothing is uploaded automatically.">
           <Button.Style>
             <Style BasedOn="{StaticResource QuietButtonStyle}"
                    TargetType="Button">
@@ -881,6 +984,225 @@
                         Margin="20,0,20,12"
                         Visibility="Collapsed" />
 
+    <ScrollViewer x:Name="DiagnosticsWorkspace"
+                  Grid.Row="1"
+                  Margin="32,0,20,16"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto"
+                  Visibility="Collapsed"
+                  automation:AutomationProperties.Name="Mod Control Diagnostics workspace">
+      <ScrollViewer.Resources>
+        <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}"
+               TargetType="{x:Type ScrollBar}" />
+      </ScrollViewer.Resources>
+      <StackPanel MaxWidth="920"
+                  Margin="0,12,16,32"
+                  HorizontalAlignment="Center">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock FontSize="28" FontWeight="SemiBold" Text="Diagnostics" />
+            <TextBlock Margin="0,6,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="Readable local checks, recovery entry points, and redacted support evidence. Nothing is uploaded automatically."
+                       TextWrapping="Wrap" />
+          </StackPanel>
+          <Button x:Name="RefreshDiagnosticsButton"
+                  Grid.Column="1"
+                  Margin="16,0,0,0"
+                  VerticalAlignment="Top"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="RefreshDiagnosticsButton_Click"
+                  Content="_Refresh checks"
+                  automation:AutomationProperties.Name="Re-run Diagnostics checks" />
+        </Grid>
+
+        <TextBlock Margin="0,28,0,8"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Text="System and community mod health" />
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
+        <ItemsControl ItemsSource="{Binding DiagnosticChecks}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Expander Padding="0"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        HorizontalContentAlignment="Stretch"
+                        automation:AutomationProperties.Name="{Binding AutomationName}"
+                        automation:AutomationProperties.HelpText="{Binding Summary}">
+                <Expander.Header>
+                  <Grid Margin="0,14" HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="150" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Text="{Binding Name}" />
+                    <TextBlock Grid.Column="1"
+                               Margin="18,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding Summary}"
+                               TextWrapping="Wrap" />
+                    <Border Grid.Column="2"
+                            Padding="8,3"
+                            Background="{DynamicResource SurfaceMutedBrush}"
+                            CornerRadius="{StaticResource BadgeCornerRadius}">
+                      <TextBlock x:Name="DiagnosticStatusText"
+                                 FontSize="12"
+                                 Text="{Binding StatusLabel}">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Level}"
+                                           Value="{x:Static core:LauncherDiagnosticLevel.Healthy}">
+                                <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                              </DataTrigger>
+                              <DataTrigger Binding="{Binding Level}"
+                                           Value="{x:Static core:LauncherDiagnosticLevel.Attention}">
+                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+                              </DataTrigger>
+                              <DataTrigger Binding="{Binding Level}"
+                                           Value="{x:Static core:LauncherDiagnosticLevel.Error}">
+                                <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                    </Border>
+                  </Grid>
+                </Expander.Header>
+                <StackPanel Margin="168,0,16,14">
+                  <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                             Text="{Binding NextAction, StringFormat=Next action: {0}}" />
+                  <TextBlock Margin="0,5,0,0"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             Text="{Binding EvidenceSource, StringFormat=Evidence: {0}}" />
+                  <TextBlock Margin="0,5,0,0"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             Text="{Binding TechnicalDetail}"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Expander>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Margin="0,30,0,8" FontSize="18" FontWeight="SemiBold" Text="Support actions" />
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
+        <WrapPanel Margin="0,14,0,0">
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="OpenGameFolderButton_Click"
+                  Content="Open _game folder"
+                  IsEnabled="{Binding CanOpenGameFolder}"
+                  automation:AutomationProperties.Name="Open detected game folder" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="OpenLogsFolderButton_Click"
+                  Content="Open _logs folder"
+                  IsEnabled="{Binding CanOpenLogsFolder}"
+                  ToolTip="Open the selected game folder where community_patch.log is written. Diagnostics reports separately when the log is absent."
+                  automation:AutomationProperties.Name="Open community mod logs folder" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="CopyDiagnosticsButton_Click"
+                  Content="_Copy diagnostic summary"
+                  automation:AutomationProperties.Name="Copy the displayed redacted diagnostic summary" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ExportDiagnosticsButton_Click"
+                  Content="_Export report…"
+                  automation:AutomationProperties.Name="Export the previewed redacted diagnostic report" />
+          <Button Margin="0,0,0,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="CheckLauncherUpdateButton_Click"
+                  Content="{Binding LauncherUpdateActionLabel}"
+                  IsEnabled="{Binding CanCheckLauncherUpdate}"
+                  automation:AutomationProperties.Name="{Binding LauncherUpdateActionAutomationName}" />
+        </WrapPanel>
+        <TextBlock Margin="0,4,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding DiagnosticActionStatus}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding DiagnosticActionStatus}" />
+        <TextBlock Margin="0,4,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding LauncherUpdateFeedback}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+
+        <Expander Margin="0,26,0,0"
+                  Header="Technical report"
+                  automation:AutomationProperties.Name="Show raw redacted diagnostic JSON">
+          <StackPanel Margin="0,12,0,0">
+            <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="This is the exact redacted JSON used by Export report. Known paths, credentials, cookies, and endpoints are removed; raw log redaction remains best effort."
+                       TextWrapping="Wrap" />
+            <TextBox Height="280"
+                     Margin="0,12,0,0"
+                     Padding="10"
+                     AcceptsReturn="True"
+                     Background="{DynamicResource SurfaceMutedBrush}"
+                     BorderBrush="{DynamicResource ControlBorderBrush}"
+                     FontFamily="Consolas"
+                     FontSize="11"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     HorizontalScrollBarVisibility="Auto"
+                     IsReadOnly="True"
+                     Text="{Binding DiagnosticTechnicalReport}"
+                     TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto"
+                     automation:AutomationProperties.Name="Exact redacted diagnostic JSON preview" />
+          </StackPanel>
+        </Expander>
+
+        <TextBlock Margin="0,34,0,8" FontSize="18" FontWeight="SemiBold" Text="Repair and removal" />
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
+        <TextBlock Margin="0,12,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Maintenance uses the existing journaled, allowlisted deployment transaction. The game must be closed. Removing the mod preserves configuration, logs, and Mod Control state."
+                   TextWrapping="Wrap" />
+        <WrapPanel Margin="0,14,0,0">
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="DiagnosticsRecoverButton_Click"
+                  Content="_Recover transaction"
+                  IsEnabled="{Binding CanRecoverMod}"
+                  ToolTip="Available only when an incomplete deployment transaction is detected and the game is closed."
+                  automation:AutomationProperties.Name="Recover incomplete journaled mod transaction" />
+          <Button Margin="0,0,0,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="DiagnosticsUninstallButton_Click"
+                  Content="Remove _mod…"
+                  IsEnabled="{Binding CanUninstallMod}"
+                  ToolTip="Removes only the managed or adopted version.dll after confirmation; configuration, logs, and Mod Control state are preserved."
+                  automation:AutomationProperties.Name="Review removal of the Mod Control-managed community mod" />
+        </WrapPanel>
+        <TextBlock FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding DiagnosticRecoveryAvailability}"
+                   automation:AutomationProperties.Name="{Binding DiagnosticRecoveryAvailability}" />
+        <TextBlock Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding DiagnosticRemovalAvailability}"
+                   automation:AutomationProperties.Name="{Binding DiagnosticRemovalAvailability}" />
+      </StackPanel>
+    </ScrollViewer>
+
     <controls:InAppDialog x:Name="ModOperationDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
@@ -911,77 +1233,6 @@
                 Click="ConfirmModOperationButton_Click"
                 Content="_Install"
                 automation:AutomationProperties.Name="Confirm community mod installation" />
-      </StackPanel>
-    </controls:InAppDialog>
-
-    <controls:InAppDialog x:Name="DiagnosticsDialog"
-                          Grid.RowSpan="2"
-                          Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Mod Control diagnostics"
-                          automation:AutomationProperties.Name="Redacted Mod Control diagnostics dialog">
-      <StackPanel Width="388">
-        <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Preview before copying or exporting. Paths, tokens, cookies, and endpoints are redacted. Nothing is uploaded automatically."
-                   TextWrapping="Wrap" />
-        <TextBox x:Name="DiagnosticPreviewText"
-                 Height="300"
-                 Margin="0,14,0,0"
-                 Padding="10"
-                 AcceptsReturn="True"
-                 FontFamily="Consolas"
-                 FontSize="11"
-                 HorizontalScrollBarVisibility="Auto"
-                 IsReadOnly="True"
-                 TextWrapping="NoWrap"
-                 VerticalScrollBarVisibility="Auto"
-                 automation:AutomationProperties.Name="Redacted diagnostic preview" />
-        <TextBlock x:Name="DiagnosticExportStatus"
-                   Margin="0,8,0,0"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   TextWrapping="Wrap"
-                   automation:AutomationProperties.LiveSetting="Polite" />
-        <TextBlock MinHeight="18"
-                   Margin="0,8,0,0"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="{Binding LauncherUpdateFeedback}"
-                   TextWrapping="Wrap"
-                   automation:AutomationProperties.LiveSetting="Polite"
-                   controls:LiveRegionBehavior.Announcement="{Binding LauncherUpdateFeedback}" />
-        <WrapPanel Margin="0,16,0,0"
-                   HorizontalAlignment="Right">
-          <Button Margin="0,0,8,8"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="CopyDiagnosticsButton_Click"
-                  Content="_Copy preview"
-                  automation:AutomationProperties.Name="Copy redacted diagnostics" />
-          <Button Margin="0,0,8,8"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="ExportDiagnosticsButton_Click"
-                  Content="_Export JSON…"
-                  automation:AutomationProperties.Name="Export redacted diagnostics JSON" />
-          <Button x:Name="DiagnosticsRecoverButton"
-                  Margin="0,0,8,8"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="DiagnosticsRecoverButton_Click"
-                  Content="_Recover"
-                  IsEnabled="{Binding CanRecoverMod}"
-                  automation:AutomationProperties.Name="Recover incomplete mod transaction" />
-          <Button x:Name="DiagnosticsUninstallButton"
-                  Margin="0,0,0,8"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="DiagnosticsUninstallButton_Click"
-                  Content="Remove _mod"
-                  IsEnabled="{Binding CanUninstallMod}"
-                  automation:AutomationProperties.Name="Remove Mod Control-managed community mod" />
-          <Button Margin="0,0,0,8"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="CheckLauncherUpdateButton_Click"
-                  Content="{Binding LauncherUpdateActionLabel}"
-                  IsEnabled="{Binding CanCheckLauncherUpdate}"
-                  automation:AutomationProperties.Name="{Binding LauncherUpdateActionAutomationName}" />
-        </WrapPanel>
       </StackPanel>
     </controls:InAppDialog>
 

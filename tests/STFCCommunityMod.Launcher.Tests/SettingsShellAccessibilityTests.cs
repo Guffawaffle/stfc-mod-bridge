@@ -108,6 +108,28 @@ public sealed class SettingsShellAccessibilityTests
             (string?)enable.Attribute(Automation + "AutomationProperties.LabeledBy"));
     }
 
+    [TestMethod]
+    public void DiagnosticsUsesDedicatedStructuredAccessibleWorkspace()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var names = document.Descendants()
+            .Select(element => (string?)element.Attribute(Automation + "AutomationProperties.Name"))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+
+        CollectionAssert.Contains(names, "Mod Control Diagnostics workspace");
+        CollectionAssert.Contains(names, "Re-run Diagnostics checks");
+        CollectionAssert.Contains(names, "Open detected game folder");
+        CollectionAssert.Contains(names, "Open community mod logs folder");
+        CollectionAssert.Contains(names, "Copy the displayed redacted diagnostic summary");
+        CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
+        CollectionAssert.Contains(names, "Review removal of the Mod Control-managed community mod");
+
+        Assert.IsFalse(
+            document.Descendants()
+                .Any(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticsDialog"));
+    }
+
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)
     {
         var element = document.Descendants()

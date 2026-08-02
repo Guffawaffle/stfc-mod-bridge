@@ -588,13 +588,38 @@ try {
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `
-    -Name "Open redacted Mod Control diagnostics" `
+    -Name "Open Mod Control Diagnostics" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $diagnosticsEntry
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Re-run Diagnostics checks" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Copy the displayed redacted diagnostic summary" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  $technicalReport = $root.FindFirst(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::NameProperty,
+      "Show raw redacted diagnostic JSON"))
+  if ($null -eq $technicalReport) {
+    throw "The Diagnostics workspace did not expose its technical-report disclosure."
+  }
+  $expandPattern = $null
+  if (-not $technicalReport.TryGetCurrentPattern(
+      [System.Windows.Automation.ExpandCollapsePattern]::Pattern,
+      [ref]$expandPattern)) {
+    throw "The technical-report disclosure does not expose ExpandCollapse through UI Automation."
+  }
+  $expandPattern.Expand()
   $diagnosticPreview = Find-AutomationElement `
     -Root $root `
-    -Name "Redacted diagnostic preview" `
+    -Name "Exact redacted diagnostic JSON preview" `
     -ControlType ([System.Windows.Automation.ControlType]::Edit) `
     -Deadline $deadline
   $valuePattern = $null
@@ -623,11 +648,11 @@ try {
   }
   $closeDiagnostics = Find-AutomationElement `
     -Root $root `
-    -Name "Close dialog" `
+    -Name "Return to Mod Control home from Diagnostics" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $closeDiagnostics
-  Write-Host "PASS: diagnostics are previewed through UI Automation with private paths redacted."
+  Write-Host "PASS: structured Diagnostics and its exact redacted technical preview are accessible through UI Automation."
 
   $settingsEntry = Find-AutomationElement `
     -Root $root `
