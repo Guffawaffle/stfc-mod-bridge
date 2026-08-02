@@ -42,6 +42,8 @@ public sealed class AboutSurfaceTests
         Assert.AreEqual("https://github.com/Guffawaffle/stfc-mod", about.RuntimeRepositoryUrl);
         Assert.IsTrue(about.Contributors.Any(item => item.Name.Contains("NetniV", StringComparison.Ordinal)));
         Assert.IsTrue(about.ThirdPartyNotices.Count >= 3);
+        StringAssert.Contains(about.NoticeCoverageStatus, "does not claim legal completeness");
+        StringAssert.Contains(about.NoticeCoverageStatus, "issue #30");
 
         Assert.IsTrue(about.OpenExternalLinkCommand.CanExecute(about.RepositoryUrl));
         about.OpenExternalLinkCommand.Execute(about.RepositoryUrl);
@@ -66,6 +68,7 @@ public sealed class AboutSurfaceTests
         Assert.IsFalse(aboutText.Contains("Recover", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(aboutText.Contains("Remove mod", StringComparison.OrdinalIgnoreCase));
         Assert.IsTrue(aboutText.Contains("About.ThirdPartyNotices", StringComparison.Ordinal));
+        Assert.IsTrue(aboutText.Contains("About.NoticeCoverageStatus", StringComparison.Ordinal));
 
         var rawTomlButton = document.Descendants(Presentation + "Button")
             .Single(element => (string?)element.Attribute("Command") == "{Binding OpenRawTomlCommand}");

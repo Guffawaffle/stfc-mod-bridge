@@ -26,7 +26,8 @@ public sealed record LauncherNoticeInventoryItem(
     string Id,
     string? Version,
     string? NoticeId,
-    string AttributionStatus);
+    string AttributionStatus,
+    string EvidenceKind);
 
 public sealed record LauncherAboutCatalog(
     IReadOnlyList<LauncherContributor> Contributors,
@@ -35,6 +36,7 @@ public sealed record LauncherAboutCatalog(
     IReadOnlyList<LauncherNoticeInventoryItem> DependencyInventory,
     IReadOnlyList<LauncherNoticeInventoryItem> AssetInventory,
     string GameAcknowledgement,
+    string NoticeCoverageStatus,
     string LegalReviewStatus);
 
 public static class LauncherAboutCatalogLoader
@@ -85,10 +87,22 @@ public static class LauncherAboutCatalogLoader
         RequireUnique(notices.Select(item => item.Id), "third-party notice ID");
         RequireUnique(dependencies.Select(item => item.Id), "dependency inventory ID");
         RequireUnique(assets.Select(item => item.Id), "asset inventory ID");
+        RequireEvidenceKind(
+            dependencies,
+            new HashSet<string>(["resolved-package", "runtime-pack"], StringComparer.Ordinal));
+        RequireEvidenceKind(
+            assets,
+            new HashSet<string>(["project-input", "package-transitive"], StringComparer.Ordinal));
 
         var noticeIds = notices.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var item in dependencies.Concat(assets))
         {
+            if (item.AttributionStatus is not ("required" or "review-pending" or "internal-build-input"))
+            {
+                throw new InvalidDataException(
+                    $"Inventory item '{item.Id}' has unsupported attribution status '{item.AttributionStatus}'.");
+            }
+
             if (string.Equals(item.AttributionStatus, "required", StringComparison.Ordinal)
                 && string.IsNullOrWhiteSpace(item.NoticeId))
             {
@@ -110,6 +124,7 @@ public static class LauncherAboutCatalogLoader
             dependencies,
             assets,
             ReadRequiredString(root, "gameAcknowledgement"),
+            ReadRequiredString(root, "noticeCoverageStatus"),
             ReadRequiredString(root, "legalReviewStatus"));
     }
 
@@ -123,7 +138,8 @@ public static class LauncherAboutCatalogLoader
                 ReadRequiredString(element, "id"),
                 ReadOptionalString(element, "version"),
                 ReadOptionalString(element, "noticeId"),
-                ReadRequiredString(element, "attributionStatus")));
+                ReadRequiredString(element, "attributionStatus"),
+                ReadRequiredString(element, "evidenceKind")));
 
     private static ReadOnlyCollection<T> ReadArray<T>(
         JsonElement root,
@@ -148,6 +164,20 @@ public static class LauncherAboutCatalogLoader
         {
             throw new InvalidDataException(
                 $"About catalog contains duplicate {description} '{duplicate.Key}'.");
+        }
+    }
+
+    private static void RequireEvidenceKind(
+        IEnumerable<LauncherNoticeInventoryItem> items,
+        HashSet<string> allowedKinds)
+    {
+        foreach (var item in items)
+        {
+            if (!allowedKinds.Contains(item.EvidenceKind))
+            {
+                throw new InvalidDataException(
+                    $"Inventory item '{item.Id}' has unsupported evidence kind '{item.EvidenceKind}'.");
+            }
         }
     }
 

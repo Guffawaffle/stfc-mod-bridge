@@ -4,6 +4,10 @@ This file is generated from `docs/windows-launcher/about-content.v1.json`. Do no
 
 STFC Mod Control is distributed under the repository license. The components below retain their own terms.
 
+## Coverage and open review
+
+Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, and explicit project resource/content/embed/icon/manifest input. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30; this inventory does not claim legal completeness.
+
 ## FluentIcons.Wpf and FluentIcons.Common
 
 - Version: 2.1.333

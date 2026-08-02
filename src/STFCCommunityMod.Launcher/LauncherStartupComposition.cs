@@ -9,9 +9,18 @@ internal sealed record LauncherStartupComposition(
     LauncherSettingsActivationDiagnostics SettingsDiagnostics)
 {
     public static LauncherStartupComposition Create(
-        LauncherDistributionProvider provider)
+        LauncherDistributionProvider provider,
+        LauncherProviderReleaseChannel releaseChannel)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(releaseChannel);
+        if (!provider.ReleaseChannels.TryGetValue(releaseChannel.Id, out var registeredChannel)
+            || registeredChannel != releaseChannel)
+        {
+            throw new ArgumentException(
+                $"Release channel '{releaseChannel.Id}' does not belong to provider '{provider.Id}'.",
+                nameof(releaseChannel));
+        }
         var manifestResourceName = provider.GetCapabilityStatus(
                 LauncherProviderCapabilityIds.RuntimeManifest)
                 == LauncherProviderCapabilityStatus.Supported
@@ -51,8 +60,8 @@ internal sealed record LauncherStartupComposition(
             settingsLayout.DisplayName,
             provider.Id,
             provider.DisplayName,
-            provider.DefaultReleaseChannel.DisplayName,
-            provider.DefaultReleaseChannel.Repository);
+            releaseChannel.DisplayName,
+            releaseChannel.Repository);
         return new(
             runtimeProfile,
             activationPlan,

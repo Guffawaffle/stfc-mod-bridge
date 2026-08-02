@@ -51,6 +51,7 @@ public sealed class LauncherAboutViewModel
         Acknowledgements = content.Acknowledgements;
         ThirdPartyNotices = content.ThirdPartyNotices;
         GameAcknowledgement = content.GameAcknowledgement;
+        NoticeCoverageStatus = content.NoticeCoverageStatus;
         LegalReviewStatus = content.LegalReviewStatus;
         OpenExternalLinkCommand = new ExternalUriCommand(openExternalUri);
     }
@@ -90,6 +91,8 @@ public sealed class LauncherAboutViewModel
     public IReadOnlyList<LauncherThirdPartyNotice> ThirdPartyNotices { get; }
 
     public string GameAcknowledgement { get; }
+
+    public string NoticeCoverageStatus { get; }
 
     public string LegalReviewStatus { get; }
 

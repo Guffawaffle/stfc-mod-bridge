@@ -63,25 +63,36 @@
       "id": "FluentIcons.Wpf",
       "version": "2.1.333",
       "noticeId": "fluent-icons",
-      "attributionStatus": "required"
+      "attributionStatus": "required",
+      "evidenceKind": "resolved-package"
     },
     {
       "id": "FluentIcons.Common",
       "version": "2.1.333",
       "noticeId": "fluent-icons",
-      "attributionStatus": "required"
+      "attributionStatus": "required",
+      "evidenceKind": "resolved-package"
     },
     {
-      "id": "Microsoft.NETCore.App",
-      "version": "8.0",
+      "id": "Microsoft.AspNetCore.App.Runtime.win-x64",
+      "version": "8.0.29",
       "noticeId": "dotnet-windows-runtime",
-      "attributionStatus": "required"
+      "attributionStatus": "review-pending",
+      "evidenceKind": "runtime-pack"
     },
     {
-      "id": "Microsoft.WindowsDesktop.App.WPF",
-      "version": "8.0",
+      "id": "Microsoft.NETCore.App.Runtime.win-x64",
+      "version": "8.0.29",
       "noticeId": "dotnet-windows-runtime",
-      "attributionStatus": "required"
+      "attributionStatus": "review-pending",
+      "evidenceKind": "runtime-pack"
+    },
+    {
+      "id": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+      "version": "8.0.29",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "runtime-pack"
     }
   ],
   "assetInventory": [
@@ -89,21 +100,109 @@
       "id": "Fluent UI icon glyphs",
       "version": "bundled by FluentIcons 2.1.333",
       "noticeId": "fluent-system-icons",
-      "attributionStatus": "required"
+      "attributionStatus": "required",
+      "evidenceKind": "package-transitive"
     },
     {
-      "id": "assets/launcher.png and derived application icon",
+      "id": "STFCCommunityMod.Launcher|ApplicationIcon|Assets/stfc-community-mod.ico",
       "version": null,
       "noticeId": null,
-      "attributionStatus": "review-pending"
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
     },
     {
-      "id": "assets/portfolio/stfc-mod-control-banner.png and badge.png",
+      "id": "STFCCommunityMod.Launcher|ApplicationManifest|app.manifest",
       "version": null,
       "noticeId": null,
-      "attributionStatus": "review-pending"
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|Resource|Assets/stfc-community-mod.ico",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|Resource|../../assets/launcher.png",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/bundled-provider-catalog.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/guffawaffle/provider-pack.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/netniv/provider-pack.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/config-schema.guffawaffle.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/runtime-manifest.guffawaffle.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/about-content.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher.Setup|ApplicationIcon|../STFCCommunityMod.Launcher/Assets/stfc-community-mod.ico",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher.Setup|ApplicationManifest|app.manifest",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher.Setup|Content|../STFCCommunityMod.Launcher/Assets/stfc-community-mod.ico",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher.Setup|EmbeddedResource|$(LauncherPayloadPath)",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
     }
   ],
   "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Control is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
+  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, and explicit project resource/content/embed/icon/manifest input. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30; this inventory does not claim legal completeness.",
   "legalReviewStatus": "Attribution and non-endorsement copy is a factual compatibility statement, not a claim of legal clearance. Final wording and asset usage remain subject to the v1 release review tracked in issue #30."
 }

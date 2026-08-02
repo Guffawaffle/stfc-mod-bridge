@@ -94,7 +94,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             distributionProviderCatalog,
             providerContext.SelectionStore,
             PerUserInstallLayout.FromCurrentUser().StateDirectory);
-        startupComposition = LauncherStartupComposition.Create(distributionProvider);
+        startupComposition = LauncherStartupComposition.Create(
+            distributionProvider,
+            distributionReleaseChannel);
         httpClient = new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,

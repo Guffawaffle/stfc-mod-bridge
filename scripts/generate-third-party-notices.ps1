@@ -22,6 +22,10 @@ foreach ($notice in $catalog.thirdPartyNotices) {
 }
 
 foreach ($item in @($catalog.dependencyInventory) + @($catalog.assetInventory)) {
+  if ($item.attributionStatus -notin @("required", "review-pending", "internal-build-input")) {
+    throw "Inventory item '$($item.id)' has unsupported attribution status '$($item.attributionStatus)'."
+  }
+
   if ($item.attributionStatus -eq "required" -and [string]::IsNullOrWhiteSpace($item.noticeId)) {
     throw "Attribution-required inventory item '$($item.id)' has no notice ID."
   }
@@ -30,19 +34,114 @@ foreach ($item in @($catalog.dependencyInventory) + @($catalog.assetInventory)) 
     throw "Inventory item '$($item.id)' references missing notice '$($item.noticeId)'."
   }
 }
+foreach ($item in $catalog.dependencyInventory) {
+  if ($item.evidenceKind -notin @("resolved-package", "runtime-pack")) {
+    throw "Dependency inventory item '$($item.id)' has unsupported evidence kind '$($item.evidenceKind)'."
+  }
+}
+foreach ($item in $catalog.assetInventory) {
+  if ($item.evidenceKind -notin @("project-input", "package-transitive")) {
+    throw "Asset inventory item '$($item.id)' has unsupported evidence kind '$($item.evidenceKind)'."
+  }
+}
 
-$declaredPackages = Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "src") -Recurse -Filter "*.csproj" |
-  ForEach-Object {
-    [xml]$project = Get-Content -Raw -LiteralPath $_.FullName
-    @($project.Project.ItemGroup.PackageReference) |
-      Where-Object { $_ -and $_.Include } |
-      ForEach-Object { [string]$_.Include }
-  } |
-  Sort-Object -Unique
-$inventoryIds = @($catalog.dependencyInventory | ForEach-Object { [string]$_.id })
-foreach ($package in $declaredPackages) {
-  if ($package -notin $inventoryIds) {
-    throw "Production PackageReference '$package' is missing from the notice dependency inventory."
+function Normalize-ProjectPath([string]$path) {
+  return $path.Replace("\", "/")
+}
+
+$productionProjects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "src") -Recurse -Filter "*.csproj")
+$resolvedDependencies = @{}
+$projectInputs = @{}
+foreach ($projectFile in $productionProjects) {
+  [xml]$project = Get-Content -Raw -LiteralPath $projectFile.FullName
+  foreach ($kind in @("Resource", "Content", "EmbeddedResource")) {
+    foreach ($element in @($project.SelectNodes("//*[local-name()='$kind']"))) {
+      $include = [string]$element.Include
+      if (-not [string]::IsNullOrWhiteSpace($include)) {
+        $id = "$($projectFile.BaseName)|$kind|$(Normalize-ProjectPath $include)"
+        $projectInputs[$id] = $true
+      }
+    }
+  }
+  foreach ($propertyName in @("ApplicationIcon", "ApplicationManifest")) {
+    foreach ($element in @($project.SelectNodes("//*[local-name()='$propertyName']"))) {
+      $include = [string]$element.InnerText
+      if (-not [string]::IsNullOrWhiteSpace($include)) {
+        $id = "$($projectFile.BaseName)|$propertyName|$(Normalize-ProjectPath $include)"
+        $projectInputs[$id] = $true
+      }
+    }
+  }
+
+  $assetsPath = Join-Path $projectFile.DirectoryName "obj\project.assets.json"
+  if (-not (Test-Path -LiteralPath $assetsPath)) {
+    throw "Resolved dependency manifest is missing for '$($projectFile.BaseName)'. Run dotnet restore first."
+  }
+  $assets = Get-Content -Raw -LiteralPath $assetsPath | ConvertFrom-Json
+  foreach ($target in $assets.targets.PSObject.Properties.Value) {
+    foreach ($library in $target.PSObject.Properties) {
+      $definition = $library.Value
+      $hasRuntimePayload = $null -ne $definition.runtime `
+        -or $null -ne $definition.runtimeTargets `
+        -or $null -ne $definition.native `
+        -or $null -ne $definition.resource
+      if ($definition.type -eq "package" -and $hasRuntimePayload) {
+        $separator = $library.Name.LastIndexOf('/')
+        if ($separator -lt 1) {
+          throw "Resolved package identity '$($library.Name)' is malformed."
+        }
+        $id = $library.Name.Substring(0, $separator)
+        $version = $library.Name.Substring($separator + 1)
+        $resolvedDependencies["resolved-package|$id|$version"] = $true
+      }
+    }
+  }
+  foreach ($framework in $assets.project.frameworks.PSObject.Properties.Value) {
+    foreach ($download in @($framework.downloadDependencies)) {
+      if ($null -eq $download) {
+        continue
+      }
+      $version = [string]$download.version
+      if ($version -match '^\[([^,]+),\s*\1\]$') {
+        $version = $Matches[1]
+      }
+      $resolvedDependencies["runtime-pack|$($download.name)|$version"] = $true
+    }
+  }
+}
+
+$checkedDependencyInventory = @{}
+foreach ($item in $catalog.dependencyInventory) {
+  if ($item.evidenceKind -in @("resolved-package", "runtime-pack")) {
+    $key = "$($item.evidenceKind)|$($item.id)|$($item.version)"
+    $checkedDependencyInventory[$key] = $true
+  }
+}
+foreach ($key in $resolvedDependencies.Keys) {
+  if (-not $checkedDependencyInventory.ContainsKey($key)) {
+    throw "Resolved publish dependency '$key' is missing from the notice dependency inventory."
+  }
+}
+foreach ($key in $checkedDependencyInventory.Keys) {
+  if (-not $resolvedDependencies.ContainsKey($key)) {
+    throw "Notice dependency inventory '$key' is stale or absent from resolved publish inputs."
+  }
+}
+
+$checkedProjectInputs = @{}
+foreach ($item in $catalog.assetInventory) {
+  if ($item.evidenceKind -eq "project-input") {
+    $checkedProjectInputs[[string]$item.id] = $true
+  }
+}
+foreach ($id in $projectInputs.Keys) {
+  if (-not $checkedProjectInputs.ContainsKey($id)) {
+    throw "Explicit bundled project input '$id' is unclassified in the notice asset inventory."
+  }
+}
+foreach ($id in $checkedProjectInputs.Keys) {
+  if (-not $projectInputs.ContainsKey($id)) {
+    throw "Notice asset inventory project input '$id' is stale or absent from production projects."
   }
 }
 
@@ -52,6 +151,10 @@ $builder = [System.Text.StringBuilder]::new()
 [void]$builder.AppendLine("This file is generated from ``docs/windows-launcher/about-content.v1.json``. Do not edit it directly.")
 [void]$builder.AppendLine()
 [void]$builder.AppendLine("STFC Mod Control is distributed under the repository license. The components below retain their own terms.")
+[void]$builder.AppendLine()
+[void]$builder.AppendLine("## Coverage and open review")
+[void]$builder.AppendLine()
+[void]$builder.AppendLine($catalog.noticeCoverageStatus)
 [void]$builder.AppendLine()
 foreach ($notice in $catalog.thirdPartyNotices) {
   [void]$builder.AppendLine("## $($notice.name)")
@@ -82,7 +185,7 @@ if ($Check) {
     throw "THIRD-PARTY-NOTICES.md is stale. Run scripts/generate-third-party-notices.ps1."
   }
 
-  Write-Host "PASS: third-party notice catalog, production package coverage, and generated document agree."
+  Write-Host "PASS: notices, resolved publish dependencies, explicit bundled inputs, and generated document agree."
   exit 0
 }
 
