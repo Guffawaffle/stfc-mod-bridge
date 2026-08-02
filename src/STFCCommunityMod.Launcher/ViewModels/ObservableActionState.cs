@@ -47,6 +47,8 @@ public sealed class LauncherActionFeedbackChannels
 
     public ObservableActionState Mod { get; } = new();
 
+    public ObservableActionState Launch { get; } = new();
+
     public ObservableActionState LauncherUpdate { get; } = new();
 
     public bool CanStartModMaintenance(bool externallyAvailable, bool conflictingWork) =>
@@ -65,6 +67,59 @@ public sealed class LauncherActionFeedbackChannels
         else
         {
             Mod.Fail(result.Message);
+        }
+    }
+}
+
+public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
+{
+    private readonly ObservableActionState mod;
+    private readonly ObservableActionState launch;
+    private ObservableActionState? mostRecent;
+    private string lastText = string.Empty;
+    private bool lastHasFeedback;
+
+    public HomeActionFeedbackArbiter(ObservableActionState mod, ObservableActionState launch)
+    {
+        this.mod = mod ?? throw new ArgumentNullException(nameof(mod));
+        this.launch = launch ?? throw new ArgumentNullException(nameof(launch));
+        mod.PropertyChanged += ActionState_PropertyChanged;
+        launch.PropertyChanged += ActionState_PropertyChanged;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string Text => Current?.StatusText ?? string.Empty;
+
+    public bool HasFeedback => !string.IsNullOrWhiteSpace(Text);
+
+    private ObservableActionState? Current =>
+        mod.IsWorking ? mod
+        : launch.IsWorking ? launch
+        : mostRecent is { HasStatus: true } ? mostRecent
+        : mod.HasStatus ? mod
+        : launch.HasStatus ? launch
+        : null;
+
+    private void ActionState_PropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (sender is ObservableActionState state
+            && eventArgs.PropertyName == nameof(ObservableActionState.StatusText)
+            && state.HasStatus)
+        {
+            mostRecent = state;
+        }
+        var afterText = Text;
+        var afterHasFeedback = HasFeedback;
+        if (!string.Equals(lastText, afterText, StringComparison.Ordinal))
+        {
+            lastText = afterText;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text)));
+        }
+        if (lastHasFeedback != afterHasFeedback)
+        {
+            lastHasFeedback = afterHasFeedback;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasFeedback)));
         }
     }
 }

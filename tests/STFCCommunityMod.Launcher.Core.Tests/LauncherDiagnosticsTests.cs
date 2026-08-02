@@ -120,7 +120,7 @@ public sealed class LauncherDiagnosticsTests
     {
         public bool IsAvailable => true;
 
-        public Task<IOfficialLauncherProcess> StartAsync(CancellationToken cancellationToken) =>
+        public Task<OfficialLauncherStartResult> StartAsync(CancellationToken cancellationToken) =>
             throw new AssertFailedException("Diagnostics must not start the official launcher.");
     }
 

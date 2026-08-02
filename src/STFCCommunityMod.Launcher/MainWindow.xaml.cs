@@ -118,7 +118,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             distributionReleaseChannel,
             providerShellAccess.CanUseProviderBoundModActions
                 ? null
-                : providerShellAccess.RestrictionReason);
+                : providerShellAccess.RestrictionReason,
+            uiPreferencesStore);
         ReleaseSourceButton.Content = providerSelectionResolution.IsResolved
             ? $"Source: {distributionProvider.DisplayName} · {distributionReleaseChannel.DisplayName}"
             : "Source needs attention";
@@ -268,16 +269,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Input,
             () => ConfirmModOperationButton.Focus());
-    }
-
-    private async void LaunchGameButton_Click(object sender, RoutedEventArgs e)
-    {
-        _ = sender;
-        _ = e;
-        if (DataContext is MainWindowViewModel viewModel)
-        {
-            await viewModel.LaunchGameAsync(lifetimeCancellation.Token);
-        }
     }
 
     private void DiagnosticsButton_Click(object sender, RoutedEventArgs e)

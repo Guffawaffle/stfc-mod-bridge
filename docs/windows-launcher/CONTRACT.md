@@ -73,8 +73,10 @@ This decision is provisional until the architecture spike proves:
 - Xsolla protocol and game-file repair.
 
 The Windows launcher must not reproduce Xsolla’s Windows updater in the first
-production release. It may detect a game-version change, start the official
-launcher, wait for it to exit, and then re-evaluate or repair the mod.
+production release. Its default launch target starts or safely reuses the exact
+official launcher, waits for that tracked process to exit, and then re-evaluates
+local state. A separately selected direct `prime.exe` target does not inherit
+official authentication, update, or repair responsibilities.
 
 ### Future-state integrated game client
 
@@ -107,7 +109,9 @@ the community launcher; first-time sign-in or expired-session recovery may
 still hand off to the official launcher.
 
 Until those gates are satisfied, the first-production-release boundary above
-remains authoritative: launch and update use the supported official path.
+remains authoritative: base-game update and authentication use the supported
+official path even when the player elects to launch an already healthy client
+directly.
 
 ## Supported environment
 
@@ -306,16 +310,24 @@ consumes TOML.
 
 ## Launch contract
 
-Launch is permitted when:
+Launch is a persisted launcher-owned selection between `Open Scopely launcher`
+and `Launch prime.exe`; it is never a mod-TOML setting. New, migrated, or
+unknown preference state defaults to Scopely, preserving the earlier behavior.
 
-- a game target is selected and valid;
-- no update/install transaction is active;
-- the deployment is healthy or the user explicitly chooses an unmodded launch;
-- no conflicting STFC process is running.
+Both actions acquire the same operation lease as mod mutation and revalidate
+after acquisition. Scopely requires only the exact supported official launcher
+and remains independently available when the game is running or the game root
+is missing. Its lease lasts until the exact newly started or safely discovered
+existing launcher process exits. Direct launch requires a valid selected game
+root, a healthy local mod deployment, and no running STFC process; its lease is
+released after successful process creation.
 
-The default action starts the supported official Windows launch path so
-authentication and official preflight behavior remain intact. Direct
-`prime.exe` launch, if needed, is an advanced mode and must be proven safe.
+Each target publishes structured availability, reason, and next-action data.
+The UI must not derive recovery behavior from target or display-name strings.
+Starting a new process is a changed action result; safely reusing an already
+running Scopely process is an explicit no-change result. Reuse still invokes
+the supported executable to surface its UI, disposes that activation handle,
+and retains the exact pre-existing process as the lifetime boundary.
 
 The launcher reports distinct states:
 
@@ -392,6 +404,10 @@ State includes:
 - transaction journal;
 - rollback metadata;
 - launcher preferences.
+
+Launcher preferences include the selected launch target. The default remains
+the official Scopely launcher; choosing direct `prime.exe` is explicit and is
+retained even while temporarily unavailable.
 
 Paths are stored as Windows-native absolute paths. Logs and state must tolerate
 non-ASCII usernames and installation directories.

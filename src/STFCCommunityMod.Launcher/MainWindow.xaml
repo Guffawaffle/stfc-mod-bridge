@@ -795,12 +795,20 @@
                 </Style>
               </TextBlock.Style>
             </TextBlock>
-            <Button MinWidth="124"
-                    Click="LaunchGameButton_Click"
-                    Content="{Binding LaunchActionLabel}"
-                    IsEnabled="{Binding CanLaunchGame}"
-                    automation:AutomationProperties.Name="{Binding LaunchActionAutomationName}"
-                    automation:AutomationProperties.HelpText="Launches the modded game through the official Star Trek Fleet Command launcher. Authentication and game updates remain official-launcher responsibilities." />
+            <controls:LaunchTargetSplitButton MinWidth="238"
+                                              PrimaryLabel="{Binding LaunchActionLabel}"
+                                              PrimaryAutomationName="{Binding LaunchActionAutomationName}"
+                                              PrimaryCommand="{Binding LaunchPrimaryCommand}"
+                                              IsPrimaryEnabled="{Binding CanLaunchGame}"
+                                              IsMenuEnabled="{Binding CanOpenLaunchTargetMenu}"
+                                              IsPrimeSelected="{Binding IsPrimeExecutableSelected}"
+                                              IsScopelySelected="{Binding IsScopelyLauncherSelected}"
+                                              PrimeChoiceAutomationName="{Binding PrimeExecutableChoiceAutomationName}"
+                                              ScopelyChoiceAutomationName="{Binding ScopelyLauncherChoiceAutomationName}"
+                                              PrimeChoiceStatus="{Binding PrimeExecutableChoiceStatus}"
+                                              ScopelyChoiceStatus="{Binding ScopelyLauncherChoiceStatus}"
+                                              SelectPrimeCommand="{Binding SelectPrimeExecutableCommand}"
+                                              SelectScopelyCommand="{Binding SelectScopelyLauncherCommand}" />
           </StackPanel>
 
           <Border Grid.Row="3"
@@ -920,7 +928,8 @@
                    TextAlignment="Center"
                    TextWrapping="Wrap"
                    automation:AutomationProperties.Name="{Binding HomeOperationFeedback}"
-                   automation:AutomationProperties.LiveSetting="Polite" />
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding HomeOperationFeedback}" />
       </Border>
 
       <Border x:Name="ProviderRecoveryBanner"
