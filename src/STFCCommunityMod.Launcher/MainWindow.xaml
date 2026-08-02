@@ -490,9 +490,8 @@
                  Text="{Binding RefreshActionStatus}"
                  TextAlignment="Center"
                  TextWrapping="Wrap"
-                 Visibility="{Binding HasRefreshActionStatus, Converter={StaticResource BooleanToVisibilityConverter}}"
-                 automation:AutomationProperties.Name="{Binding RefreshActionStatus}"
-                 automation:AutomationProperties.LiveSetting="Polite" />
+                 automation:AutomationProperties.LiveSetting="Polite"
+                 controls:LiveRegionBehavior.Announcement="{Binding RefreshActionStatus}" />
 
       <Border Margin="0,20,0,0"
               Padding="22,6"
@@ -869,6 +868,14 @@
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    TextWrapping="Wrap"
                    automation:AutomationProperties.LiveSetting="Polite" />
+        <TextBlock MinHeight="18"
+                   Margin="0,8,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding LauncherUpdateFeedback}"
+                   TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding LauncherUpdateFeedback}" />
         <WrapPanel Margin="0,16,0,0"
                    HorizontalAlignment="Right">
           <Button Margin="0,0,8,8"
@@ -886,18 +893,21 @@
                   Style="{StaticResource QuietButtonStyle}"
                   Click="DiagnosticsRecoverButton_Click"
                   Content="_Recover"
+                  IsEnabled="{Binding CanRecoverMod}"
                   automation:AutomationProperties.Name="Recover incomplete mod transaction" />
           <Button x:Name="DiagnosticsUninstallButton"
                   Margin="0,0,0,8"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod"
+                  IsEnabled="{Binding CanUninstallMod}"
                   automation:AutomationProperties.Name="Remove launcher-managed community mod" />
           <Button Margin="0,0,0,8"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="CheckLauncherUpdateButton_Click"
-                  Content="Check launcher _update"
-                  automation:AutomationProperties.Name="Check for a launcher self-update" />
+                  Content="{Binding LauncherUpdateActionLabel}"
+                  IsEnabled="{Binding CanCheckLauncherUpdate}"
+                  automation:AutomationProperties.Name="{Binding LauncherUpdateActionAutomationName}" />
         </WrapPanel>
       </StackPanel>
     </controls:InAppDialog>

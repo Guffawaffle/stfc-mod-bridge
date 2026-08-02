@@ -1,4 +1,6 @@
 using STFCCommunityMod.Launcher.ViewModels;
+using STFCCommunityMod.Launcher.Core;
+using STFCCommunityMod.Launcher.Controls;
 
 namespace STFCCommunityMod.Launcher.Tests;
 
@@ -136,6 +138,74 @@ public sealed class ObservableActionStateTests
         Assert.AreEqual(2, announcements.Count);
         Assert.AreEqual("Refresh accepted.", announcements[0]);
         Assert.AreEqual("Status is up to date.", announcements[1]);
+    }
+
+    [TestMethod]
+    public void LauncherUpdateAndModFeedbackHaveIndependentAvailabilityAndStatus()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+
+        channels.Mod.SetAvailability(false, "Select a game folder first.");
+        Assert.IsTrue(channels.LauncherUpdate.TryBegin("Checking for a launcher update…"));
+        channels.LauncherUpdate.Complete(false, "The launcher is current.");
+
+        Assert.AreEqual(ObservableActionStatus.Unavailable, channels.Mod.Status);
+        Assert.IsFalse(channels.Mod.IsCommandAvailable);
+        Assert.AreEqual(ObservableActionStatus.CompletedUnchanged, channels.LauncherUpdate.Status);
+        Assert.IsTrue(channels.LauncherUpdate.IsCommandAvailable);
+    }
+
+    [TestMethod]
+    public void SuccessfulMaintenanceNoOpIsReportedAsUnchanged()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        Assert.IsTrue(channels.Mod.TryBegin("Checking recovery state…"));
+
+        channels.CompleteModDeployment(
+            new(
+                ModDeploymentResultState.Succeeded,
+                "No incomplete mod transaction was found.",
+                Changed: false));
+
+        Assert.AreEqual(ObservableActionStatus.CompletedUnchanged, channels.Mod.Status);
+        Assert.AreEqual("No incomplete mod transaction was found.", channels.Mod.StatusText);
+    }
+
+    [TestMethod]
+    public void MaintenanceEntryPointsAreGatedWhileModWorkIsActive()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        Assert.IsTrue(channels.CanStartModMaintenance(externallyAvailable: true, conflictingWork: false));
+        Assert.IsTrue(channels.Mod.TryBegin("Installing…"));
+
+        Assert.IsTrue(channels.Mod.IsCommandAvailable, "The focused primary command remains available.");
+        Assert.IsFalse(channels.CanStartModMaintenance(externallyAvailable: true, conflictingWork: false));
+    }
+
+    [TestMethod]
+    public void ComputedNotificationsAreNotRepeatedWhenTheirValuesDoNotChange()
+    {
+        var state = new ObservableActionState();
+        var changes = new List<string?>();
+        state.PropertyChanged += (_, eventArgs) => changes.Add(eventArgs.PropertyName);
+
+        Assert.IsTrue(state.TryBegin("Accepted."));
+        state.Complete(false, "Current.");
+        state.Fail("Failed.");
+
+        Assert.AreEqual(2, changes.Count(name => name == nameof(ObservableActionState.IsWorking)));
+        Assert.AreEqual(1, changes.Count(name => name == nameof(ObservableActionState.HasStatus)));
+        Assert.AreEqual(3, changes.Count(name => name == nameof(ObservableActionState.AutomationAnnouncement)));
+    }
+
+    [TestMethod]
+    public void LiveRegionAnnouncementRecognizesAcceptedTransitionAndIgnoresDuplicates()
+    {
+        const string accepted = "Refresh accepted. Checking launcher status…";
+
+        Assert.IsTrue(LiveRegionBehavior.IsAnnouncementTransition(string.Empty, accepted));
+        Assert.IsFalse(LiveRegionBehavior.IsAnnouncementTransition(accepted, accepted));
+        Assert.IsFalse(LiveRegionBehavior.IsAnnouncementTransition(accepted, string.Empty));
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

@@ -240,7 +240,11 @@ public sealed partial class ModDeploymentService
                 retainedBackupPath);
             WriteJsonAtomically(InstalledStatePath, installedState);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
-            return new(ModDeploymentResultState.Succeeded, "The community mod was installed successfully.", installedState);
+            return new(
+                ModDeploymentResultState.Succeeded,
+                "The community mod was installed successfully.",
+                installedState,
+                Changed: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -349,7 +353,10 @@ public sealed partial class ModDeploymentService
             DeleteIfExists(InstalledStatePath);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
             DeleteIfExists(removedArtifactPath);
-            return new(ModDeploymentResultState.Succeeded, "The launcher-managed mod was removed.");
+            return new(
+                ModDeploymentResultState.Succeeded,
+                "The launcher-managed mod was removed.",
+                Changed: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -403,7 +410,8 @@ public sealed partial class ModDeploymentService
         return new(
             rolledBack ? ModDeploymentResultState.Succeeded : ModDeploymentResultState.RecoveryRequired,
             rolledBack ? "The incomplete mod transaction was rolled back." : "The incomplete transaction requires manual recovery.",
-            ReadInstalledState());
+            ReadInstalledState(),
+            Changed: rolledBack);
     }
 
     private static ModDeploymentResult? ValidateRequest(

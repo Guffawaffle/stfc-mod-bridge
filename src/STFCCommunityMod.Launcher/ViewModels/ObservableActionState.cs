@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
@@ -33,6 +34,39 @@ public sealed record ObservableActionResult(
 
     public static ObservableActionResult Failed(string message) =>
         new(ObservableActionResultKind.Failed, message);
+}
+
+/// <summary>
+/// Independent feedback channels for operations that can have different availability
+/// and lifecycles. Keeping these states distinct prevents one action from disabling or
+/// overwriting another action's feedback.
+/// </summary>
+public sealed class LauncherActionFeedbackChannels
+{
+    public ObservableActionState Refresh { get; } = new();
+
+    public ObservableActionState Mod { get; } = new();
+
+    public ObservableActionState LauncherUpdate { get; } = new();
+
+    public bool CanStartModMaintenance(bool externallyAvailable, bool conflictingWork) =>
+        externallyAvailable
+        && !conflictingWork
+        && Mod.IsCommandAvailable
+        && !Mod.IsWorking;
+
+    public void CompleteModDeployment(ModDeploymentResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.IsSuccess)
+        {
+            Mod.Complete(result.Changed, result.Message);
+        }
+        else
+        {
+            Mod.Fail(result.Message);
+        }
+    }
 }
 
 /// <summary>
@@ -108,6 +142,8 @@ public sealed class ObservableActionState : INotifyPropertyChanged
 
     private void SetStatusCore(ObservableActionStatus nextStatus, string message)
     {
+        var wasWorking = IsWorking;
+        var hadStatus = HasStatus;
         var statusChanged = status != nextStatus;
         var textChanged = !string.Equals(statusText, message, StringComparison.Ordinal);
         status = nextStatus;
@@ -115,12 +151,18 @@ public sealed class ObservableActionState : INotifyPropertyChanged
         if (statusChanged)
         {
             OnPropertyChanged(nameof(Status));
+        }
+        if (wasWorking != IsWorking)
+        {
             OnPropertyChanged(nameof(IsWorking));
         }
         if (textChanged)
         {
             OnPropertyChanged(nameof(StatusText));
             OnPropertyChanged(nameof(AutomationAnnouncement));
+        }
+        if (hadStatus != HasStatus)
+        {
             OnPropertyChanged(nameof(HasStatus));
         }
     }
