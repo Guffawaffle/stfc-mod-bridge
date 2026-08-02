@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
@@ -106,11 +107,10 @@ public sealed class WindowsReleaseManifestTests
     [TestMethod]
     public void DuplicateArtifactIdentityFailsClosed()
     {
-        var duplicate = Manifest().Replace(
-            "]\n}",
-            ",\n" + ArtifactJson() + "\n  ]\n}",
-            StringComparison.Ordinal);
-        using var stream = JsonStream(duplicate);
+        var duplicate = JsonNode.Parse(Manifest())!.AsObject();
+        var artifacts = duplicate["artifacts"]!.AsArray();
+        artifacts.Add(artifacts[0]!.DeepClone());
+        using var stream = JsonStream(duplicate.ToJsonString());
 
         Assert.ThrowsException<InvalidDataException>(() => WindowsReleaseManifestParser.Parse(stream));
     }
