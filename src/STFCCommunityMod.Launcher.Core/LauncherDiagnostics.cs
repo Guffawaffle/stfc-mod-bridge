@@ -178,7 +178,8 @@ public sealed class LauncherDiagnosticService(
             }
         }
 
-        health.Add(gameProcessInspector.IsGameRunning()
+        health.Add(validGameDirectory is not null
+            && gameProcessInspector.IsGameRunning(validGameDirectory)
             ? Attention("Game process", "Star Trek Fleet Command is running.", "Close the game before repair or removal.")
             : Healthy("Game process", "Star Trek Fleet Command is not running."));
         health.Add(officialLauncherService.IsAvailable

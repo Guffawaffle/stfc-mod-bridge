@@ -31,8 +31,9 @@ they do not block downstream work from stacking on PR #198.
   names, and no animation.
 - A local render at 120 DPI (125% display scale) completed without clipping and
   correctly reported the running `prime.exe` game client.
-- Process inspection is isolated behind `IGameProcessInspector` and checks
-  `prime.exe` without WMI, injection, or process mutation.
+- Process inspection is isolated behind `IGameProcessInspector` and attributes
+  `prime.exe` to the selected installation by normalized executable path,
+  without WMI, injection, or process mutation.
 - The Home may subscribe to unprivileged Windows shell creation events and the
   tracked game process's exit signal as event-driven invalidation. The
   inspector remains authoritative, and no WMI subscription, interval polling,
@@ -44,9 +45,11 @@ they do not block downstream work from stacking on PR #198.
 
 The launcher will treat STFC and the official launcher as external processes:
 
-1. Detect `prime.exe` by process name through the operating-system process API.
+1. Enumerate `prime.exe` through the operating-system process API, then compare
+   each inspectable executable path with the selected validated installation.
 2. Never retain a process handle longer than one bounded query.
-3. Deny launcher-managed game-directory mutation while STFC is running.
+3. Deny launcher-managed game-directory mutation only while that exact STFC
+   installation is running; an uninspectable candidate fails closed.
 4. Start the supported official launcher path with Windows shell execution so
    authentication and official preflight remain official-launcher concerns.
 5. Wait for the official launcher or game process through an injectable

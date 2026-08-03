@@ -28,6 +28,22 @@ public interface ILauncherReleaseDiscoveryClient
         CancellationToken cancellationToken = default);
 }
 
+internal static class ReleaseManifestFallbackPolicy
+{
+    private const string MissingManifestMarker =
+        "STFCModBridge.ReleaseManifestAssetAbsent";
+
+    public static InvalidDataException MissingManifest(string message)
+    {
+        var exception = new InvalidDataException(message);
+        exception.Data[MissingManifestMarker] = true;
+        return exception;
+    }
+
+    public static bool IsMissingManifest(InvalidDataException exception) =>
+        exception.Data[MissingManifestMarker] is true;
+}
+
 public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
 {
     private readonly GitHubReleaseManifestClient manifestClient;
@@ -218,7 +234,7 @@ internal sealed class GitHubReleaseManifestClient
 
         return manifests.Count > 0
             ? manifests
-            : throw new InvalidDataException(
+            : throw ReleaseManifestFallbackPolicy.MissingManifest(
                 $"No {channel} GitHub release contains the required manifest asset.");
     }
 

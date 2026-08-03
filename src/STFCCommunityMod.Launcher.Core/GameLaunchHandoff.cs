@@ -462,7 +462,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherLaunchRecoveryAction.SelectGameFolder);
         }
 
-        if (gameProcessInspector.IsGameRunning())
+        if (gameProcessInspector.IsGameRunning(validation.GameDirectory))
         {
             return Blocked(
                 "Running",

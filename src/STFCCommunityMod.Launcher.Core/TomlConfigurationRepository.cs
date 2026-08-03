@@ -1,10 +1,22 @@
 namespace STFCCommunityMod.Launcher.Core;
 
-public sealed class TomlConfigurationRepository(
-    AtomicTomlStore? store = null) :
-    IConfigurationRepository
+public sealed class TomlConfigurationRepository : IConfigurationRepository
 {
-    private readonly AtomicTomlStore store = store ?? new AtomicTomlStore();
+    private readonly AtomicTomlStore store;
+
+    public TomlConfigurationRepository(
+        AtomicTomlStore? store = null,
+        IConfigurationMutationBackup? mutationBackup = null)
+    {
+        if (store is not null && mutationBackup is not null)
+        {
+            throw new ArgumentException(
+                "Supply either an atomic store or a mutation backup, not both.");
+        }
+        this.store = store ?? new AtomicTomlStore(
+            mutationBackup is null ? null : mutationBackup.BeforeReplaceAsync,
+            retainAdjacentBackup: mutationBackup is null);
+    }
 
     public ConfigurationRepositoryReadResult Read(string? configurationPath)
     {

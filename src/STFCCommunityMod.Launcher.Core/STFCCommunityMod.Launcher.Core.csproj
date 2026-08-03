@@ -4,4 +4,9 @@
     <RootNamespace>STFCCommunityMod.Launcher.Core</RootNamespace>
     <AssemblyName>STFCCommunityMod.Launcher.Core</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
 </Project>
