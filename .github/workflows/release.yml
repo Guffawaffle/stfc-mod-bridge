@@ -123,7 +123,7 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
           description: STFC Mod Bridge
-          description-url: https://github.com/Guffawaffle/stfc-mod-launcher
+          description-url: https://github.com/Guffawaffle/stfc-mod-bridge
 
       - name: Repackage signed payload and rebuild setup
         shell: pwsh
@@ -148,7 +148,7 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
           description: STFC Mod Bridge Setup
-          description-url: https://github.com/Guffawaffle/stfc-mod-launcher
+          description-url: https://github.com/Guffawaffle/stfc-mod-bridge
 
       - name: Verify every release PE and inspect package boundary
         shell: pwsh

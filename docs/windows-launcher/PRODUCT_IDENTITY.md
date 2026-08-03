@@ -19,7 +19,7 @@ official application.
 | `STFCModBridge.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.Setup.exe` | Signed executable identity | Canonical filenames and process identity |
 | .NET namespaces and solution/project directory names | Internal implementation identity | Retained because they are not player-visible or compatibility contracts |
 | `stfc-mod-bridge-win-x64.zip` and `stfc-mod-bridge-release-manifest.json` | Machine-consumed release identity | Canonical pre-v1 artifact names |
-| `Guffawaffle/stfc-mod-launcher` update endpoint and trust metadata | Repository/update compatibility | Retained until the repository-rename checklist below is complete |
+| `Guffawaffle/stfc-mod-bridge` update endpoint and trust metadata | Repository/update compatibility | Canonical greenfield repository coordinate |
 | Historical architecture paths, provenance links and issue references | Historical record | Retained or annotated; history is not rewritten |
 
 `ModBridgeProductIdentity` is the code authority for public product language
@@ -40,13 +40,12 @@ publisher verification, rollback paths, and process detection all use the
 canonical identity from the first public build, so there is no speculative
 migration path to maintain or test.
 
-## Deferred repository rename
+## Repository coordinate
 
-The intended repository name is `Guffawaffle/stfc-mod-bridge`. Rename it only
-after release workflow URLs, the hard-coded self-update repository, provider
-metadata, documentation links, OIDC/signing subjects and external consumers
-have an atomic migration plan. GitHub redirects are a convenience, not an
-update-trust contract.
+`Guffawaffle/stfc-mod-bridge` is the canonical repository, self-update
+authority, provider-schema origin, and signing-subject coordinate. Runtime and
+release metadata use that coordinate directly rather than relying on a GitHub
+redirect from the pre-release development name.
 
 ## Portfolio provenance
 

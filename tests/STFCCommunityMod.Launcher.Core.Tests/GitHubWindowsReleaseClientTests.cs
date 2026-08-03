@@ -161,7 +161,7 @@ public sealed class GitHubWindowsReleaseClientTests
     [TestMethod]
     public async Task LauncherDiscoveryUsesStandaloneAuthorityWithoutRequiringModArtifact()
     {
-        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string repository = "Guffawaffle/stfc-mod-bridge";
         const string manifestName = "stfc-mod-bridge-release-manifest.json";
         const string tag = "v0.2.0";
         var releases = $$"""
@@ -223,7 +223,7 @@ public sealed class GitHubWindowsReleaseClientTests
     [TestMethod]
     public async Task LauncherDiscoveryRejectsReplayAtOrBelowInstalledVersion()
     {
-        const string repository = "Guffawaffle/stfc-mod-launcher";
+        const string repository = "Guffawaffle/stfc-mod-bridge";
         const string manifestName = "stfc-mod-bridge-release-manifest.json";
         var releases = $$"""
             [{
@@ -240,7 +240,7 @@ public sealed class GitHubWindowsReleaseClientTests
             {
               "schemaVersion": 1, "releaseVersion": "0.2.0", "tag": "v0.2.0",
               "channel": "stable", "releaseState": "active", "minimumLauncherVersion": "0.1.0",
-              "source": { "repository": "Guffawaffle/stfc-mod-launcher", "targetCommit": "0123456789abcdef0123456789abcdef01234567" },
+              "source": { "repository": "Guffawaffle/stfc-mod-bridge", "targetCommit": "0123456789abcdef0123456789abcdef01234567" },
               "manifestAuthenticity": { "scheme": "none" },
               "artifacts": [{
                 "id": "windows-mod-bridge-archive-x64", "kind": "windows-mod-bridge",

@@ -23,7 +23,7 @@ The GitHub environment is `windows-release`.
 - Allowed branch for manual release work: `main`
 - Allowed release tags: `v*`
 - OIDC subject:
-  `repo:Guffawaffle/stfc-mod-launcher:environment:windows-release`
+  `repo:Guffawaffle/stfc-mod-bridge:environment:windows-release`
 - Signing job permission: `id-token: write` with `contents: read`
 - Publication job permission: `contents: write` without `id-token`
 

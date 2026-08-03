@@ -1,6 +1,6 @@
 # STFC Mod Bridge release manifest
 
-Tagged releases in `Guffawaffle/stfc-mod-launcher` publish
+Tagged releases in `Guffawaffle/stfc-mod-bridge` publish
 `stfc-mod-bridge-release-manifest.json`. This repository is the only Mod Bridge
 self-update authority. Distribution provider packs describe mod artifacts and
 cannot supply or redirect the Mod Bridge repository, manifest name, publisher,
@@ -28,7 +28,7 @@ Authenticode publisher.
 
 Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the
 provider-bound mod discovery client. It accepts only HTTPS GitHub releases in
-`Guffawaffle/stfc-mod-launcher`, derives immutable asset URLs from the exact tag
+`Guffawaffle/stfc-mod-bridge`, derives immutable asset URLs from the exact tag
 and basename, requires the standalone manifest name, validates the closed v1
 schema, and selects exactly one supported update archive. A Mod Bridge-only
 manifest does not need or accept an implied mod authority.

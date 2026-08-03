@@ -20,12 +20,12 @@
     {
       "title": "Community contributors",
       "text": "Thanks to the contributors documented in the histories of this repository and the supported mod-provider repositories. Provider recognition does not imply sponsorship or approval of this standalone application.",
-      "url": "https://github.com/Guffawaffle/stfc-mod-launcher/graphs/contributors"
+      "url": "https://github.com/Guffawaffle/stfc-mod-bridge/graphs/contributors"
     },
     {
       "title": "LexRunner portfolio",
       "text": "STFC Mod Bridge is LexRunner Portfolio Project 001. The portfolio label records the development workflow; it is not a game-publisher endorsement.",
-      "url": "https://github.com/Guffawaffle/stfc-mod-launcher"
+      "url": "https://github.com/Guffawaffle/stfc-mod-bridge"
     }
   ],
   "thirdPartyNotices": [
