@@ -4,19 +4,6 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherShellLifecycleControllerTests
 {
     [TestMethod]
-    public void StartupRefreshesHomeOnly()
-    {
-        var target = new RecordingRefreshTarget();
-        var controller = new LauncherShellLifecycleController(target);
-
-        controller.HandleStartup();
-
-        Assert.AreEqual(1, target.HomeRefreshCount);
-        Assert.AreEqual(0, target.ConfigurationAvailabilityRefreshCount);
-        Assert.AreEqual(0, target.ConfigurationDocumentReloadCount);
-    }
-
-    [TestMethod]
     public void GameProcessChangeRefreshesHomeOnly()
     {
         var target = new RecordingRefreshTarget();

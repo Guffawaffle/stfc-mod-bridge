@@ -18,11 +18,6 @@ public sealed class LauncherShellLifecycleController
         this.target = target ?? throw new ArgumentNullException(nameof(target));
     }
 
-    public void HandleStartup()
-    {
-        target.RefreshHome();
-    }
-
     public void HandleGameProcessChanged()
     {
         target.RefreshHome();

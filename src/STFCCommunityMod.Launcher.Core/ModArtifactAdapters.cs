@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -45,10 +44,38 @@ public sealed class HttpModArtifactDownloader(
     }
 }
 
-public sealed class WindowsModArtifactVersionReader : IModArtifactVersionReader
+public sealed class WindowsModArtifactVersionReader(
+    string expectedRuntimeDistributionId,
+    IModBinaryVersionMetadataReader? metadataReader = null) : IModArtifactVersionReader
 {
-    public string? ReadVersion(string artifactPath) =>
-        FileVersionInfo.GetVersionInfo(artifactPath).FileVersion;
+    private readonly string expectedRuntimeDistributionId = !string.IsNullOrWhiteSpace(expectedRuntimeDistributionId)
+        ? expectedRuntimeDistributionId
+        : throw new ArgumentException(
+            "Expected runtime distribution identity is required.",
+            nameof(expectedRuntimeDistributionId));
+    private readonly IModBinaryVersionMetadataReader metadataReader =
+        metadataReader ?? new WindowsModBinaryVersionMetadataReader();
+
+    public string? ReadVersion(string artifactPath)
+    {
+        var metadata = metadataReader.Read(artifactPath);
+        var identity = ModBuildIdentityCommentParser.Parse(metadata.Comments);
+        if (identity.State == ModBuildIdentityParseState.Malformed)
+        {
+            throw new InvalidDataException(identity.Detail);
+        }
+        if (identity.Identity is not null
+            && !string.Equals(
+                identity.Identity.DistributionId,
+                expectedRuntimeDistributionId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"The artifact declares runtime distribution '{identity.Identity.DistributionId}', "
+                + $"not '{expectedRuntimeDistributionId}'.");
+        }
+        return metadata.FileVersion;
+    }
 }
 
 public sealed class WindowsAuthenticodeVerifier(string expectedPublisher) : IModArtifactAuthenticityVerifier

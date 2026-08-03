@@ -15,20 +15,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     internal static readonly TimeSpan RefreshActionStatusLifetime = TimeSpan.FromSeconds(3);
 
     private readonly LauncherEnvironmentProbe environmentProbe;
-    private readonly ModManagementCoordinator modManagementCoordinator;
+    private readonly IModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
     private readonly LauncherDiagnosticService diagnosticService;
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
-    private readonly string modSourceMetadata;
+    private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
+    private readonly string selectedModSourceMetadata;
     private readonly IDiagnosticFolderService diagnosticFolderService;
     private LauncherEnvironmentSnapshot snapshot;
     private LauncherHealthSnapshot localHealth;
     private HomeHealthProjection homeHealth;
     private LauncherHomePresentation presentation;
     private ModManagementPresentation modPresentation;
-    private GameLaunchPresentation launchPresentation;
+    private GameLaunchPresentation launchPresentation = null!;
+    private GameLaunchPresentation primeLaunchChoice = null!;
+    private GameLaunchPresentation scopelyLaunchChoice = null!;
     private string selectionFeedback = string.Empty;
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
     private readonly HomeActionFeedbackArbiter homeFeedback;
@@ -40,12 +43,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
-        ModManagementCoordinator modManagementCoordinator,
+        IModManagementCoordinator modManagementCoordinator,
         GameLaunchHandoffCoordinator gameLaunchCoordinator,
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
         ILauncherUiPreferencesStore uiPreferencesStore,
+        LauncherDistributionProviderCatalog distributionProviderCatalog,
         string modSourceMetadata,
         IDiagnosticFolderService diagnosticFolderService)
     {
@@ -56,7 +60,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.uiPreferencesStore = uiPreferencesStore;
-        this.modSourceMetadata = modSourceMetadata;
+        this.distributionProviderCatalog = distributionProviderCatalog;
+        selectedModSourceMetadata = modSourceMetadata;
         this.diagnosticFolderService = diagnosticFolderService;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
@@ -73,9 +78,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             snapshot.IsGameRunning);
         homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
         modPresentation = localHealth.ModManagement;
-        launchPresentation = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            selectedLaunchTarget);
+        RefreshLaunchPresentations();
         actionFeedback.Refresh.PropertyChanged += RefreshActionState_PropertyChanged;
         actionFeedback.Mod.PropertyChanged += ModActionState_PropertyChanged;
         actionFeedback.Launch.PropertyChanged += LaunchActionState_PropertyChanged;
@@ -167,7 +170,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string ModStatus => homeHealth.InstallationStatus;
 
-    public string ModSourceMetadata => modSourceMetadata;
+    public string ModSourceMetadata => ModSourceMetadataProjection.From(
+        localHealth.Installation,
+        distributionProviderCatalog,
+        selectedModSourceMetadata);
 
     public LauncherHomeTone ModTone => modPresentation.Tone;
 
@@ -311,12 +317,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public static MainWindowViewModel CreateDefault(
         HttpClient httpClient,
+        LauncherDistributionProviderCatalog distributionProviderCatalog,
         LauncherDistributionProvider distributionProvider,
         LauncherProviderReleaseChannel releaseChannel,
         string? providerResolutionFailure = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(distributionProviderCatalog);
         ArgumentNullException.ThrowIfNull(distributionProvider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
@@ -330,42 +338,67 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 BoundedGameInstallCandidateProvider.FromCurrentMachine(),
             ]);
 
-        var providerBinding = LauncherProviderModBinding.Resolve(
-            distributionProvider,
-            releaseChannel,
-            providerResolutionFailure);
-        IModArtifactAuthenticityVerifier modArtifactVerifier =
-            providerBinding.IsAvailable
-                ? new WindowsAuthenticodeVerifier(providerBinding.WindowsPublisher!)
-                : new FailClosedModArtifactAuthenticityVerifier(providerBinding.UnavailableReason);
-        IWindowsReleaseDiscoveryClient modReleaseClient =
-            providerBinding.IsAvailable
+        var knownArtifacts = BundledLauncherProviderCatalog.LoadKnownWindowsArtifacts(
+            distributionProviderCatalog);
+        var providerComponents = distributionProviderCatalog.Providers.Values.Select(provider =>
+        {
+            var providerChannel = string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
+                ? releaseChannel
+                : provider.DefaultReleaseChannel;
+            var binding = LauncherProviderModBinding.Resolve(
+                provider,
+                providerChannel,
+                string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
+                    ? providerResolutionFailure
+                    : null);
+            IModArtifactAuthenticityVerifier artifactVerifier = binding.IsAvailable
+                ? new WindowsAuthenticodeVerifier(binding.WindowsPublisher!)
+                : new FailClosedModArtifactAuthenticityVerifier(binding.UnavailableReason);
+            IWindowsReleaseDiscoveryClient releaseClient = binding.IsAvailable
                 ? new GitHubWindowsReleaseClient(
                     httpClient,
-                    providerBinding.Repository,
-                    providerBinding.ManifestAssetName!)
-                : new UnavailableWindowsReleaseDiscoveryClient(providerBinding.UnavailableReason);
-
-        var deploymentService = new ModDeploymentService(
-            installLayout.StateDirectory,
-            new HttpModArtifactDownloader(httpClient),
-            new WindowsModArtifactVersionReader(),
-            modArtifactVerifier,
-            processInspector.IsGameRunning,
-            installationAttribution: new(
-                providerBinding.ProviderId,
-                providerBinding.ReleaseChannelId,
-                distributionProvider.RuntimeDistributionId));
-        var healthService = new LauncherHealthService(
-            new ModInstallationInspector(
-                deploymentService,
-                new SystemModInstallationFileSystem()),
-            new LauncherProviderHealthContext(
-                providerBinding.ProviderId,
-                providerBinding.ReleaseChannelId,
-                distributionProvider.RuntimeDistributionId,
-                providerBinding.IsAvailable,
-                providerBinding.UnavailableReason));
+                    binding.Repository,
+                    binding.ManifestAssetName!)
+                : new UnavailableWindowsReleaseDiscoveryClient(binding.UnavailableReason);
+            var providerDeployment = new ModDeploymentService(
+                installLayout.StateDirectory,
+                new HttpModArtifactDownloader(httpClient),
+                new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
+                artifactVerifier,
+                processInspector.IsGameRunning,
+                new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId));
+            var providerHealth = new LauncherHealthService(
+                new ModInstallationInspector(
+                    providerDeployment,
+                    new SystemModInstallationFileSystem(),
+                    provenanceResolver: new(
+                        new WindowsModBinaryVersionMetadataReader(),
+                        knownArtifacts)),
+                new(
+                    binding.ProviderId,
+                    binding.ReleaseChannelId,
+                    provider.RuntimeDistributionId,
+                    binding.IsAvailable,
+                    binding.UnavailableReason));
+            return (
+                Endpoint: new ModProviderManagementEndpoint(
+                    provider.Id,
+                    provider.RuntimeDistributionId,
+                    new ModManagementCoordinator(
+                        providerDeployment,
+                        releaseClient,
+                        currentLauncherVersion,
+                        binding.ReleaseChannelId,
+                        providerUnavailableReason: binding.UnavailableReason,
+                        healthService: providerHealth)),
+                Deployment: providerDeployment);
+        }).ToArray();
+        var providerEndpoints = providerComponents.Select(component => component.Endpoint).ToArray();
+        var deploymentService = providerComponents.Single(component =>
+            string.Equals(component.Endpoint.ProviderId, distributionProvider.Id, StringComparison.Ordinal)).Deployment;
+        IModManagementCoordinator modManagementCoordinator = new ProviderAwareModManagementCoordinator(
+            distributionProvider.Id,
+            providerEndpoints);
         var launcherReleaseClient = new GitHubLauncherReleaseClient(
             httpClient,
             LauncherSelfUpdateAuthority.ReleaseRepository,
@@ -406,13 +439,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 processInspector,
                 installLayout,
                 installDiscovery),
-            new ModManagementCoordinator(
-                deploymentService,
-                modReleaseClient,
-                currentLauncherVersion,
-                providerBinding.ReleaseChannelId,
-                providerUnavailableReason: providerBinding.UnavailableReason,
-                healthService: healthService),
+            modManagementCoordinator,
             launchCoordinator,
             new LauncherDiagnosticService(
                 deploymentService,
@@ -429,6 +456,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient,
             uiPreferencesStore,
+            distributionProviderCatalog,
             string.IsNullOrWhiteSpace(providerResolutionFailure)
                 ? $"{distributionProvider.DisplayName} · {releaseChannel.DisplayName}"
                 : "Source needs attention",
@@ -470,9 +498,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             snapshot.IsGameRunning);
         homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
         modPresentation = localHealth.ModManagement;
-        launchPresentation = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            selectedLaunchTarget);
+        RefreshLaunchPresentations();
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameSectionStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
@@ -496,6 +522,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(ModNativeSupport));
         OnPropertyChanged(nameof(ModNativeSupportStatus));
         OnPropertyChanged(nameof(ModHealthDimensions));
+        OnPropertyChanged(nameof(ModSourceMetadata));
         NotifyModPresentationChanged();
         NotifyLaunchPresentationChanged();
         OnPropertyChanged(nameof(InitialBrowseDirectory));
@@ -807,9 +834,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             // Launcher UI preferences are best-effort; selection remains valid for this session.
         }
-        launchPresentation = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            selectedLaunchTarget);
+        launchPresentation = GetLaunchChoice(selectedLaunchTarget);
         OnPropertyChanged(nameof(SelectedLaunchTarget));
         OnPropertyChanged(nameof(IsPrimeExecutableSelected));
         OnPropertyChanged(nameof(IsScopelyLauncherSelected));
@@ -823,7 +848,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private string BuildChoiceAutomationName(LauncherLaunchTarget target, string label)
     {
-        var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
+        var choice = GetLaunchChoice(target);
         var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
         var availability = choice.CanExecute
             ? $", available, {choice.Reason}"
@@ -833,11 +858,29 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private string BuildChoiceStatus(LauncherLaunchTarget target)
     {
-        var choice = gameLaunchCoordinator.CapturePresentation(snapshot.SelectedGameDirectory, target);
+        var choice = GetLaunchChoice(target);
         return choice.CanExecute
             ? choice.Reason
             : $"Unavailable · {choice.Reason} · {choice.NextActionLabel}";
     }
+
+    private void RefreshLaunchPresentations()
+    {
+        primeLaunchChoice = gameLaunchCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            LauncherLaunchTarget.PrimeExecutable,
+            localHealth.Installation);
+        scopelyLaunchChoice = gameLaunchCoordinator.CapturePresentation(
+            snapshot.SelectedGameDirectory,
+            LauncherLaunchTarget.ScopelyLauncher,
+            localHealth.Installation);
+        launchPresentation = GetLaunchChoice(selectedLaunchTarget);
+    }
+
+    private GameLaunchPresentation GetLaunchChoice(LauncherLaunchTarget target) =>
+        target == LauncherLaunchTarget.PrimeExecutable
+            ? primeLaunchChoice
+            : scopelyLaunchChoice;
 
     private HomeState CaptureHomeState() => new(
         snapshot.HealthCode,

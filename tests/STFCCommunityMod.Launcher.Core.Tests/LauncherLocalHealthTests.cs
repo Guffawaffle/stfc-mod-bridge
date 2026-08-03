@@ -19,9 +19,10 @@ public sealed class LauncherLocalHealthTests
             inspector.Capture(gameDirectory, isGameRunning: false).State);
 
         fileSystem.ArtifactExists = true;
-        Assert.AreEqual(
-            ModInstallationEvidenceState.ManualInstallation,
-            inspector.Capture(gameDirectory, isGameRunning: false).State);
+        var manual = inspector.Capture(gameDirectory, isGameRunning: false);
+        Assert.AreEqual(ModInstallationEvidenceState.ManualInstallation, manual.State);
+        Assert.AreEqual(InstalledSha256, manual.InstalledSha256);
+        Assert.AreEqual(ModBinaryProvenanceState.MetadataUnavailable, manual.BinaryProvenance?.State);
 
         stateReader.InstalledState = InstalledState(gameDirectory);
         fileSystem.Sha256 = InstalledSha256;
@@ -58,6 +59,15 @@ public sealed class LauncherLocalHealthTests
         stateReader.Journal = null;
         stateReader.ThrowOnRead = true;
         Assert.AreEqual(ModInstallationEvidenceState.Unavailable, inspector.Capture(gameDirectory, false).State);
+
+        stateReader.ThrowOnRead = false;
+        var oversizedFileSystem = new FakeInstallationFileSystem
+        {
+            ArtifactExists = true,
+            FileLength = 128L * 1024L * 1024L + 1,
+        };
+        inspector = new(stateReader, oversizedFileSystem, new FakeGameTargetInspector(true));
+        Assert.AreEqual(ModInstallationEvidenceState.Unavailable, inspector.Capture(gameDirectory, false).State);
     }
 
     [TestMethod]
@@ -73,6 +83,70 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(LauncherProviderCompatibilityState.MatchesSelectedProvider, matching.ProviderCompatibility);
         Assert.AreEqual(LauncherProviderCompatibilityState.DifferentProvider, differentChannel.ProviderCompatibility);
         Assert.AreEqual(LauncherHomeTone.Warning, differentChannel.ModManagement.Tone);
+    }
+
+    [TestMethod]
+    public void ManualKnownAndSelfDeclaredArtifactsResolveWithoutGuessing()
+    {
+        var known = new KnownModArtifactIdentity(
+            "netniv",
+            "netniv.stfc-community-mod",
+            "stable",
+            "1.1.4",
+            42,
+            InstalledSha256,
+            "github-release:v1.1.4",
+            ObservationTime);
+        var knownInstallation = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManualInstallation,
+            false,
+            "1.1.4.0",
+            InstalledSha256: InstalledSha256,
+            BinaryProvenance: new(
+                ModBinaryProvenanceState.KnownProviderArtifact,
+                InstalledSha256,
+                42,
+                "1.1.4.0",
+                "1.1.4.0",
+                KnownArtifact: known));
+        var netniv = Provider() with
+        {
+            ProviderId = "netniv",
+            RuntimeDistributionId = "netniv.stfc-community-mod",
+        };
+        var matchingKnown = LauncherHealthResolver.Resolve(knownInstallation, netniv);
+        var differentKnown = LauncherHealthResolver.Resolve(knownInstallation, Provider());
+
+        Assert.AreEqual(
+            LauncherProviderCompatibilityState.MatchesSelectedProvider,
+            matchingKnown.ProviderCompatibility);
+        Assert.AreEqual(
+            LauncherProviderCompatibilityState.DifferentProvider,
+            differentKnown.ProviderCompatibility);
+        Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, matchingKnown.ModManagement.ActionKind);
+        Assert.AreEqual(ModManagementActionKind.None, differentKnown.ModManagement.ActionKind);
+
+        var identity = new ModBuildIdentity(
+            1,
+            "guffawaffle.windows",
+            "git:abc",
+            "abc",
+            "ax:123",
+            "release",
+            "local");
+        var selfDeclared = knownInstallation with
+        {
+            BinaryProvenance = knownInstallation.BinaryProvenance! with
+            {
+                State = ModBinaryProvenanceState.SelfDeclaredLineage,
+                BuildIdentity = identity,
+                KnownArtifact = null,
+            },
+        };
+
+        Assert.AreEqual(
+            LauncherProviderCompatibilityState.MatchesSelectedProvider,
+            LauncherHealthResolver.Resolve(selfDeclared, Provider()).ProviderCompatibility);
     }
 
     [TestMethod]
@@ -104,9 +178,9 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(LauncherProviderCompatibilityState.NotApplicable, notInstalled.ProviderCompatibility);
         Assert.AreEqual(ModUpdateEvidenceState.NotApplicable, notInstalled.UpdateAvailability);
         Assert.AreEqual(LauncherProviderCompatibilityState.Unattributed, manual.ProviderCompatibility);
-        Assert.AreEqual(ModUpdateEvidenceState.NotApplicable, manual.UpdateAvailability);
+        Assert.AreEqual(ModUpdateEvidenceState.Unknown, manual.UpdateAvailability);
         Assert.AreEqual(LauncherProviderCompatibilityState.Unknown, changed.ProviderCompatibility);
-        Assert.AreEqual(LauncherProviderCompatibilityState.Unattributed, unattributed.ProviderCompatibility);
+        Assert.AreEqual(LauncherProviderCompatibilityState.Unknown, unattributed.ProviderCompatibility);
         Assert.AreEqual(ModUpdateEvidenceState.Unknown, unattributed.UpdateAvailability);
         Assert.AreEqual(ModUpdateEvidenceState.UpToDate, current.UpdateAvailability);
     }
@@ -127,9 +201,9 @@ public sealed class LauncherLocalHealthTests
 
         Assert.AreEqual(ModManagementActionKind.Install, missing.ModManagement.ActionKind);
         Assert.AreEqual("Not installed", missing.ModManagement.Status);
-        Assert.AreEqual(ModManagementActionKind.AdoptAndInstall, manual.ModManagement.ActionKind);
+        Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, manual.ModManagement.ActionKind);
         Assert.AreEqual("Manual installation detected", manual.ModManagement.Status);
-        Assert.AreEqual("Update", manual.ModManagement.ActionLabel);
+        Assert.AreEqual("Check for updates", manual.ModManagement.ActionLabel);
         Assert.AreEqual(ModManagementActionKind.Repair, damaged.ModManagement.ActionKind);
         Assert.AreEqual("Repair required", damaged.ModManagement.Status);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, healthy.ModManagement.ActionKind);
@@ -355,7 +429,11 @@ public sealed class LauncherLocalHealthTests
 
         public string Sha256 { get; set; } = InstalledSha256;
 
+        public long FileLength { get; set; } = 42;
+
         public bool FileExists(string path) => ArtifactExists;
+
+        public long GetFileLength(string path) => FileLength;
 
         public string ComputeSha256(string path) => Sha256;
     }

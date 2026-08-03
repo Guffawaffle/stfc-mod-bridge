@@ -152,6 +152,13 @@
       "evidenceKind": "project-input"
     },
     {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/known-windows-artifacts.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
       "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/config-schema.guffawaffle.v1.json",
       "version": null,
       "noticeId": null,

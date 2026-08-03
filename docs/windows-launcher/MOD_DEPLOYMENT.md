@@ -8,9 +8,10 @@ available through Diagnostics with exact-target confirmation. Installed-client m
 Mod Control manages only `version.dll` plus its transaction-scoped stage and
 rollback names listed in
 [`GAME_DIRECTORY_FILE_ALLOWLIST.md`](../GAME_DIRECTORY_FILE_ALLOWLIST.md).
-It never treats the selected game directory as Mod Control-owned. Existing manual
-`version.dll` files require an explicit `AdoptAndPreserve` decision; the prior
-bytes are retained under Mod Control-owned rollback state.
+It never treats the selected game directory as Mod Control-owned. Existing
+manual `version.dll` files are compared only after the user chooses **Check for
+updates**. A separately confirmed replacement preserves the prior bytes under
+Mod Control-owned rollback state.
 
 ## Verified transaction
 
@@ -75,10 +76,15 @@ The installation inspector distinguishes no target, invalid target, missing,
 manual/unmanaged, verified managed, externally changed, recovery-required,
 and unreadable state. DLL presence alone is never reported as healthy managed.
 
-New deployments persist stable provider, release-channel, and runtime-
-distribution IDs beside the verified version and SHA-256. Existing schema-1
-records without those optional IDs remain valid but resolve as `Unattributed`;
-Mod Control never guesses their provider from the current selection.
+New deployments require and persist stable provider, release-channel, and
+runtime-distribution IDs beside the verified version and SHA-256. Unattributed
+managed state is invalid in this unreleased greenfield application; manual DLLs
+remain separate evidence and are never attributed from the current selection.
+
+Every present DLL is inspected through the bounded, non-executing contract in
+[`MOD_BINARY_PROVENANCE.md`](MOD_BINARY_PROVENANCE.md). Exact reviewed hashes,
+self-declared lineage, unmarked custom builds, malformed identity, and
+unavailable metadata remain distinct evidence states.
 
 Update availability is a separate, time-bounded observation. It is accepted
 only when the observation matches the installed artifact hash plus the
@@ -100,7 +106,7 @@ game is closed.
 The core test suite covers:
 
 - invalid game targets and game-running denial before download;
-- explicit adoption of a pre-existing DLL;
+- explicit, separately confirmed replacement of a pre-existing DLL;
 - non-200 HTTP, declared-size, actual-size, and SHA-256 rejection;
 - bounded HTTP reads;
 - mandatory Authenticode rejection before commit;
@@ -108,7 +114,7 @@ The core test suite covers:
 - injected failure after every persisted deployment boundary;
 - concurrent mutation denial;
 - corrupt persisted state;
-- legacy unattributed installed state and attributed deployment persistence;
+- required attributed deployment persistence and rejection of unattributed managed state;
 - missing, manual, verified, damaged, incompatible, update-available, running
   healthy, running degraded, and explicit-unknown local-health states;
 - provider/channel/runtime identity and update-observation freshness;

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "providerId": "guffawaffle",
+      "runtimeDistributionId": "guffawaffle.stfc-community-mod",
+      "trackId": "stable",
+      "version": "2.1.0-guffa.8",
+      "size": 20925848,
+      "sha256": "6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9",
+      "sourceReference": "github-release:v2.1.0-guffa.8",
+      "observedAtUtc": "2026-08-01T06:47:19.0000000+00:00"
+    },
+    {
+      "providerId": "netniv",
+      "runtimeDistributionId": "netniv.stfc-community-mod",
+      "trackId": "stable",
+      "version": "1.1.4",
+      "size": 19630080,
+      "sha256": "020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A",
+      "sourceReference": "github-release:v1.1.4",
+      "observedAtUtc": "2026-07-19T15:55:25.0000000+00:00"
+    },
+    {
+      "providerId": "netniv",
+      "runtimeDistributionId": "netniv.stfc-community-mod",
+      "trackId": "dev",
+      "version": "1.1.5.1",
+      "size": 19744256,
+      "sha256": "CBEEDA425DB044D8E2D7CAE1B45408434DE437F3526FB08E1906994463E4D8A5",
+      "sourceReference": "github-actions:dev@7f0536bebc20d0d30bca44e89bfef56b0fb85ebc",
+      "observedAtUtc": "2026-08-02T15:36:50.0000000+00:00"
+    }
+  ]
+}

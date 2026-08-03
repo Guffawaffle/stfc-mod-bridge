@@ -15,7 +15,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
     private readonly Func<bool> isGameRunning;
     private readonly TimeProvider timeProvider;
-    private readonly ModInstallationAttribution? installationAttribution;
+    private readonly ModInstallationAttribution installationAttribution;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
 
     public ModDeploymentService(
@@ -24,9 +24,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IModArtifactVersionReader versionReader,
         IModArtifactAuthenticityVerifier authenticityVerifier,
         Func<bool> isGameRunning,
+        ModInstallationAttribution installationAttribution,
         TimeProvider? timeProvider = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
-        ModInstallationAttribution? installationAttribution = null)
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -37,7 +37,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.isGameRunning = isGameRunning ?? throw new ArgumentNullException(nameof(isGameRunning));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.afterPhasePersisted = afterPhasePersisted;
-        this.installationAttribution = installationAttribution;
+        this.installationAttribution = installationAttribution
+            ?? throw new ArgumentNullException(nameof(installationAttribution));
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -241,9 +242,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 journal.Artifact.Sha256,
                 timeProvider.GetUtcNow(),
                 retainedBackupPath,
-                installationAttribution?.ProviderId,
-                installationAttribution?.ReleaseChannelId,
-                installationAttribution?.RuntimeDistributionId);
+                installationAttribution.ProviderId,
+                installationAttribution.ReleaseChannelId,
+                installationAttribution.RuntimeDistributionId);
             WriteJsonAtomically(InstalledStatePath, installedState);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
             return new(

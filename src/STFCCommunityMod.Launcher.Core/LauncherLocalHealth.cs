@@ -54,7 +54,8 @@ public sealed record ModInstallationEvidence(
     string? InstalledProviderId = null,
     string? InstalledReleaseChannelId = null,
     string? InstalledRuntimeDistributionId = null,
-    string? InstalledSha256 = null)
+    string? InstalledSha256 = null,
+    ModBinaryProvenance? BinaryProvenance = null)
 {
     public bool HasCompleteAttribution =>
         !string.IsNullOrWhiteSpace(InstalledProviderId)
@@ -104,6 +105,8 @@ public interface IModInstallationFileSystem
 {
     bool FileExists(string path);
 
+    long GetFileLength(string path);
+
     string ComputeSha256(string path);
 }
 
@@ -121,6 +124,8 @@ public sealed class SystemModInstallationFileSystem : IModInstallationFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);
 
+    public long GetFileLength(string path) => new FileInfo(path).Length;
+
     public string ComputeSha256(string path)
     {
         using var stream = File.OpenRead(path);
@@ -131,10 +136,15 @@ public sealed class SystemModInstallationFileSystem : IModInstallationFileSystem
 public sealed class ModInstallationInspector(
     IModDeploymentStateReader stateReader,
     IModInstallationFileSystem fileSystem,
-    IGameTargetHealthInspector? gameTargetInspector = null)
+    IGameTargetHealthInspector? gameTargetInspector = null,
+    ModBinaryProvenanceResolver? provenanceResolver = null)
 {
+    private const long MaximumArtifactBytes = 128L * 1024L * 1024L;
     private readonly IGameTargetHealthInspector gameTargetInspector =
         gameTargetInspector ?? new SystemGameTargetHealthInspector();
+    private readonly ModBinaryProvenanceResolver provenanceResolver = provenanceResolver ?? new(
+        new WindowsModBinaryVersionMetadataReader(),
+        KnownModArtifactCatalog.Empty);
 
     public ModInstallationEvidence Capture(string? gameDirectory, bool isGameRunning)
     {
@@ -170,21 +180,41 @@ public sealed class ModInstallationInspector(
 
             var installedState = stateReader.ReadInstalledState();
             var artifactPath = Path.Combine(normalizedGameDirectory, "version.dll");
+            var artifactExists = fileSystem.FileExists(artifactPath);
             if (installedState is null)
             {
+                if (!artifactExists)
+                {
+                    return new(ModInstallationEvidenceState.NotInstalled, isGameRunning);
+                }
+                var manualArtifactLength = ReadValidArtifactLength(artifactPath);
+                var sha256 = fileSystem.ComputeSha256(artifactPath);
+                var manualProvenance = provenanceResolver.Resolve(
+                    artifactPath,
+                    sha256,
+                    manualArtifactLength);
                 return new(
-                    fileSystem.FileExists(artifactPath)
-                        ? ModInstallationEvidenceState.ManualInstallation
-                        : ModInstallationEvidenceState.NotInstalled,
-                    isGameRunning);
+                    ModInstallationEvidenceState.ManualInstallation,
+                    isGameRunning,
+                    manualProvenance.FileVersion,
+                    InstalledSha256: sha256,
+                    BinaryProvenance: manualProvenance);
             }
 
+            var artifactLength = artifactExists ? ReadValidArtifactLength(artifactPath) : 0;
+            var actualSha256 = artifactExists ? fileSystem.ComputeSha256(artifactPath) : null;
             var verified = PathsEqual(installedState.GameDirectory, normalizedGameDirectory)
-                && fileSystem.FileExists(artifactPath)
+                && artifactExists
                 && string.Equals(
-                    fileSystem.ComputeSha256(artifactPath),
+                    actualSha256,
                     installedState.Sha256,
                     StringComparison.OrdinalIgnoreCase);
+            var actualProvenance = artifactExists
+                ? provenanceResolver.Resolve(
+                    artifactPath,
+                    actualSha256!,
+                    artifactLength)
+                : null;
             return new(
                 verified
                     ? ModInstallationEvidenceState.ManagedVerified
@@ -194,7 +224,8 @@ public sealed class ModInstallationInspector(
                 installedState.ProviderId,
                 installedState.ReleaseChannelId,
                 installedState.RuntimeDistributionId,
-                installedState.Sha256);
+                actualSha256,
+                actualProvenance);
         }
         catch (Exception exception) when (IsInspectionFailure(exception))
         {
@@ -207,6 +238,17 @@ public sealed class ModInstallationInspector(
             Path.GetFullPath(left),
             Path.GetFullPath(right),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private long ReadValidArtifactLength(string artifactPath)
+    {
+        var length = fileSystem.GetFileLength(artifactPath);
+        if (length is <= 0 or > MaximumArtifactBytes)
+        {
+            throw new InvalidDataException(
+                $"version.dll must be between 1 byte and {MaximumArtifactBytes} bytes for inspection.");
+        }
+        return length;
+    }
 
     private static bool IsInspectionFailure(Exception exception) =>
         exception is IOException
@@ -259,6 +301,7 @@ public static class LauncherHealthResolver
         var dimensions = new List<LauncherHealthDimension>
         {
             ResolveInstallationDimension(installation),
+            ResolveBinaryProvenanceDimension(installation),
             ResolveProviderDimension(providerCompatibility),
             ResolveUpdateDimension(updateAvailability, updateEvidence?.AvailableVersion),
             ResolveNativeDimension(
@@ -311,7 +354,32 @@ public static class LauncherHealthResolver
         }
         if (installation.State == ModInstallationEvidenceState.ManualInstallation)
         {
-            return LauncherProviderCompatibilityState.Unattributed;
+            return installation.BinaryProvenance?.State switch
+            {
+                ModBinaryProvenanceState.KnownProviderArtifact =>
+                    string.Equals(
+                            installation.BinaryProvenance.KnownArtifact!.ProviderId,
+                            provider.ProviderId,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            installation.BinaryProvenance.KnownArtifact.TrackId,
+                            provider.ReleaseChannelId,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            installation.BinaryProvenance.KnownArtifact.RuntimeDistributionId,
+                            provider.RuntimeDistributionId,
+                            StringComparison.Ordinal)
+                            ? LauncherProviderCompatibilityState.MatchesSelectedProvider
+                            : LauncherProviderCompatibilityState.DifferentProvider,
+                ModBinaryProvenanceState.SelfDeclaredLineage =>
+                    string.Equals(
+                        installation.BinaryProvenance.DetectedRuntimeDistributionId,
+                        provider.RuntimeDistributionId,
+                        StringComparison.Ordinal)
+                        ? LauncherProviderCompatibilityState.MatchesSelectedProvider
+                        : LauncherProviderCompatibilityState.DifferentProvider,
+                _ => LauncherProviderCompatibilityState.Unattributed,
+            };
         }
         if (installation.State != ModInstallationEvidenceState.ManagedVerified)
         {
@@ -319,7 +387,7 @@ public static class LauncherHealthResolver
         }
         if (!installation.HasCompleteAttribution)
         {
-            return LauncherProviderCompatibilityState.Unattributed;
+            return LauncherProviderCompatibilityState.Unknown;
         }
         return string.Equals(installation.InstalledProviderId, provider.ProviderId, StringComparison.Ordinal)
             && string.Equals(
@@ -342,7 +410,9 @@ public static class LauncherHealthResolver
         DateTimeOffset nowUtc,
         TimeSpan maximumAge)
     {
-        if (installation.State != ModInstallationEvidenceState.ManagedVerified)
+        if (installation.State is not (
+                ModInstallationEvidenceState.ManagedVerified
+                or ModInstallationEvidenceState.ManualInstallation))
         {
             return ModUpdateEvidenceState.NotApplicable;
         }
@@ -418,12 +488,59 @@ public static class LauncherHealthResolver
             LauncherProviderCompatibilityState.Unattributed => UnknownDimension(
                 LauncherHealthDimensionCategory.ProviderCompatibility,
                 "Installed provider unknown",
-                "Older managed state and manual installations are never attributed by guesswork."),
+                "An unmarked custom installation is never attributed from the selected release source."),
             _ => UnknownDimension(
                 LauncherHealthDimensionCategory.ProviderCompatibility,
                 "Provider compatibility not established",
                 "No attributed installed artifact is available for comparison."),
         };
+
+    private static LauncherHealthDimension ResolveBinaryProvenanceDimension(
+        ModInstallationEvidence installation) => installation.BinaryProvenance?.State switch
+        {
+            ModBinaryProvenanceState.KnownProviderArtifact => new(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                LauncherHealthSeverity.Healthy,
+                "Known provider artifact",
+                $"Exact SHA-256 matches {installation.BinaryProvenance.KnownArtifact!.SourceReference}.",
+                $"sha256={installation.BinaryProvenance.Sha256}; "
+                    + $"version={installation.BinaryProvenance.KnownArtifact.Version}; "
+                    + $"source={installation.BinaryProvenance.KnownArtifact.SourceReference}"),
+            ModBinaryProvenanceState.SelfDeclaredLineage => new(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                LauncherHealthSeverity.Informational,
+                "Self-declared build lineage",
+                "Embedded build identity was read without loading the DLL; exact official-release identity is unproven.",
+                BuildIdentityDetail(installation.BinaryProvenance)),
+            ModBinaryProvenanceState.MalformedIdentity => new(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                LauncherHealthSeverity.Unknown,
+                "Malformed build identity",
+                installation.BinaryProvenance.Detail,
+                $"sha256={installation.BinaryProvenance.Sha256}"),
+            ModBinaryProvenanceState.MetadataUnavailable => UnknownDimension(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                "Build identity unavailable",
+                installation.BinaryProvenance.Detail),
+            ModBinaryProvenanceState.CustomUnattributed => new(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                LauncherHealthSeverity.Informational,
+                "Custom or unrecognized build",
+                "The DLL remains runnable; Mod Control does not assign a provider by guesswork."),
+            _ => new(
+                LauncherHealthDimensionCategory.BinaryProvenance,
+                LauncherHealthSeverity.Informational,
+                "Build identity not applicable",
+                "No installed DLL is available for provenance inspection."),
+        };
+
+    private static string BuildIdentityDetail(ModBinaryProvenance provenance)
+    {
+        var identity = provenance.BuildIdentity!;
+        return $"distribution={identity.DistributionId}; source={identity.SourceStateId}; "
+            + $"base={identity.BaseCommit}; build={identity.BuildInvocationId}; "
+            + $"mode={identity.BuildMode}; channel={identity.BuildChannel}; sha256={provenance.Sha256}";
+    }
 
     private static LauncherHealthDimension ResolveUpdateDimension(
         ModUpdateEvidenceState state,
@@ -533,14 +650,22 @@ public static class LauncherHealthResolver
             ModInstallationEvidenceState.ManualInstallation => new(
                 "Manual installation detected",
                 LauncherHomeTone.Warning,
-                provider.CanMutate ? "Update" : "Unavailable",
-                provider.CanMutate ? ModManagementActionKind.AdoptAndInstall : ModManagementActionKind.None,
-                canMutate,
-                provider.CanMutate
-                    ? installation.IsGameRunning
-                        ? "Close Star Trek Fleet Command before adopting the existing community mod."
-                        : "Adopt the existing community mod and install the selected release"
-                    : providerReason),
+                providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider
+                    || !provider.CanMutate
+                    ? "Unavailable"
+                    : "Check for updates",
+                providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider
+                    || !provider.CanMutate
+                    ? ModManagementActionKind.None
+                    : ModManagementActionKind.UpdateManualInstallation,
+                providerCompatibility != LauncherProviderCompatibilityState.DifferentProvider && canMutate,
+                providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider
+                    ? "The detected DLL lineage differs from the selected release source. Review the release source before updating."
+                    : !provider.CanMutate
+                        ? providerReason
+                        : installation.IsGameRunning
+                            ? "Close Star Trek Fleet Command before changing the community mod."
+                            : "Check the selected release source; replacement requires a separate confirmation."),
             ModInstallationEvidenceState.NotInstalled => new(
                 "Not installed",
                 LauncherHomeTone.Neutral,
@@ -662,6 +787,12 @@ public sealed class LauncherHealthService
     public LauncherHealthSnapshot Capture(string? gameDirectory, bool isGameRunning)
     {
         var installation = inspector.Capture(gameDirectory, isGameRunning);
+        return Resolve(installation);
+    }
+
+    public LauncherHealthSnapshot Resolve(ModInstallationEvidence installation)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
         ModUpdateEvidence? observation;
         lock (observationLock)
         {
@@ -676,15 +807,19 @@ public sealed class LauncherHealthService
             MaximumUpdateAge);
     }
 
+    public string ProviderId => provider.ProviderId;
+
     public void RecordUpdateObservation(
-        string gameDirectory,
-        bool isGameRunning,
+        ModInstallationEvidence installation,
         WindowsReleaseDiscovery discovery)
     {
+        ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(discovery);
-        var installation = inspector.Capture(gameDirectory, isGameRunning);
-        if (installation.State != ModInstallationEvidenceState.ManagedVerified
-            || !installation.HasCompleteAttribution
+        var compatibility = LauncherHealthResolver.Resolve(installation, provider).ProviderCompatibility;
+        if (installation.State is not (
+                ModInstallationEvidenceState.ManagedVerified
+                or ModInstallationEvidenceState.ManualInstallation)
+            || compatibility != LauncherProviderCompatibilityState.MatchesSelectedProvider
             || string.IsNullOrWhiteSpace(installation.InstalledSha256))
         {
             return;

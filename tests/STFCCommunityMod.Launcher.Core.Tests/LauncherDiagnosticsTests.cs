@@ -242,7 +242,8 @@ public sealed class LauncherDiagnosticsTests
         new FakeDownloader(),
         new FakeVersionReader(),
         new FakeAuthenticityVerifier(),
-        () => false);
+        () => false,
+        new("guffawaffle", "stable", "guffawaffle.windows"));
 
     private static LauncherConfigurationDiagnosisEvidence SupportedConfigurationEvidence() =>
         LauncherConfigurationDiagnosisEvidence.Supported(

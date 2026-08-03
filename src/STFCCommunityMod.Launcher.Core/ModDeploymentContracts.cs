@@ -62,15 +62,9 @@ public sealed record ModInstalledArtifactState(
     string Sha256,
     DateTimeOffset InstalledAtUtc,
     string? PreviousArtifactBackupPath,
-    string? ProviderId = null,
-    string? ReleaseChannelId = null,
-    string? RuntimeDistributionId = null)
-{
-    public bool HasCompleteAttribution =>
-        !string.IsNullOrWhiteSpace(ProviderId)
-        && !string.IsNullOrWhiteSpace(ReleaseChannelId)
-        && !string.IsNullOrWhiteSpace(RuntimeDistributionId);
-}
+    string ProviderId,
+    string ReleaseChannelId,
+    string RuntimeDistributionId);
 
 public sealed record ModInstallationAttribution(
     string ProviderId,

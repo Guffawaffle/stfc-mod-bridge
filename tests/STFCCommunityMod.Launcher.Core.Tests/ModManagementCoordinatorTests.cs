@@ -38,7 +38,7 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
-    public void ExistingManualArtifactOffersExplicitAdoption()
+    public void ExistingManualArtifactOffersExplicitUpdateCheck()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -47,13 +47,13 @@ public sealed class ModManagementCoordinatorTests
 
         var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
 
-        Assert.AreEqual(ModManagementActionKind.AdoptAndInstall, presentation.ActionKind);
+        Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, presentation.ActionKind);
         Assert.AreEqual("Manual installation detected", presentation.Status);
-        Assert.AreEqual("Update", presentation.ActionLabel);
+        Assert.AreEqual("Check for updates", presentation.ActionLabel);
     }
 
     [TestMethod]
-    public async Task PreparationPinsExactTargetReleaseAndAdoptionPolicy()
+    public async Task PreparationPinsExactTargetReleaseAndPreservationPolicy()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -68,7 +68,7 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(ExistingArtifactPolicy.AdoptAndPreserve, preparation.ExistingArtifactPolicy);
         Assert.AreEqual(Path.GetFullPath(gameDirectory), preparation.GameDirectory);
         Assert.AreEqual("2.1.0-guffa.8", preparation.ReleaseVersion);
-        Assert.IsTrue(preparation.Message.Contains("Adopt", StringComparison.Ordinal));
+        StringAssert.StartsWith(preparation.Message, "Update the existing installation to");
     }
 
     [TestMethod]
@@ -87,6 +87,25 @@ public sealed class ModManagementCoordinatorTests
         _ = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
 
         Assert.AreEqual("preview", discoveryClient.LastChannel);
+    }
+
+    [TestMethod]
+    public async Task ExecutionRejectsPreparationBoundToAnotherProvider()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var (coordinator, _) = CreateCoordinator(temporaryDirectory);
+        var preparation = new ModOperationPreparation(
+            ModOperationPreparationState.Ready,
+            "Ready",
+            temporaryDirectory.Path,
+            "2.1.0-guffa.8",
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject,
+            ModManagementActionKind.Install,
+            "netniv");
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => coordinator.ExecuteAsync(preparation));
     }
 
     [TestMethod]
@@ -203,12 +222,17 @@ public sealed class ModManagementCoordinatorTests
     private static (ModManagementCoordinator Coordinator, ModDeploymentService DeploymentService) CreateCoordinator(
         TemporaryDirectory temporaryDirectory)
     {
-        var deploymentService = CreateDeploymentService(temporaryDirectory);
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
         return (
             new(
                 deploymentService,
                 new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
-                new Version(0, 1, 0)),
+                new Version(0, 1, 0),
+                healthService: healthService),
             deploymentService);
     }
 
@@ -221,7 +245,7 @@ public sealed class ModManagementCoordinatorTests
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
             () => false,
-            installationAttribution: installationAttribution);
+            installationAttribution ?? new("guffawaffle", "stable", "guffawaffle.windows"));
 
     private static WindowsReleaseDiscovery ReleaseDiscovery() =>
         new(
