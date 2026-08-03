@@ -35,6 +35,17 @@ reviewed artifact identity, recognized runtime-distribution lineage, then the us
 unrecognized custom build. Display names never select provider behavior. A prepared operation also carries its stable
 provider ID and cannot execute through another provider endpoint.
 
+Installed provenance and preferred update source are independent state axes.
+The selected source may route an explicit Check-for-updates request for an
+otherwise unknown custom build, but it never retroactively attributes those
+installed bytes. An unknown, unmarked, malformed-marker, or developer DLL
+remains external/custom and runnable when bounded file-safety checks pass. If a
+previously managed DLL changes, Mod Bridge suspends its managed-integrity claim
+and must preserve the changed bytes; it does not transfer attribution to the
+preferred source or overwrite the file until the player explicitly chooses a
+repair or source-switch transaction. See the
+[source lifecycle matrix](MOD_DEPLOYMENT.md#stateaction-matrix).
+
 ## Reviewed artifact snapshot
 
 `providers/known-windows-artifacts.v1.json` is code-reviewed release data embedded into Mod Bridge. As of 2026-08-02
@@ -53,10 +64,17 @@ source commit and observation time.
 
 ## Update boundary
 
-Network discovery begins only after **Check for updates**. The existing deployment transaction downloads to a staged
-file, checks response and size bounds, verifies the release-provided SHA-256, validates embedded numeric version and
-any declared distribution identity, applies the provider authenticity policy, and only then atomically replaces the
-target. A failed verification removes the stage and leaves the installed DLL untouched.
+Latest-release network discovery begins only after **Check for updates**. The
+existing deployment transaction downloads to a staged file, checks response
+and size bounds, verifies the release-provided SHA-256, validates embedded
+numeric version and any declared distribution identity, applies the provider
+authenticity policy, and only then atomically replaces the target. A failed
+verification removes the stage and leaves the installed DLL untouched.
+
+Install/update/switch execution may download the exact artifact named by a
+fresh prepared observation, but it must not query `latest` again or silently
+cross provider/channel/runtime identity. Passive refresh, source selection,
+Diagnostics, and launch perform no release discovery.
 
 Guffawaffle release manifests plus the expected Authenticode publisher provide the supported installation path.
 NetniV identification is implemented, but automatic NetniV replacement remains unavailable until a reviewable update

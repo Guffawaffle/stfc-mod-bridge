@@ -293,15 +293,22 @@ Unknown keys and comments must survive normal edits.
 
 ### Release source boundary
 
-The selected release source (`guffawaffle` parity+ or `netniv` upstream) is
+The preferred release source (`guffawaffle` parity+ or `netniv` upstream) is
 launcher state, not a mod TOML setting. It selects the release manifest,
 artifact trust policy, update stream, migration guidance, and matching
-configuration schema/capability adapter.
+configuration schema/capability adapter for future explicit checks. It is not
+installed-artifact provenance and never attributes an unknown/custom DLL.
 
-Changing sources is a migration transaction. The launcher previews installed
-artifact and configuration compatibility, requires explicit confirmation, and
-retains backup and rollback guarantees. Automatic update never crosses release
-sources silently.
+Selecting a preference changes only launcher state and takes effect after a
+Mod Bridge restart. Switching the installed mod to another provider/runtime is
+a separate, game-closed migration transaction. The launcher previews installed
+artifact and configuration compatibility, requires explicit confirmation and
+a protected exact-byte TOML backup when configuration exists, and retains
+artifact/preference rollback guarantees. Automatic update never crosses release
+sources silently, and custom/developer DLLs remain runnable and untouched until
+the player explicitly chooses replacement. The authoritative state/action,
+backup/restore, retention, privacy, and transaction rules are in the
+[mod source-selection lifecycle](MOD_DEPLOYMENT.md#mod-source-selection-lifecycle).
 
 TOML remains the runtime and interchange boundary for NetniV compatibility and
 safe source switching. A future Guffawaffle-only profile store may be richer,
