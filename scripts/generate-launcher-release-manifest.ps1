@@ -6,13 +6,13 @@ param(
   [string]$TargetCommit,
   [string]$Repository = "Guffawaffle/stfc-mod-launcher",
   [string]$OutputDirectory = "artifacts/win-x64",
-  [string]$OutputPath = "artifacts/win-x64/stfc-mod-control-release-manifest.json"
+  [string]$OutputPath = "artifacts/win-x64/stfc-mod-bridge-release-manifest.json"
 )
 
 $ErrorActionPreference = "Stop"
 
 if ($Tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
-  throw "Mod Control tags must use vX.Y.Z or vX.Y.Z-rc.N."
+  throw "Mod Bridge tags must use vX.Y.Z or vX.Y.Z-rc.N."
 }
 $version = $Matches.version
 if ($TargetCommit -cnotmatch '^[0-9a-f]{40}$') {
@@ -66,8 +66,8 @@ function New-Artifact {
   }
 }
 
-$archiveName = "stfc-mod-control-win-x64.zip"
-$setupName = "STFCModControl.Setup.exe"
+$archiveName = "stfc-mod-bridge-win-x64.zip"
+$setupName = "STFCModBridge.Setup.exe"
 $archive = Join-Path $outputRoot $archiveName
 $setup = Join-Path (Join-Path $outputRoot "setup") $setupName
 $manifest = [ordered]@{
@@ -81,16 +81,16 @@ $manifest = [ordered]@{
   manifestAuthenticity = [ordered]@{ scheme = "none" }
   artifacts = @(
     New-Artifact `
-      -Id "windows-mod-control-archive-x64" `
-      -Kind "windows-mod-control" `
+      -Id "windows-mod-bridge-archive-x64" `
+      -Kind "windows-mod-bridge" `
       -Path $archive `
       -FileName $archiveName `
       -MediaType "application/zip" `
       -Scope "contents" `
-      -SignedFiles @("STFCModControl.exe", "STFCModControl.Updater.exe")
+      -SignedFiles @("STFCModBridge.exe", "STFCModBridge.Updater.exe")
     New-Artifact `
-      -Id "windows-mod-control-setup-x64" `
-      -Kind "windows-mod-control-setup" `
+      -Id "windows-mod-bridge-setup-x64" `
+      -Kind "windows-mod-bridge-setup" `
       -Path $setup `
       -FileName $setupName `
       -MediaType "application/vnd.microsoft.portable-executable" `
@@ -104,4 +104,4 @@ $temporaryPath = "$manifestPath.tmp"
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporaryPath -Encoding utf8NoBOM
 Move-Item -LiteralPath $temporaryPath -Destination $manifestPath -Force
 
-Write-Host "Generated Mod Control release manifest: $manifestPath"
+Write-Host "Generated Mod Bridge release manifest: $manifestPath"

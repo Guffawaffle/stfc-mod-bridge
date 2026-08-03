@@ -188,10 +188,10 @@ public sealed class LauncherDiagnosticService(
                 "The supported per-user Scopely launcher is unavailable.",
                 "Install or repair the Scopely launcher."));
         health.Add(Unavailable(
-            "Mod Control version and update",
-            $"Installed Mod Control version {launcherVersion}. Update availability has not been checked in this local preview.",
-            "Choose Check Mod Control update to perform a network-backed check.",
-            "mod-control-update"));
+            "Mod Bridge version and update",
+            $"Installed Mod Bridge version {launcherVersion}. Update availability has not been checked in this local preview.",
+            "Choose Check Mod Bridge update to perform a network-backed check.",
+            "mod-bridge-update"));
 
         AddDeploymentFacts(health, validGameDirectory, localHealth?.Installation);
         AddLocalHealthFacts(health, localHealth);
@@ -297,7 +297,7 @@ public sealed class LauncherDiagnosticService(
                 {
                     ModInstallationEvidenceState.ManualInstallation => Informational(
                         "Managed artifact verification",
-                        "A manual version.dll is present, but no Mod Control-managed SHA-256 identity is recorded.",
+                        "A manual version.dll is present, but no Mod Bridge-managed SHA-256 identity is recorded.",
                         "Choose Check for updates when you want to compare or replace this installation.",
                         "managed-artifact-verification"),
                     ModInstallationEvidenceState.NotInstalled => Informational(
@@ -307,7 +307,7 @@ public sealed class LauncherDiagnosticService(
                         "managed-artifact-verification"),
                     _ => Unavailable(
                         "Managed artifact verification",
-                        "No Mod Control-managed artifact identity is available.",
+                        "No Mod Bridge-managed artifact identity is available.",
                         "Review the community mod installation check.",
                         "managed-artifact-verification"),
                 });
@@ -317,7 +317,7 @@ public sealed class LauncherDiagnosticService(
             {
                 health.Add(Attention(
                     "Managed artifact verification",
-                    "Mod Control-managed state belongs to a different or unavailable game folder.",
+                    "Mod Bridge-managed state belongs to a different or unavailable game folder.",
                     "Select the managed game folder or review removal with support.",
                     "managed-artifact-verification"));
                 return;
@@ -337,8 +337,8 @@ public sealed class LauncherDiagnosticService(
             {
                 health.Add(Attention(
                     "Managed artifact verification",
-                    "version.dll exceeds the Mod Control verification limit.",
-                    "Use Repair; Mod Control will not load the oversized file into diagnostics.",
+                    "version.dll exceeds the Mod Bridge verification limit.",
+                    "Use Repair; Mod Bridge will not load the oversized file into diagnostics.",
                     "managed-artifact-verification"));
                 return;
             }
@@ -346,12 +346,12 @@ public sealed class LauncherDiagnosticService(
             health.Add(string.Equals(hash, state.Sha256, StringComparison.OrdinalIgnoreCase)
                 ? Healthy(
                     "Managed artifact verification",
-                    $"Mod Control-managed version {state.Version} matches its SHA-256 identity.",
+                    $"Mod Bridge-managed version {state.Version} matches its SHA-256 identity.",
                     "managed-artifact-verification")
                 : Attention(
                     "Managed artifact verification",
-                    "version.dll differs from Mod Control-managed state.",
-                    "Use Repair; Mod Control will not delete an unknown artifact.",
+                    "version.dll differs from Mod Bridge-managed state.",
+                    "Use Repair; Mod Bridge will not delete an unknown artifact.",
                     "managed-artifact-verification"));
         }
         catch (Exception exception) when (

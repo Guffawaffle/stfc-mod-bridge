@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $AllowInteractiveFocus -and $env:CI -ne "true") {
-  throw "This UI Automation smoke launches and focuses Mod Control. Run it in CI or pass -AllowInteractiveFocus when the interactive desktop is available."
+  throw "This UI Automation smoke launches and focuses Mod Bridge. Run it in CI or pass -AllowInteractiveFocus when the interactive desktop is available."
 }
 
 function Get-ActiveConfigurationPath {
@@ -26,7 +26,7 @@ function Get-ActiveConfigurationPath {
 
   $selectionPath = Join-Path `
     $localApplicationData `
-    "STFC Mod Control\install-selection.json"
+    "STFC Mod Bridge\install-selection.json"
   if (-not (Test-Path -LiteralPath $selectionPath -PathType Leaf)) {
     return $null
   }
@@ -65,7 +65,7 @@ function Wait-ForResponsiveMainWindow {
   while ([DateTimeOffset]::UtcNow -lt $Deadline) {
     $Process.Refresh()
     if ($Process.HasExited) {
-      throw "Mod Control exited with code $($Process.ExitCode) before creating its main window."
+      throw "Mod Bridge exited with code $($Process.ExitCode) before creating its main window."
     }
 
     if ($Process.MainWindowHandle -ne [IntPtr]::Zero -and $Process.Responding) {
@@ -86,7 +86,7 @@ function Wait-ForResponsiveMainWindow {
     Start-Sleep -Milliseconds 100
   }
 
-  throw "Mod Control did not create a responsive main window within the timeout."
+  throw "Mod Bridge did not create a responsive main window within the timeout."
 }
 
 function Find-AutomationElement {
@@ -197,7 +197,7 @@ function Find-ColorModeSelector {
       if ($element.Current.ControlType -eq
           [System.Windows.Automation.ControlType]::ComboBox -and
           $element.Current.Name -match
-          '^Mod Control color mode, (System|Light|Dark)$') {
+          '^Mod Bridge color mode, (System|Light|Dark)$') {
         return [pscustomobject]@{
           Element = $element
           SelectedMode = $Matches[1]
@@ -208,7 +208,7 @@ function Find-ColorModeSelector {
     Start-Sleep -Milliseconds 100
   }
 
-  throw "UI Automation did not expose a Mod Control color mode ComboBox with a selected System, Light, or Dark value."
+  throw "UI Automation did not expose a Mod Bridge color mode ComboBox with a selected System, Light, or Dark value."
 }
 
 function Test-ColorModeSelectorPresent {
@@ -224,7 +224,7 @@ function Test-ColorModeSelectorPresent {
     if ($element.Current.ControlType -eq
         [System.Windows.Automation.ControlType]::ComboBox -and
         $element.Current.Name -match
-        '^Mod Control color mode, (System|Light|Dark)$') {
+        '^Mod Bridge color mode, (System|Light|Dark)$') {
       return $true
     }
   }
@@ -405,12 +405,12 @@ if ([string]::IsNullOrWhiteSpace($originalWindir)) {
 
   [Environment]::SetEnvironmentVariable("WINDIR", $env:SystemRoot, "Process")
   $windirWasRestored = $true
-  Write-Verbose "Restored process WINDIR from SystemRoot for the Mod Control smoke."
+  Write-Verbose "Restored process WINDIR from SystemRoot for the Mod Bridge smoke."
 }
 
 $selectionPath = Join-Path `
   ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
-  "STFC Mod Control\install-selection.json"
+  "STFC Mod Bridge\install-selection.json"
 $selectionExisted = Test-Path -LiteralPath $selectionPath -PathType Leaf
 $selectionBytes = if ($selectionExisted) {
   [System.IO.File]::ReadAllBytes($selectionPath)
@@ -516,37 +516,37 @@ try {
 
   $launcherProcess = [System.Diagnostics.Process]::Start($startInfo)
   if ($null -eq $launcherProcess) {
-    throw "Windows did not return a process for Mod Control."
+    throw "Windows did not return a process for Mod Bridge."
   }
 
-  Write-Host "Started Mod Control process $($launcherProcess.Id)."
+  Write-Host "Started Mod Bridge process $($launcherProcess.Id)."
   $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
   $windowHandle = Wait-ForResponsiveMainWindow `
     -Process $launcherProcess `
     -Deadline $deadline
   $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
   if ($null -eq $root -or $root.Current.ProcessId -ne $launcherProcess.Id) {
-    throw "UI Automation did not attach to the exact Mod Control process that was started."
+    throw "UI Automation did not attach to the exact Mod Bridge process that was started."
   }
 
-  if ($root.Current.Name -ne "STFC Mod Control") {
-    throw "Unexpected Mod Control window title '$($root.Current.Name)'."
+  if ($root.Current.Name -ne "STFC Mod Bridge") {
+    throw "Unexpected Mod Bridge window title '$($root.Current.Name)'."
   }
 
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Minimize Mod Control" `
+    -Name "Minimize Mod Bridge" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Close Mod Control" `
+    -Name "Close Mod Bridge" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if (Test-ColorModeSelectorPresent -Root $root) {
-    throw "The appearance selector must not consume title space on Mod Control Home."
+    throw "The appearance selector must not consume title space on Mod Bridge Home."
   }
-  Write-Host "PASS: Mod Control Home omits the appearance selector."
+  Write-Host "PASS: Mod Bridge Home omits the appearance selector."
 
   [void](Find-AutomationElement `
     -Root $root `
@@ -568,15 +568,15 @@ try {
     $_.Current.Name -match '(?i)community mod'
   } | Select-Object -First 1
   if ($null -eq $modAction) {
-    throw "Mod Control Home did not expose an accessible community-mod action."
+    throw "Mod Bridge Home did not expose an accessible community-mod action."
   }
-  Write-Host "PASS: Mod Control Home exposes community-mod state and action '$($modAction.Current.Name)'."
+  Write-Host "PASS: Mod Bridge Home exposes community-mod state and action '$($modAction.Current.Name)'."
 
   $launchAction = $homeButtons | Where-Object {
     $_.Current.Name -match '(?i)^(launch prime\.exe|open Scopely launcher)'
   } | Select-Object -First 1
   if ($null -eq $launchAction) {
-    throw "Mod Control Home did not expose an accessible game-launch action."
+    throw "Mod Bridge Home did not expose an accessible game-launch action."
   }
   $launchTargetMenu = Find-AutomationElement `
     -Root $root `
@@ -619,7 +619,7 @@ try {
   $choiceBounds = $primeChoice.Current.BoundingRectangle
   if ($choiceBounds.Left -lt $windowBounds.Left -or
       $choiceBounds.Right -gt $windowBounds.Right) {
-    throw "The launch-target menu opened outside the Mod Control window bounds."
+    throw "The launch-target menu opened outside the Mod Bridge window bounds."
   }
   if ([Math]::Abs($choiceBounds.Right - $menuBounds.Right) -gt 12) {
     throw "The launch-target menu is not right-aligned with its split-button owner."
@@ -628,11 +628,11 @@ try {
     throw "The launch-target menu expanded into a page-width panel instead of a compact menu."
   }
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
-  Write-Host "PASS: Mod Control Home exposes a compact, right-owned launch menu without invoking either target."
+  Write-Host "PASS: Mod Bridge Home exposes a compact, right-owned launch menu without invoking either target."
 
   $diagnosticsEntry = Find-AutomationElement `
     -Root $root `
-    -Name "Open Mod Control Diagnostics" `
+    -Name "Open Mod Bridge Diagnostics" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $diagnosticsEntry
@@ -678,7 +678,7 @@ try {
   }
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Check for a Mod Control self-update" `
+    -Name "Check for a Mod Bridge self-update" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if ($diagnosticText.IndexOf($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
@@ -692,7 +692,7 @@ try {
   }
   $closeDiagnostics = Find-AutomationElement `
     -Root $root `
-    -Name "Return to Mod Control home from Diagnostics" `
+    -Name "Return to Mod Bridge home from Diagnostics" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $closeDiagnostics
@@ -700,7 +700,7 @@ try {
 
   $settingsEntry = Find-AutomationElement `
     -Root $root `
-    -Name "Open Mod Control settings" `
+    -Name "Open Mod Bridge settings" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $settingsEntry
@@ -708,7 +708,7 @@ try {
   $settingsDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Return to Mod Control home" `
+    -Name "Return to Mod Bridge home" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline)
   $appearance = Find-ColorModeSelector -Root $root -Deadline $settingsDeadline
@@ -880,13 +880,13 @@ try {
       [System.Windows.Automation.TransformPattern]::Pattern,
       [ref]$transformPattern) -or
       -not $transformPattern.Current.CanResize) {
-    throw "The Mod Control window does not expose resize support for minimum-width validation."
+    throw "The Mod Bridge window does not expose resize support for minimum-width validation."
   }
   $transformPattern.Resize(960, 620)
   Start-Sleep -Milliseconds 250
   $bounds = $root.Current.BoundingRectangle
   if ($bounds.Width -lt 959 -or $bounds.Height -lt 619) {
-    throw "Mod Control did not retain its supported 960x620 minimum after resize."
+    throw "Mod Bridge did not retain its supported 960x620 minimum after resize."
   }
   if ($scrollPattern.Current.HorizontallyScrollable) {
     throw "The Data Sync page exposed horizontal scrolling at 960x620."
@@ -1078,13 +1078,13 @@ try {
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
-    -Name "About STFC Mod Control" `
+    -Name "About STFC Mod Bridge" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $aboutNavigation
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Open STFC Mod Control source repository" `
+    -Name "Open STFC Mod Bridge source repository" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   $technicalDetails = Find-AutomationElement `
@@ -1105,7 +1105,7 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: Mod Control chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  Write-Host "PASS: Mod Bridge chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
 }
 catch {
   $smokeFailure = $_

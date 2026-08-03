@@ -175,7 +175,7 @@ public sealed class LauncherDiagnosticsTests
         Assert.AreEqual(LauncherDiagnosticLevel.Informational, installation.Level);
         StringAssert.Contains(installation.Summary, "Manual installation detected");
         Assert.AreEqual(LauncherDiagnosticLevel.Informational, artifact.Level);
-        StringAssert.Contains(artifact.Summary, "no Mod Control-managed SHA-256 identity");
+        StringAssert.Contains(artifact.Summary, "no Mod Bridge-managed SHA-256 identity");
         Assert.AreEqual(LauncherDiagnosticLevel.Healthy, transaction.Level);
         Assert.IsTrue(
             preview.Document.Health

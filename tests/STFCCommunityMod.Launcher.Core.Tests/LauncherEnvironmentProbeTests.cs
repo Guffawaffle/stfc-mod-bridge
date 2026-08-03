@@ -71,7 +71,7 @@ public sealed class LauncherEnvironmentProbeTests
     [TestMethod]
     public void CaptureDoesNotRenderPathsFromPersistedSelectionErrors()
     {
-        const string sensitivePath = @"C:\Users\Streamer\AppData\Local\STFC Mod Control\install-selection.json";
+        const string sensitivePath = @"C:\Users\Streamer\AppData\Local\STFC Mod Bridge\install-selection.json";
         var probe = CreateProbe(
             false,
             GameInstallSelectionLoadResult.Invalid($"Access denied: {sensitivePath}"));

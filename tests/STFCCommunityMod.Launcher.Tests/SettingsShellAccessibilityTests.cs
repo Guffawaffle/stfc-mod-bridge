@@ -151,13 +151,13 @@ public sealed class SettingsShellAccessibilityTests
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
 
-        CollectionAssert.Contains(names, "Mod Control Diagnostics workspace");
+        CollectionAssert.Contains(names, "Mod Bridge Diagnostics workspace");
         CollectionAssert.Contains(names, "Re-run Diagnostics checks");
         CollectionAssert.Contains(names, "Open detected game folder");
         CollectionAssert.Contains(names, "Open community mod logs folder");
         CollectionAssert.Contains(names, "Copy the displayed redacted diagnostic summary");
         CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
-        CollectionAssert.Contains(names, "Review removal of the Mod Control-managed community mod");
+        CollectionAssert.Contains(names, "Review removal of the Mod Bridge-managed community mod");
 
         Assert.IsFalse(
             document.Descendants()

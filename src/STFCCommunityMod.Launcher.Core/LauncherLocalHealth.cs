@@ -438,13 +438,13 @@ public static class LauncherHealthResolver
             ModInstallationEvidenceState.ManagedVerified => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Healthy,
-                "Mod Control-managed installation verified",
-                "The installed artifact matches Mod Control-owned state."),
+                "Mod Bridge-managed installation verified",
+                "The installed artifact matches Mod Bridge-owned state."),
             ModInstallationEvidenceState.ManualInstallation => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Informational,
                 "Manual installation detected",
-                "The artifact may remain runnable, but Mod Control does not claim managed integrity."),
+                "The artifact may remain runnable, but Mod Bridge does not claim managed integrity."),
             ModInstallationEvidenceState.ManagedChanged => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.ActionRequired,
@@ -454,12 +454,12 @@ public static class LauncherHealthResolver
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.ActionRequired,
                 "Deployment recovery required",
-                "An interrupted Mod Control transaction must be recovered."),
+                "An interrupted Mod Bridge transaction must be recovered."),
             ModInstallationEvidenceState.Unavailable => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Unknown,
                 "Installation health unavailable",
-                "Mod Control-owned state could not be validated safely."),
+                "Mod Bridge-owned state could not be validated safely."),
             ModInstallationEvidenceState.NotInstalled => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.Informational,
@@ -526,7 +526,7 @@ public static class LauncherHealthResolver
                 LauncherHealthDimensionCategory.BinaryProvenance,
                 LauncherHealthSeverity.Informational,
                 "Custom or unrecognized build",
-                "The DLL remains runnable; Mod Control does not assign a provider by guesswork."),
+                "The DLL remains runnable; Mod Bridge does not assign a provider by guesswork."),
             _ => new(
                 LauncherHealthDimensionCategory.BinaryProvenance,
                 LauncherHealthSeverity.Informational,
@@ -644,7 +644,7 @@ public static class LauncherHealthResolver
                 false,
                 "The community mod deployment state could not be validated safely. Open Diagnostics."),
             ModInstallationEvidenceState.ManagedChanged => RepairRequired(
-                "The installed artifact no longer matches Mod Control-managed state.",
+                "The installed artifact no longer matches Mod Bridge-managed state.",
                 canMutate,
                 providerReason),
             ModInstallationEvidenceState.ManualInstallation => new(

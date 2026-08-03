@@ -20,11 +20,11 @@ public sealed class LauncherBootstrapInstaller(
         ArgumentNullException.ThrowIfNull(archive);
         if (isLauncherRunning())
         {
-            throw new InvalidOperationException($"Close {ModControlProductIdentity.ProductName} before installing or updating it.");
+            throw new InvalidOperationException($"Close {ModBridgeProductIdentity.ProductName} before installing or updating it.");
         }
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Another Mod Control operation is already in progress.");
+            ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
         LauncherUpdateRecovery.RecoverBeforeSetup(stateDirectory, programDirectory);
         var transactionRoot = Path.Combine(stateDirectory, "bootstrap", Guid.NewGuid().ToString("N"));
         var stageDirectory = Path.Combine(transactionRoot, "stage");
@@ -36,8 +36,8 @@ public sealed class LauncherBootstrapInstaller(
         try
         {
             LauncherArchiveExtractor.Extract(archive, stageDirectory);
-            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.ExecutableName));
-            VerifyExecutable(Path.Combine(stageDirectory, ModControlProductIdentity.UpdaterExecutableName));
+            VerifyExecutable(Path.Combine(stageDirectory, ModBridgeProductIdentity.ExecutableName));
+            VerifyExecutable(Path.Combine(stageDirectory, ModBridgeProductIdentity.UpdaterExecutableName));
 
             Directory.CreateDirectory(Path.GetDirectoryName(programDirectory)!);
             if (hadPrevious)
@@ -55,7 +55,7 @@ public sealed class LauncherBootstrapInstaller(
             }
 
             return new(
-                Path.Combine(programDirectory, ModControlProductIdentity.ExecutableName),
+                Path.Combine(programDirectory, ModBridgeProductIdentity.ExecutableName),
                 hadPrevious);
         }
         catch
@@ -94,12 +94,12 @@ public sealed class LauncherBootstrapInstaller(
     {
         if (!File.Exists(path))
         {
-            throw new InvalidDataException($"Mod Control package is missing {Path.GetFileName(path)}.");
+            throw new InvalidDataException($"Mod Bridge package is missing {Path.GetFileName(path)}.");
         }
         var result = authenticityVerifier.Verify(path);
         if (!result.IsTrusted)
         {
-            throw new InvalidDataException($"Mod Control package signature verification failed: {result.Message}");
+            throw new InvalidDataException($"Mod Bridge package signature verification failed: {result.Message}");
         }
     }
 }

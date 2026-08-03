@@ -8,8 +8,8 @@ public static class LauncherArchiveExtractor
     private const long MaximumExpandedBytes = 768L * 1024L * 1024L;
     private static readonly HashSet<string> PortableExecutableAllowlist = new(StringComparer.Ordinal)
     {
-        ModControlProductIdentity.ExecutableName,
-        ModControlProductIdentity.UpdaterExecutableName,
+        ModBridgeProductIdentity.ExecutableName,
+        ModBridgeProductIdentity.UpdaterExecutableName,
     };
 
     public static void Extract(byte[] contents, string destination)
@@ -22,7 +22,7 @@ public static class LauncherArchiveExtractor
         using var archive = new ZipArchive(new MemoryStream(contents, writable: false), ZipArchiveMode.Read);
         if (archive.Entries.Count is 0 or > MaximumEntries)
         {
-            throw new InvalidDataException("Mod Control archive entry count is invalid.");
+            throw new InvalidDataException("Mod Bridge archive entry count is invalid.");
         }
 
         long expandedBytes = 0;
@@ -46,7 +46,7 @@ public static class LauncherArchiveExtractor
                 || !seen.Add(target)
                 || (entry.ExternalAttributes & 0xF0000000) == 0xA0000000)
             {
-                throw new InvalidDataException("Mod Control archive contains an unsafe entry.");
+                throw new InvalidDataException("Mod Bridge archive contains an unsafe entry.");
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -69,7 +69,7 @@ public static class LauncherArchiveExtractor
             if (!PortableExecutableAllowlist.Contains(relativePath))
             {
                 throw new InvalidDataException(
-                    $"Mod Control archive contains an unexpected portable executable: {relativePath}");
+                    $"Mod Bridge archive contains an unexpected portable executable: {relativePath}");
             }
         }
     }

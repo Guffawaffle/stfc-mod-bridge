@@ -42,7 +42,7 @@ public sealed record GameLaunchPresentation(
         LauncherLaunchRecoveryAction.RecoverModTransaction => "Recover the mod transaction",
         LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher => "Install or repair the Scopely launcher",
         LauncherLaunchRecoveryAction.OpenDiagnostics => "Open Diagnostics",
-        LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active Mod Control operation",
+        LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active Mod Bridge operation",
         _ => string.Empty,
     };
 }
@@ -328,13 +328,13 @@ public sealed class GameLaunchHandoffCoordinator(
             {
                 Status = "Operation in progress",
                 CanExecute = false,
-                Reason = "Another Mod Control operation currently owns the game-operation boundary.",
+                Reason = "Another Mod Bridge operation currently owns the game-operation boundary.",
                 NextAction = LauncherLaunchRecoveryAction.WaitForLauncherOperation,
-                AutomationName = $"{initial.ActionLabel} unavailable: another Mod Control operation is active.",
+                AutomationName = $"{initial.ActionLabel} unavailable: another Mod Bridge operation is active.",
             };
             return new(
                 GameLaunchHandoffState.Busy,
-                $"Another Mod Control operation is active. Wait for it to finish before using {initial.ActionLabel}.",
+                $"Another Mod Bridge operation is active. Wait for it to finish before using {initial.ActionLabel}.",
                 busyPresentation,
                 Changed: false);
         }
@@ -493,7 +493,7 @@ public sealed class GameLaunchHandoffCoordinator(
                     or ModInstallationEvidenceState.Unavailable => Blocked(
                         "Repair required",
                         "Launch prime.exe",
-                        "Repair the Mod Control-managed mod before launching.",
+                        "Repair the Mod Bridge-managed mod before launching.",
                         target,
                         LauncherLaunchRecoveryAction.RepairMod),
                 ModInstallationEvidenceState.ManualInstallation
@@ -546,7 +546,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 return Blocked(
                     "Repair required",
                     "Launch prime.exe",
-                    "Repair the Mod Control-managed mod before launching.",
+                    "Repair the Mod Bridge-managed mod before launching.",
                     target,
                     LauncherLaunchRecoveryAction.RepairMod);
             }

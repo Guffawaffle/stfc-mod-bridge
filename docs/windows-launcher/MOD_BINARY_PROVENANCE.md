@@ -1,6 +1,6 @@
 # Windows mod binary provenance
 
-Mod Control inspects `version.dll` as data. Passive Home and Diagnostics refreshes never load the DLL and never make a
+Mod Bridge inspects `version.dll` as data. Passive Home and Diagnostics refreshes never load the DLL and never make a
 network request.
 
 ## Evidence order
@@ -13,7 +13,7 @@ network request.
 
 An exact reviewed hash can identify a provider artifact that predates the marker. A valid marker establishes only
 self-declared distribution lineage. It does not prove an official release. An unmarked or unknown-hash DLL remains a
-runnable custom installation; Mod Control does not infer its provider from the selected release source.
+runnable custom installation; Mod Bridge does not infer its provider from the selected release source.
 
 The schema-one marker is:
 
@@ -37,7 +37,7 @@ provider ID and cannot execute through another provider endpoint.
 
 ## Reviewed artifact snapshot
 
-`providers/known-windows-artifacts.v1.json` is code-reviewed release data embedded into Mod Control. As of 2026-08-02
+`providers/known-windows-artifacts.v1.json` is code-reviewed release data embedded into Mod Bridge. As of 2026-08-02
 it contains:
 
 | Provider | Track | Version/source | Windows DLL SHA-256 | Signature evidence |
@@ -46,7 +46,7 @@ it contains:
 | NetniV | Stable | `v1.1.4` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 | NetniV | Dev | commit `7f0536bebc20d0d30bca44e89bfef56b0fb85ebc` | `CBEEDA425DB044D8E2D7CAE1B45408434DE437F3526FB08E1906994463E4D8A5` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 
-The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Control build. This
+The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Bridge build. This
 prevents a mutable GitHub release or Actions artifact from becoming trusted merely because it was newest when the
 launcher ran. NetniV Actions artifacts also require GitHub authentication and expire, so the dev entry records the
 source commit and observation time.

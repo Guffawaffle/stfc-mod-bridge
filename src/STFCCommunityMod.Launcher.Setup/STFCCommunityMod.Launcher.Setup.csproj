@@ -11,9 +11,9 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
     <PublishReadyToRun>false</PublishReadyToRun>
-    <AssemblyName>STFCModControl.Setup</AssemblyName>
-    <AssemblyTitle>STFC Mod Control Setup</AssemblyTitle>
-    <FileDescription>STFC Mod Control Setup</FileDescription>
+    <AssemblyName>STFCModBridge.Setup</AssemblyName>
+    <AssemblyTitle>STFC Mod Bridge Setup</AssemblyTitle>
+    <FileDescription>STFC Mod Bridge Setup</FileDescription>
     <RootNamespace>STFCCommunityMod.Launcher.Setup</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\STFCCommunityMod.Launcher\Assets\stfc-community-mod.ico</ApplicationIcon>

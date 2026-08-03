@@ -25,9 +25,9 @@ public sealed class LauncherAboutViewModel
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
 
-        ProductName = ModControlProductIdentity.ProductName;
-        Descriptor = ModControlProductIdentity.Descriptor;
-        Description = ModControlProductIdentity.Description;
+        ProductName = ModBridgeProductIdentity.ProductName;
+        Descriptor = ModBridgeProductIdentity.Descriptor;
+        Description = ModBridgeProductIdentity.Description;
         Version = assemblyVersion is null
             ? "Unknown"
             : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";

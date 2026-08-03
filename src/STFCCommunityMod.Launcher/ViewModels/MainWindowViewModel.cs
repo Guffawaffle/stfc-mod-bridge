@@ -85,9 +85,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         actionFeedback.LauncherUpdate.PropertyChanged += LauncherUpdateActionState_PropertyChanged;
         RefreshCommand = new ObservableActionCommand(
             actionFeedback.Refresh,
-            "Refresh accepted. Checking Mod Control status…",
+            "Refresh accepted. Checking Mod Bridge status…",
             RefreshStatusAsync,
-            exception => $"Mod Control status refresh failed: {exception.Message}");
+            exception => $"Mod Bridge status refresh failed: {exception.Message}");
         LaunchPrimaryCommand = new ObservableActionCommand(
             actionFeedback.Launch,
             "Launch accepted. Starting the selected target…",
@@ -205,7 +205,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ? "Removal is available after confirmation."
         : IsGameRunning
             ? "Close Star Trek Fleet Command before removing the managed community mod."
-            : "Removal is available only for a verified Mod Control-managed installation owned by the selected provider.";
+            : "Removal is available only for a verified Mod Bridge-managed installation owned by the selected provider.";
 
     public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
 
@@ -265,7 +265,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string RefreshActionAutomationName => actionFeedback.Refresh.IsWorking
         ? actionFeedback.Refresh.AutomationAnnouncement
-        : "Refresh Mod Control status";
+        : "Refresh Mod Bridge status";
 
     public string RefreshActionStatus => actionFeedback.Refresh.StatusText;
 
@@ -274,12 +274,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public bool CanRefresh => actionFeedback.Refresh.IsCommandAvailable;
 
     public string LauncherUpdateActionLabel => actionFeedback.LauncherUpdate.IsWorking
-        ? "Checking for Mod Control update…"
-        : "Check Mod Control _update";
+        ? "Checking for Mod Bridge update…"
+        : "Check Mod Bridge _update";
 
     public string LauncherUpdateActionAutomationName => actionFeedback.LauncherUpdate.IsWorking
         ? actionFeedback.LauncherUpdate.AutomationAnnouncement
-        : "Check for a Mod Control self-update";
+        : "Check for a Mod Bridge self-update";
 
     public string LauncherUpdateFeedback => actionFeedback.LauncherUpdate.StatusText;
 
@@ -485,8 +485,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         RefreshCore();
         var changed = before != CaptureHomeState();
         return changed
-            ? ObservableActionResult.Changed("Mod Control status refreshed. The displayed status changed.")
-            : ObservableActionResult.Unchanged("Mod Control status is up to date. No changes were found.");
+            ? ObservableActionResult.Changed("Mod Bridge status refreshed. The displayed status changed.")
+            : ObservableActionResult.Unchanged("Mod Bridge status is up to date. No changes were found.");
     }
 
     private void RefreshCore()
@@ -680,7 +680,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public async Task<LauncherUpdatePreparation?> PrepareLauncherUpdateAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!actionFeedback.LauncherUpdate.TryBegin("Mod Control update check accepted. Checking for an update…"))
+        if (!actionFeedback.LauncherUpdate.TryBegin("Mod Bridge update check accepted. Checking for an update…"))
         {
             return null;
         }
@@ -702,7 +702,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (OperationCanceledException)
         {
-            actionFeedback.LauncherUpdate.Cancel("The Mod Control update check was canceled or timed out.");
+            actionFeedback.LauncherUpdate.Cancel("The Mod Bridge update check was canceled or timed out.");
             return null;
         }
         catch (Exception exception) when (
@@ -712,7 +712,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 or IOException
                 or UnauthorizedAccessException)
         {
-            actionFeedback.LauncherUpdate.Fail($"The Mod Control update could not be prepared: {exception.Message}");
+            actionFeedback.LauncherUpdate.Fail($"The Mod Bridge update could not be prepared: {exception.Message}");
             return null;
         }
     }
@@ -731,7 +731,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private static Version CurrentLauncherVersion() =>
         Assembly.GetEntryAssembly()?.GetName().Version
-        ?? throw new InvalidOperationException("The Mod Control assembly version is unavailable.");
+        ?? throw new InvalidOperationException("The Mod Bridge assembly version is unavailable.");
 
     public async Task<ModDeploymentResult?> RecoverModAsync(CancellationToken cancellationToken = default)
     {
@@ -752,7 +752,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return null;
         }
         return await ExecuteMaintenanceAsync(
-            "Removing the Mod Control-managed community mod…",
+            "Removing the Mod Bridge-managed community mod…",
             modManagementCoordinator.UninstallAsync,
             cancellationToken);
     }

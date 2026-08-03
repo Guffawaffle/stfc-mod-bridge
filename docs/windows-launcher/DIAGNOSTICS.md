@@ -1,6 +1,6 @@
 # Diagnostics workspace
 
-Diagnostics is the canonical Mod Control support surface. Its default view is a
+Diagnostics is the canonical Mod Bridge support surface. Its default view is a
 set of readable, stable-ID checks; the machine-readable JSON is secondary and
 collapsed. The workspace does not infer native hook health from a DLL, log, or
 process. Missing authoritative evidence is shown as **Unknown**.
@@ -46,7 +46,7 @@ does not mutate game files. Recovery and removal reuse the single existing
 - provider ownership continues to fail closed;
 - removal requires the existing confirmation dialog;
 - removal affects the managed `version.dll`, or restores an explicitly adopted
-  predecessor, while preserving configuration, logs, and Mod Control state.
+  predecessor, while preserving configuration, logs, and Mod Bridge state.
 
 Launcher self-update remains a separate trust and transaction domain from mod
 repair/removal. Automatic self-update residue recovery remains setup/helper

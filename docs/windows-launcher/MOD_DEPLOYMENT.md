@@ -5,13 +5,13 @@ available through Diagnostics with exact-target confirmation. Installed-client m
 
 ## Ownership boundary
 
-Mod Control manages only `version.dll` plus its transaction-scoped stage and
+Mod Bridge manages only `version.dll` plus its transaction-scoped stage and
 rollback names listed in
 [`GAME_DIRECTORY_FILE_ALLOWLIST.md`](../GAME_DIRECTORY_FILE_ALLOWLIST.md).
-It never treats the selected game directory as Mod Control-owned. Existing
+It never treats the selected game directory as Mod Bridge-owned. Existing
 manual `version.dll` files are compared only after the user chooses **Check for
 updates**. A separately confirmed replacement preserves the prior bytes under
-Mod Control-owned rollback state.
+Mod Bridge-owned rollback state.
 
 ## Verified transaction
 
@@ -56,16 +56,16 @@ and idempotently restores the preserved artifact or removes a partially
 committed fresh install, restores the previous installed-state record, and
 removes transaction-scoped files.
 
-Uninstall verifies that the live DLL still matches Mod Control-managed state. It
+Uninstall verifies that the live DLL still matches Mod Bridge-managed state. It
 then uses the same operation lock and journal boundary. A fresh managed DLL is
 removed; an explicitly adopted prior DLL is restored. Configuration, logs,
 runtime snapshots, and unrelated game files are untouched. If the managed DLL
-changed outside Mod Control, uninstall refuses to guess ownership or delete
+changed outside Mod Bridge, uninstall refuses to guess ownership or delete
 it.
 
 Managed updates retain the original adopted artifact identity rather than
 turning the immediately previous managed release into the uninstall target.
-Explicit repair may replace a missing or changed Mod Control-managed DLL only
+Explicit repair may replace a missing or changed Mod Bridge-managed DLL only
 after the same release verification and transaction checks; the changed bytes
 remain available for rollback until repair commits.
 

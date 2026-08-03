@@ -6,7 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <Deterministic>true</Deterministic>
-    <Product>STFC Mod Control</Product>
+    <Product>STFC Mod Bridge</Product>
     <Description>Install · Configure · Diagnose · Run</Description>
     <Company>Joseph Gustavson</Company>
     <Copyright>Copyright © Joseph Gustavson</Copyright>

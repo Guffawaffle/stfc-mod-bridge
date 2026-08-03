@@ -8,8 +8,8 @@ public sealed record PerUserInstallLayout(string ProgramDirectory, string StateD
 
         var normalizedRoot = Path.GetFullPath(localApplicationData);
         return new(
-            Path.Combine(normalizedRoot, "Programs", ModControlProductIdentity.ProgramDirectoryName),
-            Path.Combine(normalizedRoot, ModControlProductIdentity.StateDirectoryName));
+            Path.Combine(normalizedRoot, "Programs", ModBridgeProductIdentity.ProgramDirectoryName),
+            Path.Combine(normalizedRoot, ModBridgeProductIdentity.StateDirectoryName));
     }
 
     public static PerUserInstallLayout FromCurrentUser()

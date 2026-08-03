@@ -7,7 +7,7 @@
         xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
-        Title="STFC Mod Control"
+        Title="STFC Mod Bridge"
         Width="960"
         Height="680"
         MinWidth="960"
@@ -19,7 +19,7 @@
         WindowStyle="None"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True"
-        automation:AutomationProperties.Name="STFC Mod Control">
+        automation:AutomationProperties.Name="STFC Mod Bridge">
   <shell:WindowChrome.WindowChrome>
     <shell:WindowChrome CaptionHeight="56"
                         ResizeBorderThickness="6"
@@ -373,10 +373,10 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource QuietButtonStyle}"
                 Click="SettingsNavigationButton_Click"
-                ToolTip="Open Mod Control settings"
+                ToolTip="Open Mod Bridge settings"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open Mod Control settings"
-                automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and Mod Control settings.">
+                automation:AutomationProperties.Name="Open Mod Bridge settings"
+                automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and Mod Bridge settings.">
           <StackPanel Orientation="Horizontal">
             <controls:AppIcon Width="18"
                               Height="18"
@@ -399,11 +399,11 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource QuietButtonStyle}"
                 Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}"
-                ToolTip="Return to Mod Control home"
+                ToolTip="Return to Mod Bridge home"
                 Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Return to Mod Control home"
-                automation:AutomationProperties.HelpText="Return to the Mod Control home screen.">
+                automation:AutomationProperties.Name="Return to Mod Bridge home"
+                automation:AutomationProperties.HelpText="Return to the Mod Bridge home screen.">
           <StackPanel Orientation="Horizontal">
             <controls:AppIcon Width="18"
                               Height="18"
@@ -426,10 +426,10 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource QuietButtonStyle}"
                 Click="DiagnosticsHomeButton_Click"
-                ToolTip="Return to Mod Control home"
+                ToolTip="Return to Mod Bridge home"
                 Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Return to Mod Control home from Diagnostics">
+                automation:AutomationProperties.Name="Return to Mod Bridge home from Diagnostics">
           <StackPanel Orientation="Horizontal">
             <controls:AppIcon Width="18" Height="18" FontSize="18" Kind="Back" />
             <TextBlock Margin="10,0,0,0"
@@ -453,7 +453,7 @@
                    VerticalAlignment="Center"
                    FontSize="14"
                    FontWeight="SemiBold"
-                   Text="STFC Mod Control">
+                   Text="STFC Mod Bridge">
           <TextBlock.Style>
             <Style TargetType="TextBlock">
               <Style.Triggers>
@@ -473,9 +473,9 @@
                 VerticalAlignment="Center"
                 Click="DiagnosticsButton_Click"
                 Content="Diagnostics"
-                ToolTip="Open the Mod Control Diagnostics workspace"
+                ToolTip="Open the Mod Bridge Diagnostics workspace"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open Mod Control Diagnostics"
+                automation:AutomationProperties.Name="Open Mod Bridge Diagnostics"
                 automation:AutomationProperties.HelpText="Review structured local health, support actions, and redacted report previews. Nothing is uploaded automatically.">
           <Button.Style>
             <Style BasedOn="{StaticResource QuietButtonStyle}"
@@ -597,10 +597,10 @@
                 Style="{StaticResource TitleBarColorModeComboBoxStyle}"
                 SelectedValuePath="Mode"
                 SelectionChanged="ColorModeSelector_SelectionChanged"
-                ToolTip="Choose how Mod Control follows light and dark appearance."
+                ToolTip="Choose how Mod Bridge follows light and dark appearance."
                 Visibility="Collapsed"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Mod Control color mode"
+                automation:AutomationProperties.Name="Mod Bridge color mode"
                 automation:AutomationProperties.HelpText="Choose System, Light, or Dark. System follows the Windows app theme." />
       <StackPanel Grid.Column="3"
                   Orientation="Horizontal">
@@ -608,7 +608,7 @@
                 Click="MinimizeButton_Click"
                 ToolTip="Minimize"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Minimize Mod Control">
+                automation:AutomationProperties.Name="Minimize Mod Bridge">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -626,7 +626,7 @@
                 Click="MaximizeRestoreButton_Click"
                 ToolTip="Maximize"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Maximize Mod Control">
+                automation:AutomationProperties.Name="Maximize Mod Bridge">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -649,7 +649,7 @@
                 Click="CloseButton_Click"
                 ToolTip="Close"
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Close Mod Control">
+                automation:AutomationProperties.Name="Close Mod Bridge">
           <Viewbox Width="12"
                    Height="12">
             <Grid Width="12"
@@ -922,7 +922,7 @@
                       Content="{Binding ModSourceMetadata}"
                       Foreground="{DynamicResource TextSecondaryBrush}"
                       automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
-                      automation:AutomationProperties.HelpText="Detected installed lineage when established; otherwise the selected release source. Activate to review provider capabilities or change the update source." />
+                      automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the Mod Bridge update source." />
             </StackPanel>
             <Button Grid.Column="2"
                     MinHeight="44"
@@ -990,7 +990,7 @@
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto"
                   Visibility="Collapsed"
-                  automation:AutomationProperties.Name="Mod Control Diagnostics workspace">
+                  automation:AutomationProperties.Name="Mod Bridge Diagnostics workspace">
       <ScrollViewer.Resources>
         <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}"
                TargetType="{x:Type ScrollBar}" />
@@ -1173,7 +1173,7 @@
         <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
         <TextBlock Margin="0,12,0,0"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Maintenance uses the existing journaled, allowlisted deployment transaction. The game must be closed. Removing the mod preserves configuration, logs, and Mod Control state."
+                   Text="Maintenance uses the existing journaled, allowlisted deployment transaction. The game must be closed. Removing the mod preserves configuration, logs, and Mod Bridge state."
                    TextWrapping="Wrap" />
         <WrapPanel Margin="0,14,0,0">
           <Button Margin="0,0,10,10"
@@ -1188,8 +1188,8 @@
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod…"
                   IsEnabled="{Binding CanUninstallMod}"
-                  ToolTip="Removes only the managed or adopted version.dll after confirmation; configuration, logs, and Mod Control state are preserved."
-                  automation:AutomationProperties.Name="Review removal of the Mod Control-managed community mod" />
+                  ToolTip="Removes only the managed or adopted version.dll after confirmation; configuration, logs, and Mod Bridge state are preserved."
+                  automation:AutomationProperties.Name="Review removal of the Mod Bridge-managed community mod" />
         </WrapPanel>
         <TextBlock FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
@@ -1239,15 +1239,15 @@
     <controls:InAppDialog x:Name="LauncherUpdateDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Install Mod Control update?"
-                          automation:AutomationProperties.Name="Mod Control self-update confirmation dialog">
+                          DialogTitle="Install Mod Bridge update?"
+                          automation:AutomationProperties.Name="Mod Bridge self-update confirmation dialog">
       <StackPanel>
         <TextBlock x:Name="LauncherUpdateSummary"
                    Foreground="{DynamicResource TextPrimaryBrush}"
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,0"
                    FontWeight="SemiBold"
-                   Text="Per-user Mod Control target" />
+                   Text="Per-user Mod Bridge target" />
         <TextBlock x:Name="LauncherUpdateTarget"
                    Margin="0,4,0,0"
                    FontFamily="Consolas"
@@ -1257,14 +1257,14 @@
         <TextBlock Margin="0,12,0,0"
                    FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Mod Control will exit. A copied helper verifies and swaps the signed payload, starts the update, and restores the previous version if startup is not acknowledged. No elevation is requested."
+                   Text="Mod Bridge will exit. A copied helper verifies and swaps the signed payload, starts the update, and restores the previous version if startup is not acknowledged. No elevation is requested."
                    TextWrapping="Wrap" />
         <Button Margin="0,20,0,0"
                 HorizontalAlignment="Right"
                 Style="{StaticResource UtilityActionButtonStyle}"
                 Click="ConfirmLauncherUpdateButton_Click"
                 Content="_Install and restart"
-                automation:AutomationProperties.Name="Install verified Mod Control update and restart" />
+                automation:AutomationProperties.Name="Install verified Mod Bridge update and restart" />
       </StackPanel>
     </controls:InAppDialog>
 
@@ -1303,7 +1303,7 @@
                           automation:AutomationProperties.Name="Community mod release source dialog">
       <StackPanel Width="440">
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Release source is Mod Control state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting Mod Control."
+                   Text="Release source is Mod Bridge state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting Mod Bridge."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,4"
                    FontWeight="SemiBold"
@@ -1375,7 +1375,7 @@
                           automation:AutomationProperties.Name="Settings unavailable dialog">
       <TextBlock x:Name="SettingsUnavailableMessage"
                  Foreground="{DynamicResource TextSecondaryBrush}"
-                 Text="Mod Control could not load its configuration catalog." />
+                 Text="Mod Bridge could not load its configuration catalog." />
     </controls:InAppDialog>
   </Grid>
 </Window>
