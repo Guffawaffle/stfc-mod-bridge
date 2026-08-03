@@ -178,6 +178,58 @@ public sealed class SettingsShellAccessibilityTests
             (string?)report.Attribute("Text"));
     }
 
+    [TestMethod]
+    public void DiagnosticStatusBadgesShareFixedCenteredGeometryAcrossWrappedRows()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var badgeStyle = document.Descendants(Presentation + "Style")
+            .Single(element => (string?)element.Attribute(Xaml + "Key") == "DiagnosticsStatusBadgeStyle");
+        var textStyle = document.Descendants(Presentation + "Style")
+            .Single(element => (string?)element.Attribute(Xaml + "Key") == "DiagnosticsStatusBadgeTextStyle");
+        var badge = document.Descendants(Presentation + "Border")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticStatusBadge");
+        var statusText = document.Descendants(Presentation + "TextBlock")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticStatusText");
+        var title = badge.Parent!
+            .Elements(Presentation + "TextBlock")
+            .Single(element => (string?)element.Attribute("Text") == "{Binding Name}");
+
+        AssertStyleSetter(badgeStyle, "Width", "112");
+        AssertStyleSetter(badgeStyle, "Height", "24");
+        AssertStyleSetter(badgeStyle, "Padding", "8,0");
+        AssertStyleSetter(badgeStyle, "VerticalAlignment", "Center");
+        AssertStyleSetter(textStyle, "HorizontalAlignment", "Stretch");
+        AssertStyleSetter(textStyle, "VerticalAlignment", "Center");
+        AssertStyleSetter(textStyle, "LineHeight", "16");
+        AssertStyleSetter(textStyle, "LineStackingStrategy", "BlockLineHeight");
+        AssertStyleSetter(textStyle, "TextAlignment", "Center");
+
+        Assert.AreEqual(
+            "{StaticResource DiagnosticsStatusBadgeStyle}",
+            (string?)badge.Attribute("Style"));
+        Assert.AreEqual(
+            "{StaticResource DiagnosticsStatusBadgeTextStyle}",
+            (string?)statusText.Attribute("Style"));
+        Assert.AreEqual("Wrap", (string?)title.Attribute("TextWrapping"));
+
+        var geometryProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Height",
+            "HorizontalAlignment",
+            "Margin",
+            "MinHeight",
+            "MinWidth",
+            "Padding",
+            "VerticalAlignment",
+            "Width",
+        };
+        Assert.IsFalse(
+            textStyle.Descendants(Presentation + "DataTrigger")
+                .Descendants(Presentation + "Setter")
+                .Any(setter => geometryProperties.Contains((string?)setter.Attribute("Property") ?? string.Empty)),
+            "Semantic status triggers may change color, not badge geometry.");
+    }
+
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)
     {
         var element = document.Descendants()
@@ -196,6 +248,16 @@ public sealed class SettingsShellAccessibilityTests
                     (string?)setter.Attribute("Property") == "Visibility"
                     && (string?)setter.Attribute("Value") == "Collapsed"),
             $"{elementName} must collapse while settings search is open.");
+    }
+
+    private static void AssertStyleSetter(XElement style, string property, string value)
+    {
+        Assert.IsTrue(
+            style.Elements(Presentation + "Setter").Any(
+                setter =>
+                    (string?)setter.Attribute("Property") == property
+                    && (string?)setter.Attribute("Value") == value),
+            $"The shared style must set {property} to {value}.");
     }
 
     private static XDocument LoadXaml(string relativePath)

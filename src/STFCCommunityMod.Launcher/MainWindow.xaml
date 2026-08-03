@@ -29,6 +29,41 @@
   </shell:WindowChrome.WindowChrome>
 
   <Window.Resources>
+    <Style x:Key="DiagnosticsStatusBadgeStyle"
+           TargetType="{x:Type Border}">
+      <Setter Property="Width" Value="112" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="CornerRadius" Value="{StaticResource BadgeCornerRadius}" />
+      <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+    <Style x:Key="DiagnosticsStatusBadgeTextStyle"
+           TargetType="{x:Type TextBlock}">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+      <Setter Property="LineHeight" Value="16" />
+      <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Level}"
+                     Value="{x:Static core:LauncherDiagnosticLevel.Healthy}">
+          <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Level}"
+                     Value="{x:Static core:LauncherDiagnosticLevel.Attention}">
+          <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Level}"
+                     Value="{x:Static core:LauncherDiagnosticLevel.Error}">
+          <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
     <Style x:Key="DiagnosticsScrollPageButtonStyle"
            TargetType="{x:Type primitives:RepeatButton}">
       <Setter Property="Focusable" Value="False" />
@@ -1043,40 +1078,20 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock VerticalAlignment="Center"
                                FontWeight="SemiBold"
-                               Text="{Binding Name}" />
+                               Text="{Binding Name}"
+                               TextWrapping="Wrap" />
                     <TextBlock Grid.Column="1"
                                Margin="18,0"
                                VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                Text="{Binding Summary}"
                                TextWrapping="Wrap" />
-                    <Border Grid.Column="2"
-                            Padding="8,3"
-                            Background="{DynamicResource SurfaceMutedBrush}"
-                            CornerRadius="{StaticResource BadgeCornerRadius}">
+                    <Border x:Name="DiagnosticStatusBadge"
+                            Grid.Column="2"
+                            Style="{StaticResource DiagnosticsStatusBadgeStyle}">
                       <TextBlock x:Name="DiagnosticStatusText"
-                                 FontSize="12"
-                                 Text="{Binding StatusLabel}">
-                        <TextBlock.Style>
-                          <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-                            <Style.Triggers>
-                              <DataTrigger Binding="{Binding Level}"
-                                           Value="{x:Static core:LauncherDiagnosticLevel.Healthy}">
-                                <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                              </DataTrigger>
-                              <DataTrigger Binding="{Binding Level}"
-                                           Value="{x:Static core:LauncherDiagnosticLevel.Attention}">
-                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                              </DataTrigger>
-                              <DataTrigger Binding="{Binding Level}"
-                                           Value="{x:Static core:LauncherDiagnosticLevel.Error}">
-                                <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
-                              </DataTrigger>
-                            </Style.Triggers>
-                          </Style>
-                        </TextBlock.Style>
-                      </TextBlock>
+                                 Style="{StaticResource DiagnosticsStatusBadgeTextStyle}"
+                                 Text="{Binding StatusLabel}" />
                     </Border>
                   </Grid>
                 </Expander.Header>
