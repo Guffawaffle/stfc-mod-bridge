@@ -699,14 +699,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
-    private void CancelProviderSwitchButton_Click(object sender, RoutedEventArgs e)
-    {
-        _ = sender;
-        _ = e;
-        pendingProviderSwitch = null;
-        ProviderSwitchDialog.IsOpen = false;
-    }
-
     private void UpdateProviderCapabilityText()
     {
         if (ProviderSourceSelector.SelectedItem is not LauncherDistributionProvider provider)
@@ -716,8 +708,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 : providerSelectionResolution.Message;
             return;
         }
-        ProviderCapabilityText.Text =
-            $"{provider.Description}{Environment.NewLine}{provider.CapabilitySummary}";
+        ProviderCapabilityText.Text = LauncherProviderPresentation.Describe(provider);
     }
 
     private void ColorModeSelector_SelectionChanged(object sender, RoutedEventArgs e)

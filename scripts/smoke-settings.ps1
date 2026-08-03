@@ -159,6 +159,25 @@ function Expand-AutomationElement {
   }
 }
 
+function Collapse-AutomationElement {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Element
+  )
+
+  $pattern = $null
+  if (-not $Element.TryGetCurrentPattern(
+      [System.Windows.Automation.ExpandCollapsePattern]::Pattern,
+      [ref]$pattern)) {
+    throw "UI Automation element '$($Element.Current.Name)' does not expose ExpandCollapsePattern."
+  }
+
+  if ($pattern.Current.ExpandCollapseState -ne
+      [System.Windows.Automation.ExpandCollapseState]::Collapsed) {
+    $pattern.Collapse()
+  }
+}
+
 function Scroll-AutomationElementToVerticalEnd {
   param(
     [Parameter(Mandatory)]
@@ -571,6 +590,53 @@ try {
     throw "Mod Bridge Home did not expose an accessible community-mod action."
   }
   Write-Host "PASS: Mod Bridge Home exposes community-mod state and action '$($modAction.Current.Name)'."
+
+  $releaseSource = $homeButtons | Where-Object {
+    $_.Current.Name -match '^Community mod release source:'
+  } | Select-Object -First 1
+  if ($null -eq $releaseSource) {
+    throw "Mod Bridge Home did not expose the community-mod release source."
+  }
+  Invoke-AutomationElement -Element $releaseSource
+  $providerSelector = Find-AutomationElement `
+    -Root $root `
+    -Name "Community mod provider" `
+    -ControlType ([System.Windows.Automation.ControlType]::ComboBox) `
+    -Deadline $deadline
+  Expand-AutomationElement -Element $providerSelector
+  $providerDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  $providerNames = @()
+  while ($providerNames.Count -lt 2 -and [DateTimeOffset]::UtcNow -lt $providerDeadline) {
+    $providerElements = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+        $launcherProcess.Id))
+    $providerNames = @($providerElements | Where-Object {
+      $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ListItem -and
+      $_.Current.Name -in @("Guffawaffle", "NetniV")
+    } | ForEach-Object { $_.Current.Name } | Sort-Object -Unique)
+    if ($providerNames.Count -lt 2) {
+      Start-Sleep -Milliseconds 50
+    }
+  }
+  if ($providerNames.Count -ne 2) {
+    throw "The provider selector did not expose both catalog display names."
+  }
+  $internalProviderCopy = @($providerElements | Where-Object {
+    $_.Current.Name -match 'LauncherDistributionProvider|settings\.catalog|runtime\.manifest|mod\.release-discovery'
+  })
+  if ($internalProviderCopy.Count -gt 0) {
+    throw "The provider dialog exposed internal type or capability identifiers."
+  }
+  Collapse-AutomationElement -Element $providerSelector
+  $closeProviderDialog = Find-AutomationElement `
+    -Root $root `
+    -Name "Close dialog" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $closeProviderDialog
+  Write-Host "PASS: community-mod source selection uses catalog display names and user-facing capability copy."
 
   $launchAction = $homeButtons | Where-Object {
     $_.Current.Name -match '(?i)^(launch prime\.exe|open Scopely launcher)'

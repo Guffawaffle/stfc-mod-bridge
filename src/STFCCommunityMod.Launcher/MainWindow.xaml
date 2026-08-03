@@ -1314,24 +1314,34 @@
     <controls:InAppDialog x:Name="ProviderSwitchDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Community mod release source"
-                          automation:AutomationProperties.Name="Community mod release source dialog">
-      <StackPanel Width="440">
+                          DialogTitle="Community mod source"
+                          automation:AutomationProperties.Name="Community mod source dialog">
+      <StackPanel>
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Release source is Mod Bridge state, not mod TOML. Switching never rewrites the configuration and takes effect after restarting Mod Bridge."
+                   Text="Choose where Mod Bridge checks for community mod releases. Changing source never edits mod TOML and takes effect after restarting Mod Bridge."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,4"
                    FontWeight="SemiBold"
-                   Text="Provider" />
+                   Text="Release source" />
         <ComboBox x:Name="ProviderSourceSelector"
-                  MinWidth="260"
-                  HorizontalAlignment="Left"
+                  HorizontalAlignment="Stretch"
                   Style="{StaticResource TitleBarColorModeComboBoxStyle}"
-                  DisplayMemberPath="DisplayName"
-                  ItemTemplate="{x:Null}"
                   SelectedValuePath="Id"
                   SelectionChanged="ProviderSourceSelector_SelectionChanged"
-                  automation:AutomationProperties.Name="Community mod provider" />
+                  automation:AutomationProperties.Name="Community mod provider">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding DisplayName}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+          <ComboBox.ItemContainerStyle>
+            <Style TargetType="ComboBoxItem"
+                   BasedOn="{StaticResource TitleBarColorModeItemStyle}">
+              <Setter Property="automation:AutomationProperties.Name"
+                      Value="{Binding DisplayName}" />
+            </Style>
+          </ComboBox.ItemContainerStyle>
+        </ComboBox>
         <TextBlock x:Name="ProviderCapabilityText"
                    Margin="0,12,0,0"
                    FontSize="12"
@@ -1362,11 +1372,6 @@
         </StackPanel>
         <WrapPanel Margin="0,18,0,0"
                    HorizontalAlignment="Right">
-          <Button Margin="0,0,8,0"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="CancelProviderSwitchButton_Click"
-                  Content="_Cancel"
-                  automation:AutomationProperties.Name="Cancel provider source review" />
           <Button x:Name="ReviewProviderSwitchButton"
                   Margin="0,0,8,0"
                   Style="{StaticResource QuietButtonStyle}"
