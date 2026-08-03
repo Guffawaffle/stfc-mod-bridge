@@ -275,7 +275,8 @@ public sealed class GameLaunchHandoffCoordinator(
 
     public GameLaunchPresentation CapturePresentation(
         string? gameDirectory,
-        LauncherLaunchTarget target)
+        LauncherLaunchTarget target,
+        ModInstallationEvidence? capturedInstallation = null)
     {
         if (target == LauncherLaunchTarget.ScopelyLauncher)
         {
@@ -297,7 +298,7 @@ public sealed class GameLaunchHandoffCoordinator(
                     LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher);
         }
 
-        var health = CapturePrimeHealth(gameDirectory, target);
+        var health = CapturePrimeHealth(gameDirectory, target, capturedInstallation);
         return health ?? new(
             "Ready to play",
             LauncherHomeTone.Success,
@@ -421,7 +422,10 @@ public sealed class GameLaunchHandoffCoordinator(
         }
     }
 
-    private GameLaunchPresentation? CapturePrimeHealth(string? gameDirectory, LauncherLaunchTarget target)
+    private GameLaunchPresentation? CapturePrimeHealth(
+        string? gameDirectory,
+        LauncherLaunchTarget target,
+        ModInstallationEvidence? capturedInstallation = null)
     {
         if (string.IsNullOrWhiteSpace(gameDirectory))
         {
@@ -469,6 +473,42 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherHomeTone.Success);
         }
 
+        if (capturedInstallation is not null)
+        {
+            return capturedInstallation.State switch
+            {
+                ModInstallationEvidenceState.RecoveryRequired => Blocked(
+                    "Recovery required",
+                    "Launch prime.exe",
+                    "Recover the incomplete mod transaction before launching.",
+                    target,
+                    LauncherLaunchRecoveryAction.RecoverModTransaction),
+                ModInstallationEvidenceState.NotInstalled => Blocked(
+                    "Mod required",
+                    "Launch prime.exe",
+                    "Install the community mod before a direct modded launch.",
+                    target,
+                    LauncherLaunchRecoveryAction.InstallMod),
+                ModInstallationEvidenceState.ManagedChanged
+                    or ModInstallationEvidenceState.Unavailable => Blocked(
+                        "Repair required",
+                        "Launch prime.exe",
+                        "Repair the Mod Control-managed mod before launching.",
+                        target,
+                        LauncherLaunchRecoveryAction.RepairMod),
+                ModInstallationEvidenceState.ManualInstallation
+                    or ModInstallationEvidenceState.ManagedVerified => null,
+                _ => CapturePrimeDeploymentHealth(validation.GameDirectory, target),
+            };
+        }
+
+        return CapturePrimeDeploymentHealth(validation.GameDirectory, target);
+    }
+
+    private GameLaunchPresentation? CapturePrimeDeploymentHealth(
+        string gameDirectory,
+        LauncherLaunchTarget target)
+    {
         try
         {
             var journal = deploymentService.ReadJournal();
@@ -486,7 +526,7 @@ public sealed class GameLaunchHandoffCoordinator(
             }
 
             var state = deploymentService.ReadInstalledState();
-            var targetPath = Path.Combine(validation.GameDirectory, "version.dll");
+            var targetPath = Path.Combine(gameDirectory, "version.dll");
             if (state is null)
             {
                 if (!File.Exists(targetPath))
@@ -499,7 +539,7 @@ public sealed class GameLaunchHandoffCoordinator(
                         LauncherLaunchRecoveryAction.InstallMod);
                 }
             }
-            else if (!PathEquals(state.GameDirectory, validation.GameDirectory)
+            else if (!PathEquals(state.GameDirectory, gameDirectory)
                 || !File.Exists(targetPath)
                 || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
             {

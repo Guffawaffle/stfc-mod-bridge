@@ -170,7 +170,7 @@ public sealed class LaunchTargetSplitButtonTests
             (string?)source.Attribute(Automation + "AutomationProperties.Name"));
         StringAssert.Contains(
             (string?)source.Attribute(Automation + "AutomationProperties.HelpText"),
-            "Current provider and channel");
+            "Detected installed lineage");
         Assert.IsFalse(document.ToString().Contains("Source: {", StringComparison.Ordinal));
     }
 

@@ -53,6 +53,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
     private bool isColorModeSelectorReady;
+    private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private MaintenanceAction pendingMaintenanceAction;
@@ -117,6 +118,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateColorModeSelectorAccessibility();
         DataContext = MainWindowViewModel.CreateDefault(
             httpClient,
+            distributionProviderCatalog,
             distributionProvider,
             distributionReleaseChannel,
             providerShellAccess.CanUseProviderBoundModActions
@@ -155,10 +157,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         base.OnSourceInitialized(e);
         LauncherThemeManager.ApplyWindowChrome(this, currentTheme);
         processStateMonitor.StateChanged += ProcessStateMonitor_StateChanged;
-        if (processStateMonitor.TryStart(new WindowInteropHelper(this).Handle))
-        {
-            shellLifecycleController.HandleStartup();
-        }
+        // The view model already captured the initial state during composition. The monitor
+        // supplies subsequent edge-triggered changes; starting it must not repeat the DLL scan.
+        _ = processStateMonitor.TryStart(new WindowInteropHelper(this).Handle);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -256,7 +257,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         ModOperationDialog.DialogTitle = pendingModOperation.ActionKind switch
         {
-            ModManagementActionKind.AdoptAndInstall => "Adopt and update community mod?",
+            ModManagementActionKind.UpdateManualInstallation => "Update community mod?",
             ModManagementActionKind.Repair => "Repair community mod?",
             ModManagementActionKind.CheckForUpdate => "Update community mod?",
             _ => "Install community mod?",
@@ -265,7 +266,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ModOperationTarget.Text = pendingModOperation.GameDirectory;
         ConfirmModOperationButton.Content = pendingModOperation.ActionKind switch
         {
-            ModManagementActionKind.AdoptAndInstall => "_Adopt and install",
+            ModManagementActionKind.UpdateManualInstallation => "_Update",
             ModManagementActionKind.Repair => "_Repair",
             ModManagementActionKind.CheckForUpdate => "_Update",
             _ => "_Install",
@@ -1042,9 +1043,21 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
+        if (Interlocked.Exchange(ref isProcessStateRefreshPending, 1) != 0)
+        {
+            return;
+        }
+
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Background,
-            shellLifecycleController.HandleGameProcessChanged);
+            () =>
+            {
+                Interlocked.Exchange(ref isProcessStateRefreshPending, 0);
+                if (!isDisposed)
+                {
+                    shellLifecycleController.HandleGameProcessChanged();
+                }
+            });
     }
 
     void ILauncherShellRefreshTarget.RefreshHome()

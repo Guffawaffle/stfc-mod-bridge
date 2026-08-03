@@ -922,7 +922,7 @@
                       Content="{Binding ModSourceMetadata}"
                       Foreground="{DynamicResource TextSecondaryBrush}"
                       automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
-                      automation:AutomationProperties.HelpText="Current provider and channel. Activate to review provider capabilities and safely switch the Mod Control-owned mod release source." />
+                      automation:AutomationProperties.HelpText="Detected installed lineage when established; otherwise the selected release source. Activate to review provider capabilities or change the update source." />
             </StackPanel>
             <Button Grid.Column="2"
                     MinHeight="44"

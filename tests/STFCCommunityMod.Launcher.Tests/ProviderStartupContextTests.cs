@@ -6,6 +6,46 @@ namespace STFCCommunityMod.Launcher.Tests;
 public sealed class ProviderStartupContextTests
 {
     [TestMethod]
+    public void BundledKnownArtifactCatalogUsesResolvedProviderIdentities()
+    {
+        var providerCatalog = BundledLauncherProviderCatalog.Load();
+        var artifacts = BundledLauncherProviderCatalog.LoadKnownWindowsArtifacts(providerCatalog);
+
+        Assert.AreEqual(3, artifacts.Count);
+        var netnivStable = artifacts.Find(
+            "020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A",
+            19630080);
+        Assert.IsNotNull(netnivStable);
+        Assert.AreEqual("netniv", netnivStable.ProviderId);
+        Assert.AreEqual("stable", netnivStable.TrackId);
+    }
+
+    [TestMethod]
+    public void KnownArtifactCatalogRejectsProviderRuntimeMismatch()
+    {
+        var providerCatalog = BundledLauncherProviderCatalog.Load();
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+            """
+            {
+              "schemaVersion": 1,
+              "artifacts": [{
+                "providerId": "netniv",
+                "runtimeDistributionId": "guffawaffle.stfc-community-mod",
+                "trackId": "stable",
+                "version": "1.1.4",
+                "size": 42,
+                "sha256": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+                "sourceReference": "github-release:v1.1.4",
+                "observedAtUtc": "2026-07-19T15:55:25.0000000+00:00"
+              }]
+            }
+            """));
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => KnownModArtifactCatalogLoader.Load(stream, providerCatalog));
+    }
+
+    [TestMethod]
     public void SupportedConfigurationCatalogIsBoundToItsOwningProviderIdentity()
     {
         var providerCatalog = BundledLauncherProviderCatalog.Load();

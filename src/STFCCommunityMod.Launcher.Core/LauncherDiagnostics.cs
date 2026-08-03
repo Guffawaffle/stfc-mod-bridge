@@ -298,7 +298,7 @@ public sealed class LauncherDiagnosticService(
                     ModInstallationEvidenceState.ManualInstallation => Informational(
                         "Managed artifact verification",
                         "A manual version.dll is present, but no Mod Control-managed SHA-256 identity is recorded.",
-                        "Choose Update when ready to place the installation under Mod Control management.",
+                        "Choose Check for updates when you want to compare or replace this installation.",
                         "managed-artifact-verification"),
                     ModInstallationEvidenceState.NotInstalled => Informational(
                         "Managed artifact verification",
@@ -377,6 +377,7 @@ public sealed class LauncherDiagnosticService(
 
         foreach (var dimension in localHealth.Dimensions.Where(
                      item => item.Category is LauncherHealthDimensionCategory.ModInstallation
+                         or LauncherHealthDimensionCategory.BinaryProvenance
                          or LauncherHealthDimensionCategory.ProviderCompatibility
                          or LauncherHealthDimensionCategory.UpdateAvailability
                          or LauncherHealthDimensionCategory.GameCompatibility
@@ -401,13 +402,14 @@ public sealed class LauncherDiagnosticService(
                     : localHealth.Installation.State switch
                     {
                         ModInstallationEvidenceState.ManualInstallation when isInstallation =>
-                            "Choose Update when ready to place the installation under Mod Control management.",
+                            "Choose Check for updates when you want to compare or replace this installation.",
                         ModInstallationEvidenceState.NotInstalled when isInstallation =>
                             "Choose Install to add the community mod.",
                         _ => "No action needed.",
                     },
                 id,
-                "launcher-local-health"));
+                "launcher-local-health",
+                dimension.TechnicalDetail));
         }
     }
 

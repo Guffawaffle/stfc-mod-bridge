@@ -219,6 +219,34 @@ public sealed class GameLaunchHandoffTests
         Assert.IsFalse(presentation.AutomationName.Contains("sensitive-player-folder", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public async Task CapturedInstallationEvidenceAvoidsRepeatArtifactValidationForReadOnlyProjection()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+        var artifactPath = Path.Combine(gameDirectory, "version.dll");
+        using var exclusiveLock = new FileStream(
+            artifactPath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+        var capturedInstallation = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: false,
+            InstalledVersion: "2.1.0.8",
+            InstalledSha256: ReleaseArtifact().Sha256);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable,
+            capturedInstallation);
+
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.AreEqual("Ready to play", presentation.Status);
+    }
+
     private static Fixture CreateFixture(
         TemporaryDirectory temporaryDirectory,
         bool gameAvailable = true,
@@ -234,7 +262,8 @@ public sealed class GameLaunchHandoffTests
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
-            () => false);
+            () => false,
+            new("guffawaffle", "stable", "guffawaffle.windows"));
         var gameService = new FakeGameExecutableLaunchService(gameAvailable);
         var scopelyService = new FakeOfficialLauncherService(
             scopelyAvailable,

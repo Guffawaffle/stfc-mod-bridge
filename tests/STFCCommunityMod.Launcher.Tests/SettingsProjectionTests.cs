@@ -299,6 +299,7 @@ public sealed class SettingsProjectionTests
         var lockedGate = fixture.ViewModel.FilteredSettings
             .OfType<AdvancedPatchEditingGateViewModel>()
             .Single();
+        Assert.AreSame(fixture.ViewModel.FilteredSettings[^1], lockedGate);
         Assert.IsTrue(lockedGate.IsLocked);
         Assert.AreEqual(patchPaths.Count, lockedGate.SettingCount);
         Assert.IsTrue(lockedGate.Summaries.All(summary => !summary.IsDirty));

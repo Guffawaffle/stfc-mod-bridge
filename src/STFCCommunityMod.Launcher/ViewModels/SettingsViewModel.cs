@@ -837,10 +837,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .Select(row => row.Setting)
             .Where(IsPatchSetting)
             .ToArray();
-        if (projectedPatchSettings.Length > 0)
-        {
-            items.Add(CreatePatchGate(projectedPatchSettings));
-        }
 
         foreach (var item in projection)
         {
@@ -882,6 +878,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     constructedPaths.Add(row.Path);
                     break;
             }
+        }
+
+        if (projectedPatchSettings.Length > 0)
+        {
+            items.Add(CreatePatchGate(projectedPatchSettings));
         }
 
         projectedItems.ReplaceAll(items);

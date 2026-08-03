@@ -159,6 +159,27 @@ function Expand-AutomationElement {
   }
 }
 
+function Scroll-AutomationElementToVerticalEnd {
+  param(
+    [Parameter(Mandatory)]
+    [System.Windows.Automation.AutomationElement]$Element
+  )
+
+  $pattern = $null
+  if (-not $Element.TryGetCurrentPattern(
+      [System.Windows.Automation.ScrollPattern]::Pattern,
+      [ref]$pattern)) {
+    throw "UI Automation element '$($Element.Current.Name)' does not expose ScrollPattern."
+  }
+
+  if ($pattern.Current.VerticallyScrollable) {
+    $pattern.SetScrollPercent(
+      [System.Windows.Automation.ScrollPattern]::NoScroll,
+      100)
+    Start-Sleep -Milliseconds 250
+  }
+}
+
 function Find-ColorModeSelector {
   param(
     [Parameter(Mandatory)]
@@ -1020,6 +1041,12 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $advancedNavigation
+  $advancedSettingsList = Find-AutomationElement `
+    -Root $root `
+    -Name "Settings in the selected section" `
+    -ControlType ([System.Windows.Automation.ControlType]::List) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+  Scroll-AutomationElementToVerticalEnd -Element $advancedSettingsList
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Patch editing safety warning" `
@@ -1034,12 +1061,14 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
   Invoke-AutomationElement -Element $enablePatchEditing
+  Scroll-AutomationElementToVerticalEnd -Element $advancedSettingsList
   $lockPatchEditing = Find-AutomationElement `
     -Root $root `
     -Name "Lock patch editing" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
   Invoke-AutomationElement -Element $lockPatchEditing
+  Scroll-AutomationElementToVerticalEnd -Element $advancedSettingsList
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Enable patch editing" `

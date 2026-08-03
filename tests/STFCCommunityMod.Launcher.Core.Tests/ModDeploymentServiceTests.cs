@@ -42,7 +42,7 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
-    public void LegacyInstalledStateRemainsValidButUnattributed()
+    public void UnattributedInstalledStateFailsClosed()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -66,13 +66,10 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false);
+            () => false,
+            DefaultAttribution());
 
-        var installedState = service.ReadInstalledState();
-
-        Assert.IsNotNull(installedState);
-        Assert.IsFalse(installedState.HasCompleteAttribution);
-        Assert.IsNull(installedState.ProviderId);
+        Assert.ThrowsException<InvalidDataException>(() => service.ReadInstalledState());
     }
 
     [TestMethod]
@@ -511,7 +508,8 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false);
+            () => false,
+            DefaultAttribution());
 
         var result = await service.RecoverAsync();
 
@@ -566,7 +564,8 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false);
+            () => false,
+            DefaultAttribution());
 
         var result = await service.RecoverAsync();
 
@@ -605,7 +604,8 @@ public sealed class ModDeploymentServiceTests
             downloader,
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false);
+            () => false,
+            DefaultAttribution());
 
         var result = await service.DeployAsync(
             gameDirectory,
@@ -690,8 +690,11 @@ public sealed class ModDeploymentServiceTests
             versionReader ?? new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             authenticityVerifier ?? new FakeAuthenticityVerifier(true),
             isGameRunning ?? (() => false),
-            afterPhasePersisted: afterPhasePersisted,
-            installationAttribution: installationAttribution);
+            installationAttribution ?? DefaultAttribution(),
+            afterPhasePersisted: afterPhasePersisted);
+
+    private static ModInstallationAttribution DefaultAttribution() =>
+        new("guffawaffle", "stable", "guffawaffle.windows");
 
     private static ModReleaseArtifact ReleaseArtifact() => new(
         new Uri("https://example.invalid/version.dll"),
