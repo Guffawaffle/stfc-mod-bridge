@@ -37,6 +37,12 @@ public enum LauncherProviderReleaseDiscoveryKind
     GitHubReleaseAsset,
 }
 
+public enum LauncherProviderArtifactTrustKind
+{
+    AuthenticodePublisher,
+    ReviewedExactHash,
+}
+
 public sealed record LauncherProviderReleaseChannel(
     string Id,
     string DisplayName,
@@ -52,6 +58,7 @@ public sealed record LauncherProviderResource(
 public sealed record LauncherProviderArtifactPolicy(
     LauncherProviderCapabilityStatus Status,
     bool RequireSha256,
+    LauncherProviderArtifactTrustKind? TrustKind,
     string? WindowsPublisher);
 
 public sealed record LauncherProviderWithdrawalPolicy(
@@ -131,6 +138,14 @@ public sealed class LauncherDistributionProvider
     public bool CanUseManifestReleaseDiscovery =>
         CanUseManifestReleaseDiscoveryFor(DefaultReleaseChannel);
 
+    public bool CanUseReleaseDiscoveryFor(LauncherProviderReleaseChannel releaseChannel) =>
+        GetCapabilityStatus(LauncherProviderCapabilityIds.ReleaseDiscovery)
+            == LauncherProviderCapabilityStatus.Supported
+        && (releaseChannel.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
+                && !string.IsNullOrWhiteSpace(releaseChannel.ManifestAssetName)
+            || releaseChannel.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset
+                && !string.IsNullOrWhiteSpace(releaseChannel.ArtifactAssetName));
+
     public bool CanUseManifestReleaseDiscoveryFor(LauncherProviderReleaseChannel releaseChannel) =>
         GetCapabilityStatus(LauncherProviderCapabilityIds.ReleaseDiscovery)
             == LauncherProviderCapabilityStatus.Supported
@@ -141,7 +156,10 @@ public sealed class LauncherDistributionProvider
         GetCapabilityStatus(LauncherProviderCapabilityIds.ArtifactTrust)
             == LauncherProviderCapabilityStatus.Supported
         && ArtifactPolicy.RequireSha256
-        && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher);
+        && (ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.AuthenticodePublisher
+                && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
+            || ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.ReviewedExactHash
+                && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher));
 
     public string CapabilitySummary =>
         string.Join(
@@ -220,7 +238,7 @@ public static partial class LauncherDistributionProviderCatalogLoader
     private static readonly HashSet<string> ResourceProperties = ["status", "resourceName"];
     private static readonly HashSet<string> CapabilityProperties = ["id", "status"];
     private static readonly HashSet<string> ArtifactPolicyProperties =
-        ["status", "requireSha256", "windowsPublisher"];
+        ["status", "requireSha256", "trustKind", "windowsPublisher"];
     private static readonly HashSet<string> WithdrawalPolicyProperties = ["status", "mode"];
     private static readonly HashSet<string> MigrationProperties =
         ["status", "configurationFormat", "preserveUnknownToml", "compatibleProviderIds"];
@@ -423,6 +441,7 @@ public static partial class LauncherDistributionProviderCatalogLoader
         return new(
             ReadEnum<LauncherProviderCapabilityStatus>(element, "status", $"provider '{providerId}' artifact policy"),
             ReadRequiredBoolean(element, "requireSha256", $"provider '{providerId}' artifact policy"),
+            ReadOptionalEnum<LauncherProviderArtifactTrustKind>(element, "trustKind", $"provider '{providerId}' artifact policy"),
             ReadOptionalString(element, "windowsPublisher"));
     }
 
@@ -475,11 +494,11 @@ public static partial class LauncherDistributionProviderCatalogLoader
                     provider.ConfigurationSchema.Status == LauncherProviderCapabilityStatus.Supported,
                 LauncherProviderCapabilityIds.RuntimeManifest =>
                     provider.RuntimeManifest.Status == LauncherProviderCapabilityStatus.Supported,
-                LauncherProviderCapabilityIds.ReleaseDiscovery => provider.CanUseManifestReleaseDiscovery,
+                LauncherProviderCapabilityIds.ReleaseDiscovery =>
+                    provider.ReleaseChannels.Values.Any(provider.CanUseReleaseDiscoveryFor),
                 LauncherProviderCapabilityIds.ArtifactTrust =>
                     provider.ArtifactPolicy.Status == LauncherProviderCapabilityStatus.Supported
-                    && provider.ArtifactPolicy.RequireSha256
-                    && !string.IsNullOrWhiteSpace(provider.ArtifactPolicy.WindowsPublisher),
+                    && provider.CanAuthenticateWindowsArtifact,
                 LauncherProviderCapabilityIds.WithdrawalPolicy =>
                     provider.WithdrawalPolicy.Status == LauncherProviderCapabilityStatus.Supported
                     && !string.IsNullOrWhiteSpace(provider.WithdrawalPolicy.Mode),
@@ -542,6 +561,26 @@ public static partial class LauncherDistributionProviderCatalogLoader
         where TEnum : struct, Enum
     {
         var token = ReadRequiredString(element, propertyName, context);
+        var normalized = token.Replace("-", string.Empty, StringComparison.Ordinal);
+        if (!Enum.TryParse<TEnum>(normalized, true, out var value) || !Enum.IsDefined(value))
+        {
+            throw new InvalidDataException($"{context} property '{propertyName}' has unsupported value '{token}'.");
+        }
+        return value;
+    }
+
+    private static TEnum? ReadOptionalEnum<TEnum>(JsonElement element, string propertyName, string context)
+        where TEnum : struct, Enum
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            throw new InvalidDataException($"{context} property '{propertyName}' must be null or a string.");
+        }
+        var token = property.GetString()!;
         var normalized = token.Replace("-", string.Empty, StringComparison.Ordinal);
         if (!Enum.TryParse<TEnum>(normalized, true, out var value) || !Enum.IsDefined(value))
         {

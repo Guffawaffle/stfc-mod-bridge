@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "defaultProviderId": "guffawaffle",
+  "defaultProviderId": "netniv",
   "packResourceNames": [
     "STFCCommunityMod.Launcher.ProviderPacks.Guffawaffle.v1.json",
     "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json"

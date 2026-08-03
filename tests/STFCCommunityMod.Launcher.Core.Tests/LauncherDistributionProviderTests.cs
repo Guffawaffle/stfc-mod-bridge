@@ -10,7 +10,7 @@ public sealed class LauncherDistributionProviderTests
     {
         var catalog = LoadFixtureCatalog();
 
-        Assert.AreEqual("guffawaffle", catalog.DefaultProviderId);
+        Assert.AreEqual("netniv", catalog.DefaultProviderId);
         Assert.AreEqual(2, catalog.Providers.Count);
         var guffawaffle = catalog.GetProvider("guffawaffle");
         var netniv = catalog.GetProvider("netniv");
@@ -57,17 +57,39 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
-    public void UnknownNetnivTrustAndConfigurationRemainVisibleAndFailClosed()
+    public void NetnivReviewedTrustIsSupportedWhileConfigurationRemainsUnknown()
     {
         var netniv = LoadFixtureCatalog().GetProvider("netniv");
 
         Assert.AreEqual(
-            LauncherProviderCapabilityStatus.Unknown,
+            LauncherProviderCapabilityStatus.Supported,
             netniv.GetCapabilityStatus(LauncherProviderCapabilityIds.ArtifactTrust));
         Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, netniv.ConfigurationSchema.Status);
-        Assert.IsFalse(netniv.CanAuthenticateWindowsArtifact);
+        Assert.IsTrue(netniv.CanAuthenticateWindowsArtifact);
         Assert.IsFalse(netniv.CanUseManifestReleaseDiscovery);
-        StringAssert.Contains(netniv.CapabilitySummary, "mod.artifact-trust: unknown");
+        Assert.IsTrue(netniv.CanUseReleaseDiscoveryFor(netniv.DefaultReleaseChannel));
+        StringAssert.Contains(netniv.CapabilitySummary, "mod.artifact-trust: supported");
+    }
+
+    [TestMethod]
+    public void NetnivBindingRequiresMatchingLauncherReviewedCertification()
+    {
+        var providerCatalog = LoadFixtureCatalog();
+        var netniv = providerCatalog.GetProvider("netniv");
+        using var stream = File.OpenRead(FixturePath("reviewed-windows-releases.v1.json"));
+        var certifications = ReviewedReleaseCertificationCatalogLoader.Load(stream, providerCatalog);
+
+        var available = LauncherProviderModBinding.Resolve(
+            netniv,
+            netniv.DefaultReleaseChannel,
+            certifications);
+        var unavailable = LauncherProviderModBinding.Resolve(netniv, netniv.DefaultReleaseChannel);
+
+        Assert.IsTrue(available.IsAvailable);
+        Assert.IsNotNull(available.ReviewedCertification);
+        Assert.AreEqual(LauncherProviderArtifactTrustKind.ReviewedExactHash, available.TrustKind);
+        Assert.IsFalse(unavailable.IsAvailable);
+        StringAssert.Contains(unavailable.UnavailableReason, "no launcher-reviewed release certification");
     }
 
     [TestMethod]
@@ -121,12 +143,12 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
-    public void SupportedCapabilityWithoutEvidenceIsRejected()
+    public void SupportedExactHashCapabilityWithoutTrustKindIsRejected()
     {
         var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
         using var stream = JsonStream(contents.Replace(
-            "{ \"id\": \"mod.artifact-trust\", \"status\": \"unknown\" }",
-            "{ \"id\": \"mod.artifact-trust\", \"status\": \"supported\" }",
+            "\"trustKind\": \"reviewed-exact-hash\"",
+            "\"trustKind\": null",
             StringComparison.Ordinal));
 
         Assert.ThrowsException<InvalidDataException>(

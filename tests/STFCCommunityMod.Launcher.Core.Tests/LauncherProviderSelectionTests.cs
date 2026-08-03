@@ -55,12 +55,13 @@ public sealed class LauncherProviderSelectionTests
     [DataRow("NetniV")]
     [DataRow("netniv ")]
     [DataRow("")]
-    public void SwitchRequiresExactStableIdConfirmationAndPreviewsUnknownCapabilities(
+    public void SwitchRequiresExactStableIdConfirmationAndPreviewsRemainingUnknownCapabilities(
         string incorrectConfirmation)
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -70,11 +71,11 @@ public sealed class LauncherProviderSelectionTests
 
         Assert.IsTrue(preview.HasUnknownCompatibility);
         Assert.IsTrue(preview.Concerns.Any(concern =>
-            concern.CapabilityId == LauncherProviderCapabilityIds.ArtifactTrust
+            concern.CapabilityId == LauncherProviderCapabilityIds.ConfigurationCatalog
             && concern.Kind == LauncherProviderCompatibilityKind.Unknown));
         Assert.ThrowsException<InvalidOperationException>(
             () => service.Execute(preview, incorrectConfirmation));
-        Assert.IsNull(store.Load());
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
     }
 
     [TestMethod]
@@ -96,6 +97,7 @@ public sealed class LauncherProviderSelectionTests
         var configurationPath = WriteConfiguration(directory.Path);
         var original = File.ReadAllBytes(configurationPath);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -117,6 +119,7 @@ public sealed class LauncherProviderSelectionTests
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -127,7 +130,7 @@ public sealed class LauncherProviderSelectionTests
         Assert.ThrowsException<InvalidOperationException>(
             () => service.Execute(preview, preview.ConfirmationText));
 
-        Assert.IsNull(store.Load());
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         Assert.IsFalse(Directory.Exists(Path.Combine(directory.Path, "provider-switch-backups")));
     }
 
@@ -137,6 +140,7 @@ public sealed class LauncherProviderSelectionTests
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -147,7 +151,7 @@ public sealed class LauncherProviderSelectionTests
         var exception = Assert.ThrowsException<InvalidOperationException>(
             () => service.Execute(preview, preview.ConfirmationText));
 
-        Assert.IsNull(store.Load());
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         StringAssert.Contains(exception.Message, "while its provider-switch backup");
         Assert.AreEqual(
             0,
@@ -161,6 +165,7 @@ public sealed class LauncherProviderSelectionTests
     {
         using var directory = new TemporaryDirectory();
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -224,6 +229,7 @@ public sealed class LauncherProviderSelectionTests
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new WriteThenFailSelectionStore();
+        store.Save(new("guffawaffle", "stable"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
@@ -234,7 +240,7 @@ public sealed class LauncherProviderSelectionTests
         var exception = Assert.ThrowsException<InvalidOperationException>(
             () => service.Execute(preview, preview.ConfirmationText));
 
-        Assert.IsNull(store.Load());
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         StringAssert.Contains(exception.Message, "rolled back");
         CollectionAssert.AreEqual(
             File.ReadAllBytes(

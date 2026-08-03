@@ -6,6 +6,34 @@ namespace STFCCommunityMod.Launcher.Tests;
 public sealed class ProviderStartupContextTests
 {
     [TestMethod]
+    public void FreshLauncherDefaultsToNetnivStableWithoutPersistingSelection()
+    {
+        using var directory = new TemporaryStateDirectory();
+
+        var context = BundledLauncherProviderCatalog.LoadStartupContext(directory.Path);
+
+        Assert.AreEqual(LauncherProviderSelectionResolutionState.Defaulted, context.Selection.State);
+        Assert.AreEqual("netniv", context.Selection.Provider?.Id);
+        Assert.AreEqual("stable", context.Selection.ReleaseChannel?.Id);
+        Assert.IsFalse(File.Exists(Path.Combine(directory.Path, "provider-selection.json")));
+    }
+
+    [TestMethod]
+    public void ExistingExplicitGuffawaffleSelectionIsPreserved()
+    {
+        using var directory = new TemporaryStateDirectory();
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "preview"));
+
+        var context = BundledLauncherProviderCatalog.LoadStartupContext(directory.Path);
+
+        Assert.AreEqual(LauncherProviderSelectionResolutionState.Selected, context.Selection.State);
+        Assert.AreEqual("guffawaffle", context.Selection.Provider?.Id);
+        Assert.AreEqual("preview", context.Selection.ReleaseChannel?.Id);
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "preview"), store.Load());
+    }
+
+    [TestMethod]
     public void BundledKnownArtifactCatalogUsesResolvedProviderIdentities()
     {
         var providerCatalog = BundledLauncherProviderCatalog.Load();
@@ -90,7 +118,7 @@ public sealed class ProviderStartupContextTests
         Assert.IsFalse(context.Selection.IsResolved);
         Assert.IsNull(context.Selection.Provider);
         StringAssert.Contains(context.Selection.Message, "unreadable");
-        Assert.AreEqual("guffawaffle", context.Catalog.DefaultProviderId);
+        Assert.AreEqual("netniv", context.Catalog.DefaultProviderId);
     }
 
     [TestMethod]

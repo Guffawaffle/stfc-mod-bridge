@@ -28,7 +28,7 @@ A resolved pack supplies:
 | Runtime distribution/resource identity | Positive runtime detection |
 | Configuration schema resource | Defaults, validation, and presentation |
 | Capability status | `supported`, `unsupported`, or explicit `unknown` |
-| Artifact policy | Required hash and publisher evidence |
+| Artifact policy | Required hash and trust evidence kind |
 | Withdrawal policy | How a previously offered artifact is revoked |
 | Migration policy | Format, unknown-TOML preservation, compatibility edges |
 
@@ -45,18 +45,36 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
-| Release discovery | Signed launcher release manifest | GitHub asset name known; verified discovery contract unknown |
-| Windows artifact trust | SHA-256 plus Authenticode publisher | Unknown; install/update disabled |
+| Release discovery | Signed launcher release manifest | Exact launcher-reviewed GitHub release asset |
+| Windows artifact trust | SHA-256 plus Authenticode publisher | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |
 | Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
 | Withdrawal | Signed release-manifest policy | Unknown |
 | Migration compatibility | Same-provider TOML preservation | Cross-provider compatibility unknown |
 
-The NetniV pack intentionally records the currently observable repository and
-Windows ZIP asset without inventing a publisher, generated configuration
-schema, runtime manifest, hash contract, or withdrawal mechanism. Publishing
-those contracts upstream can turn individual fields from `unknown` into
-`supported` without adding a NetniV-specific WPF branch.
+NetniV is the default source for a new launcher-owned selection. Existing
+explicit selections are preserved. Until NetniV publishes the open provenance
+contract, stable install/update is authorized only when GitHub's current latest
+release and downloaded ZIP exactly match the manually reviewed entry in
+`providers/reviewed-windows-releases.v1.json`. The archive must contain exactly
+one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
+are checked before the atomic deployment transaction commits. A newer or
+changed release fails closed until a maintainer reviews and updates the entry.
+
+`providers/known-windows-artifacts.v1.json` separately recognizes reviewed
+stable and dev DLL hashes for local provenance display. The dev entry is
+recognition-only because GitHub Actions artifacts expire and are not a durable
+anonymous install source. Guffawaffle owns refreshing these temporary entries.
+The upstream provenance contract will supersede this shim; no publisher,
+configuration schema, runtime manifest, withdrawal policy, or migration
+compatibility is inferred from the allowlist.
+
+Manual observation recorded 2026-08-02:
+
+| Track | Immutable source | Download/container SHA-256 | `version.dll` SHA-256 |
+|---|---|---|---|
+| NetniV stable 1.1.4 | tag commit `d912611fa1eca49fc54f363bdf8377dfebf8def0` | release ZIP `EDC67ED72E4C942B08AB81D92D23B416F80E250CE5DB151FC4B7781C174D468C` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` |
+| NetniV dev 1.1.5.1 | successful Actions run `30677057536` at `238004460c4bb93aa717e47c41089fe8b71c4cf9` | expiring Actions artifact `7DD716E85643F489A74E463A4A3B8604087338D3ED46E79F24F2FD439FA74732` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` |
 
 ## Launcher-owned source selection
 

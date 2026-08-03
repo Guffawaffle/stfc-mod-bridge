@@ -43,6 +43,7 @@
     "artifactPolicy": {
       "status": "supported",
       "requireSha256": true,
+      "trustKind": "authenticode-publisher",
       "windowsPublisher": "Joseph Gustavson"
     },
     "withdrawalPolicy": {

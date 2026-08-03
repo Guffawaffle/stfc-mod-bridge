@@ -14,6 +14,8 @@ internal static class BundledLauncherProviderCatalog
         "STFCCommunityMod.Launcher.ProviderCatalog.v1.json";
     private const string KnownWindowsArtifactsResourceName =
         "STFCCommunityMod.Launcher.KnownWindowsArtifacts.v1.json";
+    private const string ReviewedWindowsReleasesResourceName =
+        "STFCCommunityMod.Launcher.ReviewedWindowsReleases.v1.json";
 
     public static LauncherDistributionProviderCatalog Load()
     {
@@ -63,6 +65,20 @@ internal static class BundledLauncherProviderCatalog
                 $"The bundled known-artifact catalog '{KnownWindowsArtifactsResourceName}' is missing.");
         }
         return KnownModArtifactCatalogLoader.Load(stream, providerCatalog);
+    }
+
+    public static ReviewedReleaseCertificationCatalog LoadReviewedWindowsReleases(
+        LauncherDistributionProviderCatalog providerCatalog)
+    {
+        ArgumentNullException.ThrowIfNull(providerCatalog);
+        using var stream = typeof(BundledLauncherProviderCatalog).Assembly.GetManifestResourceStream(
+            ReviewedWindowsReleasesResourceName);
+        if (stream is null)
+        {
+            throw new InvalidDataException(
+                $"The bundled reviewed-release catalog '{ReviewedWindowsReleasesResourceName}' is missing.");
+        }
+        return ReviewedReleaseCertificationCatalogLoader.Load(stream, providerCatalog);
     }
 
     public static LauncherConfigurationCatalog LoadConfigurationCatalog(
