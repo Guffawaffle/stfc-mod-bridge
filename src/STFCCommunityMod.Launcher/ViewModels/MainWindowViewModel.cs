@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Reflection;
+using System.Text.Json;
 using System.Windows.Input;
 using System.Windows.Threading;
 using STFCCommunityMod.Launcher.Core;
@@ -40,6 +41,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string diagnosticActionStatus = string.Empty;
     private readonly DispatcherTimer refreshActionStatusTimer;
     private bool isDisposed;
+
+    internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator { get; private set; }
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
@@ -168,35 +171,54 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public IReadOnlyList<LauncherHealthDimension> ModHealthDimensions => localHealth.Dimensions;
 
-    public string ModStatus => homeHealth.InstallationStatus;
+    public string ModStatus => HasIncompleteProviderSwitch
+        ? "Provider switch recovery required"
+        : homeHealth.InstallationStatus;
 
     public string ModSourceMetadata => ModSourceMetadataProjection.From(
         localHealth.Installation,
         distributionProviderCatalog,
         selectedModSourceMetadata);
 
-    public LauncherHomeTone ModTone => modPresentation.Tone;
+    public LauncherHomeTone ModTone => HasIncompleteProviderSwitch
+        ? LauncherHomeTone.Error
+        : modPresentation.Tone;
 
-    public string ModActionLabel => actionFeedback.Mod.IsWorking ? "Working…" : modPresentation.ActionLabel;
+    public string ModActionLabel => actionFeedback.Mod.IsWorking
+        ? "Working…"
+        : HasIncompleteProviderSwitch
+            ? "Recover"
+            : modPresentation.ActionLabel;
 
     public string ModActionAutomationName => actionFeedback.Mod.IsWorking
         ? actionFeedback.Mod.AutomationAnnouncement
-        : modPresentation.AutomationName;
+        : HasIncompleteProviderSwitch
+            ? "Recover the incomplete provider switch"
+            : modPresentation.AutomationName;
 
-    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable && !actionFeedback.Launch.IsWorking;
+    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable
+        && !actionFeedback.Launch.IsWorking
+        && (!HasIncompleteProviderSwitch || !IsGameRunning);
 
-    public ModManagementActionKind ModActionKind => modPresentation.ActionKind;
+    public ModManagementActionKind ModActionKind => HasIncompleteProviderSwitch
+        ? ModManagementActionKind.Recover
+        : modPresentation.ActionKind;
 
     public bool CanRecoverMod =>
-        modPresentation.ActionKind == ModManagementActionKind.Recover
-        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
+        ModActionKind == ModManagementActionKind.Recover
+        && actionFeedback.CanStartModMaintenance(
+            HasIncompleteProviderSwitch ? !IsGameRunning : modPresentation.CanExecute,
+            actionFeedback.Launch.IsWorking);
 
     public bool CanUninstallMod =>
-        modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
+        !HasIncompleteProviderSwitch
+        && modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
         && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
     public string DiagnosticRecoveryAvailability => CanRecoverMod
-        ? "Recovery is available for the detected incomplete transaction."
+        ? HasIncompleteProviderSwitch
+            ? "Recovery is available for the incomplete provider switch. DLL, provider selection, and TOML state will be restored together."
+            : "Recovery is available for the detected incomplete transaction."
         : ModActionKind == ModManagementActionKind.Recover
             ? modPresentation.AutomationName
             : "No incomplete deployment transaction is available to recover.";
@@ -321,7 +343,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         LauncherDistributionProvider distributionProvider,
         LauncherProviderReleaseChannel releaseChannel,
         string? providerResolutionFailure = null,
-        ILauncherUiPreferencesStore? uiPreferencesStore = null)
+        ILauncherUiPreferencesStore? uiPreferencesStore = null,
+        ILauncherProviderSelectionStore? providerSelectionStore = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(distributionProviderCatalog);
@@ -416,17 +439,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     provider.RuntimeDistributionId,
                     binding.IsAvailable,
                     binding.UnavailableReason));
+            var management = new ModManagementCoordinator(
+                providerDeployment,
+                releaseClient,
+                currentLauncherVersion,
+                binding.ReleaseChannelId,
+                providerUnavailableReason: binding.UnavailableReason,
+                healthService: providerHealth);
             return (
                 Endpoint: new ModProviderManagementEndpoint(
                     provider.Id,
                     provider.RuntimeDistributionId,
-                    new ModManagementCoordinator(
-                        providerDeployment,
-                        releaseClient,
-                        currentLauncherVersion,
-                        binding.ReleaseChannelId,
-                        providerUnavailableReason: binding.UnavailableReason,
-                        healthService: providerHealth)),
+                    management),
+                SwitchEndpoint: new LauncherProviderSwitchEndpoint(provider.Id, management),
                 Deployment: providerDeployment);
         }).ToArray();
         var providerEndpoints = providerComponents.Select(component => component.Endpoint).ToArray();
@@ -470,7 +495,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 LauncherProviderCapabilityStatus.Unknown);
         }
 
-        return new(
+        var viewModel = new MainWindowViewModel(
             new LauncherEnvironmentProbe(
                 processInspector,
                 installLayout,
@@ -497,6 +522,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 ? $"{distributionProvider.DisplayName} · {releaseChannel.DisplayName}"
                 : "Source needs attention",
             new WindowsDiagnosticFolderService());
+        providerSelectionStore ??= new JsonLauncherProviderSelectionStore(installLayout.StateDirectory);
+        viewModel.ProviderSwitchCoordinator = new(
+            new LauncherProviderSourceSwitchService(
+                distributionProviderCatalog,
+                providerSelectionStore,
+                installLayout.StateDirectory),
+            providerComponents.Select(component => component.SwitchEndpoint),
+            installLayout.StateDirectory);
+        return viewModel;
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -777,8 +811,43 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Recovering the incomplete mod transaction…",
-            modManagementCoordinator.RecoverAsync,
+            async token =>
+            {
+                if (HasIncompleteProviderSwitch && ProviderSwitchCoordinator is not null)
+                {
+                    var recovery = await ProviderSwitchCoordinator.RecoverAsync(token).ConfigureAwait(false);
+                    return new(
+                        recovery.IsSuccess
+                            ? ModDeploymentResultState.Succeeded
+                            : ModDeploymentResultState.RecoveryRequired,
+                        recovery.Message,
+                        Changed: recovery.Changed);
+                }
+                return await modManagementCoordinator.RecoverAsync(token).ConfigureAwait(false);
+            },
             cancellationToken);
+    }
+
+    private bool HasIncompleteProviderSwitch
+    {
+        get
+        {
+            try
+            {
+                var journal = ProviderSwitchCoordinator?.ReadJournal();
+                return journal is not null
+                    && journal.Phase is not (LauncherProviderAtomicSwitchPhase.Completed
+                        or LauncherProviderAtomicSwitchPhase.RolledBack);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or JsonException)
+            {
+                return true;
+            }
+        }
     }
 
     public async Task<ModDeploymentResult?> UninstallModAsync(CancellationToken cancellationToken = default)

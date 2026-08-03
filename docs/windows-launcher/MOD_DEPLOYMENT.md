@@ -175,42 +175,46 @@ The Install presentation may use a separate Check button or an explicitly
 labeled network step inside a wizard; either choice must preserve the same
 no-passive-discovery service contract.
 
-## Source-transition transaction and ownership plan
+## Source-transition transaction and ownership
 
-Artifact replacement, preference persistence, and protected backup cannot be one filesystem atomic operation. A
-durable coordinator must use the existing global mutation lease and journal compensating steps in this order:
+Artifact replacement, preference persistence, and protected backup cannot be one filesystem atomic operation.
+`LauncherProviderAtomicSwitchCoordinator` uses the deployment service's exact
+installation-scoped mutation lease and journals compensating steps in this order:
 
 ```text
-planned -> config-backed-up -> artifact-staged -> artifact-committed
-        -> installed-state-committed -> preference-committed -> committed
-                         |                    |
-                         v                    v
-                  rolling-back -> rolled-back / recovery-required
+prepared -> artifact-committing -> configuration-committed -> completed
+                    |                       |
+                    v                       v
+              rolling-back -> rolled-back / recovery-required
 ```
 
-On startup, an incomplete source transition is resolved before provider-bound mutation. Rollback restores the prior
-artifact, installed-state bytes, preference bytes, and exact prior TOML in reverse order. The protected backup is
-retained as evidence/recovery material. A source-only selection uses the much smaller atomic preference transaction and
-does not create this journal.
+An incomplete source transition blocks another switch and is projected as a
+Recovery action. Rollback restores the prior artifact, installed-state bytes,
+preference, and exact prior TOML. The protected source backup is retained as
+evidence/recovery material. A selection made while no DLL is installed uses the
+smaller preference/TOML transaction, performs no release discovery or download,
+and does not create the outer artifact journal.
 
 Implementation ownership is intentionally bounded:
 
 | Owner | Follow-up responsibility |
 |---|---|
 | Provider catalog/resolution | Stable source/channel/runtime IDs, migration compatibility and capability loss; no display-name checks and no installed-provenance claims. |
-| `LauncherProviderSelection` | Preference load/save and source-only preview. Split the current `LauncherProviderSourceSwitchService` prototype so plaintext backup copying is not part of preference persistence. |
-| New core source-transition coordinator | Prepare immutable, identity-bound operations; acquire the common lease; coordinate backup, deployment, installed state, preference, rollback, and restart result. |
-| Deployment transaction | Keep allowlisted `version.dll` staging, verification, installed attribution, rollback, repair, and uninstall semantics. Expose bounded prepare/commit/compensate seams instead of duplicating file mutation. |
-| New protected configuration-backup store | Exact-byte capture, DPAPI/DACL protection, manifest validation, retention, restore, injectable clock/filesystem/protector, and no plaintext residue. Do not reuse the editor's adjacent `.bak`. |
+| `LauncherProviderSelection` | Stable preference load/save, compatibility preview, protected source capture, target-history restore, and exact compensation. |
+| Core source-transition coordinator | Prepare immutable identity-bound operations; coordinate deployment, installed state, preference, TOML, rollback, recovery, and restart result. |
+| Deployment transaction | Keep allowlisted `version.dll` staging, verification, installed attribution, and exact rollback copy alive through the coordinated commit participant. |
+| Protected configuration-backup store | Exact-byte capture, DPAPI/DACL protection, manifest validation, five-record provider/install retention, restore, and no plaintext residue. |
 | Binary provenance/local health | Project installed and preferred sources independently; keep custom/dev DLLs runnable; suspend rather than transfer ownership when managed bytes change. |
 | Diagnostics/export | Metadata-only backup health plus explicit restore/delete workflows; hard exclusion of payloads, paths, IDs, and hashes from preview/export/support evidence. |
 | Home/source UI | Project the accepted matrix, immediate-effect labels, current-installed versus preferred-source text, confirmations, running-game/restart status, and one border per surface. No lifecycle decisions in WPF. |
 
-Blocking follow-up tests cover passive no-network behavior; source selection without provenance mutation; custom/dev direct
-launch; exact-byte/BOM/comment/unknown-key capture and restore; secret exclusion; DPAPI/DACL failures; retention; TOCTOU
-changes; game-running denial; provider/channel/runtime binding; interruption after every journal phase; rollback and
-rollback failure; prepared-operation expiry; and no silent provider crossing. UI implementation and automatic TOML
-migration remain out of scope until Guff/Lex accept this contract.
+Regression coverage includes passive no-network source selection; exact-byte
+TOML capture/restore; provider/install retention; stale revisions;
+game-running denial; provider/channel/runtime binding; coordinated rollback;
+startup recovery after DLL and configuration commit; and a live
+Guffawaffle → NetniV → Guffawaffle round trip. Follow-up coverage remains for
+custom/dev adoption, every process-termination phase, broader secret/export
+audits, and concurrent cross-workspace mutation.
 
 ## Verified transaction
 

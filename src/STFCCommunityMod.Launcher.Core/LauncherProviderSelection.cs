@@ -274,6 +274,11 @@ public sealed record LauncherProviderSwitchResult(
     ConfigurationBackupReceipt? ConfigurationBackup,
     string Message);
 
+internal sealed record PreparedLauncherProviderSwitch(
+    LauncherProviderSwitchPreview Preview,
+    ConfigurationBackupReceipt? ConfigurationBackup,
+    byte[]? TargetConfiguration);
+
 public sealed class LauncherProviderSourceSwitchService
 {
     private const long MaximumConfigurationBytes = 8 * 1024 * 1024;
@@ -366,6 +371,18 @@ public sealed class LauncherProviderSourceSwitchService
         string confirmationText,
         CancellationToken cancellationToken = default)
     {
+        var prepared = await PrepareAsync(
+            preview,
+            confirmationText,
+            cancellationToken).ConfigureAwait(false);
+        return await CommitAsync(prepared, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<PreparedLauncherProviderSwitch> PrepareAsync(
+        LauncherProviderSwitchPreview preview,
+        string confirmationText,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(preview);
         if (!string.Equals(confirmationText, preview.ConfirmationText, StringComparison.Ordinal))
         {
@@ -426,20 +443,42 @@ public sealed class LauncherProviderSourceSwitchService
                 "Configuration changed while its provider-switch backup was being prepared. Review the switch again.");
         }
 
-        byte[]? sourceConfiguration = null;
-        if (preview.ConfigurationPath is not null)
+        return new(preview, backup, targetConfiguration);
+    }
+
+    internal async Task<LauncherProviderSwitchResult> CommitAsync(
+        PreparedLauncherProviderSwitch prepared,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        var preview = prepared.Preview;
+        var current = ResolveCurrent();
+        if (current.State != preview.SourceResolutionState
+            || current.Selection != preview.Source)
         {
-            sourceConfiguration = await File.ReadAllBytesAsync(
+            throw new InvalidOperationException(
+                "Provider selection changed after the switch was prepared. The switch was not committed.");
+        }
+        if (preview.ConfigurationPath is not null
+            && !string.Equals(
+                HashConfiguration(preview.ConfigurationPath),
+                preview.ConfigurationSha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Configuration changed after the switch was prepared. The switch was not committed.");
+        }
+
+        if (preview.ConfigurationPath is not null && prepared.TargetConfiguration is not null)
+        {
+            var sourceConfiguration = await File.ReadAllBytesAsync(
                 preview.ConfigurationPath,
                 cancellationToken).ConfigureAwait(false);
-        }
-        if (preview.ConfigurationPath is not null && targetConfiguration is not null)
-        {
             var configurationWrite = await new AtomicTomlStore(retainAdjacentBackup: false)
                 .SaveDocumentAsync(
                     preview.ConfigurationPath,
-                    sourceConfiguration!,
-                    targetConfiguration,
+                    sourceConfiguration,
+                    prepared.TargetConfiguration!,
                     cancellationToken).ConfigureAwait(false);
             if (!configurationWrite.IsSuccess)
             {
@@ -460,24 +499,7 @@ public sealed class LauncherProviderSourceSwitchService
         {
             try
             {
-                if (preview.ConfigurationPath is not null
-                    && targetConfiguration is not null
-                    && sourceConfiguration is not null)
-                {
-                    var rollback = await new AtomicTomlStore(retainAdjacentBackup: false)
-                        .SaveDocumentAsync(
-                            preview.ConfigurationPath,
-                            targetConfiguration,
-                            sourceConfiguration,
-                            CancellationToken.None).ConfigureAwait(false);
-                    if (!rollback.IsSuccess)
-                    {
-                        throw new IOException(
-                            rollback.Error
-                                ?? "Configuration rollback failed.");
-                    }
-                }
-                RestoreSelection(preview.SourceResolutionState, preview.Source);
+                await RollBackAsync(prepared, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception rollbackException) when (
                 rollbackException is IOException
@@ -495,10 +517,44 @@ public sealed class LauncherProviderSourceSwitchService
         }
         return new(
             preview.Target,
-            backup,
+            prepared.ConfigurationBackup,
             preview.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
                 ? $"Selected {preview.TargetDisplayName} and restored its protected TOML history. Restart Mod Bridge before managing the mod or editing settings."
                 : $"Selected {preview.TargetDisplayName}. Restart Mod Bridge before managing the mod or editing settings.");
+    }
+
+    internal async Task RollBackAsync(
+        PreparedLauncherProviderSwitch prepared,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        var preview = prepared.Preview;
+        if (preview.ConfigurationPath is not null && prepared.ConfigurationBackup is not null)
+        {
+            var gameDirectory = Path.GetDirectoryName(preview.ConfigurationPath)
+                ?? throw new InvalidDataException("The configuration path has no game directory.");
+            var sourceConfiguration = backupStore.Read(
+                gameDirectory,
+                prepared.ConfigurationBackup.ProviderId,
+                prepared.ConfigurationBackup.BackupId);
+            var currentConfiguration = await File.ReadAllBytesAsync(
+                preview.ConfigurationPath,
+                cancellationToken).ConfigureAwait(false);
+            if (!currentConfiguration.AsSpan().SequenceEqual(sourceConfiguration))
+            {
+                var rollback = await new AtomicTomlStore(retainAdjacentBackup: false)
+                    .SaveDocumentAsync(
+                        preview.ConfigurationPath,
+                        currentConfiguration,
+                        sourceConfiguration,
+                        cancellationToken).ConfigureAwait(false);
+                if (!rollback.IsSuccess)
+                {
+                    throw new IOException(rollback.Error ?? "Configuration rollback failed.");
+                }
+            }
+        }
+        RestoreSelection(preview.SourceResolutionState, preview.Source);
     }
 
     private LauncherProviderSelectionResolution ResolveCurrent()

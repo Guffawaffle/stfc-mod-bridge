@@ -111,3 +111,26 @@ public interface IModArtifactAuthenticityVerifier
 {
     ModArtifactAuthenticityResult Verify(string artifactPath);
 }
+
+public sealed record ModDeploymentCommitContext(
+    string TransactionId,
+    string GameDirectory,
+    ModReleaseArtifact TargetArtifact,
+    ModInstalledArtifactState? PreviousInstalledState,
+    bool HadExistingArtifact);
+
+/// <summary>
+/// Participates in the commit boundary of a verified DLL deployment. The
+/// deployment service keeps its installation lease and exact prior-artifact
+/// rollback copy until this participant and the deployment journal commit.
+/// </summary>
+public interface IModDeploymentCommitParticipant
+{
+    Task BeginAsync(ModDeploymentCommitContext context, CancellationToken cancellationToken);
+
+    Task CommitAsync(CancellationToken cancellationToken);
+
+    Task CompleteAsync(CancellationToken cancellationToken);
+
+    Task RollBackAsync(CancellationToken cancellationToken);
+}

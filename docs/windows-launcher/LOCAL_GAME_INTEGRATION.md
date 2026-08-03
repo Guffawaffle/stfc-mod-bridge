@@ -61,7 +61,10 @@ Wave 1 live install/remove dogfood requires both mutation and network switches:
 
 This profile requires a clean maintained target without `version.dll`. It uses
 isolated launcher state, production provider trust/deployment/removal paths,
-and an exact before/after target fingerprint. A different validated STFC
+and an exact before/after target fingerprint. The live campaign also performs
+Guffawaffle → NetniV → Guffawaffle using distinct byte-identifiable TOML
+profiles, verifies each managed DLL attribution, then removes the mod and
+returns the target to its clean baseline. A different validated STFC
 installation may remain running.
 
 The maintained clean target currently proves the Bridge projects a valid game

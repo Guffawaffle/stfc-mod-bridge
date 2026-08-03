@@ -38,6 +38,9 @@ public sealed class LiveProviderInstallIntegrationTests
         Assert.IsFalse(
             File.Exists(Path.Combine(gameDirectory, "version.dll")),
             "Wave 1 requires the maintained clean target without version.dll.");
+        Assert.IsFalse(
+            File.Exists(Path.Combine(gameDirectory, "community_patch_settings.toml")),
+            "The provider-switch journey currently requires the maintained clean target without TOML.");
         var catalog = LoadProviderCatalog();
         var reviewed = LoadReviewedReleases(catalog);
         using var httpClient = new HttpClient(new HttpClientHandler
@@ -71,6 +74,15 @@ public sealed class LiveProviderInstallIntegrationTests
                     $"{providerId} install/remove did not restore the exact game target.");
                 TestContext.WriteLine($"{providerId}: trusted install and production removal passed");
             }
+            await SwitchRoundTripAsync(
+                catalog,
+                endpoints,
+                campaign.StateDirectory,
+                gameDirectory).ConfigureAwait(false);
+            campaign.AssertBaseline(
+                "Provider switch round trip did not restore the exact game target.");
+            TestContext.WriteLine(
+                "provider switch: Guffawaffle → NetniV → Guffawaffle restored provider TOML and clean baseline");
         }
         catch (Exception exception)
         {
@@ -109,6 +121,79 @@ public sealed class LiveProviderInstallIntegrationTests
                 $"The live provider campaign failed; the maintained game target was restored. "
                     + $"Root cause: {failure.GetType().Name}: {summary}",
                 failure);
+        }
+    }
+
+    private static async Task SwitchRoundTripAsync(
+        LauncherDistributionProviderCatalog catalog,
+        IReadOnlyDictionary<string, ProviderEndpoint> endpoints,
+        string stateDirectory,
+        string gameDirectory)
+    {
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var guffawaffleConfiguration = "# local Guffawaffle integration profile\r\n[graphics]\r\nfree_resize = true\r\n"u8.ToArray();
+        var netnivConfiguration = "# local NetniV integration profile\n[graphics]\nfree_resize = false\n"u8.ToArray();
+        var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
+        var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
+        try
+        {
+            var guffawaffleInstall = await endpoints["guffawaffle"].Coordinator.PrepareLatestAsync(
+                gameDirectory,
+                isGameRunning: false).ConfigureAwait(false);
+            var installed = await endpoints["guffawaffle"].Coordinator.ExecuteAsync(
+                guffawaffleInstall).ConfigureAwait(false);
+            Assert.IsTrue(installed.IsSuccess, installed.Message);
+            File.WriteAllBytes(configurationPath, guffawaffleConfiguration);
+            selectionStore.Save(new("guffawaffle", "stable"));
+            await backupStore.CreateAsync(new(
+                gameDirectory,
+                "netniv",
+                configurationPath,
+                netnivConfiguration,
+                "local-integration-seed")).ConfigureAwait(false);
+            var configurationSwitch = new LauncherProviderSourceSwitchService(
+                catalog,
+                selectionStore,
+                stateDirectory);
+            var switchCoordinator = new LauncherProviderAtomicSwitchCoordinator(
+                configurationSwitch,
+                endpoints.Values.Select(endpoint =>
+                    new LauncherProviderSwitchEndpoint(endpoint.ProviderId, endpoint.Coordinator)),
+                stateDirectory);
+
+            var toNetniv = await switchCoordinator.PreviewAsync(
+                "netniv",
+                "stable",
+                gameDirectory,
+                isGameRunning: false,
+                configurationPath).ConfigureAwait(false);
+            var netnivResult = await switchCoordinator.ExecuteAsync(
+                toNetniv,
+                toNetniv.ConfirmationText).ConfigureAwait(false);
+            Assert.AreEqual("netniv", netnivResult.InstalledArtifact!.ProviderId);
+            CollectionAssert.AreEqual(netnivConfiguration, File.ReadAllBytes(configurationPath));
+
+            var toGuffawaffle = await switchCoordinator.PreviewAsync(
+                "guffawaffle",
+                "stable",
+                gameDirectory,
+                isGameRunning: false,
+                configurationPath).ConfigureAwait(false);
+            var guffawaffleResult = await switchCoordinator.ExecuteAsync(
+                toGuffawaffle,
+                toGuffawaffle.ConfirmationText).ConfigureAwait(false);
+            Assert.AreEqual("guffawaffle", guffawaffleResult.InstalledArtifact!.ProviderId);
+            CollectionAssert.AreEqual(guffawaffleConfiguration, File.ReadAllBytes(configurationPath));
+
+            var removal = await endpoints["guffawaffle"].Coordinator.UninstallAsync().ConfigureAwait(false);
+            Assert.IsTrue(removal.IsSuccess, removal.Message);
+        }
+        finally
+        {
+            if (File.Exists(configurationPath))
+            {
+                File.Delete(configurationPath);
+            }
         }
     }
 

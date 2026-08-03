@@ -104,24 +104,23 @@ Changing preferred source and switching the installed mod are different
 operations under the
 [mod source-selection lifecycle](windows-launcher/MOD_DEPLOYMENT.md#mod-source-selection-lifecycle):
 
-- **Select source** atomically changes only `provider-selection.json`. It
-  compares capabilities, requires explicit stable-ID confirmation when risk is
-  present, never claims the installed artifact came from the target, performs
-  no network discovery, and takes effect after restarting Mod Bridge.
+- **Select source**, when no DLL is installed, changes the provider preference
+  and provider-scoped TOML profile without downloading or claiming an artifact.
+  It compares capabilities, requires explicit stable-ID confirmation, and
+  takes effect after restarting Mod Bridge.
 - **Switch installed mod** is a separately confirmed, game-closed migration
-  built from an explicit Check-for-updates observation. It requires the
-  protected TOML-backup and cross-domain transaction contract before changing
-  artifact lineage or installed attribution.
+  built from fresh target release discovery. `LauncherProviderAtomicSwitchCoordinator`
+  stages the target artifact and uses the deployment transaction's exact
+  installation lease and rollback copy while `LauncherProviderSourceSwitchService`
+  captures/restores protected provider TOML and commits stable provider IDs.
+  The outer recovery journal reaches `Completed` before the prior managed DLL
+  rollback copy is released. An interruption therefore resumes as one rollback
+  of DLL, installed state, selection, and exact TOML bytes.
 
-The existing `LauncherProviderSourceSwitchService` and selector are prototype
-scaffolding, not the accepted production switch implementation. They currently
-copy plaintext TOML beneath `provider-switch-backups`, expose the resulting
-path, and lack protected metadata, retention, restore, a common mutation lease,
-and a recovery journal. Follow-up work must split preference persistence from
-artifact migration and replace that copy path with the reviewed protected
-backup store. The active TOML must remain byte-untouched unless the player later
-chooses an explicit restore; automatic source migration or normalization is
-not accepted.
+Provider history is DPAPI `CurrentUser` protected, DACL restricted, verified by
+identity and SHA-256, and retained as the newest five records per provider and
+validated installation. No plaintext backup path or payload is exposed in the
+switch UI, logs, or diagnostics.
 
 Staged Settings edits block switch review. This avoids discarding an in-memory
 workspace whose catalog belongs to the current provider.

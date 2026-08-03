@@ -75,6 +75,24 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             artifact,
             existingArtifactPolicy,
             allowManagedRepair: false,
+            commitParticipant: null,
+            coordinatedTransactionId: null,
+            cancellationToken);
+
+    public async Task<ModDeploymentResult> DeployCoordinatedAsync(
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        CancellationToken cancellationToken = default) =>
+        await DeployCoreAsync(
+            gameDirectory,
+            artifact,
+            existingArtifactPolicy,
+            allowManagedRepair: false,
+            commitParticipant ?? throw new ArgumentNullException(nameof(commitParticipant)),
+            ValidateTransactionId(transactionId),
             cancellationToken);
 
     public async Task<ModDeploymentResult> RepairAsync(
@@ -86,6 +104,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             artifact,
             ExistingArtifactPolicy.Reject,
             allowManagedRepair: true,
+            commitParticipant: null,
+            coordinatedTransactionId: null,
             cancellationToken);
 
     private async Task<ModDeploymentResult> DeployCoreAsync(
@@ -93,6 +113,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModReleaseArtifact artifact,
         ExistingArtifactPolicy existingArtifactPolicy,
         bool allowManagedRepair,
+        IModDeploymentCommitParticipant? commitParticipant,
+        string? coordinatedTransactionId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -115,6 +137,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
         ModDeploymentJournal? incompleteJournal;
         ModInstalledArtifactState? previousInstalledState;
+        var participantCommitStarted = false;
         try
         {
             incompleteJournal = ReadJournal();
@@ -168,7 +191,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
 
         Directory.CreateDirectory(stateDirectory);
-        var transactionId = Guid.NewGuid().ToString("N");
+        var transactionId = coordinatedTransactionId ?? Guid.NewGuid().ToString("N");
         var stagePath = Path.Combine(normalizedGameDirectory, $".{ManagedFileName}.{transactionId}.stage");
         var sameVolumeBackupPath = Path.Combine(
             normalizedGameDirectory,
@@ -191,6 +214,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         try
         {
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Planned, cancellationToken);
+            if (commitParticipant is not null)
+            {
+                await commitParticipant.BeginAsync(
+                    new(
+                        transactionId,
+                        normalizedGameDirectory,
+                        journal.Artifact,
+                        previousInstalledState,
+                        hadExistingArtifact),
+                    cancellationToken).ConfigureAwait(false);
+            }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Downloading, cancellationToken);
 
             var download = await downloader.DownloadAsync(artifact.DownloadUri, cancellationToken);
@@ -220,18 +254,11 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             VerifyFile(targetPath, journal.Artifact);
             VerifyVersion(targetPath, journal.Artifact.ExpectedVersion);
 
-            string? retainedBackupPath = null;
-            if (isManagedUpdate)
-            {
-                DeleteIfExists(sameVolumeBackupPath);
-                retainedBackupPath = previousInstalledState?.PreviousArtifactBackupPath;
-            }
-            else if (File.Exists(sameVolumeBackupPath))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(durableBackupPath)!);
-                File.Move(sameVolumeBackupPath, durableBackupPath);
-                retainedBackupPath = durableBackupPath;
-            }
+            var retainedBackupPath = isManagedUpdate
+                ? previousInstalledState?.PreviousArtifactBackupPath
+                : hadExistingArtifact
+                    ? durableBackupPath
+                    : null;
 
             var installedState = new ModInstalledArtifactState(
                 SchemaVersion,
@@ -246,7 +273,27 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 installationAttribution.ReleaseChannelId,
                 installationAttribution.RuntimeDistributionId);
             WriteJsonAtomically(InstalledStatePath, installedState);
+
+            if (commitParticipant is not null)
+            {
+                participantCommitStarted = true;
+                await commitParticipant.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!isManagedUpdate && File.Exists(sameVolumeBackupPath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(durableBackupPath)!);
+                File.Move(sameVolumeBackupPath, durableBackupPath);
+            }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
+            if (commitParticipant is not null)
+            {
+                await commitParticipant.CompleteAsync(cancellationToken).ConfigureAwait(false);
+            }
+            if (isManagedUpdate)
+            {
+                DeleteIfExists(sameVolumeBackupPath);
+            }
             return new(
                 ModDeploymentResultState.Succeeded,
                 "The community mod was installed successfully.",
@@ -255,17 +302,52 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await RollBackAsync(journal, targetPath, CancellationToken.None);
+            await RollBackCoordinatedAsync(
+                journal,
+                targetPath,
+                commitParticipant,
+                participantCommitStarted,
+                CancellationToken.None).ConfigureAwait(false);
             throw;
         }
         catch (Exception exception)
         {
-            var rolledBack = await RollBackAsync(journal with { Error = exception.Message }, targetPath, CancellationToken.None);
+            var rolledBack = await RollBackCoordinatedAsync(
+                journal with { Error = exception.Message },
+                targetPath,
+                commitParticipant,
+                participantCommitStarted,
+                CancellationToken.None).ConfigureAwait(false);
             return new(
                 rolledBack ? ModDeploymentResultState.FailedAndRolledBack : ModDeploymentResultState.RecoveryRequired,
                 rolledBack
                     ? $"The mod transaction failed and the previous state was restored: {exception.Message}"
                     : $"The mod transaction failed and requires recovery: {exception.Message}");
+        }
+    }
+
+    private async Task<bool> RollBackCoordinatedAsync(
+        ModDeploymentJournal journal,
+        string targetPath,
+        IModDeploymentCommitParticipant? commitParticipant,
+        bool participantCommitStarted,
+        CancellationToken cancellationToken)
+    {
+        var artifactRolledBack = await RollBackAsync(journal, targetPath, cancellationToken)
+            .ConfigureAwait(false);
+        if (!participantCommitStarted || commitParticipant is null)
+        {
+            return artifactRolledBack;
+        }
+
+        try
+        {
+            await commitParticipant.RollBackAsync(cancellationToken).ConfigureAwait(false);
+            return artifactRolledBack;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -378,6 +460,57 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ? $"The uninstall failed and the managed installation was restored: {exception.Message}"
                     : $"The uninstall failed and requires recovery: {exception.Message}");
         }
+    }
+
+    public async Task<ModDeploymentResult> RollBackCoordinatedAsync(
+        string transactionId,
+        CancellationToken cancellationToken = default)
+    {
+        transactionId = ValidateTransactionId(transactionId);
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
+        if (lease is null)
+        {
+            return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
+        }
+
+        ModDeploymentJournal? journal;
+        try
+        {
+            journal = ReadJournal();
+        }
+        catch (Exception exception) when (IsStateReadFailure(exception))
+        {
+            return new(
+                ModDeploymentResultState.RecoveryRequired,
+                $"Mod Bridge deployment state could not be read: {exception.Message}");
+        }
+        if (journal is null || !string.Equals(journal.TransactionId, transactionId, StringComparison.Ordinal))
+        {
+            return new(
+                ModDeploymentResultState.RecoveryRequired,
+                "The provider-switch deployment journal does not match the recovery transaction.");
+        }
+        if (journal.Phase == ModDeploymentPhase.RolledBack)
+        {
+            return new(ModDeploymentResultState.Succeeded, "The provider-switch DLL is already rolled back.");
+        }
+        if (journal.Phase == ModDeploymentPhase.Failed)
+        {
+            return new(ModDeploymentResultState.Succeeded, "The provider-switch DLL never reached commit.");
+        }
+        if (isGameRunning(journal.GameDirectory))
+        {
+            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before provider-switch recovery.");
+        }
+        var targetPath = Path.Combine(journal.GameDirectory, ManagedFileName);
+        var rolledBack = await RollBackAsync(journal, targetPath, cancellationToken).ConfigureAwait(false);
+        return new(
+            rolledBack ? ModDeploymentResultState.Succeeded : ModDeploymentResultState.RecoveryRequired,
+            rolledBack
+                ? "The provider-switch DLL was restored to its exact prior state."
+                : "The provider-switch DLL requires manual recovery.",
+            ReadInstalledState(),
+            Changed: rolledBack);
     }
 
     public async Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default)
@@ -637,6 +770,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         TryNormalizeSha256(value, out var normalized)
             ? normalized
             : throw new ArgumentException("SHA-256 must contain exactly 64 hexadecimal characters.", nameof(value));
+
+    private static string ValidateTransactionId(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        return value.Length == 32 && value.All(Uri.IsHexDigit)
+            ? value.ToLowerInvariant()
+            : throw new ArgumentException(
+                "A coordinated transaction ID must contain exactly 32 hexadecimal characters.",
+                nameof(value));
+    }
 
     private static bool TryNormalizeSha256(string value, out string normalized)
     {
