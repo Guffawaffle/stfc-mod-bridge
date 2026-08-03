@@ -76,7 +76,8 @@ fresh prepared observation, but it must not query `latest` again or silently
 cross provider/channel/runtime identity. Passive refresh, source selection,
 Diagnostics, and launch perform no release discovery.
 
-Guffawaffle release manifests plus the expected Authenticode publisher provide the supported installation path.
-NetniV identification is implemented, but automatic NetniV replacement remains unavailable until a reviewable update
-contract can supply pinned inner-DLL bytes; upstream's current zip/checksum and unsigned DLL do not independently
-provide that contract.
+Guffawaffle release manifests plus the expected Authenticode publisher are the canonical installation path. Until the
+current stable release carries that manifest asset, the exact reviewed release ZIP/DLL entry provides a narrow fallback
+and the Authenticode publisher check still applies. NetniV stable installation is likewise available only for the exact
+reviewed ZIP and inner-DLL bytes. Either provider fails closed when GitHub's latest release differs from the bundled
+certification; these shims are replaced by provider-published provenance contracts when available.

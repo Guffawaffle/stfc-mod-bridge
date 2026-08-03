@@ -50,6 +50,20 @@ deploy a mod, install/update/repair/remove anything, or write TOML. Absolute
 paths, TOML values, tokens, and file hashes are not written to committed test
 artifacts.
 
+Wave 1 live install/remove dogfood requires both mutation and network switches:
+
+```powershell
+./scripts/test-local-game-install.ps1 `
+  -GameDirectory 'E:\path\to\Star Trek Fleet Command\default\game' `
+  -AllowRestorableMutation `
+  -UseLiveProviderReleases
+```
+
+This profile requires a clean maintained target without `version.dll`. It uses
+isolated launcher state, production provider trust/deployment/removal paths,
+and an exact before/after target fingerprint. A different validated STFC
+installation may remain running.
+
 The maintained clean target currently proves the Bridge projects a valid game
 installation with no `version.dll` as **Not installed** and offers the expected
 **Install** action. The path and binary identities remain local-only.

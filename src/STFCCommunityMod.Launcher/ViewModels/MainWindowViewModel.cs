@@ -368,15 +368,33 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 ? binding.DiscoveryKind switch
                 {
                     LauncherProviderReleaseDiscoveryKind.ReleaseManifest =>
-                        new GitHubWindowsReleaseClient(httpClient, binding.Repository, binding.ManifestAssetName!),
+                        binding.ReviewedCertification is null
+                            ? new GitHubWindowsReleaseClient(
+                                httpClient,
+                                binding.Repository,
+                                binding.ManifestAssetName!)
+                            : new ManifestWithReviewedFallbackReleaseClient(
+                                new GitHubWindowsReleaseClient(
+                                    httpClient,
+                                    binding.Repository,
+                                    binding.ManifestAssetName!),
+                                new ReviewedGitHubReleaseAssetClient(
+                                    httpClient,
+                                    binding.ReviewedCertification)),
                     LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
                         new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
                     _ => new UnavailableWindowsReleaseDiscoveryClient("Unsupported release discovery kind."),
                 }
                 : new UnavailableWindowsReleaseDiscoveryClient(binding.UnavailableReason);
             IModArtifactDownloader artifactDownloader = binding.IsAvailable
-                && binding.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset
-                    ? new ReviewedZipModArtifactDownloader(httpClient, binding.ReviewedCertification!)
+                && binding.ReviewedCertification is not null
+                    ? binding.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
+                        ? new ManifestWithReviewedFallbackArtifactDownloader(
+                            httpClient,
+                            binding.ReviewedCertification)
+                        : new ReviewedZipModArtifactDownloader(
+                            httpClient,
+                            binding.ReviewedCertification)
                     : new HttpModArtifactDownloader(httpClient);
             var providerDeployment = new ModDeploymentService(
                 installLayout.StateDirectory,

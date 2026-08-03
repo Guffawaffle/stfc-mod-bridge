@@ -2,6 +2,23 @@
   "schemaVersion": 1,
   "certifications": [
     {
+      "providerId": "guffawaffle",
+      "channelId": "stable",
+      "runtimeDistributionId": "guffawaffle.stfc-community-mod",
+      "repository": "Guffawaffle/stfc-mod",
+      "tag": "v2.1.0-guffa.8",
+      "releaseVersion": "2.1.0-guffa.8",
+      "sourceCommit": "f93e0fcf87622448fdfd609d6835ffd820026278",
+      "assetName": "stfc-community-mod.zip",
+      "assetSize": 11823408,
+      "assetSha256": "D164B78D3EF9AD43A8ACC6485507C40B2F7359EAF3A61814AD46A2C69779A9F4",
+      "payloadFileName": "version.dll",
+      "payloadSize": 20925848,
+      "payloadSha256": "6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9",
+      "payloadVersion": "2.1.0.0",
+      "observedAtUtc": "2026-08-01T06:47:19.0000000+00:00"
+    },
+    {
       "providerId": "netniv",
       "channelId": "stable",
       "runtimeDistributionId": "netniv.stfc-community-mod",
