@@ -610,7 +610,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     concern => $"• {concern.Kind}: {concern.Message}"));
             var backup = pendingProviderSwitch.ConfigurationPath is null
                 ? "No configuration file is currently selected, so no TOML backup is needed."
-                : "The exact TOML bytes will be copied to Mod Bridge-owned rollback storage before the selection changes.";
+                : pendingProviderSwitch.ConfigurationKind
+                    == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
+                    ? "The exact current TOML bytes will enter the source provider history, then the latest verified target-provider TOML will be restored."
+                    : "The exact current TOML bytes will enter the source provider history. No target-provider history exists yet, so the active TOML will be preserved.";
             ProviderSwitchPreviewText.Text =
                 $"{pendingProviderSwitch.SourceDisplayName} → {pendingProviderSwitch.TargetDisplayName}"
                 + Environment.NewLine
@@ -656,7 +659,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 StringComparison.Ordinal);
     }
 
-    private void ConfirmProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    private async void ConfirmProviderSwitchButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
@@ -666,13 +669,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         try
         {
-            var result = providerSourceSwitchService.Execute(
+            var result = await providerSourceSwitchService.ExecuteAsync(
                 pendingProviderSwitch,
-                ProviderSwitchConfirmationInput.Text);
+                ProviderSwitchConfirmationInput.Text,
+                lifetimeCancellation.Token);
             var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
-            ProviderSwitchPreviewText.Text = result.ConfigurationBackupPath is null
+            ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
                 ? result.Message
-                : $"{result.Message} Configuration backup: {result.ConfigurationBackupPath}";
+                : $"{result.Message} The prior TOML is protected in the {result.ConfigurationBackup.ProviderId} history.";
             ReleaseSourceButton.Content =
                 $"Next: {selectedProvider.DisplayName} · {selectedProvider.DefaultReleaseChannel.DisplayName}";
             providerSelectionPendingRestart = result.Selection;
@@ -682,6 +686,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderRecoveryBanner.Visibility = Visibility.Visible;
             ProviderSourceSelector.IsEnabled = false;
             ReviewProviderSwitchButton.IsEnabled = false;
+            ConfirmProviderSwitchButton.IsEnabled = false;
+            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            pendingProviderSwitch = null;
+        }
+        catch (OperationCanceledException)
+        {
+            ProviderSwitchPreviewText.Text = "The provider switch was canceled.";
             ConfirmProviderSwitchButton.IsEnabled = false;
             ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
             pendingProviderSwitch = null;
@@ -939,6 +950,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     + providerSelectionResolution.Message);
             }
             var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
+            var mutationBackup = new ProviderScopedConfigurationMutationBackup(
+                backupStore,
+                distributionProvider.Id,
+                $"{distributionProvider.Id}/{distributionReleaseChannel.Id}");
             openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
             settingsViewModel = new SettingsViewModel(
                 catalog,
@@ -947,6 +964,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 GetConfigurationFilePath,
                 startupComposition.SettingsLayout,
                 startupComposition.SettingsDiagnostics,
+                repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
                 uiPreferencesStore: uiPreferencesStore,
                 openExternalUri: OpenExternalUri);
             SettingsWorkspace.DataContext = settingsViewModel;

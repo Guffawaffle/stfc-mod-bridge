@@ -73,6 +73,41 @@
       "evidenceKind": "resolved-package"
     },
     {
+      "id": "System.IO.FileSystem.AccessControl",
+      "version": "5.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "System.Security.Cryptography.ProtectedData",
+      "version": "8.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "Microsoft.NETCore.Platforms",
+      "version": "5.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "System.Security.AccessControl",
+      "version": "5.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "System.Security.Principal.Windows",
+      "version": "5.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
       "id": "Microsoft.AspNetCore.App.Runtime.win-x64",
       "version": "8.0.29",
       "noticeId": "dotnet-windows-runtime",

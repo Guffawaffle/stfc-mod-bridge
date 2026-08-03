@@ -91,6 +91,8 @@ Before mutable or launch coverage is enabled, the harness must:
 
 - require a separate explicit opt-in and print its planned scenarios;
 - require the game closed before any download or write;
+- scope that running-game gate to the exact validated installation executable;
+  another STFC installation may remain running;
 - snapshot and hash the exact game and isolated launcher-owned state;
 - use only production trust, transaction, cleanup, and recovery paths;
 - stop only an exact process PID created by the selected launch scenario;

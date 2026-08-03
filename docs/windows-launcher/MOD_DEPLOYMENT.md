@@ -112,22 +112,23 @@ claim that the configuration is non-secret.
 ### Protected storage and retention
 
 Store envelopes beneath the per-user Mod Bridge state root at
-`configuration-backups/<installation-id>/<backup-id>/`, never beside the game and never in the ordinary `.bak` path
+`configuration-backups/<installation-id>/<provider-id>/<backup-id>/`, never beside the game and never in the ordinary `.bak` path
 used for one-document editor commits. Encrypt payloads with Windows DPAPI `CurrentUser` scope and apply an explicit
 DACL limited to the current user and `SYSTEM`; failure to establish either protection fails the mandatory-backup gate.
 No plaintext temporary copy may survive the operation. The UI must explain that backups are local to the same Windows
 profile and are not portable exports.
 
-Proposed v1 retention is the newest five completed backups per game-installation identity and no more than 30 days,
-whichever removes data sooner. Never prune an envelope referenced by an incomplete/recovery-required transaction.
-Prune only after a new transaction commits and retain at least its successful backup. Users may explicitly delete a
-completed backup; uninstalling the mod does not delete it, while the launcher's separately confirmed **Remove state**
-operation does. The `five / 30 days` values require Guff/Lex acceptance because they trade recovery depth against
-retention of configuration secrets.
+V1 retains the newest five verified backups per stable provider ID and game-installation identity. Retention is
+count-based only: there is no age grooming, and one provider can never prune another provider's history. Never prune an
+envelope referenced by an incomplete/recovery-required transaction. Prune only after the replacement backup is
+protected and byte/hash verified. Users may explicitly delete a completed backup; uninstalling the mod does not delete
+provider history, while the launcher's separately confirmed **Remove state** operation does.
 
 ### Explicit restore
 
-Restore is a Diagnostics/recovery operation, never an automatic consequence of source selection. It requires:
+Manual restore is a Diagnostics/recovery operation. A reviewed installed-provider switch may separately propose the
+latest verified target-provider backup and restore it inside the coordinated switch transaction; a first-time target
+with no history preserves the active TOML rather than inventing a migration. Manual restore requires:
 
 1. the same Windows user can decrypt the envelope and all manifest/ciphertext hashes validate;
 2. exact game-installation and destination-file confirmation;
@@ -151,10 +152,9 @@ health, and whether recovery is required. Export collectors must deny the backup
 redaction; redaction remains defense in depth, not the primary control. The current prototype's display of a plaintext
 backup path is specifically outside this proposed contract.
 
-### Decisions requiring acceptance
+### Accepted v1 decisions
 
-The safety invariants above are requirements. These product-policy choices
-must be accepted by Guff/Lex before implementation:
+The safety invariants above are requirements. V1 uses these accepted choices:
 
 1. reserve **Select source** for preference-only state and **Switch installed
    mod** for artifact-lineage migration, replacing the prototype's overloaded
@@ -169,7 +169,7 @@ must be accepted by Guff/Lex before implementation:
    restoration;
 5. use non-portable DPAPI `CurrentUser` plus an explicit DACL for v1 rather
    than designing a password/export key flow; and
-6. retain at most five completed backups for at most 30 days.
+6. retain the newest five verified backups per provider and installation with no age-based grooming.
 
 The Install presentation may use a separate Check button or an explicitly
 labeled network step inside a wizard; either choice must preserve the same
@@ -189,7 +189,7 @@ planned -> config-backed-up -> artifact-staged -> artifact-committed
 ```
 
 On startup, an incomplete source transition is resolved before provider-bound mutation. Rollback restores the prior
-artifact, installed-state bytes, and preference bytes in reverse order; it never edits TOML. The protected backup is
+artifact, installed-state bytes, preference bytes, and exact prior TOML in reverse order. The protected backup is
 retained as evidence/recovery material. A source-only selection uses the much smaller atomic preference transaction and
 does not create this journal.
 

@@ -11,7 +11,12 @@ public sealed class LauncherEnvironmentProbeTests
     [TestMethod]
     public void CaptureWhenGameIsRunningReportsMutationBlockInText()
     {
-        var probe = CreateProbe(true);
+        using var temporaryDirectory = new TemporaryDirectory();
+        TemporaryDirectory.CreateFile(temporaryDirectory.Path, "prime.exe");
+        var probe = CreateProbe(
+            true,
+            GameInstallSelectionLoadResult.Loaded(
+                new(temporaryDirectory.Path, DateTimeOffset.UtcNow)));
 
         var result = probe.Capture();
 
@@ -41,12 +46,14 @@ public sealed class LauncherEnvironmentProbeTests
         TemporaryDirectory.CreateFile(temporaryDirectory.Path, "prime.exe");
         var selection = GameInstallSelectionLoadResult.Loaded(
             new(temporaryDirectory.Path, DateTimeOffset.UtcNow));
-        var probe = CreateProbe(true, selection);
+        var processInspector = new FakeProcessInspector(true);
+        var probe = CreateProbe(processInspector, selection);
 
         var result = probe.Capture();
 
         Assert.AreEqual(LauncherHealthCode.GameRunning, result.HealthCode);
         Assert.AreEqual(temporaryDirectory.Path, result.SelectedGameDirectory);
+        Assert.AreEqual(temporaryDirectory.Path, processInspector.InspectedDirectory);
         Assert.IsTrue(
             result.HealthDimensions.Any(
                 dimension =>
@@ -89,19 +96,30 @@ public sealed class LauncherEnvironmentProbeTests
     private static LauncherEnvironmentProbe CreateProbe(
         bool gameRunning,
         GameInstallSelectionLoadResult? selection = null)
+        => CreateProbe(new FakeProcessInspector(gameRunning), selection);
+
+    private static LauncherEnvironmentProbe CreateProbe(
+        FakeProcessInspector processInspector,
+        GameInstallSelectionLoadResult? selection = null)
     {
         var store = new FakeSelectionStore(
             selection ?? GameInstallSelectionLoadResult.Missing());
         var discovery = new GameInstallDiscovery(store, []);
         return new(
-            new FakeProcessInspector(gameRunning),
+            processInspector,
             InstallLayout,
             discovery);
     }
 
     private sealed class FakeProcessInspector(bool isRunning) : IGameProcessInspector
     {
-        public bool IsGameRunning() => isRunning;
+        public string? InspectedDirectory { get; private set; }
+
+        public bool IsGameRunning(string gameDirectory)
+        {
+            InspectedDirectory = gameDirectory;
+            return isRunning;
+        }
     }
 
     private sealed class FakeSelectionStore(GameInstallSelectionLoadResult result)

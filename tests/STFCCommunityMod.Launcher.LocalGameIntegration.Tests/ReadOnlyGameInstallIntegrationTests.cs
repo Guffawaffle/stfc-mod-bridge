@@ -133,6 +133,21 @@ public sealed class ReadOnlyGameInstallIntegrationTests
         }
     }
 
+    [TestMethod]
+    public void ProcessInspectionIsScopedToTheExactOptedInInstallation()
+    {
+        var gameDirectory = LocalGameIntegrationTarget.RequireOptedInDirectory();
+        var before = ReadOnlyDirectoryFingerprint.Capture(gameDirectory);
+
+        var targetIsRunning = new SystemGameProcessInspector().IsGameRunning(gameDirectory);
+
+        Assert.IsFalse(
+            targetIsRunning,
+            "The opted-in integration installation is running or a prime.exe process could not be attributed safely.");
+        Assert.AreEqual(before, ReadOnlyDirectoryFingerprint.Capture(gameDirectory));
+        TestContext.WriteLine("Install-scoped process inspection: target is stopped");
+    }
+
     private sealed class MissingSelectionStore : IGameInstallSelectionStore
     {
         public GameInstallSelectionLoadResult Load() => GameInstallSelectionLoadResult.Missing();

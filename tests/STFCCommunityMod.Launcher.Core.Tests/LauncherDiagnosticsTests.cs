@@ -242,7 +242,7 @@ public sealed class LauncherDiagnosticsTests
         new FakeDownloader(),
         new FakeVersionReader(),
         new FakeAuthenticityVerifier(),
-        () => false,
+        _ => false,
         new("guffawaffle", "stable", "guffawaffle.windows"));
 
     private static LauncherConfigurationDiagnosisEvidence SupportedConfigurationEvidence() =>
@@ -289,7 +289,7 @@ public sealed class LauncherDiagnosticsTests
 
     private sealed class FakeGameProcessInspector : IGameProcessInspector
     {
-        public bool IsGameRunning() => false;
+        public bool IsGameRunning(string gameDirectory) => false;
     }
 
     private sealed class FixedTimeProvider : TimeProvider

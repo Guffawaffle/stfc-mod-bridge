@@ -55,7 +55,7 @@ public sealed class LauncherProviderSelectionTests
     [DataRow("NetniV")]
     [DataRow("netniv ")]
     [DataRow("")]
-    public void SwitchRequiresExactStableIdConfirmationAndPreviewsRemainingUnknownCapabilities(
+    public async Task SwitchRequiresExactStableIdConfirmationAndPreviewsRemainingUnknownCapabilities(
         string incorrectConfirmation)
     {
         using var directory = new TemporaryDirectory();
@@ -73,8 +73,8 @@ public sealed class LauncherProviderSelectionTests
         Assert.IsTrue(preview.Concerns.Any(concern =>
             concern.CapabilityId == LauncherProviderCapabilityIds.ConfigurationCatalog
             && concern.Kind == LauncherProviderCompatibilityKind.Unknown));
-        Assert.ThrowsException<InvalidOperationException>(
-            () => service.Execute(preview, incorrectConfirmation));
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(preview, incorrectConfirmation));
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
     }
 
@@ -91,30 +91,82 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void ConfirmedSwitchBacksUpBytesAndPersistsOnlySelection()
+    public async Task ConfirmedSwitchBacksUpBytesAndPersistsOnlySelection()
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var original = File.ReadAllBytes(configurationPath);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
         store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
-            directory.Path);
+            backupStore,
+            null);
         var preview = service.Preview("netniv", "stable", configurationPath);
 
-        var result = service.Execute(preview, preview.ConfirmationText);
+        var result = await service.ExecuteAsync(preview, preview.ConfirmationText);
 
         Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), store.Load());
-        Assert.IsNotNull(result.ConfigurationBackupPath);
-        CollectionAssert.AreEqual(original, File.ReadAllBytes(result.ConfigurationBackupPath));
+        Assert.IsNotNull(result.ConfigurationBackup);
+        Assert.AreEqual("guffawaffle", result.ConfigurationBackup.ProviderId);
+        Assert.AreEqual("netniv", result.ConfigurationBackup.TargetProviderId);
+        CollectionAssert.AreEqual(
+            original,
+            backupStore.Read(
+                directory.Path,
+                "guffawaffle",
+                result.ConfigurationBackup.BackupId));
         CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
         StringAssert.Contains(result.Message, "Restart");
     }
 
     [TestMethod]
-    public void ConfigurationChangeAfterPreviewAbortsBeforeSelectionMutation()
+    public async Task ProviderRoundTripRestoresEachProvidersLatestToml()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var guffawaffleContents = File.ReadAllBytes(configurationPath);
+        var netnivContents = Encoding.UTF8.GetBytes(
+            "# netniv profile\r\n[graphics]\r\nfree_resize = false\r\n");
+        var selectionStore = new JsonLauncherProviderSelectionStore(directory.Path);
+        selectionStore.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        await backupStore.CreateAsync(new(
+            directory.Path,
+            "netniv",
+            configurationPath,
+            netnivContents,
+            "test-seed"));
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            selectionStore,
+            backupStore,
+            null);
+
+        var toNetniv = service.Preview("netniv", "stable", configurationPath);
+        Assert.AreEqual(
+            LauncherProviderSwitchConfigurationKind.RestoreProviderHistory,
+            toNetniv.ConfigurationKind);
+        await service.ExecuteAsync(toNetniv, toNetniv.ConfirmationText);
+        CollectionAssert.AreEqual(netnivContents, File.ReadAllBytes(configurationPath));
+
+        var toGuffawaffle = service.Preview("guffawaffle", "stable", configurationPath);
+        Assert.AreEqual(
+            LauncherProviderSwitchConfigurationKind.RestoreProviderHistory,
+            toGuffawaffle.ConfigurationKind);
+        await service.ExecuteAsync(toGuffawaffle, toGuffawaffle.ConfirmationText);
+
+        CollectionAssert.AreEqual(guffawaffleContents, File.ReadAllBytes(configurationPath));
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), selectionStore.Load());
+        Assert.IsTrue(backupStore.List(directory.Path, "guffawaffle").Count >= 1);
+        Assert.IsTrue(backupStore.List(directory.Path, "netniv").Count >= 2);
+        Assert.IsFalse(File.Exists(configurationPath + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task ConfigurationChangeAfterPreviewAbortsBeforeSelectionMutation()
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
@@ -127,37 +179,34 @@ public sealed class LauncherProviderSelectionTests
         var preview = service.Preview("netniv", null, configurationPath);
         File.AppendAllText(configurationPath, "changed = true\n");
 
-        Assert.ThrowsException<InvalidOperationException>(
-            () => service.Execute(preview, preview.ConfirmationText));
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(preview, preview.ConfirmationText));
 
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         Assert.IsFalse(Directory.Exists(Path.Combine(directory.Path, "provider-switch-backups")));
     }
 
     [TestMethod]
-    public void ConfigurationChangeAfterBackupAbortsBeforeSelectionMutation()
+    public async Task ConfigurationChangeAfterBackupAbortsBeforeSelectionMutation()
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
         store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
-            directory.Path,
+            backupStore,
             _ => File.AppendAllText(configurationPath, "changed_during_backup = true\n"));
         var preview = service.Preview("netniv", null, configurationPath);
 
-        var exception = Assert.ThrowsException<InvalidOperationException>(
-            () => service.Execute(preview, preview.ConfirmationText));
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(preview, preview.ConfirmationText));
 
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         StringAssert.Contains(exception.Message, "while its provider-switch backup");
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(
-                Path.Combine(directory.Path, "provider-switch-backups"),
-                "*.toml").Length);
+        Assert.AreEqual(1, backupStore.List(directory.Path, "guffawaffle").Count);
     }
 
     [TestMethod]
@@ -179,7 +228,7 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void UnknownPersistedSelectionCanRecoverToKnownProvider()
+    public async Task UnknownPersistedSelectionCanRecoverToKnownProvider()
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
@@ -191,7 +240,7 @@ public sealed class LauncherProviderSelectionTests
             directory.Path);
 
         var preview = service.Preview("guffawaffle", "stable", configurationPath);
-        var result = service.Execute(preview, preview.ConfirmationText);
+        var result = await service.ExecuteAsync(preview, preview.ConfirmationText);
 
         Assert.AreEqual(
             LauncherProviderSelectionResolutionState.UnknownProvider,
@@ -202,7 +251,7 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void CorruptPersistedSelectionCanRecoverToKnownProvider()
+    public async Task CorruptPersistedSelectionCanRecoverToKnownProvider()
     {
         using var directory = new TemporaryDirectory();
         var selectionPath = Path.Combine(directory.Path, "provider-selection.json");
@@ -214,7 +263,7 @@ public sealed class LauncherProviderSelectionTests
             directory.Path);
 
         var preview = service.Preview("guffawaffle", "stable", null);
-        var result = service.Execute(preview, preview.ConfirmationText);
+        var result = await service.ExecuteAsync(preview, preview.ConfirmationText);
 
         Assert.AreEqual(
             LauncherProviderSelectionResolutionState.InvalidSelection,
@@ -224,21 +273,29 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void SelectionWriteFailureRollsBackEffectiveSource()
+    public async Task SelectionWriteFailureRollsBackEffectiveSource()
     {
         using var directory = new TemporaryDirectory();
         var configurationPath = WriteConfiguration(directory.Path);
         var store = new WriteThenFailSelectionStore();
         store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        await backupStore.CreateAsync(new(
+            directory.Path,
+            "netniv",
+            configurationPath,
+            Encoding.UTF8.GetBytes("[graphics]\nfree_resize = false\n"),
+            "test-seed"));
         var service = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             store,
-            directory.Path);
+            backupStore,
+            null);
         var preview = service.Preview("netniv", null, configurationPath);
         store.FailNextSave = true;
 
-        var exception = Assert.ThrowsException<InvalidOperationException>(
-            () => service.Execute(preview, preview.ConfirmationText));
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(preview, preview.ConfirmationText));
 
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         StringAssert.Contains(exception.Message, "rolled back");
@@ -273,6 +330,7 @@ public sealed class LauncherProviderSelectionTests
 
     private static string WriteConfiguration(string directory)
     {
+        TemporaryDirectory.CreateFile(directory, "prime.exe");
         var path = Path.Combine(directory, "community_patch_settings.toml");
         File.Copy(
             Path.Combine(
@@ -282,6 +340,23 @@ public sealed class LauncherProviderSelectionTests
                 "source-switch-unknown-content.v1.toml"),
             path);
         return path;
+    }
+
+    private static ProviderScopedConfigurationBackupStore CreateBackupStore(string stateDirectory) =>
+        new(stateDirectory, new ReversingProtector(), new NoOpStorageSecurity());
+
+    private sealed class ReversingProtector : IConfigurationBackupProtector
+    {
+        public string SchemeId => "test-reverse-v1";
+
+        public byte[] Protect(byte[] contents) => [.. contents.Reverse()];
+
+        public byte[] Unprotect(byte[] protectedContents) => [.. protectedContents.Reverse()];
+    }
+
+    private sealed class NoOpStorageSecurity : IConfigurationBackupStorageSecurity
+    {
+        public void SecureDirectory(string directory) => Directory.CreateDirectory(directory);
     }
 
     private sealed class WriteThenFailSelectionStore : ILauncherProviderSelectionStore

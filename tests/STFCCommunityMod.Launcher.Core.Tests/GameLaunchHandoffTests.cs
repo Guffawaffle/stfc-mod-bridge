@@ -262,7 +262,7 @@ public sealed class GameLaunchHandoffTests
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
-            () => false,
+            _ => false,
             new("guffawaffle", "stable", "guffawaffle.windows"));
         var gameService = new FakeGameExecutableLaunchService(gameAvailable);
         var scopelyService = new FakeOfficialLauncherService(
@@ -309,7 +309,7 @@ public sealed class GameLaunchHandoffTests
 
     private sealed class FakeGameProcessInspector(bool isRunning) : IGameProcessInspector
     {
-        public bool IsGameRunning() => isRunning;
+        public bool IsGameRunning(string gameDirectory) => isRunning;
     }
 
     private sealed class FakeGameExecutableLaunchService(bool isAvailable) : IGameExecutableLaunchService

@@ -13,7 +13,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
     private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
-    private readonly Func<bool> isGameRunning;
+    private readonly Func<string, bool> isGameRunning;
     private readonly TimeProvider timeProvider;
     private readonly ModInstallationAttribution installationAttribution;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
@@ -23,7 +23,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IModArtifactDownloader downloader,
         IModArtifactVersionReader versionReader,
         IModArtifactAuthenticityVerifier authenticityVerifier,
-        Func<bool> isGameRunning,
+        Func<string, bool> isGameRunning,
         ModInstallationAttribution installationAttribution,
         TimeProvider? timeProvider = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null)
@@ -102,7 +102,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             return validationFailure;
         }
 
-        if (isGameRunning())
+        if (isGameRunning(normalizedGameDirectory))
         {
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before changing the mod.");
         }
@@ -271,11 +271,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     public async Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default)
     {
-        if (isGameRunning())
-        {
-            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before removing the mod.");
-        }
-
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
@@ -311,6 +306,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         if (!validation.IsValid)
         {
             return new(ModDeploymentResultState.InvalidGameTarget, validation.Message);
+        }
+        if (isGameRunning(validation.GameDirectory))
+        {
+            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before removing the mod.");
         }
 
         var targetPath = Path.Combine(installedState.GameDirectory, ManagedFileName);
@@ -383,11 +382,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     public async Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default)
     {
-        if (isGameRunning())
-        {
-            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before recovery.");
-        }
-
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
@@ -410,6 +404,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         if (journal is null || IsTerminal(journal.Phase))
         {
             return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
+        }
+        if (isGameRunning(journal.GameDirectory))
+        {
+            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before recovery.");
         }
 
         var targetPath = Path.Combine(journal.GameDirectory, ManagedFileName);

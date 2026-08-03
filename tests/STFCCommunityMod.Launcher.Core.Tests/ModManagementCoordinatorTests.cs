@@ -244,7 +244,7 @@ public sealed class ModManagementCoordinatorTests
             new FakeDownloader(),
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
-            () => false,
+            _ => false,
             installationAttribution ?? new("guffawaffle", "stable", "guffawaffle.windows"));
 
     private static WindowsReleaseDiscovery ReleaseDiscovery() =>

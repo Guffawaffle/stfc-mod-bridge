@@ -240,6 +240,13 @@ public sealed record LauncherProviderCompatibilityConcern(
     LauncherProviderCompatibilityKind Kind,
     string Message);
 
+public enum LauncherProviderSwitchConfigurationKind
+{
+    None,
+    PreserveCurrent,
+    RestoreProviderHistory,
+}
+
 public sealed record LauncherProviderSwitchPreview(
     string TransactionId,
     LauncherProviderSelectionResolutionState SourceResolutionState,
@@ -250,6 +257,9 @@ public sealed record LauncherProviderSwitchPreview(
     IReadOnlyList<LauncherProviderCompatibilityConcern> Concerns,
     string? ConfigurationPath,
     string? ConfigurationSha256,
+    LauncherProviderSwitchConfigurationKind ConfigurationKind,
+    string? TargetConfigurationBackupId,
+    string? TargetConfigurationSha256,
     string ConfirmationText)
 {
     public bool HasCompatibilityLoss =>
@@ -261,7 +271,7 @@ public sealed record LauncherProviderSwitchPreview(
 
 public sealed record LauncherProviderSwitchResult(
     LauncherProviderSelection Selection,
-    string? ConfigurationBackupPath,
+    ConfigurationBackupReceipt? ConfigurationBackup,
     string Message);
 
 public sealed class LauncherProviderSourceSwitchService
@@ -269,26 +279,30 @@ public sealed class LauncherProviderSourceSwitchService
     private const long MaximumConfigurationBytes = 8 * 1024 * 1024;
     private readonly LauncherDistributionProviderCatalog catalog;
     private readonly ILauncherProviderSelectionStore selectionStore;
-    private readonly string normalizedStateDirectory;
-    private readonly Action<string?>? backupCompleted;
+    private readonly ProviderScopedConfigurationBackupStore backupStore;
+    private readonly Action<ConfigurationBackupReceipt?>? backupCompleted;
 
     public LauncherProviderSourceSwitchService(
         LauncherDistributionProviderCatalog catalog,
         ILauncherProviderSelectionStore selectionStore,
         string stateDirectory)
-        : this(catalog, selectionStore, stateDirectory, null)
+        : this(
+            catalog,
+            selectionStore,
+            new ProviderScopedConfigurationBackupStore(stateDirectory),
+            null)
     {
     }
 
     internal LauncherProviderSourceSwitchService(
         LauncherDistributionProviderCatalog catalog,
         ILauncherProviderSelectionStore selectionStore,
-        string stateDirectory,
-        Action<string?>? backupCompleted)
+        ProviderScopedConfigurationBackupStore backupStore,
+        Action<ConfigurationBackupReceipt?>? backupCompleted)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.selectionStore = selectionStore ?? throw new ArgumentNullException(nameof(selectionStore));
-        normalizedStateDirectory = Path.GetFullPath(stateDirectory);
+        this.backupStore = backupStore ?? throw new ArgumentNullException(nameof(backupStore));
         this.backupCompleted = backupCompleted;
     }
 
@@ -317,6 +331,19 @@ public sealed class LauncherProviderSourceSwitchService
         var configurationSha256 = normalizedConfigurationPath is null
             ? null
             : HashConfiguration(normalizedConfigurationPath);
+        ConfigurationBackupReceipt? targetBackup = null;
+        if (normalizedConfigurationPath is not null)
+        {
+            var targetBackups = backupStore.List(
+                Path.GetDirectoryName(normalizedConfigurationPath)!,
+                target.ProviderId);
+            targetBackup = targetBackups.Count == 0 ? null : targetBackups[0];
+        }
+        var configurationKind = normalizedConfigurationPath is null
+            ? LauncherProviderSwitchConfigurationKind.None
+            : targetBackup is null
+                ? LauncherProviderSwitchConfigurationKind.PreserveCurrent
+                : LauncherProviderSwitchConfigurationKind.RestoreProviderHistory;
         var concerns = BuildConcerns(current.Provider, targetProvider, current.Message);
         return new(
             Guid.NewGuid().ToString("N"),
@@ -328,12 +355,16 @@ public sealed class LauncherProviderSourceSwitchService
             concerns,
             normalizedConfigurationPath,
             configurationSha256,
+            configurationKind,
+            targetBackup?.BackupId,
+            targetBackup?.ContentSha256,
             targetProvider.Id);
     }
 
-    public LauncherProviderSwitchResult Execute(
+    public async Task<LauncherProviderSwitchResult> ExecuteAsync(
         LauncherProviderSwitchPreview preview,
-        string confirmationText)
+        string confirmationText,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preview);
         if (!string.Equals(confirmationText, preview.ConfirmationText, StringComparison.Ordinal))
@@ -359,20 +390,63 @@ public sealed class LauncherProviderSourceSwitchService
                 "Configuration changed after the compatibility preview. Review the switch again.");
         }
 
-        var backupPath = BackupConfiguration(preview);
-        backupCompleted?.Invoke(backupPath);
+        byte[]? targetConfiguration = null;
+        if (preview.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory)
+        {
+            if (preview.ConfigurationPath is null
+                || preview.TargetConfigurationBackupId is null
+                || preview.TargetConfigurationSha256 is null)
+            {
+                throw new InvalidDataException(
+                    "The provider-switch configuration proposal is incomplete.");
+            }
+            targetConfiguration = backupStore.Read(
+                Path.GetDirectoryName(preview.ConfigurationPath)!,
+                preview.Target.ProviderId,
+                preview.TargetConfigurationBackupId);
+            if (!string.Equals(
+                    Convert.ToHexString(SHA256.HashData(targetConfiguration)),
+                    preview.TargetConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The target provider configuration backup changed after review.");
+            }
+        }
+
+        var backup = await BackupConfigurationAsync(preview, cancellationToken).ConfigureAwait(false);
+        backupCompleted?.Invoke(backup);
         if (preview.ConfigurationPath is not null
             && !string.Equals(
                 HashConfiguration(preview.ConfigurationPath),
                 preview.ConfigurationSha256,
                 StringComparison.Ordinal))
         {
-            if (backupPath is not null && File.Exists(backupPath))
-            {
-                File.Delete(backupPath);
-            }
             throw new InvalidOperationException(
                 "Configuration changed while its provider-switch backup was being prepared. Review the switch again.");
+        }
+
+        byte[]? sourceConfiguration = null;
+        if (preview.ConfigurationPath is not null)
+        {
+            sourceConfiguration = await File.ReadAllBytesAsync(
+                preview.ConfigurationPath,
+                cancellationToken).ConfigureAwait(false);
+        }
+        if (preview.ConfigurationPath is not null && targetConfiguration is not null)
+        {
+            var configurationWrite = await new AtomicTomlStore(retainAdjacentBackup: false)
+                .SaveDocumentAsync(
+                    preview.ConfigurationPath,
+                    sourceConfiguration!,
+                    targetConfiguration,
+                    cancellationToken).ConfigureAwait(false);
+            if (!configurationWrite.IsSuccess)
+            {
+                throw new IOException(
+                    configurationWrite.Error
+                        ?? "The target provider configuration could not be restored.");
+            }
         }
         try
         {
@@ -386,6 +460,23 @@ public sealed class LauncherProviderSourceSwitchService
         {
             try
             {
+                if (preview.ConfigurationPath is not null
+                    && targetConfiguration is not null
+                    && sourceConfiguration is not null)
+                {
+                    var rollback = await new AtomicTomlStore(retainAdjacentBackup: false)
+                        .SaveDocumentAsync(
+                            preview.ConfigurationPath,
+                            targetConfiguration,
+                            sourceConfiguration,
+                            CancellationToken.None).ConfigureAwait(false);
+                    if (!rollback.IsSuccess)
+                    {
+                        throw new IOException(
+                            rollback.Error
+                                ?? "Configuration rollback failed.");
+                    }
+                }
                 RestoreSelection(preview.SourceResolutionState, preview.Source);
             }
             catch (Exception rollbackException) when (
@@ -404,8 +495,10 @@ public sealed class LauncherProviderSourceSwitchService
         }
         return new(
             preview.Target,
-            backupPath,
-            $"Selected {preview.TargetDisplayName}. Restart Mod Bridge before managing the mod or editing settings.");
+            backup,
+            preview.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
+                ? $"Selected {preview.TargetDisplayName} and restored its protected TOML history. Restart Mod Bridge before managing the mod or editing settings."
+                : $"Selected {preview.TargetDisplayName}. Restart Mod Bridge before managing the mod or editing settings.");
     }
 
     private LauncherProviderSelectionResolution ResolveCurrent()
@@ -484,22 +577,29 @@ public sealed class LauncherProviderSourceSwitchService
         return concerns.AsReadOnly();
     }
 
-    private string? BackupConfiguration(LauncherProviderSwitchPreview preview)
+    private async Task<ConfigurationBackupReceipt?> BackupConfigurationAsync(
+        LauncherProviderSwitchPreview preview,
+        CancellationToken cancellationToken)
     {
         if (preview.ConfigurationPath is null)
         {
             return null;
         }
-        var backupDirectory = Path.Combine(normalizedStateDirectory, "provider-switch-backups");
-        Directory.CreateDirectory(backupDirectory);
-        var backupPath = Path.Combine(backupDirectory, $"{preview.TransactionId}.toml");
-        File.Copy(preview.ConfigurationPath, backupPath, overwrite: false);
-        if (!string.Equals(HashConfiguration(backupPath), preview.ConfigurationSha256, StringComparison.Ordinal))
-        {
-            File.Delete(backupPath);
-            throw new IOException("Provider-switch configuration backup verification failed.");
-        }
-        return backupPath;
+        var gameDirectory = Path.GetDirectoryName(preview.ConfigurationPath)
+            ?? throw new InvalidDataException("The configuration path has no game directory.");
+        var contents = await File.ReadAllBytesAsync(
+            preview.ConfigurationPath,
+            cancellationToken).ConfigureAwait(false);
+        return await backupStore.CreateAsync(
+            new(
+                gameDirectory,
+                preview.Source.ProviderId,
+                preview.ConfigurationPath,
+                contents,
+                "provider-switch",
+                preview.Target.ProviderId,
+                $"{preview.Source.ProviderId}/{preview.Source.ReleaseChannelId}"),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private void RestoreSelection(
