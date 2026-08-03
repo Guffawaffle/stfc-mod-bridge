@@ -692,6 +692,7 @@
       <Grid Grid.Row="1">
         <ListBox x:Name="SettingsList"
                  behaviors:DragScrollBehavior.IsEnabled="True"
+                 behaviors:KeepVisibleAboveFooterBehavior.Footer="{Binding ElementName=SettingsFooter}"
                  ItemsSource="{Binding FilteredSettings}"
                  Background="Transparent"
                  BorderThickness="0"
@@ -1489,7 +1490,8 @@
                     DataContext="{Binding SyncWorkspace}"
                     Visibility="{Binding DataContext.IsDataSyncSelected, ElementName=SettingsRoot, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-    <Border Grid.Row="1"
+    <Border x:Name="SettingsFooter"
+            Grid.Row="1"
             Grid.Column="1"
             Padding="20,8,24,8"
             Background="{DynamicResource SurfaceBrush}"
