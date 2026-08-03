@@ -32,6 +32,9 @@ closed; Mod Bridge never infers support from a provider's display name.
 - `STFCCommunityMod.Launcher.Updater` — replace-on-exit update helper.
 - `STFCCommunityMod.Launcher.Core` — UI-independent contracts and services.
 - test projects under `tests/` — deterministic unit and WPF projection tests.
+- `STFCCommunityMod.Launcher.LocalGameIntegration.Tests` — the explicitly
+  opted-in real-install certification harness; its initial Inspect profile is
+  read-only and later mutation/launch profiles remain separately gated.
 
 ## Build and test
 
@@ -48,6 +51,10 @@ output.
 and focuses Mod Bridge to exercise keyboard behavior. Local runs must opt in
 with `-AllowInteractiveFocus`; ordinary tests and LexRunner branch gates remain
 headless. GitHub Actions may run the smoke on its isolated desktop.
+
+`scripts/test-local-game-install.ps1` runs the implemented read-only Inspect
+profile only for an explicitly supplied game directory. See the broader
+[local integration contract](docs/windows-launcher/LOCAL_GAME_INTEGRATION.md).
 
 ## Package
 
