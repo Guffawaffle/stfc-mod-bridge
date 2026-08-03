@@ -4,7 +4,7 @@ param(
   [string]$Tag,
   [Parameter(Mandatory = $true)]
   [string]$TargetCommit,
-  [string]$Repository = "Guffawaffle/stfc-mod-launcher",
+  [string]$Repository = "Guffawaffle/stfc-mod-bridge",
   [string]$OutputDirectory = "artifacts/win-x64",
   [string]$OutputPath = "artifacts/win-x64/stfc-mod-bridge-release-manifest.json"
 )

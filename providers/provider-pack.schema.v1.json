@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Guffawaffle/stfc-mod-launcher/providers/provider-pack.schema.v1.json",
+  "$id": "https://github.com/Guffawaffle/stfc-mod-bridge/providers/provider-pack.schema.v1.json",
   "title": "STFC Mod Bridge provider pack v1",
   "type": "object",
   "additionalProperties": false,

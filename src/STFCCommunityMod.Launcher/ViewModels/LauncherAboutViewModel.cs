@@ -7,7 +7,7 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 public sealed class LauncherAboutViewModel
 {
     private const string ProductRepository =
-        "https://github.com/Guffawaffle/stfc-mod-launcher";
+        "https://github.com/Guffawaffle/stfc-mod-bridge";
 
     public LauncherAboutViewModel(
         LauncherAboutCatalog content,

@@ -79,7 +79,7 @@ public sealed class LauncherSelfUpdateTests
             Discovery(Artifact(archive)).Manifest,
             "stable",
             new Version(0, 1, 0),
-            "Guffawaffle/stfc-mod-launcher");
+            "Guffawaffle/stfc-mod-bridge");
 
         Assert.AreEqual(TargetCommit, selected.TargetCommit);
         Assert.AreEqual("stfc-mod-bridge-win-x64.zip", selected.FileName);
@@ -289,7 +289,7 @@ public sealed class LauncherSelfUpdateTests
             "stable",
             "active",
             new Version(0, 1, 0),
-            new("Guffawaffle/stfc-mod-launcher", TargetCommit),
+            new("Guffawaffle/stfc-mod-bridge", TargetCommit),
             "none",
             [
                 new(

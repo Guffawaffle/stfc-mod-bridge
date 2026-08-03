@@ -29,7 +29,7 @@ public sealed class SelfUpdateArchitectureTests
     [TestMethod]
     public void SelfUpdateAuthorityBelongsToStandaloneLauncherRepository()
     {
-        Assert.AreEqual("Guffawaffle/stfc-mod-launcher", LauncherSelfUpdateAuthority.ReleaseRepository);
+        Assert.AreEqual("Guffawaffle/stfc-mod-bridge", LauncherSelfUpdateAuthority.ReleaseRepository);
         Assert.AreEqual(
             "stfc-mod-bridge-release-manifest.json",
             LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
