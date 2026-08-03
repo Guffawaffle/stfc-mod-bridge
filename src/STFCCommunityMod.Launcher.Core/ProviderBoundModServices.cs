@@ -6,12 +6,16 @@ public sealed record LauncherProviderModBinding(
     string Repository,
     string? ManifestAssetName,
     string? WindowsPublisher,
+    LauncherProviderReleaseDiscoveryKind DiscoveryKind,
+    LauncherProviderArtifactTrustKind? TrustKind,
+    ReviewedReleaseCertification? ReviewedCertification,
     bool IsAvailable,
     string UnavailableReason)
 {
     public static LauncherProviderModBinding Resolve(
         LauncherDistributionProvider provider,
         LauncherProviderReleaseChannel selectedChannel,
+        ReviewedReleaseCertificationCatalog? reviewedCertifications = null,
         string? providerResolutionFailure = null)
     {
         ArgumentNullException.ThrowIfNull(provider);
@@ -34,12 +38,19 @@ public sealed record LauncherProviderModBinding(
             : unavailable.Length > 0
                 ? $"{provider.DisplayName} provider capabilities are unknown or unsupported: "
                     + $"{string.Join(", ", unavailable)}. Mod download and installation fail closed."
-                : !provider.CanUseManifestReleaseDiscoveryFor(channel)
-                    ? $"Provider '{provider.Id}' channel '{channel.Id}' has no supported manifest discovery contract."
+                : !provider.CanUseReleaseDiscoveryFor(channel)
+                    ? $"Provider '{provider.Id}' channel '{channel.Id}' has no supported release discovery contract."
                     : string.Empty;
         if (string.IsNullOrWhiteSpace(reason) && !provider.CanAuthenticateWindowsArtifact)
         {
             reason = $"Provider '{provider.Id}' has no supported Windows artifact trust contract.";
+        }
+        var reviewedCertification = reviewedCertifications?.Find(provider.Id, channel.Id);
+        if (string.IsNullOrWhiteSpace(reason)
+            && provider.ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.ReviewedExactHash
+            && reviewedCertification is null)
+        {
+            reason = $"Provider '{provider.Id}' channel '{channel.Id}' has no launcher-reviewed release certification.";
         }
         var isAvailable = string.IsNullOrWhiteSpace(reason);
         return new(
@@ -48,6 +59,9 @@ public sealed record LauncherProviderModBinding(
             channel.Repository,
             channel.ManifestAssetName,
             provider.ArtifactPolicy.WindowsPublisher,
+            channel.DiscoveryKind,
+            provider.ArtifactPolicy.TrustKind,
+            reviewedCertification,
             isAvailable,
             isAvailable ? string.Empty : reason);
     }

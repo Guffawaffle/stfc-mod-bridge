@@ -3,7 +3,7 @@
   "provider": {
     "id": "netniv",
     "displayName": "NetniV",
-    "description": "Upstream distribution. Unpublished launcher contracts remain explicitly unknown.",
+    "description": "Upstream distribution with a temporary launcher-reviewed Windows release allowlist.",
     "runtimeDistributionId": "netniv.stfc-community-mod",
     "defaultReleaseChannelId": "stable",
     "releaseChannels": [
@@ -27,14 +27,15 @@
     "capabilities": [
       { "id": "settings.catalog", "status": "unknown" },
       { "id": "runtime.manifest", "status": "unknown" },
-      { "id": "mod.release-discovery", "status": "unknown" },
-      { "id": "mod.artifact-trust", "status": "unknown" },
+      { "id": "mod.release-discovery", "status": "supported" },
+      { "id": "mod.artifact-trust", "status": "supported" },
       { "id": "release.withdrawal", "status": "unknown" },
       { "id": "config.migration", "status": "unknown" }
     ],
     "artifactPolicy": {
-      "status": "unknown",
+      "status": "supported",
       "requireSha256": true,
+      "trustKind": "reviewed-exact-hash",
       "windowsPublisher": null
     },
     "withdrawalPolicy": {

@@ -77,10 +77,14 @@
         "artifactPolicy": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "requireSha256", "windowsPublisher"],
+          "required": ["status", "requireSha256", "trustKind", "windowsPublisher"],
           "properties": {
             "status": { "$ref": "#/$defs/status" },
             "requireSha256": { "type": "boolean" },
+            "trustKind": {
+              "type": ["string", "null"],
+              "enum": ["authenticode-publisher", "reviewed-exact-hash", null]
+            },
             "windowsPublisher": {
               "type": ["string", "null"],
               "minLength": 1

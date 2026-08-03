@@ -340,6 +340,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
         var knownArtifacts = BundledLauncherProviderCatalog.LoadKnownWindowsArtifacts(
             distributionProviderCatalog);
+        var reviewedReleases = BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(
+            distributionProviderCatalog);
         var providerComponents = distributionProviderCatalog.Providers.Values.Select(provider =>
         {
             var providerChannel = string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
@@ -348,21 +350,37 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var binding = LauncherProviderModBinding.Resolve(
                 provider,
                 providerChannel,
+                reviewedReleases,
                 string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
                     ? providerResolutionFailure
                     : null);
             IModArtifactAuthenticityVerifier artifactVerifier = binding.IsAvailable
-                ? new WindowsAuthenticodeVerifier(binding.WindowsPublisher!)
+                ? binding.TrustKind switch
+                {
+                    LauncherProviderArtifactTrustKind.AuthenticodePublisher =>
+                        new WindowsAuthenticodeVerifier(binding.WindowsPublisher!),
+                    LauncherProviderArtifactTrustKind.ReviewedExactHash =>
+                        new ReviewedExactHashAuthenticityVerifier(binding.ReviewedCertification!),
+                    _ => new FailClosedModArtifactAuthenticityVerifier("Unsupported artifact trust kind."),
+                }
                 : new FailClosedModArtifactAuthenticityVerifier(binding.UnavailableReason);
             IWindowsReleaseDiscoveryClient releaseClient = binding.IsAvailable
-                ? new GitHubWindowsReleaseClient(
-                    httpClient,
-                    binding.Repository,
-                    binding.ManifestAssetName!)
+                ? binding.DiscoveryKind switch
+                {
+                    LauncherProviderReleaseDiscoveryKind.ReleaseManifest =>
+                        new GitHubWindowsReleaseClient(httpClient, binding.Repository, binding.ManifestAssetName!),
+                    LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
+                        new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
+                    _ => new UnavailableWindowsReleaseDiscoveryClient("Unsupported release discovery kind."),
+                }
                 : new UnavailableWindowsReleaseDiscoveryClient(binding.UnavailableReason);
+            IModArtifactDownloader artifactDownloader = binding.IsAvailable
+                && binding.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset
+                    ? new ReviewedZipModArtifactDownloader(httpClient, binding.ReviewedCertification!)
+                    : new HttpModArtifactDownloader(httpClient);
             var providerDeployment = new ModDeploymentService(
                 installLayout.StateDirectory,
-                new HttpModArtifactDownloader(httpClient),
+                artifactDownloader,
                 new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
                 artifactVerifier,
                 processInspector.IsGameRunning,

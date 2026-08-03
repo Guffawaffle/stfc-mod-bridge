@@ -33,6 +33,9 @@
     <None Include="..\..\providers\provider-pack.schema.v1.json"
           Link="Fixtures\Providers\provider-pack.schema.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\reviewed-windows-releases.v1.json"
+          Link="Fixtures\Providers\reviewed-windows-releases.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\providers\compatibility\source-switch-unknown-content.v1.toml"
           Link="Fixtures\Providers\source-switch-unknown-content.v1.toml"
           CopyToOutputDirectory="PreserveNewest" />

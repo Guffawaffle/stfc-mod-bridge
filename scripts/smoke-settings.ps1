@@ -373,6 +373,9 @@ function Restore-DisposableFixture {
     [bool]$SelectionExisted,
     [AllowNull()][byte[]]$SelectionBytes,
     [string]$SelectionPath,
+    [bool]$ProviderSelectionExisted,
+    [AllowNull()][byte[]]$ProviderSelectionBytes,
+    [string]$ProviderSelectionPath,
     [AllowNull()][string]$DisposableGameDirectory
   )
 
@@ -381,6 +384,15 @@ function Restore-DisposableFixture {
   }
   elseif (Test-Path -LiteralPath $SelectionPath -PathType Leaf) {
     [System.IO.File]::Delete($SelectionPath)
+  }
+
+  if ($ProviderSelectionExisted) {
+    [System.IO.File]::WriteAllBytes(
+      $ProviderSelectionPath,
+      $ProviderSelectionBytes)
+  }
+  elseif (Test-Path -LiteralPath $ProviderSelectionPath -PathType Leaf) {
+    [System.IO.File]::Delete($ProviderSelectionPath)
   }
 
   if ($null -ne $DisposableGameDirectory -and
@@ -433,6 +445,15 @@ $selectionPath = Join-Path `
 $selectionExisted = Test-Path -LiteralPath $selectionPath -PathType Leaf
 $selectionBytes = if ($selectionExisted) {
   [System.IO.File]::ReadAllBytes($selectionPath)
+} else {
+  $null
+}
+$providerSelectionPath = Join-Path `
+  ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
+  "STFC Mod Bridge\provider-selection.json"
+$providerSelectionExisted = Test-Path -LiteralPath $providerSelectionPath -PathType Leaf
+$providerSelectionBytes = if ($providerSelectionExisted) {
+  [System.IO.File]::ReadAllBytes($providerSelectionPath)
 } else {
   $null
 }
@@ -494,7 +515,17 @@ token = "disposable-foxtrot-secret"
       $selectionPath,
       ($selectionDocument | ConvertTo-Json),
       [System.Text.UTF8Encoding]::new($false))
+    $providerSelectionDocument = [ordered]@{
+      schemaVersion = 1
+      providerId = "guffawaffle"
+      releaseChannelId = "stable"
+    }
+    [System.IO.File]::WriteAllText(
+      $providerSelectionPath,
+      ($providerSelectionDocument | ConvertTo-Json),
+      [System.Text.UTF8Encoding]::new($false))
     Write-Host "Using disposable Sync fixture: $disposableGameDirectory"
+    Write-Host "Using explicit Guffawaffle source for the provider-owned Settings smoke."
   }
 
   $configurationPath = Get-ActiveConfigurationPath
@@ -515,6 +546,9 @@ catch {
       -SelectionExisted $selectionExisted `
       -SelectionBytes $selectionBytes `
       -SelectionPath $selectionPath `
+      -ProviderSelectionExisted $providerSelectionExisted `
+      -ProviderSelectionBytes $providerSelectionBytes `
+      -ProviderSelectionPath $providerSelectionPath `
       -DisposableGameDirectory $disposableGameDirectory
   }
   throw
@@ -1205,6 +1239,9 @@ finally {
       -SelectionExisted $selectionExisted `
       -SelectionBytes $selectionBytes `
       -SelectionPath $selectionPath `
+      -ProviderSelectionExisted $providerSelectionExisted `
+      -ProviderSelectionBytes $providerSelectionBytes `
+      -ProviderSelectionPath $providerSelectionPath `
       -DisposableGameDirectory $disposableGameDirectory
   }
 }
