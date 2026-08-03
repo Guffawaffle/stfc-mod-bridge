@@ -23,9 +23,15 @@ The GitHub environment is `windows-release`.
 - Allowed branch for manual release work: `main`
 - Allowed release tags: `v*`
 - OIDC subject:
-  `repo:Guffawaffle/stfc-mod-bridge:environment:windows-release`
+  `repo:Guffawaffle@105761663/stfc-mod-bridge@1320037274:environment:windows-release`
 - Signing job permission: `id-token: write` with `contents: read`
 - Publication job permission: `contents: write` without `id-token`
+
+GitHub's issued subject includes the immutable owner and repository IDs. The
+values above are the exact subject presented by the protected workflow and the
+canonical prefix returned by the repository OIDC endpoint. Entra must match
+that complete subject; the shorter human-readable repository coordinate is not
+an equivalent federated credential.
 
 Pull requests and ordinary branch builds remain unsigned. Only a tag build can
 enter the signing job, and the protected environment requires approval before
