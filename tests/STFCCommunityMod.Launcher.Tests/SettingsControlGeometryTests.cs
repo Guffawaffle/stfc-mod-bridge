@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Windows;
 using System.Xml.Linq;
 
 namespace STFCCommunityMod.Launcher.Tests;
@@ -29,6 +31,29 @@ public sealed class SettingsControlGeometryTests
         Assert.AreEqual("176", values["SettingsNumericSliderWidth"]);
         Assert.AreEqual("40", values["SettingsNumericUnitWidth"]);
         Assert.AreEqual("44", values["SettingsRowPrimaryActionWidth"]);
+        Assert.AreEqual("40", values["SettingsNumericUnitColumnWidth"]);
+        Assert.AreEqual("44", values["SettingsRowPrimaryActionColumnWidth"]);
+    }
+
+    [TestMethod]
+    public void NumericColumnGeometryResourcesLoadAsGridLengths()
+    {
+        RunInSta(
+            () =>
+            {
+                var application = Application.Current ?? new App();
+                if (!application.Resources.Contains("SettingsNumericUnitColumnWidth"))
+                {
+                    ((App)application).InitializeComponent();
+                }
+
+                Assert.IsInstanceOfType(
+                    application.Resources["SettingsNumericUnitColumnWidth"],
+                    typeof(GridLength));
+                Assert.IsInstanceOfType(
+                    application.Resources["SettingsRowPrimaryActionColumnWidth"],
+                    typeof(GridLength));
+            });
     }
 
     [TestMethod]
@@ -54,8 +79,8 @@ public sealed class SettingsControlGeometryTests
             (string?)bounded.Attribute("Visibility"));
         Assert.AreEqual(3, columns.Length);
         Assert.AreEqual("Auto", columns[0]);
-        Assert.AreEqual("{StaticResource SettingsNumericUnitWidth}", columns[1]);
-        Assert.AreEqual("{StaticResource SettingsRowPrimaryActionWidth}", columns[2]);
+        Assert.AreEqual("{StaticResource SettingsNumericUnitColumnWidth}", columns[1]);
+        Assert.AreEqual("{StaticResource SettingsRowPrimaryActionColumnWidth}", columns[2]);
         Assert.AreEqual("{Binding Unit}", (string?)unit.Attribute("Text"));
         Assert.IsNull(unit.Attribute("Visibility"));
     }
@@ -131,5 +156,30 @@ public sealed class SettingsControlGeometryTests
 
         return current?.FullName
             ?? throw new DirectoryNotFoundException("Could not locate the repository root.");
+    }
+
+    private static void RunInSta(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(
+            () =>
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+            });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(10)), "The resource realization test timed out.");
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 }

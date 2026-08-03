@@ -19,6 +19,8 @@
     <sys:Double x:Key="SettingsNumericSliderWidth">176</sys:Double>
     <sys:Double x:Key="SettingsNumericUnitWidth">40</sys:Double>
     <sys:Double x:Key="SettingsRowPrimaryActionWidth">44</sys:Double>
+    <GridLength x:Key="SettingsNumericUnitColumnWidth">40</GridLength>
+    <GridLength x:Key="SettingsRowPrimaryActionColumnWidth">44</GridLength>
     <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
     <CornerRadius x:Key="PopupCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="DialogCornerRadius">12</CornerRadius>

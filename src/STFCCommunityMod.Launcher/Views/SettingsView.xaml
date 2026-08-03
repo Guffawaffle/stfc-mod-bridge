@@ -1004,8 +1004,8 @@
                           <Grid x:Name="BoundedNumericValueCluster">
                             <Grid.ColumnDefinitions>
                               <ColumnDefinition Width="Auto" />
-                              <ColumnDefinition Width="{StaticResource SettingsNumericUnitWidth}" />
-                              <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionWidth}" />
+                              <ColumnDefinition Width="{StaticResource SettingsNumericUnitColumnWidth}" />
+                              <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionColumnWidth}" />
                             </Grid.ColumnDefinitions>
                             <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
                                      Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
@@ -1029,8 +1029,8 @@
                               Visibility="{Binding IsNumericTextOnly, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="{StaticResource SettingsNumericUnitWidth}" />
-                            <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionWidth}" />
+                            <ColumnDefinition Width="{StaticResource SettingsNumericUnitColumnWidth}" />
+                            <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionColumnWidth}" />
                           </Grid.ColumnDefinitions>
                           <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
                                    Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
