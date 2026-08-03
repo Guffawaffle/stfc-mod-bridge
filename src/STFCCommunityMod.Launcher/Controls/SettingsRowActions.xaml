@@ -35,21 +35,46 @@
   </UserControl.Resources>
 
   <StackPanel Orientation="Horizontal">
-    <controls:HelpFlyoutButton HelpText="{Binding SettingDetailsHelp}"
-                               AutomationName="{Binding SettingDetailsAutomationName}" />
+    <Grid Width="{StaticResource SettingsRowPrimaryActionWidth}"
+          Height="{StaticResource SettingsRowPrimaryActionWidth}">
+      <controls:HelpFlyoutButton Width="{StaticResource SettingsRowPrimaryActionWidth}"
+                                 Height="{StaticResource SettingsRowPrimaryActionWidth}"
+                                 HelpText="{Binding SettingDetailsHelp}"
+                                 AutomationName="{Binding SettingDetailsAutomationName}">
+        <controls:HelpFlyoutButton.Style>
+          <Style TargetType="controls:HelpFlyoutButton">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </controls:HelpFlyoutButton.Style>
+      </controls:HelpFlyoutButton>
 
-    <Button Width="44"
-            Height="44"
-            MinHeight="44"
-            Padding="0"
-            Style="{StaticResource QuietButtonStyle}"
-            Command="{Binding RevertDraftCommand}"
-            ToolTip="{Binding RevertDraftAvailability}"
-            Visibility="{Binding IsDirty, Converter={StaticResource BooleanToVisibilityConverter}}"
-            automation:AutomationProperties.Name="{Binding RevertDraftAutomationName}"
-            automation:AutomationProperties.HelpText="{Binding RevertDraftAutomationHelp}">
-      <controls:AppIcon Kind="RevertDraft" />
-    </Button>
+      <Button Width="{StaticResource SettingsRowPrimaryActionWidth}"
+              Height="{StaticResource SettingsRowPrimaryActionWidth}"
+              MinHeight="{StaticResource SettingsRowPrimaryActionWidth}"
+              Padding="0"
+              Command="{Binding RevertDraftCommand}"
+              ToolTip="{Binding RevertDraftAvailability}"
+              automation:AutomationProperties.Name="{Binding RevertDraftAutomationName}"
+              automation:AutomationProperties.HelpText="{Binding RevertDraftAutomationHelp}">
+        <Button.Style>
+          <Style BasedOn="{StaticResource QuietButtonStyle}"
+                 TargetType="Button">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+        <controls:AppIcon Kind="RevertDraft" />
+      </Button>
+    </Grid>
 
     <Button x:Name="MoreActionsButton"
             Width="44"

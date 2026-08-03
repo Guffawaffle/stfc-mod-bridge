@@ -13,6 +13,12 @@
     <sys:Double x:Key="SettingsInputWidthSmall">96</sys:Double>
     <sys:Double x:Key="SettingsInputWidthMedium">144</sys:Double>
     <sys:Double x:Key="SettingsInputWidthLarge">220</sys:Double>
+    <sys:Double x:Key="SettingsNumericInputWidthCompact">84</sys:Double>
+    <sys:Double x:Key="SettingsNumericInputWidthStandard">112</sys:Double>
+    <sys:Double x:Key="SettingsNumericInputWidthWide">144</sys:Double>
+    <sys:Double x:Key="SettingsNumericSliderWidth">176</sys:Double>
+    <sys:Double x:Key="SettingsNumericUnitWidth">40</sys:Double>
+    <sys:Double x:Key="SettingsRowPrimaryActionWidth">44</sys:Double>
     <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
     <CornerRadius x:Key="PopupCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="DialogCornerRadius">12</CornerRadius>
