@@ -17,6 +17,14 @@ boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
 
+Source selection does not rewrite configuration and does not establish which
+provider produced the installed DLL. A destructive installed-mod source switch
+uses the protected exact-byte backup contract in
+[`MOD_DEPLOYMENT.md`](MOD_DEPLOYMENT.md#protected-toml-backup-contract). That
+backup is not the editor's adjacent transactional `.bak`: it is encrypted,
+retained, restored, and excluded from support evidence under a separate
+source-transition journal. Automatic TOML migration remains out of scope.
+
 ## Accepted modular architecture boundary
 
 Startup resolves behavior before the configuration workspace or WPF
@@ -161,6 +169,11 @@ counts and opening time before physical assembly separation.
   assignment without reserializing surrounding content.
 - Unknown keys, comments, ordering, whitespace, BOM, and line endings survive
   supported edits.
+- Source-transition capture and restore preserve the complete file
+  byte-for-byte, including invalid-but-runnable syntax and sparse omissions;
+  they never parse then reserialize. Explicit restore is a
+  Diagnostics/recovery action and must close or reload an open workspace
+  without changing preferred source or installed artifact provenance.
 - Duplicate targets, malformed statements, array tables, unsupported target
   syntax, invalid UTF-8, and unsafe multiline target edits fail closed.
 - The atomic store writes and flushes a sibling temporary file, rechecks the

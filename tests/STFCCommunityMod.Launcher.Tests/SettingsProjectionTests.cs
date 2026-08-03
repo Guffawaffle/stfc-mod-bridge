@@ -145,22 +145,61 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
-    public void NumericEditorsUseSharedRangeBasedWidthClasses()
+    public void NumericEditorsUseCatalogWidthClassesAcrossRepresentativeRows()
     {
         using var fixture = SettingsFixture.Create();
 
         fixture.Select(LauncherSettingsSection.Interface);
         Assert.AreEqual(
-            SettingsInputWidth.Small,
+            LauncherConfigurationEditorWidth.Compact,
             fixture.Row("ui.extend_chest_purchase_max").NumericInputWidth);
+        Assert.AreEqual(
+            LauncherConfigurationEditorWidth.Compact,
+            fixture.Row("ui.escape_exit_timer").NumericInputWidth);
 
         fixture.Select(LauncherSettingsSection.Graphics);
         Assert.AreEqual(
-            SettingsInputWidth.Medium,
+            LauncherConfigurationEditorWidth.Compact,
             fixture.Row("graphics.default_system_zoom").NumericInputWidth);
         Assert.AreEqual(
-            SettingsInputWidth.Large,
-            fixture.Row("graphics.zoom").NumericInputWidth);
+            LauncherConfigurationEditorWidth.Compact,
+            fixture.Row("graphics.keyboard_zoom_speed").NumericInputWidth);
+        Assert.AreEqual(
+            LauncherConfigurationEditorWidth.Compact,
+            fixture.Row("graphics.loader_logo_scale").NumericInputWidth);
+
+        Assert.IsTrue(fixture.Row("graphics.default_system_zoom").HasNumericSlider);
+        Assert.IsFalse(fixture.Row("graphics.keyboard_zoom_speed").HasNumericSlider);
+        Assert.IsTrue(fixture.Row("graphics.keyboard_zoom_speed").IsNumericTextOnly);
+        Assert.IsFalse(fixture.Row("graphics.loader_logo_scale").HasNumericSlider);
+        Assert.IsTrue(fixture.Row("graphics.loader_logo_scale").IsNumericTextOnly);
+    }
+
+    [TestMethod]
+    public void DirtyAndRestoreKeepBoundedNumericGeometryClassificationStable()
+    {
+        using var fixture = SettingsFixture.Create();
+        fixture.Select(LauncherSettingsSection.Interface);
+        var row = fixture.Row("ui.extend_chest_purchase_max");
+        var width = row.NumericInputWidth;
+        var sliderMinimum = row.NumericSliderMinimum;
+        var sliderMaximum = row.NumericSliderMaximum;
+
+        row.NumericText = "120";
+
+        Assert.IsTrue(row.IsDirty);
+        Assert.AreEqual(width, row.NumericInputWidth);
+        Assert.AreEqual(sliderMinimum, row.NumericSliderMinimum);
+        Assert.AreEqual(sliderMaximum, row.NumericSliderMaximum);
+        Assert.IsTrue(row.HasNumericSlider);
+
+        row.RevertDraftCommand.Execute(null);
+
+        Assert.IsFalse(row.IsDirty);
+        Assert.AreEqual(width, row.NumericInputWidth);
+        Assert.AreEqual(sliderMinimum, row.NumericSliderMinimum);
+        Assert.AreEqual(sliderMaximum, row.NumericSliderMaximum);
+        Assert.IsTrue(row.HasNumericSlider);
     }
 
     [TestMethod]
@@ -178,6 +217,8 @@ public sealed class SettingsProjectionTests
         interfaceRow.NumericText = "120";
         Assert.IsTrue(interfaceRow.DraftHasOverride);
         StringAssert.Contains(interfaceRow.SettingDetailsHelp, "Default: 160");
+        StringAssert.Contains(interfaceRow.RevertDraftAutomationHelp, "Default: 160");
+        StringAssert.Contains(interfaceRow.RevertDraftAutomationHelp, interfaceRow.Description);
 
         fixture.Select(LauncherSettingsSection.Graphics);
         var graphicsRow = fixture.Row("graphics.default_system_zoom");

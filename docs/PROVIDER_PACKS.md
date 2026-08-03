@@ -74,23 +74,28 @@ Settings actions are disabled, the resolution reason is visible, launcher
 self-update remains independent, and Source remains available so a known
 provider can be selected.
 
-Changing source is a small transaction:
+Changing preferred source and switching the installed mod are different
+operations under the
+[mod source-selection lifecycle](windows-launcher/MOD_DEPLOYMENT.md#mod-source-selection-lifecycle):
 
-1. Resolve both providers and compare every contract capability.
-2. Report supported-to-unsupported loss and every unknown target capability.
-3. Hash the selected TOML and require the user to type the target provider's
-   exact, case-sensitive stable ID in the themed confirmation field.
-   An explicitly supplied configuration path that is missing is an error;
-   only an absent/unspecified path means there is nothing to back up.
-4. Verify the hash is still current and copy the exact bytes to
-   `provider-switch-backups/<transaction>.toml`.
-5. Rehash the source after the verified backup and immediately before commit,
-   closing the backup-to-selection time-of-check/time-of-use window.
-6. Atomically replace only `provider-selection.json`.
-7. If the state write reports failure, restore the previous effective
-   selection. The active TOML is never normalized or rewritten.
-8. Require a launcher restart before the newly selected provider composes mod
-   discovery, artifact trust, runtime activation, or configuration editing.
+- **Select source** atomically changes only `provider-selection.json`. It
+  compares capabilities, requires explicit stable-ID confirmation when risk is
+  present, never claims the installed artifact came from the target, performs
+  no network discovery, and takes effect after restarting Mod Bridge.
+- **Switch installed mod** is a separately confirmed, game-closed migration
+  built from an explicit Check-for-updates observation. It requires the
+  protected TOML-backup and cross-domain transaction contract before changing
+  artifact lineage or installed attribution.
+
+The existing `LauncherProviderSourceSwitchService` and selector are prototype
+scaffolding, not the accepted production switch implementation. They currently
+copy plaintext TOML beneath `provider-switch-backups`, expose the resulting
+path, and lack protected metadata, retention, restore, a common mutation lease,
+and a recovery journal. Follow-up work must split preference persistence from
+artifact migration and replace that copy path with the reviewed protected
+backup store. The active TOML must remain byte-untouched unless the player later
+chooses an explicit restore; automatic source migration or normalization is
+not accepted.
 
 Staged Settings edits block switch review. This avoids discarding an in-memory
 workspace whose catalog belongs to the current provider.

@@ -8,13 +8,6 @@ using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.ViewModels;
 
-public enum SettingsInputWidth
-{
-    Small,
-    Medium,
-    Large,
-}
-
 public sealed class SettingsRowViewModel :
     SettingsListItemViewModel,
     INotifyPropertyChanged
@@ -175,7 +168,9 @@ public sealed class SettingsRowViewModel :
     public double NumericSliderLargeChange =>
         Math.Min(NumericSliderStep * 10, NumericSliderMaximum - NumericSliderMinimum);
 
-    public SettingsInputWidth NumericInputWidth => ResolveNumericInputWidth();
+    public LauncherConfigurationEditorWidth NumericInputWidth => Setting.Presentation.EditorWidth;
+
+    public bool IsNumericTextOnly => IsNumericEditor && !HasNumericSlider;
 
     public bool NumericSliderAllowsExtendedEntry
     {
@@ -298,7 +293,9 @@ public sealed class SettingsRowViewModel :
         $"Revert {Title} to saved value {SavedValueText}";
 
     public string RevertDraftAutomationHelp =>
-        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "initial")} state.";
+        $"Restores both the saved value and its saved {(SavedHasOverride ? "explicit override" : "initial")} state. "
+        + (HasDescription ? Description + " " : string.Empty)
+        + SettingDetailsHelp;
 
     public string DefaultValueText
     {
@@ -716,31 +713,6 @@ public sealed class SettingsRowViewModel :
         OnPropertyChanged(nameof(RevertDraftAvailability));
         OnPropertyChanged(nameof(RevertDraftAutomationName));
         OnPropertyChanged(nameof(RevertDraftAutomationHelp));
-    }
-
-    private SettingsInputWidth ResolveNumericInputWidth()
-    {
-        if (!IsNumericEditor)
-        {
-            return SettingsInputWidth.Medium;
-        }
-
-        var minimum = Setting.NumericConstraints?.Minimum
-            ?? (HasNumericSlider ? NumericSliderMinimum : null);
-        var maximum = Setting.NumericConstraints?.Maximum
-            ?? (HasNumericSlider ? NumericSliderMaximum : null);
-        if (minimum is null || maximum is null)
-        {
-            return SettingsInputWidth.Large;
-        }
-
-        var magnitude = Math.Max(Math.Abs(minimum.Value), Math.Abs(maximum.Value));
-        return magnitude switch
-        {
-            <= 999 => SettingsInputWidth.Small,
-            <= 999_999 => SettingsInputWidth.Medium,
-            _ => SettingsInputWidth.Large,
-        };
     }
 
     private bool ReadBooleanValue()
