@@ -72,18 +72,18 @@
     <Style x:Key="SettingsNumericEditorStyle"
            BasedOn="{StaticResource SettingsSearchStyle}"
            TargetType="TextBox">
-      <Setter Property="Width" Value="{StaticResource SettingsInputWidthSmall}" />
+      <Setter Property="Width" Value="{StaticResource SettingsNumericInputWidthCompact}" />
       <Setter Property="MinHeight" Value="42" />
       <Setter Property="Padding" Value="12,8" />
       <Setter Property="HorizontalContentAlignment" Value="Right" />
       <Setter Property="TextAlignment" Value="Right" />
       <Setter Property="MaxLength" Value="64" />
       <Style.Triggers>
-        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Medium">
-          <Setter Property="Width" Value="{StaticResource SettingsInputWidthMedium}" />
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Standard">
+          <Setter Property="Width" Value="{StaticResource SettingsNumericInputWidthStandard}" />
         </DataTrigger>
-        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Large">
-          <Setter Property="Width" Value="{StaticResource SettingsInputWidthLarge}" />
+        <DataTrigger Binding="{Binding NumericInputWidth}" Value="Wide">
+          <Setter Property="Width" Value="{StaticResource SettingsNumericInputWidthWide}" />
         </DataTrigger>
         <DataTrigger Binding="{Binding NumericNeedsAttention}" Value="True">
           <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}" />
@@ -983,14 +983,11 @@
                       </StackPanel>
 
                       <StackPanel Visibility="{Binding IsNumericEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Grid>
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                          </Grid.ColumnDefinitions>
-                          <Slider Margin="0,0,12,0"
+                        <WrapPanel x:Name="BoundedNumericEditor"
+                                   HorizontalAlignment="Stretch"
+                                   Visibility="{Binding HasNumericSlider, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <Slider Width="{StaticResource SettingsNumericSliderWidth}"
+                                  Margin="0,5,12,5"
                                   Style="{StaticResource SettingsNumericSliderStyle}"
                                   Minimum="{Binding NumericSliderMinimum}"
                                   Maximum="{Binding NumericSliderMaximum}"
@@ -1001,27 +998,53 @@
                                   Value="{Binding NumericSliderValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   IsEnabled="{Binding CanEdit}"
                                   ToolTip="{Binding NumericValidationMessage}"
-                                  Visibility="{Binding HasNumericSlider, Converter={StaticResource BooleanToVisibilityConverter}}"
                                   automation:AutomationProperties.Name="{Binding Title, StringFormat=Adjust {0}}"
                                   automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
-                          <TextBox Grid.Column="1"
-                                   Style="{StaticResource SettingsNumericEditorStyle}"
+                          <Grid x:Name="BoundedNumericValueCluster">
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="Auto" />
+                              <ColumnDefinition Width="{StaticResource SettingsNumericUnitWidth}" />
+                              <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionWidth}" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
+                                     Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     IsEnabled="{Binding CanEdit}"
+                                     ToolTip="{Binding NumericValidationMessage}"
+                                     behaviors:TextInputCommitBehavior.CommitOnEnter="True"
+                                     automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
+                                     automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
+                            <TextBlock Grid.Column="1"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Text="{Binding Unit}" />
+                            <controls:SettingsRowActions Grid.Column="2" />
+                          </Grid>
+                        </WrapPanel>
+
+                        <Grid x:Name="NumericTextOnlyEditor"
+                              HorizontalAlignment="Right"
+                              Visibility="{Binding IsNumericTextOnly, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="{StaticResource SettingsNumericUnitWidth}" />
+                            <ColumnDefinition Width="{StaticResource SettingsRowPrimaryActionWidth}" />
+                          </Grid.ColumnDefinitions>
+                          <TextBox Style="{StaticResource SettingsNumericEditorStyle}"
                                    Text="{Binding NumericText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                    IsEnabled="{Binding CanEdit}"
                                    ToolTip="{Binding NumericValidationMessage}"
                                    behaviors:TextInputCommitBehavior.CommitOnEnter="True"
                                    automation:AutomationProperties.Name="{Binding Title, StringFormat=Set {0}}"
                                    automation:AutomationProperties.HelpText="{Binding NumericValidationMessage}" />
-                          <TextBlock Grid.Column="2"
-                                     MinWidth="32"
-                                     Margin="10,0,0,0"
+                          <TextBlock Grid.Column="1"
+                                     Margin="8,0,0,0"
                                      VerticalAlignment="Center"
                                      FontSize="12"
                                      Foreground="{DynamicResource TextSecondaryBrush}"
-                                     Text="{Binding Unit}"
-                                     Visibility="{Binding HasUnit, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                          <controls:SettingsRowActions Grid.Column="3"
-                                                       Margin="8,0,0,0" />
+                                     Text="{Binding Unit}" />
+                          <controls:SettingsRowActions Grid.Column="2" />
                         </Grid>
                         <TextBlock Margin="0,4,52,0"
                                    HorizontalAlignment="Right"
