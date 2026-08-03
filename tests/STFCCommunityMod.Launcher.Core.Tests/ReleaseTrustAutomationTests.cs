@@ -59,7 +59,61 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(releaseWorkflow, "publish:");
         StringAssert.Contains(releaseWorkflow, "contents: write");
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "id-token: write", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "attestations: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "contents: write", RegexOptions.CultureInvariant).Count);
+    }
+
+    [TestMethod]
+    public void ReleaseWorkflowAttestsFinalSubjectsAndReverifiesThemBeforePublication()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
+        var manifest = workflow.IndexOf(
+            "- name: Generate repository-owned Mod Bridge manifest",
+            StringComparison.Ordinal);
+        var attestation = workflow.IndexOf("- name: Attest final signed release subjects", StringComparison.Ordinal);
+        var transfer = workflow.IndexOf("- name: Upload signed release assets", StringComparison.Ordinal);
+        var publicationVerification = workflow.IndexOf(
+            "- name: Verify attested release subjects before publication",
+            StringComparison.Ordinal);
+        var publication = workflow.IndexOf(
+            "- name: Publish setup and machine-consumed update inputs",
+            StringComparison.Ordinal);
+
+        Assert.IsTrue(manifest >= 0, "Release workflow must generate its final manifest.");
+        Assert.IsTrue(attestation > manifest, "Attestation must occur after final manifest generation.");
+        Assert.IsTrue(transfer > attestation, "Only attested subjects may enter the publication transfer.");
+        Assert.IsTrue(
+            publicationVerification > transfer,
+            "The publication job must verify transferred subjects after download.");
+        Assert.IsTrue(publication > publicationVerification, "Attestation verification must precede publication.");
+
+        StringAssert.Matches(
+            workflow,
+            new Regex(
+                @"uses:\s+actions/attest@[0-9a-f]{40}\s+#\s+v4",
+                RegexOptions.CultureInvariant));
+        foreach (var subject in new[]
+                 {
+                     "artifacts/win-x64/app/STFCModBridge.exe",
+                     "artifacts/win-x64/app/STFCModBridge.Updater.exe",
+                     "artifacts/win-x64/setup/STFCModBridge.Setup.exe",
+                     "artifacts/win-x64/stfc-mod-bridge-win-x64.zip",
+                     "artifacts/win-x64/stfc-mod-bridge-release-manifest.json",
+                 })
+        {
+            StringAssert.Contains(workflow, subject, $"Missing attested release subject: {subject}");
+        }
+
+        StringAssert.Contains(workflow, "stfc-mod-bridge-release-attestation.json");
+        StringAssert.Contains(workflow, "gh attestation verify");
+        StringAssert.Contains(workflow, "--signer-workflow");
+        StringAssert.Contains(workflow, "--source-digest");
+        StringAssert.Contains(workflow, "--source-ref");
+        StringAssert.Contains(workflow, "--deny-self-hosted-runners");
+        StringAssert.Contains(workflow, "--bundle $bundle");
+        Assert.IsFalse(
+            workflow.Contains("pull_request_target", StringComparison.Ordinal),
+            "Untrusted pull-request code must not enter the release-attestation authority boundary.");
     }
 
     [TestMethod]
