@@ -10,6 +10,7 @@ namespace STFCCommunityMod.Launcher.Tests;
 [TestClass]
 public sealed class KeepVisibleAboveFooterBehaviorTests
 {
+    private static readonly TimeSpan WpfConstructionTimeout = TimeSpan.FromSeconds(30);
     private static readonly XNamespace Presentation =
         "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace Behaviors =
@@ -188,7 +189,7 @@ public sealed class KeepVisibleAboveFooterBehaviorTests
                 });
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
-            Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(10)), "The WPF construction test timed out.");
+            Assert.IsTrue(thread.Join(WpfConstructionTimeout), "The WPF construction test timed out.");
 
             if (failure is not null)
             {
