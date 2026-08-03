@@ -122,6 +122,41 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ConcurrentSwitchIsRejectedBeforeItCanOverwriteTransactionState()
+    {
+        using var directory = new TemporaryDirectory();
+        var downloader = new BlockingDownloader(NetnivArtifact);
+        var fixture = await CreateFixtureAsync(directory, targetDownloader: downloader);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+
+        var firstSwitch = fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+        await downloader.Started;
+        try
+        {
+            var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+            var recovery = await fixture.Coordinator.RecoverAsync();
+
+            StringAssert.Contains(exception.Message, "already active");
+            Assert.IsFalse(recovery.IsSuccess);
+            StringAssert.Contains(recovery.Message, "already active");
+        }
+        finally
+        {
+            downloader.Release();
+            await firstSwitch;
+        }
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.Completed,
+            fixture.Coordinator.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
     public async Task NoInstalledDllKeepsSourceSelectionPreferenceOnly()
     {
         using var directory = new TemporaryDirectory();
@@ -227,7 +262,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     private static async Task<Fixture> CreateFixtureAsync(
         TemporaryDirectory directory,
         ILauncherProviderSelectionStore? selectionStore = null,
-        bool installSource = true)
+        bool installSource = true,
+        IModArtifactDownloader? targetDownloader = null)
     {
         var gameDirectory = directory.CreateDirectory("game");
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
@@ -262,7 +298,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             stateDirectory,
             NetnivArtifact,
             targetArtifact.ExpectedVersion,
-            new("netniv", "stable", "netniv.stfc-community-mod"));
+            new("netniv", "stable", "netniv.stfc-community-mod"),
+            targetDownloader);
         if (installSource)
         {
             Assert.AreEqual(
@@ -332,10 +369,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         string stateDirectory,
         byte[] contents,
         string version,
-        ModInstallationAttribution attribution) =>
+        ModInstallationAttribution attribution,
+        IModArtifactDownloader? downloader = null) =>
         new(
             stateDirectory,
-            new FakeDownloader(contents),
+            downloader ?? new FakeDownloader(contents),
             new FakeVersionReader(version),
             new FakeAuthenticityVerifier(),
             _ => false,
@@ -393,6 +431,25 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     {
         public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken) =>
             Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
+    }
+
+    private sealed class BlockingDownloader(byte[] contents) : IModArtifactDownloader
+    {
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => started.Task;
+
+        public void Release() => released.TrySetResult();
+
+        public async Task<ModArtifactDownload> DownloadAsync(
+            Uri uri,
+            CancellationToken cancellationToken)
+        {
+            started.TrySetResult();
+            await released.Task.WaitAsync(cancellationToken);
+            return new(HttpStatusCode.OK, contents, contents.LongLength);
+        }
     }
 
     private sealed class FakeVersionReader(string version) : IModArtifactVersionReader

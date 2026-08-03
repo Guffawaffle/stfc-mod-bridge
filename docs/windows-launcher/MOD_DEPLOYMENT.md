@@ -178,8 +178,10 @@ no-passive-discovery service contract.
 ## Source-transition transaction and ownership
 
 Artifact replacement, preference persistence, and protected backup cannot be one filesystem atomic operation.
-`LauncherProviderAtomicSwitchCoordinator` uses the deployment service's exact
-installation-scoped mutation lease and journals compensating steps in this order:
+`LauncherProviderAtomicSwitchCoordinator` uses a dedicated cross-process
+provider-switch admission lease, then enters the deployment service's exact
+installation-scoped mutation lease before any artifact commit. It journals
+compensating steps in this order:
 
 ```text
 prepared -> artifact-committing -> configuration-committed -> completed
@@ -214,7 +216,8 @@ game-running denial; provider/channel/runtime binding; coordinated rollback;
 startup recovery after DLL and configuration commit; and a live
 Guffawaffle → NetniV → Guffawaffle round trip. Follow-up coverage remains for
 custom/dev adoption, every process-termination phase, broader secret/export
-audits, and concurrent cross-workspace mutation.
+audits, and exhaustive contention between provider switching and independent
+Settings/Data Sync writers in another Mod Bridge process.
 
 ## Verified transaction
 

@@ -91,6 +91,28 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public async Task GameStartingWhileDeploymentAcquiresLeaseBlocksBeforeDownload()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var downloader = new FakeDownloader(SuccessfulDownload());
+        var checks = 0;
+        var service = CreateService(
+            temporaryDirectory,
+            downloader,
+            isGameRunning: _ => ++checks > 1);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.GameRunning, result.State);
+        Assert.AreEqual(0, downloader.CallCount);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
     public async Task ExistingArtifactRequiresExplicitAdoption()
     {
         using var temporaryDirectory = new TemporaryDirectory();

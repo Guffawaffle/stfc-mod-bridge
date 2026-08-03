@@ -608,6 +608,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         try
         {
             ReviewProviderSwitchButton.IsEnabled = false;
+            ProviderSourceSelector.IsEnabled = false;
             ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
             var configurationPath = GetConfigurationFilePath();
             if (configurationPath is not null && !File.Exists(configurationPath))
@@ -651,6 +652,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ConfirmProviderSwitchButton.IsEnabled = false;
             ProviderSwitchConfirmationInput.Focus();
         }
+        catch (OperationCanceledException)
+        {
+            pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
+            ProviderSwitchPreviewText.Text = "The provider-switch review was canceled.";
+        }
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
@@ -660,8 +667,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or HttpRequestException)
         {
             pendingProviderSwitch = null;
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            ResetProviderSwitchReviewControls();
             ProviderSwitchPreviewText.Text = $"The provider switch could not be prepared: {exception.Message}";
         }
     }
@@ -689,6 +695,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationInput.IsEnabled = false;
         try
         {
             var result = await providerSourceSwitchCoordinator.ExecuteAsync(
@@ -715,9 +723,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         catch (OperationCanceledException)
         {
             ProviderSwitchPreviewText.Text = "The provider switch was canceled.";
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
             pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
         }
         catch (Exception exception) when (
             exception is IOException
@@ -726,10 +733,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or InvalidOperationException)
         {
             ProviderSwitchPreviewText.Text = $"The provider switch failed: {exception.Message}";
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
             pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
         }
+    }
+
+    private void ResetProviderSwitchReviewControls()
+    {
+        ProviderSourceSelector.IsEnabled = providerSelectionPendingRestart is null;
+        ProviderSwitchConfirmationInput.IsEnabled = true;
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+        ReviewProviderSwitchButton.IsEnabled =
+            providerSelectionPendingRestart is null
+            && ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
+            && (!providerSelectionResolution.IsResolved
+                || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));
     }
 
     private void UpdateProviderCapabilityText()

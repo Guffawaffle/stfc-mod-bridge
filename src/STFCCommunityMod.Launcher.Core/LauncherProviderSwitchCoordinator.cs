@@ -61,6 +61,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     private readonly LauncherProviderSourceSwitchService configurationSwitch;
     private readonly Dictionary<string, ModManagementCoordinator> endpoints;
     private readonly string journalPath;
+    private readonly LauncherOperationLock operationLock;
     private readonly TimeProvider timeProvider;
 
     public LauncherProviderAtomicSwitchCoordinator(
@@ -85,7 +86,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             throw new ArgumentException("A provider-switch endpoint is bound to the wrong provider.", nameof(endpoints));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
-        journalPath = Path.Combine(Path.GetFullPath(stateDirectory), "provider-switch-journal.json");
+        var normalizedStateDirectory = Path.GetFullPath(stateDirectory);
+        journalPath = Path.Combine(normalizedStateDirectory, "provider-switch-journal.json");
+        operationLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -167,6 +170,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preview);
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
+        if (lease is null)
+        {
+            throw new InvalidOperationException("Another provider switch or recovery is already active.");
+        }
         RejectIncompleteTransaction();
         if (preview.Artifact is null)
         {
@@ -253,6 +261,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     public async Task<LauncherProviderAtomicSwitchRecoveryResult> RecoverAsync(
         CancellationToken cancellationToken = default)
     {
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
+        if (lease is null)
+        {
+            return new(false, false, "Another provider switch or recovery is already active.");
+        }
         var journal = ReadJournal();
         if (journal is null
             || journal.Phase is LauncherProviderAtomicSwitchPhase.Completed

@@ -134,6 +134,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
+        if (isGameRunning(normalizedGameDirectory))
+        {
+            return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before changing the mod.");
+        }
 
         ModDeploymentJournal? incompleteJournal;
         ModInstalledArtifactState? previousInstalledState;

@@ -1318,7 +1318,7 @@
                           automation:AutomationProperties.Name="Community mod source dialog">
       <StackPanel>
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Choose where Mod Bridge checks for community mod releases. Changing source never edits mod TOML and takes effect after restarting Mod Bridge."
+                   Text="Choose where Mod Bridge checks for community mod releases. A switch protects the current provider's TOML and may restore the target provider's latest TOML history. Changes take effect after restarting Mod Bridge."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,4"
                    FontWeight="SemiBold"
