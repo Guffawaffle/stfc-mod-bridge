@@ -1,8 +1,8 @@
-# STFC Mod Control product identity
+# STFC Mod Bridge product identity
 
-Issue #27 adopts **STFC Mod Control** as the public name of the standalone
+Issue #27 adopts **STFC Mod Bridge** as the public name of the standalone
 Windows application. Its descriptor is **Install · Configure · Diagnose ·
-Run**. In prose, use **Mod Control** when referring to the product, lowercase
+Run**. In prose, use **Mod Bridge** when referring to the product, lowercase
 `launch` only for starting a process, and **Scopely launcher** for the external
 official application.
 
@@ -10,28 +10,28 @@ official application.
 
 | Surface | Classification | v1 disposition |
 |---|---|---|
-| Window title, accessibility name, dialogs, diagnostics filename, UI copy | Public identity | Renamed to STFC Mod Control / Mod Control |
-| Setup error title, Start menu and desktop shortcuts, Add/Remove Programs entry | Public identity | Named STFC Mod Control from the first public build |
-| Assembly product, title, description and signed-file description | Public identity | Named STFC Mod Control |
+| Window title, accessibility name, dialogs, diagnostics filename, UI copy | Public identity | Renamed to STFC Mod Bridge / Mod Bridge |
+| Setup error title, Start menu and desktop shortcuts, Add/Remove Programs entry | Public identity | Named STFC Mod Bridge from the first public build |
+| Assembly product, title, description and signed-file description | Public identity | Named STFC Mod Bridge |
 | README, release title/copy, provider schema title, portfolio artwork | Public identity | Renamed |
-| `%LOCALAPPDATA%\\Programs\\STFC Mod Control` | Program location | Canonical greenfield install path |
-| `%LOCALAPPDATA%\\STFC Mod Control` | Persisted state | Canonical greenfield state, logs, journal, rollback, and preferences path |
-| `STFCModControl.exe`, `STFCModControl.Updater.exe`, and `STFCModControl.Setup.exe` | Signed executable identity | Canonical filenames and process identity |
+| `%LOCALAPPDATA%\\Programs\\STFC Mod Bridge` | Program location | Canonical greenfield install path |
+| `%LOCALAPPDATA%\\STFC Mod Bridge` | Persisted state | Canonical greenfield state, logs, journal, rollback, and preferences path |
+| `STFCModBridge.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.Setup.exe` | Signed executable identity | Canonical filenames and process identity |
 | .NET namespaces and solution/project directory names | Internal implementation identity | Retained because they are not player-visible or compatibility contracts |
-| `stfc-mod-control-win-x64.zip` and `stfc-mod-control-release-manifest.json` | Machine-consumed release identity | Canonical pre-v1 artifact names |
+| `stfc-mod-bridge-win-x64.zip` and `stfc-mod-bridge-release-manifest.json` | Machine-consumed release identity | Canonical pre-v1 artifact names |
 | `Guffawaffle/stfc-mod-launcher` update endpoint and trust metadata | Repository/update compatibility | Retained until the repository-rename checklist below is complete |
 | Historical architecture paths, provenance links and issue references | Historical record | Retained or annotated; history is not rewritten |
 
-`ModControlProductIdentity` is the code authority for public product language
+`ModBridgeProductIdentity` is the code authority for public product language
 and install/process/artifact identifiers. The WPF namespace and classes may
 continue to contain `Launcher`; those are implementation names, not display
 copy.
 
 ## Greenfield behavior
 
-No pre-v1 STFC Mod Control build has been released. Setup therefore installs
+No pre-v1 STFC Mod Bridge build has been released. Setup therefore installs
 directly into the canonical program and state directories, creates only the
-**STFC Mod Control** shortcuts, and writes one per-user Add/Remove Programs
+**STFC Mod Bridge** shortcuts, and writes one per-user Add/Remove Programs
 entry. Uninstall removes only the canonical shortcuts and registration. State
 is preserved unless the explicit `-RemoveState` option is used.
 
@@ -42,7 +42,7 @@ migration path to maintain or test.
 
 ## Deferred repository rename
 
-The intended repository name is `Guffawaffle/stfc-mod-control`. Rename it only
+The intended repository name is `Guffawaffle/stfc-mod-bridge`. Rename it only
 after release workflow URLs, the hard-coded self-update repository, provider
 metadata, documentation links, OIDC/signing subjects and external consumers
 have an atomic migration plan. GitHub redirects are a convenience, not an
@@ -53,4 +53,4 @@ update-trust contract.
 This is LexRunner Portfolio Project 001 under the SmarterGPT brand. The active
 v1 lifecycle uses **The Lex Toolchain · In Practice**. **Proven in Practice** is
 reserved for the completed evidence-backed release. This provenance is
-secondary to the STFC Mod Control product identity.
+secondary to the STFC Mod Bridge product identity.

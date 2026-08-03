@@ -15,7 +15,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
     private readonly Func<bool> isGameRunning;
     private readonly TimeProvider timeProvider;
-    private readonly ModInstallationAttribution? installationAttribution;
+    private readonly ModInstallationAttribution installationAttribution;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
 
     public ModDeploymentService(
@@ -24,9 +24,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IModArtifactVersionReader versionReader,
         IModArtifactAuthenticityVerifier authenticityVerifier,
         Func<bool> isGameRunning,
+        ModInstallationAttribution installationAttribution,
         TimeProvider? timeProvider = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
-        ModInstallationAttribution? installationAttribution = null)
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -37,7 +37,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.isGameRunning = isGameRunning ?? throw new ArgumentNullException(nameof(isGameRunning));
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.afterPhasePersisted = afterPhasePersisted;
-        this.installationAttribution = installationAttribution;
+        this.installationAttribution = installationAttribution
+            ?? throw new ArgumentNullException(nameof(installationAttribution));
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -109,7 +110,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
 
         ModDeploymentJournal? incompleteJournal;
@@ -123,7 +124,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Mod Control deployment state could not be read: {exception.Message}");
+                $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
         if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
         {
@@ -141,7 +142,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             {
                 return new(
                     ModDeploymentResultState.RecoveryRequired,
-                    "Mod Control-managed mod state belongs to a different game installation; remove or repair it first.");
+                    "Mod Bridge-managed mod state belongs to a different game installation; remove or repair it first.");
             }
             if ((!hadExistingArtifact
                 || !string.Equals(
@@ -152,7 +153,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
-                    "The installed version.dll no longer matches Mod Control-managed state; repair is required.");
+                    "The installed version.dll no longer matches Mod Bridge-managed state; repair is required.");
             }
             isManagedUpdate = true;
         }
@@ -163,7 +164,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(
                 ModDeploymentResultState.ExistingArtifactRequiresAdoption,
-                "An existing version.dll requires explicit adoption before Mod Control can replace it.");
+                "An existing version.dll requires explicit adoption before Mod Bridge can replace it.");
         }
 
         Directory.CreateDirectory(stateDirectory);
@@ -241,9 +242,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 journal.Artifact.Sha256,
                 timeProvider.GetUtcNow(),
                 retainedBackupPath,
-                installationAttribution?.ProviderId,
-                installationAttribution?.ReleaseChannelId,
-                installationAttribution?.RuntimeDistributionId);
+                installationAttribution.ProviderId,
+                installationAttribution.ReleaseChannelId,
+                installationAttribution.RuntimeDistributionId);
             WriteJsonAtomically(InstalledStatePath, installedState);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
             return new(
@@ -278,7 +279,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
 
         ModDeploymentJournal? incompleteJournal;
@@ -292,7 +293,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Mod Control deployment state could not be read: {exception.Message}");
+                $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
         if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
         {
@@ -303,7 +304,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
         if (installedState is null)
         {
-            return new(ModDeploymentResultState.Succeeded, "No Mod Control-managed mod installation was found.");
+            return new(ModDeploymentResultState.Succeeded, "No Mod Bridge-managed mod installation was found.");
         }
 
         var validation = GameInstallValidator.Validate(installedState.GameDirectory);
@@ -318,7 +319,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(
                 ModDeploymentResultState.ManagedArtifactChanged,
-                "The installed version.dll no longer matches Mod Control-managed state; it was not removed.");
+                "The installed version.dll no longer matches Mod Bridge-managed state; it was not removed.");
         }
 
         var transactionId = Guid.NewGuid().ToString("N");
@@ -361,7 +362,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             DeleteIfExists(removedArtifactPath);
             return new(
                 ModDeploymentResultState.Succeeded,
-                "The Mod Control-managed mod was removed.",
+                "The Mod Bridge-managed mod was removed.",
                 Changed: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -390,7 +391,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {
-            return new(ModDeploymentResultState.Busy, "Another Mod Control mutation is already active.");
+            return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
 
         ModDeploymentJournal? journal;
@@ -404,7 +405,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
-                $"Mod Control deployment state could not be read: {exception.Message}");
+                $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
         if (journal is null || IsTerminal(journal.Phase))
         {

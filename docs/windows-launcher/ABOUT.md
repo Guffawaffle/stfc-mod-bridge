@@ -1,6 +1,6 @@
 # About, attribution, and notice ownership
 
-The About page is STFC Mod Control's durable identity and provenance surface.
+The About page is STFC Mod Bridge's durable identity and provenance surface.
 It owns product/build information, active provider/runtime context, credits,
 game/publisher acknowledgement, and readable third-party notices. It does not
 own repair, update, removal, game/log folder, diagnostic export, or other

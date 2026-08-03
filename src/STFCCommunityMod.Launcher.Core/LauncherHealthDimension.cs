@@ -6,6 +6,7 @@ public enum LauncherHealthDimensionCategory
     InstallationSelection,
     Discovery,
     ModInstallation,
+    BinaryProvenance,
     ProviderCompatibility,
     UpdateAvailability,
     GameCompatibility,
@@ -26,4 +27,5 @@ public sealed record LauncherHealthDimension(
     LauncherHealthDimensionCategory Category,
     LauncherHealthSeverity Severity,
     string Title,
-    string Detail);
+    string Detail,
+    string? TechnicalDetail = null);

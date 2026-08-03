@@ -34,7 +34,7 @@ public sealed class AboutSurfaceTests
                 "Guffawaffle/stfc-mod"),
             uri => openedUri = uri);
 
-        Assert.AreEqual(ModControlProductIdentity.ProductName, about.ProductName);
+        Assert.AreEqual(ModBridgeProductIdentity.ProductName, about.ProductName);
         Assert.AreEqual("Guffawaffle", about.Provider);
         Assert.AreEqual("guffawaffle", about.ProviderId);
         Assert.AreEqual("Stable", about.ReleaseChannel);
@@ -59,7 +59,7 @@ public sealed class AboutSurfaceTests
         var about = document.Descendants(Presentation + "ScrollViewer")
             .Single(element =>
                 (string?)element.Attribute(Automation + "AutomationProperties.Name")
-                == "About STFC Mod Control");
+                == "About STFC Mod Bridge");
         var aboutText = about.ToString(SaveOptions.DisableFormatting);
 
         Assert.AreEqual("Disabled", (string?)about.Attribute("HorizontalScrollBarVisibility"));
@@ -85,14 +85,14 @@ public sealed class AboutSurfaceTests
         var about = document.Descendants(Presentation + "ScrollViewer")
             .Single(element =>
                 (string?)element.Attribute(Automation + "AutomationProperties.Name")
-                == "About STFC Mod Control");
+                == "About STFC Mod Bridge");
         var namedButtons = about.Descendants(Presentation + "Button")
             .Select(element => (string?)element.Attribute(Automation + "AutomationProperties.Name"))
             .ToArray();
 
-        CollectionAssert.Contains(namedButtons, "Open STFC Mod Control source repository");
-        CollectionAssert.Contains(namedButtons, "Open STFC Mod Control releases");
-        CollectionAssert.Contains(namedButtons, "Open STFC Mod Control license");
+        CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge source repository");
+        CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge releases");
+        CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge license");
         CollectionAssert.Contains(namedButtons, "Open active mod provider repository");
         var contributionLink = about.Descendants(Presentation + "Button")
             .Single(element => (string?)element.Attribute("Content") == "View contribution source");

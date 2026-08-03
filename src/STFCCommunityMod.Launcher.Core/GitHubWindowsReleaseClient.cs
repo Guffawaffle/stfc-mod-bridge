@@ -76,7 +76,7 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
             channel,
             currentLauncherVersion,
             repository);
-        var launcherArtifact = manifest.Artifacts.Any(candidate => candidate.Id == "windows-mod-control-archive-x64")
+        var launcherArtifact = manifest.Artifacts.Any(candidate => candidate.Id == "windows-mod-bridge-archive-x64")
             ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(manifest, channel, currentLauncherVersion, repository)
             : null;
         return new(manifest, artifact, launcherArtifact);
@@ -121,8 +121,8 @@ public sealed class GitHubLauncherReleaseClient : ILauncherReleaseDiscoveryClien
         if (candidateVersion <= installedVersion)
         {
             throw new InvalidDataException(
-                $"No newer {channel} Mod Control release is eligible; {artifact.ReleaseVersion} does not advance "
-                + $"the installed Mod Control {currentLauncherVersion}.");
+                $"No newer {channel} Mod Bridge release is eligible; {artifact.ReleaseVersion} does not advance "
+                + $"the installed Mod Bridge {currentLauncherVersion}.");
         }
         return new(manifest, artifact);
     }

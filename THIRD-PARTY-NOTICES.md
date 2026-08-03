@@ -2,7 +2,7 @@
 
 This file is generated from `docs/windows-launcher/about-content.v1.json`. Do not edit it directly.
 
-STFC Mod Control is distributed under the repository license. The components below retain their own terms.
+STFC Mod Bridge is distributed under the repository license. The components below retain their own terms.
 
 ## Coverage and open review
 
@@ -54,7 +54,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - Authoritative license information: https://github.com/dotnet/core/blob/main/license-information.md
 
 ```text
-STFC Mod Control is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
+STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
 ```
 
 ## Attribution review boundary

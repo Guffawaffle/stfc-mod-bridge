@@ -47,7 +47,7 @@ file records stable IDs so a fresh session can recover the intended sequence.
 - Validation: Release build clean, `69/69` launcher tests passing,
   `dotnet format --verify-no-changes` clean, and `git diff --check` clean.
 - Last packaged executable:
-  `windows-launcher/artifacts/win-x64/app/STFCModControl.exe`.
+  `windows-launcher/artifacts/win-x64/app/STFCModBridge.exe`.
 
 ### Accepted UI contract — do not casually reopen
 

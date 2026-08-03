@@ -291,7 +291,7 @@ public static partial class WindowsReleaseSelectionPolicy
 {
     private const string ModArtifactId = "windows-mod-dll-x64";
     private const long MaximumModArtifactSize = 128L * 1024L * 1024L;
-    private const string LauncherArtifactId = "windows-mod-control-archive-x64";
+    private const string LauncherArtifactId = "windows-mod-bridge-archive-x64";
     private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
 
     [GeneratedRegex(
@@ -347,7 +347,7 @@ public static partial class WindowsReleaseSelectionPolicy
         if (currentLauncherVersion < manifest.MinimumLauncherVersion)
         {
             throw new InvalidDataException(
-                $"Mod Control {manifest.MinimumLauncherVersion} or newer is required for this release.");
+                $"Mod Bridge {manifest.MinimumLauncherVersion} or newer is required for this release.");
         }
         if (!string.Equals(
                 manifest.Source.Repository,
@@ -401,22 +401,22 @@ public static partial class WindowsReleaseSelectionPolicy
         var matches = manifest.Artifacts.Where(artifact => artifact.Id == LauncherArtifactId).ToArray();
         if (matches.Length != 1)
         {
-            throw new InvalidDataException("The release must contain exactly one Windows Mod Control archive.");
+            throw new InvalidDataException("The release must contain exactly one Windows Mod Bridge archive.");
         }
         var artifact = matches[0];
-        if (artifact.Kind != "windows-mod-control"
+        if (artifact.Kind != "windows-mod-bridge"
             || artifact.Platform != "windows"
             || artifact.Architecture != "x64"
-            || artifact.FileName != ModControlProductIdentity.UpdateArchiveName
+            || artifact.FileName != ModBridgeProductIdentity.UpdateArchiveName
             || artifact.MediaType != "application/zip"
             || artifact.Size > MaximumLauncherArtifactSize
             || artifact.Authenticity.Scheme != "authenticode"
             || artifact.Authenticity.Scope != "contents"
             || artifact.Authenticity.SignedFiles.Count != 2
-            || artifact.Authenticity.SignedFiles[0] != ModControlProductIdentity.ExecutableName
-            || artifact.Authenticity.SignedFiles[1] != ModControlProductIdentity.UpdaterExecutableName)
+            || artifact.Authenticity.SignedFiles[0] != ModBridgeProductIdentity.ExecutableName
+            || artifact.Authenticity.SignedFiles[1] != ModBridgeProductIdentity.UpdaterExecutableName)
         {
-            throw new InvalidDataException("The Windows Mod Control artifact contract is invalid or unsupported.");
+            throw new InvalidDataException("The Windows Mod Bridge artifact contract is invalid or unsupported.");
         }
         return new(
             new Uri($"https://github.com/{expectedRepository}/releases/download/{Uri.EscapeDataString(manifest.Tag)}/{artifact.FileName}"),
@@ -438,7 +438,7 @@ public static partial class WindowsReleaseSelectionPolicy
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedRepository);
         if (!IsEligibleRelease(manifest, selectedChannel, currentLauncherVersion, expectedRepository))
         {
-            throw new InvalidDataException("The release is not eligible for this Mod Control channel.");
+            throw new InvalidDataException("The release is not eligible for this Mod Bridge channel.");
         }
     }
 

@@ -244,7 +244,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string OpenRawTomlAvailability =>
         CanOpenRawToml
             ? "Open the active configuration as raw TOML."
-            : "Raw TOML becomes available after Mod Control selects an active configuration.";
+            : "Raw TOML becomes available after Mod Bridge selects an active configuration.";
 
     public bool IsConfigurationReady => workspace is not null;
 
@@ -377,7 +377,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 LauncherSettingsSection.About,
                 "About",
                 "Product identity, build provenance, credits, and third-party notices.",
-                "About STFC Mod Control",
+                "About STFC Mod Bridge",
                 SelectSection));
         return sections.AsReadOnly();
     }
@@ -638,7 +638,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 "Changes saved. A backup of the previous TOML is available beside the configuration.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
-                "The TOML changed outside Mod Control. Those external edits were preserved; reload before saving.",
+                "The TOML changed outside Mod Bridge. Those external edits were preserved; reload before saving.",
             AtomicTomlWriteState.Invalid =>
                 $"Nothing was written because the TOML is not safe to update: {result.ValidationError?.Message}",
             AtomicTomlWriteState.NoConfigurationSelected =>
@@ -837,10 +837,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .Select(row => row.Setting)
             .Where(IsPatchSetting)
             .ToArray();
-        if (projectedPatchSettings.Length > 0)
-        {
-            items.Add(CreatePatchGate(projectedPatchSettings));
-        }
 
         foreach (var item in projection)
         {
@@ -882,6 +878,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     constructedPaths.Add(row.Path);
                     break;
             }
+        }
+
+        if (projectedPatchSettings.Length > 0)
+        {
+            items.Add(CreatePatchGate(projectedPatchSettings));
         }
 
         projectedItems.ReplaceAll(items);

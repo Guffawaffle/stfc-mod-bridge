@@ -146,7 +146,7 @@ public static class LauncherRuntimeManifestDetector
                 return LauncherRuntimeProfile.Unknown(
                     evidenceSource,
                     $"Runtime manifest schema {manifestSchema} is unsupported. "
-                    + $"Mod Control supports schema {SupportedManifestSchema}.");
+                    + $"Mod Bridge supports schema {SupportedManifestSchema}.");
             }
 
             var distributionId = ReadRequiredString(root, "distributionId", "runtime manifest");

@@ -395,17 +395,17 @@ public sealed class LauncherProviderSourceSwitchService
                     or InvalidOperationException)
             {
                 throw new InvalidOperationException(
-                    "Provider switch failed and Mod Control state rollback also failed.",
+                    "Provider switch failed and Mod Bridge state rollback also failed.",
                     new AggregateException(switchException, rollbackException));
             }
             throw new InvalidOperationException(
-                "Provider switch failed; the Mod Control selection was rolled back and configuration was not rewritten.",
+                "Provider switch failed; the Mod Bridge selection was rolled back and configuration was not rewritten.",
                 switchException);
         }
         return new(
             preview.Target,
             backupPath,
-            $"Selected {preview.TargetDisplayName}. Restart Mod Control before managing the mod or editing settings.");
+            $"Selected {preview.TargetDisplayName}. Restart Mod Bridge before managing the mod or editing settings.");
     }
 
     private LauncherProviderSelectionResolution ResolveCurrent()
@@ -450,7 +450,7 @@ public sealed class LauncherProviderSourceSwitchService
                     new(
                         capabilityId,
                         LauncherProviderCompatibilityKind.Unknown,
-                        $"{capabilityId} is unknown for {target.DisplayName}; Mod Control will not assume support."));
+                        $"{capabilityId} is unknown for {target.DisplayName}; Mod Bridge will not assume support."));
             }
             else if (sourceStatus == LauncherProviderCapabilityStatus.Supported
                      && targetStatus == LauncherProviderCapabilityStatus.Unsupported)

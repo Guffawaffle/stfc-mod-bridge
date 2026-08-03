@@ -24,7 +24,7 @@ internal static class Program
         {
             MessageBox.Show(
                 exception.Message,
-                $"{ModControlProductIdentity.ProductName} setup",
+                $"{ModBridgeProductIdentity.ProductName} setup",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             Environment.ExitCode = 1;
@@ -48,7 +48,7 @@ internal static class Program
         {
             UseShellExecute = true,
             WorkingDirectory = Path.GetDirectoryName(result.LauncherPath),
-        }) ?? throw new InvalidOperationException($"Windows did not start {ModControlProductIdentity.ProductName}.");
+        }) ?? throw new InvalidOperationException($"Windows did not start {ModBridgeProductIdentity.ProductName}.");
     }
 
     private static void VerifySetupSignature()
@@ -65,10 +65,10 @@ internal static class Program
     private static byte[] ReadEmbeddedPayload()
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadResource)
-            ?? throw new InvalidDataException("This setup executable does not contain a Mod Control payload.");
+            ?? throw new InvalidDataException("This setup executable does not contain a Mod Bridge payload.");
         if (stream.Length is <= 0 or > 768L * 1024L * 1024L)
         {
-            throw new InvalidDataException("The embedded Mod Control payload has an invalid size.");
+            throw new InvalidDataException("The embedded Mod Bridge payload has an invalid size.");
         }
         using var destination = new MemoryStream((int)stream.Length);
         stream.CopyTo(destination);
@@ -77,7 +77,7 @@ internal static class Program
 
     private static bool IsLauncherRunning()
     {
-        var processes = Process.GetProcessesByName(ModControlProductIdentity.ProcessName);
+        var processes = Process.GetProcessesByName(ModBridgeProductIdentity.ProcessName);
         try
         {
             return processes.Length > 0;
@@ -95,7 +95,7 @@ internal static class Program
     {
         var startMenuDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Programs),
-            ModControlProductIdentity.StartMenuGroupName);
+            ModBridgeProductIdentity.StartMenuGroupName);
         Directory.CreateDirectory(startMenuDirectory);
         var shellType = Type.GetTypeFromProgID("WScript.Shell")
             ?? throw new InvalidOperationException("Windows shortcut support is unavailable.");
@@ -110,10 +110,10 @@ internal static class Program
                 BindingFlags.InvokeMethod,
                 binder: null,
                 target: shell,
-                [Path.Combine(startMenuDirectory, ModControlProductIdentity.ShortcutFileName)],
+                [Path.Combine(startMenuDirectory, ModBridgeProductIdentity.ShortcutFileName)],
                 CultureInfo.InvariantCulture);
             var shortcutType = shortcut?.GetType()
-                ?? throw new InvalidOperationException("Windows did not create the Mod Control shortcut.");
+                ?? throw new InvalidOperationException("Windows did not create the Mod Bridge shortcut.");
             shortcutType.InvokeMember(
                 "TargetPath",
                 BindingFlags.SetProperty,
@@ -164,10 +164,10 @@ internal static class Program
         var uninstallCommand =
             $"\"{Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")}\" "
             + $"-NoProfile -ExecutionPolicy Bypass -File \"{uninstallScript}\"";
-        var keyPath = $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{ModControlProductIdentity.UninstallRegistryKeyName}";
+        var keyPath = $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{ModBridgeProductIdentity.UninstallRegistryKeyName}";
         using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true)
             ?? throw new InvalidOperationException("Windows did not create the uninstall registration.");
-        key.SetValue("DisplayName", ModControlProductIdentity.ProductName, RegistryValueKind.String);
+        key.SetValue("DisplayName", ModBridgeProductIdentity.ProductName, RegistryValueKind.String);
         key.SetValue("DisplayIcon", $"{productPath},0", RegistryValueKind.String);
         key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0", RegistryValueKind.String);
         key.SetValue("Publisher", Publisher, RegistryValueKind.String);

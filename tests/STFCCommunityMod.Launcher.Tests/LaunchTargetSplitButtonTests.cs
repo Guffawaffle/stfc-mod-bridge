@@ -170,12 +170,12 @@ public sealed class LaunchTargetSplitButtonTests
             (string?)source.Attribute(Automation + "AutomationProperties.Name"));
         StringAssert.Contains(
             (string?)source.Attribute(Automation + "AutomationProperties.HelpText"),
-            "Current provider and channel");
+            "Detected installed lineage");
         Assert.IsFalse(document.ToString().Contains("Source: {", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void HomeUsesModControlIdentityAndAnnouncesGameStatusOnce()
+    public void HomeUsesModBridgeIdentityAndAnnouncesGameStatusOnce()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
         var productTitle = document.Descendants(Presentation + "TextBlock")
@@ -190,7 +190,7 @@ public sealed class LaunchTargetSplitButtonTests
         var decorativeGlyph = gameSection.Descendants(Presentation + "Viewbox")
             .Single(element => GetName(element) == "GameStatusGlyph");
 
-        Assert.AreEqual("STFC Mod Control", (string?)productTitle.Attribute("Text"));
+        Assert.AreEqual("STFC Mod Bridge", (string?)productTitle.Attribute("Text"));
         Assert.AreEqual(1, gameStatusBindings.Length);
         Assert.IsNull(decorativeGlyph.Attribute(Automation + "AutomationProperties.Name"));
         Assert.IsFalse(decorativeGlyph.Descendants().Any(element =>

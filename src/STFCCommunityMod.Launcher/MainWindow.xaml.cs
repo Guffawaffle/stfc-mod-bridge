@@ -53,6 +53,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
     private bool isColorModeSelectorReady;
+    private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private MaintenanceAction pendingMaintenanceAction;
@@ -117,6 +118,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateColorModeSelectorAccessibility();
         DataContext = MainWindowViewModel.CreateDefault(
             httpClient,
+            distributionProviderCatalog,
             distributionProvider,
             distributionReleaseChannel,
             providerShellAccess.CanUseProviderBoundModActions
@@ -155,10 +157,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         base.OnSourceInitialized(e);
         LauncherThemeManager.ApplyWindowChrome(this, currentTheme);
         processStateMonitor.StateChanged += ProcessStateMonitor_StateChanged;
-        if (processStateMonitor.TryStart(new WindowInteropHelper(this).Handle))
-        {
-            shellLifecycleController.HandleStartup();
-        }
+        // The view model already captured the initial state during composition. The monitor
+        // supplies subsequent edge-triggered changes; starting it must not repeat the DLL scan.
+        _ = processStateMonitor.TryStart(new WindowInteropHelper(this).Handle);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -256,7 +257,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         ModOperationDialog.DialogTitle = pendingModOperation.ActionKind switch
         {
-            ModManagementActionKind.AdoptAndInstall => "Adopt and update community mod?",
+            ModManagementActionKind.UpdateManualInstallation => "Update community mod?",
             ModManagementActionKind.Repair => "Repair community mod?",
             ModManagementActionKind.CheckForUpdate => "Update community mod?",
             _ => "Install community mod?",
@@ -265,7 +266,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ModOperationTarget.Text = pendingModOperation.GameDirectory;
         ConfirmModOperationButton.Content = pendingModOperation.ActionKind switch
         {
-            ModManagementActionKind.AdoptAndInstall => "_Adopt and install",
+            ModManagementActionKind.UpdateManualInstallation => "_Update",
             ModManagementActionKind.Repair => "_Repair",
             ModManagementActionKind.CheckForUpdate => "_Update",
             _ => "_Install",
@@ -382,8 +383,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         var dialog = new SaveFileDialog
         {
-            Title = "Export redacted Mod Control diagnostics",
-            FileName = $"stfc-mod-control-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            Title = "Export redacted Mod Bridge diagnostics",
+            FileName = $"stfc-mod-bridge-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.json",
             DefaultExt = ".json",
             Filter = "JSON diagnostics (*.json)|*.json",
             AddExtension = true,
@@ -491,10 +492,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         pendingMaintenanceAction = action;
         MaintenanceDialog.DialogTitle = action == MaintenanceAction.Recover
             ? "Recover mod transaction?"
-            : "Remove Mod Control-managed mod?";
+            : "Remove Mod Bridge-managed mod?";
         MaintenanceSummary.Text = action == MaintenanceAction.Recover
             ? "Roll back the incomplete transaction using its persisted journal. Only version.dll and transaction-scoped allowlisted files can change."
-            : "Remove Mod Control-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
+            : "Remove Mod Bridge-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
         MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
         ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
         MaintenanceDialog.IsOpen = true;
@@ -556,7 +557,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ProviderSwitchConfirmationInput.Text = string.Empty;
         ProviderSwitchPreviewText.Text = providerSelectionPendingRestart is null
             ? "Choose another provider, then review compatibility before switching."
-            : "The selected source is saved. Restart Mod Control before reviewing another switch.";
+            : "The selected source is saved. Restart Mod Bridge before reviewing another switch.";
         UpdateProviderCapabilityText();
         ProviderSwitchDialog.IsOpen = true;
         _ = Dispatcher.BeginInvoke(
@@ -578,7 +579,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));
         ProviderSwitchPreviewText.Text = ReviewProviderSwitchButton.IsEnabled
             ? "Review the compatibility evidence and backup boundary before switching."
-            : "This provider is active for the current Mod Control process.";
+            : "This provider is active for the current Mod Bridge process.";
         UpdateProviderCapabilityText();
     }
 
@@ -609,7 +610,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     concern => $"• {concern.Kind}: {concern.Message}"));
             var backup = pendingProviderSwitch.ConfigurationPath is null
                 ? "No configuration file is currently selected, so no TOML backup is needed."
-                : "The exact TOML bytes will be copied to Mod Control-owned rollback storage before the selection changes.";
+                : "The exact TOML bytes will be copied to Mod Bridge-owned rollback storage before the selection changes.";
             ProviderSwitchPreviewText.Text =
                 $"{pendingProviderSwitch.SourceDisplayName} → {pendingProviderSwitch.TargetDisplayName}"
                 + Environment.NewLine
@@ -825,7 +826,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.ToolTip = helpText;
         AutomationProperties.SetName(
             ColorModeSelector,
-            $"Mod Control color mode, {selectedColorMode}");
+            $"Mod Bridge color mode, {selectedColorMode}");
         AutomationProperties.SetHelpText(ColorModeSelector, helpText);
     }
 
@@ -837,7 +838,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         MaximizeRestoreButton.ToolTip = isMaximized ? "Restore" : "Maximize";
         AutomationProperties.SetName(
             MaximizeRestoreButton,
-            isMaximized ? "Restore Mod Control" : "Maximize Mod Control");
+            isMaximized ? "Restore Mod Bridge" : "Maximize Mod Bridge");
     }
 
     private void SetSettingsWorkspaceOpen(bool isOpen)
@@ -979,7 +980,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ArgumentNullException.ThrowIfNull(uri);
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Mod Control opens HTTPS links only.");
+            throw new InvalidOperationException("Mod Bridge opens HTTPS links only.");
         }
 
         try
@@ -1042,9 +1043,21 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
+        if (Interlocked.Exchange(ref isProcessStateRefreshPending, 1) != 0)
+        {
+            return;
+        }
+
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Background,
-            shellLifecycleController.HandleGameProcessChanged);
+            () =>
+            {
+                Interlocked.Exchange(ref isProcessStateRefreshPending, 0);
+                if (!isDisposed)
+                {
+                    shellLifecycleController.HandleGameProcessChanged();
+                }
+            });
     }
 
     void ILauncherShellRefreshTarget.RefreshHome()

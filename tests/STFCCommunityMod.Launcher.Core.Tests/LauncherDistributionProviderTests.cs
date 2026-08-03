@@ -116,7 +116,7 @@ public sealed class LauncherDistributionProviderTests
             "https://json-schema.org/draft/2020-12/schema",
             document.RootElement.GetProperty("$schema").GetString());
         Assert.AreEqual(
-            "STFC Mod Control provider pack v1",
+            "STFC Mod Bridge provider pack v1",
             document.RootElement.GetProperty("title").GetString());
     }
 

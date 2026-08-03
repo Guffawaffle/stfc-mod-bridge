@@ -19,7 +19,7 @@ public sealed class LauncherSelfUpdateTests
     public async Task VerifiedArchiveStagesPlanWithoutTouchingProgramDirectory()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var archive = CreateArchive(("STFCModControl.exe", [1, 2, 3]), ("STFCModControl.Updater.exe", [4, 5, 6]));
+        var archive = CreateArchive(("STFCModBridge.exe", [1, 2, 3]), ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
@@ -35,7 +35,7 @@ public sealed class LauncherSelfUpdateTests
     public async Task CurrentSourceCommitRequiresNoDownloadOrMutation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var archive = CreateArchive(("STFCModControl.exe", [1]), ("STFCModControl.Updater.exe", [2]));
+        var archive = CreateArchive(("STFCModBridge.exe", [1]), ("STFCModBridge.Updater.exe", [2]));
         var downloader = new FakeDownloader(archive);
         var service = CreateService(temporaryDirectory, archive, downloader);
 
@@ -49,7 +49,7 @@ public sealed class LauncherSelfUpdateTests
     public async Task ArchiveTraversalFailsBeforeExecutableVerification()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var archive = CreateArchive(("../escape.exe", [1]), ("STFCModControl.exe", [2]), ("STFCModControl.Updater.exe", [3]));
+        var archive = CreateArchive(("../escape.exe", [1]), ("STFCModBridge.exe", [2]), ("STFCModBridge.Updater.exe", [3]));
         var service = CreateService(temporaryDirectory, archive);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(
@@ -63,8 +63,8 @@ public sealed class LauncherSelfUpdateTests
         using var temporaryDirectory = new TemporaryDirectory();
         var archive = CreateArchive(
             ("payload.txt:stream", [1]),
-            ("STFCModControl.exe", [2]),
-            ("STFCModControl.Updater.exe", [3]));
+            ("STFCModBridge.exe", [2]),
+            ("STFCModBridge.Updater.exe", [3]));
         var service = CreateService(temporaryDirectory, archive);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(
@@ -82,7 +82,7 @@ public sealed class LauncherSelfUpdateTests
             "Guffawaffle/stfc-mod-launcher");
 
         Assert.AreEqual(TargetCommit, selected.TargetCommit);
-        Assert.AreEqual("stfc-mod-control-win-x64.zip", selected.FileName);
+        Assert.AreEqual("stfc-mod-bridge-win-x64.zip", selected.FileName);
     }
 
     [TestMethod]
@@ -94,8 +94,8 @@ public sealed class LauncherSelfUpdateTests
         var journal = Path.Combine(journalDirectory.FullName, "journal.json");
         File.WriteAllText(journal, "preserve-me");
         var archive = CreateArchive(
-            ("STFCModControl.exe", [1, 2, 3]),
-            ("STFCModControl.Updater.exe", [4, 5, 6]));
+            ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var service = CreateService(temporaryDirectory, archive);
 
         await service.PrepareAsync(Discovery(Artifact(archive)), new string('a', 40), 123);
@@ -293,8 +293,8 @@ public sealed class LauncherSelfUpdateTests
             "none",
             [
                 new(
-                    "windows-mod-control-archive-x64",
-                    "windows-mod-control",
+                    "windows-mod-bridge-archive-x64",
+                    "windows-mod-bridge",
                     "windows",
                     "x64",
                     artifact.FileName,
@@ -304,14 +304,14 @@ public sealed class LauncherSelfUpdateTests
                     new(
                         "authenticode",
                         "contents",
-                        ["STFCModControl.exe", "STFCModControl.Updater.exe"])),
+                        ["STFCModBridge.exe", "STFCModBridge.Updater.exe"])),
             ]);
         return new(manifest, artifact);
     }
 
     private static LauncherReleaseArtifact Artifact(byte[] archive) => new(
         new Uri("https://example.invalid/launcher.zip"),
-        "stfc-mod-control-win-x64.zip",
+        "stfc-mod-bridge-win-x64.zip",
         archive.LongLength,
         Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant(),
         "2.1.0-guffa.8",
@@ -393,7 +393,7 @@ public sealed class LauncherSelfUpdateTests
             target,
             Path.Combine(transactionRoot, "backup"),
             Path.Combine(transactionRoot, "startup.ack"),
-            "STFCModControl.exe",
+            "STFCModBridge.exe",
             [],
             previousFiles);
         File.WriteAllText(

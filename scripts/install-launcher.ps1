@@ -8,16 +8,16 @@ $ErrorActionPreference = "Stop"
 $source = [System.IO.Path]::GetFullPath($SourceDirectory)
 $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$target = Join-Path $localAppData "Programs\STFC Mod Control"
-$state = Join-Path $localAppData "STFC Mod Control"
-$productName = "STFC Mod Control"
-$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModControl"
-$launcher = Join-Path $source "STFCModControl.exe"
-$updater = Join-Path $source "STFCModControl.Updater.exe"
+$target = Join-Path $localAppData "Programs\STFC Mod Bridge"
+$state = Join-Path $localAppData "STFC Mod Bridge"
+$productName = "STFC Mod Bridge"
+$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModBridge"
+$launcher = Join-Path $source "STFCModBridge.exe"
+$updater = Join-Path $source "STFCModBridge.Updater.exe"
 
 foreach ($file in @($launcher, $updater)) {
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-    throw "The Mod Control package is incomplete: $file"
+    throw "The Mod Bridge package is incomplete: $file"
   }
   $signature = Get-AuthenticodeSignature -LiteralPath $file
   if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
@@ -26,7 +26,7 @@ foreach ($file in @($launcher, $updater)) {
   }
 }
 
-if (Get-Process -Name "STFCModControl" -ErrorAction SilentlyContinue) {
+if (Get-Process -Name "STFCModBridge" -ErrorAction SilentlyContinue) {
   throw "Close $productName before installing or updating it."
 }
 
@@ -45,10 +45,10 @@ try {
   Move-Item -LiteralPath $stage -Destination $target
 
   $shell = New-Object -ComObject WScript.Shell
-  $startMenuDirectory = Join-Path $programs "STFC Mod Control"
+  $startMenuDirectory = Join-Path $programs "STFC Mod Bridge"
   New-Item -ItemType Directory -Path $startMenuDirectory -Force | Out-Null
   $shortcut = $shell.CreateShortcut((Join-Path $startMenuDirectory "$productName.lnk"))
-  $shortcut.TargetPath = Join-Path $target "STFCModControl.exe"
+  $shortcut.TargetPath = Join-Path $target "STFCModBridge.exe"
   $shortcut.WorkingDirectory = $target
   $shortcut.IconLocation = "$($shortcut.TargetPath),0"
   $shortcut.Save()
@@ -68,7 +68,7 @@ try {
   $windowsPowerShell = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)) "System32\WindowsPowerShell\v1.0\powershell.exe"
   $uninstallCommand = "`"$windowsPowerShell`" -NoProfile -ExecutionPolicy Bypass -File `"$uninstallScript`""
   Set-ItemProperty -Path $uninstallKey -Name DisplayName -Value $productName
-  Set-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$(Join-Path $target 'STFCModControl.exe'),0"
+  Set-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$(Join-Path $target 'STFCModBridge.exe'),0"
   Set-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value "0.1.0"
   Set-ItemProperty -Path $uninstallKey -Name Publisher -Value "Joseph Gustavson"
   Set-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $target
@@ -76,7 +76,7 @@ try {
   Set-ItemProperty -Path $uninstallKey -Name QuietUninstallString -Value $uninstallCommand
   New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
-  Start-Process -FilePath (Join-Path $target "STFCModControl.exe") -WorkingDirectory $target
+  Start-Process -FilePath (Join-Path $target "STFCModBridge.exe") -WorkingDirectory $target
 }
 catch {
   if (Test-Path -LiteralPath $target) {

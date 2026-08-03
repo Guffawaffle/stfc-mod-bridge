@@ -6,9 +6,9 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
-    <AssemblyName>STFCModControl.Updater</AssemblyName>
-    <AssemblyTitle>STFC Mod Control Update Helper</AssemblyTitle>
-    <FileDescription>STFC Mod Control Update Helper</FileDescription>
+    <AssemblyName>STFCModBridge.Updater</AssemblyName>
+    <AssemblyTitle>STFC Mod Bridge Update Helper</AssemblyTitle>
+    <FileDescription>STFC Mod Bridge Update Helper</FileDescription>
     <Version>0.1.0</Version>
   </PropertyGroup>
   <ItemGroup>

@@ -203,7 +203,7 @@ public sealed class LauncherConfigurationSetting
     public LauncherConfigurationSensitivity Sensitivity { get; }
 
     /// <summary>
-    /// Provider-authored compatibility paths. Mod Control never infers aliases
+    /// Provider-authored compatibility paths. Mod Bridge never infers aliases
     /// from a canonical path or a provider display name.
     /// </summary>
     public IReadOnlyList<LauncherConfigurationAlias> Aliases { get; }

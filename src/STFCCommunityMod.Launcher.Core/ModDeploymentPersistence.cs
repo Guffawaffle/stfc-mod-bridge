@@ -60,13 +60,6 @@ public sealed partial class ModDeploymentService
 
     private void ValidatePersistedInstalledState(ModInstalledArtifactState state)
     {
-        var attributionValues = new[]
-        {
-            state.ProviderId,
-            state.ReleaseChannelId,
-            state.RuntimeDistributionId,
-        };
-        var attributedValueCount = attributionValues.Count(value => !string.IsNullOrWhiteSpace(value));
         if (state.SchemaVersion != SchemaVersion
             || !Path.IsPathFullyQualified(state.GameDirectory)
             || !string.Equals(state.FileName, ManagedFileName, StringComparison.OrdinalIgnoreCase)
@@ -74,8 +67,9 @@ public sealed partial class ModDeploymentService
             || state.Size > MaximumArtifactSize
             || string.IsNullOrWhiteSpace(state.Version)
             || !TryNormalizeSha256(state.Sha256, out _)
-            || attributedValueCount is not (0 or 3)
-            || attributionValues.Where(value => value is not null).Any(value => !IsStableIdentity(value!)))
+            || !IsStableIdentity(state.ProviderId)
+            || !IsStableIdentity(state.ReleaseChannelId)
+            || !IsStableIdentity(state.RuntimeDistributionId))
         {
             throw new InvalidDataException("The installed-mod state is invalid or unsupported.");
         }
@@ -84,12 +78,13 @@ public sealed partial class ModDeploymentService
             && (!Path.IsPathFullyQualified(state.PreviousArtifactBackupPath)
                 || !IsContainedBy(Path.Combine(stateDirectory, "rollback"), state.PreviousArtifactBackupPath)))
         {
-            throw new InvalidDataException("The installed-mod rollback path escapes Mod Control-owned state.");
+            throw new InvalidDataException("The installed-mod rollback path escapes Mod Bridge-owned state.");
         }
     }
 
-    private static bool IsStableIdentity(string value) =>
-        value.Length is > 0 and <= 96
+    private static bool IsStableIdentity(string? value) =>
+        value is not null
+        && value.Length is > 0 and <= 96
         && (char.IsAsciiDigit(value[0]) || char.IsAsciiLetterLower(value[0]))
         && value.All(character =>
             char.IsAsciiDigit(character)
