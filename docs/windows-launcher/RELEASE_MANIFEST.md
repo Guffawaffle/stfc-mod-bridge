@@ -1,9 +1,9 @@
-# STFC Mod Control release manifest
+# STFC Mod Bridge release manifest
 
 Tagged releases in `Guffawaffle/stfc-mod-launcher` publish
-`stfc-mod-control-release-manifest.json`. This repository is the only Mod Control
+`stfc-mod-bridge-release-manifest.json`. This repository is the only Mod Bridge
 self-update authority. Distribution provider packs describe mod artifacts and
-cannot supply or redirect the Mod Control repository, manifest name, publisher,
+cannot supply or redirect the Mod Bridge repository, manifest name, publisher,
 or update channel.
 
 ## Producer contract
@@ -14,35 +14,35 @@ the already signed artifacts. It emits exactly two stable artifact identities:
 
 | ID | Role | User-facing? |
 |---|---|---|
-| `windows-mod-control-setup-x64` | Signed per-user setup executable | Yes; the only install asset |
-| `windows-mod-control-archive-x64` | ZIP containing signed Mod Control and its replace-on-exit helper | No; machine-consumed self-update input |
+| `windows-mod-bridge-setup-x64` | Signed per-user setup executable | Yes; the only install asset |
+| `windows-mod-bridge-archive-x64` | ZIP containing signed Mod Bridge and its replace-on-exit helper | No; machine-consumed self-update input |
 
 The manifest itself is also machine-consumed metadata. The package inspection
 gate checks that the setup directory contains only
-`STFCModControl.Setup.exe`, that every required input is a PE, and
+`STFCModBridge.Setup.exe`, that every required input is a PE, and
 that the update archive has exactly one root launcher and updater executable.
 The protected tag workflow repeats the inspection while requiring the reviewed
 Authenticode publisher.
 
 ## Consumer and authority boundary
 
-Mod Control uses `GitHubLauncherReleaseClient`, which is separate from the
+Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the
 provider-bound mod discovery client. It accepts only HTTPS GitHub releases in
 `Guffawaffle/stfc-mod-launcher`, derives immutable asset URLs from the exact tag
 and basename, requires the standalone manifest name, validates the closed v1
-schema, and selects exactly one supported update archive. A Mod Control-only
+schema, and selects exactly one supported update archive. A Mod Bridge-only
 manifest does not need or accept an implied mod authority.
 
 The archive size and SHA-256 must match before extraction. Extraction is
 bounded and rejects traversal, links, duplicate identities, and unsafe paths.
-Both extracted PEs must pass Authenticode for the Mod Control-owned publisher, and
+Both extracted PEs must pass Authenticode for the Mod Bridge-owned publisher, and
 the signed application's embedded source revision must match the manifest's tagged
 commit.
 
 ## Replay and withdrawal policy
 
 Stable and preview are distinct; the normal application requests stable. A
-candidate must numerically advance the running Mod Control version. Equal or lower
+candidate must numerically advance the running Mod Bridge version. Equal or lower
 versions fail closed before download, which prevents ordinary downgrade and
 replay after an update.
 

@@ -1267,7 +1267,7 @@
                       HorizontalScrollBarVisibility="Disabled"
                       PanningMode="VerticalOnly"
                       Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}"
-                      automation:AutomationProperties.Name="About STFC Mod Control">
+                      automation:AutomationProperties.Name="About STFC Mod Bridge">
           <ScrollViewer.Resources>
             <Style BasedOn="{StaticResource SettingsScrollBarStyle}"
                    TargetType="{x:Type ScrollBar}" />
@@ -1308,7 +1308,7 @@
               </Grid.RowDefinitions>
               <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Text="Version" />
               <TextBlock Grid.Column="1" Text="{Binding About.Version}" TextWrapping="Wrap"
-                         automation:AutomationProperties.Name="{Binding About.Version, StringFormat='Mod Control version {0}'}" />
+                         automation:AutomationProperties.Name="{Binding About.Version, StringFormat='Mod Bridge version {0}'}" />
               <TextBlock Grid.Row="1" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Build" />
               <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,7,0,0" Text="{Binding About.BuildProvenance}" TextWrapping="Wrap" />
               <TextBlock Grid.Row="2" Margin="0,7,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="Mod provider" />
@@ -1325,17 +1325,17 @@
                       Command="{Binding About.OpenExternalLinkCommand}"
                       CommandParameter="{Binding About.RepositoryUrl}"
                       Content="View _source"
-                      automation:AutomationProperties.Name="Open STFC Mod Control source repository" />
+                      automation:AutomationProperties.Name="Open STFC Mod Bridge source repository" />
               <Button Style="{StaticResource AboutLinkButtonStyle}"
                       Command="{Binding About.OpenExternalLinkCommand}"
                       CommandParameter="{Binding About.ReleasesUrl}"
                       Content="View _releases"
-                      automation:AutomationProperties.Name="Open STFC Mod Control releases" />
+                      automation:AutomationProperties.Name="Open STFC Mod Bridge releases" />
               <Button Style="{StaticResource AboutLinkButtonStyle}"
                       Command="{Binding About.OpenExternalLinkCommand}"
                       CommandParameter="{Binding About.ProductLicenseUrl}"
                       Content="Product _license"
-                      automation:AutomationProperties.Name="Open STFC Mod Control license" />
+                      automation:AutomationProperties.Name="Open STFC Mod Bridge license" />
               <Button Style="{StaticResource AboutLinkButtonStyle}"
                       Command="{Binding About.OpenExternalLinkCommand}"
                       CommandParameter="{Binding About.RuntimeRepositoryUrl}"
@@ -1447,7 +1447,7 @@
               </Expander.Header>
               <StackPanel Margin="24,10,0,8">
                 <TextBlock MaxWidth="700" Foreground="{DynamicResource TextSecondaryBrush}"
-                           Text="Mod Control stages sparse changes for the selected provider. Runtime defaults remain owned by the mod; unknown TOML keys and comments are preserved. Raw TOML editing belongs to Advanced."
+                           Text="Mod Bridge stages sparse changes for the selected provider. Runtime defaults remain owned by the mod; unknown TOML keys and comments are preserved. Raw TOML editing belongs to Advanced."
                            TextWrapping="Wrap" />
                 <TextBlock Margin="0,10,0,0" Text="{Binding About.ProviderId, StringFormat='Provider ID: {0}'}" />
                 <TextBlock Margin="0,4,0,0" Text="{Binding SemanticGroupingStatus, StringFormat='Semantic grouping: {0}'}" />

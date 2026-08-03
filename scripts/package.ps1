@@ -12,20 +12,20 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
   [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
 }
 $payload = Join-Path $outputRoot "app"
-$launcher = Join-Path $payload "STFCModControl.exe"
-$archive = Join-Path $outputRoot "stfc-mod-control-win-x64.zip"
+$launcher = Join-Path $payload "STFCModBridge.exe"
+$archive = Join-Path $outputRoot "stfc-mod-bridge-win-x64.zip"
 $checksum = "$archive.sha256"
 
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-launcher.ps1") -Destination (Join-Path $payload "Install-Launcher.ps1") -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "uninstall-launcher.ps1") -Destination (Join-Path $payload "Uninstall-Launcher.ps1") -Force
 
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-  throw "Mod Control payload does not contain the expected executable: $launcher"
+  throw "Mod Bridge payload does not contain the expected executable: $launcher"
 }
 
 Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $archive -CompressionLevel Optimal -Force
 $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $checksum -Value $archiveHash -Encoding utf8NoBOM
 
-Write-Host "Packaged Mod Control archive: $archive"
+Write-Host "Packaged Mod Bridge archive: $archive"
 Write-Host "SHA-256: $archiveHash"

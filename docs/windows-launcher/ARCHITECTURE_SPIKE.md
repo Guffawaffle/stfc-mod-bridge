@@ -62,8 +62,8 @@ official-updater handoff, and actual launch behavior.
 The recommended per-user layout is:
 
 ```text
-%LOCALAPPDATA%\Programs\STFC Mod Control\  immutable program payload
-%LOCALAPPDATA%\STFC Mod Control\           state, logs, journal, rollback
+%LOCALAPPDATA%\Programs\STFC Mod Bridge\  immutable program payload
+%LOCALAPPDATA%\STFC Mod Bridge\           state, logs, journal, rollback
 ```
 
 Properties:

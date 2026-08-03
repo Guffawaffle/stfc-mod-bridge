@@ -3,7 +3,7 @@
   "contributors": [
     {
       "name": "Joseph \"Guffawaffle\" Gustavson",
-      "contribution": "STFC Mod Control product design, Windows application engineering, and maintenance.",
+      "contribution": "STFC Mod Bridge product design, Windows application engineering, and maintenance.",
       "url": "https://github.com/Guffawaffle"
     },
     {
@@ -24,7 +24,7 @@
     },
     {
       "title": "LexRunner portfolio",
-      "text": "STFC Mod Control is LexRunner Portfolio Project 001. The portfolio label records the development workflow; it is not a game-publisher endorsement.",
+      "text": "STFC Mod Bridge is LexRunner Portfolio Project 001. The portfolio label records the development workflow; it is not a game-publisher endorsement.",
       "url": "https://github.com/Guffawaffle/stfc-mod-launcher"
     }
   ],
@@ -54,7 +54,7 @@
       "license": ".NET Library License on Windows; component notices also apply",
       "sourceUrl": "https://github.com/dotnet/runtime",
       "licenseUrl": "https://github.com/dotnet/core/blob/main/license-information.md",
-      "noticeText": "STFC Mod Control is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms."
+      "noticeText": "STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms."
     }
   ],
   "dependencyInventory": [
@@ -201,7 +201,7 @@
       "evidenceKind": "project-input"
     }
   ],
-  "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Control is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
+  "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Bridge is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
   "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, and explicit project resource/content/embed/icon/manifest input. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30; this inventory does not claim legal completeness.",
   "legalReviewStatus": "Attribution and non-endorsement copy is a factual compatibility statement, not a claim of legal clearance. Final wording and asset usage remain subject to the v1 release review tracked in issue #30."
 }

@@ -30,7 +30,7 @@ jobs:
       - name: Test
         run: dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
-      - name: Publish Mod Control
+      - name: Publish Mod Bridge
         shell: pwsh
         run: ./scripts/publish.ps1
 
@@ -43,13 +43,13 @@ jobs:
         timeout-minutes: 5
         run: >-
           ./scripts/smoke-settings.ps1
-          -LauncherPath ./artifacts/win-x64/app/STFCModControl.exe
+          -LauncherPath ./artifacts/win-x64/app/STFCModBridge.exe
           -UseDisposableSyncFixture
           -TimeoutSeconds 60
 
       - name: Upload setup evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: stfc-mod-control-setup-win-x64
-          path: artifacts/win-x64/setup/STFCModControl.Setup.exe
+          name: windows-mod-bridge-setup-x64
+          path: artifacts/win-x64/setup/STFCModBridge.Setup.exe
           if-no-files-found: error

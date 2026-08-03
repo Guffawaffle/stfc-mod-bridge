@@ -46,7 +46,7 @@ public static class LauncherConfigurationSchemaLoader
         catch (JsonException exception)
         {
             throw new LauncherConfigurationSchemaException(
-                "The Mod Control configuration schema is not valid JSON.",
+                "The Mod Bridge configuration schema is not valid JSON.",
                 exception);
         }
     }
@@ -67,7 +67,7 @@ public static class LauncherConfigurationSchemaLoader
         {
             throw Invalid(
                 $"Unsupported schema version '{schemaVersionText}'. "
-                + $"Mod Control supports {SupportedSchemaVersion}.");
+                + $"Mod Bridge supports {SupportedSchemaVersion}.");
         }
 
         var sourceElement = ReadRequiredProperty(root, "source", "schema root");

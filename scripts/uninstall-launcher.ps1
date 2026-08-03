@@ -2,16 +2,16 @@
 param([switch]$RemoveState)
 
 $ErrorActionPreference = "Stop"
-$productName = "STFC Mod Control"
-if (Get-Process -Name "STFCModControl" -ErrorAction SilentlyContinue) {
+$productName = "STFC Mod Bridge"
+if (Get-Process -Name "STFCModBridge" -ErrorAction SilentlyContinue) {
   throw "Close $productName before uninstalling it."
 }
 $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$target = Join-Path $localAppData "Programs\STFC Mod Control"
-$state = Join-Path $localAppData "STFC Mod Control"
+$target = Join-Path $localAppData "Programs\STFC Mod Bridge"
+$state = Join-Path $localAppData "STFC Mod Bridge"
 $shortcuts = @(
-  (Join-Path $programs "STFC Mod Control\$productName.lnk"),
+  (Join-Path $programs "STFC Mod Bridge\$productName.lnk"),
   (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) "$productName.lnk")
 )
 foreach ($shortcut in $shortcuts) {
@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $target) {
 if ($RemoveState -and (Test-Path -LiteralPath $state)) {
   Remove-Item -LiteralPath $state -Recurse -Force
 }
-$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModControl"
+$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModBridge"
 if (Test-Path -LiteralPath $uninstallKey) {
   Remove-Item -LiteralPath $uninstallKey -Recurse -Force
 }

@@ -1,14 +1,14 @@
-# STFC Mod Control
+# STFC Mod Bridge
 
-![STFC Mod Control portfolio banner](assets/portfolio/stfc-mod-control-banner.png)
+![STFC Mod Bridge portfolio banner](assets/portfolio/stfc-mod-bridge-banner.png)
 
 **Install · Configure · Diagnose · Run**
 
-STFC Mod Control is a source-neutral Windows application for installing,
+STFC Mod Bridge is a source-neutral Windows application for installing,
 updating, repairing, configuring, diagnosing, and running supported Star Trek
 Fleet Command community-mod distributions.
 
-Mod Control is a .NET 8 WPF application for Windows x64. It discovers and
+Mod Bridge is a .NET 8 WPF application for Windows x64. It discovers and
 validates an STFC installation, opens the Scopely launcher, manages verified
 mod artifacts transactionally, edits configuration through staged Save/Discard
 sessions, and provides a destination-oriented Data Sync workspace.
@@ -23,7 +23,7 @@ than requiring a distribution-specific launcher build.
 
 Bundled Guffawaffle and NetniV packs coexist in one build. Capabilities without
 published evidence remain visibly unknown and their dependent operations fail
-closed; Mod Control never infers support from a provider's display name.
+closed; Mod Bridge never infers support from a provider's display name.
 
 ## Projects
 
@@ -45,7 +45,7 @@ from this checkout. A failed build remains visible and never launches stale
 output.
 
 `scripts/smoke-settings.ps1` is an interactive UI Automation gate: it launches
-and focuses Mod Control to exercise keyboard behavior. Local runs must opt in
+and focuses Mod Bridge to exercise keyboard behavior. Local runs must opt in
 with `-AllowInteractiveFocus`; ordinary tests and LexRunner branch gates remain
 headless. GitHub Actions may run the smoke on its isolated desktop.
 
@@ -73,9 +73,9 @@ payload.
 
 ## Portfolio provenance
 
-![The Lex Toolchain · In Practice](assets/portfolio/stfc-mod-control-badge.png)
+![The Lex Toolchain · In Practice](assets/portfolio/stfc-mod-bridge-badge.png)
 
-STFC Mod Control is LexRunner Portfolio Project 001 under the SmarterGPT brand.
+STFC Mod Bridge is LexRunner Portfolio Project 001 under the SmarterGPT brand.
 During the active v1 lifecycle, its evidence label is **The Lex Toolchain · In
 Practice**. The completed-state label **Proven in Practice** is reserved for an
 evidence-backed release.

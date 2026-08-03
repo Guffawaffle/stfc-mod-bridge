@@ -17,7 +17,7 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
 $archive = if ($PayloadArchive) {
   [System.IO.Path]::GetFullPath($PayloadArchive)
 } else {
-  Join-Path $outputRoot "stfc-mod-control-win-x64.zip"
+  Join-Path $outputRoot "stfc-mod-bridge-win-x64.zip"
 }
 $project = Join-Path $repoRoot "src\STFCCommunityMod.Launcher.Setup\STFCCommunityMod.Launcher.Setup.csproj"
 $setupOutput = Join-Path $outputRoot "setup"
@@ -30,7 +30,7 @@ if ($SourceRevisionId) {
 }
 
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-  throw "Packaged Mod Control payload was not found: $archive"
+  throw "Packaged Mod Bridge payload was not found: $archive"
 }
 if (Test-Path -LiteralPath $setupOutput) {
   Remove-Item -LiteralPath $setupOutput -Recurse -Force
@@ -46,12 +46,12 @@ dotnet publish $project `
   -p:LauncherPayloadPath=$archive `
   @buildProperties
 
-$setup = Join-Path $setupOutput "STFCModControl.Setup.exe"
+$setup = Join-Path $setupOutput "STFCModBridge.Setup.exe"
 if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
-  throw "Single-file Mod Control setup was not published: $setup"
+  throw "Single-file Mod Bridge setup was not published: $setup"
 }
 Get-ChildItem -LiteralPath $setupOutput -File |
   Where-Object { $_.FullName -ne $setup } |
   Remove-Item -Force
 
-Write-Host "Published one-file Mod Control setup: $setup"
+Write-Host "Published one-file Mod Bridge setup: $setup"

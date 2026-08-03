@@ -21,7 +21,7 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             ?? throw new InvalidDataException("Update plan is empty.");
         ValidatePlan(plan, planPath);
         await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
-            ?? throw new InvalidOperationException("Another Mod Control operation is already in progress.");
+            ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
         try
         {
             using var parent = Process.GetProcessById(plan.ParentProcessId);
@@ -51,7 +51,7 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             {
                 UseShellExecute = true,
                 WorkingDirectory = plan.TargetDirectory,
-            }) ?? throw new InvalidOperationException("The updated Mod Control did not start.");
+            }) ?? throw new InvalidOperationException("The updated Mod Bridge did not start.");
             var deadline = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
             {
@@ -125,7 +125,7 @@ static void ValidatePlan(LauncherUpdatePlan plan, string planPath)
         || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
         || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
         || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
-        || plan.LauncherRelativePath != ModControlProductIdentity.ExecutableName)
+        || plan.LauncherRelativePath != ModBridgeProductIdentity.ExecutableName)
     {
         throw new InvalidDataException("Update plan paths are invalid.");
     }

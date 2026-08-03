@@ -148,7 +148,7 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                             ? ConfigurationDiagnosisConfidence.Unsupported
                             : ConfigurationDiagnosisConfidence.Unknown,
                         unsupported
-                            ? "The selected provider does not support launcher configuration diagnosis."
+                            ? "The selected provider does not support Mod Bridge configuration diagnosis."
                             : "Configuration diagnosis is unknown because the selected provider has no verified catalog.",
                         null,
                         null,

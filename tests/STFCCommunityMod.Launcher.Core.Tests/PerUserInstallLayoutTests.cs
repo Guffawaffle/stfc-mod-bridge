@@ -13,10 +13,10 @@ public sealed class PerUserInstallLayoutTests
         var result = PerUserInstallLayout.FromLocalApplicationData(localAppData);
 
         Assert.AreEqual(
-            Path.Combine(Path.GetFullPath(localAppData), "Programs", "STFC Mod Control"),
+            Path.Combine(Path.GetFullPath(localAppData), "Programs", "STFC Mod Bridge"),
             result.ProgramDirectory);
         Assert.AreEqual(
-            Path.Combine(Path.GetFullPath(localAppData), "STFC Mod Control"),
+            Path.Combine(Path.GetFullPath(localAppData), "STFC Mod Bridge"),
             result.StateDirectory);
         Assert.AreNotEqual(result.ProgramDirectory, result.StateDirectory);
     }
@@ -31,16 +31,16 @@ public sealed class PerUserInstallLayoutTests
     [TestMethod]
     public void ProductIdentityOwnsGreenfieldInstallAndArtifactNames()
     {
-        Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.ProductName);
-        Assert.AreEqual("Mod Control", ModControlProductIdentity.ShortName);
-        Assert.AreEqual("Install · Configure · Diagnose · Run", ModControlProductIdentity.Descriptor);
-        Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.ProgramDirectoryName);
-        Assert.AreEqual("STFC Mod Control", ModControlProductIdentity.StateDirectoryName);
-        Assert.AreEqual("STFCModControl.exe", ModControlProductIdentity.ExecutableName);
-        Assert.AreEqual("STFCModControl.Updater.exe", ModControlProductIdentity.UpdaterExecutableName);
-        Assert.AreEqual("STFCModControl.Setup.exe", ModControlProductIdentity.SetupExecutableName);
-        Assert.AreEqual("STFCModControl", ModControlProductIdentity.ProcessName);
-        Assert.AreEqual("stfc-mod-control-win-x64.zip", ModControlProductIdentity.UpdateArchiveName);
-        Assert.AreEqual("stfc-mod-control-release-manifest.json", ModControlProductIdentity.ReleaseManifestName);
+        Assert.AreEqual("STFC Mod Bridge", ModBridgeProductIdentity.ProductName);
+        Assert.AreEqual("Mod Bridge", ModBridgeProductIdentity.ShortName);
+        Assert.AreEqual("Install · Configure · Diagnose · Run", ModBridgeProductIdentity.Descriptor);
+        Assert.AreEqual("STFC Mod Bridge", ModBridgeProductIdentity.ProgramDirectoryName);
+        Assert.AreEqual("STFC Mod Bridge", ModBridgeProductIdentity.StateDirectoryName);
+        Assert.AreEqual("STFCModBridge.exe", ModBridgeProductIdentity.ExecutableName);
+        Assert.AreEqual("STFCModBridge.Updater.exe", ModBridgeProductIdentity.UpdaterExecutableName);
+        Assert.AreEqual("STFCModBridge.Setup.exe", ModBridgeProductIdentity.SetupExecutableName);
+        Assert.AreEqual("STFCModBridge", ModBridgeProductIdentity.ProcessName);
+        Assert.AreEqual("stfc-mod-bridge-win-x64.zip", ModBridgeProductIdentity.UpdateArchiveName);
+        Assert.AreEqual("stfc-mod-bridge-release-manifest.json", ModBridgeProductIdentity.ReleaseManifestName);
     }
 }

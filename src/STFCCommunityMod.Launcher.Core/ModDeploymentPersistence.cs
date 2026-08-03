@@ -84,7 +84,7 @@ public sealed partial class ModDeploymentService
             && (!Path.IsPathFullyQualified(state.PreviousArtifactBackupPath)
                 || !IsContainedBy(Path.Combine(stateDirectory, "rollback"), state.PreviousArtifactBackupPath)))
         {
-            throw new InvalidDataException("The installed-mod rollback path escapes Mod Control-owned state.");
+            throw new InvalidDataException("The installed-mod rollback path escapes Mod Bridge-owned state.");
         }
     }
 

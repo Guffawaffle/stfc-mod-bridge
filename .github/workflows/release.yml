@@ -1,4 +1,4 @@
-name: Signed Mod Control release
+name: Signed Mod Bridge release
 
 on:
   push:
@@ -32,7 +32,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
-            throw "Mod Control release tags must use vX.Y.Z or vX.Y.Z-rc.N."
+            throw "Mod Bridge release tags must use vX.Y.Z or vX.Y.Z-rc.N."
           }
           "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
           "prerelease=$($Matches.version.Contains('-rc.'))" >> $env:GITHUB_OUTPUT
@@ -43,7 +43,7 @@ jobs:
           dotnet restore STFCCommunityMod.Launcher.sln
           dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
-      - name: Build unsigned Mod Control payload
+      - name: Build unsigned Mod Bridge payload
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -53,10 +53,10 @@ jobs:
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
-      - name: Upload unsigned Mod Control payload
+      - name: Upload unsigned Mod Bridge payload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: unsigned-mod-control-payload
+          name: windows-mod-bridge-unsigned-payload-x64
           path: artifacts/win-x64/app
           if-no-files-found: error
 
@@ -81,10 +81,10 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Download unsigned Mod Control payload
+      - name: Download unsigned Mod Bridge payload
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: unsigned-mod-control-payload
+          name: windows-mod-bridge-unsigned-payload-x64
           path: artifacts/win-x64/app
 
       - name: Validate protected signing configuration
@@ -101,7 +101,7 @@ jobs:
             throw "Missing signing environment values: $($missing -join ', ')"
           }
           if ($env:WIN_PUBLISHER_NAME -ne "Joseph Gustavson") {
-            throw "WIN_PUBLISHER_NAME must match the reviewed Mod Control publisher."
+            throw "WIN_PUBLISHER_NAME must match the reviewed Mod Bridge publisher."
           }
 
       - name: Azure login with GitHub OIDC
@@ -111,7 +111,7 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sign Mod Control and updater
+      - name: Sign Mod Bridge and updater
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
@@ -122,7 +122,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: STFC Mod Control
+          description: STFC Mod Bridge
           description-url: https://github.com/Guffawaffle/stfc-mod-launcher
 
       - name: Repackage signed payload and rebuild setup
@@ -147,7 +147,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: STFC Mod Control Setup
+          description: STFC Mod Bridge Setup
           description-url: https://github.com/Guffawaffle/stfc-mod-launcher
 
       - name: Verify every release PE and inspect package boundary
@@ -157,7 +157,7 @@ jobs:
           -RequireSignatures
           -ExpectedPublisher "$env:WIN_PUBLISHER_NAME"
 
-      - name: Generate repository-owned Mod Control manifest
+      - name: Generate repository-owned Mod Bridge manifest
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -172,11 +172,11 @@ jobs:
       - name: Upload signed release assets
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: signed-mod-control-release-assets
+          name: windows-mod-bridge-signed-release-x64
           path: |
-            artifacts/win-x64/setup/STFCModControl.Setup.exe
-            artifacts/win-x64/stfc-mod-control-win-x64.zip
-            artifacts/win-x64/stfc-mod-control-release-manifest.json
+            artifacts/win-x64/setup/STFCModBridge.Setup.exe
+            artifacts/win-x64/stfc-mod-bridge-win-x64.zip
+            artifacts/win-x64/stfc-mod-bridge-release-manifest.json
           if-no-files-found: error
 
   publish:
@@ -189,7 +189,7 @@ jobs:
       - name: Download signed release assets
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: signed-mod-control-release-assets
+          name: windows-mod-bridge-signed-release-x64
           path: artifacts/win-x64
 
       - name: Publish setup and machine-consumed update inputs
@@ -203,12 +203,12 @@ jobs:
         run: |
           $root = "artifacts/win-x64"
           $assets = @(
-            "$root/setup/STFCModControl.Setup.exe",
-            "$root/stfc-mod-control-win-x64.zip",
-            "$root/stfc-mod-control-release-manifest.json"
+            "$root/setup/STFCModBridge.Setup.exe",
+            "$root/stfc-mod-bridge-win-x64.zip",
+            "$root/stfc-mod-bridge-release-manifest.json"
           )
           $notes = @"
-          Install STFC Mod Control with `STFCModControl.Setup.exe`.
+          Install STFC Mod Bridge with `STFCModBridge.Setup.exe`.
 
           The ZIP and JSON assets are machine-consumed self-update inputs, not alternate installation packages.
           "@
@@ -218,7 +218,7 @@ jobs:
             "release", "create", $env:RELEASE_TAG,
             "--repo", $env:RELEASE_REPOSITORY,
             "--verify-tag",
-            "--title", "STFC Mod Control $env:RELEASE_VERSION",
+            "--title", "STFC Mod Bridge $env:RELEASE_VERSION",
             "--notes-file", $notesPath
           )
           if ($env:RELEASE_IS_PRERELEASE -eq "True") {
