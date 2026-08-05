@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Guffawaffle/stfc-mod-bridge/security/advisories/new
+    about: Report exploitable security problems privately.
+  - name: Closed-alpha testing guide
+    url: https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/TESTING.md
+    about: Review the supported build, test lanes, and evidence checklist.

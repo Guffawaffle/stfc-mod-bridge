@@ -29,11 +29,12 @@ copy.
 
 ## Greenfield behavior
 
-No pre-v1 STFC Mod Bridge build has been released. Setup therefore installs
-directly into the canonical program and state directories, creates only the
-**STFC Mod Bridge** shortcuts, and writes one per-user Add/Remove Programs
-entry. Uninstall removes only the canonical shortcuts and registration. State
-is preserved unless the explicit `-RemoveState` option is used.
+Pre-v1 release candidates use the canonical product identity from their first
+public artifact. Setup installs directly into the canonical program and state
+directories, creates only the **STFC Mod Bridge** shortcuts, and writes one
+per-user Add/Remove Programs entry. Uninstall removes only the canonical
+shortcuts and registration. State is preserved unless the explicit
+`-RemoveState` option is used.
 
 Product identity does not read or write mod TOML. Self-update artifacts,
 publisher verification, rollback paths, and process detection all use the

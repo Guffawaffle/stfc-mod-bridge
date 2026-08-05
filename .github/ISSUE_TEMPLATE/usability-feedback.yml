@@ -1,0 +1,71 @@
+name: Closed-alpha usability feedback
+description: Describe friction or confusing behavior in an approved build.
+title: "[Usability]: "
+labels:
+  - area:ux
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the goal you were trying to accomplish. Do not include credentials or unreviewed diagnostics.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I used a release whose notes explicitly say **Closed-alpha approved**.
+          required: true
+        - label: I reviewed every attachment and removed private information.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Exact Mod Bridge version
+      placeholder: v0.1.0-rc.4
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Windows version, display scaling, theme, input method, selected provider, and game version.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Home
+        - Install or manage
+        - Provider selection
+        - Configuration
+        - Data Sync
+        - Diagnostics
+        - Setup or self-update
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What was difficult or surprising?
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional reviewed evidence
+      description: Add screenshots or reviewed/redacted diagnostics only when useful.
