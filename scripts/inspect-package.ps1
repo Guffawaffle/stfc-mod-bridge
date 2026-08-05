@@ -2,10 +2,13 @@
 param(
   [string]$OutputDirectory = "artifacts/win-x64",
   [switch]$RequireSignatures,
-  [string]$ExpectedPublisher = "Joseph Gustavson"
+  [string]$ExpectedPublisherSubject = "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118"
 )
 
 $ErrorActionPreference = "Stop"
+$expectedPublisherName = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new(
+  $ExpectedPublisherSubject)
+$expectedArtifactSigningIdentityEku = "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
@@ -57,15 +60,47 @@ function Assert-PortableExecutable {
   }
 
   if ($RequireSignatures) {
+    $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($null -eq $signTool) {
+      $kitsBin = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+      $signTool = Get-ChildItem -LiteralPath $kitsBin -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    } else {
+      $signTool = $signTool.Source
+    }
+    if (-not $signTool) {
+      throw "Windows SDK SignTool is required for all-signature package verification."
+    }
+    & $signTool verify /pa /all /q $Path
+    if ($LASTEXITCODE -ne 0) {
+      throw "WinVerifyTrust rejected one or more Authenticode signatures for $Path"
+    }
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
     if ($signature.Status -ne "Valid") {
       throw "Authenticode status was $($signature.Status) for $Path"
     }
-    $publisher = $signature.SignerCertificate.GetNameInfo(
-      [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName,
-      $false)
-    if (-not [string]::Equals($publisher, $ExpectedPublisher, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (-not [System.Linq.Enumerable]::SequenceEqual(
+      $signature.SignerCertificate.SubjectName.RawData,
+      $expectedPublisherName.RawData)) {
       throw "Unexpected Authenticode publisher for $Path"
+    }
+    $codeSigningEku = @($signature.SignerCertificate.EnhancedKeyUsageList | Where-Object {
+      $_.ObjectId -eq "1.3.6.1.5.5.7.3.3"
+    })
+    if ($codeSigningEku.Count -ne 1) {
+      throw "The Authenticode signer certificate lacks the code-signing EKU for $Path"
+    }
+    $durableIdentityEku = @($signature.SignerCertificate.EnhancedKeyUsageList | Where-Object {
+      $_.ObjectId -eq $expectedArtifactSigningIdentityEku
+    })
+    if ($durableIdentityEku.Count -ne 1) {
+      throw "The signer does not match the reviewed Artifact Signing identity for $Path"
+    }
+    if ($null -eq $signature.TimeStamperCertificate) {
+      throw "The Authenticode signature has no trusted timestamp for $Path"
     }
   }
 }

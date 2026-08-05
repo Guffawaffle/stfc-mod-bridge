@@ -17,6 +17,12 @@ public sealed class LauncherDistributionProviderTests
         Assert.AreEqual("Guffawaffle/stfc-mod", guffawaffle.DefaultReleaseChannel.Repository);
         Assert.AreEqual("netniV/stfc-mod", netniv.DefaultReleaseChannel.Repository);
         Assert.AreEqual(
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+            guffawaffle.ArtifactPolicy.WindowsPublisher);
+        Assert.AreEqual(
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku,
+            guffawaffle.ArtifactPolicy.WindowsArtifactSigningIdentityEku);
+        Assert.AreEqual(
             LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset,
             netniv.DefaultReleaseChannel.DiscoveryKind);
         Assert.AreEqual("stfc-community-mod.zip", netniv.DefaultReleaseChannel.ArtifactAssetName);
@@ -100,7 +106,12 @@ public sealed class LauncherDistributionProviderTests
         Assert.AreNotEqual(
             netniv.DefaultReleaseChannel.Repository,
             LauncherSelfUpdateAuthority.ReleaseRepository);
-        Assert.AreEqual("Joseph Gustavson", LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+        Assert.AreEqual(
+            "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118",
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+        Assert.AreEqual(
+            "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748",
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku);
     }
 
     [TestMethod]
@@ -126,6 +137,9 @@ public sealed class LauncherDistributionProviderTests
         Assert.AreEqual("preview", binding.ReleaseChannelId);
         Assert.AreEqual("PreviewOwner/stfc-mod-preview", binding.Repository);
         Assert.AreEqual("stfc-community-mod-release-manifest.json", binding.ManifestAssetName);
+        Assert.AreEqual(
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku,
+            binding.WindowsArtifactSigningIdentityEku);
     }
 
     [TestMethod]

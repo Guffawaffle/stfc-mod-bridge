@@ -59,7 +59,8 @@ public sealed record LauncherProviderArtifactPolicy(
     LauncherProviderCapabilityStatus Status,
     bool RequireSha256,
     LauncherProviderArtifactTrustKind? TrustKind,
-    string? WindowsPublisher);
+    string? WindowsPublisher,
+    string? WindowsArtifactSigningIdentityEku);
 
 public sealed record LauncherProviderWithdrawalPolicy(
     LauncherProviderCapabilityStatus Status,
@@ -158,8 +159,10 @@ public sealed class LauncherDistributionProvider
         && ArtifactPolicy.RequireSha256
         && (ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.AuthenticodePublisher
                 && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
+                && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku)
             || ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.ReviewedExactHash
-                && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher));
+                && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
+                && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku));
 
     public string CapabilitySummary =>
         string.Join(
@@ -238,7 +241,7 @@ public static partial class LauncherDistributionProviderCatalogLoader
     private static readonly HashSet<string> ResourceProperties = ["status", "resourceName"];
     private static readonly HashSet<string> CapabilityProperties = ["id", "status"];
     private static readonly HashSet<string> ArtifactPolicyProperties =
-        ["status", "requireSha256", "trustKind", "windowsPublisher"];
+        ["status", "requireSha256", "trustKind", "windowsPublisher", "windowsArtifactSigningIdentityEku"];
     private static readonly HashSet<string> WithdrawalPolicyProperties = ["status", "mode"];
     private static readonly HashSet<string> MigrationProperties =
         ["status", "configurationFormat", "preserveUnknownToml", "compatibleProviderIds"];
@@ -442,7 +445,8 @@ public static partial class LauncherDistributionProviderCatalogLoader
             ReadEnum<LauncherProviderCapabilityStatus>(element, "status", $"provider '{providerId}' artifact policy"),
             ReadRequiredBoolean(element, "requireSha256", $"provider '{providerId}' artifact policy"),
             ReadOptionalEnum<LauncherProviderArtifactTrustKind>(element, "trustKind", $"provider '{providerId}' artifact policy"),
-            ReadOptionalString(element, "windowsPublisher"));
+            ReadOptionalString(element, "windowsPublisher"),
+            ReadOptionalString(element, "windowsArtifactSigningIdentityEku"));
     }
 
     private static LauncherProviderWithdrawalPolicy ReadWithdrawalPolicy(JsonElement provider, string providerId)

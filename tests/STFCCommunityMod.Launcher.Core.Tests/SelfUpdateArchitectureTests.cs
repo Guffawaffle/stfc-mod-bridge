@@ -33,6 +33,11 @@ public sealed class SelfUpdateArchitectureTests
         Assert.AreEqual(
             "stfc-mod-bridge-release-manifest.json",
             LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
-        Assert.AreEqual("Joseph Gustavson", LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+        Assert.AreEqual(
+            "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118",
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher);
+        Assert.AreEqual(
+            "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748",
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku);
     }
 }

@@ -381,7 +381,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 ? binding.TrustKind switch
                 {
                     LauncherProviderArtifactTrustKind.AuthenticodePublisher =>
-                        new WindowsAuthenticodeVerifier(binding.WindowsPublisher!),
+                        new WindowsAuthenticodeVerifier(
+                            binding.WindowsPublisher!,
+                            binding.WindowsArtifactSigningIdentityEku!),
                     LauncherProviderArtifactTrustKind.ReviewedExactHash =>
                         new ReviewedExactHashAuthenticityVerifier(binding.ReviewedCertification!),
                     _ => new FailClosedModArtifactAuthenticityVerifier("Unsupported artifact trust kind."),
@@ -513,7 +515,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
                 new HttpLauncherArchiveDownloader(httpClient),
-                new WindowsAuthenticodeVerifier(LauncherSelfUpdateAuthority.WindowsArtifactPublisher),
+                new WindowsAuthenticodeVerifier(
+                    LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+                    LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku),
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient,
             uiPreferencesStore,

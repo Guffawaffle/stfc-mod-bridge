@@ -105,7 +105,39 @@ public interface IModArtifactVersionReader
     string? ReadVersion(string artifactPath);
 }
 
-public sealed record ModArtifactAuthenticityResult(bool IsTrusted, string Message);
+public enum AuthenticodeRevocationMode
+{
+    CachedOnly,
+    OnlineRetrievalAllowed,
+}
+
+public enum AuthenticodeTimestampKind
+{
+    None,
+    LegacyAuthenticode,
+    Rfc3161,
+}
+
+public sealed record AuthenticodeSignatureEvidence(
+    int Index,
+    bool TrustPolicyPassed,
+    bool PublisherMatched,
+    bool HasCodeSigningEku,
+    bool DurableIdentityMatched,
+    AuthenticodeTimestampKind TimestampKind,
+    DateTimeOffset? VerifiedAsOfUtc,
+    string? SignerIdentitySha256);
+
+public sealed record AuthenticodeVerificationEvidence(
+    AuthenticodeRevocationMode RevocationMode,
+    DateTimeOffset EvaluatedAtUtc,
+    string RevocationFreshness,
+    IReadOnlyList<AuthenticodeSignatureEvidence> Signatures);
+
+public sealed record ModArtifactAuthenticityResult(
+    bool IsTrusted,
+    string Message,
+    AuthenticodeVerificationEvidence? Evidence = null);
 
 public interface IModArtifactAuthenticityVerifier
 {

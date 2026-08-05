@@ -305,7 +305,9 @@ public sealed class LiveProviderInstallIntegrationTests
         IModArtifactAuthenticityVerifier verifier = binding.TrustKind switch
         {
             LauncherProviderArtifactTrustKind.AuthenticodePublisher =>
-                new WindowsAuthenticodeVerifier(binding.WindowsPublisher!),
+                new WindowsAuthenticodeVerifier(
+                    binding.WindowsPublisher!,
+                    binding.WindowsArtifactSigningIdentityEku!),
             LauncherProviderArtifactTrustKind.ReviewedExactHash =>
                 new ReviewedExactHashAuthenticityVerifier(binding.ReviewedCertification!),
             _ => throw new InvalidOperationException("Unsupported live artifact trust kind."),

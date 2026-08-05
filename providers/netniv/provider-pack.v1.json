@@ -36,7 +36,8 @@
       "status": "supported",
       "requireSha256": true,
       "trustKind": "reviewed-exact-hash",
-      "windowsPublisher": null
+      "windowsPublisher": null,
+      "windowsArtifactSigningIdentityEku": null
     },
     "withdrawalPolicy": {
       "status": "unknown",

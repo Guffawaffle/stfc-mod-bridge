@@ -46,7 +46,7 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
 | Release discovery | Signed launcher release manifest; exact reviewed current-release fallback while the asset is absent | Exact launcher-reviewed GitHub release asset |
-| Windows artifact trust | SHA-256 plus Authenticode publisher; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
+| Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |
 | Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
 | Withdrawal | Signed release-manifest policy | Unknown |
