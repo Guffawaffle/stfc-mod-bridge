@@ -16,9 +16,10 @@ internal static class Program
     private static void Main()
     {
         Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
         try
         {
-            InstallAndLaunchAsync().GetAwaiter().GetResult();
+            ShowSetup();
         }
         catch (Exception exception)
         {
@@ -31,10 +32,20 @@ internal static class Program
         }
     }
 
-    private static async Task InstallAndLaunchAsync()
+    private static void ShowSetup()
     {
         VerifySetupSignature();
         var layout = PerUserInstallLayout.FromCurrentUser();
+        var displayVersion = LauncherInstalledProduct.DisplayVersion(Assembly.GetExecutingAssembly());
+        var installedLauncherPath = Path.Combine(layout.ProgramDirectory, ModBridgeProductIdentity.ExecutableName);
+        var installedVersion = File.Exists(installedLauncherPath)
+            ? FileVersionInfo.GetVersionInfo(installedLauncherPath).ProductVersion
+            : null;
+        var action = LauncherInstalledProduct.DetermineSetupAction(
+            Directory.Exists(layout.ProgramDirectory),
+            File.Exists(installedLauncherPath),
+            installedVersion,
+            displayVersion);
         var installer = new LauncherBootstrapInstaller(
             layout.StateDirectory,
             layout.ProgramDirectory,
@@ -42,14 +53,29 @@ internal static class Program
                 LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
                 LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku),
             IsLauncherRunning);
-        var result = await installer.InstallAsync(ReadEmbeddedPayload());
-        CreateStartMenuShortcut(result.LauncherPath);
-        RegisterInstalledProduct(result.LauncherPath);
+        using var setup = new SetupForm(
+            action,
+            displayVersion,
+            installedVersion,
+            DisplayPublisher,
+            layout,
+            async () =>
+            {
+                var result = await Task.Run(async () => await installer.InstallAsync(ReadEmbeddedPayload()));
+                CreateStartMenuShortcut(result.LauncherPath);
+                RegisterInstalledProduct(result.LauncherPath, displayVersion);
+                return result.LauncherPath;
+            });
+        _ = setup.ShowDialog();
+        if (!setup.LaunchRequested)
+        {
+            return;
+        }
 
-        _ = Process.Start(new ProcessStartInfo(result.LauncherPath)
+        _ = Process.Start(new ProcessStartInfo(installedLauncherPath)
         {
             UseShellExecute = true,
-            WorkingDirectory = Path.GetDirectoryName(result.LauncherPath),
+            WorkingDirectory = layout.ProgramDirectory,
         }) ?? throw new InvalidOperationException($"Windows did not start {ModBridgeProductIdentity.ProductName}.");
     }
 
@@ -160,24 +186,25 @@ internal static class Program
         }
     }
 
-    private static void RegisterInstalledProduct(string productPath)
+    private static void RegisterInstalledProduct(string productPath, string displayVersion)
     {
         var programDirectory = Path.GetDirectoryName(productPath)
             ?? throw new InvalidOperationException("The installed product path has no parent directory.");
         var uninstallScript = Path.Combine(programDirectory, "Uninstall-Launcher.ps1");
-        var uninstallCommand =
+        var quietUninstallCommand =
             $"\"{Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")}\" "
-            + $"-NoProfile -ExecutionPolicy Bypass -File \"{uninstallScript}\"";
+            + $"-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{uninstallScript}\" -Quiet";
+        var uninstallCommand = $"\"{productPath}\" --uninstall";
         var keyPath = $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{ModBridgeProductIdentity.UninstallRegistryKeyName}";
         using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true)
             ?? throw new InvalidOperationException("Windows did not create the uninstall registration.");
         key.SetValue("DisplayName", ModBridgeProductIdentity.ProductName, RegistryValueKind.String);
         key.SetValue("DisplayIcon", $"{productPath},0", RegistryValueKind.String);
-        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0", RegistryValueKind.String);
+        key.SetValue("DisplayVersion", displayVersion, RegistryValueKind.String);
         key.SetValue("Publisher", DisplayPublisher, RegistryValueKind.String);
         key.SetValue("InstallLocation", programDirectory, RegistryValueKind.String);
         key.SetValue("UninstallString", uninstallCommand, RegistryValueKind.String);
-        key.SetValue("QuietUninstallString", uninstallCommand, RegistryValueKind.String);
+        key.SetValue("QuietUninstallString", quietUninstallCommand, RegistryValueKind.String);
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }

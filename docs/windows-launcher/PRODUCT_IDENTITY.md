@@ -1,7 +1,7 @@
 # STFC Mod Bridge product identity
 
-Issue #27 adopts **STFC Mod Bridge** as the public name of the standalone
-Windows application. Its descriptor is **Install · Configure · Diagnose ·
+Issue #27 adopts **STFC Mod Bridge** as the public name of the installed
+per-user Windows application. Its descriptor is **Install · Configure · Diagnose ·
 Run**. In prose, use **Mod Bridge** when referring to the product, lowercase
 `launch` only for starting a process, and **Scopely launcher** for the external
 official application.
@@ -32,9 +32,17 @@ copy.
 Pre-v1 release candidates use the canonical product identity from their first
 public artifact. Setup installs directly into the canonical program and state
 directories, creates only the **STFC Mod Bridge** shortcuts, and writes one
-per-user Add/Remove Programs entry. Uninstall removes only the canonical
-shortcuts and registration. State is preserved unless the explicit
-`-RemoveState` option is used.
+per-user Add/Remove Programs entry. Uninstall removes the canonical program
+directory, shortcuts, and registration. State is preserved unless the explicit
+removal option is selected.
+
+Setup must present the exact version, verified publisher, program location, and
+state location before mutation. It labels a greenfield install, newer-version
+update, or same/older-version repair truthfully and launches the product only
+after an explicit visible choice. Windows Installed Apps invokes the signed
+application's `--uninstall` confirmation. That confirmation preserves state by
+default, offers explicit state removal, and states that Community Mod and game
+files are outside the application-uninstall boundary.
 
 Product identity does not read or write mod TOML. Self-update artifacts,
 publisher verification, rollback paths, and process detection all use the

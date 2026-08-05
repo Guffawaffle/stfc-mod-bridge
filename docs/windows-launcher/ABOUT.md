@@ -55,7 +55,7 @@ must not be edited directly.
   `review-pending` under issue #30.
 - Extraction provenance and git history ground the named community-mod
   credits. Provider recognition is explicitly not presented as approval of
-  this standalone application. Every explicitly bundled artwork input is
+  this installed application. Every explicitly bundled artwork input is
   classified by project identity and remains `review-pending` until the final
   issue #30 asset review.
 

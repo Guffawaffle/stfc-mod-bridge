@@ -1197,11 +1197,17 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $aboutNavigation
-  [void](Find-AutomationElement `
-    -Root $root `
-    -Name "Open STFC Mod Bridge source repository" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  foreach ($aboutAction in @(
+      "Open STFC Mod Bridge source repository",
+      "Open Mod Bridge data folder",
+      "Uninstall STFC Mod Bridge application"
+    )) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name $aboutAction `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  }
   $technicalDetails = Find-AutomationElement `
     -Root $root `
     -Name "Configuration ownership technical details" `

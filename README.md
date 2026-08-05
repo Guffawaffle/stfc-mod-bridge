@@ -40,6 +40,14 @@ before changing an installed mod. Download only `STFCModBridge.Setup.exe` from
 the linked RC.4 release; the ZIP, manifest, SBOM, and attestation bundle are
 machine-consumed release inputs rather than alternate installers.
 
+Setup presents the version, verified publisher, and exact per-user locations
+before it changes the machine. Application files live under
+`%LOCALAPPDATA%\Programs\STFC Mod Bridge`; preferences, journals, rollback data,
+and configuration backups live under `%LOCALAPPDATA%\STFC Mod Bridge`.
+Windows Installed Apps and Settings → About provide application-uninstall
+access. Uninstall preserves that local data unless the user explicitly selects
+its removal, and it never removes the Community Mod DLL or TOML from the game.
+
 Use the [bug report](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=bug-report.yml)
 or [usability feedback](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=usability-feedback.yml)
 form for ordinary feedback. Report security vulnerabilities privately as

@@ -25,6 +25,10 @@ public sealed class LauncherBootstrapInstaller(
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken)
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+        if (Directory.Exists(programDirectory))
+        {
+            LauncherFilesystemSafety.RejectReparsePoints(programDirectory, "Mod Bridge setup");
+        }
         LauncherUpdateRecovery.RecoverBeforeSetup(stateDirectory, programDirectory);
         var transactionRoot = Path.Combine(stateDirectory, "bootstrap", Guid.NewGuid().ToString("N"));
         var stageDirectory = Path.Combine(transactionRoot, "stage");

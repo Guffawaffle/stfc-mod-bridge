@@ -13,14 +13,15 @@ public sealed class LauncherAboutViewModel
         LauncherAboutCatalog content,
         LauncherConfigurationCatalog configurationCatalog,
         LauncherSettingsActivationDiagnostics diagnostics,
-        Action<Uri>? openExternalUri)
+        Action<Uri>? openExternalUri,
+        Action? openDataFolder = null,
+        Action? uninstallApplication = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(configurationCatalog);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
         var assembly = typeof(LauncherAboutViewModel).Assembly;
-        var assemblyVersion = assembly.GetName().Version;
         var informationalVersion = assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
@@ -28,9 +29,7 @@ public sealed class LauncherAboutViewModel
         ProductName = ModBridgeProductIdentity.ProductName;
         Descriptor = ModBridgeProductIdentity.Descriptor;
         Description = ModBridgeProductIdentity.Description;
-        Version = assemblyVersion is null
-            ? "Unknown"
-            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
+        Version = LauncherInstalledProduct.DisplayVersion(assembly);
         BuildProvenance = string.IsNullOrWhiteSpace(informationalVersion)
             ? "No informational build identity is embedded."
             : informationalVersion;
@@ -47,6 +46,9 @@ public sealed class LauncherAboutViewModel
         RepositoryUrl = ProductRepository;
         ReleasesUrl = $"{ProductRepository}/releases";
         ProductLicenseUrl = $"{ProductRepository}/blob/main/LICENSE";
+        var installLayout = PerUserInstallLayout.FromCurrentUser();
+        ProgramDirectory = installLayout.ProgramDirectory;
+        DataDirectory = installLayout.StateDirectory;
         Contributors = content.Contributors;
         Acknowledgements = content.Acknowledgements;
         ThirdPartyNotices = content.ThirdPartyNotices;
@@ -54,6 +56,12 @@ public sealed class LauncherAboutViewModel
         NoticeCoverageStatus = content.NoticeCoverageStatus;
         LegalReviewStatus = content.LegalReviewStatus;
         OpenExternalLinkCommand = new ExternalUriCommand(openExternalUri);
+        OpenDataFolderCommand = new SettingsActionCommand(
+            () => openDataFolder?.Invoke(),
+            () => openDataFolder is not null);
+        UninstallApplicationCommand = new SettingsActionCommand(
+            () => uninstallApplication?.Invoke(),
+            () => uninstallApplication is not null);
     }
 
     public string ProductName { get; }
@@ -84,6 +92,10 @@ public sealed class LauncherAboutViewModel
 
     public string ProductLicenseUrl { get; }
 
+    public string ProgramDirectory { get; }
+
+    public string DataDirectory { get; }
+
     public IReadOnlyList<LauncherContributor> Contributors { get; }
 
     public IReadOnlyList<LauncherAcknowledgement> Acknowledgements { get; }
@@ -97,6 +109,10 @@ public sealed class LauncherAboutViewModel
     public string LegalReviewStatus { get; }
 
     public ICommand OpenExternalLinkCommand { get; }
+
+    public ICommand OpenDataFolderCommand { get; }
+
+    public ICommand UninstallApplicationCommand { get; }
 
     private static string? BuildGitHubRepositoryUrl(string repository)
     {

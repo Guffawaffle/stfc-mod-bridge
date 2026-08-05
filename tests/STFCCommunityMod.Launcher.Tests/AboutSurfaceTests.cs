@@ -53,7 +53,7 @@ public sealed class AboutSurfaceTests
     }
 
     [TestMethod]
-    public void AboutOwnsNoOperationalOrRawConfigurationActions()
+    public void AboutKeepsApplicationMaintenanceSeparateFromModOperations()
     {
         var document = LoadSettingsXaml();
         var about = document.Descendants(Presentation + "ScrollViewer")
@@ -68,6 +68,8 @@ public sealed class AboutSurfaceTests
         Assert.IsFalse(aboutText.Contains("Diagnostics", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(aboutText.Contains("Recover", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(aboutText.Contains("Remove mod", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(aboutText.Contains("About.OpenDataFolderCommand", StringComparison.Ordinal));
+        Assert.IsTrue(aboutText.Contains("About.UninstallApplicationCommand", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.ThirdPartyNotices", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.NoticeCoverageStatus", StringComparison.Ordinal));
 
@@ -94,6 +96,8 @@ public sealed class AboutSurfaceTests
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge releases");
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge license");
         CollectionAssert.Contains(namedButtons, "Open active mod provider repository");
+        CollectionAssert.Contains(namedButtons, "Open Mod Bridge data folder");
+        CollectionAssert.Contains(namedButtons, "Uninstall STFC Mod Bridge application");
         var contributionLink = about.Descendants(Presentation + "Button")
             .Single(element => (string?)element.Attribute("Content") == "View contribution source");
         Assert.AreEqual(

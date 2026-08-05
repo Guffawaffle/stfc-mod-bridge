@@ -1100,7 +1100,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 startupComposition.SettingsDiagnostics,
                 repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
                 uiPreferencesStore: uiPreferencesStore,
-                openExternalUri: OpenExternalUri);
+                openExternalUri: OpenExternalUri,
+                openDataFolder: OpenApplicationDataFolder,
+                uninstallApplication: IsRunningInstalledApplication() ? ShowApplicationUninstall : null);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -1138,6 +1140,50 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 $"Windows could not open this link: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
         }
+    }
+
+    private void OpenApplicationDataFolder()
+    {
+        try
+        {
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            Directory.CreateDirectory(stateDirectory);
+            _ = Process.Start(new ProcessStartInfo(stateDirectory) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text = $"Windows could not open the Mod Bridge data folder: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void ShowApplicationUninstall()
+    {
+        var window = new ApplicationUninstallWindow(PerUserInstallLayout.FromCurrentUser())
+        {
+            Owner = this,
+        };
+        _ = window.ShowDialog();
+    }
+
+    private static bool IsRunningInstalledApplication()
+    {
+        var processPath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(processPath))
+        {
+            return false;
+        }
+
+        var layout = PerUserInstallLayout.FromCurrentUser();
+        var installedPath = Path.Combine(layout.ProgramDirectory, ModBridgeProductIdentity.ExecutableName);
+        return string.Equals(
+            Path.GetFullPath(processPath),
+            Path.GetFullPath(installedPath),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private void OpenRawConfiguration()

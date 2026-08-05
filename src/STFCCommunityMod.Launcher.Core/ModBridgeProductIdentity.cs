@@ -9,7 +9,7 @@ public static class ModBridgeProductIdentity
     public const string ShortName = "Mod Bridge";
     public const string Descriptor = "Install · Configure · Diagnose · Run";
     public const string Description =
-        "A standalone Windows application for installing, updating, repairing, configuring, diagnosing, and running supported Star Trek Fleet Command community-mod distributions.";
+        "An installed per-user Windows application for installing, updating, repairing, configuring, diagnosing, and running supported Star Trek Fleet Command community-mod distributions.";
 
     public const string ProgramDirectoryName = ProductName;
     public const string StateDirectoryName = ProductName;

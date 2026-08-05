@@ -50,7 +50,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherSettingsActivationDiagnostics settingsDiagnostics,
         IConfigurationRepository? repository = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null,
-        Action<Uri>? openExternalUri = null)
+        Action<Uri>? openExternalUri = null,
+        Action? openDataFolder = null,
+        Action? uninstallApplication = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -70,7 +72,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             BundledLauncherAboutCatalog.Load(),
             catalog,
             settingsDiagnostics,
-            openExternalUri);
+            openExternalUri,
+            openDataFolder,
+            uninstallApplication);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);

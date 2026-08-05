@@ -1368,6 +1368,58 @@
             </WrapPanel>
 
             <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Installation" />
+            <Border Height="1" Margin="0,0,0,12" Background="{DynamicResource BorderBrush}" />
+            <Grid MaxWidth="760" HorizontalAlignment="Stretch">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="128" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Text="Application" />
+              <TextBlock Grid.Column="1"
+                         FontFamily="Consolas"
+                         FontSize="11"
+                         Text="{Binding About.ProgramDirectory}"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Row="1"
+                         Margin="0,8,0,0"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Local data" />
+              <TextBlock Grid.Row="1"
+                         Grid.Column="1"
+                         Margin="0,8,0,0"
+                         FontFamily="Consolas"
+                         FontSize="11"
+                         Text="{Binding About.DataDirectory}"
+                         TextWrapping="Wrap" />
+            </Grid>
+            <TextBlock MaxWidth="760"
+                       Margin="0,12,0,0"
+                       HorizontalAlignment="Left"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="Uninstalling Mod Bridge preserves local data by default and never removes the installed Community Mod or its game configuration."
+                       TextWrapping="Wrap" />
+            <WrapPanel Margin="0,14,0,0">
+              <Button Style="{StaticResource UtilityActionButtonStyle}"
+                      Command="{Binding About.OpenDataFolderCommand}"
+                      Content="Open _data folder"
+                      automation:AutomationProperties.Name="Open Mod Bridge data folder" />
+              <Button Margin="10,0,0,0"
+                      Style="{StaticResource UtilityActionButtonStyle}"
+                      Command="{Binding About.UninstallApplicationCommand}"
+                      Foreground="{DynamicResource ErrorBrush}"
+                      Background="{DynamicResource ErrorSoftBrush}"
+                      BorderBrush="{DynamicResource ErrorBrush}"
+                      Content="_Uninstall Mod Bridge"
+                      ToolTip="Available when running the installed application"
+                      automation:AutomationProperties.Name="Uninstall STFC Mod Bridge application" />
+            </WrapPanel>
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
                        Text="Credits and acknowledgements" />
             <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource BorderBrush}" />
             <ItemsControl ItemsSource="{Binding About.Contributors}">

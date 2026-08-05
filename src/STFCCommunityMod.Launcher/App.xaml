@@ -3,8 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
-             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls"
-             StartupUri="MainWindow.xaml">
+             xmlns:controls="clr-namespace:STFCCommunityMod.Launcher.Controls">
   <Application.Resources>
     <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     <FontFamily x:Key="LauncherTextFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>

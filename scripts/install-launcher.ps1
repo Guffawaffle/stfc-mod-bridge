@@ -82,15 +82,21 @@ try {
   }
   New-Item -Path $uninstallKey -Force | Out-Null
   $uninstallScript = Join-Path $target "Uninstall-Launcher.ps1"
+  $launcher = Join-Path $target "STFCModBridge.exe"
   $windowsPowerShell = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)) "System32\WindowsPowerShell\v1.0\powershell.exe"
-  $uninstallCommand = "`"$windowsPowerShell`" -NoProfile -ExecutionPolicy Bypass -File `"$uninstallScript`""
+  $uninstallCommand = "`"$launcher`" --uninstall"
+  $quietUninstallCommand = "`"$windowsPowerShell`" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$uninstallScript`" -Quiet"
+  $displayVersion = (Get-Item -LiteralPath $launcher).VersionInfo.ProductVersion -replace '\+.*$', ''
+  if ([string]::IsNullOrWhiteSpace($displayVersion)) {
+    $displayVersion = "0.1.0"
+  }
   Set-ItemProperty -Path $uninstallKey -Name DisplayName -Value $productName
-  Set-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$(Join-Path $target 'STFCModBridge.exe'),0"
-  Set-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value "0.1.0"
+  Set-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "$launcher,0"
+  Set-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $displayVersion
   Set-ItemProperty -Path $uninstallKey -Name Publisher -Value "Joseph Gustavson"
   Set-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $target
   Set-ItemProperty -Path $uninstallKey -Name UninstallString -Value $uninstallCommand
-  Set-ItemProperty -Path $uninstallKey -Name QuietUninstallString -Value $uninstallCommand
+  Set-ItemProperty -Path $uninstallKey -Name QuietUninstallString -Value $quietUninstallCommand
   New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
   Start-Process -FilePath (Join-Path $target "STFCModBridge.exe") -WorkingDirectory $target

@@ -271,6 +271,50 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void InstalledProductSurfacesRequireVisibleSetupAndSignedUninstallConsent()
+    {
+        var root = RepositoryRoot();
+        var setupProgram = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Setup",
+            "Program.cs"));
+        var setupForm = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Setup",
+            "SetupForm.cs"));
+        var application = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "App.xaml.cs"));
+        var uninstallWindow = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "ApplicationUninstallWindow.xaml"));
+        var uninstallScript = File.ReadAllText(Path.Combine(root, "scripts", "uninstall-launcher.ps1"));
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        StringAssert.Contains(setupProgram, "using var setup = new SetupForm");
+        StringAssert.Contains(setupProgram, "LauncherInstalledProduct.DetermineSetupAction");
+        StringAssert.Contains(setupProgram, "key.SetValue(\"DisplayVersion\", displayVersion");
+        StringAssert.Contains(setupProgram, "$\"\\\"{productPath}\\\" --uninstall\"");
+        StringAssert.Contains(setupForm, "Nothing has been changed yet.");
+        StringAssert.Contains(setupForm, "Launch STFC Mod Bridge");
+        StringAssert.Contains(setupForm, "Visible = false");
+        StringAssert.Contains(application, "--uninstall");
+        StringAssert.Contains(uninstallWindow, "IsChecked=\"False\"");
+        StringAssert.Contains(uninstallWindow, "Community Mod TOML will not be changed");
+        StringAssert.Contains(uninstallScript, "$WaitForProcessId");
+        StringAssert.Contains(uninstallScript, "$RemoveState");
+        StringAssert.Contains(uninstallScript, "FileAttributes]::ReparsePoint");
+        StringAssert.Contains(readme, "%LOCALAPPDATA%\\Programs\\STFC Mod Bridge");
+        StringAssert.Contains(readme, "preserves that local data");
+    }
+
+    [TestMethod]
     public void UpdaterAcquiresSharedLeaseBeforeWaitingOrReplacingFiles()
     {
         var source = File.ReadAllText(Path.Combine(

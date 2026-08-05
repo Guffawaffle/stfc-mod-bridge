@@ -19,9 +19,17 @@ installers. The supported alpha environment is Windows 10 or 11 x64, a
 per-user Scopely STFC install, and the bundled Guffawaffle or NetniV stable
 provider.
 
-Setup is per-user and includes the required .NET runtime. Before running it,
-verify that Windows shows the publisher as **Joseph Gustavson**. Windows may
-still identify a new certificate as uncommon while reputation develops.
+Setup is per-user and includes the required .NET runtime. It shows the version,
+verified publisher, application path, and local-data path before installation.
+Before continuing, verify that Windows and Setup show the publisher as **Joseph
+Gustavson**. Windows may still identify a new certificate as uncommon while
+reputation develops.
+
+Application files are installed beneath `%LOCALAPPDATA%\Programs\STFC Mod
+Bridge`. Preferences, journals, rollback data, and configuration backups are
+stored beneath `%LOCALAPPDATA%\STFC Mod Bridge`. Application uninstall is
+available from Windows Installed Apps and Settings → About; it preserves local
+data by default and never removes the Community Mod DLL or TOML from the game.
 
 ## Protect your installation
 
