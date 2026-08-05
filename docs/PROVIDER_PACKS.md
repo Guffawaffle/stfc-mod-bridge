@@ -107,7 +107,7 @@ operations under the
 - **Select source**, when no DLL is installed, changes the provider preference
   and provider-scoped TOML profile without downloading or claiming an artifact.
   It compares capabilities, requires explicit stable-ID confirmation, and
-  takes effect after restarting Mod Bridge.
+  recomposes the provider-bound workspace inside the current process.
 - **Switch installed mod** is a separately confirmed, game-closed migration
   built from fresh target release discovery. `LauncherProviderAtomicSwitchCoordinator`
   stages the target artifact and uses the deployment transaction's exact
@@ -116,6 +116,8 @@ operations under the
   The outer recovery journal reaches `Completed` before the prior managed DLL
   rollback copy is released. An interruption therefore resumes as one rollback
   of DLL, installed state, selection, and exact TOML bytes.
+  After commit, Mod Bridge replaces the provider session in-process; the same
+  window can immediately inspect the new source or switch back.
 
 Provider history is DPAPI `CurrentUser` protected, DACL restricted, verified by
 identity and SHA-256, and retained as the newest five records per provider and

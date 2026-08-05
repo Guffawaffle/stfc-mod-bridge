@@ -56,8 +56,11 @@ settings view model receives the selected `ILauncherSettingsLayoutProvider`;
 ordinary row and rendering paths do not inspect distribution IDs, versions, or
 feature flags.
 
-Feature activation is startup-latched. Changing release source, runtime
-manifest, or policy requires a launcher restart.
+Feature activation is provider-session-latched. Changing release source,
+runtime manifest, or provider policy replaces the provider session inside the
+current process while preserving launcher-owned window, theme, navigation, and
+preference state. Only updating the Bridge executable itself uses the separate
+verified updater handoff and process relaunch.
 
 ## Runtime manifest
 

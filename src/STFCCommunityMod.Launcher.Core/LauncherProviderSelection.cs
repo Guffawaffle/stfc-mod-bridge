@@ -519,8 +519,8 @@ public sealed class LauncherProviderSourceSwitchService
             preview.Target,
             prepared.ConfigurationBackup,
             preview.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
-                ? $"Selected {preview.TargetDisplayName} and restored its protected TOML history. Restart Mod Bridge before managing the mod or editing settings."
-                : $"Selected {preview.TargetDisplayName}. Restart Mod Bridge before managing the mod or editing settings.");
+                ? $"Selected {preview.TargetDisplayName} and restored its protected TOML history."
+                : $"Selected {preview.TargetDisplayName}.");
     }
 
     internal async Task RollBackAsync(

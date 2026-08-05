@@ -36,13 +36,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly IGameProcessStateMonitor processStateMonitor;
     private readonly HttpClient httpClient;
     private readonly CancellationTokenSource lifetimeCancellation = new();
-    private readonly LauncherDistributionProvider distributionProvider;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
-    private readonly LauncherProviderSelectionResolution providerSelectionResolution;
-    private readonly LauncherProviderShellAccess providerShellAccess;
-    private readonly LauncherProviderReleaseChannel distributionReleaseChannel;
-    private readonly LauncherProviderAtomicSwitchCoordinator providerSourceSwitchCoordinator;
-    private readonly LauncherStartupComposition startupComposition;
+    private readonly ILauncherProviderSelectionStore providerSelectionStore;
+    private readonly LauncherProviderSessionRecomposer<LauncherProviderSession> providerSessions;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
     private readonly WorkspaceFocusTransition diagnosticsFocusTransition = new();
@@ -59,7 +55,21 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private MaintenanceAction pendingMaintenanceAction;
     private LauncherUpdatePreparation? pendingLauncherUpdate;
     private LauncherProviderAtomicSwitchPreview? pendingProviderSwitch;
-    private LauncherProviderSelection? providerSelectionPendingRestart;
+
+    private LauncherProviderSession ProviderSession => providerSessions.Current;
+
+    private LauncherDistributionProvider distributionProvider => ProviderSession.Provider;
+
+    private LauncherProviderSelectionResolution providerSelectionResolution => ProviderSession.Resolution;
+
+    private LauncherProviderShellAccess providerShellAccess => ProviderSession.ShellAccess;
+
+    private LauncherProviderReleaseChannel distributionReleaseChannel => ProviderSession.ReleaseChannel;
+
+    private LauncherProviderAtomicSwitchCoordinator providerSourceSwitchCoordinator =>
+        ProviderSession.SwitchCoordinator;
+
+    private LauncherStartupComposition startupComposition => ProviderSession.StartupComposition;
 
     public MainWindow()
         : this(
@@ -86,15 +96,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             processStateMonitor ?? throw new ArgumentNullException(nameof(processStateMonitor));
         ArgumentNullException.ThrowIfNull(providerContext);
         distributionProviderCatalog = providerContext.Catalog;
-        providerSelectionResolution = providerContext.Selection;
-        providerShellAccess = LauncherProviderShellAccess.From(providerSelectionResolution);
-        distributionProvider = providerSelectionResolution.Provider
-            ?? distributionProviderCatalog.DefaultProvider;
-        distributionReleaseChannel = providerSelectionResolution.ReleaseChannel
-            ?? distributionProvider.DefaultReleaseChannel;
-        startupComposition = LauncherStartupComposition.Create(
-            distributionProvider,
-            distributionReleaseChannel);
+        providerSelectionStore = providerContext.SelectionStore;
         httpClient = new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
@@ -112,19 +114,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.SelectedValue = selectedColorMode;
         isColorModeSelectorReady = true;
         UpdateColorModeSelectorAccessibility();
-        var viewModel = MainWindowViewModel.CreateDefault(
-            httpClient,
+        providerSessions = new(
             distributionProviderCatalog,
-            distributionProvider,
-            distributionReleaseChannel,
-            providerShellAccess.CanUseProviderBoundModActions
-                ? null
-                : providerShellAccess.RestrictionReason,
-            uiPreferencesStore,
-            providerContext.SelectionStore);
-        providerSourceSwitchCoordinator = viewModel.ProviderSwitchCoordinator
-            ?? throw new InvalidOperationException("Provider-switch composition is unavailable.");
-        DataContext = viewModel;
+            providerContext.Selection,
+            CreateProviderSession);
+        ApplyProviderSession(ProviderSession);
         if (!providerShellAccess.CanEditProviderSettings)
         {
             HomeSettingsTitleBarButton.IsEnabled = false;
@@ -133,6 +127,103 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 $"Release source needs attention. {providerShellAccess.RestrictionReason} "
                 + "Choose Source needs attention to select a known provider.";
             ProviderRecoveryBanner.Visibility = Visibility.Visible;
+        }
+    }
+
+    private LauncherProviderSession CreateProviderSession(
+        LauncherProviderSelectionResolution resolution)
+    {
+        var shellAccess = LauncherProviderShellAccess.From(resolution);
+        var provider = resolution.Provider ?? distributionProviderCatalog.DefaultProvider;
+        var releaseChannel = resolution.ReleaseChannel ?? provider.DefaultReleaseChannel;
+        var composition = LauncherStartupComposition.Create(provider, releaseChannel);
+        var viewModel = MainWindowViewModel.CreateDefault(
+            httpClient,
+            distributionProviderCatalog,
+            provider,
+            releaseChannel,
+            shellAccess.CanUseProviderBoundModActions
+                ? null
+                : shellAccess.RestrictionReason,
+            uiPreferencesStore,
+            providerSelectionStore);
+        return new(
+            resolution,
+            shellAccess,
+            provider,
+            releaseChannel,
+            composition,
+            viewModel);
+    }
+
+    private void ApplyProviderSession(LauncherProviderSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        DataContext = session.ViewModel;
+        pendingProviderSwitch = null;
+        pendingModOperation = null;
+        diagnosticPreview = null;
+        SettingsWorkspace.DataContext = null;
+        settingsViewModel = null;
+        openRawTomlCommand = null;
+        isSettingsWorkspaceInitialized = false;
+        ProviderSwitchConfirmationInput.Text = string.Empty;
+        ProviderSwitchConfirmationInput.IsEnabled = true;
+        ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSourceSelector.IsEnabled = true;
+        ReleaseSourceButton.IsEnabled = true;
+        RetryProviderRecompositionButton.Visibility = Visibility.Collapsed;
+        ProviderRecoveryBanner.Visibility = Visibility.Collapsed;
+        HomeSettingsTitleBarButton.IsEnabled = session.ShellAccess.CanEditProviderSettings;
+        HomeSettingsTitleBarButton.ToolTip = session.ShellAccess.CanEditProviderSettings
+            ? null
+            : session.ShellAccess.RestrictionReason;
+        ModActionButton.IsHitTestVisible = true;
+        ModActionButton.Focusable = true;
+    }
+
+    private void ShowProviderRecompositionFailure(Exception exception)
+    {
+        HomeSettingsTitleBarButton.IsEnabled = false;
+        ReleaseSourceButton.IsEnabled = false;
+        ModActionButton.IsHitTestVisible = false;
+        ModActionButton.Focusable = false;
+        ProviderRecoveryMessage.Text =
+            "The provider switch committed, but its workspace could not be refreshed. "
+            + $"Retry inside Mod Bridge before further mod management. {exception.Message}";
+        RetryProviderRecompositionButton.Visibility = Visibility.Visible;
+        ProviderRecoveryBanner.Visibility = Visibility.Visible;
+    }
+
+    private void RetryProviderRecompositionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        RetryProviderRecompositionButton.IsEnabled = false;
+        try
+        {
+            var session = providerSessions.Retry();
+            ApplyProviderSession(session);
+            ProviderSwitchPreviewText.Text =
+                $"{session.Provider.DisplayName} is active. You can review another source immediately.";
+            ProviderSourceSelector.ItemsSource = distributionProviderCatalog.Providers.Values
+                .OrderBy(provider => provider.DisplayName, StringComparer.Ordinal)
+                .ToArray();
+            ProviderSourceSelector.SelectedValue = session.Provider.Id;
+            UpdateProviderCapabilityText();
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException)
+        {
+            ShowProviderRecompositionFailure(exception);
+        }
+        finally
+        {
+            RetryProviderRecompositionButton.IsEnabled = true;
         }
     }
 
@@ -177,11 +268,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
-        if (DataContext is IDisposable disposableViewModel)
-        {
-            disposableViewModel.Dispose();
-        }
-
+        providerSessions.Dispose();
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
         httpClient.Dispose();
@@ -548,16 +635,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ProviderSourceSelector.ItemsSource = distributionProviderCatalog.Providers.Values
             .OrderBy(provider => provider.DisplayName, StringComparer.Ordinal)
             .ToArray();
-        ProviderSourceSelector.SelectedValue = providerSelectionPendingRestart?.ProviderId
-            ?? (providerSelectionResolution.IsResolved ? distributionProvider.Id : null);
-        ProviderSourceSelector.IsEnabled = providerSelectionPendingRestart is null;
+        ProviderSourceSelector.SelectedValue =
+            providerSelectionResolution.IsResolved ? distributionProvider.Id : null;
+        ProviderSourceSelector.IsEnabled = true;
         ReviewProviderSwitchButton.IsEnabled = false;
         ConfirmProviderSwitchButton.IsEnabled = false;
         ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
         ProviderSwitchConfirmationInput.Text = string.Empty;
-        ProviderSwitchPreviewText.Text = providerSelectionPendingRestart is null
-            ? "Choose another provider, then review compatibility before switching."
-            : "The selected source is saved. Restart Mod Bridge before reviewing another switch.";
+        ProviderSwitchPreviewText.Text =
+            "Choose another provider, then review compatibility before switching.";
         UpdateProviderCapabilityText();
         ProviderSwitchDialog.IsOpen = true;
         _ = Dispatcher.BeginInvoke(
@@ -591,10 +677,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (settingsViewModel?.HasPendingChanges == true)
+        if (settingsViewModel is not null
+            && (settingsViewModel.HasPendingChanges
+                || settingsViewModel.SyncWorkspace.HasPendingChanges))
         {
             ProviderSwitchPreviewText.Text =
-                "Save or discard staged mod-setting changes before reviewing a provider switch.";
+                "Save or discard staged Settings and Data Sync changes before reviewing a provider switch.";
             ConfirmProviderSwitchButton.IsEnabled = false;
             return;
         }
@@ -707,18 +795,17 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
                 ? result.Message
                 : $"{result.Message} The prior TOML is protected in the {result.ConfigurationBackup.ProviderId} history.";
-            ReleaseSourceButton.Content =
-                $"Next: {selectedProvider.DisplayName} · {selectedProvider.DefaultReleaseChannel.DisplayName}";
-            providerSelectionPendingRestart = result.Selection;
-            HomeSettingsTitleBarButton.IsEnabled = false;
-            HomeSettingsTitleBarButton.ToolTip = result.Message;
-            ProviderRecoveryMessage.Text = result.Message;
-            ProviderRecoveryBanner.Visibility = Visibility.Visible;
-            ProviderSourceSelector.IsEnabled = false;
+            var session = providerSessions.Recompose(result.Selection);
+            ApplyProviderSession(session);
+            ProviderSourceSelector.ItemsSource = distributionProviderCatalog.Providers.Values
+                .OrderBy(provider => provider.DisplayName, StringComparer.Ordinal)
+                .ToArray();
+            ProviderSourceSelector.SelectedValue = selectedProvider.Id;
+            ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
+                ? $"{result.Message} The {selectedProvider.DisplayName} workspace is active."
+                : $"{result.Message} The prior TOML is protected in the {result.ConfigurationBackup.ProviderId} history. The {selectedProvider.DisplayName} workspace is active.";
             ReviewProviderSwitchButton.IsEnabled = false;
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
-            pendingProviderSwitch = null;
+            UpdateProviderCapabilityText();
         }
         catch (OperationCanceledException)
         {
@@ -732,7 +819,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or InvalidDataException
                 or InvalidOperationException)
         {
-            ProviderSwitchPreviewText.Text = $"The provider switch failed: {exception.Message}";
+            ProviderSwitchPreviewText.Text = providerSessions.HasPendingRecomposition
+                ? "The provider switch committed, but its workspace refresh needs attention."
+                : $"The provider switch failed: {exception.Message}";
+            if (providerSessions.HasPendingRecomposition)
+            {
+                ShowProviderRecompositionFailure(exception);
+            }
             pendingProviderSwitch = null;
             ResetProviderSwitchReviewControls();
         }
@@ -740,12 +833,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void ResetProviderSwitchReviewControls()
     {
-        ProviderSourceSelector.IsEnabled = providerSelectionPendingRestart is null;
+        ProviderSourceSelector.IsEnabled = !providerSessions.HasPendingRecomposition;
         ProviderSwitchConfirmationInput.IsEnabled = true;
         ConfirmProviderSwitchButton.IsEnabled = false;
         ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
         ReviewProviderSwitchButton.IsEnabled =
-            providerSelectionPendingRestart is null
+            !providerSessions.HasPendingRecomposition
             && ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
             && (!providerSelectionResolution.IsResolved
                 || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));

@@ -119,7 +119,8 @@ public sealed class LauncherProviderSelectionTests
                 "guffawaffle",
                 result.ConfigurationBackup.BackupId));
         CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-        StringAssert.Contains(result.Message, "Restart");
+        StringAssert.Contains(result.Message, "Selected NetniV");
+        Assert.IsFalse(result.Message.Contains("restart", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
