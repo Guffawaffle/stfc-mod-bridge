@@ -261,7 +261,7 @@ jobs:
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
           if-no-files-found: error
 
-  publish:
+  stage:
     needs: [build, sign]
     runs-on: windows-2022
     timeout-minutes: 10
@@ -274,7 +274,7 @@ jobs:
           name: windows-mod-bridge-signed-release-x64
           path: artifacts/win-x64
 
-      - name: Verify attested release subjects before publication
+      - name: Verify attested release subjects before draft staging
         shell: pwsh
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
@@ -310,7 +310,7 @@ jobs:
             }
           }
 
-      - name: Publish setup and machine-consumed update inputs
+      - name: Stage setup and machine-consumed update inputs as a draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -328,6 +328,9 @@ jobs:
             "$root/stfc-mod-bridge-sbom.spdx.json"
           )
           $notes = @"
+          > [!WARNING]
+          > Qualification draft. Do not publish or distribute this release until its canary evidence is complete.
+
           Install STFC Mod Bridge with `STFCModBridge.Setup.exe`.
 
           The ZIP, manifest, SBOM, and attestation bundle are machine-consumed trust/update inputs, not alternate installation packages.
@@ -338,6 +341,7 @@ jobs:
             "release", "create", $env:RELEASE_TAG,
             "--repo", $env:RELEASE_REPOSITORY,
             "--verify-tag",
+            "--draft",
             "--title", "STFC Mod Bridge $env:RELEASE_VERSION",
             "--notes-file", $notesPath
           )
@@ -347,5 +351,5 @@ jobs:
           $arguments += $assets
           & gh @arguments
           if ($LASTEXITCODE -ne 0) {
-            throw "GitHub release publication failed."
+            throw "GitHub draft release staging failed."
           }

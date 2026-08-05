@@ -28,11 +28,47 @@ available, the build job:
 6. generates an SPDX 2.2 SBOM for the unsigned payload.
 
 The SBOM crosses the same artifact boundary as the unsigned payload, is
-included in the final attestation, is reverified before publication, and is
-published with the machine-consumed release inputs. The protected signing job
-alone receives `id-token: write`; the publication job alone receives
+included in the final attestation, is reverified before draft staging, and is
+staged with the machine-consumed release inputs. The protected signing job
+alone receives `id-token: write`; the draft-staging job alone receives
 `contents: write`. The signing/attestation order remains defined in
 [Windows Release Signing](CODE_SIGNING.md).
+
+## Draft qualification and one-way publication
+
+The tag workflow always creates a GitHub **draft** release. A successful
+workflow proves that the tagged source passed the producer gates and that the
+staged subjects were signed, attested, transferred, and reverified. It does not
+approve those subjects for testers and does not make the draft discoverable by
+the update client.
+
+Before publication, the maintainer must:
+
+1. download the exact draft assets and retain the workflow URL, environment
+   approval, runner image, Defender versions, manifest, SBOM, hashes, and
+   attestation verification output;
+2. complete the release epic's canary matrix against those staged bytes;
+3. leave a failed candidate as a draft and record the rejection; never publish
+   it merely to obtain a public download URL; and
+4. replace the qualification warning with final release notes containing the
+   exact phrase **Closed-alpha approved**, then publish the prerelease once.
+
+For example, after preparing and reviewing a final notes file:
+
+```powershell
+gh release edit v0.1.0-rc.4 `
+  --repo Guffawaffle/stfc-mod-bridge `
+  --notes-file ./approved-release-notes.md `
+  --draft=false `
+  --prerelease
+```
+
+Confirm the release is still a draft immediately before this command. Release
+immutability takes effect when it is published, so the notes and asset set must
+already be final. The release notes must call the build a prerelease, identify
+`STFCModBridge.Setup.exe` as the only user-facing download, describe the ZIP,
+manifest, SBOM, and attestation bundle as machine-consumed inputs, link the
+qualification evidence, and retain the provenance-versus-safety limitation.
 
 ## Reviewed network and tool inputs
 
@@ -95,7 +131,8 @@ Attach these items to the release epic:
 - the successful tag workflow URL and protected-environment approval record;
 - runner image and Defender signature versions from the build log;
 - downloaded release SBOM and attestation bundle verification output; and
-- clean-machine install, update, rollback, repair, and uninstall receipts.
+- clean-machine install, update, rollback, repair, and uninstall receipts; and
+- the final reviewed release notes and immutable publication receipt.
 
 Repository tests prove workflow shape and ordering. They do not prove that an
 administrator has enabled the external controls above.
