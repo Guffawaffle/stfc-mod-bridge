@@ -31,6 +31,8 @@
     <Resource Include="Assets\stfc-community-mod.ico" />
     <Resource Include="..\..\assets\launcher.png"
               Link="Assets\stfc-community-mod.png" />
+    <Resource Include="..\..\assets\portfolio\stfc-mod-bridge-banner.png"
+              Link="Assets\stfc-mod-bridge-banner.png" />
     <EmbeddedResource Include="..\..\providers\bundled-provider-catalog.v1.json"
                       LogicalName="STFCCommunityMod.Launcher.ProviderCatalog.v1.json" />
     <EmbeddedResource Include="..\..\providers\guffawaffle\provider-pack.v1.json"

@@ -601,6 +601,21 @@ try {
   }
   Write-Host "PASS: Mod Bridge Home omits the appearance selector."
 
+  $homeArtwork = Find-AutomationElement `
+    -Root $root `
+    -Name "STFC Mod Bridge" `
+    -ControlType ([System.Windows.Automation.ControlType]::Image) `
+    -Deadline $deadline
+  $artworkBounds = $homeArtwork.Current.BoundingRectangle
+  if ($artworkBounds.Width -lt 240 -or $artworkBounds.Height -lt 80) {
+    throw "Mod Bridge Home artwork did not decode into a visible packaged surface."
+  }
+  $artworkAspectRatio = $artworkBounds.Width / $artworkBounds.Height
+  if ($artworkAspectRatio -lt 2.95 -or $artworkAspectRatio -gt 3.05) {
+    throw "Mod Bridge Home artwork did not preserve its canonical 3:1 aspect ratio."
+  }
+  Write-Host "PASS: Packaged Mod Bridge Home artwork decoded at $([Math]::Round($artworkBounds.Width))x$([Math]::Round($artworkBounds.Height))."
+
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Star Trek Fleet Command" `

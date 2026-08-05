@@ -148,6 +148,16 @@ The launcher does not invent substitute release artwork. The final asset must
 remain legible at small Windows icon sizes and in both light and dark shell
 contexts.
 
+Home reuses the canonical `assets/portfolio/stfc-mod-bridge-banner.png`
+directly as a linked WPF resource. Its opaque dark substrate preserves the
+artwork's own contrast in Light, Dark, System, and Windows high-contrast
+contexts; the adjacent status and action surfaces remain ordinary themed text
+and controls, so the image is never the sole carrier of operational state.
+The artwork is non-interactive and does not enter keyboard focus order. UI
+Automation receives one concise `STFC Mod Bridge` image name and no decorative
+child descriptions, while the title-area product text remains the ordinary
+accessible product-name equivalent.
+
 ### Theme
 
 The theme preference is:

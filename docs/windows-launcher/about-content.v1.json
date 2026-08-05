@@ -166,6 +166,13 @@
       "evidenceKind": "project-input"
     },
     {
+      "id": "STFCCommunityMod.Launcher|Resource|../../assets/portfolio/stfc-mod-bridge-banner.png",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "review-pending",
+      "evidenceKind": "project-input"
+    },
+    {
       "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/bundled-provider-catalog.v1.json",
       "version": null,
       "noticeId": null,
