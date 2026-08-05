@@ -78,17 +78,20 @@ not verify against the release bundle, repository, workflow, tag, and commit.
 
 Authenticode proves the publisher and integrity of each Windows PE file. It
 does not authenticate the JSON release manifest that selects versions, URLs,
-channels, hashes, or withdrawal state. A detached manifest-signature design
-with replay protection remains a separate release-control deliverable.
+channels, hashes, or withdrawal state. Native verification of the existing
+GitHub/Sigstore producer evidence, with replay and withdrawal policy, remains a
+separate release-control deliverable.
 
-Until that design is accepted, a manifest checksum must not be described as a
-manifest signature. Schema v1 therefore declares
+Until that consumer is implemented and qualified, a manifest checksum must not
+be described as a manifest signature. Schema v1 therefore declares
 `manifestAuthenticity.scheme: none` while recording independent Authenticode
 expectations for each PE artifact or signed archive member. The complete
 producer and consumer contract is in
-`docs/windows-launcher/RELEASE_MANIFEST.md`; producer attestation evidence is
-documented in `docs/windows-launcher/ARTIFACT_ATTESTATIONS.md`. Native
-authenticated release-selection consumption remains issue #71.
+`docs/windows-launcher/RELEASE_MANIFEST.md`; the proposed consumer design is in
+`docs/windows-launcher/RELEASE_SELECTION_AUTHENTICATION.md`; producer
+attestation evidence is documented in
+`docs/windows-launcher/ARTIFACT_ATTESTATIONS.md`. Native authenticated
+release-selection consumption remains issue #71.
 
 The workflow pins every external action to a reviewed commit and passes tag,
 commit, and repository contexts into PowerShell through environment variables.

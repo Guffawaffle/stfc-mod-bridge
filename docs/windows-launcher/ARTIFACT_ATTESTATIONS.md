@@ -95,7 +95,8 @@ running Bridge continues to enforce the existing repository, path, size,
 SHA-256, Authenticode, version, provenance-consistency, and transactional
 replacement checks.
 
-Issue #71 owns native authenticated release-selection consumption, including
-trust-root rotation, expiry, replay, withdrawal, and offline policy. Until that
-contract lands, attestations are independently verifiable producer evidence,
+[`RELEASE_SELECTION_AUTHENTICATION.md`](RELEASE_SELECTION_AUTHENTICATION.md)
+records issue #71's proposed consumer direction, including trust-root rotation,
+expiry, replay, withdrawal, and offline policy. Until that verifier and schema
+land together, attestations are independently verifiable producer evidence,
 not a silently activated updater authority.
