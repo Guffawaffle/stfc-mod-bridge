@@ -1,0 +1,88 @@
+name: Closed-alpha bug report
+description: Report a reproducible defect in an approved STFC Mod Bridge build.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. Do not include tokens, cookies, credentials, raw credential-bearing TOML, or unreviewed diagnostics. Report exploitable security problems through private vulnerability reporting instead.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I used a release whose notes explicitly say **Closed-alpha approved**.
+          required: true
+        - label: I reviewed every attachment and removed private or credential-bearing information.
+          required: true
+        - label: This is not an exploitable security report.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Exact Mod Bridge version
+      placeholder: v0.1.0-rc.4
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Windows and display environment
+      description: Include Windows version, display scaling, theme, and keyboard/mouse/touch input used.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Selected provider
+      options:
+        - Guffawaffle stable
+        - NetniV stable
+        - No provider selected
+        - Other or unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Setup or uninstall
+        - Install, update, repair, or remove
+        - Provider switching
+        - Configuration
+        - Data Sync
+        - Launch
+        - Diagnostics
+        - Self-update or recovery
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: game_version
+    attributes:
+      label: STFC game version
+      description: Use the exact version if known.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include the action attempted and whether STFC was open.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include reviewed/redacted diagnostics when they materially help.
+    validations:
+      required: true

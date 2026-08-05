@@ -4,6 +4,13 @@
 
 **Install · Configure · Diagnose · Run**
 
+> [!WARNING]
+> STFC Mod Bridge is pre-release software. Closed-alpha testers should install
+> only a release whose notes explicitly say **Closed-alpha approved**.
+> `v0.1.0-rc.3` is rejected because of a provider-state projection regression;
+> follow [issue #84](https://github.com/Guffawaffle/stfc-mod-bridge/issues/84)
+> for the approved candidate.
+
 STFC Mod Bridge is a source-neutral Windows application for installing,
 updating, repairing, configuring, diagnosing, and running supported Star Trek
 Fleet Command community-mod distributions.
@@ -24,6 +31,19 @@ than requiring a distribution-specific launcher build.
 Bundled Guffawaffle and NetniV packs coexist in one build. Capabilities without
 published evidence remain visibly unknown and their dependent operations fail
 closed; Mod Bridge never infers support from a provider's display name.
+
+## Test a pre-release
+
+The current invitation is for a small technical closed alpha, not a general
+release. Read the [closed-alpha testing guide](TESTING.md) before changing an
+installed mod. Download only `STFCModBridge.Setup.exe` from an approved GitHub
+release; the ZIP, manifest, SBOM, and attestation bundle are machine-consumed
+release inputs rather than alternate installers.
+
+Use the [bug report](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=bug-report.yml)
+or [usability feedback](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=usability-feedback.yml)
+form for ordinary feedback. Report security vulnerabilities privately as
+described in [SECURITY.md](SECURITY.md).
 
 ## Projects
 
@@ -75,6 +95,8 @@ payload.
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
 - [Release security operations](docs/windows-launcher/RELEASE_SECURITY_OPERATIONS.md)
+- [Closed-alpha testing guide](TESTING.md)
+- [Security policy](SECURITY.md)
 - [Product identity inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)
 - [About, attribution, and notice ownership](docs/windows-launcher/ABOUT.md)
 - [Generated third-party notices](THIRD-PARTY-NOTICES.md)

@@ -85,10 +85,11 @@ public sealed partial class ReleaseTrustAutomationTests
 
         var buildProperties = File.ReadAllText(Path.Combine(root, "Directory.Build.props"));
         StringAssert.Contains(buildProperties, "<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>");
-        foreach (var project in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
-                     .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                                    && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                                    && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
+        var projectRoots = new[] { Path.Combine(root, "src"), Path.Combine(root, "tests") };
+        foreach (var project in projectRoots.SelectMany(
+                     projectRoot => Directory.EnumerateFiles(projectRoot, "*.csproj", SearchOption.AllDirectories))
+                 .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
         {
             Assert.IsTrue(
                 File.Exists(Path.Combine(Path.GetDirectoryName(project)!, "packages.lock.json")),
@@ -226,6 +227,31 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsFalse(
             workflow.Contains("pull_request_target", StringComparison.Ordinal),
             "Untrusted pull-request code must not enter the release-attestation authority boundary.");
+    }
+
+    [TestMethod]
+    public void ClosedAlphaDocumentationKeepsInstallAndReportingBoundariesExplicit()
+    {
+        var root = RepositoryRoot();
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
+        var testing = File.ReadAllText(Path.Combine(root, "TESTING.md"));
+        var security = File.ReadAllText(Path.Combine(root, "SECURITY.md"));
+        var issueTemplateRoot = Path.Combine(root, ".github", "ISSUE_TEMPLATE");
+        var bugReport = File.ReadAllText(Path.Combine(issueTemplateRoot, "bug-report.yml"));
+        var usabilityReport = File.ReadAllText(Path.Combine(issueTemplateRoot, "usability-feedback.yml"));
+
+        foreach (var document in new[] { readme, testing })
+        {
+            StringAssert.Contains(document, "STFCModBridge.Setup.exe");
+            StringAssert.Contains(document, "v0.1.0-rc.3");
+            StringAssert.Contains(document, "rejected");
+        }
+
+        StringAssert.Contains(testing, "machine-consumed release inputs");
+        StringAssert.Contains(testing, "never uploaded");
+        StringAssert.Contains(security, "/security/advisories/new");
+        StringAssert.Contains(bugReport, "Do not include tokens");
+        StringAssert.Contains(usabilityReport, "Do not include credentials");
     }
 
     [TestMethod]
