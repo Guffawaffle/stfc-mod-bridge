@@ -45,6 +45,29 @@ public sealed class ProviderSourceDialogTests
         Assert.IsFalse(dialog.Descendants(Presentation + "Button")
             .Any(button => string.Equals((string?)button.Attribute("Content"), "_Cancel", StringComparison.Ordinal)));
         Assert.IsNull(dialog.Elements().Single().Attribute("Width"));
+        Assert.IsFalse(dialog.Value.Contains("restart Mod Bridge", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(document.Descendants(Presentation + "Button")
+            .Any(button => GetName(button) == "RetryProviderRecompositionButton"));
+    }
+
+    [TestMethod]
+    public void ProviderSwitchFlowNeverRequestsABridgeRestart()
+    {
+        var sources = new[]
+        {
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml",
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs",
+            "src/STFCCommunityMod.Launcher.Core/LauncherProviderSelection.cs",
+            "src/STFCCommunityMod.Launcher.Core/LauncherProviderSwitchCoordinator.cs",
+        };
+
+        foreach (var source in sources)
+        {
+            var text = File.ReadAllText(Path.Combine(RepositoryRoot(), source));
+            Assert.IsFalse(
+                text.Contains("restart Mod Bridge", StringComparison.OrdinalIgnoreCase),
+                $"Provider-switch source '{source}' must recompose in-process.");
+        }
     }
 
     private static XDocument LoadXaml(string relativePath) =>

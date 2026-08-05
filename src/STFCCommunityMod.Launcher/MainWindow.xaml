@@ -959,7 +959,8 @@
                       automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
                       automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the Mod Bridge update source." />
             </StackPanel>
-            <Button Grid.Column="2"
+            <Button x:Name="ModActionButton"
+                    Grid.Column="2"
                     MinHeight="44"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
@@ -1006,11 +1007,26 @@
               Background="{DynamicResource WarningSoftBrush}"
               CornerRadius="8"
               Visibility="Collapsed">
-        <TextBlock x:Name="ProviderRecoveryMessage"
-                   FontSize="13"
-                   Foreground="{DynamicResource WarningBrush}"
-                   TextWrapping="Wrap"
-                   automation:AutomationProperties.LiveSetting="Polite" />
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="ProviderRecoveryMessage"
+                     FontSize="13"
+                     Foreground="{DynamicResource WarningBrush}"
+                     TextWrapping="Wrap"
+                     automation:AutomationProperties.LiveSetting="Polite" />
+          <Button x:Name="RetryProviderRecompositionButton"
+                  Grid.Column="1"
+                  Margin="12,0,0,0"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="RetryProviderRecompositionButton_Click"
+                  Content="_Retry refresh"
+                  Visibility="Collapsed"
+                  automation:AutomationProperties.Name="Retry provider workspace refresh" />
+        </Grid>
       </Border>
     </StackPanel>
 
@@ -1318,7 +1334,7 @@
                           automation:AutomationProperties.Name="Community mod source dialog">
       <StackPanel>
         <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Choose where Mod Bridge checks for community mod releases. A switch protects the current provider's TOML and may restore the target provider's latest TOML history. Changes take effect after restarting Mod Bridge."
+                   Text="Choose where Mod Bridge checks for community mod releases. A switch protects the current provider's TOML, may restore the target provider's latest TOML history, and refreshes this workspace immediately."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,4"
                    FontWeight="SemiBold"

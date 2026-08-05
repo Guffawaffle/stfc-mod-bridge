@@ -255,7 +255,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             deployment.InstalledState,
             configurationResult.ConfigurationBackup,
             $"Switched the managed DLL, release source, and TOML state to "
-            + $"{preview.Configuration.TargetDisplayName}. Restart Mod Bridge before further mod management.");
+            + $"{preview.Configuration.TargetDisplayName}.");
     }
 
     public async Task<LauncherProviderAtomicSwitchRecoveryResult> RecoverAsync(
