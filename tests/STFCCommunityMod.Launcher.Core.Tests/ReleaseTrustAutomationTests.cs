@@ -308,6 +308,8 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(uninstallWindow, "IsChecked=\"False\"");
         StringAssert.Contains(uninstallWindow, "Community Mod TOML will not be changed");
         StringAssert.Contains(uninstallScript, "$WaitForProcessId");
+        StringAssert.Contains(uninstallScript, "[int]$WaitTimeoutSeconds = 120");
+        StringAssert.Contains(uninstallScript, "Wait-Process -Timeout $WaitTimeoutSeconds");
         StringAssert.Contains(uninstallScript, "$RemoveState");
         StringAssert.Contains(uninstallScript, "FileAttributes]::ReparsePoint");
         StringAssert.Contains(readme, "%LOCALAPPDATA%\\Programs\\STFC Mod Bridge");

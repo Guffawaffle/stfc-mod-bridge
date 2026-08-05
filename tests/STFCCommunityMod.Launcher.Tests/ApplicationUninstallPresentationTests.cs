@@ -19,7 +19,9 @@ public sealed class ApplicationUninstallPresentationTests
             "STFCCommunityMod.Launcher",
             "ApplicationUninstallWindow.xaml"));
         var window = document.Root!;
-        var removeState = document.Descendants(Presentation + "CheckBox").Single();
+        var removeState = document.Descendants(Presentation + "CheckBox").Single(element =>
+            (string?)element.Attribute(Automation + "AutomationProperties.Name")
+                == "Also remove Mod Bridge local data");
         var text = document.ToString(SaveOptions.DisableFormatting);
 
         Assert.AreEqual("600", (string?)window.Attribute("MinWidth"));
@@ -28,6 +30,9 @@ public sealed class ApplicationUninstallPresentationTests
         Assert.AreEqual(
             "Also remove Mod Bridge local data",
             (string?)removeState.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual(
+            "Wrap",
+            (string?)removeState.Element(Presentation + "TextBlock")?.Attribute("TextWrapping"));
         StringAssert.Contains(text, "Community Mod TOML will not be changed");
         StringAssert.Contains(text, "Application files");
         StringAssert.Contains(text, "Local data");

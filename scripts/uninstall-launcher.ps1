@@ -3,6 +3,8 @@ param(
   [switch]$RemoveState,
   [ValidateRange(0, [int]::MaxValue)]
   [int]$WaitForProcessId = 0,
+  [ValidateRange(1, 600)]
+  [int]$WaitTimeoutSeconds = 120,
   [switch]$Quiet
 )
 
@@ -41,7 +43,7 @@ if ($WaitForProcessId -gt 0) {
     if ($scheduledProcess.ProcessName -ne "STFCModBridge") {
       throw "The uninstall wait target is not STFC Mod Bridge."
     }
-    $scheduledProcess | Wait-Process -Timeout 30 -ErrorAction Stop
+    $scheduledProcess | Wait-Process -Timeout $WaitTimeoutSeconds -ErrorAction Stop
   }
 }
 if (Get-Process -Name "STFCModBridge" -ErrorAction SilentlyContinue) {
