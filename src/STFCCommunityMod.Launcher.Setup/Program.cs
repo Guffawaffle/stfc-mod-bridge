@@ -10,7 +10,7 @@ namespace STFCCommunityMod.Launcher.Setup;
 internal static class Program
 {
     private const string PayloadResource = "STFCCommunityMod.Launcher.Payload.zip";
-    private const string Publisher = "Joseph Gustavson";
+    private const string DisplayPublisher = "Joseph Gustavson";
 
     [STAThread]
     private static void Main()
@@ -38,7 +38,9 @@ internal static class Program
         var installer = new LauncherBootstrapInstaller(
             layout.StateDirectory,
             layout.ProgramDirectory,
-            new WindowsAuthenticodeVerifier(Publisher),
+            new WindowsAuthenticodeVerifier(
+                LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+                LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku),
             IsLauncherRunning);
         var result = await installer.InstallAsync(ReadEmbeddedPayload());
         CreateStartMenuShortcut(result.LauncherPath);
@@ -55,7 +57,9 @@ internal static class Program
     {
         var setupPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Windows did not provide the setup executable path.");
-        var result = new WindowsAuthenticodeVerifier(Publisher).Verify(setupPath);
+        var result = new WindowsAuthenticodeVerifier(
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku).Verify(setupPath);
         if (!result.IsTrusted)
         {
             throw new InvalidDataException($"Setup signature verification failed: {result.Message}");
@@ -170,7 +174,7 @@ internal static class Program
         key.SetValue("DisplayName", ModBridgeProductIdentity.ProductName, RegistryValueKind.String);
         key.SetValue("DisplayIcon", $"{productPath},0", RegistryValueKind.String);
         key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0", RegistryValueKind.String);
-        key.SetValue("Publisher", Publisher, RegistryValueKind.String);
+        key.SetValue("Publisher", DisplayPublisher, RegistryValueKind.String);
         key.SetValue("InstallLocation", programDirectory, RegistryValueKind.String);
         key.SetValue("UninstallString", uninstallCommand, RegistryValueKind.String);
         key.SetValue("QuietUninstallString", uninstallCommand, RegistryValueKind.String);

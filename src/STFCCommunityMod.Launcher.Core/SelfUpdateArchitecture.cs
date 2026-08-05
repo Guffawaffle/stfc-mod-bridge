@@ -21,5 +21,8 @@ public static class LauncherSelfUpdateAuthority
 {
     public const string ReleaseRepository = "Guffawaffle/stfc-mod-bridge";
     public const string ReleaseManifestAssetName = ModBridgeProductIdentity.ReleaseManifestName;
-    public const string WindowsArtifactPublisher = "Joseph Gustavson";
+    public const string WindowsArtifactPublisher =
+        "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118";
+    public const string WindowsArtifactSigningIdentityEku =
+        "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748";
 }

@@ -147,6 +147,34 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void ReleaseInspectionUsesReviewedStableIdentityAndAllSignaturePolicy()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
+        var inspection = File.ReadAllText(Path.Combine(RepositoryRoot(), "scripts", "inspect-package.ps1"));
+
+        StringAssert.Contains(inspection, "signtool.exe");
+        StringAssert.Contains(inspection, "verify /pa /all");
+        StringAssert.Contains(
+            inspection,
+            "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118");
+        StringAssert.Contains(
+            inspection,
+            "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748");
+        StringAssert.Contains(inspection, "1.3.6.1.5.5.7.3.3");
+        StringAssert.Contains(workflow, "Verify signed payload with the runtime Authenticode policy");
+        StringAssert.Contains(workflow, "STFC_MOD_BRIDGE_SIGNED_RELEASE_ROOT");
+        StringAssert.Contains(
+            workflow,
+            "AuthenticodeTrustPolicyTests.OptedInSignedReleasePayloadSatisfiesRuntimePolicy");
+        Assert.IsFalse(
+            inspection.Contains("X509NameType]::SimpleName", StringComparison.Ordinal),
+            "Release inspection must not reduce publisher identity to a display name.");
+        Assert.IsFalse(
+            workflow.Contains("WIN_PUBLISHER_NAME", StringComparison.Ordinal),
+            "The reviewed publisher identity belongs in versioned policy, not a mutable repository variable.");
+    }
+
+    [TestMethod]
     public void ReleaseWorkflowAttestsFinalSubjectsAndReverifiesThemBeforePublication()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));

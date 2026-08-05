@@ -14,14 +14,31 @@ $productName = "STFC Mod Bridge"
 $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\STFCModBridge"
 $launcher = Join-Path $source "STFCModBridge.exe"
 $updater = Join-Path $source "STFCModBridge.Updater.exe"
+$expectedPublisherName = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new(
+  "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118")
+$expectedArtifactSigningIdentityEku = "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748"
 
 foreach ($file in @($launcher, $updater)) {
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
     throw "The Mod Bridge package is incomplete: $file"
   }
   $signature = Get-AuthenticodeSignature -LiteralPath $file
+  $publisherMatches = $null -ne $signature.SignerCertificate -and [System.Linq.Enumerable]::SequenceEqual(
+    $signature.SignerCertificate.SubjectName.RawData,
+    $expectedPublisherName.RawData)
+  $hasCodeSigningEku = $null -ne $signature.SignerCertificate -and @(
+    $signature.SignerCertificate.EnhancedKeyUsageList | Where-Object {
+      $_.ObjectId -eq "1.3.6.1.5.5.7.3.3"
+    }).Count -eq 1
+  $hasDurableIdentityEku = $null -ne $signature.SignerCertificate -and @(
+    $signature.SignerCertificate.EnhancedKeyUsageList | Where-Object {
+      $_.ObjectId -eq $expectedArtifactSigningIdentityEku
+    }).Count -eq 1
   if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-      $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)CN=Joseph Gustavson(?:,|$)') {
+      -not $publisherMatches -or
+      -not $hasCodeSigningEku -or
+      -not $hasDurableIdentityEku -or
+      $null -eq $signature.TimeStamperCertificate) {
     throw "Refusing to install an unsigned or unexpected-publisher executable: $file"
   }
 }

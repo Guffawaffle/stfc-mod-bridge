@@ -3,3 +3,10 @@
 /.config/dotnet-tools.json @Guffawaffle
 **/packages.lock.json @Guffawaffle
 /scripts/run-release-security-gates.ps1 @Guffawaffle
+/scripts/inspect-package.ps1 @Guffawaffle
+/scripts/install-launcher.ps1 @Guffawaffle
+/providers/ @Guffawaffle
+/src/STFCCommunityMod.Launcher.Core/ModArtifactAdapters.cs @Guffawaffle
+/src/STFCCommunityMod.Launcher.Core/ModDeploymentContracts.cs @Guffawaffle
+/src/STFCCommunityMod.Launcher.Core/SelfUpdateArchitecture.cs @Guffawaffle
+/docs/windows-launcher/CODE_SIGNING.md @Guffawaffle

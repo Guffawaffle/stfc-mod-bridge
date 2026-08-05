@@ -4,7 +4,21 @@
 
 Windows release tags use Azure Artifact Signing with the existing
 `stfcsidecarsign` account and `stfc-sidecar-public` Public Trust certificate
-profile. The expected publisher is `Joseph Gustavson`.
+profile. The reviewed publisher identity is:
+
+- exact subject DN:
+  `CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118`;
+- Artifact Signing durable identity EKU:
+  `1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748`;
+- code-signing EKU: `1.3.6.1.5.5.7.3.3`.
+
+The leaf certificate serial number, public key, and thumbprint are deliberately
+not pinned. Azure renews Artifact Signing certificates daily and makes them
+valid for only 72 hours. Microsoft identifies the subscriber-specific
+`1.3.6.1.4.1.311.97.*` EKU as the durable identity value intended to survive
+that leaf rotation. A future legitimate subject-DN or identity-validation
+change therefore requires a reviewed policy update; it must not be accepted by
+weakening the comparison to a display name.
 
 The certificate profile is shared with the STFC Community Mod Companion so the
 Windows launcher, proxy DLL, and companion present one verified publisher. The
@@ -63,9 +77,73 @@ locked restore/test -> unsigned build -> vulnerability/malware gates -> SPDX SBO
 Packaging and checksums must occur after signing because Authenticode modifies
 the PE file. The setup must be built only after the signed launcher ZIP exists,
 because that exact ZIP is embedded in its PE; the setup is then signed as the
-outermost artifact. The workflow verifies every executable with
-`Get-AuthenticodeSignature`, including valid status and the expected
-certificate subject, before manifest generation or release publication.
+outermost artifact. The workflow verifies all embedded signatures with
+SignTool's Authenticode policy and separately requires the exact subject DN,
+both reviewed EKUs, and a trusted timestamp before manifest generation or
+release publication. It then runs those same three signed PE files through the
+runtime verifier, which enumerates every signature and applies the complete
+consumer policy. A mixed-publisher secondary signature therefore fails the
+release before its manifest or attestations are created.
+
+## Consumer verification contract
+
+`WindowsAuthenticodeVerifier` applies the Windows generic Authenticode policy
+with whole-chain revocation checking. Its ordinary `Verify` entry point sets
+`WTD_CACHE_ONLY_URL_RETRIEVAL`, so a background install, update, or diagnostic
+check cannot initiate certificate or CRL retrieval. An online evaluation is a
+separate explicit mode and may be called only from a user-authorized network
+flow.
+
+Cached success and online-permitted success both report revocation freshness as
+**not established**. Permitting retrieval is not evidence that Windows fetched
+fresh CRL/OCSP material, and the launcher does not claim otherwise. The result
+records the evaluation mode and time, not a fabricated revocation-freshness
+time.
+
+The verifier enumerates the primary signature and every secondary signature by
+using `WINTRUST_SIGNATURE_SETTINGS`. Every discovered signature must:
+
+1. return exactly zero from `WinVerifyTrust`;
+2. match the complete reviewed subject DN;
+3. contain both the code-signing EKU and the subscriber's durable Artifact
+   Signing identity EKU;
+4. carry an RFC 3161 timestamp attribute with a Windows-verified signing time.
+
+One rejected, mismatched, non-code-signing, legacy-timestamped, or untimestamped
+signature fails the artifact closed. Signer evidence contains only the
+signature index, policy booleans, timestamp kind/time, and a SHA-256 digest of
+the subject identity. It does not copy artifact paths, certificate dumps,
+chain URLs, tokens, or unexpected subject text into diagnostics.
+
+The trust result remains intentionally separate from these other release axes:
+
+| Axis | What it establishes | What it does not establish |
+|---|---|---|
+| Authenticode policy | Windows accepted the PE signature/chain for code signing | repository release authorization or software safety |
+| Publisher policy | the full DN and durable Artifact Signing identity match the reviewed publisher | that the current leaf is permanently pinned |
+| RFC 3161 timestamp | Windows can evaluate signing time beyond the short-lived leaf's validity | current revocation freshness |
+| Reviewed SHA-256 | exact artifact identity selected by reviewed release metadata | publisher identity by itself |
+| GitHub attestation | producer workflow provenance for the attested bytes | runtime authorization or vulnerability absence |
+| Runtime state | what is installed/running now | any of the producer claims above |
+
+### 2026-08-03 platform audit receipt
+
+The published `v0.1.0-rc.3` setup was inspected on Windows with both the runtime
+verifier and Windows SDK SignTool. The observed leaf had the exact subject and
+both EKUs above, was valid from 2026-08-01 through 2026-08-04, and had one RFC
+3161 timestamp at `2026-08-03T02:43:49Z`. `signtool verify /pa /all /v`
+reported one successfully verified signature and no warnings or errors. This
+receipt is manual platform evidence for that artifact only; it is not a claim
+about later artifacts, current revocation data, dependencies, or software
+safety.
+
+Primary references:
+
+- [WinVerifyTrust return-value contract](https://learn.microsoft.com/en-us/windows/win32/api/wintrust/nf-wintrust-winverifytrust)
+- [WINTRUST_DATA revocation, cache-only, and state lifecycle](https://learn.microsoft.com/en-us/windows/win32/api/wintrust/ns-wintrust-wintrust_data)
+- [WINTRUST_SIGNATURE_SETTINGS multi-signature enumeration](https://learn.microsoft.com/en-us/windows/win32/api/wintrust/ns-wintrust-wintrust_signature_settings)
+- [Artifact Signing certificate rotation, durable identity EKU, and timestamp semantics](https://learn.microsoft.com/en-us/azure/artifact-signing/concept-certificate-management)
+- [Microsoft Authenticode RFC 3161 guidance](https://learn.microsoft.com/en-us/windows/win32/seccrypto/time-stamping-authenticode-signatures)
 
 The same protected job grants `attestations: write` only alongside its existing
 environment-scoped OIDC authority. It generates GitHub/Sigstore provenance for

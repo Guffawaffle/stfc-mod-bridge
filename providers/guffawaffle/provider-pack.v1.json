@@ -44,7 +44,8 @@
       "status": "supported",
       "requireSha256": true,
       "trustKind": "authenticode-publisher",
-      "windowsPublisher": "Joseph Gustavson"
+      "windowsPublisher": "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118",
+      "windowsArtifactSigningIdentityEku": "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748"
     },
     "withdrawalPolicy": {
       "status": "supported",
