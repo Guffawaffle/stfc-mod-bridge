@@ -711,17 +711,17 @@
                 Margin="24,0"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Center">
-      <TextBlock HorizontalAlignment="Center"
-                 FontSize="32"
-                 FontWeight="SemiBold"
-                 Text="Make STFC yours."
-                 TextAlignment="Center" />
-      <TextBlock Margin="24,10,24,0"
-                 HorizontalAlignment="Center"
-                 FontSize="15"
-                 Foreground="{DynamicResource TextSecondaryBrush}"
-                 Text="Install, update, and configure the community mod in one place."
-                 TextAlignment="Center" />
+      <Image x:Name="HomeProductArtwork"
+             MaxWidth="640"
+             Margin="12,0"
+             HorizontalAlignment="Stretch"
+             Focusable="False"
+             IsHitTestVisible="False"
+             RenderOptions.BitmapScalingMode="HighQuality"
+             SnapsToDevicePixels="True"
+             Source="Assets/stfc-mod-bridge-banner.png"
+             Stretch="Uniform"
+             automation:AutomationProperties.Name="STFC Mod Bridge" />
 
       <Grid Margin="0,18,0,0">
         <Grid.ColumnDefinitions>
