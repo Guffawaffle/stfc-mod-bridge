@@ -41,6 +41,7 @@ dotnet publish $project `
   -r win-x64 `
   --self-contained true `
   --output $setupOutput `
+  -p:RestoreLockedMode=true `
   -p:PublishSingleFile=true `
   -p:RequireLauncherPayload=true `
   -p:LauncherPayloadPath=$archive `

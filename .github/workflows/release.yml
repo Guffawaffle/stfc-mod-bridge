@@ -7,19 +7,26 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 20
     permissions:
       contents: read
     outputs:
       version: ${{ steps.release.outputs.version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
+      commit: ${{ steps.release.outputs.commit }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
+          submodules: false
 
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
@@ -30,26 +37,56 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_COMMIT: ${{ github.sha }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
             throw "Mod Bridge release tags must use vX.Y.Z or vX.Y.Z-rc.N."
           }
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch the protected main branch for release ancestry validation."
+          }
+          $tagRevision = "refs/tags/$env:RELEASE_TAG" + "^{commit}"
+          $eventRevision = $env:TARGET_COMMIT + "^{commit}"
+          $tagCommit = (git rev-parse $tagRevision).Trim()
+          $eventCommit = (git rev-parse $eventRevision).Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $eventCommit) {
+            throw "The release event does not resolve to the tagged commit."
+          }
+          git merge-base --is-ancestor $tagCommit refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tag '$env:RELEASE_TAG' is not reachable from protected main."
+          }
           "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
           "prerelease=$($Matches.version.Contains('-rc.'))" >> $env:GITHUB_OUTPUT
+          "commit=$tagCommit" >> $env:GITHUB_OUTPUT
 
-      - name: Restore and test
+      - name: Restore, analyze, and test
         shell: pwsh
         run: |
-          dotnet restore STFCCommunityMod.Launcher.sln
-          dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
+          dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
+          dotnet build STFCCommunityMod.Launcher.sln -c Release --no-restore
+          dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore --no-build
 
       - name: Build unsigned Mod Bridge payload
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          SOURCE_REVISION_ID: ${{ github.sha }}
+          SOURCE_REVISION_ID: ${{ steps.release.outputs.commit }}
         run: >-
           ./scripts/publish.ps1
+          -Version "$env:RELEASE_VERSION"
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
+
+      - name: Run pre-signing security gates and generate SBOM
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_REVISION_ID: ${{ steps.release.outputs.commit }}
+        run: >-
+          ./scripts/run-release-security-gates.ps1
+          -ArtifactDirectory ./artifacts/win-x64/app
+          -OutputPath ./artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
@@ -57,12 +94,14 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-mod-bridge-unsigned-payload-x64
-          path: artifacts/win-x64/app
+          path: |
+            artifacts/win-x64/app
+            artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
           if-no-files-found: error
 
   sign:
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 20
     environment:
       name: windows-release
@@ -75,8 +114,14 @@ jobs:
       AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
       AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
       AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: false
 
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
@@ -86,7 +131,7 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: windows-mod-bridge-unsigned-payload-x64
-          path: artifacts/win-x64/app
+          path: artifacts/win-x64
 
       - name: Validate protected signing configuration
         shell: pwsh
@@ -95,7 +140,10 @@ jobs:
             "WIN_PUBLISHER_NAME",
             "AZURE_TRUSTED_SIGNING_ENDPOINT",
             "AZURE_CODE_SIGNING_ACCOUNT_NAME",
-            "AZURE_CERTIFICATE_PROFILE_NAME"
+            "AZURE_CERTIFICATE_PROFILE_NAME",
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID"
           )
           $missing = @($required | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
           if ($missing.Count -gt 0) {
@@ -108,9 +156,9 @@ jobs:
       - name: Azure login with GitHub OIDC
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Mod Bridge and updater
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
@@ -130,7 +178,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
-          SOURCE_REVISION_ID: ${{ github.sha }}
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
         run: |
           ./scripts/package.ps1
           ./scripts/publish-bootstrapper.ps1 `
@@ -162,7 +210,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-          TARGET_COMMIT: ${{ github.sha }}
+          TARGET_COMMIT: ${{ needs.build.outputs.commit }}
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: >-
           ./scripts/generate-launcher-release-manifest.ps1
@@ -180,6 +228,7 @@ jobs:
             artifacts/win-x64/setup/STFCModBridge.Setup.exe
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
+            artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
 
       - name: Stage offline attestation bundle
         shell: pwsh
@@ -206,11 +255,12 @@ jobs:
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-release-attestation.json
+            artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
           if-no-files-found: error
 
   publish:
     needs: [build, sign]
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 10
     permissions:
       contents: write
@@ -226,7 +276,7 @@ jobs:
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-          TARGET_COMMIT: ${{ github.sha }}
+          TARGET_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           $root = "artifacts/win-x64"
           $bundle = "$root/stfc-mod-bridge-release-attestation.json"
@@ -235,7 +285,8 @@ jobs:
             "$root/app/STFCModBridge.exe",
             "$root/app/STFCModBridge.Updater.exe",
             "$root/stfc-mod-bridge-win-x64.zip",
-            "$root/stfc-mod-bridge-release-manifest.json"
+            "$root/stfc-mod-bridge-release-manifest.json",
+            "$root/stfc-mod-bridge-sbom.spdx.json"
           )
           if (-not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
             throw "The signed release payload is missing its attestation bundle."
@@ -270,12 +321,13 @@ jobs:
             "$root/setup/STFCModBridge.Setup.exe",
             "$root/stfc-mod-bridge-win-x64.zip",
             "$root/stfc-mod-bridge-release-manifest.json",
-            "$root/stfc-mod-bridge-release-attestation.json"
+            "$root/stfc-mod-bridge-release-attestation.json",
+            "$root/stfc-mod-bridge-sbom.spdx.json"
           )
           $notes = @"
           Install STFC Mod Bridge with `STFCModBridge.Setup.exe`.
 
-          The ZIP, manifest, and attestation bundle are machine-consumed trust/update inputs, not alternate installation packages.
+          The ZIP, manifest, SBOM, and attestation bundle are machine-consumed trust/update inputs, not alternate installation packages.
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM

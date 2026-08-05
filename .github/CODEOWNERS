@@ -1,0 +1,5 @@
+/.github/workflows/ @Guffawaffle
+/global.json @Guffawaffle
+/.config/dotnet-tools.json @Guffawaffle
+**/packages.lock.json @Guffawaffle
+/scripts/run-release-security-gates.ps1 @Guffawaffle

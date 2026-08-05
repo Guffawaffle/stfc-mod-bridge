@@ -3,6 +3,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>STFCCommunityMod.Launcher.Core</RootNamespace>
     <AssemblyName>STFCCommunityMod.Launcher.Core</AssemblyName>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>

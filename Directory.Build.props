@@ -6,6 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <Deterministic>true</Deterministic>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Product>STFC Mod Bridge</Product>
     <Description>Install · Configure · Diagnose · Run</Description>
     <Company>Joseph Gustavson</Company>

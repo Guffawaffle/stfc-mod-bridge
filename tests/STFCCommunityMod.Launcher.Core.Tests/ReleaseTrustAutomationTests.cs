@@ -51,6 +51,15 @@ public sealed partial class ReleaseTrustAutomationTests
             Assert.IsTrue(
                 uses.All(reference => FullCommitPattern().IsMatch(reference)),
                 $"{name} contains an action that is not pinned to a full commit: {string.Join(", ", uses)}");
+            Assert.IsFalse(workflow.Contains("windows-latest", StringComparison.Ordinal));
+            StringAssert.Contains(workflow, "runs-on: windows-2022");
+
+            foreach (var line in workflow.Split('\n').Where(line => line.TrimStart().StartsWith("- uses: ", StringComparison.Ordinal)))
+            {
+                StringAssert.Matches(
+                    line,
+                    new Regex(@"@[0-9a-f]{40}\s+#\s+v\d+\s*$", RegexOptions.CultureInvariant));
+            }
         }
 
         var releaseWorkflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
@@ -61,6 +70,80 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "id-token: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "attestations: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "contents: write", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "persist-credentials: false", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "submodules: false", RegexOptions.CultureInvariant).Count);
+        Assert.IsFalse(File.Exists(Path.Combine(RepositoryRoot(), ".gitmodules")));
+    }
+
+    [TestMethod]
+    public void DotNetDependenciesAndToolchainAreLockedForAutomation()
+    {
+        var root = RepositoryRoot();
+        var globalJson = File.ReadAllText(Path.Combine(root, "global.json"));
+        StringAssert.Contains(globalJson, "\"version\": \"8.0.423\"");
+        StringAssert.Contains(globalJson, "\"rollForward\": \"disable\"");
+
+        var buildProperties = File.ReadAllText(Path.Combine(root, "Directory.Build.props"));
+        StringAssert.Contains(buildProperties, "<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>");
+        foreach (var project in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+                     .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                                    && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                                    && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
+        {
+            Assert.IsTrue(
+                File.Exists(Path.Combine(Path.GetDirectoryName(project)!, "packages.lock.json")),
+                $"Missing lock file for {project}.");
+        }
+
+        var toolManifest = File.ReadAllText(Path.Combine(root, ".config", "dotnet-tools.json"));
+        StringAssert.Contains(toolManifest, "\"microsoft.sbom.dotnettool\"");
+        StringAssert.Contains(toolManifest, "\"version\": \"4.1.5\"");
+
+        foreach (var workflowName in new[] { "ci.yml", "release.yml" })
+        {
+            var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", workflowName));
+            foreach (var line in workflow.Split('\n').Where(line => line.Contains("dotnet restore", StringComparison.Ordinal)))
+            {
+                StringAssert.Contains(line, "--locked-mode");
+            }
+        }
+
+        foreach (var scriptName in new[] { "publish.ps1", "publish-bootstrapper.ps1" })
+        {
+            var script = File.ReadAllText(Path.Combine(root, "scripts", scriptName));
+            StringAssert.Contains(script, "-p:RestoreLockedMode=true");
+        }
+    }
+
+    [TestMethod]
+    public void ReleaseSecurityGatesRunBeforeSigningAndSbomRemainsAttested()
+    {
+        var root = RepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+        var identity = workflow.IndexOf("- name: Resolve and validate tag identity", StringComparison.Ordinal);
+        var build = workflow.IndexOf("- name: Build unsigned Mod Bridge payload", StringComparison.Ordinal);
+        var security = workflow.IndexOf("- name: Run pre-signing security gates and generate SBOM", StringComparison.Ordinal);
+        var transferToSigning = workflow.IndexOf("- name: Upload unsigned Mod Bridge payload", StringComparison.Ordinal);
+        var oidc = workflow.IndexOf("- name: Azure login with GitHub OIDC", StringComparison.Ordinal);
+        var signing = workflow.IndexOf("- name: Sign Mod Bridge and updater", StringComparison.Ordinal);
+
+        Assert.IsTrue(identity >= 0);
+        Assert.IsTrue(build > identity);
+        Assert.IsTrue(security > build);
+        Assert.IsTrue(transferToSigning > security);
+        Assert.IsTrue(oidc > transferToSigning);
+        Assert.IsTrue(signing > oidc);
+        StringAssert.Contains(workflow, "git merge-base --is-ancestor $tagCommit refs/remotes/origin/main");
+        Assert.IsTrue(
+            Regex.Matches(workflow, "stfc-mod-bridge-sbom.spdx.json", RegexOptions.CultureInvariant).Count >= 5,
+            "The SBOM must cross the unsigned transfer, attestation, signed transfer, verification, and publication boundaries.");
+
+        var script = File.ReadAllText(Path.Combine(root, "scripts", "run-release-security-gates.ps1"));
+        StringAssert.Contains(script, "--vulnerable --include-transitive --format json --output-version 1");
+        StringAssert.Contains(script, "Get-MpComputerStatus");
+        StringAssert.Contains(script, "-DisableRemediation");
+        StringAssert.Contains(script, "dotnet tool restore");
+        StringAssert.Contains(script, "SPDX-2.2");
     }
 
     [TestMethod]
@@ -99,6 +182,7 @@ public sealed partial class ReleaseTrustAutomationTests
                      "artifacts/win-x64/setup/STFCModBridge.Setup.exe",
                      "artifacts/win-x64/stfc-mod-bridge-win-x64.zip",
                      "artifacts/win-x64/stfc-mod-bridge-release-manifest.json",
+                     "artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json",
                  })
         {
             StringAssert.Contains(workflow, subject, $"Missing attested release subject: {subject}");

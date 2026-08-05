@@ -39,8 +39,8 @@ closed; Mod Bridge never infers support from a provider's display name.
 ## Build and test
 
 ```powershell
-dotnet restore STFCCommunityMod.Launcher.sln
-dotnet test STFCCommunityMod.Launcher.sln -c Release
+dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
+dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 ```
 
 Double-click `run-launcher.cmd` to build and start the exact Release executable
@@ -74,6 +74,7 @@ payload.
 - [UX direction](docs/windows-launcher/UX_DIRECTION.md)
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
+- [Release security operations](docs/windows-launcher/RELEASE_SECURITY_OPERATIONS.md)
 - [Product identity inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)
 - [About, attribution, and notice ownership](docs/windows-launcher/ABOUT.md)
 - [Generated third-party notices](THIRD-PARTY-NOTICES.md)
