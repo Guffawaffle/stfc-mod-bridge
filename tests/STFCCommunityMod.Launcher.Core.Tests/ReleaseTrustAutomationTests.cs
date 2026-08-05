@@ -242,7 +242,7 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
-    public void ClosedAlphaDocumentationKeepsInstallAndReportingBoundariesExplicit()
+    public void PreReleaseDocumentationKeepsInstallAndReportingBoundariesExplicit()
     {
         var root = RepositoryRoot();
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
@@ -257,10 +257,14 @@ public sealed partial class ReleaseTrustAutomationTests
             StringAssert.Contains(document, "STFCModBridge.Setup.exe");
             StringAssert.Contains(document, "v0.1.0-rc.3");
             StringAssert.Contains(document, "rejected");
+            StringAssert.Contains(document, "Public canary");
         }
 
+        StringAssert.Contains(readme, "releases/tag/v0.1.0-rc.4");
+        StringAssert.Contains(testing, "Closed-alpha approved");
         StringAssert.Contains(testing, "machine-consumed release inputs");
         StringAssert.Contains(testing, "never uploaded");
+        StringAssert.Contains(security, "Public canary");
         StringAssert.Contains(security, "/security/advisories/new");
         StringAssert.Contains(bugReport, "Do not include tokens");
         StringAssert.Contains(usabilityReport, "Do not include credentials");

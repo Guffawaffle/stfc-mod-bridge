@@ -1,14 +1,17 @@
-# STFC Mod Bridge closed-alpha testing
+# STFC Mod Bridge pre-release testing
 
-This pre-release is intended for a small technical cohort. Participation is
-not an endorsement that Mod Bridge is ready for a general v1 release.
+This pre-release is intended for technically comfortable testers. Participation
+is not an endorsement that Mod Bridge is ready for a stable or general v1
+release.
 
 ## Choose the build
 
-Install only a GitHub release whose notes explicitly say **Closed-alpha
-approved**. Do not infer approval from a version number, the newest tag, or the
-GitHub "Latest" label. `v0.1.0-rc.3` is rejected because of a provider-state
-projection regression.
+Install only a GitHub release whose notes explicitly classify it as
+**Closed-alpha approved** or **Public canary — qualification is still in
+progress**. For a public canary, read every listed open check before deciding to
+test it. Do not infer either classification from a version number, the newest
+tag, or the GitHub "Latest" label. `v0.1.0-rc.3` is rejected because of a
+provider-state projection regression.
 
 Download only `STFCModBridge.Setup.exe`. The ZIP, release manifest, SBOM, and
 attestation bundle are machine-consumed release inputs and are not alternate

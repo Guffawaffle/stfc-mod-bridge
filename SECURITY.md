@@ -1,8 +1,9 @@
 # Security policy
 
-Security support during the closed alpha applies only to the newest pre-release
-whose release notes explicitly say **Closed-alpha approved**. Rejected or
-superseded release candidates are not supported.
+Security support during pre-release testing applies only to the newest release
+whose notes explicitly classify it as **Closed-alpha approved** or
+**Public canary — qualification is still in progress**. Rejected or superseded
+release candidates are not supported.
 
 Report a potential vulnerability with GitHub's
 [private vulnerability reporting](https://github.com/Guffawaffle/stfc-mod-bridge/security/advisories/new).

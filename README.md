@@ -5,11 +5,11 @@
 **Install · Configure · Diagnose · Run**
 
 > [!WARNING]
-> STFC Mod Bridge is pre-release software. Closed-alpha testers should install
-> only a release whose notes explicitly say **Closed-alpha approved**.
-> `v0.1.0-rc.3` is rejected because of a provider-state projection regression;
-> follow [issue #84](https://github.com/Guffawaffle/stfc-mod-bridge/issues/84)
-> for the approved candidate.
+> STFC Mod Bridge is pre-release software. The current test build is
+> [`v0.1.0-rc.4`](https://github.com/Guffawaffle/stfc-mod-bridge/releases/tag/v0.1.0-rc.4),
+> published as a **Public canary — qualification is still in progress**. Read
+> its permanent release notes and open checks before installing. `v0.1.0-rc.3`
+> is rejected because of a provider-state projection regression.
 
 STFC Mod Bridge is a source-neutral Windows application for installing,
 updating, repairing, configuring, diagnosing, and running supported Star Trek
@@ -34,11 +34,11 @@ closed; Mod Bridge never infers support from a provider's display name.
 
 ## Test a pre-release
 
-The current invitation is for a small technical closed alpha, not a general
-release. Read the [closed-alpha testing guide](TESTING.md) before changing an
-installed mod. Download only `STFCModBridge.Setup.exe` from an approved GitHub
-release; the ZIP, manifest, SBOM, and attestation bundle are machine-consumed
-release inputs rather than alternate installers.
+The current build is a public canary for technically comfortable testers, not a
+stable or general release. Read the [pre-release testing guide](TESTING.md)
+before changing an installed mod. Download only `STFCModBridge.Setup.exe` from
+the linked RC.4 release; the ZIP, manifest, SBOM, and attestation bundle are
+machine-consumed release inputs rather than alternate installers.
 
 Use the [bug report](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=bug-report.yml)
 or [usability feedback](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=usability-feedback.yml)
