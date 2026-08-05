@@ -205,8 +205,10 @@ public sealed partial class ReleaseTrustAutomationTests
             "docs",
             "windows-launcher",
             "RELEASE_SECURITY_OPERATIONS.md"));
-        StringAssert.Contains(operations, "complete the release epic's canary matrix");
+        StringAssert.Contains(operations, "exercise and record the release epic's applicable canary matrix");
         StringAssert.Contains(operations, "**Closed-alpha approved**");
+        StringAssert.Contains(operations, "**Public canary —");
+        StringAssert.Contains(operations, "enumerate every open check");
         StringAssert.Contains(operations, "--draft=false");
 
         StringAssert.Matches(
