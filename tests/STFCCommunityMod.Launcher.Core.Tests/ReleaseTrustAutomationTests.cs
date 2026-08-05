@@ -65,7 +65,7 @@ public sealed partial class ReleaseTrustAutomationTests
         var releaseWorkflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
         StringAssert.Contains(releaseWorkflow, "sign:");
         StringAssert.Contains(releaseWorkflow, "id-token: write");
-        StringAssert.Contains(releaseWorkflow, "publish:");
+        StringAssert.Contains(releaseWorkflow, "stage:");
         StringAssert.Contains(releaseWorkflow, "contents: write");
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "id-token: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "attestations: write", RegexOptions.CultureInvariant).Count);
@@ -137,7 +137,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(workflow, "git merge-base --is-ancestor $tagCommit refs/remotes/origin/main");
         Assert.IsTrue(
             Regex.Matches(workflow, "stfc-mod-bridge-sbom.spdx.json", RegexOptions.CultureInvariant).Count >= 5,
-            "The SBOM must cross the unsigned transfer, attestation, signed transfer, verification, and publication boundaries.");
+            "The SBOM must cross the unsigned transfer, attestation, signed transfer, verification, and draft-staging boundaries.");
 
         var script = File.ReadAllText(Path.Combine(root, "scripts", "run-release-security-gates.ps1"));
         StringAssert.Contains(script, "--vulnerable --include-transitive --format json --output-version 1");
@@ -176,7 +176,7 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
-    public void ReleaseWorkflowAttestsFinalSubjectsAndReverifiesThemBeforePublication()
+    public void ReleaseWorkflowAttestsFinalSubjectsAndReverifiesThemBeforeDraftStaging()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
         var manifest = workflow.IndexOf(
@@ -184,20 +184,30 @@ public sealed partial class ReleaseTrustAutomationTests
             StringComparison.Ordinal);
         var attestation = workflow.IndexOf("- name: Attest final signed release subjects", StringComparison.Ordinal);
         var transfer = workflow.IndexOf("- name: Upload signed release assets", StringComparison.Ordinal);
-        var publicationVerification = workflow.IndexOf(
-            "- name: Verify attested release subjects before publication",
+        var stagingVerification = workflow.IndexOf(
+            "- name: Verify attested release subjects before draft staging",
             StringComparison.Ordinal);
-        var publication = workflow.IndexOf(
-            "- name: Publish setup and machine-consumed update inputs",
+        var staging = workflow.IndexOf(
+            "- name: Stage setup and machine-consumed update inputs as a draft",
             StringComparison.Ordinal);
 
         Assert.IsTrue(manifest >= 0, "Release workflow must generate its final manifest.");
         Assert.IsTrue(attestation > manifest, "Attestation must occur after final manifest generation.");
-        Assert.IsTrue(transfer > attestation, "Only attested subjects may enter the publication transfer.");
+        Assert.IsTrue(transfer > attestation, "Only attested subjects may enter the staging transfer.");
         Assert.IsTrue(
-            publicationVerification > transfer,
-            "The publication job must verify transferred subjects after download.");
-        Assert.IsTrue(publication > publicationVerification, "Attestation verification must precede publication.");
+            stagingVerification > transfer,
+            "The staging job must verify transferred subjects after download.");
+        Assert.IsTrue(staging > stagingVerification, "Attestation verification must precede draft staging.");
+        StringAssert.Contains(workflow, "\"--draft\"");
+
+        var operations = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "docs",
+            "windows-launcher",
+            "RELEASE_SECURITY_OPERATIONS.md"));
+        StringAssert.Contains(operations, "complete the release epic's canary matrix");
+        StringAssert.Contains(operations, "**Closed-alpha approved**");
+        StringAssert.Contains(operations, "--draft=false");
 
         StringAssert.Matches(
             workflow,
