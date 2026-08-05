@@ -47,18 +47,24 @@ Before publication, the maintainer must:
 1. download the exact draft assets and retain the workflow URL, environment
    approval, runner image, Defender versions, manifest, SBOM, hashes, and
    attestation verification output;
-2. complete the release epic's canary matrix against those staged bytes;
-3. leave a failed candidate as a draft and record the rejection; never publish
-   it merely to obtain a public download URL; and
-4. replace the qualification warning with final release notes containing the
-   exact phrase **Closed-alpha approved**, then publish the prerelease once.
+2. exercise and record the release epic's applicable canary matrix against those
+   staged bytes;
+3. leave a candidate with failed producer/security evidence or unacceptable
+   residual risk as a draft and record the rejection; never publish it merely
+   to obtain a public download URL; and
+4. choose and record one truthful, immutable publication classification:
+   - after the required canary matrix is complete, use the exact phrase
+     **Closed-alpha approved**; or
+   - after an explicit maintainer decision to permit broader voluntary testing
+     with incomplete canary coverage, use the exact phrase **Public canary —
+     qualification is still in progress** and enumerate every open check.
 
 For example, after preparing and reviewing a final notes file:
 
 ```powershell
 gh release edit v0.1.0-rc.4 `
   --repo Guffawaffle/stfc-mod-bridge `
-  --notes-file ./approved-release-notes.md `
+  --notes-file ./release-notes.md `
   --draft=false `
   --prerelease
 ```
@@ -68,7 +74,8 @@ immutability takes effect when it is published, so the notes and asset set must
 already be final. The release notes must call the build a prerelease, identify
 `STFCModBridge.Setup.exe` as the only user-facing download, describe the ZIP,
 manifest, SBOM, and attestation bundle as machine-consumed inputs, link the
-qualification evidence, and retain the provenance-versus-safety limitation.
+qualification evidence, state the chosen classification and open checks, and
+retain the provenance-versus-safety limitation.
 
 ## Reviewed network and tool inputs
 
