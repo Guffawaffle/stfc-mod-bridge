@@ -54,7 +54,8 @@ cannot evade that allowlist.
 The release order is:
 
 ```text
-test -> build -> approve protected environment -> OIDC login -> sign inner executables
+locked restore/test -> unsigned build -> vulnerability/malware gates -> SPDX SBOM
+      -> approve protected environment -> OIDC login -> sign inner executables
       -> verify -> package -> embed package -> sign setup -> verify -> hash
       -> attest final subjects -> transfer -> reverify attestations -> publish
 ```
@@ -95,3 +96,7 @@ The workflow contains no PFX or client secret. A successful protected tag run,
 package inspection, and manual clean-machine install/update/rollback/uninstall
 receipt are still required evidence; this document does not claim that those
 external gates have occurred.
+
+The complete repository/external-control inventory and the evidence required
+for a production tag are in
+[`RELEASE_SECURITY_OPERATIONS.md`](RELEASE_SECURITY_OPERATIONS.md).

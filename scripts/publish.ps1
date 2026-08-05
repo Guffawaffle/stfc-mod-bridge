@@ -35,6 +35,7 @@ dotnet publish $project `
   -r win-x64 `
   --self-contained true `
   --output $payload `
+  -p:RestoreLockedMode=true `
   -p:PublishSingleFile=true `
   @buildProperties
 
@@ -43,6 +44,7 @@ dotnet publish $updaterProject `
   -r win-x64 `
   --self-contained true `
   --output $updaterPublish `
+  -p:RestoreLockedMode=true `
   -p:PublishSingleFile=true `
   @buildProperties
 Copy-Item `
