@@ -118,6 +118,37 @@ public sealed class ReviewedReleaseCertificationTests
         StringAssert.Contains(exception.Message, "does not match the reviewed release certification");
     }
 
+    [TestMethod]
+    public async Task MissingManifestUsesReviewedFallback()
+    {
+        var expected = Discovery(Certification());
+        var fallback = new RecordingDiscoveryClient(expected);
+        var client = new ManifestWithReviewedFallbackReleaseClient(
+            new RecordingDiscoveryClient(
+                ReleaseManifestFallbackPolicy.MissingManifest("No manifest asset.")),
+            fallback);
+
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+
+        Assert.AreSame(expected, result);
+        Assert.AreEqual(1, fallback.CallCount);
+    }
+
+    [TestMethod]
+    public async Task InvalidManifestDoesNotDowngradeToReviewedFallback()
+    {
+        var fallback = new RecordingDiscoveryClient(Discovery(Certification()));
+        var client = new ManifestWithReviewedFallbackReleaseClient(
+            new RecordingDiscoveryClient(
+                new InvalidDataException("Manifest signature is invalid.")),
+            fallback);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
+
+        Assert.AreEqual(0, fallback.CallCount);
+    }
+
     private static ReviewedReleaseCertification Certification(byte[]? archive = null, byte[]? payload = null)
     {
         payload ??= Encoding.UTF8.GetBytes("reviewed dll bytes");
@@ -154,6 +185,26 @@ public sealed class ReviewedReleaseCertificationTests
           }]
         }
         """;
+
+    private static WindowsReleaseDiscovery Discovery(
+        ReviewedReleaseCertification certification) =>
+        new(
+            new(
+                1,
+                certification.ReleaseVersion,
+                certification.Tag,
+                certification.ChannelId,
+                "active",
+                new Version(0, 1, 0),
+                new(certification.Repository, certification.SourceCommit),
+                "launcher-reviewed-exact-hash",
+                []),
+            new(
+                certification.DownloadUri,
+                certification.PayloadFileName,
+                certification.PayloadSize,
+                certification.PayloadSha256,
+                certification.PayloadVersion));
 
     private static byte[] CreateArchive(string name, byte[] contents, params (string Name, byte[] Contents)[] extras)
     {
@@ -199,5 +250,33 @@ public sealed class ReviewedReleaseCertificationTests
             {
                 Content = new ByteArrayContent(contents),
             });
+    }
+
+    private sealed class RecordingDiscoveryClient : IWindowsReleaseDiscoveryClient
+    {
+        private readonly WindowsReleaseDiscovery? result;
+        private readonly Exception? exception;
+
+        public RecordingDiscoveryClient(WindowsReleaseDiscovery result) =>
+            this.result = result;
+
+        public RecordingDiscoveryClient(Exception exception) =>
+            this.exception = exception;
+
+        public int CallCount { get; private set; }
+
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+            string channel,
+            Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            _ = channel;
+            _ = currentLauncherVersion;
+            _ = cancellationToken;
+            ++CallCount;
+            return exception is null
+                ? Task.FromResult(result!)
+                : Task.FromException<WindowsReleaseDiscovery>(exception);
+        }
     }
 }

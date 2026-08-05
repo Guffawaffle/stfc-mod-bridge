@@ -66,7 +66,7 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false,
+            _ => false,
             DefaultAttribution());
 
         Assert.ThrowsException<InvalidDataException>(() => service.ReadInstalledState());
@@ -78,7 +78,29 @@ public sealed class ModDeploymentServiceTests
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
         var downloader = new FakeDownloader(SuccessfulDownload());
-        var service = CreateService(temporaryDirectory, downloader, isGameRunning: () => true);
+        var service = CreateService(temporaryDirectory, downloader, isGameRunning: _ => true);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.GameRunning, result.State);
+        Assert.AreEqual(0, downloader.CallCount);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task GameStartingWhileDeploymentAcquiresLeaseBlocksBeforeDownload()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var downloader = new FakeDownloader(SuccessfulDownload());
+        var checks = 0;
+        var service = CreateService(
+            temporaryDirectory,
+            downloader,
+            isGameRunning: _ => ++checks > 1);
 
         var result = await service.DeployAsync(
             gameDirectory,
@@ -344,6 +366,83 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public async Task CoordinatedParticipantFailureRestoresManagedArtifactAndState()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var sourceService = CreateService(
+            temporaryDirectory,
+            SuccessfulDownload(),
+            installationAttribution: new("guffawaffle", "stable", "guffawaffle.windows"));
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await sourceService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        var targetContents = new byte[] { 0x4e, 0x45, 0x54, 0x4e, 0x49, 0x56 };
+        var targetArtifact = ReleaseArtifact(targetContents, "1.1.5.1");
+        var targetService = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, targetContents, targetContents.LongLength),
+            versionReader: new FakeVersionReader(targetArtifact.ExpectedVersion),
+            installationAttribution: new("netniv", "stable", "netniv.stfc-community-mod"));
+        var participant = new FakeCommitParticipant(failCommit: true);
+
+        var result = await targetService.DeployCoordinatedAsync(
+            gameDirectory,
+            targetArtifact,
+            ExistingArtifactPolicy.Reject,
+            Guid.NewGuid().ToString("N"),
+            participant);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual("guffawaffle", targetService.ReadInstalledState()!.ProviderId);
+        Assert.AreEqual(1, participant.CommitCount);
+        Assert.AreEqual(1, participant.RollbackCount);
+        Assert.IsFalse(Directory.EnumerateFiles(gameDirectory, "*.rollback").Any());
+    }
+
+    [TestMethod]
+    public async Task DeploymentFinalizationFailureCompensatesCommittedParticipant()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var sourceService = CreateService(temporaryDirectory, SuccessfulDownload());
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await sourceService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        var targetContents = new byte[] { 0x4e, 0x45, 0x54, 0x4e, 0x49, 0x56 };
+        var targetArtifact = ReleaseArtifact(targetContents, "1.1.5.1");
+        var targetService = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, targetContents, targetContents.LongLength),
+            versionReader: new FakeVersionReader(targetArtifact.ExpectedVersion),
+            afterPhasePersisted: (phase, _) => phase == ModDeploymentPhase.Committed
+                ? ValueTask.FromException(new InjectedDeploymentFaultException(phase))
+                : ValueTask.CompletedTask,
+            installationAttribution: new("netniv", "stable", "netniv.stfc-community-mod"));
+        var participant = new FakeCommitParticipant();
+
+        var result = await targetService.DeployCoordinatedAsync(
+            gameDirectory,
+            targetArtifact,
+            ExistingArtifactPolicy.Reject,
+            Guid.NewGuid().ToString("N"),
+            participant);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual("guffawaffle", targetService.ReadInstalledState()!.ProviderId);
+        Assert.AreEqual(1, participant.CommitCount);
+        Assert.AreEqual(1, participant.RollbackCount);
+    }
+
+    [TestMethod]
     public async Task ConcurrentMutationIsRejectedWhileDownloadIsActive()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -508,7 +607,7 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false,
+            _ => false,
             DefaultAttribution());
 
         var result = await service.RecoverAsync();
@@ -564,7 +663,7 @@ public sealed class ModDeploymentServiceTests
             new FakeDownloader(SuccessfulDownload()),
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false,
+            _ => false,
             DefaultAttribution());
 
         var result = await service.RecoverAsync();
@@ -604,7 +703,7 @@ public sealed class ModDeploymentServiceTests
             downloader,
             new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(true),
-            () => false,
+            _ => false,
             DefaultAttribution());
 
         var result = await service.DeployAsync(
@@ -662,7 +761,7 @@ public sealed class ModDeploymentServiceTests
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
         ModArtifactDownload download,
-        Func<bool>? isGameRunning = null,
+        Func<string, bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
@@ -679,7 +778,7 @@ public sealed class ModDeploymentServiceTests
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
         IModArtifactDownloader downloader,
-        Func<bool>? isGameRunning = null,
+        Func<string, bool>? isGameRunning = null,
         IModArtifactVersionReader? versionReader = null,
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
@@ -689,7 +788,7 @@ public sealed class ModDeploymentServiceTests
             downloader,
             versionReader ?? new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
             authenticityVerifier ?? new FakeAuthenticityVerifier(true),
-            isGameRunning ?? (() => false),
+            isGameRunning ?? (_ => false),
             installationAttribution ?? DefaultAttribution(),
             afterPhasePersisted: afterPhasePersisted);
 
@@ -702,6 +801,13 @@ public sealed class ModDeploymentServiceTests
         ArtifactContents.LongLength,
         Convert.ToHexString(SHA256.HashData(ArtifactContents)),
         "2.1.0.8");
+
+    private static ModReleaseArtifact ReleaseArtifact(byte[] contents, string version) => new(
+        new Uri("https://example.invalid/version.dll"),
+        "version.dll",
+        contents.LongLength,
+        Convert.ToHexString(SHA256.HashData(contents)),
+        version);
 
     private static ModArtifactDownload SuccessfulDownload() => new(
         HttpStatusCode.OK,
@@ -730,6 +836,33 @@ public sealed class ModDeploymentServiceTests
             Entered.SetResult();
             await Release.Task.WaitAsync(cancellationToken);
             return result;
+        }
+    }
+
+    private sealed class FakeCommitParticipant(bool failCommit = false) : IModDeploymentCommitParticipant
+    {
+        public int CommitCount { get; private set; }
+
+        public int RollbackCount { get; private set; }
+
+        public Task BeginAsync(
+            ModDeploymentCommitContext context,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task CommitAsync(CancellationToken cancellationToken)
+        {
+            CommitCount++;
+            return failCommit
+                ? Task.FromException(new InvalidOperationException("Injected participant commit failure."))
+                : Task.CompletedTask;
+        }
+
+        public Task CompleteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task RollBackAsync(CancellationToken cancellationToken)
+        {
+            RollbackCount++;
+            return Task.CompletedTask;
         }
     }
 

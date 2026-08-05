@@ -94,6 +94,11 @@ authoritative `IGameProcessInspector` check, so the Home updates without WMI or
 a timer. The manual Refresh action remains as a fallback when event
 subscription is unavailable.
 
+The authoritative check resolves each candidate process's executable path and
+attributes it to the exact validated installation. A `prime.exe` running from
+another installation may coexist and does not block the selected target. If a
+`prime.exe` path cannot be inspected safely, mutations fail closed.
+
 Candidate counts, provenance, storage ownership, filesystem paths, and raw
 health dimensions are intentionally absent. They remain internal inputs for
 future structured logs and the explicit redacted diagnostic surface in

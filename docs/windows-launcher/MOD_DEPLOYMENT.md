@@ -112,22 +112,23 @@ claim that the configuration is non-secret.
 ### Protected storage and retention
 
 Store envelopes beneath the per-user Mod Bridge state root at
-`configuration-backups/<installation-id>/<backup-id>/`, never beside the game and never in the ordinary `.bak` path
+`configuration-backups/<installation-id>/<provider-id>/<backup-id>/`, never beside the game and never in the ordinary `.bak` path
 used for one-document editor commits. Encrypt payloads with Windows DPAPI `CurrentUser` scope and apply an explicit
 DACL limited to the current user and `SYSTEM`; failure to establish either protection fails the mandatory-backup gate.
 No plaintext temporary copy may survive the operation. The UI must explain that backups are local to the same Windows
 profile and are not portable exports.
 
-Proposed v1 retention is the newest five completed backups per game-installation identity and no more than 30 days,
-whichever removes data sooner. Never prune an envelope referenced by an incomplete/recovery-required transaction.
-Prune only after a new transaction commits and retain at least its successful backup. Users may explicitly delete a
-completed backup; uninstalling the mod does not delete it, while the launcher's separately confirmed **Remove state**
-operation does. The `five / 30 days` values require Guff/Lex acceptance because they trade recovery depth against
-retention of configuration secrets.
+V1 retains the newest five verified backups per stable provider ID and game-installation identity. Retention is
+count-based only: there is no age grooming, and one provider can never prune another provider's history. Never prune an
+envelope referenced by an incomplete/recovery-required transaction. Prune only after the replacement backup is
+protected and byte/hash verified. Users may explicitly delete a completed backup; uninstalling the mod does not delete
+provider history, while the launcher's separately confirmed **Remove state** operation does.
 
 ### Explicit restore
 
-Restore is a Diagnostics/recovery operation, never an automatic consequence of source selection. It requires:
+Manual restore is a Diagnostics/recovery operation. A reviewed installed-provider switch may separately propose the
+latest verified target-provider backup and restore it inside the coordinated switch transaction; a first-time target
+with no history preserves the active TOML rather than inventing a migration. Manual restore requires:
 
 1. the same Windows user can decrypt the envelope and all manifest/ciphertext hashes validate;
 2. exact game-installation and destination-file confirmation;
@@ -151,10 +152,9 @@ health, and whether recovery is required. Export collectors must deny the backup
 redaction; redaction remains defense in depth, not the primary control. The current prototype's display of a plaintext
 backup path is specifically outside this proposed contract.
 
-### Decisions requiring acceptance
+### Accepted v1 decisions
 
-The safety invariants above are requirements. These product-policy choices
-must be accepted by Guff/Lex before implementation:
+The safety invariants above are requirements. V1 uses these accepted choices:
 
 1. reserve **Select source** for preference-only state and **Switch installed
    mod** for artifact-lineage migration, replacing the prototype's overloaded
@@ -169,48 +169,55 @@ must be accepted by Guff/Lex before implementation:
    restoration;
 5. use non-portable DPAPI `CurrentUser` plus an explicit DACL for v1 rather
    than designing a password/export key flow; and
-6. retain at most five completed backups for at most 30 days.
+6. retain the newest five verified backups per provider and installation with no age-based grooming.
 
 The Install presentation may use a separate Check button or an explicitly
 labeled network step inside a wizard; either choice must preserve the same
 no-passive-discovery service contract.
 
-## Source-transition transaction and ownership plan
+## Source-transition transaction and ownership
 
-Artifact replacement, preference persistence, and protected backup cannot be one filesystem atomic operation. A
-durable coordinator must use the existing global mutation lease and journal compensating steps in this order:
+Artifact replacement, preference persistence, and protected backup cannot be one filesystem atomic operation.
+`LauncherProviderAtomicSwitchCoordinator` uses a dedicated cross-process
+provider-switch admission lease, then enters the deployment service's exact
+installation-scoped mutation lease before any artifact commit. It journals
+compensating steps in this order:
 
 ```text
-planned -> config-backed-up -> artifact-staged -> artifact-committed
-        -> installed-state-committed -> preference-committed -> committed
-                         |                    |
-                         v                    v
-                  rolling-back -> rolled-back / recovery-required
+prepared -> artifact-committing -> configuration-committed -> completed
+                    |                       |
+                    v                       v
+              rolling-back -> rolled-back / recovery-required
 ```
 
-On startup, an incomplete source transition is resolved before provider-bound mutation. Rollback restores the prior
-artifact, installed-state bytes, and preference bytes in reverse order; it never edits TOML. The protected backup is
-retained as evidence/recovery material. A source-only selection uses the much smaller atomic preference transaction and
-does not create this journal.
+An incomplete source transition blocks another switch and is projected as a
+Recovery action. Rollback restores the prior artifact, installed-state bytes,
+preference, and exact prior TOML. The protected source backup is retained as
+evidence/recovery material. A selection made while no DLL is installed uses the
+smaller preference/TOML transaction, performs no release discovery or download,
+and does not create the outer artifact journal.
 
 Implementation ownership is intentionally bounded:
 
 | Owner | Follow-up responsibility |
 |---|---|
 | Provider catalog/resolution | Stable source/channel/runtime IDs, migration compatibility and capability loss; no display-name checks and no installed-provenance claims. |
-| `LauncherProviderSelection` | Preference load/save and source-only preview. Split the current `LauncherProviderSourceSwitchService` prototype so plaintext backup copying is not part of preference persistence. |
-| New core source-transition coordinator | Prepare immutable, identity-bound operations; acquire the common lease; coordinate backup, deployment, installed state, preference, rollback, and restart result. |
-| Deployment transaction | Keep allowlisted `version.dll` staging, verification, installed attribution, rollback, repair, and uninstall semantics. Expose bounded prepare/commit/compensate seams instead of duplicating file mutation. |
-| New protected configuration-backup store | Exact-byte capture, DPAPI/DACL protection, manifest validation, retention, restore, injectable clock/filesystem/protector, and no plaintext residue. Do not reuse the editor's adjacent `.bak`. |
+| `LauncherProviderSelection` | Stable preference load/save, compatibility preview, protected source capture, target-history restore, and exact compensation. |
+| Core source-transition coordinator | Prepare immutable identity-bound operations; coordinate deployment, installed state, preference, TOML, rollback, recovery, and restart result. |
+| Deployment transaction | Keep allowlisted `version.dll` staging, verification, installed attribution, and exact rollback copy alive through the coordinated commit participant. |
+| Protected configuration-backup store | Exact-byte capture, DPAPI/DACL protection, manifest validation, five-record provider/install retention, restore, and no plaintext residue. |
 | Binary provenance/local health | Project installed and preferred sources independently; keep custom/dev DLLs runnable; suspend rather than transfer ownership when managed bytes change. |
 | Diagnostics/export | Metadata-only backup health plus explicit restore/delete workflows; hard exclusion of payloads, paths, IDs, and hashes from preview/export/support evidence. |
 | Home/source UI | Project the accepted matrix, immediate-effect labels, current-installed versus preferred-source text, confirmations, running-game/restart status, and one border per surface. No lifecycle decisions in WPF. |
 
-Blocking follow-up tests cover passive no-network behavior; source selection without provenance mutation; custom/dev direct
-launch; exact-byte/BOM/comment/unknown-key capture and restore; secret exclusion; DPAPI/DACL failures; retention; TOCTOU
-changes; game-running denial; provider/channel/runtime binding; interruption after every journal phase; rollback and
-rollback failure; prepared-operation expiry; and no silent provider crossing. UI implementation and automatic TOML
-migration remain out of scope until Guff/Lex accept this contract.
+Regression coverage includes passive no-network source selection; exact-byte
+TOML capture/restore; provider/install retention; stale revisions;
+game-running denial; provider/channel/runtime binding; coordinated rollback;
+startup recovery after DLL and configuration commit; and a live
+Guffawaffle → NetniV → Guffawaffle round trip. Follow-up coverage remains for
+custom/dev adoption, every process-termination phase, broader secret/export
+audits, and exhaustive contention between provider switching and independent
+Settings/Data Sync writers in another Mod Bridge process.
 
 ## Verified transaction
 

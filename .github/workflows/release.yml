@@ -67,6 +67,7 @@ jobs:
     environment:
       name: windows-release
     permissions:
+      attestations: write
       contents: read
       id-token: write
     env:
@@ -169,14 +170,42 @@ jobs:
           -TargetCommit "$env:TARGET_COMMIT"
           -Repository "$env:RELEASE_REPOSITORY"
 
+      - name: Attest final signed release subjects
+        id: attest-release
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: |
+            artifacts/win-x64/app/STFCModBridge.exe
+            artifacts/win-x64/app/STFCModBridge.Updater.exe
+            artifacts/win-x64/setup/STFCModBridge.Setup.exe
+            artifacts/win-x64/stfc-mod-bridge-win-x64.zip
+            artifacts/win-x64/stfc-mod-bridge-release-manifest.json
+
+      - name: Stage offline attestation bundle
+        shell: pwsh
+        env:
+          ATTESTATION_BUNDLE_PATH: ${{ steps.attest-release.outputs.bundle-path }}
+        run: |
+          if (-not $env:ATTESTATION_BUNDLE_PATH `
+              -or -not (Test-Path -LiteralPath $env:ATTESTATION_BUNDLE_PATH -PathType Leaf)) {
+            throw "The release attestation action did not produce a bundle."
+          }
+          Copy-Item `
+            -LiteralPath $env:ATTESTATION_BUNDLE_PATH `
+            -Destination "artifacts/win-x64/stfc-mod-bridge-release-attestation.json" `
+            -Force
+
       - name: Upload signed release assets
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-mod-bridge-signed-release-x64
           path: |
+            artifacts/win-x64/app/STFCModBridge.exe
+            artifacts/win-x64/app/STFCModBridge.Updater.exe
             artifacts/win-x64/setup/STFCModBridge.Setup.exe
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
+            artifacts/win-x64/stfc-mod-bridge-release-attestation.json
           if-no-files-found: error
 
   publish:
@@ -192,6 +221,41 @@ jobs:
           name: windows-mod-bridge-signed-release-x64
           path: artifacts/win-x64
 
+      - name: Verify attested release subjects before publication
+        shell: pwsh
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_COMMIT: ${{ github.sha }}
+        run: |
+          $root = "artifacts/win-x64"
+          $bundle = "$root/stfc-mod-bridge-release-attestation.json"
+          $subjects = @(
+            "$root/setup/STFCModBridge.Setup.exe",
+            "$root/app/STFCModBridge.exe",
+            "$root/app/STFCModBridge.Updater.exe",
+            "$root/stfc-mod-bridge-win-x64.zip",
+            "$root/stfc-mod-bridge-release-manifest.json"
+          )
+          if (-not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
+            throw "The signed release payload is missing its attestation bundle."
+          }
+          foreach ($subject in $subjects) {
+            if (-not (Test-Path -LiteralPath $subject -PathType Leaf)) {
+              throw "The signed release payload is missing attested subject '$subject'."
+            }
+            & gh attestation verify $subject `
+              --repo $env:RELEASE_REPOSITORY `
+              --signer-workflow "$env:RELEASE_REPOSITORY/.github/workflows/release.yml" `
+              --source-digest $env:TARGET_COMMIT `
+              --source-ref "refs/tags/$env:RELEASE_TAG" `
+              --deny-self-hosted-runners `
+              --bundle $bundle
+            if ($LASTEXITCODE -ne 0) {
+              throw "Release attestation verification failed for '$subject'."
+            }
+          }
+
       - name: Publish setup and machine-consumed update inputs
         shell: pwsh
         env:
@@ -205,12 +269,13 @@ jobs:
           $assets = @(
             "$root/setup/STFCModBridge.Setup.exe",
             "$root/stfc-mod-bridge-win-x64.zip",
-            "$root/stfc-mod-bridge-release-manifest.json"
+            "$root/stfc-mod-bridge-release-manifest.json",
+            "$root/stfc-mod-bridge-release-attestation.json"
           )
           $notes = @"
           Install STFC Mod Bridge with `STFCModBridge.Setup.exe`.
 
-          The ZIP and JSON assets are machine-consumed self-update inputs, not alternate installation packages.
+          The ZIP, manifest, and attestation bundle are machine-consumed trust/update inputs, not alternate installation packages.
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM

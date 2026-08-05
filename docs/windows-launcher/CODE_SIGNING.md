@@ -24,7 +24,8 @@ The GitHub environment is `windows-release`.
 - Allowed release tags: `v*`
 - OIDC subject:
   `repo:Guffawaffle@105761663/stfc-mod-bridge@1320037274:environment:windows-release`
-- Signing job permission: `id-token: write` with `contents: read`
+- Signing job permission: `id-token: write` and `attestations: write` with
+  `contents: read`
 - Publication job permission: `contents: write` without `id-token`
 
 GitHub's issued subject includes the immutable owner and repository IDs. The
@@ -54,7 +55,8 @@ The release order is:
 
 ```text
 test -> build -> approve protected environment -> OIDC login -> sign inner executables
-      -> verify -> package -> embed package -> sign setup -> verify -> hash -> publish
+      -> verify -> package -> embed package -> sign setup -> verify -> hash
+      -> attest final subjects -> transfer -> reverify attestations -> publish
 ```
 
 Packaging and checksums must occur after signing because Authenticode modifies
@@ -63,6 +65,13 @@ because that exact ZIP is embedded in its PE; the setup is then signed as the
 outermost artifact. The workflow verifies every executable with
 `Get-AuthenticodeSignature`, including valid status and the expected
 certificate subject, before manifest generation or release publication.
+
+The same protected job grants `attestations: write` only alongside its existing
+environment-scoped OIDC authority. It generates GitHub/Sigstore provenance for
+the final setup, archive, manifest, launcher, and updater bytes using the
+official attestation Action pinned to a reviewed commit. The publication job
+has no OIDC/signing authority and refuses to publish transferred bytes that do
+not verify against the release bundle, repository, workflow, tag, and commit.
 
 ## Release manifest boundary
 
@@ -76,7 +85,9 @@ manifest signature. Schema v1 therefore declares
 `manifestAuthenticity.scheme: none` while recording independent Authenticode
 expectations for each PE artifact or signed archive member. The complete
 producer and consumer contract is in
-`docs/windows-launcher/RELEASE_MANIFEST.md`.
+`docs/windows-launcher/RELEASE_MANIFEST.md`; producer attestation evidence is
+documented in `docs/windows-launcher/ARTIFACT_ATTESTATIONS.md`. Native
+authenticated release-selection consumption remains issue #71.
 
 The workflow pins every external action to a reviewed commit and passes tag,
 commit, and repository contexts into PowerShell through environment variables.

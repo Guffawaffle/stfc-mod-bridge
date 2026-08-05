@@ -50,6 +50,23 @@ deploy a mod, install/update/repair/remove anything, or write TOML. Absolute
 paths, TOML values, tokens, and file hashes are not written to committed test
 artifacts.
 
+Wave 1 live install/remove dogfood requires both mutation and network switches:
+
+```powershell
+./scripts/test-local-game-install.ps1 `
+  -GameDirectory 'E:\path\to\Star Trek Fleet Command\default\game' `
+  -AllowRestorableMutation `
+  -UseLiveProviderReleases
+```
+
+This profile requires a clean maintained target without `version.dll`. It uses
+isolated launcher state, production provider trust/deployment/removal paths,
+and an exact before/after target fingerprint. The live campaign also performs
+Guffawaffle → NetniV → Guffawaffle using distinct byte-identifiable TOML
+profiles, verifies each managed DLL attribution, then removes the mod and
+returns the target to its clean baseline. A different validated STFC
+installation may remain running.
+
 The maintained clean target currently proves the Bridge projects a valid game
 installation with no `version.dll` as **Not installed** and offers the expected
 **Install** action. The path and binary identities remain local-only.
@@ -91,6 +108,8 @@ Before mutable or launch coverage is enabled, the harness must:
 
 - require a separate explicit opt-in and print its planned scenarios;
 - require the game closed before any download or write;
+- scope that running-game gate to the exact validated installation executable;
+  another STFC installation may remain running;
 - snapshot and hash the exact game and isolated launcher-owned state;
 - use only production trust, transaction, cleanup, and recovery paths;
 - stop only an exact process PID created by the selected launch scenario;

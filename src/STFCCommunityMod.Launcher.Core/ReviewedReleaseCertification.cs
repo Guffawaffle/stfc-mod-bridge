@@ -130,8 +130,8 @@ public static class ReviewedReleaseCertificationCatalogLoader
         var observedAt = ReadString(element, "observedAtUtc");
         if (!string.Equals(runtimeDistributionId, provider.RuntimeDistributionId, StringComparison.Ordinal)
             || !string.Equals(repository, channel.Repository, StringComparison.Ordinal)
-            || !string.Equals(assetName, channel.ArtifactAssetName, StringComparison.Ordinal)
-            || channel.DiscoveryKind != LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset
+            || (channel.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset
+                && !string.Equals(assetName, channel.ArtifactAssetName, StringComparison.Ordinal))
             || !string.Equals(tag, $"v{releaseVersion}", StringComparison.Ordinal)
             || sourceCommit.Length != 40 || !sourceCommit.All(Uri.IsHexDigit)
             || !DateTimeOffset.TryParseExact(observedAt, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var observedAtUtc)
@@ -250,7 +250,7 @@ public sealed class ReviewedGitHubReleaseAssetClient(
         if (!string.Equals(tag, certification.Tag, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"NetniV latest release '{tag}' is not yet in the launcher-reviewed allowlist; installation fails closed.");
+                $"The latest {certification.ProviderId} release '{tag}' is not yet in the launcher-reviewed allowlist; installation fails closed.");
         }
         if (ReadBoolean(root, "draft") || ReadBoolean(root, "prerelease"))
         {
@@ -381,6 +381,49 @@ public sealed class ReviewedZipModArtifactDownloader(
         }
         return new(HttpStatusCode.OK, payload, payload.LongLength);
     }
+}
+
+public sealed class ManifestWithReviewedFallbackReleaseClient(
+    IWindowsReleaseDiscoveryClient manifestClient,
+    IWindowsReleaseDiscoveryClient reviewedFallback) : IWindowsReleaseDiscoveryClient
+{
+    public async Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+        string channel,
+        Version currentLauncherVersion,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await manifestClient.DiscoverLatestAsync(
+                channel,
+                currentLauncherVersion,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidDataException exception) when (
+            ReleaseManifestFallbackPolicy.IsMissingManifest(exception))
+        {
+            return await reviewedFallback.DiscoverLatestAsync(
+                channel,
+                currentLauncherVersion,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+}
+
+public sealed class ManifestWithReviewedFallbackArtifactDownloader(
+    HttpClient httpClient,
+    ReviewedReleaseCertification certification) : IModArtifactDownloader
+{
+    private readonly HttpModArtifactDownloader manifestDownloader = new(httpClient);
+    private readonly ReviewedZipModArtifactDownloader reviewedDownloader =
+        new(httpClient, certification);
+
+    public Task<ModArtifactDownload> DownloadAsync(
+        Uri uri,
+        CancellationToken cancellationToken) =>
+        uri == certification.DownloadUri
+            ? reviewedDownloader.DownloadAsync(uri, cancellationToken)
+            : manifestDownloader.DownloadAsync(uri, cancellationToken);
 }
 
 public sealed class ReviewedExactHashAuthenticityVerifier(

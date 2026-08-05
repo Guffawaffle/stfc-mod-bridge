@@ -41,7 +41,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly LauncherProviderSelectionResolution providerSelectionResolution;
     private readonly LauncherProviderShellAccess providerShellAccess;
     private readonly LauncherProviderReleaseChannel distributionReleaseChannel;
-    private readonly LauncherProviderSourceSwitchService providerSourceSwitchService;
+    private readonly LauncherProviderAtomicSwitchCoordinator providerSourceSwitchCoordinator;
     private readonly LauncherStartupComposition startupComposition;
     private readonly LauncherShellLifecycleController shellLifecycleController;
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
@@ -58,7 +58,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private LauncherDiagnosticPreview? diagnosticPreview;
     private MaintenanceAction pendingMaintenanceAction;
     private LauncherUpdatePreparation? pendingLauncherUpdate;
-    private LauncherProviderSwitchPreview? pendingProviderSwitch;
+    private LauncherProviderAtomicSwitchPreview? pendingProviderSwitch;
     private LauncherProviderSelection? providerSelectionPendingRestart;
 
     public MainWindow()
@@ -92,10 +92,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ?? distributionProviderCatalog.DefaultProvider;
         distributionReleaseChannel = providerSelectionResolution.ReleaseChannel
             ?? distributionProvider.DefaultReleaseChannel;
-        providerSourceSwitchService = new(
-            distributionProviderCatalog,
-            providerContext.SelectionStore,
-            PerUserInstallLayout.FromCurrentUser().StateDirectory);
         startupComposition = LauncherStartupComposition.Create(
             distributionProvider,
             distributionReleaseChannel);
@@ -116,7 +112,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ColorModeSelector.SelectedValue = selectedColorMode;
         isColorModeSelectorReady = true;
         UpdateColorModeSelectorAccessibility();
-        DataContext = MainWindowViewModel.CreateDefault(
+        var viewModel = MainWindowViewModel.CreateDefault(
             httpClient,
             distributionProviderCatalog,
             distributionProvider,
@@ -124,7 +120,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             providerShellAccess.CanUseProviderBoundModActions
                 ? null
                 : providerShellAccess.RestrictionReason,
-            uiPreferencesStore);
+            uiPreferencesStore,
+            providerContext.SelectionStore);
+        providerSourceSwitchCoordinator = viewModel.ProviderSwitchCoordinator
+            ?? throw new InvalidOperationException("Provider-switch composition is unavailable.");
+        DataContext = viewModel;
         if (!providerShellAccess.CanEditProviderSettings)
         {
             HomeSettingsTitleBarButton.IsEnabled = false;
@@ -494,7 +494,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ? "Recover mod transaction?"
             : "Remove Mod Bridge-managed mod?";
         MaintenanceSummary.Text = action == MaintenanceAction.Recover
-            ? "Roll back the incomplete transaction using its persisted journal. Only version.dll and transaction-scoped allowlisted files can change."
+            ? "Roll back the incomplete transaction using its persisted journal. A provider switch restores version.dll, provider selection, and exact TOML bytes together."
             : "Remove Mod Bridge-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
         MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
         ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
@@ -583,7 +583,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         UpdateProviderCapabilityText();
     }
 
-    private void ReviewProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    private async void ReviewProviderSwitchButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
@@ -598,22 +598,47 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ConfirmProviderSwitchButton.IsEnabled = false;
             return;
         }
+        if (DataContext is not MainWindowViewModel viewModel
+            || viewModel.SelectedGameDirectory is null)
+        {
+            ProviderSwitchPreviewText.Text =
+                "Select a valid game installation before reviewing a release-source switch.";
+            return;
+        }
         try
         {
-            pendingProviderSwitch = providerSourceSwitchService.Preview(
+            ReviewProviderSwitchButton.IsEnabled = false;
+            ProviderSourceSelector.IsEnabled = false;
+            ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
+            var configurationPath = GetConfigurationFilePath();
+            if (configurationPath is not null && !File.Exists(configurationPath))
+            {
+                configurationPath = null;
+            }
+            pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
                 targetProvider.Id,
                 targetProvider.DefaultReleaseChannelId,
-                GetConfigurationFilePath());
+                viewModel.SelectedGameDirectory,
+                viewModel.IsGameRunning,
+                configurationPath,
+                lifetimeCancellation.Token);
+            var configuration = pendingProviderSwitch.Configuration;
             var concerns = string.Join(
                 Environment.NewLine,
-                pendingProviderSwitch.Concerns.Select(
+                configuration.Concerns.Select(
                     concern => $"• {concern.Kind}: {concern.Message}"));
-            var backup = pendingProviderSwitch.ConfigurationPath is null
+            var backup = configuration.ConfigurationPath is null
                 ? "No configuration file is currently selected, so no TOML backup is needed."
-                : "The exact TOML bytes will be copied to Mod Bridge-owned rollback storage before the selection changes.";
+                : configuration.ConfigurationKind
+                    == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
+                    ? "The exact current TOML bytes will enter the source provider history, then the latest verified target-provider TOML will be restored."
+                    : "The exact current TOML bytes will enter the source provider history. No target-provider history exists yet, so the active TOML will be preserved.";
             ProviderSwitchPreviewText.Text =
-                $"{pendingProviderSwitch.SourceDisplayName} → {pendingProviderSwitch.TargetDisplayName}"
+                $"{configuration.SourceDisplayName} → {configuration.TargetDisplayName}"
                 + Environment.NewLine
+                + (pendingProviderSwitch.Artifact is null
+                    ? "No managed DLL is installed; this changes the preferred source and TOML profile only."
+                    : $"Target artifact: {pendingProviderSwitch.Artifact.ReleaseVersion}")
                 + Environment.NewLine
                 + concerns
                 + Environment.NewLine
@@ -621,22 +646,28 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 + backup;
             ConfirmProviderSwitchButton.Content = $"_Switch to {targetProvider.DisplayName}";
             ProviderSwitchConfirmationPrompt.Text =
-                $"Type {pendingProviderSwitch.ConfirmationText} to confirm";
+                $"Type {configuration.ConfirmationText} to confirm";
             ProviderSwitchConfirmationInput.Text = string.Empty;
             ProviderSwitchConfirmationPanel.Visibility = Visibility.Visible;
             ConfirmProviderSwitchButton.IsEnabled = false;
             ProviderSwitchConfirmationInput.Focus();
+        }
+        catch (OperationCanceledException)
+        {
+            pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
+            ProviderSwitchPreviewText.Text = "The provider-switch review was canceled.";
         }
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
                 or InvalidDataException
                 or InvalidOperationException
-                or KeyNotFoundException)
+                or KeyNotFoundException
+                or HttpRequestException)
         {
             pendingProviderSwitch = null;
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+            ResetProviderSwitchReviewControls();
             ProviderSwitchPreviewText.Text = $"The provider switch could not be prepared: {exception.Message}";
         }
     }
@@ -656,7 +687,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 StringComparison.Ordinal);
     }
 
-    private void ConfirmProviderSwitchButton_Click(object sender, RoutedEventArgs e)
+    private async void ConfirmProviderSwitchButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
@@ -664,15 +695,18 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationInput.IsEnabled = false;
         try
         {
-            var result = providerSourceSwitchService.Execute(
+            var result = await providerSourceSwitchCoordinator.ExecuteAsync(
                 pendingProviderSwitch,
-                ProviderSwitchConfirmationInput.Text);
+                ProviderSwitchConfirmationInput.Text,
+                lifetimeCancellation.Token);
             var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
-            ProviderSwitchPreviewText.Text = result.ConfigurationBackupPath is null
+            ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
                 ? result.Message
-                : $"{result.Message} Configuration backup: {result.ConfigurationBackupPath}";
+                : $"{result.Message} The prior TOML is protected in the {result.ConfigurationBackup.ProviderId} history.";
             ReleaseSourceButton.Content =
                 $"Next: {selectedProvider.DisplayName} · {selectedProvider.DefaultReleaseChannel.DisplayName}";
             providerSelectionPendingRestart = result.Selection;
@@ -686,6 +720,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
             pendingProviderSwitch = null;
         }
+        catch (OperationCanceledException)
+        {
+            ProviderSwitchPreviewText.Text = "The provider switch was canceled.";
+            pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
+        }
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
@@ -693,10 +733,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or InvalidOperationException)
         {
             ProviderSwitchPreviewText.Text = $"The provider switch failed: {exception.Message}";
-            ConfirmProviderSwitchButton.IsEnabled = false;
-            ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
             pendingProviderSwitch = null;
+            ResetProviderSwitchReviewControls();
         }
+    }
+
+    private void ResetProviderSwitchReviewControls()
+    {
+        ProviderSourceSelector.IsEnabled = providerSelectionPendingRestart is null;
+        ProviderSwitchConfirmationInput.IsEnabled = true;
+        ConfirmProviderSwitchButton.IsEnabled = false;
+        ProviderSwitchConfirmationPanel.Visibility = Visibility.Collapsed;
+        ReviewProviderSwitchButton.IsEnabled =
+            providerSelectionPendingRestart is null
+            && ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
+            && (!providerSelectionResolution.IsResolved
+                || !string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal));
     }
 
     private void UpdateProviderCapabilityText()
@@ -939,6 +991,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     + providerSelectionResolution.Message);
             }
             var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
+            var mutationBackup = new ProviderScopedConfigurationMutationBackup(
+                backupStore,
+                distributionProvider.Id,
+                $"{distributionProvider.Id}/{distributionReleaseChannel.Id}");
             openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
             settingsViewModel = new SettingsViewModel(
                 catalog,
@@ -947,6 +1005,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 GetConfigurationFilePath,
                 startupComposition.SettingsLayout,
                 startupComposition.SettingsDiagnostics,
+                repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
                 uiPreferencesStore: uiPreferencesStore,
                 openExternalUri: OpenExternalUri);
             SettingsWorkspace.DataContext = settingsViewModel;

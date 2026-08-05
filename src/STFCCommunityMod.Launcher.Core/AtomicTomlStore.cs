@@ -23,7 +23,8 @@ public sealed record AtomicTomlWriteResult(
 }
 
 public sealed class AtomicTomlStore(
-    Func<string, string, CancellationToken, ValueTask>? beforeReplace = null)
+    Func<string, string, CancellationToken, ValueTask>? beforeReplace = null,
+    bool retainAdjacentBackup = true)
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates = new(
         OperatingSystem.IsWindows()
@@ -31,6 +32,7 @@ public sealed class AtomicTomlStore(
             : StringComparer.Ordinal);
 
     private readonly Func<string, string, CancellationToken, ValueTask>? beforeReplace = beforeReplace;
+    private readonly bool retainAdjacentBackup = retainAdjacentBackup;
 
     public Task<AtomicTomlWriteResult> SetOverrideAsync(
         string? configurationPath,
@@ -107,7 +109,7 @@ public sealed class AtomicTomlStore(
         var temporaryPath = Path.Combine(
             parentDirectory,
             $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-        var backupPath = fullPath + ".bak";
+        var backupPath = retainAdjacentBackup ? fullPath + ".bak" : null;
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
 
@@ -172,11 +174,13 @@ public sealed class AtomicTomlStore(
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
-                or NotSupportedException)
+                or NotSupportedException
+                or InvalidDataException
+                or CryptographicException)
         {
             return new(
                 AtomicTomlWriteState.IoFailure,
-                File.Exists(backupPath) ? backupPath : null,
+                backupPath is not null && File.Exists(backupPath) ? backupPath : null,
                 Error: exception.Message);
         }
         finally
@@ -232,7 +236,7 @@ public sealed class AtomicTomlStore(
         var temporaryPath = Path.Combine(
             parentDirectory,
             $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-        var backupPath = fullPath + ".bak";
+        var backupPath = retainAdjacentBackup ? fullPath + ".bak" : null;
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
 
@@ -317,11 +321,13 @@ public sealed class AtomicTomlStore(
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
-                or NotSupportedException)
+                or NotSupportedException
+                or InvalidDataException
+                or CryptographicException)
         {
             return new(
                 AtomicTomlWriteState.IoFailure,
-                File.Exists(backupPath) ? backupPath : null,
+                backupPath is not null && File.Exists(backupPath) ? backupPath : null,
                 Error: exception.Message);
         }
         finally

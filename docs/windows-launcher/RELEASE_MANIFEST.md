@@ -24,6 +24,14 @@ that the update archive has exactly one root launcher and updater executable.
 The protected tag workflow repeats the inspection while requiring the reviewed
 Authenticode publisher.
 
+After those checks, the protected job generates GitHub/Sigstore provenance for
+the final setup, update archive, manifest, launcher, and updater bytes. It
+publishes the signed bundle as
+`stfc-mod-bridge-release-attestation.json`. The separate publication job
+reverifies every subject against the exact repository, release workflow, tag,
+and source commit before creating the release. See
+[`ARTIFACT_ATTESTATIONS.md`](ARTIFACT_ATTESTATIONS.md).
+
 ## Consumer and authority boundary
 
 Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the
@@ -52,12 +60,13 @@ published. The release and tag are then removed and the action is committed to
 manifests are never rewritten. Healthy installed payloads remain usable
 offline, and withdrawal never deletes local files.
 
-Schema v1 still declares `manifestAuthenticity.scheme: none`. GitHub repository
-controls and immutable release URLs distribute the manifest, while
-Authenticode independently authenticates the executable bytes. This is not a
-detached manifest signature and does not protect against compromise of the
-repository/release-control plane. A reviewed authenticated release index is a
-remaining issue #4 gate.
+Schema v1 still declares `manifestAuthenticity.scheme: none`. The producer now
+publishes independently verifiable attestation evidence for the manifest and
+final binaries, while Authenticode independently authenticates executable
+publisher/integrity. The running Bridge does not yet consume that attestation
+as release-selection authority, so this is not represented as a completed
+authenticated-manifest design. Native verification and replay/rotation policy
+remain issue #71.
 
 ## Failure behavior
 

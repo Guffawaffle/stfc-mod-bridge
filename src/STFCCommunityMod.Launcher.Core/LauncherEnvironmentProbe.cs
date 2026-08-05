@@ -10,7 +10,6 @@ public sealed class LauncherEnvironmentProbe(
 
     public LauncherEnvironmentSnapshot Capture(CancellationToken cancellationToken = default)
     {
-        var gameRunning = processInspector.IsGameRunning();
         var discovery = installDiscovery.Discover(cancellationToken);
         var persistedCandidate = discovery.Candidates.FirstOrDefault(
             candidate => candidate.Evidence.Any(
@@ -18,6 +17,8 @@ public sealed class LauncherEnvironmentProbe(
         var selectedGameDirectory = persistedCandidate?.Validation.IsValid == true
             ? persistedCandidate.GameDirectory
             : null;
+        var gameRunning = selectedGameDirectory is not null
+            && processInspector.IsGameRunning(selectedGameDirectory);
         var dimensions = CreateHealthDimensions(gameRunning, discovery, persistedCandidate);
         var aggregate = CreateAggregateState(gameRunning, discovery, persistedCandidate);
 

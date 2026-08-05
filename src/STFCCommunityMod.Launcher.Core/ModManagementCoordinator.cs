@@ -203,6 +203,77 @@ public sealed class ModManagementCoordinator(
                 cancellationToken);
     }
 
+    public async Task<ModOperationPreparation> PrepareProviderSwitchTargetAsync(
+        string gameDirectory,
+        bool isGameRunning,
+        ModInstallationEvidence sourceInstallation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceInstallation);
+        var validation = GameInstallValidator.Validate(gameDirectory);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(validation.Message);
+        }
+        if (isGameRunning || sourceInstallation.IsGameRunning)
+        {
+            throw new InvalidOperationException(
+                "Close Star Trek Fleet Command in the selected installation before switching release source.");
+        }
+        if (sourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
+            || string.IsNullOrWhiteSpace(sourceInstallation.InstalledProviderId))
+        {
+            throw new InvalidOperationException(
+                "A release-source switch requires a verified Mod Bridge-managed DLL. "
+                + "Manual or changed DLLs require their separate adoption or repair flow.");
+        }
+
+        var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
+            channel,
+            launcherVersion,
+            cancellationToken).ConfigureAwait(false);
+        return new(
+            ModOperationPreparationState.Ready,
+            $"Switch the managed community mod to {discovery.Manifest.ReleaseVersion}.",
+            validation.GameDirectory,
+            discovery.Manifest.ReleaseVersion,
+            discovery.ModArtifact,
+            ExistingArtifactPolicy.Reject,
+            ModManagementActionKind.UpdateManualInstallation,
+            ProviderId);
+    }
+
+    public Task<ModDeploymentResult> ExecuteCoordinatedAsync(
+        ModOperationPreparation preparation,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preparation);
+        ArgumentNullException.ThrowIfNull(commitParticipant);
+        if (preparation.State != ModOperationPreparationState.Ready)
+        {
+            throw new InvalidOperationException("Only a ready provider-switch artifact can execute.");
+        }
+        if (!string.Equals(preparation.ProviderId, ProviderId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Prepared provider '{preparation.ProviderId}' does not match '{ProviderId}'.");
+        }
+        return deploymentService.DeployCoordinatedAsync(
+            preparation.GameDirectory,
+            preparation.Artifact,
+            preparation.ExistingArtifactPolicy,
+            transactionId,
+            commitParticipant,
+            cancellationToken);
+    }
+
+    public Task<ModDeploymentResult> RollBackCoordinatedAsync(
+        string transactionId,
+        CancellationToken cancellationToken = default) =>
+        deploymentService.RollBackCoordinatedAsync(transactionId, cancellationToken);
+
     public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
         deploymentService.RecoverAsync(cancellationToken);
 

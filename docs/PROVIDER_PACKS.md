@@ -45,8 +45,8 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
-| Release discovery | Signed launcher release manifest | Exact launcher-reviewed GitHub release asset |
-| Windows artifact trust | SHA-256 plus Authenticode publisher | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
+| Release discovery | Signed launcher release manifest; exact reviewed current-release fallback while the asset is absent | Exact launcher-reviewed GitHub release asset |
+| Windows artifact trust | SHA-256 plus Authenticode publisher; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |
 | Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
 | Withdrawal | Signed release-manifest policy | Unknown |
@@ -61,6 +61,13 @@ one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
 are checked before the atomic deployment transaction commits. A newer or
 changed release fails closed until a maintainer reviews and updates the entry.
 
+The current Guffawaffle stable release predates the required release-manifest
+asset. Mod Bridge first attempts the canonical manifest flow and falls back
+only when that asset is absent, using the exact reviewed `v2.1.0-guffa.8` ZIP
+and DLL entry plus the normal Authenticode publisher check. An invalid or
+tampered manifest never falls back. A future manifest-bearing release removes
+the need for this temporary reviewed-release entry.
+
 `providers/known-windows-artifacts.v1.json` separately recognizes reviewed
 stable and dev DLL hashes for local provenance display. The dev entry is
 recognition-only because GitHub Actions artifacts expire and are not a durable
@@ -73,6 +80,7 @@ Manual observation recorded 2026-08-02:
 
 | Track | Immutable source | Download/container SHA-256 | `version.dll` SHA-256 |
 |---|---|---|---|
+| Guffawaffle stable 2.1.0-guffa.8 | tag commit `f93e0fcf87622448fdfd609d6835ffd820026278` | release ZIP `D164B78D3EF9AD43A8ACC6485507C40B2F7359EAF3A61814AD46A2C69779A9F4` | `6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9` |
 | NetniV stable 1.1.4 | tag commit `d912611fa1eca49fc54f363bdf8377dfebf8def0` | release ZIP `EDC67ED72E4C942B08AB81D92D23B416F80E250CE5DB151FC4B7781C174D468C` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` |
 | NetniV dev 1.1.5.1 | successful Actions run `30677057536` at `238004460c4bb93aa717e47c41089fe8b71c4cf9` | expiring Actions artifact `7DD716E85643F489A74E463A4A3B8604087338D3ED46E79F24F2FD439FA74732` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` |
 
@@ -96,24 +104,23 @@ Changing preferred source and switching the installed mod are different
 operations under the
 [mod source-selection lifecycle](windows-launcher/MOD_DEPLOYMENT.md#mod-source-selection-lifecycle):
 
-- **Select source** atomically changes only `provider-selection.json`. It
-  compares capabilities, requires explicit stable-ID confirmation when risk is
-  present, never claims the installed artifact came from the target, performs
-  no network discovery, and takes effect after restarting Mod Bridge.
+- **Select source**, when no DLL is installed, changes the provider preference
+  and provider-scoped TOML profile without downloading or claiming an artifact.
+  It compares capabilities, requires explicit stable-ID confirmation, and
+  takes effect after restarting Mod Bridge.
 - **Switch installed mod** is a separately confirmed, game-closed migration
-  built from an explicit Check-for-updates observation. It requires the
-  protected TOML-backup and cross-domain transaction contract before changing
-  artifact lineage or installed attribution.
+  built from fresh target release discovery. `LauncherProviderAtomicSwitchCoordinator`
+  stages the target artifact and uses the deployment transaction's exact
+  installation lease and rollback copy while `LauncherProviderSourceSwitchService`
+  captures/restores protected provider TOML and commits stable provider IDs.
+  The outer recovery journal reaches `Completed` before the prior managed DLL
+  rollback copy is released. An interruption therefore resumes as one rollback
+  of DLL, installed state, selection, and exact TOML bytes.
 
-The existing `LauncherProviderSourceSwitchService` and selector are prototype
-scaffolding, not the accepted production switch implementation. They currently
-copy plaintext TOML beneath `provider-switch-backups`, expose the resulting
-path, and lack protected metadata, retention, restore, a common mutation lease,
-and a recovery journal. Follow-up work must split preference persistence from
-artifact migration and replace that copy path with the reviewed protected
-backup store. The active TOML must remain byte-untouched unless the player later
-chooses an explicit restore; automatic source migration or normalization is
-not accepted.
+Provider history is DPAPI `CurrentUser` protected, DACL restricted, verified by
+identity and SHA-256, and retained as the newest five records per provider and
+validated installation. No plaintext backup path or payload is exposed in the
+switch UI, logs, or diagnostics.
 
 Staged Settings edits block switch review. This avoids discarding an in-memory
 workspace whose catalog belongs to the current provider.
