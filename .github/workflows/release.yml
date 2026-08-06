@@ -21,6 +21,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       prerelease: ${{ steps.release.outputs.prerelease }}
       commit: ${{ steps.release.outputs.commit }}
+      release_sequence: ${{ steps.release.outputs.release_sequence }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -38,6 +39,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           TARGET_COMMIT: ${{ github.sha }}
+          RELEASE_SEQUENCE: ${{ github.run_number }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v(?<version>\d+\.\d+\.\d+(?:-rc\.\d+)?)$') {
             throw "Mod Bridge release tags must use vX.Y.Z or vX.Y.Z-rc.N."
@@ -60,6 +62,10 @@ jobs:
           "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
           "prerelease=$($Matches.version.Contains('-rc.'))" >> $env:GITHUB_OUTPUT
           "commit=$tagCommit" >> $env:GITHUB_OUTPUT
+          if ($env:RELEASE_SEQUENCE -notmatch '^[1-9][0-9]*$') {
+            throw "The GitHub workflow run number is not a positive release sequence."
+          }
+          "release_sequence=$env:RELEASE_SEQUENCE" >> $env:GITHUB_OUTPUT
 
       - name: Restore, analyze, and test
         shell: pwsh
@@ -210,17 +216,27 @@ jobs:
             --no-restore `
             --filter FullyQualifiedName=STFCCommunityMod.Launcher.Core.Tests.AuthenticodeTrustPolicyTests.OptedInSignedReleasePayloadSatisfiesRuntimePolicy
 
+      - name: Resolve authenticated manifest issue time
+        id: manifest-time
+        shell: pwsh
+        run: |
+          "issued_at=$([DateTimeOffset]::UtcNow.ToString('yyyy-MM-dd''T''HH:mm:ss''Z'''))" >> $env:GITHUB_OUTPUT
+
       - name: Generate repository-owned Mod Bridge manifest
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           TARGET_COMMIT: ${{ needs.build.outputs.commit }}
           RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_SEQUENCE: ${{ needs.build.outputs.release_sequence }}
+          RELEASE_ISSUED_AT: ${{ steps.manifest-time.outputs.issued_at }}
         run: >-
           ./scripts/generate-launcher-release-manifest.ps1
           -Tag "$env:RELEASE_TAG"
           -TargetCommit "$env:TARGET_COMMIT"
           -Repository "$env:RELEASE_REPOSITORY"
+          -ReleaseSequence $env:RELEASE_SEQUENCE
+          -IssuedAtUtc "$env:RELEASE_ISSUED_AT"
 
       - name: Attest final signed release subjects
         id: attest-release

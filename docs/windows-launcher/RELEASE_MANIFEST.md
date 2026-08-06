@@ -10,12 +10,30 @@ or update channel.
 
 `scripts/generate-launcher-release-manifest.ps1` derives the release version
 and channel from the immutable tag, records the exact tagged commit, and hashes
-the already signed artifacts. It emits exactly two stable artifact identities:
+the already signed artifacts. Schema v2 also receives the positive GitHub
+workflow run number as its monotonic release sequence and one explicit
+whole-second UTC issue time. Given those inputs, artifact bytes, and the reviewed
+withdrawal ledger, generation is deterministic. It emits exactly two stable
+artifact identities:
 
 | ID | Role | User-facing? |
 |---|---|---|
 | `windows-mod-bridge-archive-x64` | ZIP containing signed Mod Bridge and its replace-on-exit helper | No; machine-consumed self-update input |
 | `windows-mod-bridge-msix-x64` | Signed Windows package containing the signed launcher | No; installed through the App Installer descriptor |
+
+The authenticated v2 metadata contract is:
+
+| Field | Contract |
+|---|---|
+| `schemaVersion` | Exact integer `2` |
+| `releaseSequence` | Positive GitHub workflow run number; compared monotonically per channel |
+| `issuedAt` / `expiresAt` | Whole-second UTC RFC 3339; stable is valid for at most 45 days and preview for at most 14 days |
+| `manifestAuthenticity.scheme` | Exact `github-sigstore-build-provenance-v1` |
+| `withdrawals` | Canonically ordered additive selectors for a release sequence, manifest SHA-256, or artifact SHA-256 |
+
+The consumer allows ten minutes of clock skew, at most one hour between
+`issuedAt` and the verified Rekor integrated time, and treats a local clock more
+than 24 hours behind its persisted observation floor as a material rollback.
 
 The manifest itself is also machine-consumed metadata. The package inspection
 gate checks that the signed MSIX has the reviewed identity, publisher,
@@ -46,11 +64,12 @@ the future #71 consumer policy.
 ## Consumer and authority boundary
 
 Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the
-provider-bound mod discovery client. It accepts only HTTPS GitHub releases in
-`Guffawaffle/stfc-mod-bridge`, derives immutable asset URLs from the exact tag
-and basename, requires the standalone manifest name, validates the closed v1
-schema, and selects exactly one supported update archive. A Mod Bridge-only
-manifest does not need or accept an implied mod authority.
+provider-bound mod discovery client. Its existing unauthenticated path accepts
+only the closed legacy v1 schema. It therefore rejects schema v2 rather than
+silently treating new authenticated fields as authority. The v2 parser, policy,
+and state store are non-authorizing groundwork until issue #96 verifies the raw
+manifest first and deliberately invokes them. A Mod Bridge-only manifest does
+not need or accept an implied mod authority.
 
 The archive size and SHA-256 must match before extraction. Extraction is
 bounded and rejects traversal, links, duplicate identities, and unsafe paths.
@@ -60,28 +79,35 @@ commit.
 
 ## Replay and withdrawal policy
 
-Stable and preview are distinct; the normal application requests stable. A
-candidate must numerically advance the running Mod Bridge version. Equal or lower
-versions fail closed before download, which prevents ordinary downgrade and
-replay after an update.
+Stable and preview have independent monotonic floors. A v2 candidate must
+advance the installed semantic version and may not fall below either the highest
+accepted sequence or semantic version for its channel. Reobserving the exact
+same sequence is allowed only when the tag, source commit, manifest/bundle
+digests, trust epoch/root digest, and complete withdrawal set are identical.
+Any rebinding fails closed.
+
+Accepted floors are stored under the external Mod Bridge state root in
+`authenticated-release-state.v1.json`. Updates take an exclusive state lock,
+write and flush a bounded temporary document, and atomically replace the prior
+file while retaining `authenticated-release-state.v1.previous.json` as recovery
+evidence. A malformed or missing primary state never silently enrolls the older
+backup or resets a floor; new update authorization fails closed while the
+installed application remains usable.
 
 Emergency containment freezes publication immediately and records the affected
-tag and digests in `docs/release-withdrawals/release-withdrawals.jsonl`; it does
-not wait for a replacement. Preserve the immutable release, tag, manifests, and
-attestation evidence for investigation. A numerically higher independently
-verified replacement is the normal recovery path, not a containment
-prerequisite. Healthy installed payloads remain usable offline, and withdrawal
-never deletes local files. Runtime enforcement of authenticated withdrawal
-policy remains issue #71. See [`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md)
-for the operator procedure.
+identity in `docs/release-withdrawals/release-withdrawals.jsonl`; it does not
+wait for a replacement. Every later manifest for that channel must retain each
+prior withdrawal selector. A higher independently verified manifest publishes
+the additive denial to online clients; offline clients cannot learn it until
+they receive newer authenticated evidence. Healthy installed payloads remain
+usable, and withdrawal never deletes local files. See
+[`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md) for the operator procedure.
 
-Schema v1 still declares `manifestAuthenticity.scheme: none`. The producer now
-publishes independently verifiable attestation evidence for the manifest and
-final binaries, while Authenticode independently authenticates executable
-publisher/integrity. The running Bridge does not yet consume that attestation
-as release-selection authority, so this is not represented as a completed
-authenticated-manifest design. Native verification and replay/rotation policy
-remain issue #71.
+Schema v1 declares `manifestAuthenticity.scheme: none` and remains ineligible
+for authenticated self-update. Schema v2 declares the exact GitHub/Sigstore
+scheme and is produced before its manifest-only attestation. The running Bridge
+does not yet consume that evidence as release-selection authority: issue #96
+owns authenticated discovery and issue #97 owns final package/updater pairing.
 
 ## Failure behavior
 
