@@ -1197,10 +1197,15 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $settingsDeadline
   Invoke-AutomationElement -Element $aboutNavigation
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Standalone copy" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
+    -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   foreach ($aboutAction in @(
       "Open STFC Mod Bridge source repository",
       "Open Mod Bridge data folder",
-      "Uninstall STFC Mod Bridge application"
+      "Open Windows Installed Apps for STFC Mod Bridge"
     )) {
     [void](Find-AutomationElement `
       -Root $root `
