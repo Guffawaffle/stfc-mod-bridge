@@ -34,6 +34,15 @@ reverifies every subject against the exact repository, release workflow, tag,
 and source commit before creating the release. See
 [`ARTIFACT_ATTESTATIONS.md`](ARTIFACT_ATTESTATIONS.md).
 
+The producer also publishes the fixed-name
+`stfc-mod-bridge-release-selection-attestation.json`. That bundle is generated
+by a separate attestation action invocation over the manifest path alone. Before
+draft staging, the workflow requires exactly one verified attestation result and
+exactly one statement subject whose basename and SHA-256 match the transferred
+manifest. The broad bundle remains the independent evidence for all final
+release subjects; the manifest-only bundle is the unambiguous input reserved for
+the future #71 consumer policy.
+
 ## Consumer and authority boundary
 
 Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the

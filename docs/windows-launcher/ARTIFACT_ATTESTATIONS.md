@@ -30,6 +30,14 @@ The workflow copies the signed bundle to
 user-facing install entry point. The MSIX, ZIP, manifest, SBOM, and attestation
 bundle are machine-consumed trust/update evidence or a standalone fallback.
 
+The workflow also creates
+`stfc-mod-bridge-release-selection-attestation.json`. This second, fixed-name
+bundle contains exactly one statement subject: the raw
+`stfc-mod-bridge-release-manifest.json` bytes and SHA-256. It supplements the
+broad release-evidence bundle rather than replacing it. The staging job verifies
+its repository, workflow, tag, commit, hosted-runner origin, result cardinality,
+subject cardinality, subject name, and digest before creating the draft release.
+
 The publication job downloads the final subjects and refuses to create the
 GitHub release unless every subject verifies against:
 
@@ -63,6 +71,26 @@ gh attestation verify .\STFCModBridge.msix `
 The descriptor, ZIP, manifest, and SBOM use the same command with their
 respective file paths. The inner launcher and updater can be extracted from the
 ZIP and verified against the same bundle.
+
+To verify the manifest-only evidence used by the planned authenticated release
+selection design, use the same command with the manifest as the subject and the
+dedicated bundle:
+
+```powershell
+gh attestation verify .\stfc-mod-bridge-release-manifest.json `
+  --repo $repository `
+  --signer-workflow $workflow `
+  --source-ref "refs/tags/$releaseTag" `
+  --source-digest $sourceCommit `
+  --deny-self-hosted-runners `
+  --bundle .\stfc-mod-bridge-release-selection-attestation.json `
+  --format json
+```
+
+Successful cryptographic verification is still insufficient if the returned
+JSON does not contain exactly one verification result whose statement has
+exactly one subject with the manifest basename and exact local SHA-256. The
+protected workflow enforces that additional policy before draft staging.
 
 Changing one byte, selecting another repository/workflow/commit/ref, or using
 evidence from a self-hosted runner must fail verification.
@@ -101,4 +129,6 @@ replacement checks.
 records issue #71's proposed consumer direction, including trust-root rotation,
 expiry, replay, withdrawal, and offline policy. Until that verifier and schema
 land together, attestations are independently verifiable producer evidence,
-not a silently activated updater authority.
+not a silently activated updater authority. Publishing the dedicated
+manifest-only bundle establishes an unambiguous producer input for #71; it does
+not make the current updater consume or trust that input.
