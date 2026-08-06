@@ -35,7 +35,12 @@ foreach ($item in @($catalog.dependencyInventory) + @($catalog.assetInventory)) 
   }
 }
 foreach ($item in $catalog.dependencyInventory) {
-  if ($item.evidenceKind -notin @("resolved-package", "runtime-pack")) {
+  if ($item.evidenceKind -notin @(
+      "resolved-package",
+      "runtime-pack",
+      "go-build-toolchain",
+      "go-build-module",
+      "go-build-graph")) {
     throw "Dependency inventory item '$($item.id)' has unsupported evidence kind '$($item.evidenceKind)'."
   }
 }

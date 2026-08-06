@@ -4,6 +4,15 @@ Status: proposed implementation direction for issue #71. The consumer remains
 fail-closed until the verifier, producer schema, fixtures, and recovery policy
 land together.
 
+Issue #94 now implements the non-authorizing verifier groundwork on its feature
+branch: a Go 1.26.5 helper locked to `sigstore-go` v1.3.0 and a 71-module
+compiled checksum inventory, the embedded public-good root at Bridge trust
+epoch 1, bounded local request and receipt contracts, a strict .NET process and
+receipt boundary, and a captured real-release rejection fixture. It is not
+packaged or consumed by discovery or update selection. Issues #95, #96, and #97
+remain responsible for authenticated manifest v2 state, discovery, and final
+signed package/updater integration respectively.
+
 ## Decision
 
 Authenticate the exact release-manifest bytes with the GitHub/Sigstore build
