@@ -1188,6 +1188,12 @@
                   Content="Export effective _configuration…"
                   automation:AutomationProperties.HelpText="Creates a separate local unredacted file after an explicit warning. It is never uploaded or included in support diagnostics."
                   automation:AutomationProperties.Name="Review local unredacted effective configuration export" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ReleaseSecurityGuidanceButton_Click"
+                  Content="Verification &amp; _recovery guidance"
+                  ToolTip="Open the bundled offline independent-verification and compromise-response guides"
+                  automation:AutomationProperties.Name="Open bundled verification and recovery guidance" />
           <Button Margin="0,0,0,10"
                   Style="{StaticResource UtilityActionButtonStyle}"
                   Click="CheckLauncherUpdateButton_Click"

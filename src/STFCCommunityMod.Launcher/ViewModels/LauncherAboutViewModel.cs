@@ -16,7 +16,8 @@ public sealed class LauncherAboutViewModel
         LauncherSettingsActivationDiagnostics diagnostics,
         Action<Uri>? openExternalUri,
         Action? openDataFolder = null,
-        Action? manageApplication = null)
+        Action? manageApplication = null,
+        Action? openReleaseSecurityGuidance = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(configurationCatalog);
@@ -69,6 +70,9 @@ public sealed class LauncherAboutViewModel
         ManageApplicationCommand = new SettingsActionCommand(
             () => manageApplication?.Invoke(),
             () => IsPackagedInstallation && manageApplication is not null);
+        OpenReleaseSecurityGuidanceCommand = new SettingsActionCommand(
+            () => openReleaseSecurityGuidance?.Invoke(),
+            () => openReleaseSecurityGuidance is not null);
     }
 
     public string ProductName { get; }
@@ -126,6 +130,8 @@ public sealed class LauncherAboutViewModel
     public ICommand OpenDataFolderCommand { get; }
 
     public ICommand ManageApplicationCommand { get; }
+
+    public ICommand OpenReleaseSecurityGuidanceCommand { get; }
 
     private static string? BuildGitHubRepositoryUrl(string repository)
     {

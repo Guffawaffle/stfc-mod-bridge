@@ -227,6 +227,20 @@
       "noticeId": null,
       "attributionStatus": "internal-build-input",
       "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/INDEPENDENT_VERIFICATION.md",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../docs/windows-launcher/COMPROMISE_RESPONSE.md",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
     }
   ],
   "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Bridge is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",

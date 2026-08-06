@@ -14,7 +14,7 @@ tag, or the GitHub "Latest" label. `v0.1.0-rc.3` is rejected because of a
 provider-state projection regression.
 
 Use `STFCModBridge.appinstaller` for an MSIX-era release. The MSIX, ZIP, release
-manifest, SBOM, and attestation bundle are machine-consumed release inputs or a
+manifest, SBOM, and attestation bundles are machine-consumed release inputs or a
 clearly labeled standalone fallback, not alternate installation entry points.
 The supported alpha environment is Windows 10 or 11 x64, a per-user Scopely
 STFC install, and the bundled Guffawaffle or NetniV stable provider.
@@ -23,6 +23,13 @@ Before continuing, verify that Windows App Installer shows the publisher as
 **Joseph Gustavson**. Windows may still identify a new certificate as uncommon
 while reputation develops. App Installer owns version-to-version update and
 Windows owns package uninstall.
+
+Before relying on release evidence, use the
+[independent verification guide](docs/windows-launcher/INDEPENDENT_VERIFICATION.md).
+It is also bundled inside Mod Bridge for offline access. Security testers and
+release operators should read the
+[compromise-response procedure](docs/windows-launcher/COMPROMISE_RESPONSE.md)
+before exercising withdrawal, root-rotation, or recovery scenarios.
 
 Application files live in the OS-managed, read-only WindowsApps package
 location. Preferences, journals, rollback data, and configuration backups are
@@ -63,9 +70,10 @@ Start with the lowest-risk lane that is useful to you.
 ## Known pre-v1 boundaries
 
 The following work remains intentionally visible rather than being implied as
-complete: configuration cleanup and migration (#8), native authenticated
-release selection (#71), separate integrity/runtime/freshness feedback (#73),
-the compromise-response guide (#74), and provider-switch review polish (#75).
+complete: packaged configuration-migration qualification (#8), native
+authenticated release selection (#71), separate integrity/runtime/freshness
+feedback (#73), clean-machine verification and compromise-response rehearsal
+(#74), and provider-switch review polish (#75).
 
 Signatures, exact hashes, and attestations establish publisher or build origin
 and byte integrity. They do not establish that the software or its dependencies

@@ -20,6 +20,7 @@ public sealed class AboutSurfaceTests
         Assert.IsNotNull(schema);
         var configurationCatalog = LauncherConfigurationSchemaLoader.Load(schema);
         Uri? openedUri = null;
+        var openedGuidance = false;
         var about = new LauncherAboutViewModel(
             BundledLauncherAboutCatalog.Load(),
             configurationCatalog,
@@ -32,7 +33,8 @@ public sealed class AboutSurfaceTests
                 "Guffawaffle",
                 "Stable",
                 "Guffawaffle/stfc-mod"),
-            uri => openedUri = uri);
+            uri => openedUri = uri,
+            openReleaseSecurityGuidance: () => openedGuidance = true);
 
         Assert.AreEqual(ModBridgeProductIdentity.ProductName, about.ProductName);
         Assert.AreEqual("Guffawaffle", about.Provider);
@@ -54,6 +56,9 @@ public sealed class AboutSurfaceTests
         about.OpenExternalLinkCommand.Execute(about.RepositoryUrl);
         Assert.AreEqual(new Uri(about.RepositoryUrl), openedUri);
         Assert.IsFalse(about.OpenExternalLinkCommand.CanExecute("file:///C:/unsafe"));
+        Assert.IsTrue(about.OpenReleaseSecurityGuidanceCommand.CanExecute(null));
+        about.OpenReleaseSecurityGuidanceCommand.Execute(null);
+        Assert.IsTrue(openedGuidance);
     }
 
     [TestMethod]
@@ -69,9 +74,9 @@ public sealed class AboutSurfaceTests
         Assert.AreEqual("Disabled", (string?)about.Attribute("HorizontalScrollBarVisibility"));
         Assert.AreEqual("Auto", (string?)about.Attribute("VerticalScrollBarVisibility"));
         Assert.IsFalse(aboutText.Contains("OpenRawTomlCommand", StringComparison.Ordinal));
-        Assert.IsFalse(aboutText.Contains("Diagnostics", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(aboutText.Contains("Recover", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(aboutText.Contains("Remove mod", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(aboutText.Contains("CopyDiagnosticsButton_Click", StringComparison.Ordinal));
+        Assert.IsFalse(aboutText.Contains("DiagnosticsRecoverButton_Click", StringComparison.Ordinal));
+        Assert.IsFalse(aboutText.Contains("DiagnosticsUninstallButton_Click", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.OpenDataFolderCommand", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.ManageApplicationCommand", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.ThirdPartyNotices", StringComparison.Ordinal));
@@ -100,6 +105,7 @@ public sealed class AboutSurfaceTests
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge releases");
         CollectionAssert.Contains(namedButtons, "Open STFC Mod Bridge license");
         CollectionAssert.Contains(namedButtons, "Open active mod provider repository");
+        CollectionAssert.Contains(namedButtons, "Open bundled verification and recovery guidance");
         CollectionAssert.Contains(namedButtons, "Open Mod Bridge data folder");
         CollectionAssert.Contains(namedButtons, "Open Windows Installed Apps for STFC Mod Bridge");
         var contributionLink = about.Descendants(Presentation + "Button")

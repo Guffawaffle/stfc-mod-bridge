@@ -19,3 +19,9 @@ publisher or build-origin properties and byte integrity. They do not prove that
 source code or dependencies are safe or free from malicious behavior.
 Diagnostics remain local unless a user explicitly shares them. Redaction is
 defense in depth, so review every export before attaching it.
+
+The application bundles offline copies of the independent verification and
+compromise-response guidance. The maintained repository copies are
+[`INDEPENDENT_VERIFICATION.md`](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
+and
+[`COMPROMISE_RESPONSE.md`](docs/windows-launcher/COMPROMISE_RESPONSE.md).

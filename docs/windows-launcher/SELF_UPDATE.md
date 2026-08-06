@@ -44,8 +44,12 @@ Stable is explicit and offline use is unaffected: update discovery is
 user-initiated from Diagnostics and has no bearing on local game launch.
 
 The discovery client requires a candidate version to advance the running
-launcher, preventing ordinary replay/downgrade. Release withdrawal requires a
-higher signed replacement, removal of the affected release and tag, and a
-reviewed entry in `docs/release-withdrawals/release-withdrawals.jsonl`.
+launcher, preventing ordinary replay/downgrade. Emergency containment freezes
+publication and adds a reviewed entry to
+`docs/release-withdrawals/release-withdrawals.jsonl` without waiting for a
+replacement. Preserve immutable release evidence; a higher independently
+verified replacement is the normal recovery path. Runtime enforcement of
+authenticated withdrawal policy remains issue #71. See
+[`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md).
 Manifest v1 is not detached-signed, so repository-control compromise remains a
 documented residual rather than being mislabeled as solved.

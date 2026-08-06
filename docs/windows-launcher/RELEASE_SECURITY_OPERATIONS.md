@@ -5,6 +5,12 @@ Azure controls that a repository checkout cannot inspect or change. Record the
 external-control evidence on the release epic before approving a production
 tag. Do not treat this document as evidence that a setting is enabled.
 
+Release users and independent reviewers follow
+[`INDEPENDENT_VERIFICATION.md`](INDEPENDENT_VERIFICATION.md). Suspected
+authority compromise follows
+[`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md); containment never waits for
+a replacement release.
+
 ## Repository-enforced release boundary
 
 The tag workflow accepts only `vX.Y.Z` and `vX.Y.Z-rc.N`, resolves the tag to a

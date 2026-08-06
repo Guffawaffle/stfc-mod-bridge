@@ -774,6 +774,46 @@ try {
     -Name "Review local unredacted effective configuration export" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
+  $securityGuidance = Find-AutomationElement `
+    -Root $root `
+    -Name "Open bundled verification and recovery guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $securityGuidance
+  $guidanceWindow = Find-AutomationElement `
+    -Root ([System.Windows.Automation.AutomationElement]::RootElement) `
+    -Name "Verification and recovery guidance window" `
+    -ControlType ([System.Windows.Automation.ControlType]::Window) `
+    -Deadline $deadline
+  [void](Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Bundled independent release verification guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline $deadline)
+  $compromiseTab = Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Compromise response guide" `
+    -ControlType ([System.Windows.Automation.ControlType]::TabItem) `
+    -Deadline $deadline
+  $selectionPattern = $null
+  if (-not $compromiseTab.TryGetCurrentPattern(
+      [System.Windows.Automation.SelectionItemPattern]::Pattern,
+      [ref]$selectionPattern)) {
+    throw "The compromise-response guidance tab does not expose SelectionItemPattern."
+  }
+  $selectionPattern.Select()
+  [void](Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Bundled compromise response guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline $deadline)
+  $closeGuidance = Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Close verification and recovery guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $closeGuidance
+  Write-Host "PASS: bundled verification and recovery guidance opens offline as a selectable read-only surface."
   Invoke-AutomationElement -Element $configurationCleanup
   [void](Find-AutomationElement `
     -Root $root `
@@ -1237,7 +1277,8 @@ try {
   foreach ($aboutAction in @(
       "Open STFC Mod Bridge source repository",
       "Open Mod Bridge data folder",
-      "Open Windows Installed Apps for STFC Mod Bridge"
+      "Open Windows Installed Apps for STFC Mod Bridge",
+      "Open bundled verification and recovery guidance"
     )) {
     [void](Find-AutomationElement `
       -Root $root `
