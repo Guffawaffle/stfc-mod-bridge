@@ -71,13 +71,14 @@ public sealed class AuthenticatedReleaseStateStore
             }
             return null;
         }
-        var info = new FileInfo(statePath);
-        if (info.Length is <= 0 or > MaximumStateBytes || (info.Attributes & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new InvalidDataException("The authenticated release state file is empty, oversized, or not a regular file.");
-        }
         try
         {
+            var info = new FileInfo(statePath);
+            if (info.Length is <= 0 or > MaximumStateBytes || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException(
+                    "The authenticated release state file is empty, oversized, or not a regular file.");
+            }
             byte[] bytes;
             using (var stream = new FileStream(
                 statePath,
@@ -124,6 +125,14 @@ public sealed class AuthenticatedReleaseStateStore
         catch (JsonException exception)
         {
             throw new InvalidDataException("The authenticated release state file is malformed or unsupported.", exception);
+        }
+        catch (InvalidDataException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidDataException("The authenticated release state file could not be read safely.", exception);
         }
     }
 

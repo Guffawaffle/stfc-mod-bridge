@@ -49,6 +49,8 @@ public sealed class AuthenticatedReleaseManifestTests
     [DataRow("wrong-scheme")]
     [DataRow("duplicate-withdrawal")]
     [DataRow("ambiguous-sequence")]
+    [DataRow("dot-signed-file")]
+    [DataRow("dotdot-signed-file")]
     public void ClosedV2SchemaRejectsMalformedOrUnsupportedValues(string mutation)
     {
         var json = Manifest();
@@ -70,6 +72,12 @@ public sealed class AuthenticatedReleaseManifestTests
                 break;
             case "ambiguous-sequence":
                 json["withdrawals"]!.AsArray().Add(Withdrawal("release-sequence", "042"));
+                break;
+            case "dot-signed-file":
+                json["artifacts"]![0]!["authenticity"]!["signedFiles"] = new JsonArray(".");
+                break;
+            case "dotdot-signed-file":
+                json["artifacts"]![0]!["authenticity"]!["signedFiles"] = new JsonArray("..");
                 break;
         }
 
@@ -349,6 +357,35 @@ public sealed class AuthenticatedReleaseManifestTests
         finally
         {
             Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
+    public void StateStoreTranslatesReadFailuresIntoFailClosedDataErrors()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"stfc-auth-state-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new AuthenticatedReleaseStateStore(root);
+            var state = AuthenticatedReleaseManifestPolicy.Evaluate(
+                Parse(Manifest()),
+                Receipt(),
+                "0.1.0",
+                LocalNow).State;
+            store.Advance(state);
+            var statePath = Path.Combine(root, "authenticated-release-state.v1.json");
+            using var exclusive = new FileStream(statePath, FileMode.Open, FileAccess.Read, FileShare.None);
+
+            var exception = Assert.ThrowsException<InvalidDataException>(() => store.Load("stable"));
+
+            Assert.IsInstanceOfType<IOException>(exception.InnerException);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
         }
     }
 

@@ -116,7 +116,7 @@ public static partial class AuthenticatedReleaseManifestParser
         return Parse(buffer.ToArray());
     }
 
-    public static AuthenticatedWindowsReleaseManifest Parse(ReadOnlySpan<byte> manifestBytes)
+    public static AuthenticatedWindowsReleaseManifest Parse(ReadOnlyMemory<byte> manifestBytes)
     {
         if (manifestBytes.IsEmpty || manifestBytes.Length > MaximumManifestBytes)
         {
@@ -124,7 +124,7 @@ public static partial class AuthenticatedReleaseManifestParser
         }
         try
         {
-            using var document = JsonDocument.Parse(manifestBytes.ToArray(), new JsonDocumentOptions
+            using var document = JsonDocument.Parse(manifestBytes, new JsonDocumentOptions
             {
                 AllowTrailingCommas = false,
                 CommentHandling = JsonCommentHandling.Disallow,
@@ -256,11 +256,12 @@ public static partial class AuthenticatedReleaseManifestParser
                 if (element.ValueKind != JsonValueKind.String
                     || element.GetString() is not { Length: > 0 and <= 260 } signedFile
                     || string.IsNullOrWhiteSpace(signedFile)
-                    || Path.GetFileName(element.GetString()) != element.GetString())
+                    || signedFile is "." or ".."
+                    || Path.GetFileName(signedFile) != signedFile)
                 {
                     throw new InvalidDataException("artifact authenticity signedFiles contains an invalid file name.");
                 }
-                return element.GetString()!;
+                return signedFile;
             }).ToArray();
             if (signedFiles.Distinct(StringComparer.Ordinal).Count() != signedFiles.Length)
             {
