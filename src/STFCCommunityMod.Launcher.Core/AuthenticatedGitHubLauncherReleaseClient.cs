@@ -434,7 +434,8 @@ internal sealed partial class AuthenticatedGitHubLauncherReleaseClient : ILaunch
         {
             throw new InvalidDataException($"{context} is outside the accepted size bound.");
         }
-        var bytes = new byte[stream.Length];
+        var length = checked((int)stream.Length);
+        var bytes = new byte[length];
         await stream.ReadExactlyAsync(bytes, cancellationToken);
         if (stream.Length != bytes.Length
             || !ReleaseSelectionAttestationPolicy.Sha256Pattern().IsMatch(expectedSha256)
@@ -454,6 +455,7 @@ internal sealed partial class AuthenticatedGitHubLauncherReleaseClient : ILaunch
         LauncherFilesystemSafety.RejectReparsePoints(root, "authenticated release evidence");
         var directory = Path.Combine(root, Guid.NewGuid().ToString("N"));
         storageSecurity.SecureDirectory(directory);
+        LauncherFilesystemSafety.RejectReparsePoints(directory, "authenticated release evidence");
         return directory;
     }
 
