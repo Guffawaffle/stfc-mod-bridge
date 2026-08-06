@@ -78,7 +78,7 @@ public sealed partial class ReleaseTrustAutomationTests
             RepositoryRoot(),
             ".github",
             "workflows",
-            "publish-update-channel.yml"));
+            "publish-update-channel.yml")).ReplaceLineEndings("\n");
         StringAssert.Contains(publicationWorkflow, "release:\n    types: [published]");
         StringAssert.Contains(publicationWorkflow, "environment:\n      name: windows-release");
         StringAssert.Contains(publicationWorkflow, "attestations: read");
