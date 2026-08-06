@@ -197,8 +197,12 @@ withdrawal behavior, and producer/consumer validation rules are defined in
 
 The provider/mod artifact contract retains this schema-v1 shape. The
 repository-owned Mod Bridge self-update producer now emits authenticated schema
-v2 as defined in `RELEASE_MANIFEST.md`; the legacy unauthenticated client rejects
-that schema until issue #96 activates verify-before-parse discovery.
+v2 as defined in `RELEASE_MANIFEST.md`. Issue #96 removes the legacy
+unauthenticated standalone client, implements bounded verify-before-parse
+discovery, and leaves the application composition explicitly unavailable until
+#97 packages and digest-pairs the installed verifier with the launcher and
+external updater. Provider/mod discovery is unchanged; NetniV remains on its
+exact reviewed-hash contract.
 
 Schema v1 shape:
 
@@ -239,7 +243,9 @@ Schema v1 shape:
 Rules:
 
 - Stable is the default channel; prerelease selection is explicit.
-- Redirects are allowed only over HTTPS.
+- Standalone evidence requests are derived from the compiled repository, exact
+  canonical tag, and fixed manifest/bundle basenames. GitHub asset redirects
+  are accepted only to HTTPS `release-assets.githubusercontent.com`.
 - HTTP success, declared size, and SHA-256 are mandatory.
 - A download is untrusted until verification succeeds.
 - Unknown manifest schema versions fail closed with an actionable message.
@@ -250,6 +256,11 @@ Rules:
 
 Self-update must use a separate bootstrapper or replace-on-exit helper. The
 running launcher never overwrites its own executable in place.
+
+The current integration build fails standalone update checks closed with an
+actionable message until #97 supplies the signed verifier/helper package and
+the schema-v2 updater handoff. Packaged MSIX installations remain Windows App
+Installer-owned.
 
 ## Configuration contract
 

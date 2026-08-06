@@ -63,13 +63,14 @@ the future #71 consumer policy.
 
 ## Consumer and authority boundary
 
-Mod Bridge uses `GitHubLauncherReleaseClient`, which is separate from the
-provider-bound mod discovery client. Its existing unauthenticated path accepts
-only the closed legacy v1 schema. It therefore rejects schema v2 rather than
-silently treating new authenticated fields as authority. The v2 parser, policy,
-and state store are non-authorizing groundwork until issue #96 verifies the raw
-manifest first and deliberately invokes them. A Mod Bridge-only manifest does
-not need or accept an implied mod authority.
+Mod Bridge's standalone path uses
+`AuthenticatedGitHubLauncherReleaseClient`, separate from provider-bound mod
+discovery. It treats tag/draft/prerelease/asset-name data only as discovery,
+derives fixed HTTPS manifest and bundle URLs, invokes a prevalidated installed
+verifier, independently rehashes the same files, and applies v2 policy before
+projecting an archive selection. The legacy unauthenticated standalone client
+has been removed. A Mod Bridge-only manifest does not need or accept an implied
+mod authority.
 
 The archive size and SHA-256 must match before extraction. Extraction is
 bounded and rejects traversal, links, duplicate identities, and unsafe paths.
@@ -105,9 +106,11 @@ usable, and withdrawal never deletes local files. See
 
 Schema v1 declares `manifestAuthenticity.scheme: none` and remains ineligible
 for authenticated self-update. Schema v2 declares the exact GitHub/Sigstore
-scheme and is produced before its manifest-only attestation. The running Bridge
-does not yet consume that evidence as release-selection authority: issue #96
-owns authenticated discovery and issue #97 owns final package/updater pairing.
+scheme and is produced before its manifest-only attestation. Issue #96 adds the
+authenticated discovery/evidence/state consumer and removes the legacy
+standalone v1 client from application composition. Authorization remains
+unavailable in integration builds until issue #97 packages the signed,
+digest-paired verifier and implements final external-updater revalidation.
 
 ## Failure behavior
 
