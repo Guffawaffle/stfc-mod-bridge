@@ -75,7 +75,7 @@ $package = Join-Path $packageDirectory "STFCModBridge.msix"
 $appInstaller = Join-Path $packageDirectory "STFCModBridge.appinstaller"
 $manifestTemplate = Join-Path $repoRoot "packaging\windows\AppxManifest.xml.in"
 $appInstallerTemplate = Join-Path $repoRoot "packaging\windows\STFCModBridge.appinstaller.xml.in"
-$logo = Join-Path $repoRoot "assets\launcher.png"
+$logoDirectory = Join-Path $repoRoot "packaging\windows\Assets"
 $appInstallerUri = "$baseUri/$channel/STFCModBridge.appinstaller"
 $packageUri = "$baseUri/packages/v$Version/STFCModBridge.msix"
 
@@ -90,7 +90,9 @@ try {
   New-Item -ItemType Directory -Path (Join-Path $layout "Assets") -Force | Out-Null
   New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
   Copy-Item -LiteralPath $launcher -Destination (Join-Path $layout "STFCModBridge.exe") -Force
-  Copy-Item -LiteralPath $logo -Destination (Join-Path $layout "Assets\Logo.png") -Force
+  Copy-Item -Path (Join-Path $logoDirectory "*.png") `
+    -Destination (Join-Path $layout "Assets") `
+    -Force
 
   $manifest = (Get-Content -Raw -LiteralPath $manifestTemplate).Replace(
     "__PACKAGE_VERSION__",

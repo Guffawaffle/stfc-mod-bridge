@@ -138,7 +138,7 @@
       "evidenceKind": "package-transitive"
     },
     {
-      "id": "STFCCommunityMod.Launcher|ApplicationIcon|Assets/stfc-community-mod.ico",
+      "id": "STFCCommunityMod.Launcher|ApplicationIcon|Assets/stfc-mod-bridge.ico",
       "version": null,
       "noticeId": null,
       "attributionStatus": "review-pending",
@@ -152,14 +152,7 @@
       "evidenceKind": "project-input"
     },
     {
-      "id": "STFCCommunityMod.Launcher|Resource|Assets/stfc-community-mod.ico",
-      "version": null,
-      "noticeId": null,
-      "attributionStatus": "review-pending",
-      "evidenceKind": "project-input"
-    },
-    {
-      "id": "STFCCommunityMod.Launcher|Resource|../../assets/launcher.png",
+      "id": "STFCCommunityMod.Launcher|Resource|Assets/stfc-mod-bridge.ico",
       "version": null,
       "noticeId": null,
       "attributionStatus": "review-pending",

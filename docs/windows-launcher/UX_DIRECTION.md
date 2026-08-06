@@ -134,19 +134,22 @@ native/custom rendering.
 
 ### Application identity assets
 
-The production launcher uses the existing community-mod artwork in
-`assets/launcher.png` and `assets/launcher.icns`. The Windows asset pipeline
-produces a multi-resolution `.ico` from that approved source and applies it
-consistently to:
+The production launcher uses its own Bridge console-core identity in
+`assets/stfc-mod-bridge.png`. Its segmented cyan-to-violet console rings and
+central connection hub extend the visual language of the canonical Bridge
+banner without reusing the community mod's macOS launcher artwork. The Windows
+asset pipeline produces a multi-resolution `.ico` and explicit MSIX raster
+assets from that approved source and applies them consistently to:
 
 - the executable and taskbar;
 - the window and task switcher;
 - shortcuts and installer/update surfaces;
 - About and release-facing launcher artwork where appropriate.
 
-The launcher does not invent substitute release artwork. The final asset must
-remain legible at small Windows icon sizes and in both light and dark shell
-contexts.
+The final asset must remain legible at small Windows icon sizes and in both
+light and dark shell contexts. It must not introduce a Starfleet delta,
+targeting reticle, wrench, ship silhouette, franchise insignia, typography, or
+orange substrate.
 
 Home reuses the canonical `assets/portfolio/stfc-mod-bridge-banner.png`
 directly as a linked WPF resource. Its opaque dark substrate preserves the

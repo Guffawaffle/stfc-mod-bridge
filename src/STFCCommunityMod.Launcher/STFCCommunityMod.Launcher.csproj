@@ -9,7 +9,7 @@
     <AssemblyTitle>STFC Mod Bridge</AssemblyTitle>
     <FileDescription>STFC Mod Bridge</FileDescription>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\stfc-community-mod.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\stfc-mod-bridge.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -28,9 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\stfc-community-mod.ico" />
-    <Resource Include="..\..\assets\launcher.png"
-              Link="Assets\stfc-community-mod.png" />
+    <Resource Include="Assets\stfc-mod-bridge.ico" />
     <Resource Include="..\..\assets\portfolio\stfc-mod-bridge-banner.png"
               Link="Assets\stfc-mod-bridge-banner.png" />
     <EmbeddedResource Include="..\..\providers\bundled-provider-catalog.v1.json"
