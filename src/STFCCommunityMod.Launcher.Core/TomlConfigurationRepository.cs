@@ -13,10 +13,13 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
             throw new ArgumentException(
                 "Supply either an atomic store or a mutation backup, not both.");
         }
-        this.store = store ?? new AtomicTomlStore(
-            mutationBackup is null ? null : mutationBackup.BeforeReplaceAsync,
-            retainAdjacentBackup: mutationBackup is null);
+        this.store = store
+            ?? (mutationBackup is null
+                ? new AtomicTomlStore()
+                : new AtomicTomlStore(mutationBackup));
     }
+
+    public bool ProducesVerifiedBackupReceipt => store.ProducesVerifiedBackupReceipt;
 
     public ConfigurationRepositoryReadResult Read(string? configurationPath)
     {
@@ -103,13 +106,15 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                 write.State,
                 BackupPath: write.BackupPath,
                 ValidationError: write.ValidationError,
-                Error: write.Error);
+                Error: write.Error,
+                BackupReceipt: write.BackupReceipt);
         }
 
         return new(
             write.State,
             new ConfigurationDocumentSnapshot(request.Path, transformed.Contents),
-            write.BackupPath);
+            write.BackupPath,
+            BackupReceipt: write.BackupReceipt);
     }
 
     public async Task<ConfigurationRepositoryCommitResult> CommitDocumentAsync(
@@ -138,8 +143,17 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
             request.DesiredContents,
             cancellationToken).ConfigureAwait(false);
         return write.IsSuccess
-            ? new(write.State, new ConfigurationDocumentSnapshot(request.Path, request.DesiredContents), write.BackupPath)
-            : new(write.State, BackupPath: write.BackupPath, ValidationError: write.ValidationError, Error: write.Error);
+            ? new(
+                write.State,
+                new ConfigurationDocumentSnapshot(request.Path, request.DesiredContents),
+                write.BackupPath,
+                BackupReceipt: write.BackupReceipt)
+            : new(
+                write.State,
+                BackupPath: write.BackupPath,
+                ValidationError: write.ValidationError,
+                Error: write.Error,
+                BackupReceipt: write.BackupReceipt);
     }
 
     private static SparseTomlEditResult ApplyChanges(

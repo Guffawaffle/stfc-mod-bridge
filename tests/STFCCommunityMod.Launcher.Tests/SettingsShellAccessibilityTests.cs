@@ -156,12 +156,42 @@ public sealed class SettingsShellAccessibilityTests
         CollectionAssert.Contains(names, "Open detected game folder");
         CollectionAssert.Contains(names, "Open community mod logs folder");
         CollectionAssert.Contains(names, "Copy the displayed redacted diagnostic summary");
+        CollectionAssert.Contains(names, "Review eligible configuration cleanup");
+        CollectionAssert.Contains(names, "Apply selected reviewed configuration cleanup");
+        CollectionAssert.Contains(names, "Cancel configuration cleanup without changing the file");
+        CollectionAssert.Contains(names, "Review local unredacted effective configuration export");
+        CollectionAssert.Contains(names, "Confirm unredacted effective configuration export");
         CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
         CollectionAssert.Contains(names, "Review removal of the Mod Bridge-managed community mod");
 
         Assert.IsFalse(
             document.Descendants()
                 .Any(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticsDialog"));
+    }
+
+    [TestMethod]
+    public void ConfigurationCleanupAndEffectiveExportKeepDistinctSafetyContracts()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var cleanup = document.Descendants()
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ConfigurationCleanupDialog");
+        var export = document.Descendants()
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "EffectiveConfigurationExportDialog");
+        var cleanupText = string.Join(" ", cleanup.Descendants().Attributes("Text").Select(attribute => attribute.Value));
+        var exportText = string.Join(" ", export.Descendants().Attributes("Text").Select(attribute => attribute.Value));
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+
+        StringAssert.Contains(source, "unknown content and values remain untouched");
+        StringAssert.Contains(cleanupText, "creates and verifies a protected provider-scoped backup");
+        StringAssert.Contains(cleanupText, "Mod Bridge does not restart");
+        StringAssert.Contains(exportText, "intentionally unredacted");
+        StringAssert.Contains(exportText, "Nothing is uploaded automatically");
+        Assert.IsTrue(cleanup.Descendants(Presentation + "Button").Any(button =>
+            (string?)button.Attribute("Click") == "CancelConfigurationCleanupButton_Click"));
+        Assert.IsTrue(cleanup.Descendants(Presentation + "Button").Any(button =>
+            (string?)button.Attribute("Click") == "ConfirmConfigurationCleanupButton_Click"));
     }
 
     [TestMethod]

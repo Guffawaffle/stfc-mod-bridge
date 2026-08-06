@@ -1,3 +1,4 @@
+using System.Text;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
@@ -220,5 +221,85 @@ public sealed class AtomicTomlStoreTests
         Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
         Assert.IsFalse(File.Exists(configPath));
         Assert.IsFalse(File.Exists(configPath + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task VerifiedBackupReceiptSurvivesPostBackupConflict()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        var external = Encoding.UTF8.GetBytes(
+            "[settings]\nenabled = false\nexternal = \"preserve\"\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var receipt = new ConfigurationBackupReceipt(
+            "backup-id",
+            "installation-id",
+            "guffawaffle",
+            null,
+            new DateTimeOffset(2026, 8, 6, 0, 0, 0, TimeSpan.Zero),
+            ConfigurationDocumentRevision.FromContents(original).Sha256,
+            "configuration-migration",
+            "guffawaffle/stable");
+        var mutationBackup = new ReplacingMutationBackup(receipt, external);
+        var store = new AtomicTomlStore(mutationBackup);
+
+        var result = await store.SaveDocumentAsync(configPath, original, updated);
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        Assert.AreEqual(receipt, result.BackupReceipt);
+        CollectionAssert.AreEqual(original, mutationBackup.ExpectedContents);
+        CollectionAssert.AreEqual(external, await File.ReadAllBytesAsync(configPath));
+        Assert.IsFalse(File.Exists(configPath + ".bak"));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task MismatchedBackupReceiptPreventsReplacement()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var receipt = new ConfigurationBackupReceipt(
+            "backup-id",
+            "installation-id",
+            "guffawaffle",
+            null,
+            new DateTimeOffset(2026, 8, 6, 0, 0, 0, TimeSpan.Zero),
+            "NOT-THE-SOURCE-HASH",
+            "configuration-migration",
+            null);
+        var store = new AtomicTomlStore(
+            new ReplacingMutationBackup(receipt, original));
+
+        var result = await store.SaveDocumentAsync(configPath, original, updated);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State);
+        Assert.IsNull(result.BackupReceipt);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configPath));
+        Assert.IsFalse(File.Exists(configPath + ".bak"));
+    }
+
+    private sealed class ReplacingMutationBackup(
+        ConfigurationBackupReceipt receipt,
+        byte[] replacement) : IConfigurationMutationBackup
+    {
+        public byte[]? ExpectedContents { get; private set; }
+
+        public async ValueTask<ConfigurationBackupReceipt> BeforeReplaceAsync(
+            string configurationPath,
+            byte[] expectedContents,
+            CancellationToken cancellationToken)
+        {
+            ExpectedContents = [.. expectedContents];
+            await File.WriteAllBytesAsync(
+                configurationPath,
+                replacement,
+                cancellationToken);
+            return receipt;
+        }
     }
 }

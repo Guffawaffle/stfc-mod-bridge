@@ -161,7 +161,13 @@ public sealed class ProviderScopedConfigurationBackupStoreTests
             updated));
 
         Assert.IsTrue(result.IsSuccess, result.Error);
+        Assert.IsNotNull(result.BackupReceipt);
         var receipt = store.List(gameDirectory, "guffawaffle").Single();
+        Assert.AreEqual(receipt, result.BackupReceipt);
+        Assert.AreEqual("configuration-save", receipt.Reason);
+        Assert.AreEqual(
+            ConfigurationDocumentRevision.FromContents(original).Sha256,
+            receipt.ContentSha256);
         CollectionAssert.AreEqual(
             original,
             store.Read(gameDirectory, "guffawaffle", receipt.BackupId));

@@ -478,7 +478,8 @@ public sealed record SyncTopologyPersistenceCommitResult(
     SyncTopologyPersistencePlan? Plan = null,
     string? BackupPath = null,
     SparseTomlError? ValidationError = null,
-    string? Error = null);
+    string? Error = null,
+    ConfigurationBackupReceipt? BackupReceipt = null);
 
 public sealed class SyncTopologyEditSession
 {
@@ -595,7 +596,8 @@ public sealed class SyncTopologyEditSession
                 Plan: plan,
                 BackupPath: write.BackupPath,
                 ValidationError: write.ValidationError,
-                Error: write.Error);
+                Error: write.Error,
+                BackupReceipt: write.BackupReceipt);
         }
 
         snapshot = new ConfigurationDocumentSnapshot(snapshot.Path, edit.Contents);
@@ -606,7 +608,12 @@ public sealed class SyncTopologyEditSession
             new Dictionary<string, SyncTargetKindChangePolicy>(StringComparer.Ordinal));
         HasPendingChanges = false;
         IsStale = false;
-        return new(write.State, snapshot, plan, write.BackupPath);
+        return new(
+            write.State,
+            snapshot,
+            plan,
+            write.BackupPath,
+            BackupReceipt: write.BackupReceipt);
     }
 
     internal SyncTopologyTomlLoadResult AcceptCommittedSnapshot(ConfigurationDocumentSnapshot committedSnapshot)

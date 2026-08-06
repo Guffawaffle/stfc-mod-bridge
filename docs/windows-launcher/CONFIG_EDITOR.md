@@ -1,6 +1,6 @@
 # Windows Launcher Configuration Editor
 
-Status: WL-006 vertical slice in progress
+Status: v1 implementation complete; packaged qualification remains in issue #30
 
 ## Contract
 
@@ -10,9 +10,13 @@ is the catalog authority; the mod runtime remains the TOML parser and default
 authority.
 
 The selected release source chooses the matching schema and capabilities.
-Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV's
-configuration schema remains explicitly unknown, so its settings editor fails
-closed instead of reusing Guffawaffle metadata. TOML remains the compatibility
+Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV
+uses a provider-owned versioned schema set that resolves only an exact reviewed
+provider, track, release version, and full source commit. The current stable
+binding is NetniV `1.1.4` at `d912611fa1eca49fc54f363bdf8377dfebf8def0`;
+the captured dev `1.1.5.1` catalog remains unavailable unless a selected release
+matches its exact reviewed identity. Unreviewed releases fail closed instead of
+reusing Guffawaffle or adjacent NetniV metadata. TOML remains the compatibility
 boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
@@ -23,7 +27,9 @@ uses the protected exact-byte backup contract in
 [`MOD_DEPLOYMENT.md`](MOD_DEPLOYMENT.md#protected-toml-backup-contract). That
 backup is not the editor's adjacent transactional `.bak`: it is encrypted,
 retained, restored, and excluded from support evidence under a separate
-source-transition journal. Automatic TOML migration remains out of scope.
+source-transition journal. Broad or inferred TOML migration remains out of
+scope. Diagnostics may separately offer explicit catalog-authorized cleanup for
+one valid alias move or one redundant alias removal after a redacted preview.
 
 ## Accepted modular architecture boundary
 
@@ -133,6 +139,10 @@ counts and opening time before physical assembly separation.
 ## Implemented foundation
 
 - The packaged launcher embeds and fail-closed loads schema version `1.0.0`.
+- The packaged NetniV schema set materializes stable `1.1.4` and dev `1.1.5.1`
+  catalogs from shared metadata plus reviewed deltas. Runtime status, feature
+  gates, release identity, and full source SHA remain catalog data rather than
+  WPF inference.
 - Startup and game-process events refresh Home only. A narrow lifecycle
   controller and deterministic counter tests prevent those events from
   reloading the active Settings document; confirmed game-installation changes
@@ -157,6 +167,15 @@ counts and opening time before physical assembly separation.
   the workspace stale, and leave replacement policy to the application layer.
   Successful atomic replacement is the only path that advances the workspace
   and edit-session baselines.
+- Explicit cleanup binds the selected remediation IDs to the source revision,
+  provider, channel, catalog ID, and catalog version. Apply rechecks those
+  identities, requires a verified protected-backup receipt, commits through the
+  repository, and returns a post-commit diagnosis. Unknown bytes are never
+  cleanup candidates.
+- The effective-configuration export is a separate local JSON document. It is
+  intentionally unredacted, warns before the file picker, includes value origin
+  and runtime status, and never enters diagnostics, clipboard support output,
+  or an upload path.
 - The catalog retains all 332 settings while exposing only player-facing
   directly editable settings to the normal workspace. Dynamic
   `sync.targets.*.*` templates remain machine-readable but are withheld until

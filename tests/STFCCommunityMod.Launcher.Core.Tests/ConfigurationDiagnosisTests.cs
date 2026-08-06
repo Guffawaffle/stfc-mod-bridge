@@ -274,6 +274,30 @@ public sealed class ConfigurationDiagnosisTests
         Assert.IsFalse(serialized.Contains(endpoint, StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void CatalogRuntimeStatusProducesActionableValueFreeWarning()
+    {
+        var root = JsonNode.Parse(File.ReadAllText(CatalogPath()))!.AsObject();
+        var setting = root["settings"]!.AsArray()
+            .Select(node => node!.AsObject())
+            .Single(node => node["path"]!.GetValue<string>() == "graphics.default_system_zoom");
+        setting["runtimeStatus"] = "parsed-unused";
+        setting["featureGates"] = new JsonArray("patches.zoomhooks=true");
+        using var stream = JsonStream(root.ToJsonString());
+        var catalog = LauncherConfigurationSchemaLoader.Load(stream);
+
+        var report = Analyzer().Analyze(
+            Snapshot(Encoding.UTF8.GetBytes("[graphics]\ndefault_system_zoom = 4321\n")),
+            LauncherConfigurationDiagnosisEvidence.Supported("guffawaffle", "stable", catalog));
+        var finding = report.Findings.Single(item => item.Code == "CONFIG_SETTING_PARSED_UNUSED");
+
+        Assert.AreEqual(ConfigurationDiagnosisSeverity.Attention, finding.Severity);
+        Assert.AreEqual("graphics.default_system_zoom", finding.CanonicalPath);
+        Assert.AreEqual("graphics.default_system_zoom", finding.SourcePath);
+        Assert.IsNull(finding.RemediationId);
+        Assert.IsFalse(JsonSerializer.Serialize(finding).Contains("4321", StringComparison.Ordinal));
+    }
+
     private static ConfigurationDiagnosisReport Diagnose(string text) =>
         Analyzer().Analyze(Snapshot(Encoding.UTF8.GetBytes(text)), SupportedEvidence());
 

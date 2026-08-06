@@ -250,7 +250,8 @@ public sealed class ConfigurationWorkspace
                 Plan: plan,
                 BackupPath: result.BackupPath,
                 ValidationError: result.ValidationError,
-                Error: result.Error);
+                Error: result.Error,
+                BackupReceipt: result.BackupReceipt);
         }
 
         var acceptedSettings = settingsSession.AcceptCommittedBaseline(result.CommittedSnapshot.Contents);
@@ -269,7 +270,12 @@ public sealed class ConfigurationWorkspace
             ConfigurationWorkspaceTransitionReason.Committed,
             plan.Mutations.Select(mutation => mutation.Path),
             DraftInvalidations | ConfigurationWorkspaceInvalidation.ExternalState);
-        return new(result.State, result.CommittedSnapshot, plan, result.BackupPath);
+        return new(
+            result.State,
+            result.CommittedSnapshot,
+            plan,
+            result.BackupPath,
+            BackupReceipt: result.BackupReceipt);
     }
 
     public async Task<ConfigurationRepositoryCommitResult> CommitAsync(

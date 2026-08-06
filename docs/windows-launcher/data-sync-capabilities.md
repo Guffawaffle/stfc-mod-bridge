@@ -143,11 +143,12 @@ identity mismatch disables both editors instead of projecting Guffawaffle capabi
 The WPF Data Sync view then projects feed names and supported-feed sets from `SyncTargetTypeCatalog`; it does not carry
 a second feed-capability map.
 
-The provider-pack v1 contract does **not** contain an independently portable Data Sync catalog resource. Today the
-typed catalog documents the established Guffawaffle runtime contract and is reachable through the verified
-Guffawaffle configuration-catalog composition. NetniV's configuration and sync contracts remain unknown and fail
-closed. Supporting another provider's editable Data Sync topology therefore requires a reviewed provider-specific
-configuration/sync contract; the launcher must not infer compatibility from TOML shape or display names.
+The provider-pack v1 contract does **not** contain an independently portable Data Sync catalog resource. The typed
+catalog is projected from the selected provider's verified configuration catalog. Guffawaffle uses its generated
+runtime contract; NetniV uses the exact reviewed release catalog selected from its versioned schema set. NetniV stable
+`1.1.4` is currently established, while unreviewed versions and commits remain unknown and fail closed. Supporting any
+later provider release still requires reviewed provider-specific configuration/sync evidence; the launcher must not
+infer compatibility from TOML shape, a nearby branch, or display names.
 
 ### Visual validation
 

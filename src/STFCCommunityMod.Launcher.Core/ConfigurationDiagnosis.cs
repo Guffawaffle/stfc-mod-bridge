@@ -34,7 +34,8 @@ public sealed record ConfigurationDiagnosisFinding(
     string? CanonicalPath,
     int? LineNumber,
     LauncherConfigurationSensitivity Sensitivity,
-    string? RemediationId = null);
+    string? RemediationId = null,
+    string? SourcePath = null);
 
 public sealed class ConfigurationDiagnosisReport
 {
@@ -129,8 +130,8 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
             snapshot.Revision,
             evidence.ProviderId,
             evidence.ChannelId,
-            catalog is null ? null : $"{catalog.Source.StableId}.configuration",
-            catalog?.SchemaVersion.ToString(),
+            catalog?.Identity.CatalogId,
+            catalog?.Identity.CatalogVersion.ToString(),
             timeProvider.GetUtcNow(),
             "selected-configuration-document");
         if (catalog is null)
@@ -207,6 +208,7 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         {
             recognizedAssignments.Add(configured.CanonicalPath);
             AddInvalidValueFinding(setting, configured, findings);
+            AddRuntimeStatusFinding(setting, configured, findings);
         }
 
         var aliases = setting.Aliases
@@ -219,6 +221,12 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         {
             recognizedAssignments.Add(configured.CanonicalPath);
             AddInvalidValueFinding(setting, configured, findings);
+            AddRuntimeStatusFinding(setting, configured, findings);
+            var canMoveAlias = canonical.Length == 0
+                && aliases.Length == 1
+                && LauncherConfigurationEditSession.ValidateSettingValue(
+                    setting,
+                    configured.RenderedValue) is null;
             findings.Add(
                 Finding(
                     "CONFIG_ALIAS_PRESENT",
@@ -226,7 +234,10 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                     "A compatibility or deprecated alias is present for a known setting.",
                     setting,
                     configured.LineNumber,
-                    "review-configuration-alias"));
+                    canMoveAlias
+                        ? AliasRemediationId("move", configured.CanonicalPath, setting.Path)
+                        : null,
+                    configured.CanonicalPath));
         }
 
         if (canonical.Length == 1)
@@ -253,7 +264,10 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                             : "A canonical setting and its alias assign conflicting or invalid values.",
                         setting,
                         alias.LineNumber,
-                        "review-configuration-alias"));
+                        equivalent
+                            ? AliasRemediationId("remove", alias.CanonicalPath, setting.Path)
+                            : null,
+                        alias.CanonicalPath));
             }
         }
 
@@ -284,7 +298,7 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                         : "Multiple aliases assign conflicting or invalid values to one known setting.",
                     setting,
                     aliases[1].Configured.LineNumber,
-                    "review-configuration-alias"));
+                    null));
         }
     }
 
@@ -306,6 +320,52 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                 setting,
                 configured.LineNumber,
                 "review-invalid-configuration-value"));
+    }
+
+    private static void AddRuntimeStatusFinding(
+        LauncherConfigurationSetting setting,
+        SparseTomlOverride configured,
+        List<ConfigurationDiagnosisFinding> findings)
+    {
+        var (code, severity, summary) = setting.RuntimeStatus switch
+        {
+            LauncherConfigurationRuntimeStatus.Conditional => (
+                "CONFIG_SETTING_CONDITIONAL",
+                ConfigurationDiagnosisSeverity.Informational,
+                "This known setting is effective only when its catalog-declared feature gates are active."),
+            LauncherConfigurationRuntimeStatus.ParsedUnused => (
+                "CONFIG_SETTING_PARSED_UNUSED",
+                ConfigurationDiagnosisSeverity.Attention,
+                "The selected provider parses this setting but does not currently use it at runtime."),
+            LauncherConfigurationRuntimeStatus.Ignored => (
+                "CONFIG_SETTING_IGNORED",
+                ConfigurationDiagnosisSeverity.Attention,
+                "The selected provider currently ignores this known setting."),
+            LauncherConfigurationRuntimeStatus.Legacy => (
+                "CONFIG_SETTING_LEGACY",
+                ConfigurationDiagnosisSeverity.Attention,
+                "This is a known legacy setting whose behavior is limited by the selected provider catalog."),
+            LauncherConfigurationRuntimeStatus.Removed => (
+                "CONFIG_SETTING_REMOVED",
+                ConfigurationDiagnosisSeverity.Attention,
+                "This known setting has been removed from the selected provider runtime and is preserved without cleanup."),
+            _ => (null, ConfigurationDiagnosisSeverity.Informational, null),
+        };
+        if (code is null || summary is null)
+        {
+            return;
+        }
+
+        findings.Add(
+            new(
+                code,
+                severity,
+                ConfigurationDiagnosisConfidence.Established,
+                summary,
+                setting.Path,
+                configured.LineNumber,
+                setting.Sensitivity,
+                SourcePath: configured.CanonicalPath));
     }
 
     private static void AddUnknownContent(
@@ -437,7 +497,8 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         string summary,
         LauncherConfigurationSetting setting,
         int? lineNumber,
-        string? remediationId) =>
+        string? remediationId,
+        string? sourcePath = null) =>
         new(
             code,
             severity,
@@ -446,7 +507,14 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
             setting.Path,
             lineNumber,
             setting.Sensitivity,
-            remediationId);
+            remediationId,
+            sourcePath);
+
+    private static string AliasRemediationId(
+        string operation,
+        string sourcePath,
+        string canonicalPath) =>
+        $"configuration.alias.{operation}:{sourcePath}->{canonicalPath}";
 
     private static bool MatchesPath(string pattern, string path)
     {

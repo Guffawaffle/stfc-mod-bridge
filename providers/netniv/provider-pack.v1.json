@@ -17,15 +17,15 @@
       }
     ],
     "configurationSchema": {
-      "status": "unknown",
-      "resourceName": null
+      "status": "supported",
+      "resourceName": "STFCCommunityMod.Launcher.Schemas.Netniv.v1.json"
     },
     "runtimeManifest": {
       "status": "unknown",
       "resourceName": null
     },
     "capabilities": [
-      { "id": "settings.catalog", "status": "unknown" },
+      { "id": "settings.catalog", "status": "supported" },
       { "id": "runtime.manifest", "status": "unknown" },
       { "id": "mod.release-discovery", "status": "supported" },
       { "id": "mod.artifact-trust", "status": "supported" },

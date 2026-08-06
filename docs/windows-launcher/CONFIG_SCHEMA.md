@@ -103,10 +103,13 @@ change.
 
 ## Release source and persistence boundary
 
-The schema declares `source.id = "guffawaffle"`. It describes Guffawaffle
-artifacts only. A NetniV installation must use a NetniV-published schema or an
-explicit compatibility adapter; the launcher must not silently apply this
-schema to a different release source.
+The generated Guffawaffle schema declares `source.id = "guffawaffle"` and
+describes Guffawaffle artifacts only. NetniV uses the repository-owned
+`providers/netniv/configuration-schema-set.v1.json`, derived from reviewed
+upstream source evidence. Its loader requires an exact provider, track, release
+version, and full commit SHA before materializing a catalog. Shared metadata and
+explicit stable/dev deltas do not authorize adjacent or future releases. The
+launcher must never apply either provider's catalog to another release source.
 
 Release-source selection belongs to launcher state, not the mod TOML. Switching
 sources is a migration transaction with compatibility preview, confirmation,
