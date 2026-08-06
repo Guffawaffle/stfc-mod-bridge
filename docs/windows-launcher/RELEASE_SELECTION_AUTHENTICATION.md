@@ -1,17 +1,19 @@
 # Release-selection authentication
 
-Status: proposed implementation direction for issue #71. The consumer remains
-fail-closed until the verifier, producer schema, fixtures, and recovery policy
-land together.
+Status: accepted implementation direction for issue #71. The consumer remains
+fail-closed until the verifier, producer schema, discovery, packaging, fixtures,
+and recovery policy land together.
 
-Issue #94 now implements the non-authorizing verifier groundwork on its feature
-branch: a Go 1.26.5 helper locked to `sigstore-go` v1.3.0 and a 71-module
+Issue #94 implements the non-authorizing verifier groundwork: a Go 1.26.5
+helper locked to `sigstore-go` v1.3.0 and a 71-module
 compiled checksum inventory, the embedded public-good root at Bridge trust
 epoch 1, bounded local request and receipt contracts, a strict .NET process and
-receipt boundary, and a captured real-release rejection fixture. It is not
-packaged or consumed by discovery or update selection. Issues #95, #96, and #97
-remain responsible for authenticated manifest v2 state, discovery, and final
-signed package/updater integration respectively.
+receipt boundary, and a captured real-release rejection fixture. Issue #95 adds
+the deterministic schema-v2 producer, strict authenticated parser, freshness
+and withdrawal policy, and atomic per-channel monotonic state. Neither slice is
+packaged or consumed by discovery or update selection. Issues #96 and #97 remain
+responsible for authenticated discovery and final signed package/updater
+integration respectively.
 
 ## Decision
 
@@ -199,13 +201,28 @@ no authenticated update could be established.
 
 ## Freshness, replay, freeze, and withdrawal
 
-The next manifest schema must add authenticated release sequence, issued time,
-expiry, and withdrawal entries. Times use UTC RFC 3339 and are checked against
+Manifest schema v2 adds authenticated release sequence, issued time, expiry,
+and withdrawal entries. Times use whole-second UTC RFC 3339 and are checked against
 the local clock plus verified Rekor integrated time. `issuedAt` must be no later
 than integrated time plus allowed clock skew, and the interval from `issuedAt`
 to integrated time must not exceed a compiled maximum signing delay. Expiry is
 bounded from Rekor integrated time, not from an unauthenticated transport
 timestamp.
+
+The frozen v1 cadence is:
+
+- ten minutes of allowed clock skew;
+- one hour maximum signing delay;
+- 45 days maximum stable-manifest validity;
+- 14 days maximum preview-manifest validity;
+- 24 hours of tolerated local-clock rollback before new acceptance fails
+  closed.
+
+The positive GitHub workflow run number is the release sequence. It is stable
+across a rerun of the same workflow run and monotonically advances across later
+tag runs. Sequence alone never authorizes a downgrade: semantic version, tag,
+source commit, manifest/bundle digests, and the channel floor are checked
+independently.
 
 Mod Bridge persists, per channel:
 

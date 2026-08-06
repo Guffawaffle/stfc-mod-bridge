@@ -16,6 +16,7 @@ public sealed partial class ReleaseTrustAutomationTests
             "${{ github.ref_name }}",
             "${{ github.sha }}",
             "${{ github.repository }}",
+            "${{ github.run_number }}",
         };
         foreach (var line in workflow.Split('\n'))
         {
@@ -29,7 +30,8 @@ public sealed partial class ReleaseTrustAutomationTests
                 trimmed.StartsWith("RELEASE_TAG: ", StringComparison.Ordinal)
                 || trimmed.StartsWith("SOURCE_REVISION_ID: ", StringComparison.Ordinal)
                 || trimmed.StartsWith("TARGET_COMMIT: ", StringComparison.Ordinal)
-                || trimmed.StartsWith("RELEASE_REPOSITORY: ", StringComparison.Ordinal),
+                || trimmed.StartsWith("RELEASE_REPOSITORY: ", StringComparison.Ordinal)
+                || trimmed.StartsWith("RELEASE_SEQUENCE: ", StringComparison.Ordinal),
                 $"Sensitive GitHub context is interpolated outside a step environment binding: {line}");
         }
 
@@ -196,6 +198,9 @@ public sealed partial class ReleaseTrustAutomationTests
     public void ReleaseWorkflowAttestsFinalSubjectsAndReverifiesThemBeforeDraftStaging()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
+        var manifestTime = workflow.IndexOf(
+            "- name: Resolve authenticated manifest issue time",
+            StringComparison.Ordinal);
         var manifest = workflow.IndexOf(
             "- name: Generate repository-owned Mod Bridge manifest",
             StringComparison.Ordinal);
@@ -214,7 +219,13 @@ public sealed partial class ReleaseTrustAutomationTests
             "- name: Stage App Installer and machine-consumed release inputs as a draft",
             StringComparison.Ordinal);
 
-        Assert.IsTrue(manifest >= 0, "Release workflow must generate its final manifest.");
+        Assert.IsTrue(manifestTime >= 0, "The protected signing job must resolve the manifest issue time.");
+        Assert.IsTrue(manifest > manifestTime, "Manifest time must be captured immediately before generation.");
+        StringAssert.Contains(workflow, "RELEASE_SEQUENCE: ${{ github.run_number }}");
+        StringAssert.Contains(workflow, "release_sequence: ${{ steps.release.outputs.release_sequence }}");
+        StringAssert.Contains(workflow, "RELEASE_ISSUED_AT: ${{ steps.manifest-time.outputs.issued_at }}");
+        StringAssert.Contains(workflow, "-ReleaseSequence $env:RELEASE_SEQUENCE");
+        StringAssert.Contains(workflow, "-IssuedAtUtc \"$env:RELEASE_ISSUED_AT\"");
         Assert.IsTrue(attestation > manifest, "Attestation must occur after final manifest generation.");
         Assert.IsTrue(
             releaseSelectionAttestation > attestation,
@@ -284,6 +295,65 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsFalse(
             workflow.Contains("pull_request_target", StringComparison.Ordinal),
             "Untrusted pull-request code must not enter the release-attestation authority boundary.");
+    }
+
+    [TestMethod]
+    public async Task ReleaseManifestV2ProducerIsDeterministicForExplicitInputs()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var output = temporaryDirectory.CreateDirectory("release");
+        var package = Directory.CreateDirectory(Path.Combine(output, "package")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(output, "stfc-mod-bridge-win-x64.zip"), "archive-bytes");
+        await File.WriteAllTextAsync(Path.Combine(package, "STFCModBridge.msix"), "package-bytes");
+        var withdrawals = Path.Combine(output, "withdrawals.jsonl");
+        await File.WriteAllTextAsync(
+            withdrawals,
+            "{\"schemaVersion\":1,\"channel\":\"stable\",\"kind\":\"artifact-sha256\","
+            + "\"value\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
+            + "\"withdrawnAt\":\"2026-08-05T00:00:00Z\",\"reason\":\"security\"}\n");
+        var first = Path.Combine(output, "manifest-one.json");
+        var second = Path.Combine(output, "manifest-two.json");
+
+        await RunManifestProducerAsync(output, withdrawals, first);
+        await RunManifestProducerAsync(output, withdrawals, second);
+
+        CollectionAssert.AreEqual(await File.ReadAllBytesAsync(first), await File.ReadAllBytesAsync(second));
+        await using var stream = File.OpenRead(first);
+        var manifest = AuthenticatedReleaseManifestParser.Parse(stream);
+        Assert.AreEqual(2, manifest.SchemaVersion);
+        Assert.AreEqual(42L, manifest.ReleaseSequence);
+        Assert.AreEqual("github-sigstore-build-provenance-v1", manifest.ManifestAuthenticityScheme);
+        Assert.AreEqual(TimeSpan.FromDays(45), manifest.ExpiresAt - manifest.IssuedAt);
+        Assert.AreEqual(1, manifest.Withdrawals.Count);
+    }
+
+    [TestMethod]
+    public async Task ReleaseManifestV2ProducerRejectsMalformedOrDuplicateLedgerEntries()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var output = temporaryDirectory.CreateDirectory("release");
+        var package = Directory.CreateDirectory(Path.Combine(output, "package")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(output, "stfc-mod-bridge-win-x64.zip"), "archive-bytes");
+        await File.WriteAllTextAsync(Path.Combine(package, "STFCModBridge.msix"), "package-bytes");
+        var withdrawals = Path.Combine(output, "withdrawals.jsonl");
+        var entry = "{\"schemaVersion\":1,\"channel\":\"stable\",\"kind\":\"release-sequence\","
+            + "\"value\":\"41\",\"withdrawnAt\":\"2026-08-05T00:00:00Z\",\"reason\":\"security\"}";
+
+        await File.WriteAllTextAsync(withdrawals, entry[..^1] + ",\"surprise\":true}\n");
+        var unknown = await RunManifestProducerAsync(
+            output,
+            withdrawals,
+            Path.Combine(output, "unknown.json"),
+            expectSuccess: false);
+        StringAssert.Contains(unknown, "unknown property");
+
+        await File.WriteAllTextAsync(withdrawals, entry + "\n" + entry + "\n");
+        var duplicate = await RunManifestProducerAsync(
+            output,
+            withdrawals,
+            Path.Combine(output, "duplicate.json"),
+            expectSuccess: false);
+        StringAssert.Contains(duplicate, "selectors must be unique");
     }
 
     [TestMethod]
@@ -449,6 +519,59 @@ public sealed partial class ReleaseTrustAutomationTests
         var entry = archive.CreateEntry(name);
         using var stream = entry.Open();
         stream.Write(contents);
+    }
+
+    private static async Task<string> RunManifestProducerAsync(
+        string output,
+        string withdrawals,
+        string manifestPath,
+        bool expectSuccess = true)
+    {
+        var startInfo = new ProcessStartInfo("pwsh")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in new[]
+                 {
+                     "-NoLogo",
+                     "-NoProfile",
+                     "-File",
+                     Path.Combine(RepositoryRoot(), "scripts", "generate-launcher-release-manifest.ps1"),
+                     "-Tag",
+                     "v0.2.0",
+                     "-TargetCommit",
+                     "0123456789abcdef0123456789abcdef01234567",
+                     "-ReleaseSequence",
+                     "42",
+                     "-IssuedAtUtc",
+                     "2026-08-06T09:30:00Z",
+                     "-OutputDirectory",
+                     output,
+                     "-OutputPath",
+                     manifestPath,
+                     "-WithdrawalsPath",
+                     withdrawals,
+                 })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        using var process = Process.Start(startInfo)!;
+        var standardOutput = await process.StandardOutput.ReadToEndAsync();
+        var standardError = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var result = standardOutput + standardError;
+        if (expectSuccess)
+        {
+            Assert.AreEqual(0, process.ExitCode, result);
+        }
+        else
+        {
+            Assert.AreNotEqual(0, process.ExitCode, result);
+        }
+        return result;
     }
 
     private static string RepositoryRoot()

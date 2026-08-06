@@ -126,15 +126,17 @@ online freshness/revocation was not checked.
 ## Consumer boundary
 
 Publishing an attestation does not by itself authorize a Bridge self-update.
-Schema v1 continues to declare `manifestAuthenticity.scheme: none`, and the
-running Bridge continues to enforce the existing repository, path, size,
-SHA-256, Authenticode, version, provenance-consistency, and transactional
-replacement checks.
+Legacy schema v1 declares `manifestAuthenticity.scheme: none`. Bridge schema v2
+declares the exact GitHub/Sigstore provenance scheme and adds freshness,
+withdrawal, and monotonic state, but the running unauthenticated discovery path
+deliberately rejects it. Existing repository, path, size, SHA-256,
+Authenticode, version, provenance-consistency, and transactional replacement
+checks remain independent layers.
 
 [`RELEASE_SELECTION_AUTHENTICATION.md`](RELEASE_SELECTION_AUTHENTICATION.md)
-records issue #71's proposed consumer direction, including trust-root rotation,
-expiry, replay, withdrawal, and offline policy. Until that verifier and schema
-land together, attestations are independently verifiable producer evidence,
-not a silently activated updater authority. Publishing the dedicated
-manifest-only bundle establishes an unambiguous producer input for #71; it does
-not make the current updater consume or trust that input.
+records issue #71's accepted consumer direction, including trust-root rotation,
+expiry, replay, withdrawal, and offline policy. Issues #94 and #95 implement the
+non-authorizing verifier and schema/state seams. Attestations remain independently
+verifiable producer evidence, not a silently activated updater authority, until
+#96 deliberately connects authenticated discovery. Publishing the dedicated
+manifest-only bundle does not make the current updater consume or trust it.

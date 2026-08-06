@@ -195,6 +195,11 @@ The canonical schema, artifact kinds, channel mapping, authenticity boundary,
 withdrawal behavior, and producer/consumer validation rules are defined in
 `docs/windows-launcher/RELEASE_MANIFEST.md`.
 
+The provider/mod artifact contract retains this schema-v1 shape. The
+repository-owned Mod Bridge self-update producer now emits authenticated schema
+v2 as defined in `RELEASE_MANIFEST.md`; the legacy unauthenticated client rejects
+that schema until issue #96 activates verify-before-parse discovery.
+
 Schema v1 shape:
 
 ```json
