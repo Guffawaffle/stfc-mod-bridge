@@ -91,15 +91,16 @@ public sealed class ProviderStartupContextTests
     }
 
     [TestMethod]
-    public void UnknownProviderConfigurationCannotProjectTheBundledSyncWorkspace()
+    public void NetnivConfigurationResolvesOnlyTheExactReviewedStableCatalog()
     {
         var provider = BundledLauncherProviderCatalog.Load().GetProvider("netniv");
 
-        var exception = Assert.ThrowsException<LauncherConfigurationSchemaException>(
-            () => BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider));
+        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
 
-        StringAssert.Contains(exception.Message, "no verified configuration catalog");
-        StringAssert.Contains(exception.Message, "disabled rather than inferred");
+        Assert.AreEqual("netniv", catalog.Source.StableId);
+        Assert.AreEqual("netniv.configuration.stable-1.1.4", catalog.Identity.CatalogId);
+        Assert.AreEqual("1.1.4", catalog.Identity.ReleaseVersion);
+        Assert.AreEqual("d912611fa1eca49fc54f363bdf8377dfebf8def0", catalog.Identity.SourceCommit);
     }
 
     [TestMethod]

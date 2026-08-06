@@ -60,43 +60,44 @@ public interface IConfigurationBackupStorageSecurity
 
 public interface IConfigurationMutationBackup
 {
-    ValueTask BeforeReplaceAsync(
-        string stagedPath,
+    ValueTask<ConfigurationBackupReceipt> BeforeReplaceAsync(
         string configurationPath,
+        byte[] expectedContents,
         CancellationToken cancellationToken);
 }
 
 public sealed class ProviderScopedConfigurationMutationBackup(
     ProviderScopedConfigurationBackupStore store,
     string providerId,
-    string? releaseIdentity = null) : IConfigurationMutationBackup
+    string? releaseIdentity = null,
+    string reason = "configuration-save") : IConfigurationMutationBackup
 {
     private readonly ProviderScopedConfigurationBackupStore store =
         store ?? throw new ArgumentNullException(nameof(store));
     private readonly string providerId = string.IsNullOrWhiteSpace(providerId)
         ? throw new ArgumentException("A stable provider ID is required.", nameof(providerId))
         : providerId;
+    private readonly string reason = string.IsNullOrWhiteSpace(reason)
+        ? throw new ArgumentException("A configuration backup reason is required.", nameof(reason))
+        : reason;
 
-    public async ValueTask BeforeReplaceAsync(
-        string stagedPath,
+    public async ValueTask<ConfigurationBackupReceipt> BeforeReplaceAsync(
         string configurationPath,
+        byte[] expectedContents,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(stagedPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
+        ArgumentNullException.ThrowIfNull(expectedContents);
         var fullConfigurationPath = Path.GetFullPath(configurationPath);
         var gameDirectory = Path.GetDirectoryName(fullConfigurationPath)
             ?? throw new InvalidDataException("The configuration path has no game directory.");
-        var contents = await File.ReadAllBytesAsync(
-            fullConfigurationPath,
-            cancellationToken).ConfigureAwait(false);
-        await store.CreateAsync(
+        return await store.CreateAsync(
             new(
                 gameDirectory,
                 providerId,
                 fullConfigurationPath,
-                contents,
-                "configuration-save",
+                expectedContents,
+                reason,
                 ReleaseIdentity: releaseIdentity),
             cancellationToken).ConfigureAwait(false);
     }

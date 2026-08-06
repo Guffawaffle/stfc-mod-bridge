@@ -473,6 +473,9 @@ try {
 [sync]
 jobs = true
 
+[shortcuts]
+set_hotkeys_disable = "M"
+
 [sidecar.sync]
 enabled = false
 
@@ -761,6 +764,35 @@ try {
     -Name "Copy the displayed redacted diagnostic summary" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
+  $configurationCleanup = Find-AutomationElement `
+    -Root $root `
+    -Name "Review eligible configuration cleanup" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Review local unredacted effective configuration export" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  Invoke-AutomationElement -Element $configurationCleanup
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Apply selected reviewed configuration cleanup" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  $cancelConfigurationCleanup = Find-AutomationElement `
+    -Root $root `
+    -Name "Cancel configuration cleanup without changing the file" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $cancelConfigurationCleanup
+  Start-Sleep -Milliseconds 250
+  $focusedAfterCleanup = [System.Windows.Automation.AutomationElement]::FocusedElement
+  if ($null -eq $focusedAfterCleanup -or
+      $focusedAfterCleanup.Current.Name -ne "Review eligible configuration cleanup") {
+    throw "Canceling configuration cleanup did not return keyboard focus to its Diagnostics entry point."
+  }
+  Write-Host "PASS: catalog-authorized cleanup opens a focused redacted review and cancellation preserves focus without mutation."
   $technicalReport = $root.FindFirst(
     [System.Windows.Automation.TreeScope]::Descendants,
     [System.Windows.Automation.PropertyCondition]::new(

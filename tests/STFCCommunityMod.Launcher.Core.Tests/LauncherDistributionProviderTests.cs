@@ -48,10 +48,10 @@ public sealed class LauncherDistributionProviderTests
     {
         var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
         using var stream = JsonStream(contents.Replace(
-            "      { \"id\": \"settings.catalog\", \"status\": \"unknown\" },\r\n",
+            "      { \"id\": \"settings.catalog\", \"status\": \"supported\" },\r\n",
             string.Empty,
             StringComparison.Ordinal).Replace(
-            "      { \"id\": \"settings.catalog\", \"status\": \"unknown\" },\n",
+            "      { \"id\": \"settings.catalog\", \"status\": \"supported\" },\n",
             string.Empty,
             StringComparison.Ordinal));
 
@@ -63,14 +63,20 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
-    public void NetnivReviewedTrustIsSupportedWhileConfigurationRemainsUnknown()
+    public void NetnivReviewedTrustAndVersionedConfigurationCatalogAreSupported()
     {
         var netniv = LoadFixtureCatalog().GetProvider("netniv");
 
         Assert.AreEqual(
             LauncherProviderCapabilityStatus.Supported,
             netniv.GetCapabilityStatus(LauncherProviderCapabilityIds.ArtifactTrust));
-        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, netniv.ConfigurationSchema.Status);
+        Assert.AreEqual(
+            LauncherProviderCapabilityStatus.Supported,
+            netniv.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog));
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported, netniv.ConfigurationSchema.Status);
+        Assert.AreEqual(
+            "STFCCommunityMod.Launcher.Schemas.Netniv.v1.json",
+            netniv.ConfigurationSchema.ResourceName);
         Assert.IsTrue(netniv.CanAuthenticateWindowsArtifact);
         Assert.IsFalse(netniv.CanUseManifestReleaseDiscovery);
         Assert.IsTrue(netniv.CanUseReleaseDiscoveryFor(netniv.DefaultReleaseChannel));

@@ -17,22 +17,40 @@ public sealed record AtomicTomlWriteResult(
     AtomicTomlWriteState State,
     string? BackupPath = null,
     SparseTomlError? ValidationError = null,
-    string? Error = null)
+    string? Error = null,
+    ConfigurationBackupReceipt? BackupReceipt = null)
 {
     public bool IsSuccess => State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange;
 }
 
-public sealed class AtomicTomlStore(
-    Func<string, string, CancellationToken, ValueTask>? beforeReplace = null,
-    bool retainAdjacentBackup = true)
+public sealed class AtomicTomlStore
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates = new(
         OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal);
 
-    private readonly Func<string, string, CancellationToken, ValueTask>? beforeReplace = beforeReplace;
-    private readonly bool retainAdjacentBackup = retainAdjacentBackup;
+    private readonly Func<string, string, CancellationToken, ValueTask>? beforeReplace;
+    private readonly IConfigurationMutationBackup? mutationBackup;
+    private readonly bool retainAdjacentBackup;
+
+    public AtomicTomlStore(
+        Func<string, string, CancellationToken, ValueTask>? beforeReplace = null,
+        bool retainAdjacentBackup = true)
+    {
+        this.beforeReplace = beforeReplace;
+        this.retainAdjacentBackup = retainAdjacentBackup;
+    }
+
+    public AtomicTomlStore(
+        IConfigurationMutationBackup mutationBackup,
+        bool retainAdjacentBackup = false)
+    {
+        this.mutationBackup = mutationBackup ?? throw new ArgumentNullException(nameof(mutationBackup));
+        this.retainAdjacentBackup = retainAdjacentBackup;
+    }
+
+    public bool ProducesVerifiedBackupReceipt => mutationBackup is not null;
 
     public Task<AtomicTomlWriteResult> SetOverrideAsync(
         string? configurationPath,
@@ -61,6 +79,8 @@ public sealed class AtomicTomlStore(
     {
         ArgumentNullException.ThrowIfNull(expectedContents);
         ArgumentNullException.ThrowIfNull(updatedContents);
+        expectedContents = [.. expectedContents];
+        updatedContents = [.. updatedContents];
 
         var expectedValidation = ValidateDocument(expectedContents);
         if (expectedValidation is not null)
@@ -112,6 +132,7 @@ public sealed class AtomicTomlStore(
         var backupPath = retainAdjacentBackup ? fullPath + ".bak" : null;
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
+        ConfigurationBackupReceipt? backupReceipt = null;
 
         try
         {
@@ -164,8 +185,43 @@ public sealed class AtomicTomlStore(
                     Error: "The configuration changed before it could be saved; the external changes were preserved.");
             }
 
+            if (mutationBackup is not null)
+            {
+                backupReceipt = await CreateVerifiedBackupAsync(
+                    mutationBackup,
+                    fullPath,
+                    expectedContents,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                current = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: "The configuration disappeared after its verified backup was created.",
+                    BackupReceipt: backupReceipt);
+            }
+
+            if (!current.AsSpan().SequenceEqual(expectedContents))
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error:
+                        "The configuration changed after its verified backup was created; "
+                        + "the external changes were preserved.",
+                    BackupReceipt: backupReceipt);
+            }
+
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            return new(AtomicTomlWriteState.Succeeded, backupPath);
+            return new(
+                AtomicTomlWriteState.Succeeded,
+                backupPath,
+                BackupReceipt: backupReceipt);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -181,7 +237,8 @@ public sealed class AtomicTomlStore(
             return new(
                 AtomicTomlWriteState.IoFailure,
                 backupPath is not null && File.Exists(backupPath) ? backupPath : null,
-                Error: exception.Message);
+                Error: exception.Message,
+                BackupReceipt: backupReceipt);
         }
         finally
         {
@@ -239,6 +296,7 @@ public sealed class AtomicTomlStore(
         var backupPath = retainAdjacentBackup ? fullPath + ".bak" : null;
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
+        ConfigurationBackupReceipt? backupReceipt = null;
 
         try
         {
@@ -311,8 +369,44 @@ public sealed class AtomicTomlStore(
                     Error: "The configuration changed after it was read; the external changes were preserved.");
             }
 
+            if (mutationBackup is not null)
+            {
+                backupReceipt = await CreateVerifiedBackupAsync(
+                    mutationBackup,
+                    fullPath,
+                    original,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                var current = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
+                currentSnapshot = DestinationSnapshot.Capture(fullPath, current);
+            }
+            catch (Exception exception) when (
+                exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: "The configuration disappeared after its verified backup was created.",
+                    BackupReceipt: backupReceipt);
+            }
+
+            if (!originalSnapshot.Matches(currentSnapshot))
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error:
+                        "The configuration changed after its verified backup was created; "
+                        + "the external changes were preserved.",
+                    BackupReceipt: backupReceipt);
+            }
+
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            return new(AtomicTomlWriteState.Succeeded, backupPath);
+            return new(
+                AtomicTomlWriteState.Succeeded,
+                backupPath,
+                BackupReceipt: backupReceipt);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -328,7 +422,8 @@ public sealed class AtomicTomlStore(
             return new(
                 AtomicTomlWriteState.IoFailure,
                 backupPath is not null && File.Exists(backupPath) ? backupPath : null,
-                Error: exception.Message);
+                Error: exception.Message,
+                BackupReceipt: backupReceipt);
         }
         finally
         {
@@ -367,6 +462,30 @@ public sealed class AtomicTomlStore(
         await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         stream.Flush(flushToDisk: true);
+    }
+
+    private static async ValueTask<ConfigurationBackupReceipt> CreateVerifiedBackupAsync(
+        IConfigurationMutationBackup mutationBackup,
+        string configurationPath,
+        byte[] expectedContents,
+        CancellationToken cancellationToken)
+    {
+        var sourceContents = expectedContents.ToArray();
+        var receipt = await mutationBackup.BeforeReplaceAsync(
+            configurationPath,
+            sourceContents,
+            cancellationToken).ConfigureAwait(false);
+        if (receipt is null
+            || !string.Equals(
+                receipt.ContentSha256,
+                ConfigurationDocumentRevision.FromContents(expectedContents).Sha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The configuration backup receipt does not identify the exact source bytes.");
+        }
+
+        return receipt;
     }
 
     private static SparseTomlError? ValidateDocument(byte[] contents)

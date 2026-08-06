@@ -75,6 +75,7 @@ public static class LauncherConfigurationSchemaLoader
         var sourceId = ParseSourceId(ReadRequiredString(sourceElement, "id", "source"));
         var repository = ReadRequiredString(sourceElement, "repository", "source");
         var source = new LauncherConfigurationSource(sourceId, repository);
+        var identity = ReadCatalogIdentity(root, source);
 
         var settingsElement = ReadRequiredProperty(root, "settings", "schema root");
         RequireKind(settingsElement, JsonValueKind.Array, "settings");
@@ -97,7 +98,8 @@ public static class LauncherConfigurationSchemaLoader
         return new LauncherConfigurationCatalog(
             schemaVersion,
             source,
-            Array.AsReadOnly(settings.ToArray()));
+            Array.AsReadOnly(settings.ToArray()),
+            identity);
     }
 
     private static LauncherConfigurationSetting ParseSetting(
@@ -148,6 +150,12 @@ public static class LauncherConfigurationSchemaLoader
             path);
         var aliases = ReadAliases(element, path);
         var provenance = ReadProvenance(element, path);
+        var runtimeStatus = element.TryGetProperty("runtimeStatus", out var runtimeStatusElement)
+            ? ParseRuntimeStatus(ReadArrayString(runtimeStatusElement, $"runtimeStatus for '{path}'"), path)
+            : LauncherConfigurationRuntimeStatus.Live;
+        var featureGates = element.TryGetProperty("featureGates", out var featureGatesElement)
+            ? ReadStringList(featureGatesElement, $"featureGates for '{path}'")
+            : Array.AsReadOnly(Array.Empty<string>());
 
         if (!sourceSupport.Contains(schemaSource))
         {
@@ -175,7 +183,51 @@ public static class LauncherConfigurationSchemaLoader
             aliases,
             provenance,
             applyBehavior,
-            presentation);
+            presentation,
+            runtimeStatus,
+            featureGates);
+    }
+
+    private static LauncherConfigurationCatalogIdentity? ReadCatalogIdentity(
+        JsonElement root,
+        LauncherConfigurationSource source)
+    {
+        if (!root.TryGetProperty("identity", out var element))
+        {
+            return null;
+        }
+
+        RequireKind(element, JsonValueKind.Object, "catalog identity");
+        RejectUnknownProperties(
+            element,
+            "catalog identity",
+            "catalogId",
+            "catalogVersion",
+            "trackId",
+            "releaseVersion",
+            "sourceCommit");
+        var catalogId = ReadRequiredString(element, "catalogId", "catalog identity");
+        if (!catalogId.StartsWith(source.StableId + ".", StringComparison.Ordinal))
+        {
+            throw Invalid("Catalog identity must be owned by its source provider.");
+        }
+        var versionText = ReadRequiredString(element, "catalogVersion", "catalog identity");
+        if (!Version.TryParse(versionText, out var catalogVersion))
+        {
+            throw Invalid($"Catalog identity has invalid version '{versionText}'.");
+        }
+        var sourceCommit = ReadRequiredString(element, "sourceCommit", "catalog identity");
+        if (sourceCommit.Length != 40 || sourceCommit.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw Invalid("Catalog identity sourceCommit must be a full hexadecimal Git commit SHA.");
+        }
+
+        return new(
+            catalogId,
+            catalogVersion,
+            ReadRequiredString(element, "trackId", "catalog identity"),
+            ReadRequiredString(element, "releaseVersion", "catalog identity"),
+            sourceCommit.ToLowerInvariant());
     }
 
     private static ReadOnlyCollection<LauncherConfigurationAlias> ReadAliases(
@@ -855,6 +907,18 @@ public static class LauncherConfigurationSchemaLoader
             _ => throw Invalid($"Setting '{path}' uses unsupported stability '{value}'."),
         };
 
+    private static LauncherConfigurationRuntimeStatus ParseRuntimeStatus(string value, string path) =>
+        value switch
+        {
+            "live" => LauncherConfigurationRuntimeStatus.Live,
+            "conditional" => LauncherConfigurationRuntimeStatus.Conditional,
+            "parsed-unused" => LauncherConfigurationRuntimeStatus.ParsedUnused,
+            "ignored" => LauncherConfigurationRuntimeStatus.Ignored,
+            "legacy" => LauncherConfigurationRuntimeStatus.Legacy,
+            "removed" => LauncherConfigurationRuntimeStatus.Removed,
+            _ => throw Invalid($"Setting '{path}' uses unsupported runtime status '{value}'."),
+        };
+
     private static LauncherConfigurationApplyBehavior ParseApplyBehavior(
         string value,
         string path) =>
@@ -977,6 +1041,25 @@ public static class LauncherConfigurationSchemaLoader
             throw Invalid($"{context} must contain at least one value.");
         }
 
+        return Array.AsReadOnly(values.ToArray());
+    }
+
+    private static ReadOnlyCollection<string> ReadStringList(
+        JsonElement element,
+        string context)
+    {
+        RequireKind(element, JsonValueKind.Array, context);
+        var values = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in element.EnumerateArray())
+        {
+            var text = ReadArrayString(value, context);
+            if (!seen.Add(text))
+            {
+                throw Invalid($"{context} contains duplicate value '{text}'.");
+            }
+            values.Add(text);
+        }
         return Array.AsReadOnly(values.ToArray());
     }
 

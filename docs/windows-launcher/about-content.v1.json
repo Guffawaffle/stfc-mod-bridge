@@ -187,6 +187,13 @@
       "evidenceKind": "project-input"
     },
     {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/netniv/configuration-schema-set.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
       "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/known-windows-artifacts.v1.json",
       "version": null,
       "noticeId": null,
