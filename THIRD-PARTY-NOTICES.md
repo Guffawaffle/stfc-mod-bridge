@@ -6,7 +6,7 @@ STFC Mod Bridge is distributed under the repository license. The components belo
 
 ## Coverage and open review
 
-Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, and explicit project resource/content/embed/icon/manifest input. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30; this inventory does not claim legal completeness.
+Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and the direct sigstore-go module. The verifier's 71-module compiled graph is checksum-locked in dependencies.v1.txt; complete transitive module license classification remains review-pending under issue #97, while complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This inventory does not claim legal completeness.
 
 ## FluentIcons.Wpf and FluentIcons.Common
 
@@ -55,6 +55,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ```text
 STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
+```
+
+## The Go Programming Language runtime
+
+- Version: 1.26.5
+- License: BSD 3-Clause License
+- Source: https://go.dev/
+- Authoritative license information: https://go.dev/LICENSE
+
+```text
+Copyright 2009 The Go Authors. All rights reserved. Redistribution and use in source and binary forms, with or without modification, are permitted subject to the conditions in the authoritative Go license. Neither the name of Google LLC nor the names of its contributors may be used to endorse or promote derived products without specific prior written permission. The software is provided without warranty; see the linked license for the complete terms.
+```
+
+## sigstore-go
+
+- Version: 1.3.0
+- License: Apache License 2.0
+- Source: https://github.com/sigstore/sigstore-go
+- Authoritative license information: https://github.com/sigstore/sigstore-go/blob/v1.3.0/LICENSE
+
+```text
+Copyright 2023 The Sigstore Authors. Licensed under the Apache License, Version 2.0. You may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an AS IS basis, without warranties or conditions of any kind. The linked upstream license contains the complete terms.
 ```
 
 ## Attribution review boundary

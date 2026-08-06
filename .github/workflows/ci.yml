@@ -25,12 +25,21 @@ jobs:
         with:
           global-json-file: global.json
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: src/STFCModBridge.ReleaseVerifier/go.sum
+
       - name: Restore
         run: dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
 
       - name: Verify third-party notice inventory
         shell: pwsh
         run: ./scripts/generate-third-party-notices.ps1 -Check
+
+      - name: Build and test closed release verifier
+        shell: pwsh
+        run: ./scripts/verify-release-verifier.ps1 -RunVulnerabilityAudit
 
       - name: Test
         run: dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
