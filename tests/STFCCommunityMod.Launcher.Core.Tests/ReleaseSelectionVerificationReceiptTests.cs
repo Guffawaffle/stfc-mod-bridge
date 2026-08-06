@@ -130,27 +130,17 @@ public sealed class ReleaseSelectionVerificationReceiptTests
             Encoding.UTF8.GetBytes(new string('[', 10) + new string(']', 10)),
             new byte[ReleaseSelectionAttestationPolicy.MaximumReceiptBytes + 1],
         };
-        for (var index = 0; index < Math.Min(valid.Length, 256); index++)
+        for (var length = 1; length < Math.Min(valid.Length, 256); length++)
         {
-            var mutated = valid.ToArray();
-            mutated[index] ^= 0x5a;
-            corpus.Add(mutated);
+            corpus.Add(valid[..length]);
         }
 
-        foreach (var input in corpus)
+        for (var index = 0; index < corpus.Count; index++)
         {
-            try
+            Assert.ThrowsException<InvalidDataException>(() =>
             {
-                _ = ReleaseSelectionVerificationReceiptParser.Parse(input, Request(), ManifestDigest, BundleDigest);
-            }
-            catch (InvalidDataException)
-            {
-                continue;
-            }
-            catch (Exception exception)
-            {
-                Assert.Fail($"Receipt parser escaped its fail-closed exception contract: {exception}");
-            }
+                _ = ReleaseSelectionVerificationReceiptParser.Parse(corpus[index], Request(), ManifestDigest, BundleDigest);
+            }, $"Malformed receipt corpus item {index} was accepted.");
         }
     }
 
