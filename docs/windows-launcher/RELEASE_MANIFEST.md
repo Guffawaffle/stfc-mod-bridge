@@ -14,18 +14,20 @@ the already signed artifacts. It emits exactly two stable artifact identities:
 
 | ID | Role | User-facing? |
 |---|---|---|
-| `windows-mod-bridge-setup-x64` | Signed per-user setup executable | Yes; the only install asset |
 | `windows-mod-bridge-archive-x64` | ZIP containing signed Mod Bridge and its replace-on-exit helper | No; machine-consumed self-update input |
+| `windows-mod-bridge-msix-x64` | Signed Windows package containing the signed launcher | No; installed through the App Installer descriptor |
 
 The manifest itself is also machine-consumed metadata. The package inspection
-gate checks that the setup directory contains only
-`STFCModBridge.Setup.exe`, that every required input is a PE, and
-that the update archive has exactly one root launcher and updater executable.
+gate checks that the signed MSIX has the reviewed identity, publisher,
+full-trust desktop declarations, content-integrity enforcement, and exactly one
+inner PE. It also checks that the fallback archive has exactly one root launcher
+and updater executable.
 The protected tag workflow repeats the inspection while requiring the reviewed
 Authenticode publisher.
 
 After those checks, the protected job generates GitHub/Sigstore provenance for
-the final setup, update archive, manifest, launcher, and updater bytes. It
+the final MSIX, App Installer descriptor, update archive, manifest, SBOM,
+launcher, and updater bytes. It
 publishes the signed bundle as
 `stfc-mod-bridge-release-attestation.json`. The separate publication job
 reverifies every subject against the exact repository, release workflow, tag,

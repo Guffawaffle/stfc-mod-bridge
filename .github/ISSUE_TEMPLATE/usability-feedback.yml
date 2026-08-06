@@ -42,7 +42,7 @@ body:
         - Configuration
         - Data Sync
         - Diagnostics
-        - Setup or self-update
+        - App Installer or update
         - Other
     validations:
       required: true

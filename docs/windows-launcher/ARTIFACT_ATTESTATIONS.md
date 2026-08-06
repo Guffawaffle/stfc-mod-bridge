@@ -19,14 +19,16 @@ signing, final packaging, package inspection, and release-manifest generation:
 
 - `STFCModBridge.exe`;
 - `STFCModBridge.Updater.exe`;
-- `STFCModBridge.Setup.exe`;
+- `STFCModBridge.msix`;
+- `STFCModBridge.appinstaller`;
 - `stfc-mod-bridge-win-x64.zip`;
-- `stfc-mod-bridge-release-manifest.json`.
+- `stfc-mod-bridge-release-manifest.json`;
+- `stfc-mod-bridge-sbom.spdx.json`.
 
 The workflow copies the signed bundle to
-`stfc-mod-bridge-release-attestation.json`. The setup remains the only
-user-facing install artifact. The ZIP, manifest, and attestation bundle are
-machine-consumed trust/update evidence.
+`stfc-mod-bridge-release-attestation.json`. The App Installer descriptor is the
+user-facing install entry point. The MSIX, ZIP, manifest, SBOM, and attestation
+bundle are machine-consumed trust/update evidence or a standalone fallback.
 
 The publication job downloads the final subjects and refuses to create the
 GitHub release unless every subject verifies against:
@@ -39,7 +41,7 @@ GitHub release unless every subject verifies against:
 
 ## Independent online verification
 
-Download the release setup, machine-consumed attestation bundle, and any other
+Download the release MSIX, machine-consumed attestation bundle, and any other
 subject to inspect. Substitute the release tag and its full 40-character commit:
 
 ```powershell
@@ -49,7 +51,7 @@ $repository = "Guffawaffle/stfc-mod-bridge"
 $workflow = "$repository/.github/workflows/release.yml"
 $bundle = ".\stfc-mod-bridge-release-attestation.json"
 
-gh attestation verify .\STFCModBridge.Setup.exe `
+gh attestation verify .\STFCModBridge.msix `
   --repo $repository `
   --signer-workflow $workflow `
   --source-ref "refs/tags/$releaseTag" `
@@ -58,9 +60,9 @@ gh attestation verify .\STFCModBridge.Setup.exe `
   --bundle $bundle
 ```
 
-The ZIP and manifest use the same command with their respective file paths.
-The inner launcher and updater can be extracted from the ZIP and verified
-against the same bundle.
+The descriptor, ZIP, manifest, and SBOM use the same command with their
+respective file paths. The inner launcher and updater can be extracted from the
+ZIP and verified against the same bundle.
 
 Changing one byte, selecting another repository/workflow/commit/ref, or using
 evidence from a self-hosted runner must fail verification.

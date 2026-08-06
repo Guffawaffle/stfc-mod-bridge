@@ -50,7 +50,7 @@ body:
       label: Affected area
       multiple: true
       options:
-        - Setup or uninstall
+        - App Installer or Windows uninstall
         - Install, update, repair, or remove
         - Provider switching
         - Configuration

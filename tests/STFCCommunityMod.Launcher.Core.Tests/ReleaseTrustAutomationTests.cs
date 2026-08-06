@@ -43,7 +43,7 @@ public sealed partial class ReleaseTrustAutomationTests
     [TestMethod]
     public void WorkflowsPinActionsAndSeparateSigningFromReleasePublicationAuthority()
     {
-        foreach (var name in new[] { "ci.yml", "release.yml" })
+        foreach (var name in new[] { "ci.yml", "release.yml", "publish-update-channel.yml" })
         {
             var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", name));
             var uses = UsesPattern().Matches(workflow).Select(match => match.Groups[1].Value).ToArray();
@@ -73,6 +73,23 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "persist-credentials: false", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "submodules: false", RegexOptions.CultureInvariant).Count);
         Assert.IsFalse(File.Exists(Path.Combine(RepositoryRoot(), ".gitmodules")));
+
+        var publicationWorkflow = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            ".github",
+            "workflows",
+            "publish-update-channel.yml"));
+        StringAssert.Contains(publicationWorkflow, "release:\n    types: [published]");
+        StringAssert.Contains(publicationWorkflow, "environment:\n      name: windows-release");
+        StringAssert.Contains(publicationWorkflow, "attestations: read");
+        StringAssert.Contains(publicationWorkflow, "contents: read");
+        StringAssert.Contains(publicationWorkflow, "id-token: write");
+        StringAssert.Contains(publicationWorkflow, "group: appinstaller-publish");
+        StringAssert.Contains(publicationWorkflow, "cancel-in-progress: false");
+        Assert.AreEqual(1, Regex.Matches(publicationWorkflow, "id-token: write", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(0, Regex.Matches(publicationWorkflow, "contents: write", RegexOptions.CultureInvariant).Count);
+        Assert.IsFalse(publicationWorkflow.Contains("pull_request_target", StringComparison.Ordinal));
+        Assert.IsFalse(publicationWorkflow.Contains("credentials_json", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -109,7 +126,7 @@ public sealed partial class ReleaseTrustAutomationTests
             }
         }
 
-        foreach (var scriptName in new[] { "publish.ps1", "publish-bootstrapper.ps1" })
+        foreach (var scriptName in new[] { "publish.ps1" })
         {
             var script = File.ReadAllText(Path.Combine(root, "scripts", scriptName));
             StringAssert.Contains(script, "-p:RestoreLockedMode=true");
@@ -188,7 +205,7 @@ public sealed partial class ReleaseTrustAutomationTests
             "- name: Verify attested release subjects before draft staging",
             StringComparison.Ordinal);
         var staging = workflow.IndexOf(
-            "- name: Stage setup and machine-consumed update inputs as a draft",
+            "- name: Stage App Installer and machine-consumed release inputs as a draft",
             StringComparison.Ordinal);
 
         Assert.IsTrue(manifest >= 0, "Release workflow must generate its final manifest.");
@@ -220,7 +237,8 @@ public sealed partial class ReleaseTrustAutomationTests
                  {
                      "artifacts/win-x64/app/STFCModBridge.exe",
                      "artifacts/win-x64/app/STFCModBridge.Updater.exe",
-                     "artifacts/win-x64/setup/STFCModBridge.Setup.exe",
+                     "artifacts/win-x64/package/STFCModBridge.msix",
+                     "artifacts/win-x64/package/STFCModBridge.appinstaller",
                      "artifacts/win-x64/stfc-mod-bridge-win-x64.zip",
                      "artifacts/win-x64/stfc-mod-bridge-release-manifest.json",
                      "artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json",
@@ -254,7 +272,7 @@ public sealed partial class ReleaseTrustAutomationTests
 
         foreach (var document in new[] { readme, testing })
         {
-            StringAssert.Contains(document, "STFCModBridge.Setup.exe");
+            StringAssert.Contains(document, "STFCModBridge.appinstaller");
             StringAssert.Contains(document, "v0.1.0-rc.3");
             StringAssert.Contains(document, "rejected");
             StringAssert.Contains(document, "Public canary");
@@ -271,49 +289,75 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
-    public void InstalledProductSurfacesRequireVisibleSetupAndSignedUninstallConsent()
+    public void MsixOwnsInstallUpdateAndUninstallWhileUserStateRemainsExternal()
     {
         var root = RepositoryRoot();
-        var setupProgram = File.ReadAllText(Path.Combine(
+        var manifest = File.ReadAllText(Path.Combine(root, "packaging", "windows", "AppxManifest.xml.in"));
+        var descriptor = File.ReadAllText(Path.Combine(
             root,
-            "src",
-            "STFCCommunityMod.Launcher.Setup",
-            "Program.cs"));
-        var setupForm = File.ReadAllText(Path.Combine(
-            root,
-            "src",
-            "STFCCommunityMod.Launcher.Setup",
-            "SetupForm.cs"));
+            "packaging",
+            "windows",
+            "STFCModBridge.appinstaller.xml.in"));
         var application = File.ReadAllText(Path.Combine(
             root,
             "src",
             "STFCCommunityMod.Launcher",
             "App.xaml.cs"));
-        var uninstallWindow = File.ReadAllText(Path.Combine(
+        var settings = File.ReadAllText(Path.Combine(
             root,
             "src",
             "STFCCommunityMod.Launcher",
-            "ApplicationUninstallWindow.xaml"));
-        var uninstallScript = File.ReadAllText(Path.Combine(root, "scripts", "uninstall-launcher.ps1"));
+            "Views",
+            "SettingsView.xaml"));
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 
-        StringAssert.Contains(setupProgram, "using var setup = new SetupForm");
-        StringAssert.Contains(setupProgram, "LauncherInstalledProduct.DetermineSetupAction");
-        StringAssert.Contains(setupProgram, "key.SetValue(\"DisplayVersion\", displayVersion");
-        StringAssert.Contains(setupProgram, "$\"\\\"{productPath}\\\" --uninstall\"");
-        StringAssert.Contains(setupForm, "Nothing has been changed yet.");
-        StringAssert.Contains(setupForm, "Launch STFC Mod Bridge");
-        StringAssert.Contains(setupForm, "Visible = false");
-        StringAssert.Contains(application, "--uninstall");
-        StringAssert.Contains(uninstallWindow, "IsChecked=\"False\"");
-        StringAssert.Contains(uninstallWindow, "Community Mod TOML will not be changed");
-        StringAssert.Contains(uninstallScript, "$WaitForProcessId");
-        StringAssert.Contains(uninstallScript, "[int]$WaitTimeoutSeconds = 120");
-        StringAssert.Contains(uninstallScript, "Wait-Process -Timeout $WaitTimeoutSeconds");
-        StringAssert.Contains(uninstallScript, "$RemoveState");
-        StringAssert.Contains(uninstallScript, "FileAttributes]::ReparsePoint");
-        StringAssert.Contains(readme, "%LOCALAPPDATA%\\Programs\\STFC Mod Bridge");
-        StringAssert.Contains(readme, "preserves that local data");
+        StringAssert.Contains(manifest, "Name=\"Guffawaffle.STFCModBridge\"");
+        StringAssert.Contains(manifest, "uap10:RuntimeBehavior=\"win32App\"");
+        StringAssert.Contains(manifest, "uap10:TrustLevel=\"mediumIL\"");
+        StringAssert.Contains(manifest, "<uap10:Content Enforcement=\"on\" />");
+        StringAssert.Contains(manifest, "<rescap:Capability Name=\"runFullTrust\" />");
+        StringAssert.Contains(descriptor, "HoursBetweenUpdateChecks=\"0\"");
+        StringAssert.Contains(descriptor, "ShowPrompt=\"true\"");
+        StringAssert.Contains(descriptor, "UpdateBlocksActivation=\"true\"");
+        Assert.IsFalse(application.Contains("--uninstall", StringComparison.Ordinal));
+        StringAssert.Contains(settings, "About.ManageApplicationCommand");
+        StringAssert.Contains(settings, "Open Windows Installed Apps");
+        Assert.IsFalse(File.Exists(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Setup",
+            "STFCCommunityMod.Launcher.Setup.csproj")));
+        Assert.IsFalse(File.Exists(Path.Combine(root, "scripts", "uninstall-launcher.ps1")));
+        StringAssert.Contains(readme, "%LOCALAPPDATA%\\STFC Mod Bridge");
+        StringAssert.Contains(readme, "external local data");
+    }
+
+    [TestMethod]
+    public void PublishedReleaseUsesKeylessGcsPublicationAndImmutablePackagePaths()
+    {
+        var root = RepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "publish-update-channel.yml"));
+        var publisher = File.ReadAllText(Path.Combine(root, "scripts", "publish-appinstaller-gcs.ps1"));
+
+        StringAssert.Contains(workflow, "google-github-actions/auth@");
+        StringAssert.Contains(workflow, "workload_identity_provider:");
+        StringAssert.Contains(workflow, "service_account:");
+        StringAssert.Contains(workflow, "gh attestation verify");
+        StringAssert.Contains(publisher, "--if-generation-match=0");
+        StringAssert.Contains(publisher, "application/msix");
+        StringAssert.Contains(publisher, "application/appinstaller");
+        StringAssert.Contains(publisher, "bytes=0-1023");
+        StringAssert.Contains(publisher, "refusing a channel downgrade");
+    }
+
+    [TestMethod]
+    public void MsixVersionMappingReservesTheHighestRevisionForStable()
+    {
+        var builder = File.ReadAllText(Path.Combine(RepositoryRoot(), "scripts", "build-msix.ps1"));
+
+        StringAssert.Contains(builder, "else { 65535 }");
+        StringAssert.Contains(builder, "$revision -gt 65534");
+        StringAssert.Contains(builder, "revision 65535 is reserved for the stable package");
     }
 
     [TestMethod]
@@ -344,11 +388,7 @@ public sealed partial class ReleaseTrustAutomationTests
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var output = temporaryDirectory.CreateDirectory("output");
-        var setup = Directory.CreateDirectory(Path.Combine(output, "setup"));
         var portableExecutable = await File.ReadAllBytesAsync(Environment.ProcessPath!);
-        await File.WriteAllBytesAsync(
-            Path.Combine(setup.FullName, "STFCModBridge.Setup.exe"),
-            portableExecutable);
         var archivePath = Path.Combine(output, "stfc-mod-bridge-win-x64.zip");
         using (var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
         {

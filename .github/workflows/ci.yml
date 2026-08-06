@@ -50,9 +50,11 @@ jobs:
           -UseDisposableSyncFixture
           -TimeoutSeconds 60
 
-      - name: Upload setup evidence
+      - name: Upload MSIX packaging evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: windows-mod-bridge-setup-x64
-          path: artifacts/win-x64/setup/STFCModBridge.Setup.exe
+          name: windows-mod-bridge-msix-x64
+          path: |
+            artifacts/win-x64/package/STFCModBridge.appinstaller
+            artifacts/win-x64/package/STFCModBridge.msix
           if-no-files-found: error

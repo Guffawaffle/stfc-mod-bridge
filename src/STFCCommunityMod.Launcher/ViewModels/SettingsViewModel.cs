@@ -52,7 +52,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         ILauncherUiPreferencesStore? uiPreferencesStore = null,
         Action<Uri>? openExternalUri = null,
         Action? openDataFolder = null,
-        Action? uninstallApplication = null)
+        Action? manageApplication = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -74,7 +74,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             settingsDiagnostics,
             openExternalUri,
             openDataFolder,
-            uninstallApplication);
+            manageApplication);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);

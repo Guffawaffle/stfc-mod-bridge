@@ -1102,7 +1102,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 uiPreferencesStore: uiPreferencesStore,
                 openExternalUri: OpenExternalUri,
                 openDataFolder: OpenApplicationDataFolder,
-                uninstallApplication: IsRunningInstalledApplication() ? ShowApplicationUninstall : null);
+                manageApplication: OpenWindowsInstalledApps);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -1161,29 +1161,20 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
-    private void ShowApplicationUninstall()
+    private void OpenWindowsInstalledApps()
     {
-        var window = new ApplicationUninstallWindow(PerUserInstallLayout.FromCurrentUser())
+        try
         {
-            Owner = this,
-        };
-        _ = window.ShowDialog();
-    }
-
-    private static bool IsRunningInstalledApplication()
-    {
-        var processPath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(processPath))
-        {
-            return false;
+            _ = Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
         }
-
-        var layout = PerUserInstallLayout.FromCurrentUser();
-        var installedPath = Path.Combine(layout.ProgramDirectory, ModBridgeProductIdentity.ExecutableName);
-        return string.Equals(
-            Path.GetFullPath(processPath),
-            Path.GetFullPath(installedPath),
-            StringComparison.OrdinalIgnoreCase);
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                $"Windows could not open Installed Apps: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
     }
 
     private void OpenRawConfiguration()

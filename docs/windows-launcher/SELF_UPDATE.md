@@ -1,6 +1,14 @@
 # Windows Launcher Self-Update
 
-Status: WL-009 verified replace-on-exit implementation and packaging are complete; signed packaged upgrade/rollback smoke remains a final release gate.
+Status: the replace-on-exit implementation remains the signed standalone ZIP
+fallback. MSIX installs use Windows App Installer and never run this replacement
+path.
+
+Packaged processes detect their Windows package identity and direct users to
+Windows Installed Apps. The signed App Installer descriptor checks its channel
+on launch, and Windows owns download, version ordering, replacement, rollback,
+and package uninstall. The remainder of this document applies only to a copy
+launched from the standalone ZIP.
 
 Launcher updates use the standalone repository's canonical stable release
 manifest and immutable GitHub asset URL. Provider packs cannot alter this
@@ -26,16 +34,11 @@ or early exit removes the failed payload, verifies/restores the prior payload,
 and restarts it when available. No elevation is requested.
 
 The update plan and backup live under the persistent state root, never inside
-the replaced program directory. If the helper is interrupted before it can
-acknowledge or roll back, the next signed setup run validates the plan's exact
-state/program paths and every recorded backup hash before removing any current
-payload, restores the verified previous payload, and only then begins the new
-setup transaction. Recovery preflights every abandoned plan and backup before
-the first delete and refuses ambiguous multiple-backup state instead of
-choosing an order. Setup must acquire the same operation lease before recovery,
-so it rejects a concurrent updater before touching the current payload.
-Independent mod/configuration operation journals are not
-moved or deleted by launcher setup or self-update.
+the replaced program directory. The helper validates exact state/program paths
+and recorded hashes, and it restores the verified prior payload when launch
+acknowledgement fails. Independent mod/configuration operation journals are not
+moved or deleted by standalone self-update. App Installer and MSIX uninstall do
+not consume or remove those external state records.
 
 Stable is explicit and offline use is unaffected: update discovery is
 user-initiated from Diagnostics and has no bearing on local game launch.

@@ -758,6 +758,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             return null;
         }
+        if (WindowsPackageIdentity.IsCurrentProcessPackaged)
+        {
+            actionFeedback.LauncherUpdate.Complete(
+                false,
+                "Windows App Installer manages Mod Bridge updates and checks the signed package channel when the app starts.");
+            return null;
+        }
         try
         {
             var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(

@@ -67,9 +67,9 @@ function New-Artifact {
 }
 
 $archiveName = "stfc-mod-bridge-win-x64.zip"
-$setupName = "STFCModBridge.Setup.exe"
+$packageName = "STFCModBridge.msix"
 $archive = Join-Path $outputRoot $archiveName
-$setup = Join-Path (Join-Path $outputRoot "setup") $setupName
+$package = Join-Path (Join-Path $outputRoot "package") $packageName
 $manifest = [ordered]@{
   schemaVersion = 1
   releaseVersion = $version
@@ -89,11 +89,11 @@ $manifest = [ordered]@{
       -Scope "contents" `
       -SignedFiles @("STFCModBridge.exe", "STFCModBridge.Updater.exe")
     New-Artifact `
-      -Id "windows-mod-bridge-setup-x64" `
-      -Kind "windows-mod-bridge-setup" `
-      -Path $setup `
-      -FileName $setupName `
-      -MediaType "application/vnd.microsoft.portable-executable" `
+      -Id "windows-mod-bridge-msix-x64" `
+      -Kind "windows-mod-bridge-package" `
+      -Path $package `
+      -FileName $packageName `
+      -MediaType "application/msix" `
       -Scope "artifact"
   )
 }

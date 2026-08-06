@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher;
 
@@ -9,44 +8,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        if (e.Args.Contains("--uninstall", StringComparer.OrdinalIgnoreCase))
-        {
-            ShowUninstall();
-            return;
-        }
-
         ConfigureSelfUpdateAcknowledgement(e.Args);
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
-    }
-
-    private void ShowUninstall()
-    {
-        try
-        {
-            var layout = PerUserInstallLayout.FromCurrentUser();
-            var expectedPath = Path.GetFullPath(Path.Combine(layout.ProgramDirectory, ModBridgeProductIdentity.ExecutableName));
-            var processPath = Path.GetFullPath(Environment.ProcessPath
-                ?? throw new InvalidOperationException("Windows did not provide the application path."));
-            if (!string.Equals(expectedPath, processPath, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("Run uninstall from Windows Installed Apps or the installed application.");
-            }
-
-            var window = new ApplicationUninstallWindow(layout);
-            MainWindow = window;
-            window.Show();
-        }
-        catch (Exception exception) when (exception is IOException or InvalidOperationException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(
-                exception.Message,
-                "STFC Mod Bridge uninstall",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            Shutdown(1);
-        }
     }
 
     private void ConfigureSelfUpdateAcknowledgement(string[] arguments)

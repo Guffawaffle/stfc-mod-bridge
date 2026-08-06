@@ -13,23 +13,23 @@ test it. Do not infer either classification from a version number, the newest
 tag, or the GitHub "Latest" label. `v0.1.0-rc.3` is rejected because of a
 provider-state projection regression.
 
-Download only `STFCModBridge.Setup.exe`. The ZIP, release manifest, SBOM, and
-attestation bundle are machine-consumed release inputs and are not alternate
-installers. The supported alpha environment is Windows 10 or 11 x64, a
-per-user Scopely STFC install, and the bundled Guffawaffle or NetniV stable
-provider.
+Use `STFCModBridge.appinstaller` for an MSIX-era release. The MSIX, ZIP, release
+manifest, SBOM, and attestation bundle are machine-consumed release inputs or a
+clearly labeled standalone fallback, not alternate installation entry points.
+The supported alpha environment is Windows 10 or 11 x64, a per-user Scopely
+STFC install, and the bundled Guffawaffle or NetniV stable provider.
 
-Setup is per-user and includes the required .NET runtime. It shows the version,
-verified publisher, application path, and local-data path before installation.
-Before continuing, verify that Windows and Setup show the publisher as **Joseph
-Gustavson**. Windows may still identify a new certificate as uncommon while
-reputation develops.
+Before continuing, verify that Windows App Installer shows the publisher as
+**Joseph Gustavson**. Windows may still identify a new certificate as uncommon
+while reputation develops. App Installer owns version-to-version update and
+Windows owns package uninstall.
 
-Application files are installed beneath `%LOCALAPPDATA%\Programs\STFC Mod
-Bridge`. Preferences, journals, rollback data, and configuration backups are
-stored beneath `%LOCALAPPDATA%\STFC Mod Bridge`. Application uninstall is
-available from Windows Installed Apps and Settings → About; it preserves local
-data by default and never removes the Community Mod DLL or TOML from the game.
+Application files live in the OS-managed, read-only WindowsApps package
+location. Preferences, journals, rollback data, and configuration backups are
+stored beneath `%LOCALAPPDATA%\STFC Mod Bridge`. Application management is
+available from Windows Installed Apps and Settings → About; uninstall preserves
+that external local data and never removes the Community Mod DLL or TOML from
+the game.
 
 ## Protect your installation
 
