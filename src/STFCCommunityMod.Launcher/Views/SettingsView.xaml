@@ -1365,6 +1365,11 @@
                       CommandParameter="{Binding About.RuntimeRepositoryUrl}"
                       Content="Runtime source"
                       automation:AutomationProperties.Name="Open active mod provider repository" />
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenReleaseSecurityGuidanceCommand}"
+                      Content="Verification &amp; _recovery guidance"
+                      ToolTip="Open the bundled offline independent-verification and compromise-response guides"
+                      automation:AutomationProperties.Name="Open bundled verification and recovery guidance" />
             </WrapPanel>
 
             <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"

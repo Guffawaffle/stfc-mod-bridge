@@ -65,11 +65,15 @@ candidate must numerically advance the running Mod Bridge version. Equal or lowe
 versions fail closed before download, which prevents ordinary downgrade and
 replay after an update.
 
-An affected release is withdrawn only after a higher signed replacement is
-published. The release and tag are then removed and the action is committed to
-`docs/release-withdrawals/release-withdrawals.jsonl`. Immutable historical
-manifests are never rewritten. Healthy installed payloads remain usable
-offline, and withdrawal never deletes local files.
+Emergency containment freezes publication immediately and records the affected
+tag and digests in `docs/release-withdrawals/release-withdrawals.jsonl`; it does
+not wait for a replacement. Preserve the immutable release, tag, manifests, and
+attestation evidence for investigation. A numerically higher independently
+verified replacement is the normal recovery path, not a containment
+prerequisite. Healthy installed payloads remain usable offline, and withdrawal
+never deletes local files. Runtime enforcement of authenticated withdrawal
+policy remains issue #71. See [`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md)
+for the operator procedure.
 
 Schema v1 still declares `manifestAuthenticity.scheme: none`. The producer now
 publishes independently verifiable attestation evidence for the manifest and

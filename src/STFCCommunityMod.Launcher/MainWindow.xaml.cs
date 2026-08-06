@@ -1413,7 +1413,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 uiPreferencesStore: uiPreferencesStore,
                 openExternalUri: OpenExternalUri,
                 openDataFolder: OpenApplicationDataFolder,
-                manageApplication: OpenWindowsInstalledApps);
+                manageApplication: OpenWindowsInstalledApps,
+                openReleaseSecurityGuidance: OpenReleaseSecurityGuidance);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -1486,6 +1487,22 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 $"Windows could not open Installed Apps: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
         }
+    }
+
+    private void OpenReleaseSecurityGuidance()
+    {
+        var guidance = new ReleaseSecurityGuidanceWindow
+        {
+            Owner = this,
+        };
+        _ = guidance.ShowDialog();
+    }
+
+    private void ReleaseSecurityGuidanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        OpenReleaseSecurityGuidance();
     }
 
     private void OpenRawConfiguration()

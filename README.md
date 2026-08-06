@@ -39,8 +39,14 @@ stable or general release. Read the [pre-release testing guide](TESTING.md)
 before changing an installed mod. MSIX-era releases use
 `STFCModBridge.appinstaller` as the installation entry point. Windows verifies
 the signed MSIX, owns update and uninstall, and installs the read-only program
-payload under WindowsApps. The ZIP, manifest, SBOM, and attestation bundle are
+payload under WindowsApps. The ZIP, manifest, SBOM, and attestation bundles are
 machine-consumed release inputs or a clearly labeled standalone fallback.
+
+Skeptical users can follow the
+[independent verification guide](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
+without trusting Bridge's own UI. The application also carries an offline copy
+of that guide and the
+[compromise-response procedure](docs/windows-launcher/COMPROMISE_RESPONSE.md).
 
 Preferences, journals, rollback data, and configuration backups live under
 `%LOCALAPPDATA%\STFC Mod Bridge`. Windows Installed Apps and Settings → About
@@ -103,6 +109,8 @@ fallback.
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
 - [Release security operations](docs/windows-launcher/RELEASE_SECURITY_OPERATIONS.md)
+- [Independent release verification](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
+- [Compromise response](docs/windows-launcher/COMPROMISE_RESPONSE.md)
 - [Google Cloud update hosting](docs/windows-launcher/GCP_UPDATE_HOSTING.md)
 - [Closed-alpha testing guide](TESTING.md)
 - [Security policy](SECURITY.md)

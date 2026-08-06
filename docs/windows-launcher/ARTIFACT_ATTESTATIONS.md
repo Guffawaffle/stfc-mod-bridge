@@ -1,5 +1,11 @@
 # STFC Mod Bridge release attestations
 
+For the complete acquisition, hash, Authenticode, package, embedded-identity,
+online, and offline procedure, use
+[`INDEPENDENT_VERIFICATION.md`](INDEPENDENT_VERIFICATION.md). Incident
+containment and recovery are in
+[`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md).
+
 ## Purpose
 
 Every protected STFC Mod Bridge tag build publishes a GitHub/Sigstore build-provenance
