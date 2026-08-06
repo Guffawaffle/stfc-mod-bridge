@@ -16,9 +16,6 @@ $launcher = Join-Path $payload "STFCModBridge.exe"
 $archive = Join-Path $outputRoot "stfc-mod-bridge-win-x64.zip"
 $checksum = "$archive.sha256"
 
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "install-launcher.ps1") -Destination (Join-Path $payload "Install-Launcher.ps1") -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "uninstall-launcher.ps1") -Destination (Join-Path $payload "Uninstall-Launcher.ps1") -Force
-
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   throw "Mod Bridge payload does not contain the expected executable: $launcher"
 }

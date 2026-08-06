@@ -275,7 +275,7 @@ contract until upstream publishes compatible authenticated evidence.
 - Hash and Authenticode-verify the already-installed helper before invocation.
   Bootstrap is an ordered cryptographic pairing: build and sign the helper,
   embed that final helper digest into the launcher, then build and sign the
-  launcher and outer setup. A clean install therefore starts with an
+  launcher and outer signed MSIX. A clean install therefore starts with an
   Authenticode-protected launcher carrying the exact expected helper digest; it
   does not need a prior receipt. During self-update, the running launcher passes
   its embedded current-helper digest to the updater, while the authenticated

@@ -57,9 +57,10 @@ does not mutate game files. Recovery and removal reuse the single existing
 - removal affects the managed `version.dll`, or restores an explicitly adopted
   predecessor, while preserving configuration, logs, and Mod Bridge state.
 
-Launcher self-update remains a separate trust and transaction domain from mod
-repair/removal. Automatic self-update residue recovery remains setup/helper
-owned; Diagnostics does not invent a second recovery implementation.
+Launcher delivery remains a separate trust and transaction domain from mod
+repair/removal. Windows owns packaged-app update recovery; the standalone
+fallback updater owns its own rollback. Diagnostics does not invent a second
+recovery implementation.
 
 An explicit protected-TOML restore will also reuse the common mutation lease,
 game-running exclusion, exact-target confirmation, and durable recovery

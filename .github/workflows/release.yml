@@ -116,6 +116,7 @@ jobs:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      MOD_BRIDGE_UPDATE_BASE_URI: ${{ vars.MOD_BRIDGE_UPDATE_BASE_URI }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -141,7 +142,8 @@ jobs:
             "AZURE_CERTIFICATE_PROFILE_NAME",
             "AZURE_CLIENT_ID",
             "AZURE_TENANT_ID",
-            "AZURE_SUBSCRIPTION_ID"
+            "AZURE_SUBSCRIPTION_ID",
+            "MOD_BRIDGE_UPDATE_BASE_URI"
           )
           $missing = @($required | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
           if ($missing.Count -gt 0) {
@@ -169,29 +171,28 @@ jobs:
           description: STFC Mod Bridge
           description-url: https://github.com/Guffawaffle/stfc-mod-bridge
 
-      - name: Repackage signed payload and rebuild setup
+      - name: Repackage signed fallback payload and build MSIX
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
-          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
         run: |
           ./scripts/package.ps1
-          ./scripts/publish-bootstrapper.ps1 `
+          ./scripts/build-msix.ps1 `
             -Version "$env:RELEASE_VERSION" `
-            -SourceRevisionId "$env:SOURCE_REVISION_ID"
+            -UpdateBaseUri "$env:MOD_BRIDGE_UPDATE_BASE_URI"
 
-      - name: Sign setup
+      - name: Sign MSIX package
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
-          files-folder: artifacts/win-x64/setup
-          files-folder-filter: exe
+          files-folder: artifacts/win-x64/package
+          files-folder-filter: msix
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-          description: STFC Mod Bridge Setup
+          description: STFC Mod Bridge MSIX
           description-url: https://github.com/Guffawaffle/stfc-mod-bridge
 
       - name: Verify every release PE and inspect package boundary
@@ -228,7 +229,8 @@ jobs:
           subject-path: |
             artifacts/win-x64/app/STFCModBridge.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
-            artifacts/win-x64/setup/STFCModBridge.Setup.exe
+            artifacts/win-x64/package/STFCModBridge.msix
+            artifacts/win-x64/package/STFCModBridge.appinstaller
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
@@ -254,7 +256,8 @@ jobs:
           path: |
             artifacts/win-x64/app/STFCModBridge.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
-            artifacts/win-x64/setup/STFCModBridge.Setup.exe
+            artifacts/win-x64/package/STFCModBridge.msix
+            artifacts/win-x64/package/STFCModBridge.appinstaller
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-release-attestation.json
@@ -284,7 +287,8 @@ jobs:
           $root = "artifacts/win-x64"
           $bundle = "$root/stfc-mod-bridge-release-attestation.json"
           $subjects = @(
-            "$root/setup/STFCModBridge.Setup.exe",
+            "$root/package/STFCModBridge.msix",
+            "$root/package/STFCModBridge.appinstaller",
             "$root/app/STFCModBridge.exe",
             "$root/app/STFCModBridge.Updater.exe",
             "$root/stfc-mod-bridge-win-x64.zip",
@@ -310,7 +314,7 @@ jobs:
             }
           }
 
-      - name: Stage setup and machine-consumed update inputs as a draft
+      - name: Stage App Installer and machine-consumed release inputs as a draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -321,7 +325,8 @@ jobs:
         run: |
           $root = "artifacts/win-x64"
           $assets = @(
-            "$root/setup/STFCModBridge.Setup.exe",
+            "$root/package/STFCModBridge.appinstaller",
+            "$root/package/STFCModBridge.msix",
             "$root/stfc-mod-bridge-win-x64.zip",
             "$root/stfc-mod-bridge-release-manifest.json",
             "$root/stfc-mod-bridge-release-attestation.json",
@@ -331,9 +336,9 @@ jobs:
           > [!WARNING]
           > Qualification draft. Do not publish or distribute this release until its canary evidence is complete.
 
-          Install STFC Mod Bridge with `STFCModBridge.Setup.exe`.
+          Install STFC Mod Bridge with `STFCModBridge.appinstaller` after the published-release hosting check succeeds.
 
-          The ZIP, manifest, SBOM, and attestation bundle are machine-consumed trust/update inputs, not alternate installation packages.
+          The MSIX, ZIP, manifest, SBOM, and attestation bundle are machine-consumed trust/update inputs, not alternate installation entry points.
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM

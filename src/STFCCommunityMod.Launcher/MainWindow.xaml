@@ -14,7 +14,7 @@
         MinHeight="620"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
-        Icon="Assets/stfc-community-mod.ico"
+        Icon="Assets/stfc-mod-bridge.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         TextOptions.TextFormattingMode="Display"

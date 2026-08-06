@@ -1,7 +1,7 @@
 # STFC Mod Bridge product identity
 
-Issue #27 adopts **STFC Mod Bridge** as the public name of the standalone
-Windows application. Its descriptor is **Install · Configure · Diagnose ·
+Issue #27 adopts **STFC Mod Bridge** as the public name of the installed
+per-user Windows application. Its descriptor is **Install · Configure · Diagnose ·
 Run**. In prose, use **Mod Bridge** when referring to the product, lowercase
 `launch` only for starting a process, and **Scopely launcher** for the external
 official application.
@@ -11,12 +11,12 @@ official application.
 | Surface | Classification | v1 disposition |
 |---|---|---|
 | Window title, accessibility name, dialogs, diagnostics filename, UI copy | Public identity | Renamed to STFC Mod Bridge / Mod Bridge |
-| Setup error title, Start menu and desktop shortcuts, Add/Remove Programs entry | Public identity | Named STFC Mod Bridge from the first public build |
+| App Installer, Start menu entry, and Windows Installed Apps entry | Public identity | Named STFC Mod Bridge from the first MSIX build |
 | Assembly product, title, description and signed-file description | Public identity | Named STFC Mod Bridge |
 | README, release title/copy, provider schema title, portfolio artwork | Public identity | Renamed |
-| `%LOCALAPPDATA%\\Programs\\STFC Mod Bridge` | Program location | Canonical greenfield install path |
+| OS-managed WindowsApps package directory | Program location | Canonical read-only MSIX install location |
 | `%LOCALAPPDATA%\\STFC Mod Bridge` | Persisted state | Canonical greenfield state, logs, journal, rollback, and preferences path |
-| `STFCModBridge.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.Setup.exe` | Signed executable identity | Canonical filenames and process identity |
+| `STFCModBridge.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.msix` | Signed release identity | Canonical filenames and process/package identity |
 | .NET namespaces and solution/project directory names | Internal implementation identity | Retained because they are not player-visible or compatibility contracts |
 | `stfc-mod-bridge-win-x64.zip` and `stfc-mod-bridge-release-manifest.json` | Machine-consumed release identity | Canonical pre-v1 artifact names |
 | `Guffawaffle/stfc-mod-bridge` update endpoint and trust metadata | Repository/update compatibility | Canonical greenfield repository coordinate |
@@ -29,14 +29,17 @@ copy.
 
 ## Greenfield behavior
 
-Pre-v1 release candidates use the canonical product identity from their first
-public artifact. Setup installs directly into the canonical program and state
-directories, creates only the **STFC Mod Bridge** shortcuts, and writes one
-per-user Add/Remove Programs entry. Uninstall removes only the canonical
-shortcuts and registration. State is preserved unless the explicit
-`-RemoveState` option is used.
+Pre-v1 MSIX release candidates use the canonical package identity
+`Guffawaffle.STFCModBridge` and the immutable reviewed publisher subject. App
+Installer presents the signed publisher and version; Windows owns package
+installation, update, repair/reset surfaces, Start menu registration, and
+uninstall. The package payload is read-only and uninstall removes it while
+preserving external state under `%LOCALAPPDATA%\STFC Mod Bridge`.
 
-Product identity does not read or write mod TOML. Self-update artifacts,
+Settings → About opens Windows Installed Apps for application management.
+Community Mod DLL and TOML files are outside the package-uninstall boundary.
+
+Product identity does not read or write mod TOML. Package/update artifacts,
 publisher verification, rollback paths, and process detection all use the
 canonical identity from the first public build, so there is no speculative
 migration path to maintain or test.

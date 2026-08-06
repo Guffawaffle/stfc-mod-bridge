@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
@@ -13,14 +14,15 @@ public sealed class LauncherAboutViewModel
         LauncherAboutCatalog content,
         LauncherConfigurationCatalog configurationCatalog,
         LauncherSettingsActivationDiagnostics diagnostics,
-        Action<Uri>? openExternalUri)
+        Action<Uri>? openExternalUri,
+        Action? openDataFolder = null,
+        Action? manageApplication = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(configurationCatalog);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
         var assembly = typeof(LauncherAboutViewModel).Assembly;
-        var assemblyVersion = assembly.GetName().Version;
         var informationalVersion = assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
@@ -28,9 +30,7 @@ public sealed class LauncherAboutViewModel
         ProductName = ModBridgeProductIdentity.ProductName;
         Descriptor = ModBridgeProductIdentity.Descriptor;
         Description = ModBridgeProductIdentity.Description;
-        Version = assemblyVersion is null
-            ? "Unknown"
-            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
+        Version = LauncherInstalledProduct.DisplayVersion(assembly);
         BuildProvenance = string.IsNullOrWhiteSpace(informationalVersion)
             ? "No informational build identity is embedded."
             : informationalVersion;
@@ -47,6 +47,15 @@ public sealed class LauncherAboutViewModel
         RepositoryUrl = ProductRepository;
         ReleasesUrl = $"{ProductRepository}/releases";
         ProductLicenseUrl = $"{ProductRepository}/blob/main/LICENSE";
+        var installLayout = PerUserInstallLayout.FromCurrentUser();
+        IsPackagedInstallation = WindowsPackageIdentity.IsCurrentProcessPackaged;
+        InstallationKind = IsPackagedInstallation ? "Windows MSIX package" : "Standalone copy";
+        ApplicationManagementDescription = IsPackagedInstallation
+            ? "Windows owns Mod Bridge package updates and uninstall. Local data remains outside the package, and removing the app never removes the installed Community Mod or its game configuration."
+            : "This copy is running standalone, so Windows does not install, update, or uninstall it. Remove its application folder to remove this copy. Local data remains separate, and removing Mod Bridge never removes the installed Community Mod or its game configuration.";
+        ProgramDirectory = WindowsPackageIdentity.CurrentInstallDirectory ??
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
+        DataDirectory = installLayout.StateDirectory;
         Contributors = content.Contributors;
         Acknowledgements = content.Acknowledgements;
         ThirdPartyNotices = content.ThirdPartyNotices;
@@ -54,6 +63,12 @@ public sealed class LauncherAboutViewModel
         NoticeCoverageStatus = content.NoticeCoverageStatus;
         LegalReviewStatus = content.LegalReviewStatus;
         OpenExternalLinkCommand = new ExternalUriCommand(openExternalUri);
+        OpenDataFolderCommand = new SettingsActionCommand(
+            () => openDataFolder?.Invoke(),
+            () => openDataFolder is not null);
+        ManageApplicationCommand = new SettingsActionCommand(
+            () => manageApplication?.Invoke(),
+            () => IsPackagedInstallation && manageApplication is not null);
     }
 
     public string ProductName { get; }
@@ -84,6 +99,16 @@ public sealed class LauncherAboutViewModel
 
     public string ProductLicenseUrl { get; }
 
+    public string ProgramDirectory { get; }
+
+    public string DataDirectory { get; }
+
+    public bool IsPackagedInstallation { get; }
+
+    public string InstallationKind { get; }
+
+    public string ApplicationManagementDescription { get; }
+
     public IReadOnlyList<LauncherContributor> Contributors { get; }
 
     public IReadOnlyList<LauncherAcknowledgement> Acknowledgements { get; }
@@ -97,6 +122,10 @@ public sealed class LauncherAboutViewModel
     public string LegalReviewStatus { get; }
 
     public ICommand OpenExternalLinkCommand { get; }
+
+    public ICommand OpenDataFolderCommand { get; }
+
+    public ICommand ManageApplicationCommand { get; }
 
     private static string? BuildGitHubRepositoryUrl(string repository)
     {

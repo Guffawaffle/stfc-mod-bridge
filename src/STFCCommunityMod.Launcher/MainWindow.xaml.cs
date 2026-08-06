@@ -1100,7 +1100,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 startupComposition.SettingsDiagnostics,
                 repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
                 uiPreferencesStore: uiPreferencesStore,
-                openExternalUri: OpenExternalUri);
+                openExternalUri: OpenExternalUri,
+                openDataFolder: OpenApplicationDataFolder,
+                manageApplication: OpenWindowsInstalledApps);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -1136,6 +1138,41 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             SettingsUnavailableMessage.Text =
                 $"Windows could not open this link: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void OpenApplicationDataFolder()
+    {
+        try
+        {
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            Directory.CreateDirectory(stateDirectory);
+            _ = Process.Start(new ProcessStartInfo(stateDirectory) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text = $"Windows could not open the Mod Bridge data folder: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void OpenWindowsInstalledApps()
+    {
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                $"Windows could not open Installed Apps: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
         }
     }

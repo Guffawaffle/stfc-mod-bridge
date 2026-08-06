@@ -59,10 +59,10 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 }
 
 & (Join-Path $PSScriptRoot "package.ps1") -OutputDirectory $outputRoot
-& (Join-Path $PSScriptRoot "publish-bootstrapper.ps1") `
+& (Join-Path $PSScriptRoot "build-msix.ps1") `
   -OutputDirectory $outputRoot `
-  -Version $Version `
-  -SourceRevisionId $SourceRevisionId
+  -Version $(if ($Version) { $Version } else { "0.1.0-rc.1" }) `
+  -UpdateBaseUri "https://updates.invalid/stfc-mod-bridge"
 & (Join-Path $PSScriptRoot "inspect-package.ps1") -OutputDirectory $outputRoot
 
 Write-Host "Published Mod Bridge payload: $payload"

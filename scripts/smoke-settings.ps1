@@ -1199,9 +1199,20 @@ try {
   Invoke-AutomationElement -Element $aboutNavigation
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Open STFC Mod Bridge source repository" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Name "Standalone copy" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  foreach ($aboutAction in @(
+      "Open STFC Mod Bridge source repository",
+      "Open Mod Bridge data folder",
+      "Open Windows Installed Apps for STFC Mod Bridge"
+    )) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name $aboutAction `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  }
   $technicalDetails = Find-AutomationElement `
     -Root $root `
     -Name "Configuration ownership technical details" `

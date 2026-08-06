@@ -8,13 +8,21 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var index = Array.IndexOf(e.Args, "--self-update-ack");
-        if (index < 0 || index + 2 >= e.Args.Length)
+        ConfigureSelfUpdateAcknowledgement(e.Args);
+        var window = new MainWindow();
+        MainWindow = window;
+        window.Show();
+    }
+
+    private void ConfigureSelfUpdateAcknowledgement(string[] arguments)
+    {
+        var index = Array.IndexOf(arguments, "--self-update-ack");
+        if (index < 0 || index + 2 >= arguments.Length)
         {
             return;
         }
-        var acknowledgementPath = e.Args[index + 1];
-        var transactionId = e.Args[index + 2];
+        var acknowledgementPath = arguments[index + 1];
+        var transactionId = arguments[index + 2];
         EventHandler? activated = null;
         activated = (_, _) =>
         {
@@ -34,4 +42,5 @@ public partial class App : Application
         };
         Activated += activated;
     }
+
 }

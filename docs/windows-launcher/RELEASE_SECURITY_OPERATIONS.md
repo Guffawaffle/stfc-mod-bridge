@@ -29,9 +29,11 @@ available, the build job:
 
 The SBOM crosses the same artifact boundary as the unsigned payload, is
 included in the final attestation, is reverified before draft staging, and is
-staged with the machine-consumed release inputs. The protected signing job
-alone receives `id-token: write`; the draft-staging job alone receives
-`contents: write`. The signing/attestation order remains defined in
+staged with the machine-consumed release inputs. Within the tag workflow, only
+the protected signing job receives `id-token: write`; the draft-staging job
+alone receives `contents: write`. A separate post-publication GCS job receives
+OIDC plus read-only GitHub permissions and no signing or GitHub publication
+authority. The signing/attestation order remains defined in
 [Windows Release Signing](CODE_SIGNING.md).
 
 ## Draft qualification and one-way publication
@@ -72,8 +74,9 @@ gh release edit v0.1.0-rc.4 `
 Confirm the release is still a draft immediately before this command. Release
 immutability takes effect when it is published, so the notes and asset set must
 already be final. The release notes must call the build a prerelease, identify
-`STFCModBridge.Setup.exe` as the only user-facing download, describe the ZIP,
-manifest, SBOM, and attestation bundle as machine-consumed inputs, link the
+`STFCModBridge.appinstaller` as the user-facing installation entry point,
+describe the MSIX, ZIP, manifest, SBOM, and attestation bundle as
+machine-consumed inputs or a standalone fallback, link the
 qualification evidence, state the chosen classification and open checks, and
 retain the provenance-versus-safety limitation.
 
@@ -89,6 +92,7 @@ retain the provenance-versus-safety limitation.
 | Microsoft Defender | Gate requires enabled engine and signatures; version logged | Microsoft supplies current signatures on the hosted image |
 | Azure Artifact Signing | OIDC only; no PFX/client secret; action commit pinned | Azure endpoint, profile, role assignment, certificate, and timestamp service |
 | GitHub attestations/releases | Exact subjects verified after job transfer | GitHub OIDC, transparency log, attestation, CLI, and release services |
+| Google Cloud Storage update feed | GitHub OIDC/WIF only; immutable-package create precondition; public byte/hash/MIME/range verification before channel advance | GCP WIF provider, bucket IAM, public endpoint, DNS/TLS, and service availability |
 
 Adding a submodule, a download script, a package source, an Action, or another
 network-acquired tool requires updating this inventory and the invariant tests
@@ -127,6 +131,22 @@ The application must have only `Artifact Signing Certificate Profile Signer`
 at the `stfc-sidecar-public` profile scope. Record every principal able to
 change the federated credential, signing account, certificate profile, or role
 assignment. Remove or document any broader subscription/resource-group role.
+
+## Required Google Cloud evidence
+
+The `windows-release` environment supplies the GCP project, bucket, workload
+identity provider, service account, and public HTTPS base URI as protected
+variables. Export and review the WIF provider attribute condition and bucket
+IAM. The GitHub principal must be limited to this repository's protected
+`windows-release` environment, and the service account must have object access
+only on the update bucket. No service-account JSON key belongs in GitHub.
+
+The bucket serves public objects over HTTPS with byte-range support. Versioned
+`packages/v<version>/STFCModBridge.msix` objects are write-once by workflow
+precondition; only `stable/STFCModBridge.appinstaller` and
+`preview/STFCModBridge.appinstaller` move. Enable object versioning or retention
+as a recovery control, and retain evidence of MIME types, cache controls, public
+hash equality, and channel non-downgrade checks from the publication run.
 
 ## Production-tag acceptance record
 

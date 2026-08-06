@@ -89,7 +89,7 @@ public static class LauncherUpdateRecovery
                 continue;
             }
 
-            RejectReparsePoints(transactionRoot);
+            LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge update recovery");
             var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
                 ?? throw new InvalidDataException("An abandoned Mod Bridge update plan is empty.");
             ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
@@ -101,7 +101,7 @@ public static class LauncherUpdateRecovery
             var hasBackup = Directory.Exists(plan.BackupDirectory);
             if (hasBackup)
             {
-                RejectReparsePoints(plan.BackupDirectory);
+                LauncherFilesystemSafety.RejectReparsePoints(plan.BackupDirectory, "Mod Bridge update recovery");
                 VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
             }
             transactions.Add(new(transactionRoot, plan, hasBackup));
@@ -122,7 +122,7 @@ public static class LauncherUpdateRecovery
             var movedCurrent = false;
             if (Directory.Exists(targetRoot))
             {
-                RejectReparsePoints(targetRoot);
+                LauncherFilesystemSafety.RejectReparsePoints(targetRoot, "Mod Bridge update recovery");
                 moveDirectory(targetRoot, failedTarget);
                 movedCurrent = true;
             }
@@ -200,30 +200,6 @@ public static class LauncherUpdateRecovery
     private static bool PathEquals(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 
-    private static void RejectReparsePoints(string root)
-    {
-        var pendingDirectories = new Stack<string>();
-        pendingDirectories.Push(root);
-        while (pendingDirectories.TryPop(out var directory))
-        {
-            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
-            {
-                throw new InvalidDataException("Mod Bridge update recovery refuses filesystem links or reparse points.");
-            }
-            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
-            {
-                var attributes = File.GetAttributes(entry);
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    throw new InvalidDataException("Mod Bridge update recovery refuses filesystem links or reparse points.");
-                }
-                if ((attributes & FileAttributes.Directory) != 0)
-                {
-                    pendingDirectories.Push(entry);
-                }
-            }
-        }
-    }
 }
 
 public interface ILauncherArchiveDownloader

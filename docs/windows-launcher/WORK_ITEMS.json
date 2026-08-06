@@ -281,7 +281,7 @@
       "objective": "Publish a production-ready Windows launcher without removing the manual version.dll distribution path.",
       "acceptance": [
         "Windows CI builds, tests, and packages launcher and mod artifacts.",
-        "The executable, window, taskbar, shortcuts, and release surfaces use the approved multi-resolution community-mod application icon.",
+        "The executable, window, taskbar, shortcuts, and release surfaces use the approved multi-resolution STFC Mod Bridge application icon.",
         "Keyboard, screen reader, reduced motion, and high-DPI smoke tests pass.",
         "Clean install, adoption, update, game-update repair, rollback, uninstall, and offline launch are documented and smoked.",
         "Manual version.dll assets and installation documentation remain supported.",
