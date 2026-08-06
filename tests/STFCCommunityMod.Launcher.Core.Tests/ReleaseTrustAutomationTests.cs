@@ -70,8 +70,8 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "id-token: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "attestations: write", RegexOptions.CultureInvariant).Count);
         Assert.AreEqual(1, Regex.Matches(releaseWorkflow, "contents: write", RegexOptions.CultureInvariant).Count);
-        Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "persist-credentials: false", RegexOptions.CultureInvariant).Count);
-        Assert.AreEqual(2, Regex.Matches(releaseWorkflow, "submodules: false", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(3, Regex.Matches(releaseWorkflow, "persist-credentials: false", RegexOptions.CultureInvariant).Count);
+        Assert.AreEqual(3, Regex.Matches(releaseWorkflow, "submodules: false", RegexOptions.CultureInvariant).Count);
         Assert.IsFalse(File.Exists(Path.Combine(RepositoryRoot(), ".gitmodules")));
 
         var publicationWorkflow = File.ReadAllText(Path.Combine(
@@ -200,9 +200,15 @@ public sealed partial class ReleaseTrustAutomationTests
             "- name: Generate repository-owned Mod Bridge manifest",
             StringComparison.Ordinal);
         var attestation = workflow.IndexOf("- name: Attest final signed release subjects", StringComparison.Ordinal);
+        var releaseSelectionAttestation = workflow.IndexOf(
+            "- name: Attest release-selection manifest only",
+            StringComparison.Ordinal);
         var transfer = workflow.IndexOf("- name: Upload signed release assets", StringComparison.Ordinal);
         var stagingVerification = workflow.IndexOf(
             "- name: Verify attested release subjects before draft staging",
+            StringComparison.Ordinal);
+        var releaseSelectionVerification = workflow.IndexOf(
+            "- name: Verify manifest-only release-selection attestation",
             StringComparison.Ordinal);
         var staging = workflow.IndexOf(
             "- name: Stage App Installer and machine-consumed release inputs as a draft",
@@ -210,11 +216,21 @@ public sealed partial class ReleaseTrustAutomationTests
 
         Assert.IsTrue(manifest >= 0, "Release workflow must generate its final manifest.");
         Assert.IsTrue(attestation > manifest, "Attestation must occur after final manifest generation.");
-        Assert.IsTrue(transfer > attestation, "Only attested subjects may enter the staging transfer.");
+        Assert.IsTrue(
+            releaseSelectionAttestation > attestation,
+            "The manifest-only authority bundle must supplement, not replace, broad release evidence.");
+        Assert.IsTrue(
+            transfer > releaseSelectionAttestation,
+            "Only attested subjects may enter the staging transfer.");
         Assert.IsTrue(
             stagingVerification > transfer,
             "The staging job must verify transferred subjects after download.");
-        Assert.IsTrue(staging > stagingVerification, "Attestation verification must precede draft staging.");
+        Assert.IsTrue(
+            releaseSelectionVerification > stagingVerification,
+            "The dedicated manifest policy must run after broad subject verification.");
+        Assert.IsTrue(
+            staging > releaseSelectionVerification,
+            "Both attestation verification policies must precede draft staging.");
         StringAssert.Contains(workflow, "\"--draft\"");
 
         var operations = File.ReadAllText(Path.Combine(
@@ -233,6 +249,13 @@ public sealed partial class ReleaseTrustAutomationTests
             new Regex(
                 @"uses:\s+actions/attest@[0-9a-f]{40}\s+#\s+v4",
                 RegexOptions.CultureInvariant));
+        Assert.AreEqual(
+            2,
+            Regex.Matches(
+                workflow,
+                @"uses:\s+actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d\s+#\s+v4",
+                RegexOptions.CultureInvariant).Count,
+            "Both release attestations must use the same reviewed immutable action revision.");
         foreach (var subject in new[]
                  {
                      "artifacts/win-x64/app/STFCModBridge.exe",
@@ -248,6 +271,10 @@ public sealed partial class ReleaseTrustAutomationTests
         }
 
         StringAssert.Contains(workflow, "stfc-mod-bridge-release-attestation.json");
+        StringAssert.Contains(workflow, "stfc-mod-bridge-release-selection-attestation.json");
+        StringAssert.Contains(workflow, "verify-release-selection-attestation.ps1");
+        StringAssert.Contains(workflow, "--format json");
+        StringAssert.Contains(workflow, "ref: ${{ needs.build.outputs.commit }}");
         StringAssert.Contains(workflow, "gh attestation verify");
         StringAssert.Contains(workflow, "--signer-workflow");
         StringAssert.Contains(workflow, "--source-digest");

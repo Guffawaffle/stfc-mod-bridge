@@ -235,18 +235,33 @@ jobs:
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
 
+      - name: Attest release-selection manifest only
+        id: attest-release-selection
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: artifacts/win-x64/stfc-mod-bridge-release-manifest.json
+
       - name: Stage offline attestation bundle
         shell: pwsh
         env:
           ATTESTATION_BUNDLE_PATH: ${{ steps.attest-release.outputs.bundle-path }}
+          RELEASE_SELECTION_BUNDLE_PATH: ${{ steps.attest-release-selection.outputs.bundle-path }}
         run: |
           if (-not $env:ATTESTATION_BUNDLE_PATH `
               -or -not (Test-Path -LiteralPath $env:ATTESTATION_BUNDLE_PATH -PathType Leaf)) {
             throw "The release attestation action did not produce a bundle."
           }
+          if (-not $env:RELEASE_SELECTION_BUNDLE_PATH `
+              -or -not (Test-Path -LiteralPath $env:RELEASE_SELECTION_BUNDLE_PATH -PathType Leaf)) {
+            throw "The release-selection attestation action did not produce a bundle."
+          }
           Copy-Item `
             -LiteralPath $env:ATTESTATION_BUNDLE_PATH `
             -Destination "artifacts/win-x64/stfc-mod-bridge-release-attestation.json" `
+            -Force
+          Copy-Item `
+            -LiteralPath $env:RELEASE_SELECTION_BUNDLE_PATH `
+            -Destination "artifacts/win-x64/stfc-mod-bridge-release-selection-attestation.json" `
             -Force
 
       - name: Upload signed release assets
@@ -261,6 +276,7 @@ jobs:
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-release-attestation.json
+            artifacts/win-x64/stfc-mod-bridge-release-selection-attestation.json
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
           if-no-files-found: error
 
@@ -271,6 +287,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+          submodules: false
+
       - name: Download signed release assets
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -314,6 +336,35 @@ jobs:
             }
           }
 
+      - name: Verify manifest-only release-selection attestation
+        shell: pwsh
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          $root = "artifacts/win-x64"
+          $manifest = "$root/stfc-mod-bridge-release-manifest.json"
+          $bundle = "$root/stfc-mod-bridge-release-selection-attestation.json"
+          $verificationJson = Join-Path $env:RUNNER_TEMP "release-selection-verification.json"
+          if (-not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
+            throw "The signed release payload is missing its release-selection attestation bundle."
+          }
+          & gh attestation verify $manifest `
+            --repo $env:RELEASE_REPOSITORY `
+            --signer-workflow "$env:RELEASE_REPOSITORY/.github/workflows/release.yml" `
+            --source-digest $env:TARGET_COMMIT `
+            --source-ref "refs/tags/$env:RELEASE_TAG" `
+            --deny-self-hosted-runners `
+            --bundle $bundle `
+            --format json | Set-Content -LiteralPath $verificationJson -Encoding utf8NoBOM
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release-selection attestation verification failed."
+          }
+          ./scripts/verify-release-selection-attestation.ps1 `
+            -VerificationJsonPath $verificationJson `
+            -SubjectPath $manifest
+
       - name: Stage App Installer and machine-consumed release inputs as a draft
         shell: pwsh
         env:
@@ -330,6 +381,7 @@ jobs:
             "$root/stfc-mod-bridge-win-x64.zip",
             "$root/stfc-mod-bridge-release-manifest.json",
             "$root/stfc-mod-bridge-release-attestation.json",
+            "$root/stfc-mod-bridge-release-selection-attestation.json",
             "$root/stfc-mod-bridge-sbom.spdx.json"
           )
           $notes = @"
@@ -338,7 +390,7 @@ jobs:
 
           Install STFC Mod Bridge with `STFCModBridge.appinstaller` after the published-release hosting check succeeds.
 
-          The MSIX, ZIP, manifest, SBOM, and attestation bundle are machine-consumed trust/update inputs, not alternate installation entry points.
+          The MSIX, ZIP, manifest, SBOM, and attestation bundles are machine-consumed trust/update inputs, not alternate installation entry points.
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM
