@@ -59,6 +59,7 @@ public sealed record LauncherUpdatePreparation(
     string TargetDirectory,
     string PlanPath,
     LauncherUpdateBoundFile? RunnerUpdater,
+    string UpdaterReadyPath,
     string PlanSha256);
 
 public sealed record LauncherUpdateRecoveryPreparation(
@@ -67,6 +68,23 @@ public sealed record LauncherUpdateRecoveryPreparation(
     LauncherUpdateBoundFile RunnerUpdater,
     string JournalPath,
     string JournalSha256);
+
+public sealed class LauncherRestoredPayload : IDisposable
+{
+    private IDisposable? payloadLease;
+
+    internal LauncherRestoredPayload(
+        LauncherUpdateBoundFile launcher,
+        IDisposable payloadLease)
+    {
+        Launcher = launcher;
+        this.payloadLease = payloadLease;
+    }
+
+    public LauncherUpdateBoundFile Launcher { get; }
+
+    public void Dispose() => Interlocked.Exchange(ref payloadLease, null)?.Dispose();
+}
 
 public static class LauncherUpdateRecovery
 {
@@ -178,7 +196,7 @@ public static class LauncherUpdateRecovery
     }
 
     [SupportedOSPlatform("windows")]
-    public static LauncherUpdateBoundFile RestoreFromJournal(
+    public static LauncherRestoredPayload RestoreFromJournal(
         string journalPath,
         string expectedJournalSha256,
         string expectedStateDirectory,
@@ -197,7 +215,7 @@ public static class LauncherUpdateRecovery
             new WindowsLauncherArtifactIdentityReader());
     }
 
-    internal static LauncherUpdateBoundFile RestoreFromJournal(
+    internal static LauncherRestoredPayload RestoreFromJournal(
         string journalPath,
         string expectedJournalSha256,
         string expectedStateDirectory,
@@ -223,14 +241,28 @@ public static class LauncherUpdateRecovery
             journal.TargetDirectory,
             journal.PreviousFiles,
             journal.LauncherRelativePath);
-        VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
-        Directory.Delete(journal.BackupDirectory, recursive: true);
-        var launcher = journal.PreviousFiles.Single(file =>
-            string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
-        return new(
-            Path.Combine(journal.TargetDirectory, journal.LauncherRelativePath),
-            launcher.Size,
-            launcher.Sha256);
+        var payloadLease = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+            journal.TargetDirectory,
+            journal.PreviousFiles,
+            "restored payload");
+        try
+        {
+            VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+            Directory.Delete(journal.BackupDirectory, recursive: true);
+            var launcher = journal.PreviousFiles.Single(file =>
+                string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+            return new LauncherRestoredPayload(
+                new(
+                    Path.Combine(journal.TargetDirectory, journal.LauncherRelativePath),
+                    launcher.Size,
+                    launcher.Sha256),
+                payloadLease);
+        }
+        catch
+        {
+            payloadLease.Dispose();
+            throw;
+        }
     }
 
     private static void ValidateUncommittedPlan(
@@ -534,6 +566,7 @@ public sealed class LauncherSelfUpdateService(
                 programDirectory,
                 string.Empty,
                 null,
+                string.Empty,
                 string.Empty);
         }
 
@@ -669,6 +702,7 @@ public sealed class LauncherSelfUpdateService(
                 programDirectory,
                 planPath,
                 plan.RunnerUpdater,
+                Path.Combine(transactionRoot, LauncherUpdaterReadiness.FileName),
                 planFile.Sha256);
         }
         catch
@@ -690,6 +724,17 @@ public sealed class LauncherSelfUpdateService(
         {
             throw new InvalidOperationException("Only a ready Mod Bridge update can start.");
         }
+        var expectedReadyPath = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(preparation.PlanPath))!,
+            LauncherUpdaterReadiness.FileName);
+        if (!string.Equals(
+                Path.GetFullPath(preparation.UpdaterReadyPath),
+                expectedReadyPath,
+                StringComparison.OrdinalIgnoreCase)
+            || File.Exists(expectedReadyPath))
+        {
+            throw new InvalidDataException("The update helper readiness path is invalid or stale.");
+        }
         var startInfo = new ProcessStartInfo(preparation.RunnerUpdater.Path)
         {
             UseShellExecute = false,
@@ -700,7 +745,24 @@ public sealed class LauncherSelfUpdateService(
         startInfo.ArgumentList.Add(preparation.PlanPath);
         startInfo.ArgumentList.Add("--plan-sha256");
         startInfo.ArgumentList.Add(preparation.PlanSha256);
-        _ = LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo);
+        using var updater = LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo);
+        try
+        {
+            LauncherUpdaterReadiness.WaitForReady(
+                updater,
+                expectedReadyPath,
+                preparation.PlanSha256,
+                TimeSpan.FromSeconds(30));
+        }
+        catch
+        {
+            if (!updater.HasExited)
+            {
+                updater.Kill(entireProcessTree: true);
+                updater.WaitForExit(5_000);
+            }
+            throw;
+        }
     }
 
     private void VerifySignedExecutable(string path)

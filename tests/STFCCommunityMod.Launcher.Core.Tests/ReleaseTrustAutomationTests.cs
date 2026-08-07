@@ -627,13 +627,73 @@ public sealed partial class ReleaseTrustAutomationTests
             "src",
             "STFCCommunityMod.Launcher.Updater",
             "Program.cs"));
+        var retainedPayload = updater.IndexOf(
+            "LauncherUpdatePayloadTransaction.RetainVerifiedPayload(",
+            StringComparison.Ordinal);
         var completion = updater.IndexOf("LauncherUpdateCompletionJournalStore.Create(", StringComparison.Ordinal);
         var recorded = updater.IndexOf("completionRecorded = true;", StringComparison.Ordinal);
         var cleanup = updater.IndexOf("Directory.Delete(plan.BackupDirectory, true);", StringComparison.Ordinal);
 
-        Assert.IsTrue(completion >= 0, "Acknowledgement must create a protected terminal journal.");
+        Assert.IsTrue(retainedPayload >= 0, "Acknowledgement must retain the verified installed inventory.");
+        Assert.IsTrue(completion > retainedPayload, "Terminal state must be written while the payload lease is held.");
         Assert.IsTrue(recorded > completion, "The updater must record durable completion before changing behavior.");
         Assert.IsTrue(cleanup > recorded, "Backup cleanup must begin only after the terminal journal is durable.");
+    }
+
+    [TestMethod]
+    public void RestoreRetainsVerifiedInventoryThroughBackupDeletion()
+    {
+        var recovery = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var restore = recovery.IndexOf("RestorePreservingLauncher(", StringComparison.Ordinal);
+        var retainedPayload = recovery.IndexOf(
+            "LauncherUpdatePayloadTransaction.RetainVerifiedPayload(",
+            restore,
+            StringComparison.Ordinal);
+        var cleanup = recovery.IndexOf(
+            "Directory.Delete(journal.BackupDirectory, recursive: true);",
+            retainedPayload,
+            StringComparison.Ordinal);
+        var returnedLease = recovery.IndexOf("new LauncherRestoredPayload(", cleanup, StringComparison.Ordinal);
+
+        Assert.IsTrue(restore >= 0);
+        Assert.IsTrue(retainedPayload > restore, "Restored bytes must be pinned after replacement.");
+        Assert.IsTrue(cleanup > retainedPayload, "Backup deletion must happen under the retained payload lease.");
+        Assert.IsTrue(returnedLease > cleanup, "The payload lease must survive return for pinned process creation.");
+    }
+
+    [TestMethod]
+    public void UpdaterSignalsRetainedPlanBeforeParentShutdown()
+    {
+        var root = RepositoryRoot();
+        var updater = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var selfUpdate = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var window = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "MainWindow.xaml.cs"));
+        var retained = updater.IndexOf("LoadAndRetain(", StringComparison.Ordinal);
+        var ready = updater.IndexOf("LauncherUpdaterReadiness.Publish(", StringComparison.Ordinal);
+        var waitsForReady = selfUpdate.Contains("LauncherUpdaterReadiness.WaitForReady(", StringComparison.Ordinal);
+        var start = window.IndexOf("MainWindowViewModel.StartLauncherUpdate(preparation);", StringComparison.Ordinal);
+        var shutdown = window.IndexOf("Application.Current.Shutdown();", start, StringComparison.Ordinal);
+
+        Assert.IsTrue(ready > retained, "The child may signal readiness only after retaining the authenticated plan.");
+        Assert.IsTrue(waitsForReady, "The parent handoff must wait for the child readiness acknowledgement.");
+        Assert.IsTrue(start >= 0);
+        Assert.IsTrue(shutdown > start, "The UI may shut down only after the blocking ready handoff returns.");
     }
 
     [TestMethod]

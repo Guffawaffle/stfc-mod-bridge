@@ -29,6 +29,9 @@ static async Task<int> RunAsync(string[] args)
             args[3],
             expectedLayout.StateDirectory,
             expectedLayout.ProgramDirectory);
+        LauncherUpdaterReadiness.Publish(
+            Path.Combine(Path.GetDirectoryName(planPath)!, LauncherUpdaterReadiness.FileName),
+            args[3]);
         var plan = runtimePlan.Plan;
         await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
@@ -99,7 +102,10 @@ static async Task<int> RunAsync(string[] args)
             if (File.Exists(plan.AcknowledgementPath)
                 && string.Equals(await File.ReadAllTextAsync(plan.AcknowledgementPath), plan.TransactionId, StringComparison.Ordinal))
             {
-                VerifyPayload(plan.TargetDirectory, plan.Files);
+                using var installedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    plan.TargetDirectory,
+                    plan.Files,
+                    "acknowledged installation");
                 _ = LauncherUpdateCompletionJournalStore.Create(
                     plan,
                     recoveryJournalSha256,
@@ -113,11 +119,12 @@ static async Task<int> RunAsync(string[] args)
                 updated.Kill(entireProcessTree: true);
                 await updated.WaitForExitAsync();
             }
-            var previousLauncher = LauncherUpdateRecovery.RestoreFromJournal(
+            using var restored = LauncherUpdateRecovery.RestoreFromJournal(
                 recoveryJournalPath,
                 recoveryJournalSha256,
                 plan.StateRoot,
                 plan.TargetDirectory);
+            var previousLauncher = restored.Launcher;
             if (File.Exists(previousLauncher.Path))
             {
                 _ = LauncherVerifiedExecutable.Start(
@@ -143,7 +150,7 @@ static async Task<int> RunAsync(string[] args)
             }
             if (Directory.Exists(plan.BackupDirectory))
             {
-                _ = LauncherUpdateRecovery.RestoreFromJournal(
+                using var restored = LauncherUpdateRecovery.RestoreFromJournal(
                     recoveryJournalPath,
                     recoveryJournalSha256,
                     plan.StateRoot,
@@ -181,11 +188,12 @@ static async Task<int> RunRecoveryAsync(
         var layout = PerUserInstallLayout.FromCurrentUser();
         await using var lease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
-        var launcher = LauncherUpdateRecovery.RestoreFromJournal(
+        using var restored = LauncherUpdateRecovery.RestoreFromJournal(
             Path.GetFullPath(journalPath),
             expectedJournalSha256,
             layout.StateDirectory,
             layout.ProgramDirectory);
+        var launcher = restored.Launcher;
         _ = LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)
         {
             UseShellExecute = false,

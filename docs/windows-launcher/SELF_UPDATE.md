@@ -31,6 +31,12 @@ Authenticode while a deny-write/deny-delete file handle remains open through
 direct process creation. A verified executable pathname therefore cannot be
 substituted across the verify/execute boundary.
 
+For the ordinary update handoff, the parent does not exit merely because
+process creation succeeded. The child atomically publishes a plan-SHA-bound
+readiness acknowledgement only after strict `LoadAndRetain` succeeds; the
+parent waits for that exact acknowledgement before allowing the UI shutdown
+that makes replacement possible.
+
 The running executable is never overwritten. The launcher stages the verified
 archive and exact manifest, bundle, receipt, and approved trust root under
 per-user state. Plan schema v2 binds their paths, sizes, and SHA-256 values plus
@@ -53,13 +59,16 @@ remains at the stable shortcut path across every individual file boundary; the
 two-directory rename gap is not used. The new launcher acknowledges only after
 WPF activation. Missing acknowledgement or early exit revalidates the protected
 journal, backup inventory, Authenticode identities, and launcher/verifier
-pairing before restoring the prior payload and restarting it. No elevation is
-requested.
+pairing before restoring the prior payload. The complete restored inventory
+remains pinned through backup deletion and the verified launcher restart. No
+elevation is requested.
 
 After a successful startup acknowledgement, the updater verifies the installed
-payload again and durably writes a second current-user DPAPI-protected completion
-journal before deleting any backup file. That terminal journal binds the exact
-recovery journal and complete installed inventory. If backup cleanup is
+payload again while retaining deny-write/deny-delete handles for every installed
+file, then durably writes a second current-user DPAPI-protected completion
+journal and deletes the backup before releasing those handles. That terminal
+journal binds the exact recovery journal and complete installed inventory. If
+backup cleanup is
 interrupted, the next startup validates the acknowledged installation and
 discards cleanup residue instead of misclassifying the partial backup as a
 rollback candidate. An invalid acknowledged installation fails closed without

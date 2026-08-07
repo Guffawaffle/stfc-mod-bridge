@@ -35,6 +35,9 @@ public sealed class LauncherSelfUpdateTests
         Assert.IsTrue(File.Exists(result.PlanPath));
         Assert.IsNotNull(result.RunnerUpdater);
         Assert.IsTrue(File.Exists(result.RunnerUpdater.Path));
+        Assert.AreEqual(
+            Path.Combine(Path.GetDirectoryName(result.PlanPath)!, LauncherUpdaterReadiness.FileName),
+            result.UpdaterReadyPath);
         StringAssert.Matches(result.PlanSha256, new System.Text.RegularExpressions.Regex("^[0-9a-f]{64}$"));
         var serializedPlan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
             await File.ReadAllBytesAsync(result.PlanPath),
@@ -197,7 +200,7 @@ public sealed class LauncherSelfUpdateTests
         var recovery = CreateRecoveryTransaction(state, target, "trusted previous payload");
         var preparation = InspectRecovery(state, target)!;
 
-        var launcher = LauncherUpdateRecovery.RestoreFromJournal(
+        using var restored = LauncherUpdateRecovery.RestoreFromJournal(
             preparation.JournalPath,
             preparation.JournalSha256,
             state,
@@ -205,6 +208,7 @@ public sealed class LauncherSelfUpdateTests
             JournalProtector,
             new FakeAuthenticityVerifier(),
             new FakeIdentityReader());
+        var launcher = restored.Launcher;
 
         Assert.AreEqual(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), launcher.Path);
         Assert.AreEqual(new FileInfo(launcher.Path).Length, launcher.Size);
@@ -212,6 +216,8 @@ public sealed class LauncherSelfUpdateTests
         Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(File.Exists(Path.Combine(target, "new.txt")));
         Assert.IsFalse(Directory.Exists(recovery.Backup));
+        Assert.ThrowsException<IOException>(
+            () => File.WriteAllText(Path.Combine(target, "old.txt"), "substituted-restored-payload"));
 
         using var process = LauncherVerifiedExecutable.Start(
             launcher,
@@ -313,6 +319,41 @@ public sealed class LauncherSelfUpdateTests
             Process.Start);
         Assert.IsTrue(process.WaitForExit(10_000));
         Assert.AreEqual(0, process.ExitCode);
+    }
+
+    [TestMethod]
+    public async Task UpdaterReadinessPublishesOnlyTheRetainedPlanIdentity()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var readyPath = Path.Combine(temporaryDirectory.Path, LauncherUpdaterReadiness.FileName);
+        var planSha256 = new string('a', 64);
+        using var process = Process.GetCurrentProcess();
+        var publisher = Task.Run(async () =>
+        {
+            await Task.Delay(50);
+            LauncherUpdaterReadiness.Publish(readyPath, planSha256);
+        });
+
+        LauncherUpdaterReadiness.WaitForReady(process, readyPath, planSha256, TimeSpan.FromSeconds(5));
+        await publisher;
+
+        Assert.AreEqual(planSha256, File.ReadAllText(readyPath));
+    }
+
+    [TestMethod]
+    public void UpdaterReadinessRejectsAnotherPlanIdentity()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var readyPath = Path.Combine(temporaryDirectory.Path, LauncherUpdaterReadiness.FileName);
+        LauncherUpdaterReadiness.Publish(readyPath, new string('b', 64));
+        using var process = Process.GetCurrentProcess();
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdaterReadiness.WaitForReady(
+                process,
+                readyPath,
+                new string('a', 64),
+                TimeSpan.FromSeconds(1)));
     }
 
     [TestMethod]
@@ -485,6 +526,32 @@ public sealed class LauncherSelfUpdateTests
 
         Assert.IsTrue(File.Exists(launcher));
         Assert.AreEqual("old-launcher", File.ReadAllText(launcher));
+    }
+
+    [TestMethod]
+    public void VerifiedPayloadLeasePinsEveryInstalledFileUntilDisposed()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var target = temporaryDirectory.CreateDirectory("program");
+        WritePayload(target, "installed");
+        var expected = Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories)
+            .Select(path => FileRecord(target, path))
+            .ToArray();
+        var payloadLease = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+            target,
+            expected,
+            "test installation");
+
+        foreach (var file in expected)
+        {
+            var path = Path.Combine(target, file.RelativePath);
+            Assert.ThrowsException<IOException>(() => File.WriteAllText(path, "substituted"));
+            Assert.ThrowsException<IOException>(() => File.Move(path, path + ".moved"));
+        }
+
+        payloadLease.Dispose();
+        File.WriteAllText(Path.Combine(target, "old.txt"), "released");
+        Assert.AreEqual("released", File.ReadAllText(Path.Combine(target, "old.txt")));
     }
 
     [TestMethod]

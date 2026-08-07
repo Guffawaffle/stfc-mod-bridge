@@ -271,6 +271,17 @@ internal static class LauncherUpdateRecoveryJournalStore
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 }
 
+internal sealed class LauncherUpdatePayloadLease(IReadOnlyList<FileStream> streams) : IDisposable
+{
+    public void Dispose()
+    {
+        for (var index = streams.Count - 1; index >= 0; index--)
+        {
+            streams[index].Dispose();
+        }
+    }
+}
+
 internal static class LauncherUpdatePayloadTransaction
 {
     public static void CreateBackup(string sourceRoot, string backupRoot, IReadOnlyList<LauncherUpdateFile> expected)
@@ -320,29 +331,68 @@ internal static class LauncherUpdatePayloadTransaction
         IReadOnlyList<LauncherUpdateFile> expected,
         string context)
     {
+        using var payloadLease = RetainVerifiedPayload(root, expected, context);
+    }
+
+    public static LauncherUpdatePayloadLease RetainVerifiedPayload(
+        string root,
+        IReadOnlyList<LauncherUpdateFile> expected,
+        string context)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        LauncherUpdateTransactionSecurity.ValidatePayloadRecords(expected, requireFiles: true);
         LauncherFilesystemSafety.RejectReparsePoints(root, $"Mod Bridge {context}");
-        var actual = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Select(path => new LauncherUpdateFile(
-                Path.GetRelativePath(root, path),
-                new FileInfo(path).Length,
-                HashFile(path)))
-            .ToArray();
-        if (actual.Length != expected.Count)
+        var expectedPaths = expected
+            .Select(file => NormalizeRelativePath(file.RelativePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var actualPaths = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(path => NormalizeRelativePath(Path.GetRelativePath(root, path)))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!actualPaths.SetEquals(expectedPaths))
         {
-            throw new InvalidDataException($"The Mod Bridge {context} file count changed.");
+            throw new InvalidDataException($"The Mod Bridge {context} file identity changed.");
         }
-        foreach (var expectedFile in expected)
+        var streams = new List<FileStream>(expected.Count);
+        try
         {
-            var actualFile = actual.SingleOrDefault(file =>
-                string.Equals(file.RelativePath, expectedFile.RelativePath, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidDataException($"The Mod Bridge {context} file identity changed.");
-            if (actualFile.Size != expectedFile.Size
-                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
-                    actualFile.Sha256,
-                    expectedFile.Sha256))
+            foreach (var expectedFile in expected.OrderBy(file => file.RelativePath, StringComparer.Ordinal))
             {
-                throw new InvalidDataException($"The Mod Bridge {context} failed verification.");
+                var path = ResolveContainedPath(root, expectedFile.RelativePath);
+                var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    64 * 1024,
+                    FileOptions.SequentialScan);
+                streams.Add(stream);
+                if (stream.Length != expectedFile.Size
+                    || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidDataException($"The Mod Bridge {context} file identity changed.");
+                }
+                var digest = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+                if (!AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(digest, expectedFile.Sha256))
+                {
+                    throw new InvalidDataException($"The Mod Bridge {context} failed verification.");
+                }
             }
+            actualPaths = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Select(path => NormalizeRelativePath(Path.GetRelativePath(root, path)))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!actualPaths.SetEquals(expectedPaths))
+            {
+                throw new InvalidDataException($"The Mod Bridge {context} file identity changed.");
+            }
+            return new LauncherUpdatePayloadLease(streams);
+        }
+        catch
+        {
+            for (var index = streams.Count - 1; index >= 0; index--)
+            {
+                streams[index].Dispose();
+            }
+            throw;
         }
     }
 
