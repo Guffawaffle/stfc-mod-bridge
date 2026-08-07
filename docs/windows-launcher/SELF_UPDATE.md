@@ -65,6 +65,13 @@ Authenticode identities, and launcher/verifier pairing before restoring the
 prior payload. The complete restored inventory remains pinned through backup
 deletion and the verified launcher restart. No elevation is requested.
 
+Preparation creates its transaction root under the same operation lease used by
+startup, then retains a durable owner marker with a deny-write/delete handle
+through confirmation and updater readiness. A concurrent launch therefore
+defers that live transaction instead of deleting staged evidence. If preparation
+crashes before `plan.json` is committed, the released marker or markerless
+partial root is recognized as abandoned and removed on the next leased startup.
+
 After successful exact-child startup, the updater verifies the installed
 payload again while retaining deny-write/deny-delete handles for every installed
 file, then durably writes a second current-user DPAPI-protected completion
@@ -91,6 +98,9 @@ transaction-bound self-update child arguments as the forward-update child. That
 single child launch defers startup recovery so it cannot race deletion of the
 still-running transaction updater. The residue remains protected and is
 validated and removed on the next ordinary startup after the updater has exited.
+Completed-recovery cleanup validates the protected installed inventory before it
+requires a runner; once no authoritative backup remains, a runner already
+deleted by an interrupted marker-last cleanup is not needed to finish safely.
 
 The complete expected inventory is enumerated both before and after its file
 handles are retained, and is checked at cleanup boundaries under the

@@ -29,7 +29,7 @@ public sealed class LauncherSelfUpdateTests
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
-        var result = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
+        using var result = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.Ready, result.State);
         Assert.IsTrue(File.Exists(result.PlanPath));
@@ -47,6 +47,11 @@ public sealed class LauncherSelfUpdateTests
             result.PlanSha256,
             serializedPlan.StateRoot,
             serializedPlan.TargetDirectory);
+        Assert.IsTrue(LauncherUpdatePreparationOwner.IsLive(Path.Combine(
+            Path.GetDirectoryName(result.PlanPath)!,
+            LauncherUpdatePreparationOwner.FileName)));
+        Assert.IsNull(InspectRecovery(serializedPlan.StateRoot, serializedPlan.TargetDirectory));
+        Assert.IsTrue(File.Exists(result.PlanPath));
         Assert.AreEqual(2, retained.Plan.SchemaVersion);
         Assert.IsTrue(retained.Plan.Files.All(file => string.Equals(
             file.Sha256,
@@ -71,10 +76,44 @@ public sealed class LauncherSelfUpdateTests
         var downloader = new FakeDownloader(archive);
         var service = CreateService(temporaryDirectory, archive, downloader);
 
-        var result = await service.PrepareAsync(Discovery(Artifact(archive)), TargetCommit, 123);
+        using var result = await service.PrepareAsync(Discovery(Artifact(archive)), TargetCommit, 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.UpToDate, result.State);
         Assert.AreEqual(0, downloader.CallCount);
+    }
+
+    [TestMethod]
+    public void RejectedUpdaterStartReleasesPreparationOwner()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            AssertRejectedUpdaterStartReleasesPreparationOwner();
+            return;
+        }
+        Assert.Inconclusive("Windows process handoff semantics are required for this check.");
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AssertRejectedUpdaterStartReleasesPreparationOwner()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var transactionRoot = temporaryDirectory.CreateDirectory(Guid.NewGuid().ToString("N"));
+        var ownerPath = Path.Combine(transactionRoot, LauncherUpdatePreparationOwner.FileName);
+        var preparation = new LauncherUpdatePreparation(
+            LauncherUpdatePreparationState.UpToDate,
+            "No update.",
+            "0.1.0",
+            temporaryDirectory.Path,
+            string.Empty,
+            null,
+            string.Empty,
+            string.Empty);
+        preparation.RetainPreparationOwner(LauncherUpdatePreparationOwner.Create(transactionRoot));
+        Assert.IsTrue(LauncherUpdatePreparationOwner.IsLive(ownerPath));
+
+        Assert.ThrowsException<InvalidOperationException>(() => LauncherSelfUpdateService.StartUpdater(preparation));
+
+        Assert.IsFalse(LauncherUpdatePreparationOwner.IsLive(ownerPath));
     }
 
     [TestMethod]
@@ -168,7 +207,10 @@ public sealed class LauncherSelfUpdateTests
             ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var service = CreateService(temporaryDirectory, archive);
 
-        await service.PrepareAsync(Discovery(Artifact(archive), temporaryDirectory), new string('a', 40), 123);
+        using var preparation = await service.PrepareAsync(
+            Discovery(Artifact(archive), temporaryDirectory),
+            new string('a', 40),
+            123);
 
         Assert.AreEqual("preserve-me", File.ReadAllText(journal));
     }
@@ -267,7 +309,10 @@ public sealed class LauncherSelfUpdateTests
             ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
-        var preparation = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
+        using var preparation = await service.PrepareAsync(
+            Discovery(artifact, temporaryDirectory),
+            new string('a', 40),
+            123);
         var runner = preparation.RunnerUpdater!;
         var startInfo = new ProcessStartInfo(runner.Path) { UseShellExecute = false };
 
@@ -438,6 +483,44 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void RecoveryDefersLivePreparationAndCleansItAfterOwnerRelease()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(
+            state,
+            "self-update",
+            Guid.NewGuid().ToString("N"))).FullName;
+        using (LauncherUpdatePreparationOwner.Create(transactionRoot))
+        {
+            Directory.CreateDirectory(Path.Combine(transactionRoot, "stage"));
+
+            Assert.IsNull(InspectRecovery(state, target));
+            Assert.IsTrue(Directory.Exists(transactionRoot));
+        }
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansPreparationCrashBeforePlanCreation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(
+            state,
+            "self-update",
+            Guid.NewGuid().ToString("N"))).FullName;
+        Directory.CreateDirectory(Path.Combine(transactionRoot, "stage"));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
     public void RecoveryRejectsMissingBackupWithoutVerifiedRestoredTarget()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -470,6 +553,26 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void RecoveryCleansVerifiedRestoreAfterRunnerDeletion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
+        Directory.Delete(recovery.Backup, recursive: true);
+        File.Delete(recovery.Plan.RunnerUpdater.Path);
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
     public void RecoveryCleansPartialBackupAfterVerifiedRestore()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -483,6 +586,7 @@ public sealed class LauncherSelfUpdateTests
             File.Copy(source, destination);
         }
         File.Delete(Path.Combine(recovery.Backup, "old.txt"));
+        File.Delete(recovery.Plan.RunnerUpdater.Path);
 
         Assert.IsNull(InspectRecovery(state, target));
         Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));

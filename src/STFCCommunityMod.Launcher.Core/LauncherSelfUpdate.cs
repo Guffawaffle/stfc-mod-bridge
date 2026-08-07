@@ -60,7 +60,16 @@ public sealed record LauncherUpdatePreparation(
     string PlanPath,
     LauncherUpdateBoundFile? RunnerUpdater,
     string UpdaterReadyPath,
-    string PlanSha256);
+    string PlanSha256) : IDisposable
+{
+    private IDisposable? preparationOwner;
+
+    internal void RetainPreparationOwner(IDisposable owner) =>
+        preparationOwner = owner;
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref preparationOwner, null)?.Dispose();
+}
 
 public sealed record LauncherUpdateRecoveryPreparation(
     int ExaminedTransactions,
@@ -84,6 +93,52 @@ public sealed class LauncherRestoredPayload : IDisposable
     public LauncherUpdateBoundFile Launcher { get; }
 
     public void Dispose() => Interlocked.Exchange(ref payloadLease, null)?.Dispose();
+}
+
+internal static class LauncherUpdatePreparationOwner
+{
+    internal const string FileName = "preparation.owner";
+
+    public static IDisposable Create(string transactionRoot)
+    {
+        var path = Path.Combine(Path.GetFullPath(transactionRoot), FileName);
+        var stream = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.Read,
+            1,
+            FileOptions.WriteThrough);
+        stream.Flush(flushToDisk: true);
+        return stream;
+    }
+
+    public static bool IsLive(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException("The Mod Bridge update preparation owner marker is unsafe.");
+        }
+        try
+        {
+            using var probe = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                1,
+                FileOptions.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
 }
 
 public static class LauncherUpdateRecovery
@@ -136,6 +191,11 @@ public static class LauncherUpdateRecovery
             var backupPath = Path.Combine(transactionRoot, "backup");
             var journalPath = Path.Combine(transactionRoot, LauncherUpdateRecoveryJournalStore.FileName);
             var completionPath = Path.Combine(transactionRoot, LauncherUpdateCompletionJournalStore.FileName);
+            var preparationOwnerPath = Path.Combine(transactionRoot, LauncherUpdatePreparationOwner.FileName);
+            if (LauncherUpdatePreparationOwner.IsLive(preparationOwnerPath))
+            {
+                continue;
+            }
             if (File.Exists(completionPath))
             {
                 var completion = LauncherUpdateCompletionJournalStore.Load(completionPath, protector);
@@ -180,13 +240,26 @@ public static class LauncherUpdateRecovery
                     Directory.Delete(transactionRoot, recursive: false);
                     continue;
                 }
-                ValidateUncommittedPlan(transactionRoot, transactionId, stateRoot, targetRoot);
-                Directory.Delete(transactionRoot, recursive: true);
+                var planPath = Path.Combine(transactionRoot, "plan.json");
+                if (File.Exists(planPath))
+                {
+                    ValidateUncommittedPlan(transactionRoot, transactionId, stateRoot, targetRoot);
+                }
+                if (File.Exists(preparationOwnerPath))
+                {
+                    DeleteTransactionResidueMarkerLast(
+                        transactionRoot,
+                        preparationOwnerPath,
+                        "abandoned update preparation cleanup");
+                }
+                else
+                {
+                    Directory.Delete(transactionRoot, recursive: true);
+                }
                 continue;
             }
             var journal = LauncherUpdateRecoveryJournalStore.Load(journalPath, protector);
             ValidateJournal(journal, transactionId, transactionRoot, stateRoot, targetRoot);
-            VerifyBoundRunner(journal.RunnerUpdater, authenticityVerifier);
             if (!Directory.Exists(backupPath))
             {
                 using var restoredPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
@@ -225,6 +298,7 @@ public static class LauncherUpdateRecovery
                     "completed recovery cleanup");
                 continue;
             }
+            VerifyBoundRunner(journal.RunnerUpdater, authenticityVerifier);
             recoveries.Add((journal, journalPath));
         }
 
@@ -666,8 +740,17 @@ public sealed class LauncherSelfUpdateService(
 
         var transactionId = Guid.NewGuid().ToString("N");
         var transactionRoot = Path.Combine(stateDirectory, "self-update", transactionId);
+        IDisposable? preparationOwner = null;
         try
         {
+            var initializationLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+            await using (initializationLease)
+            {
+                Directory.CreateDirectory(transactionRoot);
+                preparationOwner = LauncherUpdatePreparationOwner.Create(transactionRoot);
+            }
             var stageDirectory = Path.Combine(transactionRoot, "stage");
             var evidenceDirectory = Path.Combine(transactionRoot, "evidence");
             Directory.CreateDirectory(stageDirectory);
@@ -775,7 +858,7 @@ public sealed class LauncherSelfUpdateService(
             var planPath = Path.Combine(transactionRoot, "plan.json");
             var planBytes = JsonSerializer.SerializeToUtf8Bytes(plan, JsonOptions);
             var planFile = await WriteBoundBytesAsync(planPath, planBytes, expectedSha256: null, cancellationToken);
-            return new(
+            var preparation = new LauncherUpdatePreparation(
                 LauncherUpdatePreparationState.Ready,
                 $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
                 + "Action outcome: the archive is staged; installation has not started."
@@ -787,13 +870,29 @@ public sealed class LauncherSelfUpdateService(
                 plan.RunnerUpdater,
                 Path.Combine(transactionRoot, LauncherUpdaterReadiness.FileName),
                 planFile.Sha256);
+            preparation.RetainPreparationOwner(preparationOwner);
+            preparationOwner = null;
+            return preparation;
         }
         catch
         {
-            if (Directory.Exists(transactionRoot))
+            var cleanupLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync(CancellationToken.None);
+            if (cleanupLease is null)
             {
-                LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update cleanup");
-                Directory.Delete(transactionRoot, recursive: true);
+                preparationOwner?.Dispose();
+            }
+            else
+            {
+                await using (cleanupLease)
+                {
+                    preparationOwner?.Dispose();
+                    if (Directory.Exists(transactionRoot))
+                    {
+                        LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update cleanup");
+                        Directory.Delete(transactionRoot, recursive: true);
+                    }
+                }
             }
             throw;
         }
@@ -801,6 +900,19 @@ public sealed class LauncherSelfUpdateService(
 
     [SupportedOSPlatform("windows")]
     public static void StartUpdater(LauncherUpdatePreparation preparation)
+    {
+        try
+        {
+            StartUpdaterCore(preparation);
+        }
+        finally
+        {
+            preparation.Dispose();
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void StartUpdaterCore(LauncherUpdatePreparation preparation)
     {
         if (preparation.State != LauncherUpdatePreparationState.Ready
             || preparation.RunnerUpdater is null)
