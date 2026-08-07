@@ -117,6 +117,25 @@ public static class LauncherUpdateRecovery
             LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge update recovery");
             var backupPath = Path.Combine(transactionRoot, "backup");
             var journalPath = Path.Combine(transactionRoot, LauncherUpdateRecoveryJournalStore.FileName);
+            var completionPath = Path.Combine(transactionRoot, LauncherUpdateCompletionJournalStore.FileName);
+            if (File.Exists(completionPath))
+            {
+                var completion = LauncherUpdateCompletionJournalStore.Load(completionPath, protector);
+                if (!PathEquals(completion.StateRoot, stateRoot)
+                    || !PathEquals(completion.TargetDirectory, targetRoot))
+                {
+                    throw new InvalidDataException(
+                        "The protected completion journal does not match this installation.");
+                }
+                var completedRecovery = LauncherUpdateRecoveryJournalStore.Load(
+                    journalPath,
+                    protector,
+                    completion.RecoveryJournalSha256);
+                ValidateJournal(completedRecovery, transactionId, transactionRoot, stateRoot, targetRoot);
+                VerifyCompletedInstallationAuthority(completion, authenticityVerifier, identityReader);
+                Directory.Delete(transactionRoot, recursive: true);
+                continue;
+            }
             if (!File.Exists(journalPath))
             {
                 if (Directory.Exists(backupPath))
@@ -159,7 +178,7 @@ public static class LauncherUpdateRecovery
     }
 
     [SupportedOSPlatform("windows")]
-    public static string RestoreFromJournal(
+    public static LauncherUpdateBoundFile RestoreFromJournal(
         string journalPath,
         string expectedJournalSha256,
         string expectedStateDirectory,
@@ -178,7 +197,7 @@ public static class LauncherUpdateRecovery
             new WindowsLauncherArtifactIdentityReader());
     }
 
-    internal static string RestoreFromJournal(
+    internal static LauncherUpdateBoundFile RestoreFromJournal(
         string journalPath,
         string expectedJournalSha256,
         string expectedStateDirectory,
@@ -206,7 +225,12 @@ public static class LauncherUpdateRecovery
             journal.LauncherRelativePath);
         VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
         Directory.Delete(journal.BackupDirectory, recursive: true);
-        return Path.Combine(journal.TargetDirectory, journal.LauncherRelativePath);
+        var launcher = journal.PreviousFiles.Single(file =>
+            string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+        return new(
+            Path.Combine(journal.TargetDirectory, journal.LauncherRelativePath),
+            launcher.Size,
+            launcher.Sha256);
     }
 
     private static void ValidateUncommittedPlan(
@@ -278,31 +302,95 @@ public static class LauncherUpdateRecovery
         ILauncherArtifactIdentityReader identityReader) =>
         VerifyAuthorityPair(journal.TargetDirectory, journal, authenticityVerifier, identityReader);
 
+    private static void VerifyCompletedInstallationAuthority(
+        LauncherUpdateCompletionJournal completion,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
+    {
+        LauncherUpdatePayloadTransaction.VerifyPayload(
+            completion.TargetDirectory,
+            completion.Files,
+            "acknowledged installation");
+        var launcher = completion.Files.Single(file =>
+            string.Equals(file.RelativePath, completion.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+        var verifier = completion.Files.Single(file =>
+            string.Equals(
+                file.RelativePath,
+                completion.ReleaseVerifierRelativePath,
+                StringComparison.OrdinalIgnoreCase));
+        VerifyAuthorityPair(
+            completion.TargetDirectory,
+            completion.LauncherRelativePath,
+            completion.ReleaseVerifierRelativePath,
+            completion.LauncherSha256,
+            launcher.Size,
+            completion.ReleaseVerifierSha256,
+            verifier.Size,
+            authenticityVerifier,
+            identityReader,
+            "acknowledged installation");
+    }
+
     private static void VerifyAuthorityPair(
         string root,
         LauncherUpdateRecoveryJournal journal,
         IModArtifactAuthenticityVerifier authenticityVerifier,
         ILauncherArtifactIdentityReader identityReader)
     {
-        var launcherPath = Path.Combine(root, journal.LauncherRelativePath);
-        var verifierPath = Path.Combine(root, journal.ReleaseVerifierRelativePath);
+        var launcher = journal.PreviousFiles.Single(file =>
+            string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+        var verifier = journal.PreviousFiles.Single(file =>
+            string.Equals(
+                file.RelativePath,
+                journal.ReleaseVerifierRelativePath,
+                StringComparison.OrdinalIgnoreCase));
+        VerifyAuthorityPair(
+            root,
+            journal.LauncherRelativePath,
+            journal.ReleaseVerifierRelativePath,
+            journal.LauncherSha256,
+            launcher.Size,
+            journal.ReleaseVerifierSha256,
+            verifier.Size,
+            authenticityVerifier,
+            identityReader,
+            "recovery");
+    }
+
+    private static void VerifyAuthorityPair(
+        string root,
+        string launcherRelativePath,
+        string releaseVerifierRelativePath,
+        string launcherSha256,
+        long launcherSize,
+        string releaseVerifierSha256,
+        long releaseVerifierSize,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader,
+        string context)
+    {
+        var launcherPath = Path.Combine(root, launcherRelativePath);
+        var verifierPath = Path.Combine(root, releaseVerifierRelativePath);
         using var launcherLock = VerifySignedDigest(
             launcherPath,
-            journal.LauncherSha256,
+            launcherSha256,
             authenticityVerifier,
-            "recovery launcher");
+            $"{context} launcher",
+            launcherSize);
         using var verifierLock = VerifySignedDigest(
             verifierPath,
-            journal.ReleaseVerifierSha256,
+            releaseVerifierSha256,
             authenticityVerifier,
-            "recovery release verifier");
+            $"{context} release verifier",
+            releaseVerifierSize);
         var identity = identityReader.ReadIdentity(launcherPath);
         if (!identity.HasReleaseVerifierPairing
             || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
                 identity.ReleaseVerifierSha256!,
-                journal.ReleaseVerifierSha256))
+                releaseVerifierSha256))
         {
-            throw new InvalidDataException("The recovery launcher is not paired with its verified release verifier.");
+            throw new InvalidDataException(
+                $"The {context} launcher is not paired with its verified release verifier.");
         }
     }
 

@@ -261,7 +261,9 @@ public sealed partial class ReleaseTrustAutomationTests
         var journal = updater.IndexOf("LauncherUpdateRecoveryJournalStore.Create(", StringComparison.Ordinal);
         var replace = updater.IndexOf("LauncherUpdatePayloadTransaction.InstallPreservingLauncher(", StringComparison.Ordinal);
         var postMove = updater.IndexOf("VerifyPayload(plan.TargetDirectory, plan.Files)", StringComparison.Ordinal);
-        var launch = updater.IndexOf("Process.Start(updatedStartInfo)", StringComparison.Ordinal);
+        var launch = updater.IndexOf(
+            "LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo)",
+            StringComparison.Ordinal);
 
         Assert.IsTrue(retain >= 0);
         Assert.IsTrue(parentExit > retain);
@@ -568,7 +570,7 @@ public sealed partial class ReleaseTrustAutomationTests
         var lease = source.IndexOf("new LauncherOperationLock(layout.StateDirectory)", StringComparison.Ordinal);
         var inspect = source.IndexOf("LauncherUpdateRecovery.InspectBeforeStartup(", StringComparison.Ordinal);
         var handoff = source.IndexOf("--recover-journal", StringComparison.Ordinal);
-        var shutdown = source.IndexOf("Shutdown();", StringComparison.Ordinal);
+        var shutdown = source.IndexOf("Shutdown();", handoff, StringComparison.Ordinal);
 
         Assert.IsTrue(lease >= 0, "Startup recovery must acquire the shared operation lease.");
         Assert.IsTrue(inspect > lease, "Recovery inspection must occur under the shared lease.");
@@ -590,6 +592,11 @@ public sealed partial class ReleaseTrustAutomationTests
             "src",
             "STFCCommunityMod.Launcher.Core",
             "LauncherSelfUpdate.cs"));
+        var updater = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs")).Replace("\r\n", "\n", StringComparison.Ordinal);
         var launchBoundary = File.ReadAllText(Path.Combine(
             root,
             "src",
@@ -602,11 +609,48 @@ public sealed partial class ReleaseTrustAutomationTests
 
         StringAssert.Contains(application, "LauncherVerifiedExecutable.Start(recovery.RunnerUpdater, startInfo)");
         StringAssert.Contains(selfUpdate, "LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo)");
+        StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo)");
+        StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(\n                    previousLauncher,");
+        StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)");
         StringAssert.Contains(launchBoundary, "FileShare.Read");
         Assert.IsTrue(fileLock >= 0, "The runner must be opened with a restrictive sharing handle.");
         Assert.IsTrue(digest > fileLock, "The exact open runner must be hashed while pinned.");
         Assert.IsTrue(signature > digest, "Authenticode must be checked after the runner digest.");
         Assert.IsTrue(process > signature, "The runner handle must remain alive through process creation.");
+    }
+
+    [TestMethod]
+    public void AcknowledgedUpdatePersistsTerminalStateBeforeBackupCleanup()
+    {
+        var updater = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var completion = updater.IndexOf("LauncherUpdateCompletionJournalStore.Create(", StringComparison.Ordinal);
+        var recorded = updater.IndexOf("completionRecorded = true;", StringComparison.Ordinal);
+        var cleanup = updater.IndexOf("Directory.Delete(plan.BackupDirectory, true);", StringComparison.Ordinal);
+
+        Assert.IsTrue(completion >= 0, "Acknowledgement must create a protected terminal journal.");
+        Assert.IsTrue(recorded > completion, "The updater must record durable completion before changing behavior.");
+        Assert.IsTrue(cleanup > recorded, "Backup cleanup must begin only after the terminal journal is durable.");
+    }
+
+    [TestMethod]
+    public void StartupExitsWhenAnotherProcessOwnsTheMutationLease()
+    {
+        var application = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher",
+            "App.xaml.cs"));
+        var unavailable = application.IndexOf("if (lease is null)", StringComparison.Ordinal);
+        var shutdown = application.IndexOf("Shutdown();", unavailable, StringComparison.Ordinal);
+        var window = application.IndexOf("var window = new MainWindow();", StringComparison.Ordinal);
+
+        Assert.IsTrue(unavailable >= 0, "Startup must explicitly handle lease contention.");
+        Assert.IsTrue(shutdown > unavailable, "Lease contention must shut down the competing launcher.");
+        Assert.IsTrue(window > shutdown, "A competing old launcher must not open before the shutdown branch returns.");
     }
 
     [TestMethod]

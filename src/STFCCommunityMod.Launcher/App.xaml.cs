@@ -22,41 +22,43 @@ public partial class App : Application
                 .AsTask()
                 .GetAwaiter()
                 .GetResult();
-            if (lease is not null)
+            if (lease is null)
             {
-                var handedOff = false;
-                try
+                Shutdown();
+                return;
+            }
+            var handedOff = false;
+            try
+            {
+                var recovery = LauncherUpdateRecovery.InspectBeforeStartup(
+                    layout.StateDirectory,
+                    layout.ProgramDirectory);
+                if (recovery is not null)
                 {
-                    var recovery = LauncherUpdateRecovery.InspectBeforeStartup(
-                        layout.StateDirectory,
-                        layout.ProgramDirectory);
-                    if (recovery is not null)
+                    var startInfo = new ProcessStartInfo(recovery.RunnerUpdater.Path)
                     {
-                        var startInfo = new ProcessStartInfo(recovery.RunnerUpdater.Path)
-                        {
-                            UseShellExecute = false,
-                            WorkingDirectory = Path.GetDirectoryName(recovery.RunnerUpdater.Path),
-                            CreateNoWindow = true,
-                        };
-                        startInfo.ArgumentList.Add("--recover-journal");
-                        startInfo.ArgumentList.Add(recovery.JournalPath);
-                        startInfo.ArgumentList.Add("--journal-sha256");
-                        startInfo.ArgumentList.Add(recovery.JournalSha256);
-                        startInfo.ArgumentList.Add("--parent-process-id");
-                        startInfo.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
-                        _ = LauncherVerifiedExecutable.Start(recovery.RunnerUpdater, startInfo);
-                        recoveryHandoffLease = lease;
-                        handedOff = true;
-                        Shutdown();
-                        return;
-                    }
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(recovery.RunnerUpdater.Path),
+                        CreateNoWindow = true,
+                    };
+                    startInfo.ArgumentList.Add("--recover-journal");
+                    startInfo.ArgumentList.Add(recovery.JournalPath);
+                    startInfo.ArgumentList.Add("--journal-sha256");
+                    startInfo.ArgumentList.Add(recovery.JournalSha256);
+                    startInfo.ArgumentList.Add("--parent-process-id");
+                    startInfo.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+                    _ = LauncherVerifiedExecutable.Start(recovery.RunnerUpdater, startInfo);
+                    recoveryHandoffLease = lease;
+                    handedOff = true;
+                    Shutdown();
+                    return;
                 }
-                finally
+            }
+            finally
+            {
+                if (!handedOff)
                 {
-                    if (!handedOff)
-                    {
-                        lease.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                    }
+                    lease.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
         }

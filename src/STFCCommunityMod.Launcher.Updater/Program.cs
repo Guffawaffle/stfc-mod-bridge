@@ -67,6 +67,7 @@ static async Task<int> RunAsync(string[] args)
             throw;
         }
         Process? updated = null;
+        var completionRecorded = false;
         try
         {
             LauncherUpdatePayloadTransaction.InstallPreservingLauncher(
@@ -76,16 +77,19 @@ static async Task<int> RunAsync(string[] args)
                 plan.LauncherRelativePath);
             VerifyPayload(plan.TargetDirectory, plan.Files);
             var launcherPath = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
+            var installedLauncher = new LauncherUpdateBoundFile(
+                launcherPath,
+                plan.CandidateLauncher.Size,
+                plan.CandidateLauncher.Sha256);
             var updatedStartInfo = new ProcessStartInfo(launcherPath)
             {
-                UseShellExecute = true,
+                UseShellExecute = false,
                 WorkingDirectory = plan.TargetDirectory,
             };
             updatedStartInfo.ArgumentList.Add("--self-update-ack");
             updatedStartInfo.ArgumentList.Add(plan.AcknowledgementPath);
             updatedStartInfo.ArgumentList.Add(plan.TransactionId);
-            updated = Process.Start(updatedStartInfo)
-                ?? throw new InvalidOperationException("The updated Mod Bridge did not start.");
+            updated = LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo);
             var deadline = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
             {
@@ -95,6 +99,12 @@ static async Task<int> RunAsync(string[] args)
             if (File.Exists(plan.AcknowledgementPath)
                 && string.Equals(await File.ReadAllTextAsync(plan.AcknowledgementPath), plan.TransactionId, StringComparison.Ordinal))
             {
+                VerifyPayload(plan.TargetDirectory, plan.Files);
+                _ = LauncherUpdateCompletionJournalStore.Create(
+                    plan,
+                    recoveryJournalSha256,
+                    new WindowsDpapiLauncherUpdateRecoveryJournalProtector());
+                completionRecorded = true;
                 Directory.Delete(plan.BackupDirectory, true);
                 return 0;
             }
@@ -108,14 +118,29 @@ static async Task<int> RunAsync(string[] args)
                 recoveryJournalSha256,
                 plan.StateRoot,
                 plan.TargetDirectory);
-            if (File.Exists(previousLauncher))
+            if (File.Exists(previousLauncher.Path))
             {
-                _ = Process.Start(new ProcessStartInfo(previousLauncher) { UseShellExecute = true });
+                _ = LauncherVerifiedExecutable.Start(
+                    previousLauncher,
+                    new ProcessStartInfo(previousLauncher.Path)
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = plan.TargetDirectory,
+                    });
             }
             return 3;
         }
         catch
         {
+            if (completionRecorded)
+            {
+                return 0;
+            }
+            if (updated is not null && !updated.HasExited)
+            {
+                updated.Kill(entireProcessTree: true);
+                await updated.WaitForExitAsync();
+            }
             if (Directory.Exists(plan.BackupDirectory))
             {
                 _ = LauncherUpdateRecovery.RestoreFromJournal(
@@ -156,14 +181,14 @@ static async Task<int> RunRecoveryAsync(
         var layout = PerUserInstallLayout.FromCurrentUser();
         await using var lease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
-        var launcherPath = LauncherUpdateRecovery.RestoreFromJournal(
+        var launcher = LauncherUpdateRecovery.RestoreFromJournal(
             Path.GetFullPath(journalPath),
             expectedJournalSha256,
             layout.StateDirectory,
             layout.ProgramDirectory);
-        _ = Process.Start(new ProcessStartInfo(launcherPath)
+        _ = LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)
         {
-            UseShellExecute = true,
+            UseShellExecute = false,
             WorkingDirectory = layout.ProgramDirectory,
         });
         return 0;

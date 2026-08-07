@@ -23,12 +23,13 @@ all matching release manifests and selects the highest active eligible channel
 version; API order, a lower release, or a withdrawn release cannot select or
 block another eligible release.
 
-Both ordinary update handoff and abandoned-transaction recovery carry the
-runner's exact size and SHA-256 from their authenticated preparation. Immediately
-before process creation, the launcher rehashes and rechecks Authenticode while a
-deny-write/deny-delete file handle remains open through direct process creation.
-The verified runner pathname therefore cannot be substituted across the
-verify/execute boundary.
+Every self-update executable handoff—the ordinary updater runner, recovery
+runner, newly installed launcher, and restored launcher—carries its exact size
+and SHA-256 from authenticated preparation or the protected recovery journal.
+Immediately before process creation, the caller rehashes and rechecks
+Authenticode while a deny-write/deny-delete file handle remains open through
+direct process creation. A verified executable pathname therefore cannot be
+substituted across the verify/execute boundary.
 
 The running executable is never overwritten. The launcher stages the verified
 archive and exact manifest, bundle, receipt, and approved trust root under
@@ -55,10 +56,20 @@ journal, backup inventory, Authenticode identities, and launcher/verifier
 pairing before restoring the prior payload and restarting it. No elevation is
 requested.
 
+After a successful startup acknowledgement, the updater verifies the installed
+payload again and durably writes a second current-user DPAPI-protected completion
+journal before deleting any backup file. That terminal journal binds the exact
+recovery journal and complete installed inventory. If backup cleanup is
+interrupted, the next startup validates the acknowledged installation and
+discards cleanup residue instead of misclassifying the partial backup as a
+rollback candidate. An invalid acknowledged installation fails closed without
+silently restoring stale bytes.
+
 The update plan, protected recovery journal, external updater, and backup live
 under the persistent state root, never inside the replaced program directory.
 Normal startup first attempts the same cross-process operation lease; it skips
-recovery while an updater owns that lease. An abandoned protected journal is
+recovery and exits without opening a competing old launcher while an updater
+owns that lease. An abandoned protected journal is
 inspected without mutating the installation, then handed to the external
 updater while the launcher exits. The updater checks the exact protected-journal
 hash again before restoring. A backup without that independently protected

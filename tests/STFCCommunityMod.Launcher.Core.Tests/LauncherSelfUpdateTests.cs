@@ -197,7 +197,7 @@ public sealed class LauncherSelfUpdateTests
         var recovery = CreateRecoveryTransaction(state, target, "trusted previous payload");
         var preparation = InspectRecovery(state, target)!;
 
-        var launcherPath = LauncherUpdateRecovery.RestoreFromJournal(
+        var launcher = LauncherUpdateRecovery.RestoreFromJournal(
             preparation.JournalPath,
             preparation.JournalSha256,
             state,
@@ -206,10 +206,22 @@ public sealed class LauncherSelfUpdateTests
             new FakeAuthenticityVerifier(),
             new FakeIdentityReader());
 
-        Assert.AreEqual(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), launcherPath);
+        Assert.AreEqual(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), launcher.Path);
+        Assert.AreEqual(new FileInfo(launcher.Path).Length, launcher.Size);
+        Assert.AreEqual(BoundFile(launcher.Path).Sha256, launcher.Sha256);
         Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(File.Exists(Path.Combine(target, "new.txt")));
         Assert.IsFalse(Directory.Exists(recovery.Backup));
+
+        using var process = LauncherVerifiedExecutable.Start(
+            launcher,
+            new ProcessStartInfo(launcher.Path) { UseShellExecute = false },
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(() => File.WriteAllText(launcher.Path, "substituted"));
+                return Process.GetCurrentProcess();
+            });
     }
 
     [TestMethod]
@@ -395,6 +407,53 @@ public sealed class LauncherSelfUpdateTests
 
         Assert.IsNull(InspectRecovery(state, target));
         Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansInterruptedAcknowledgedBackupDeletionWithoutRollback()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.Delete(Path.Combine(recovery.Backup, "old.txt"));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsChangedAcknowledgedInstallationWithoutRollingBack()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.WriteAllText(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), "changed-after-ack");
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.AreEqual(
+            "changed-after-ack",
+            File.ReadAllText(Path.Combine(target, ModBridgeProductIdentity.ExecutableName)));
+        Assert.IsTrue(Directory.Exists(recovery.Backup));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsAcknowledgedRecoveryJournalSubstitution()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        var recoveryJournalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        File.WriteAllText(recoveryJournalPath, "substituted-after-completion");
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsTrue(Directory.Exists(recovery.Backup));
     }
 
     [TestMethod]
@@ -698,7 +757,31 @@ public sealed class LauncherSelfUpdateTests
             Path.Combine(transactionRoot, "plan.json"),
             JsonSerializer.Serialize(plan, PlanJsonOptions));
         _ = LauncherUpdateRecoveryJournalStore.Create(plan, JournalProtector);
-        return new(transactionId, transactionRoot, backup);
+        return new(transactionId, transactionRoot, backup, plan);
+    }
+
+    private static RecoveryFixture CreateAcknowledgedRecoveryTransaction(string state, string target)
+    {
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        WritePayload(target, "new");
+        var files = Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories)
+            .Select(path => FileRecord(target, path))
+            .ToArray();
+        var completedPlan = recovery.Plan with
+        {
+            CandidateLauncher = BoundFile(Path.Combine(target, ModBridgeProductIdentity.ExecutableName)),
+            CandidateReleaseVerifier = BoundFile(
+                Path.Combine(target, ModBridgeProductIdentity.ReleaseVerifierExecutableName)),
+            Files = files,
+        };
+        var recoveryJournalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        _ = LauncherUpdateCompletionJournalStore.Create(
+            completedPlan,
+            LauncherUpdateRecoveryJournalStore.HashProtected(recoveryJournalPath),
+            JournalProtector);
+        return recovery with { Plan = completedPlan };
     }
 
     private static LauncherUpdateBoundFile BoundFile(string path) => new(
@@ -807,7 +890,11 @@ public sealed class LauncherSelfUpdateTests
         }
     }
 
-    private sealed record RecoveryFixture(string TransactionId, string TransactionRoot, string Backup);
+    private sealed record RecoveryFixture(
+        string TransactionId,
+        string TransactionRoot,
+        string Backup,
+        LauncherUpdatePlan Plan);
 
     private sealed class ReversingRecoveryJournalProtector : ILauncherUpdateRecoveryJournalProtector
     {
