@@ -39,7 +39,7 @@ stable or general release. Read the [pre-release testing guide](TESTING.md)
 before changing an installed mod. MSIX-era releases use
 `STFCModBridge.appinstaller` as the installation entry point. Windows verifies
 the signed MSIX, owns update and uninstall, and installs the read-only program
-payload under WindowsApps. The ZIP, manifest, SBOM, and attestation bundles are
+payload under WindowsApps. The ZIP, manifest, SBOMs, and attestation bundles are
 machine-consumed release inputs or a clearly labeled standalone fallback.
 
 Skeptical users can follow the

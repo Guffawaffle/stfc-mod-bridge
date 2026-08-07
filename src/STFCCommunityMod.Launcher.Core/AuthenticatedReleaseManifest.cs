@@ -556,7 +556,11 @@ public static partial class AuthenticatedReleaseManifestPolicy
             || archive.Authenticity.Scheme != "authenticode"
             || archive.Authenticity.Scope != "contents"
             || !archive.Authenticity.SignedFiles.SequenceEqual(
-                [ModBridgeProductIdentity.ExecutableName, ModBridgeProductIdentity.UpdaterExecutableName],
+                [
+                    ModBridgeProductIdentity.ExecutableName,
+                    ModBridgeProductIdentity.ReleaseVerifierExecutableName,
+                    ModBridgeProductIdentity.UpdaterExecutableName,
+                ],
                 StringComparer.Ordinal)
             || package is null
             || package.Kind != "windows-mod-bridge-package"

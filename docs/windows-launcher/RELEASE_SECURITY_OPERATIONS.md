@@ -29,13 +29,15 @@ available, the build job:
 2. builds the unsigned payload with analyzers and warnings-as-errors;
 3. queries NuGet's vulnerability database for direct and transitive packages;
 4. fails if a Git submodule is introduced without a new reviewed policy;
-5. scans the unsigned payload with the runner's enabled Microsoft Defender
-   engine and reports its signature version; and
-6. generates an SPDX 2.2 SBOM for the unsigned payload.
+5. scans the rebuilt inner payload before launcher/updater signing with the
+   runner's enabled Microsoft Defender engine and reports its signature version;
+   and
+6. regenerates SPDX 2.2 payload and verifier SBOMs from the exact final signed
+   PE bytes.
 
-The SBOM crosses the same artifact boundary as the unsigned payload, is
-included in the final attestation, is reverified before draft staging, and is
-staged with the machine-consumed release inputs. Within the tag workflow, only
+Both final-byte SBOMs are included in the final attestation, reverified before
+draft staging, and staged with the machine-consumed release inputs. Each checks
+that its SHA-256 file records match the final PE bytes. Within the tag workflow, only
 the protected signing job receives `id-token: write`; the draft-staging job
 alone receives `contents: write`. A separate post-publication GCS job receives
 OIDC plus read-only GitHub permissions and no signing or GitHub publication
@@ -53,7 +55,7 @@ the update client.
 Before publication, the maintainer must:
 
 1. download the exact draft assets and retain the workflow URL, environment
-   approval, runner image, Defender versions, manifest, SBOM, hashes, and
+approval, runner image, Defender versions, manifest, SBOMs, hashes, and
    attestation verification output;
 2. exercise and record the release epic's applicable canary matrix against those
    staged bytes;
@@ -81,7 +83,7 @@ Confirm the release is still a draft immediately before this command. Release
 immutability takes effect when it is published, so the notes and asset set must
 already be final. The release notes must call the build a prerelease, identify
 `STFCModBridge.appinstaller` as the user-facing installation entry point,
-describe the MSIX, ZIP, manifest, SBOM, and attestation bundle as
+describe the MSIX, ZIP, manifest, SBOMs, and attestation bundle as
 machine-consumed inputs or a standalone fallback, link the
 qualification evidence, state the chosen classification and open checks, and
 retain the provenance-versus-safety limitation.

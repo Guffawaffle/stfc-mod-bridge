@@ -53,6 +53,6 @@ save.
 - Packaged UI Automation enters Data Sync, finds the typed workspace, global defaults, and virtualized target collection,
   then verifies both the active manual TOML and an isolated mixed-target fixture remain unchanged. The fixture run restores
   the real launcher selection byte-for-byte in `finally`.
-- Packaging asserts that the signed MSIX contains exactly one reviewed PE and that its App Installer descriptor targets
+- Packaging asserts that the signed MSIX contains exactly the reviewed launcher and paired release-verifier PEs and that its App Installer descriptor targets
   the immutable package URL. The ZIP remains a separately labeled standalone/self-update fallback, not a second
   installation entry point.

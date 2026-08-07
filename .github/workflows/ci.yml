@@ -46,7 +46,9 @@ jobs:
 
       - name: Publish Mod Bridge
         shell: pwsh
-        run: ./scripts/publish.ps1
+        run: >-
+          ./scripts/publish.ps1
+          -ReleaseVerifierPath ./artifacts/release-verifier/STFCModBridge.ReleaseVerifier.exe
 
       - name: Inspect unsigned package evidence
         shell: pwsh

@@ -15,41 +15,52 @@ manifest and immutable GitHub asset URL. Provider packs cannot alter this
 authority. The archive response must match manifest status, declared/actual
 size, and SHA-256. Extraction rejects traversal, duplicate, link, excessive
 entry-count, expanded-size payloads, and every PE-header-bearing archive member
-outside the exact launcher/updater allowlist. Both the launcher and the updater
-helper must pass Authenticode for Joseph Gustavson, and the launcher's embedded
-source revision must exactly match `source.targetCommit`. Discovery evaluates
+outside the exact launcher/release-verifier/updater allowlist. All three PEs
+must pass Authenticode for Joseph Gustavson. The launcher's embedded source
+revision must exactly match `source.targetCommit`, and its embedded verifier
+SHA-256 must match the adjacent helper bytes. Discovery evaluates
 all matching release manifests and selects the highest active eligible channel
 version; API order, a lower release, or a withdrawn release cannot select or
 block another eligible release.
 
 The running executable is never overwritten. The launcher stages the verified
-archive under per-user state, copies the signed helper outside both old and new
-program directories, writes a file-hashed plan, and exits. The helper acquires
-the launcher's cross-process operation lease before waiting for that exact
-process and holds it through re-verification, replacement, startup
-acknowledgement, and rollback. It then moves the old per-user
+archive and exact manifest, bundle, receipt, and approved trust root under
+per-user state. Plan schema v2 binds their paths, sizes, and SHA-256 values plus
+the archive, current and candidate launcher/verifier pairs, candidate and runner
+updaters, and complete old/new file inventories. The updater parses and retains
+that closed plan before the parent exits. After the exact parent exits and
+immediately before replacement, it rehashes every bound input, rechecks
+Authenticode and both launcher/verifier pairings, and reruns the already-installed
+verifier with the embedded approved root. The candidate helper and mutable plan
+never authenticate their own replacement.
+
+The updater acquires the launcher's cross-process operation lease and holds it
+through re-verification, replacement, startup acknowledgement, and rollback. It
+then moves the old per-user
 program directory to transaction backup, and moves the stage into place. The
 new launcher acknowledges only after WPF activation. Missing acknowledgement
 or early exit removes the failed payload, verifies/restores the prior payload,
 and restarts it when available. No elevation is requested.
 
 The update plan and backup live under the persistent state root, never inside
-the replaced program directory. The helper validates exact state/program paths
-and recorded hashes, and it restores the verified prior payload when launch
-acknowledgement fails. Independent mod/configuration operation journals are not
+the replaced program directory. Recovery strictly parses both legacy schema-v1
+and schema-v2 journals on the next normal startup and restores the verified
+prior payload when launch acknowledgement fails. Independent mod/configuration
+operation journals are not
 moved or deleted by standalone self-update. App Installer and MSIX uninstall do
 not consume or remove those external state records.
 
 Stable is explicit and offline use is unaffected: update discovery is
-user-initiated from Diagnostics and has no bearing on local game launch.
+user-initiated from Diagnostics and has no bearing on local game launch. The
+authenticated standalone command remains deliberately disabled in application
+composition until issue #30 completes protected-release qualification.
 
 The discovery client requires a candidate version to advance the running
 launcher, preventing ordinary replay/downgrade. Emergency containment freezes
 publication and adds a reviewed entry to
 `docs/release-withdrawals/release-withdrawals.jsonl` without waiting for a
 replacement. Preserve immutable release evidence; a higher independently
-verified replacement is the normal recovery path. Runtime enforcement of
-authenticated withdrawal policy remains issue #71. See
+verified replacement is the normal recovery path. See
 [`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md).
 Manifest v1 is not detached-signed, so repository-control compromise remains a
 documented residual rather than being mislabeled as solved.

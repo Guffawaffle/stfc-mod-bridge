@@ -59,8 +59,9 @@ GitHub issues the environment-scoped OIDC token.
 The standalone tag workflow signs and verifies:
 
 - `STFCModBridge.exe`
+- `STFCModBridge.ReleaseVerifier.exe`
 - `STFCModBridge.Updater.exe`
-- `STFCModBridge.msix` (after its inner launcher is signed)
+- `STFCModBridge.msix` (after its inner launcher and verifier are signed)
 
 Future executable release components must be added to an explicit signing
 allowlist before release. Package inspection identifies PE files by their
@@ -70,22 +71,30 @@ cannot evade that allowlist.
 The release order is:
 
 ```text
-locked restore/test -> unsigned build -> vulnerability/malware gates -> SPDX SBOM
-      -> approve protected environment -> OIDC login -> sign inner executables
-      -> package MSIX -> sign MSIX -> verify package and inner signatures -> hash
-      -> attest final subjects -> transfer -> reverify attestations -> publish
+locked restore/test -> unsigned build -> approve protected environment -> OIDC
+      -> sign verifier -> embed final verifier SHA-256 -> rebuild launcher/updater
+      -> regenerate verifier SBOM -> vulnerability/malware gates -> sign launcher/updater
+      -> generate final payload SBOM
+      -> package MSIX -> sign MSIX -> verify package, pairing, and inner signatures
+      -> hash -> attest final subjects -> transfer -> reverify attestations -> publish
 ```
 
-Packaging and checksums must occur after signing the inner executables because
-Authenticode modifies PE files. The MSIX is then signed as the outermost
-artifact and enforces package-content integrity. The workflow verifies all
-inner and package signatures with
+The verifier is signed first because Authenticode changes its bytes; the final
+verifier SHA-256 is embedded in the rebuilt launcher and its SBOM is regenerated
+from those final helper bytes before the launcher
+and updater are signed. The payload SBOM is regenerated after those signatures
+and checks its SHA-256 file entries against all three final inner PEs. Packaging
+and release checksums occur only after those inner signatures. The MSIX is then
+signed as the outermost artifact and
+enforces package-content integrity. The workflow verifies all inner and package
+signatures with
 SignTool's Authenticode policy and separately requires the exact subject DN,
 both reviewed EKUs, and a trusted timestamp before manifest generation or
-release publication. It then runs the signed launcher and standalone updater
-through the runtime verifier, which enumerates every signature and applies the complete
-consumer policy. A mixed-publisher secondary signature therefore fails the
-release before its manifest or attestations are created.
+release publication. It then runs the signed launcher, release verifier, and
+standalone updater through the runtime verifier, which enumerates every
+signature and applies the complete consumer policy. A mixed-publisher secondary
+signature therefore fails the release before its manifest or attestations are
+created.
 
 ## Consumer verification contract
 

@@ -55,8 +55,10 @@ $payloadRoot = if ($PayloadDirectory) {
   Join-Path $outputRoot "app"
 }
 $launcher = Join-Path $payloadRoot "STFCModBridge.exe"
-if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-  throw "The launcher payload was not found: $launcher"
+$releaseVerifier = Join-Path $payloadRoot "STFCModBridge.ReleaseVerifier.exe"
+if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) `
+    -or -not (Test-Path -LiteralPath $releaseVerifier -PathType Leaf)) {
+  throw "The launcher or paired release-verifier payload was not found."
 }
 
 $sdkRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
@@ -90,6 +92,10 @@ try {
   New-Item -ItemType Directory -Path (Join-Path $layout "Assets") -Force | Out-Null
   New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
   Copy-Item -LiteralPath $launcher -Destination (Join-Path $layout "STFCModBridge.exe") -Force
+  Copy-Item `
+    -LiteralPath $releaseVerifier `
+    -Destination (Join-Path $layout "STFCModBridge.ReleaseVerifier.exe") `
+    -Force
   Copy-Item -Path (Join-Path $logoDirectory "*.png") `
     -Destination (Join-Path $layout "Assets") `
     -Force

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher;
 
@@ -8,18 +9,23 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        ConfigureSelfUpdateAcknowledgement(e.Args);
+        if (!ConfigureSelfUpdateAcknowledgement(e.Args))
+        {
+            var layout = PerUserInstallLayout.FromLocalApplicationData(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+            _ = LauncherUpdateRecovery.RecoverBeforeSetup(layout.StateDirectory, layout.ProgramDirectory);
+        }
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
     }
 
-    private void ConfigureSelfUpdateAcknowledgement(string[] arguments)
+    private bool ConfigureSelfUpdateAcknowledgement(string[] arguments)
     {
         var index = Array.IndexOf(arguments, "--self-update-ack");
         if (index < 0 || index + 2 >= arguments.Length)
         {
-            return;
+            return false;
         }
         var acknowledgementPath = arguments[index + 1];
         var transactionId = arguments[index + 2];
@@ -41,6 +47,7 @@ public partial class App : Application
             }
         };
         Activated += activated;
+        return true;
     }
 
 }

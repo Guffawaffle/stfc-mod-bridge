@@ -136,34 +136,60 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
-    public void ReleaseSecurityGatesRunBeforeSigningAndSbomRemainsAttested()
+    public void ReleaseSecurityGatesBindTheSignedVerifierBeforeSigningThePairedPayload()
     {
         var root = RepositoryRoot();
         var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
         var identity = workflow.IndexOf("- name: Resolve and validate tag identity", StringComparison.Ordinal);
         var build = workflow.IndexOf("- name: Build unsigned Mod Bridge payload", StringComparison.Ordinal);
-        var security = workflow.IndexOf("- name: Run pre-signing security gates and generate SBOM", StringComparison.Ordinal);
         var transferToSigning = workflow.IndexOf("- name: Upload unsigned Mod Bridge payload", StringComparison.Ordinal);
         var oidc = workflow.IndexOf("- name: Azure login with GitHub OIDC", StringComparison.Ordinal);
-        var signing = workflow.IndexOf("- name: Sign Mod Bridge and updater", StringComparison.Ordinal);
+        var verifierSigning = workflow.IndexOf("- name: Sign release verifier first", StringComparison.Ordinal);
+        var pairedBuild = workflow.IndexOf(
+            "- name: Rebuild launcher and updater against final signed verifier",
+            StringComparison.Ordinal);
+        var verifierSbom = workflow.IndexOf(
+            "- name: Regenerate verifier SBOM from final signed bytes",
+            StringComparison.Ordinal);
+        var security = workflow.IndexOf(
+            "- name: Run final pre-signing security gates",
+            StringComparison.Ordinal);
+        var pairedSigning = workflow.IndexOf(
+            "- name: Sign paired Mod Bridge launcher and updater",
+            StringComparison.Ordinal);
+        var finalPayloadSbom = workflow.IndexOf(
+            "- name: Generate payload SBOM from final signed inner bytes",
+            StringComparison.Ordinal);
 
         Assert.IsTrue(identity >= 0);
         Assert.IsTrue(build > identity);
-        Assert.IsTrue(security > build);
-        Assert.IsTrue(transferToSigning > security);
+        Assert.IsTrue(transferToSigning > build);
         Assert.IsTrue(oidc > transferToSigning);
-        Assert.IsTrue(signing > oidc);
+        Assert.IsTrue(verifierSigning > oidc);
+        Assert.IsTrue(pairedBuild > verifierSigning);
+        Assert.IsTrue(verifierSbom > pairedBuild);
+        Assert.IsTrue(security > verifierSbom);
+        Assert.IsTrue(pairedSigning > security);
+        Assert.IsTrue(finalPayloadSbom > pairedSigning);
+        StringAssert.Contains(
+            workflow,
+            "files: ${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
+        StringAssert.Contains(workflow, "-ReleaseVerifierPath $retained");
+        StringAssert.Contains(workflow, "generate-release-verifier-sbom.ps1");
+        StringAssert.Contains(workflow, "generate-payload-sbom.ps1");
+        StringAssert.Contains(workflow, "STFCModBridge.ReleaseVerifier.spdx.json");
         StringAssert.Contains(workflow, "git merge-base --is-ancestor $tagCommit refs/remotes/origin/main");
         Assert.IsTrue(
             Regex.Matches(workflow, "stfc-mod-bridge-sbom.spdx.json", RegexOptions.CultureInvariant).Count >= 5,
-            "The SBOM must cross the unsigned transfer, attestation, signed transfer, verification, and draft-staging boundaries.");
+            "The final payload SBOM must cross attestation, signed transfer, verification, and draft-staging boundaries.");
 
         var script = File.ReadAllText(Path.Combine(root, "scripts", "run-release-security-gates.ps1"));
         StringAssert.Contains(script, "--vulnerable --include-transitive --format json --output-version 1");
         StringAssert.Contains(script, "Get-MpComputerStatus");
         StringAssert.Contains(script, "-DisableRemediation");
-        StringAssert.Contains(script, "dotnet tool restore");
-        StringAssert.Contains(script, "SPDX-2.2");
+        var sbomScript = File.ReadAllText(Path.Combine(root, "scripts", "generate-payload-sbom.ps1"));
+        StringAssert.Contains(sbomScript, "dotnet tool restore");
+        StringAssert.Contains(sbomScript, "SPDX-2.2");
     }
 
     [TestMethod]
@@ -181,6 +207,9 @@ public sealed partial class ReleaseTrustAutomationTests
             inspection,
             "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748");
         StringAssert.Contains(inspection, "1.3.6.1.5.5.7.3.3");
+        StringAssert.Contains(inspection, "Assert-LauncherVerifierPairing");
+        StringAssert.Contains(inspection, "STFCModBridge.ReleaseVerifier.exe");
+        StringAssert.Contains(workflow, "-ExpectedSourceRevisionId \"$env:SOURCE_REVISION_ID\"");
         StringAssert.Contains(workflow, "Verify signed payload with the runtime Authenticode policy");
         StringAssert.Contains(workflow, "STFC_MOD_BRIDGE_SIGNED_RELEASE_ROOT");
         StringAssert.Contains(
@@ -192,6 +221,52 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsFalse(
             workflow.Contains("WIN_PUBLISHER_NAME", StringComparison.Ordinal),
             "The reviewed publisher identity belongs in versioned policy, not a mutable repository variable.");
+    }
+
+    [TestMethod]
+    public void AuthenticatedStandaloneUpdateCompositionRemainsDisabledPendingQualification()
+    {
+        var root = RepositoryRoot();
+        var composition = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "ViewModels",
+            "MainWindowViewModel.cs"));
+        var factory = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "AuthenticatedGitHubLauncherReleaseClient.cs"));
+
+        StringAssert.Contains(composition, "Authenticated standalone update authorization remains disabled");
+        Assert.IsFalse(
+            composition.Contains("AuthenticatedLauncherReleaseDiscovery.Create(", StringComparison.Ordinal),
+            "Issue #97 must not activate standalone authorization before the release-qualification gate.");
+        StringAssert.Contains(factory, "public static class AuthenticatedLauncherReleaseDiscovery");
+    }
+
+    [TestMethod]
+    public void UpdaterReverifiesAfterParentExitAndAfterTheDirectoryMoveBeforeLaunch()
+    {
+        var updater = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var retain = updater.IndexOf("LoadAndRetain(", StringComparison.Ordinal);
+        var parentExit = updater.IndexOf("WaitForExitAsync()", StringComparison.Ordinal);
+        var preSwap = updater.IndexOf("VerifyImmediatelyBeforeSwapAsync(runtimePlan)", StringComparison.Ordinal);
+        var move = updater.IndexOf("Directory.Move(plan.StageDirectory, plan.TargetDirectory)", StringComparison.Ordinal);
+        var postMove = updater.IndexOf("VerifyPayload(plan.TargetDirectory, plan.Files)", StringComparison.Ordinal);
+        var launch = updater.IndexOf("Process.Start(updatedStartInfo)", StringComparison.Ordinal);
+
+        Assert.IsTrue(retain >= 0);
+        Assert.IsTrue(parentExit > retain);
+        Assert.IsTrue(preSwap > parentExit);
+        Assert.IsTrue(move > preSwap);
+        Assert.IsTrue(postMove > move);
+        Assert.IsTrue(launch > postMove);
     }
 
     [TestMethod]
@@ -270,12 +345,14 @@ public sealed partial class ReleaseTrustAutomationTests
         foreach (var subject in new[]
                  {
                      "artifacts/win-x64/app/STFCModBridge.exe",
+                     "artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe",
                      "artifacts/win-x64/app/STFCModBridge.Updater.exe",
                      "artifacts/win-x64/package/STFCModBridge.msix",
                      "artifacts/win-x64/package/STFCModBridge.appinstaller",
                      "artifacts/win-x64/stfc-mod-bridge-win-x64.zip",
                      "artifacts/win-x64/stfc-mod-bridge-release-manifest.json",
                      "artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json",
+                     "artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json",
                  })
         {
             StringAssert.Contains(workflow, subject, $"Missing attested release subject: {subject}");

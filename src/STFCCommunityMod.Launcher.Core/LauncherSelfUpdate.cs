@@ -15,6 +15,8 @@ public sealed record LauncherReleaseArtifact(
 
 public sealed record LauncherUpdateFile(string RelativePath, long Size, string Sha256);
 
+public sealed record LauncherUpdateBoundFile(string Path, long Size, string Sha256);
+
 public sealed record LauncherUpdatePlan(
     int SchemaVersion,
     string TransactionId,
@@ -25,6 +27,21 @@ public sealed record LauncherUpdatePlan(
     string BackupDirectory,
     string AcknowledgementPath,
     string LauncherRelativePath,
+    string UpdaterRelativePath,
+    string ReleaseVerifierRelativePath,
+    string ExpectedTag,
+    string InstalledReleaseVersion,
+    LauncherUpdateBoundFile Manifest,
+    LauncherUpdateBoundFile Bundle,
+    LauncherUpdateBoundFile Receipt,
+    LauncherUpdateBoundFile TrustedRoot,
+    LauncherUpdateBoundFile Archive,
+    LauncherUpdateBoundFile CurrentLauncher,
+    LauncherUpdateBoundFile CurrentReleaseVerifier,
+    LauncherUpdateBoundFile CandidateLauncher,
+    LauncherUpdateBoundFile CandidateUpdater,
+    LauncherUpdateBoundFile CandidateReleaseVerifier,
+    LauncherUpdateBoundFile RunnerUpdater,
     IReadOnlyList<LauncherUpdateFile> Files,
     IReadOnlyList<LauncherUpdateFile> PreviousFiles);
 
@@ -40,7 +57,8 @@ public sealed record LauncherUpdatePreparation(
     string ReleaseVersion,
     string TargetDirectory,
     string PlanPath,
-    string UpdaterPath);
+    string UpdaterPath,
+    string PlanSha256);
 
 public sealed record LauncherUpdateRecoveryResult(int ExaminedTransactions, int RestoredBackups);
 
@@ -50,11 +68,6 @@ public static class LauncherUpdateRecovery
         string TransactionRoot,
         LauncherUpdatePlan Plan,
         bool HasBackup);
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
 
     public static LauncherUpdateRecoveryResult RecoverBeforeSetup(
         string stateDirectory,
@@ -90,8 +103,7 @@ public static class LauncherUpdateRecovery
             }
 
             LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge update recovery");
-            var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
-                ?? throw new InvalidDataException("An abandoned Mod Bridge update plan is empty.");
+            var plan = LauncherUpdateTransactionSecurity.ParseForRecovery(planPath);
             ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
             if (Directory.Exists(Path.Combine(transactionRoot, "failed-target")))
             {
@@ -159,7 +171,7 @@ public static class LauncherUpdateRecovery
         string stateRoot,
         string targetRoot)
     {
-        if (plan.SchemaVersion != 1
+        if (plan.SchemaVersion is not (1 or 2)
             || !string.Equals(plan.TransactionId, transactionId, StringComparison.Ordinal)
             || !PathEquals(plan.StateRoot, stateRoot)
             || !PathEquals(plan.TargetDirectory, targetRoot)
@@ -170,6 +182,12 @@ public static class LauncherUpdateRecovery
         {
             throw new InvalidDataException("An abandoned Mod Bridge update plan has invalid recovery paths.");
         }
+        if (plan.SchemaVersion == 2
+            && (plan.UpdaterRelativePath != ModBridgeProductIdentity.UpdaterExecutableName
+                || plan.ReleaseVerifierRelativePath != ModBridgeProductIdentity.ReleaseVerifierExecutableName))
+        {
+            throw new InvalidDataException("An abandoned Mod Bridge update plan has invalid executable roles.");
+        }
     }
 
     private static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
@@ -178,7 +196,7 @@ public static class LauncherUpdateRecovery
             .Select(path => new LauncherUpdateFile(
                 Path.GetRelativePath(root, path),
                 new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+                HashFile(path)))
             .ToArray();
         if (actual.Length != expected.Count)
         {
@@ -199,6 +217,18 @@ public static class LauncherUpdateRecovery
 
     private static bool PathEquals(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string HashFile(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.SequentialScan);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
 
 }
 
@@ -241,17 +271,13 @@ public sealed class HttpLauncherArchiveDownloader(HttpClient httpClient) : ILaun
 
 public interface ILauncherArtifactIdentityReader
 {
-    string? ReadSourceCommit(string executablePath);
+    LauncherReleaseIdentity ReadIdentity(string executablePath);
 }
 
 public sealed class WindowsLauncherArtifactIdentityReader : ILauncherArtifactIdentityReader
 {
-    public string? ReadSourceCommit(string executablePath)
-    {
-        var productVersion = FileVersionInfo.GetVersionInfo(executablePath).ProductVersion;
-        var separator = productVersion?.LastIndexOf('+') ?? -1;
-        return separator >= 0 ? productVersion![(separator + 1)..] : null;
-    }
+    public LauncherReleaseIdentity ReadIdentity(string executablePath) =>
+        LauncherReleaseIdentityParser.Parse(FileVersionInfo.GetVersionInfo(executablePath).ProductVersion);
 }
 
 public sealed class LauncherSelfUpdateService(
@@ -290,6 +316,7 @@ public sealed class LauncherSelfUpdateService(
                 artifact.ReleaseVersion,
                 programDirectory,
                 string.Empty,
+                string.Empty,
                 string.Empty);
         }
 
@@ -306,52 +333,136 @@ public sealed class LauncherSelfUpdateService(
 
         var transactionId = Guid.NewGuid().ToString("N");
         var transactionRoot = Path.Combine(stateDirectory, "self-update", transactionId);
-        var stageDirectory = Path.Combine(transactionRoot, "stage");
-        Directory.CreateDirectory(stageDirectory);
-        LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
-
-        var launcherPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.ExecutableName);
-        var updaterPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.UpdaterExecutableName);
-        VerifySignedExecutable(launcherPath);
-        VerifySignedExecutable(updaterPath);
-        if (!string.Equals(identityReader.ReadSourceCommit(launcherPath), artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
+        try
         {
-            throw new InvalidDataException("The signed Mod Bridge source identity does not match the release manifest.");
-        }
+            var stageDirectory = Path.Combine(transactionRoot, "stage");
+            var evidenceDirectory = Path.Combine(transactionRoot, "evidence");
+            Directory.CreateDirectory(stageDirectory);
+            Directory.CreateDirectory(evidenceDirectory);
+            LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update staging");
 
-        var files = Directory.EnumerateFiles(stageDirectory, "*", SearchOption.AllDirectories)
-            .Select(path => new LauncherUpdateFile(
-                Path.GetRelativePath(stageDirectory, path),
-                new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
-            .OrderBy(file => file.RelativePath, StringComparer.Ordinal)
-            .ToArray();
-        var plan = new LauncherUpdatePlan(
-            1,
-            transactionId,
-            parentProcessId,
-            stateDirectory,
-            stageDirectory,
-            programDirectory,
-            Path.Combine(transactionRoot, "backup"),
-            Path.Combine(transactionRoot, "startup.ack"),
-            ModBridgeProductIdentity.ExecutableName,
-            files,
-            Directory.Exists(programDirectory) ? EnumerateFiles(programDirectory) : []);
-        var planPath = Path.Combine(transactionRoot, "plan.json");
-        await File.WriteAllTextAsync(planPath, JsonSerializer.Serialize(plan, JsonOptions), cancellationToken);
-        var runnerPath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName);
-        File.Copy(updaterPath, runnerPath);
-        return new(
-            LauncherUpdatePreparationState.Ready,
-            $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
-            + "Action outcome: the archive is staged; installation has not started."
-            + Environment.NewLine
-            + authentication.Summary,
-            artifact.ReleaseVersion,
-            programDirectory,
-            planPath,
-            runnerPath);
+            var archivePath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdateArchiveName);
+            await WriteBoundBytesAsync(archivePath, download.Contents, artifact.Sha256, cancellationToken);
+            LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
+
+            var manifest = await CopyBoundFileAsync(
+                authentication.ManifestPath,
+                Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.ManifestName),
+                authentication.Receipt.ManifestSha256,
+                ReleaseSelectionAttestationPolicy.MaximumEvidenceBytes,
+                cancellationToken);
+            var bundle = await CopyBoundFileAsync(
+                authentication.BundlePath,
+                Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.BundleName),
+                authentication.Receipt.BundleSha256,
+                ReleaseSelectionAttestationPolicy.MaximumEvidenceBytes,
+                cancellationToken);
+            var receiptPath = Path.Combine(evidenceDirectory, "release-selection-receipt.json");
+            var receiptBytes = ReleaseSelectionVerificationReceiptSerializer.Serialize(
+                authentication.Receipt,
+                writeIndented: true);
+            var receipt = await WriteBoundBytesAsync(receiptPath, receiptBytes, expectedSha256: null, cancellationToken);
+            var trustedRootPath = Path.Combine(evidenceDirectory, "trusted-root.public-good.v1.json");
+            var trustedRoot = await WriteBoundBytesAsync(
+                trustedRootPath,
+                ReleaseSelectionTrustedRoot.GetNormalizedBytes(),
+                ReleaseSelectionAttestationPolicy.TrustedRootSha256,
+                cancellationToken);
+
+            var launcherPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.ExecutableName);
+            var updaterPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.UpdaterExecutableName);
+            var candidateVerifierPath = Path.Combine(
+                stageDirectory,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            VerifySignedExecutable(launcherPath);
+            VerifySignedExecutable(updaterPath);
+            VerifySignedExecutable(candidateVerifierPath);
+            var candidateIdentity = identityReader.ReadIdentity(launcherPath);
+            var candidateVerifier = BoundFile(candidateVerifierPath);
+            if (!string.Equals(
+                    candidateIdentity.SourceCommit,
+                    artifact.TargetCommit,
+                    StringComparison.OrdinalIgnoreCase)
+                || !candidateIdentity.HasReleaseVerifierPairing
+                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                    candidateIdentity.ReleaseVerifierSha256!,
+                    candidateVerifier.Sha256))
+            {
+                throw new InvalidDataException(
+                    "The signed candidate launcher identity does not match its source or paired release verifier.");
+            }
+
+            var currentLauncherPath = Path.Combine(programDirectory, ModBridgeProductIdentity.ExecutableName);
+            var currentVerifierPath = Path.Combine(
+                programDirectory,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            VerifySignedExecutable(currentLauncherPath);
+            VerifySignedExecutable(currentVerifierPath);
+            var currentIdentity = identityReader.ReadIdentity(currentLauncherPath);
+            var currentVerifier = BoundFile(currentVerifierPath);
+            if (!currentIdentity.HasReleaseVerifierPairing
+                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                    currentIdentity.ReleaseVerifierSha256!,
+                    currentVerifier.Sha256))
+            {
+                throw new InvalidDataException(
+                    "The installed launcher does not match its paired release verifier.");
+            }
+
+            var files = EnumerateFiles(stageDirectory);
+            var runnerPath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName);
+            File.Copy(updaterPath, runnerPath);
+            var plan = new LauncherUpdatePlan(
+                2,
+                transactionId,
+                parentProcessId,
+                stateDirectory,
+                stageDirectory,
+                programDirectory,
+                Path.Combine(transactionRoot, "backup"),
+                Path.Combine(transactionRoot, "startup.ack"),
+                ModBridgeProductIdentity.ExecutableName,
+                ModBridgeProductIdentity.UpdaterExecutableName,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName,
+                authentication.Acceptance.Manifest.Tag,
+                authentication.InstalledReleaseVersion,
+                manifest,
+                bundle,
+                receipt,
+                trustedRoot,
+                BoundFile(archivePath),
+                BoundFile(currentLauncherPath),
+                currentVerifier,
+                BoundFile(launcherPath),
+                BoundFile(updaterPath),
+                candidateVerifier,
+                BoundFile(runnerPath),
+                files,
+                Directory.Exists(programDirectory) ? EnumerateFiles(programDirectory) : []);
+            var planPath = Path.Combine(transactionRoot, "plan.json");
+            var planBytes = JsonSerializer.SerializeToUtf8Bytes(plan, JsonOptions);
+            var planFile = await WriteBoundBytesAsync(planPath, planBytes, expectedSha256: null, cancellationToken);
+            return new(
+                LauncherUpdatePreparationState.Ready,
+                $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
+                + "Action outcome: the archive is staged; installation has not started."
+                + Environment.NewLine
+                + authentication.Summary,
+                artifact.ReleaseVersion,
+                programDirectory,
+                planPath,
+                runnerPath,
+                planFile.Sha256);
+        }
+        catch
+        {
+            if (Directory.Exists(transactionRoot))
+            {
+                LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update cleanup");
+                Directory.Delete(transactionRoot, recursive: true);
+            }
+            throw;
+        }
     }
 
     public static void StartUpdater(LauncherUpdatePreparation preparation)
@@ -360,12 +471,18 @@ public sealed class LauncherSelfUpdateService(
         {
             throw new InvalidOperationException("Only a ready Mod Bridge update can start.");
         }
-        _ = Process.Start(new ProcessStartInfo(preparation.UpdaterPath, $"--plan \"{preparation.PlanPath}\"")
+        var startInfo = new ProcessStartInfo(preparation.UpdaterPath)
         {
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(preparation.UpdaterPath),
             CreateNoWindow = true,
-        }) ?? throw new InvalidOperationException("Windows did not start the Mod Bridge update helper.");
+        };
+        startInfo.ArgumentList.Add("--plan");
+        startInfo.ArgumentList.Add(preparation.PlanPath);
+        startInfo.ArgumentList.Add("--plan-sha256");
+        startInfo.ArgumentList.Add(preparation.PlanSha256);
+        _ = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Windows did not start the Mod Bridge update helper.");
     }
 
     private void VerifySignedExecutable(string path)
@@ -458,7 +575,81 @@ public sealed class LauncherSelfUpdateService(
             .Select(path => new LauncherUpdateFile(
                 Path.GetRelativePath(root, path),
                 new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+                HashFile(path)))
             .OrderBy(file => file.RelativePath, StringComparer.Ordinal)
             .ToArray();
+
+    private static LauncherUpdateBoundFile BoundFile(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var info = new FileInfo(fullPath);
+        if (!info.Exists || info.Length <= 0 || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException($"The bound update file is missing or unsafe: {Path.GetFileName(fullPath)}");
+        }
+        return new(
+            fullPath,
+            info.Length,
+            HashFile(fullPath));
+    }
+
+    private static string HashFile(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.SequentialScan);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static async Task<LauncherUpdateBoundFile> CopyBoundFileAsync(
+        string sourcePath,
+        string destinationPath,
+        string expectedSha256,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var source = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (source.Length is <= 0 || source.Length > maximumBytes)
+        {
+            throw new InvalidDataException("Authenticated release evidence is outside its accepted size bound.");
+        }
+        var bytes = new byte[checked((int)source.Length)];
+        await source.ReadExactlyAsync(bytes, cancellationToken);
+        return await WriteBoundBytesAsync(destinationPath, bytes, expectedSha256, cancellationToken);
+    }
+
+    private static async Task<LauncherUpdateBoundFile> WriteBoundBytesAsync(
+        string path,
+        byte[] bytes,
+        string? expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (expectedSha256 is not null
+            && !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(digest, expectedSha256))
+        {
+            throw new InvalidDataException("A staged update input disagrees with its authenticated digest.");
+        }
+        await using var destination = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await destination.WriteAsync(bytes, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
+        destination.Flush(flushToDisk: true);
+        return new(Path.GetFullPath(path), bytes.LongLength, digest);
+    }
 }

@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $moduleRoot = Join-Path $repositoryRoot "src/STFCModBridge.ReleaseVerifier"
 $inventoryPath = Join-Path $moduleRoot "dependencies.v1.txt"
+$licenseInventoryPath = Join-Path $moduleRoot "licenses.v1.json"
 $expectedGoVersion = "go1.26.5"
 $expectedSigstoreVersion = "v1.3.0"
 
@@ -49,6 +50,27 @@ try {
       -cne "github.com/sigstore/sigstore-go $expectedSigstoreVersion h1:hnIMHREyCNTYFtOE1o7ae3Axa9B5W5EjUSBJICP2NBE=") {
     throw "Release verifier is not locked to the reviewed sigstore-go version and module checksum."
   }
+  $licenseInventory = Get-Content -Raw -LiteralPath $licenseInventoryPath | ConvertFrom-Json
+  $inventorySha256 = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($licenseInventory.schemaVersion -ne 1 `
+      -or $licenseInventory.dependencyInventorySha256 -cne $inventorySha256) {
+    throw "Release verifier license classification is not bound to the exact dependency inventory."
+  }
+  $allowedLicenses = @("Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "MIT AND Apache-2.0")
+  $classifiedModules = @()
+  foreach ($classification in @($licenseInventory.classifications)) {
+    if ($classification.spdxExpression -cnotin $allowedLicenses `
+        -or @($classification.modules).Count -eq 0) {
+      throw "Release verifier license classification contains an unsupported or empty group."
+    }
+    $classifiedModules += @($classification.modules)
+  }
+  $expectedModules = @($expectedInventory | ForEach-Object { $_.Split(' ', 2)[0] } | Sort-Object)
+  $classifiedModules = @($classifiedModules | Sort-Object)
+  if ($classifiedModules.Count -ne ($classifiedModules | Sort-Object -Unique).Count `
+      -or [string]::Join("`n", $classifiedModules) -cne [string]::Join("`n", $expectedModules)) {
+    throw "Release verifier license classification does not cover the exact compiled module graph."
+  }
   $aboutCatalog = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "docs/windows-launcher/about-content.v1.json") `
     | ConvertFrom-Json
   $goInventory = @($aboutCatalog.dependencyInventory | Where-Object { $_.evidenceKind -like "go-build-*" })
@@ -68,7 +90,11 @@ try {
     throw "Release verifier notice inventory does not match the reviewed toolchain and compiled module graph."
   }
 
-  $resolvedOutput = Join-Path $repositoryRoot $OutputDirectory
+  $resolvedOutput = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    [System.IO.Path]::GetFullPath($OutputDirectory)
+  } else {
+    [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $OutputDirectory))
+  }
   New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
   $binaryPath = Join-Path $resolvedOutput "STFCModBridge.ReleaseVerifier.exe"
   $priorCgo = $env:CGO_ENABLED
@@ -96,57 +122,12 @@ try {
     throw "Release verifier binary does not carry the reviewed Go/sigstore-go build identity."
   }
 
-  & dotnet tool restore
-  if ($LASTEXITCODE -ne 0) {
-    throw "The repository-pinned SBOM generator could not be restored."
-  }
   $finalSbomPath = Join-Path $resolvedOutput "STFCModBridge.ReleaseVerifier.spdx.json"
-  if (Test-Path -LiteralPath $finalSbomPath) {
-    Remove-Item -LiteralPath $finalSbomPath -Force
-  }
-  $sbomWork = Join-Path (Split-Path -Parent $resolvedOutput) ".release-verifier-sbom-work"
-  if (Test-Path -LiteralPath $sbomWork) {
-    Remove-Item -LiteralPath $sbomWork -Recurse -Force
-  }
-  New-Item -ItemType Directory -Path $sbomWork | Out-Null
   $sourceRevision = (& git -C $repositoryRoot rev-parse HEAD).Trim()
-  & dotnet tool run sbom-tool -- generate `
-    -b $resolvedOutput `
-    -bc $moduleRoot `
-    -m $sbomWork `
-    -pn "STFC Mod Bridge Release Verifier" `
-    -pv "0.1.0-dev" `
-    -ps "Organization: Joseph Gustavson" `
-    -nsb "https://github.com/Guffawaffle/stfc-mod-bridge" `
-    -nsu $sourceRevision `
-    -D true `
-    -pm true `
-    -F false
-  if ($LASTEXITCODE -ne 0) {
-    throw "Release verifier SBOM generation failed."
-  }
-  $generatedSboms = @(Get-ChildItem -LiteralPath $sbomWork -Recurse -Filter "manifest.spdx.json" -File)
-  if ($generatedSboms.Count -ne 1) {
-    throw "Release verifier build produced $($generatedSboms.Count) SPDX manifests instead of one."
-  }
-  $sbom = Get-Content -Raw -LiteralPath $generatedSboms[0].FullName | ConvertFrom-Json
-  $sbomInventory = @($sbom.packages | Where-Object { $_.SPDXID -ne "SPDXRef-RootPackage" } | ForEach-Object {
-      "$($_.name) $($_.versionInfo)"
-    } | Sort-Object -Unique)
-  $expectedSbomInventory = @($expectedInventory | ForEach-Object {
-      $parts = $_.Split(' ', 3, [StringSplitOptions]::RemoveEmptyEntries)
-      "$($parts[0]) $($parts[1])"
-    } | Sort-Object -Unique)
-  if ($sbom.spdxVersion -ne "SPDX-2.2" `
-      -or $sbom.name -ne "STFC Mod Bridge Release Verifier 0.1.0-dev" `
-      -or [string]::Join("`n", $sbomInventory) -cne [string]::Join("`n", $expectedSbomInventory)) {
-    throw "Release verifier SPDX inventory does not match the compiled module lock."
-  }
-  Copy-Item `
-    -LiteralPath $generatedSboms[0].FullName `
-    -Destination $finalSbomPath `
-    -Force
-  Remove-Item -LiteralPath $sbomWork -Recurse -Force
+  & (Join-Path $PSScriptRoot "generate-release-verifier-sbom.ps1") `
+    -BinaryDirectory $resolvedOutput `
+    -OutputPath $finalSbomPath `
+    -SourceRevisionId $sourceRevision
 
   $source = @(Get-ChildItem -LiteralPath $moduleRoot -Filter "*.go" -File `
       | Where-Object { $_.Name -notlike "*_test.go" } `

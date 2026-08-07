@@ -34,7 +34,8 @@ $assets = @(
   "stfc-mod-bridge-release-manifest.json",
   "stfc-mod-bridge-release-attestation.json",
   "stfc-mod-bridge-release-selection-attestation.json",
-  "stfc-mod-bridge-sbom.spdx.json"
+  "stfc-mod-bridge-sbom.spdx.json",
+  "STFCModBridge.ReleaseVerifier.spdx.json"
 )
 foreach ($asset in $assets) {
   gh release download $tag --repo $repository --dir $root --pattern $asset
@@ -101,6 +102,7 @@ Run Windows SDK verification against the signed MSIX and each extracted PE:
 ```powershell
 signtool verify /pa /all /v /debug .\STFCModBridge.msix
 signtool verify /pa /all /v /debug .\STFCModBridge.exe
+signtool verify /pa /all /v /debug .\STFCModBridge.ReleaseVerifier.exe
 signtool verify /pa /all /v /debug .\STFCModBridge.Updater.exe
 ```
 
@@ -118,7 +120,9 @@ reviewed durable Azure Artifact Signing identity EKU
 
 Unpack a copy of the MSIX with `makeappx unpack`, then require the immutable
 package Name, Publisher, Version, architecture, full-trust declarations,
-content enforcement, and exactly one reviewed inner executable. Parse the
+content enforcement, and exactly the reviewed launcher and release-verifier
+executables. Confirm the launcher's `ProductVersion` embeds the adjacent
+verifier's exact SHA-256. Parse the
 `.appinstaller` XML separately and require the same package Name, Publisher,
 Version, and the expected immutable versioned MSIX URI. The App Installer file
 is a mutable channel index; it is not independent release authorization.
@@ -126,8 +130,8 @@ is a mutable channel index; it is not independent release authorization.
 ## Verify every final subject
 
 Use the broad bundle with the same repository/workflow/tag/commit/hosted-runner
-constraints for the MSIX, App Installer descriptor, ZIP, manifest, SBOM, and the
-launcher/updater extracted from the ZIP:
+constraints for the MSIX, App Installer descriptor, ZIP, manifest, both SBOMs,
+and the launcher/release-verifier/updater extracted from the ZIP:
 
 ```powershell
 gh attestation verify $subjectPath `

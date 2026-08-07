@@ -340,6 +340,50 @@ internal static class ReleaseSelectionVerificationReceiptParser
     }
 }
 
+internal static class ReleaseSelectionVerificationReceiptSerializer
+{
+    private static readonly JsonSerializerOptions CompactOptions = new();
+    private static readonly JsonSerializerOptions IndentedOptions = new() { WriteIndented = true };
+
+    internal static byte[] Serialize(ReleaseSelectionVerificationReceipt receipt, bool writeIndented = false)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        return JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = receipt.SchemaVersion,
+            verified = receipt.Verified,
+            verificationMode = receipt.VerificationMode,
+            repository = receipt.Repository,
+            repositoryId = receipt.RepositoryId,
+            ownerId = receipt.OwnerId,
+            workflow = receipt.Workflow,
+            sourceRef = receipt.SourceRef,
+            sourceCommit = receipt.SourceCommit,
+            @event = receipt.Event,
+            runner = receipt.Runner,
+            statementType = receipt.StatementType,
+            predicateType = receipt.PredicateType,
+            buildType = receipt.BuildType,
+            subjectName = receipt.SubjectName,
+            manifestSha256 = receipt.ManifestSha256,
+            bundleSha256 = receipt.BundleSha256,
+            trustEpoch = receipt.TrustEpoch,
+            trustedRootSha256 = receipt.TrustedRootSha256,
+            fulcioIssuer = receipt.FulcioIssuer,
+            fulcioSan = receipt.FulcioSan,
+            rekorEntries = receipt.RekorEntries.Select(entry => new
+            {
+                logId = entry.LogId,
+                logIndex = entry.LogIndex,
+                integratedTime = entry.IntegratedTime.ToUniversalTime().ToString(
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                    System.Globalization.CultureInfo.InvariantCulture),
+            }),
+            checks = receipt.Checks,
+        }, writeIndented ? IndentedOptions : CompactOptions);
+    }
+}
+
 internal static class ReleaseSelectionVerifierProcess
 {
     private const int MaximumErrorCharacters = 8 * 1024;

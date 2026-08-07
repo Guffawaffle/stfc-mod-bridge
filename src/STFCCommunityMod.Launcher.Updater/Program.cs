@@ -1,25 +1,26 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text.Json;
 using STFCCommunityMod.Launcher.Core;
 
-var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-return await RunAsync(args, jsonOptions);
+return await RunAsync(args);
 
-static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions)
+static async Task<int> RunAsync(string[] args)
 {
     try
     {
-        if (args.Length != 2 || args[0] != "--plan")
+        if (args.Length != 4 || args[0] != "--plan" || args[2] != "--plan-sha256")
         {
             return 2;
         }
         var planPath = Path.GetFullPath(args[1]);
-        var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
-            await File.ReadAllTextAsync(planPath),
-            jsonOptions)
-            ?? throw new InvalidDataException("Update plan is empty.");
-        ValidatePlan(plan, planPath);
+        var localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var expectedLayout = PerUserInstallLayout.FromLocalApplicationData(localApplicationData);
+        var runtimePlan = LauncherUpdateTransactionSecurity.LoadAndRetain(
+            planPath,
+            args[3],
+            expectedLayout.StateDirectory,
+            expectedLayout.ProgramDirectory);
+        var plan = runtimePlan.Plan;
         await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
         try
@@ -32,6 +33,7 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             // The parent already exited.
         }
 
+        await LauncherUpdateTransactionSecurity.VerifyImmediatelyBeforeSwapAsync(runtimePlan);
         VerifyPayload(plan.StageDirectory, plan.Files);
         var hadPrevious = Directory.Exists(plan.TargetDirectory);
         Process? updated = null;
@@ -44,14 +46,18 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             }
             Directory.Move(plan.StageDirectory, plan.TargetDirectory);
             installedNewPayload = true;
+            VerifyPayload(plan.TargetDirectory, plan.Files);
             var launcherPath = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
-            updated = Process.Start(new ProcessStartInfo(
-                launcherPath,
-                $"--self-update-ack \"{plan.AcknowledgementPath}\" {plan.TransactionId}")
+            var updatedStartInfo = new ProcessStartInfo(launcherPath)
             {
                 UseShellExecute = true,
                 WorkingDirectory = plan.TargetDirectory,
-            }) ?? throw new InvalidOperationException("The updated Mod Bridge did not start.");
+            };
+            updatedStartInfo.ArgumentList.Add("--self-update-ack");
+            updatedStartInfo.ArgumentList.Add(plan.AcknowledgementPath);
+            updatedStartInfo.ArgumentList.Add(plan.TransactionId);
+            updated = Process.Start(updatedStartInfo)
+                ?? throw new InvalidOperationException("The updated Mod Bridge did not start.");
             var deadline = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
             {
@@ -109,28 +115,6 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
     }
 }
 
-static void ValidatePlan(LauncherUpdatePlan plan, string planPath)
-{
-    if (plan.SchemaVersion != 1 || !Guid.TryParseExact(plan.TransactionId, "N", out _))
-    {
-        throw new InvalidDataException("Update plan identity is invalid.");
-    }
-    var stateRoot = Path.GetFullPath(plan.StateRoot);
-    var localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    var expectedLayout = PerUserInstallLayout.FromLocalApplicationData(localApplicationData);
-    var transactionRoot = Path.Combine(stateRoot, "self-update", plan.TransactionId);
-    if (!PathEquals(stateRoot, expectedLayout.StateDirectory)
-        || !PathEquals(plan.TargetDirectory, expectedLayout.ProgramDirectory)
-        || !PathEquals(Path.GetDirectoryName(planPath)!, transactionRoot)
-        || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
-        || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
-        || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
-        || plan.LauncherRelativePath != ModBridgeProductIdentity.ExecutableName)
-    {
-        throw new InvalidDataException("Update plan paths are invalid.");
-    }
-}
-
 static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
 {
     var actual = EnumerateFiles(root);
@@ -155,8 +139,17 @@ static IReadOnlyList<LauncherUpdateFile> EnumerateFiles(string root) =>
         .Select(path => new LauncherUpdateFile(
             Path.GetRelativePath(root, path),
             new FileInfo(path).Length,
-            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+            HashFile(path)))
         .ToArray();
 
-static bool PathEquals(string left, string right) =>
-    string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+static string HashFile(string path)
+{
+    using var stream = new FileStream(
+        path,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        64 * 1024,
+        FileOptions.SequentialScan);
+    return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+}

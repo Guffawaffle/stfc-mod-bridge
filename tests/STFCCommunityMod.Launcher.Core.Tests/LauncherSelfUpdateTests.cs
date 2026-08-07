@@ -19,16 +19,35 @@ public sealed class LauncherSelfUpdateTests
     public async Task VerifiedArchiveStagesPlanWithoutTouchingProgramDirectory()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var archive = CreateArchive(("STFCModBridge.exe", [1, 2, 3]), ("STFCModBridge.Updater.exe", [4, 5, 6]));
+        var archive = CreateArchive(
+            ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
+            ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
-        var result = await service.PrepareAsync(Discovery(artifact), new string('a', 40), 123);
+        var result = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.Ready, result.State);
         Assert.IsTrue(File.Exists(result.PlanPath));
         Assert.IsTrue(File.Exists(result.UpdaterPath));
-        Assert.IsFalse(Directory.Exists(Path.Combine(temporaryDirectory.Path, "program")));
+        StringAssert.Matches(result.PlanSha256, new System.Text.RegularExpressions.Regex("^[0-9a-f]{64}$"));
+        var serializedPlan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
+            await File.ReadAllBytesAsync(result.PlanPath),
+            PlanJsonOptions)!;
+        var retained = LauncherUpdateTransactionSecurity.LoadAndRetain(
+            result.PlanPath,
+            result.PlanSha256,
+            serializedPlan.StateRoot,
+            serializedPlan.TargetDirectory);
+        Assert.AreEqual(2, retained.Plan.SchemaVersion);
+        Assert.IsTrue(retained.Plan.Files.All(file => string.Equals(
+            file.Sha256,
+            file.Sha256.ToLowerInvariant(),
+            StringComparison.Ordinal)));
+        Assert.AreEqual(
+            "keep-current",
+            File.ReadAllText(Path.Combine(temporaryDirectory.Path, "program", "sentinel.txt")));
         StringAssert.Contains(result.Message, "Integrity:");
         StringAssert.Contains(result.Message, "Producer origin:");
         StringAssert.Contains(result.Message, "Freshness:");
@@ -138,10 +157,11 @@ public sealed class LauncherSelfUpdateTests
         File.WriteAllText(journal, "preserve-me");
         var archive = CreateArchive(
             ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
             ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var service = CreateService(temporaryDirectory, archive);
 
-        await service.PrepareAsync(Discovery(Artifact(archive)), new string('a', 40), 123);
+        await service.PrepareAsync(Discovery(Artifact(archive), temporaryDirectory), new string('a', 40), 123);
 
         Assert.AreEqual("preserve-me", File.ReadAllText(journal));
     }
@@ -166,6 +186,33 @@ public sealed class LauncherSelfUpdateTests
         Assert.AreEqual(1, result.RestoredBackups);
         Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(File.Exists(Path.Combine(target, "new.txt")));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
+    public void SetupRecoveryRestoresV2BackupAfterCrashBetweenDirectoryMoves()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = Path.Combine(temporaryDirectory.Path, "program");
+        var transactionId = Guid.NewGuid().ToString("N");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
+        var backup = Directory.CreateDirectory(Path.Combine(transactionRoot, "backup")).FullName;
+        var previousPath = Path.Combine(backup, "old.txt");
+        File.WriteAllText(previousPath, "trusted previous payload");
+        WritePlan(
+            state,
+            target,
+            transactionId,
+            transactionRoot,
+            [FileRecord(backup, previousPath)],
+            schemaVersion: 2);
+
+        var result = LauncherUpdateRecovery.RecoverBeforeSetup(state, target);
+
+        Assert.AreEqual(1, result.ExaminedTransactions);
+        Assert.AreEqual(1, result.RestoredBackups);
+        Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(Directory.Exists(transactionRoot));
     }
 
@@ -259,6 +306,26 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void SetupRecoveryCleansCompletedV2TransactionOnNextNormalStartup()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var currentPath = Path.Combine(target, "current.txt");
+        File.WriteAllText(currentPath, "keep-current");
+        var transactionId = Guid.NewGuid().ToString("N");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
+        WritePlan(state, target, transactionId, transactionRoot, [], schemaVersion: 2);
+
+        var result = LauncherUpdateRecovery.RecoverBeforeSetup(state, target);
+
+        Assert.AreEqual(1, result.ExaminedTransactions);
+        Assert.AreEqual(0, result.RestoredBackups);
+        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
     public void SetupRecoveryRefusesReparsePointsBeforeRemovingCurrentPayload()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -316,14 +383,23 @@ public sealed class LauncherSelfUpdateTests
     private static LauncherSelfUpdateService CreateService(
         TemporaryDirectory temporaryDirectory,
         byte[] archive,
-        FakeDownloader? downloader = null) => new(
+        FakeDownloader? downloader = null)
+    {
+        var program = temporaryDirectory.CreateDirectory("program");
+        File.WriteAllBytes(Path.Combine(program, ModBridgeProductIdentity.ExecutableName), [10, 11, 12]);
+        File.WriteAllBytes(Path.Combine(program, ModBridgeProductIdentity.ReleaseVerifierExecutableName), [13, 14, 15]);
+        File.WriteAllText(Path.Combine(program, "sentinel.txt"), "keep-current");
+        return new(
             temporaryDirectory.CreateDirectory("state"),
-            Path.Combine(temporaryDirectory.Path, "program"),
+            program,
             downloader ?? new FakeDownloader(archive),
             new FakeAuthenticityVerifier(),
             new FakeIdentityReader());
+    }
 
-    private static LauncherReleaseDiscovery Discovery(LauncherReleaseArtifact artifact)
+    private static LauncherReleaseDiscovery Discovery(
+        LauncherReleaseArtifact artifact,
+        TemporaryDirectory? temporaryDirectory = null)
     {
         var manifest = new WindowsReleaseManifest(
             2,
@@ -347,7 +423,11 @@ public sealed class LauncherSelfUpdateTests
                     new(
                         "authenticode",
                         "contents",
-                        ["STFCModBridge.exe", "STFCModBridge.Updater.exe"])),
+                        [
+                            "STFCModBridge.exe",
+                            "STFCModBridge.ReleaseVerifier.exe",
+                            "STFCModBridge.Updater.exe",
+                        ])),
                 new(
                     "windows-mod-bridge-msix-x64",
                     "windows-mod-bridge-package",
@@ -377,6 +457,20 @@ public sealed class LauncherSelfUpdateTests
             AuthenticatedReleaseManifestPolicy.AuthenticityScheme,
             manifest.Artifacts,
             []);
+        var evidenceDirectory = temporaryDirectory is null
+            ? "unused"
+            : temporaryDirectory.CreateDirectory("evidence-" + Guid.NewGuid().ToString("N"));
+        var manifestPath = Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.ManifestName);
+        var bundlePath = Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.BundleName);
+        var manifestBytes = "test manifest"u8.ToArray();
+        var bundleBytes = "test bundle"u8.ToArray();
+        if (temporaryDirectory is not null)
+        {
+            File.WriteAllBytes(manifestPath, manifestBytes);
+            File.WriteAllBytes(bundlePath, bundleBytes);
+        }
+        var manifestSha256 = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+        var bundleSha256 = Convert.ToHexString(SHA256.HashData(bundleBytes)).ToLowerInvariant();
         var receipt = new ReleaseSelectionVerificationReceipt(
             1,
             true,
@@ -393,8 +487,8 @@ public sealed class LauncherSelfUpdateTests
             "https://slsa.dev/provenance/v1",
             "https://actions.github.io/buildtypes/workflow/v1",
             "stfc-mod-bridge-release-manifest.json",
-            new string('a', 64),
-            new string('b', 64),
+            manifestSha256,
+            bundleSha256,
             1,
             "844a1c6de3986c9f02070266b25e0d1a2fa99ceccc89f6b9ad90aae47b62a16e",
             "https://token.actions.githubusercontent.com",
@@ -417,9 +511,9 @@ public sealed class LauncherSelfUpdateTests
             receipt.VerificationMode,
             []);
         var authentication = new AuthenticatedLauncherReleaseEvidence(
-            "unused",
-            "unused-manifest",
-            "unused-bundle",
+            evidenceDirectory,
+            manifestPath,
+            bundlePath,
             "0.1.0",
             receipt,
             new(authenticatedManifest, state, observedAt));
@@ -501,10 +595,11 @@ public sealed class LauncherSelfUpdateTests
         string target,
         string transactionId,
         string transactionRoot,
-        IReadOnlyList<LauncherUpdateFile> previousFiles)
+        IReadOnlyList<LauncherUpdateFile> previousFiles,
+        int schemaVersion = 1)
     {
         var plan = new LauncherUpdatePlan(
-            1,
+            schemaVersion,
             transactionId,
             123,
             state,
@@ -513,6 +608,21 @@ public sealed class LauncherSelfUpdateTests
             Path.Combine(transactionRoot, "backup"),
             Path.Combine(transactionRoot, "startup.ack"),
             "STFCModBridge.exe",
+            schemaVersion == 2 ? ModBridgeProductIdentity.UpdaterExecutableName : string.Empty,
+            schemaVersion == 2 ? ModBridgeProductIdentity.ReleaseVerifierExecutableName : string.Empty,
+            string.Empty,
+            string.Empty,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
             [],
             previousFiles);
         File.WriteAllText(
@@ -538,6 +648,14 @@ public sealed class LauncherSelfUpdateTests
 
     private sealed class FakeIdentityReader : ILauncherArtifactIdentityReader
     {
-        public string? ReadSourceCommit(string executablePath) => TargetCommit;
+        public LauncherReleaseIdentity ReadIdentity(string executablePath)
+        {
+            var verifierPath = Path.Combine(
+                Path.GetDirectoryName(executablePath)!,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            return new(
+                TargetCommit,
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(verifierPath))).ToLowerInvariant());
+        }
     }
 }

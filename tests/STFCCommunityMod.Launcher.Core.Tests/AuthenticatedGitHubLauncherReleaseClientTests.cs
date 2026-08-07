@@ -263,7 +263,7 @@ public sealed class AuthenticatedGitHubLauncherReleaseClientTests
               "authenticity": {
                 "scheme": "authenticode",
                 "scope": "contents",
-                "signedFiles": ["STFCModBridge.exe", "STFCModBridge.Updater.exe"]
+                "signedFiles": ["STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe", "STFCModBridge.Updater.exe"]
               }
             },
             {
