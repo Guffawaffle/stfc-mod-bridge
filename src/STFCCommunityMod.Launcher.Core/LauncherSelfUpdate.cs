@@ -150,6 +150,10 @@ public static class LauncherUpdateRecovery
                     protector,
                     completion.RecoveryJournalSha256);
                 ValidateJournal(completedRecovery, transactionId, transactionRoot, stateRoot, targetRoot);
+                using var completedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    completion.TargetDirectory,
+                    completion.Files,
+                    "acknowledged installation");
                 VerifyCompletedInstallationAuthority(completion, authenticityVerifier, identityReader);
                 Directory.Delete(transactionRoot, recursive: true);
                 continue;
@@ -339,10 +343,6 @@ public static class LauncherUpdateRecovery
         IModArtifactAuthenticityVerifier authenticityVerifier,
         ILauncherArtifactIdentityReader identityReader)
     {
-        LauncherUpdatePayloadTransaction.VerifyPayload(
-            completion.TargetDirectory,
-            completion.Files,
-            "acknowledged installation");
         var launcher = completion.Files.Single(file =>
             string.Equals(file.RelativePath, completion.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
         var verifier = completion.Files.Single(file =>

@@ -666,6 +666,27 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void CompletedStartupCleanupRetainsVerifiedInventoryThroughResidueDeletion()
+    {
+        var recovery = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var completion = recovery.IndexOf("if (File.Exists(completionPath))", StringComparison.Ordinal);
+        var retained = recovery.IndexOf(
+            "using var completedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(",
+            completion,
+            StringComparison.Ordinal);
+        var cleanup = recovery.IndexOf("Directory.Delete(transactionRoot, recursive: true);", retained, StringComparison.Ordinal);
+        var nextBranch = recovery.IndexOf("if (!File.Exists(journalPath))", completion, StringComparison.Ordinal);
+
+        Assert.IsTrue(retained > completion, "Completed startup cleanup must retain the installed inventory.");
+        Assert.IsTrue(cleanup > retained, "Residue deletion must occur while the installed inventory is retained.");
+        Assert.IsTrue(cleanup < nextBranch, "The completion lease must protect the completion cleanup branch.");
+    }
+
+    [TestMethod]
     public void UpdaterSignalsRetainedPlanBeforeParentShutdown()
     {
         var root = RepositoryRoot();
