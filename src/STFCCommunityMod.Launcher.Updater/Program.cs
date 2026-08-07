@@ -6,6 +6,7 @@ return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] args)
 {
+    IAsyncDisposable? operationLease = null;
     try
     {
         if (args.Length == 6
@@ -30,7 +31,7 @@ static async Task<int> RunAsync(string[] args)
             expectedLayout.StateDirectory,
             expectedLayout.ProgramDirectory);
         var plan = runtimePlan.Plan;
-        await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
+        operationLease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
         LauncherUpdaterReadiness.Publish(
             Path.Combine(Path.GetDirectoryName(planPath)!, LauncherUpdaterReadiness.FileName),
@@ -125,6 +126,9 @@ static async Task<int> RunAsync(string[] args)
                 plan.StateRoot,
                 plan.TargetDirectory);
             var previousLauncher = restored.Launcher;
+            var rollbackLease = operationLease;
+            operationLease = null;
+            await rollbackLease.DisposeAsync();
             if (File.Exists(previousLauncher.Path))
             {
                 _ = LauncherVerifiedExecutable.Start(
@@ -167,6 +171,13 @@ static async Task<int> RunAsync(string[] args)
     {
         return 1;
     }
+    finally
+    {
+        if (operationLease is not null)
+        {
+            await operationLease.DisposeAsync();
+        }
+    }
 }
 
 static async Task<int> RunRecoveryAsync(
@@ -174,6 +185,7 @@ static async Task<int> RunRecoveryAsync(
     string expectedJournalSha256,
     int parentProcessId)
 {
+    IAsyncDisposable? recoveryLease = null;
     try
     {
         try
@@ -186,7 +198,7 @@ static async Task<int> RunRecoveryAsync(
             // The launcher already exited.
         }
         var layout = PerUserInstallLayout.FromCurrentUser();
-        await using var lease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
+        recoveryLease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
         using var restored = LauncherUpdateRecovery.RestoreFromJournal(
             Path.GetFullPath(journalPath),
@@ -194,6 +206,9 @@ static async Task<int> RunRecoveryAsync(
             layout.StateDirectory,
             layout.ProgramDirectory);
         var launcher = restored.Launcher;
+        var handoffLease = recoveryLease;
+        recoveryLease = null;
+        await handoffLease.DisposeAsync();
         _ = LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)
         {
             UseShellExecute = false,
@@ -204,6 +219,13 @@ static async Task<int> RunRecoveryAsync(
     catch
     {
         return 1;
+    }
+    finally
+    {
+        if (recoveryLease is not null)
+        {
+            await recoveryLease.DisposeAsync();
+        }
     }
 }
 

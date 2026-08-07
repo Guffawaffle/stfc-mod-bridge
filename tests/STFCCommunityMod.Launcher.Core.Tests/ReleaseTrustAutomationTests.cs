@@ -687,6 +687,31 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void RollbackRestartsReleaseTheMutationLeaseBeforePinnedLaunch()
+    {
+        var updater = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var recoveryFunction = updater.IndexOf("static async Task<int> RunRecoveryAsync(", StringComparison.Ordinal);
+        var ordinaryRollback = updater[..recoveryFunction];
+        var protectedRecovery = updater[recoveryFunction..];
+
+        var ordinaryRestore = ordinaryRollback.IndexOf("var previousLauncher = restored.Launcher;", StringComparison.Ordinal);
+        var ordinaryRelease = ordinaryRollback.IndexOf("await rollbackLease.DisposeAsync();", ordinaryRestore, StringComparison.Ordinal);
+        var ordinaryLaunch = ordinaryRollback.IndexOf("LauncherVerifiedExecutable.Start(", ordinaryRelease, StringComparison.Ordinal);
+        Assert.IsTrue(ordinaryRelease > ordinaryRestore, "Rollback must remain protected until restoration completes.");
+        Assert.IsTrue(ordinaryLaunch > ordinaryRelease, "Rollback restart must begin only after releasing the mutation lease.");
+
+        var protectedRestore = protectedRecovery.IndexOf("var launcher = restored.Launcher;", StringComparison.Ordinal);
+        var protectedRelease = protectedRecovery.IndexOf("await handoffLease.DisposeAsync();", protectedRestore, StringComparison.Ordinal);
+        var protectedLaunch = protectedRecovery.IndexOf("LauncherVerifiedExecutable.Start(", protectedRelease, StringComparison.Ordinal);
+        Assert.IsTrue(protectedRelease > protectedRestore, "Protected recovery must remain leased until restoration completes.");
+        Assert.IsTrue(protectedLaunch > protectedRelease, "Protected recovery restart must begin only after releasing the mutation lease.");
+    }
+
+    [TestMethod]
     public void UpdaterSignalsRetainedPlanBeforeParentShutdown()
     {
         var root = RepositoryRoot();
