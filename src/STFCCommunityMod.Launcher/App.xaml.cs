@@ -13,7 +13,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        if (!ConfigureSelfUpdateAcknowledgement(e.Args))
+        if (!IsBoundSelfUpdateChild(e.Args))
         {
             var layout = PerUserInstallLayout.FromLocalApplicationData(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
@@ -73,34 +73,36 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    private bool ConfigureSelfUpdateAcknowledgement(string[] arguments)
+    private static bool IsBoundSelfUpdateChild(string[] arguments)
     {
-        var index = Array.IndexOf(arguments, "--self-update-ack");
-        if (index < 0 || index + 2 >= arguments.Length)
+        if (arguments.Length != 3 || arguments[0] != "--self-update-child")
         {
             return false;
         }
-        var acknowledgementPath = arguments[index + 1];
-        var transactionId = arguments[index + 2];
-        EventHandler? activated = null;
-        activated = (_, _) =>
+        var transactionId = arguments[2];
+        if (!Guid.TryParseExact(transactionId, "N", out _))
         {
-            Activated -= activated;
-            try
-            {
-                var parent = Path.GetDirectoryName(Path.GetFullPath(acknowledgementPath));
-                if (parent is not null && Directory.Exists(parent) && Guid.TryParseExact(transactionId, "N", out _))
-                {
-                    File.WriteAllText(acknowledgementPath, transactionId);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-            {
-                // The helper treats a missing acknowledgement as failed startup and rolls back.
-            }
-        };
-        Activated += activated;
-        return true;
+            return false;
+        }
+        string acknowledgementPath;
+        try
+        {
+            acknowledgementPath = Path.GetFullPath(arguments[1]);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or IOException)
+        {
+            return false;
+        }
+        var layout = PerUserInstallLayout.FromCurrentUser();
+        var expectedPath = Path.Combine(
+            layout.StateDirectory,
+            "self-update",
+            transactionId,
+            "startup.ack");
+        return string.Equals(
+            acknowledgementPath,
+            Path.GetFullPath(expectedPath),
+            StringComparison.OrdinalIgnoreCase);
     }
 
 }

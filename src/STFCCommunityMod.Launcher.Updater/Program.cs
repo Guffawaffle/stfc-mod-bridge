@@ -90,18 +90,11 @@ static async Task<int> RunAsync(string[] args)
                 UseShellExecute = false,
                 WorkingDirectory = plan.TargetDirectory,
             };
-            updatedStartInfo.ArgumentList.Add("--self-update-ack");
+            updatedStartInfo.ArgumentList.Add("--self-update-child");
             updatedStartInfo.ArgumentList.Add(plan.AcknowledgementPath);
             updatedStartInfo.ArgumentList.Add(plan.TransactionId);
             updated = LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo);
-            var deadline = DateTime.UtcNow.AddSeconds(45);
-            while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
-            {
-                await Task.Delay(200);
-                updated.Refresh();
-            }
-            if (File.Exists(plan.AcknowledgementPath)
-                && string.Equals(await File.ReadAllTextAsync(plan.AcknowledgementPath), plan.TransactionId, StringComparison.Ordinal))
+            if (await WaitForResponsiveMainWindowAsync(updated, TimeSpan.FromSeconds(45)))
             {
                 using var installedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
                     plan.TargetDirectory,
@@ -112,6 +105,10 @@ static async Task<int> RunAsync(string[] args)
                     recoveryJournalSha256,
                     new WindowsDpapiLauncherUpdateRecoveryJournalProtector());
                 completionRecorded = true;
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    plan.TargetDirectory,
+                    plan.Files,
+                    "acknowledged installation cleanup");
                 Directory.Delete(plan.BackupDirectory, true);
                 return 0;
             }
@@ -255,6 +252,32 @@ static IReadOnlyList<LauncherUpdateFile> EnumerateFiles(string root) =>
             new FileInfo(path).Length,
             HashFile(path)))
         .ToArray();
+
+static async Task<bool> WaitForResponsiveMainWindowAsync(Process process, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow.Add(timeout);
+    while (DateTime.UtcNow < deadline)
+    {
+        try
+        {
+            process.Refresh();
+            if (process.HasExited)
+            {
+                return false;
+            }
+            if (process.MainWindowHandle != IntPtr.Zero && process.Responding)
+            {
+                return true;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        await Task.Delay(200);
+    }
+    return false;
+}
 
 static string HashFile(string path)
 {

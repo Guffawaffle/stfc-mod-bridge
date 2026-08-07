@@ -438,12 +438,31 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
-    public void RecoveryCleansAcknowledgedTransactionAfterBackupWasRemoved()
+    public void RecoveryRejectsMissingBackupWithoutVerifiedRestoredTarget()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
         var recovery = CreateRecoveryTransaction(state, target, "old");
+        Directory.Delete(recovery.Backup, recursive: true);
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.IsTrue(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansMissingBackupAfterVerifiedRestore()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
         Directory.Delete(recovery.Backup, recursive: true);
 
         Assert.IsNull(InspectRecovery(state, target));
@@ -548,6 +567,11 @@ public sealed class LauncherSelfUpdateTests
             Assert.ThrowsException<IOException>(() => File.WriteAllText(path, "substituted"));
             Assert.ThrowsException<IOException>(() => File.Move(path, path + ".moved"));
         }
+        var unexpected = Path.Combine(target, "unexpected.dll");
+        File.WriteAllText(unexpected, "added by another same-user process");
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdatePayloadTransaction.VerifyPayload(target, expected, "cleanup recheck"));
+        File.Delete(unexpected);
 
         payloadLease.Dispose();
         File.WriteAllText(Path.Combine(target, "old.txt"), "released");

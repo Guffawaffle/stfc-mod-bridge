@@ -632,12 +632,14 @@ public sealed partial class ReleaseTrustAutomationTests
             StringComparison.Ordinal);
         var completion = updater.IndexOf("LauncherUpdateCompletionJournalStore.Create(", StringComparison.Ordinal);
         var recorded = updater.IndexOf("completionRecorded = true;", StringComparison.Ordinal);
+        var finalInventory = updater.IndexOf("\"acknowledged installation cleanup\"", recorded, StringComparison.Ordinal);
         var cleanup = updater.IndexOf("Directory.Delete(plan.BackupDirectory, true);", StringComparison.Ordinal);
 
         Assert.IsTrue(retainedPayload >= 0, "Acknowledgement must retain the verified installed inventory.");
         Assert.IsTrue(completion > retainedPayload, "Terminal state must be written while the payload lease is held.");
         Assert.IsTrue(recorded > completion, "The updater must record durable completion before changing behavior.");
-        Assert.IsTrue(cleanup > recorded, "Backup cleanup must begin only after the terminal journal is durable.");
+        Assert.IsTrue(finalInventory > recorded, "The exact inventory must be rechecked after terminal persistence.");
+        Assert.IsTrue(cleanup > finalInventory, "Backup cleanup must begin only after the final inventory check.");
     }
 
     [TestMethod]
@@ -657,11 +659,13 @@ public sealed partial class ReleaseTrustAutomationTests
             "Directory.Delete(journal.BackupDirectory, recursive: true);",
             retainedPayload,
             StringComparison.Ordinal);
+        var finalInventory = recovery.IndexOf("\"restored payload cleanup\"", retainedPayload, StringComparison.Ordinal);
         var returnedLease = recovery.IndexOf("new LauncherRestoredPayload(", cleanup, StringComparison.Ordinal);
 
         Assert.IsTrue(restore >= 0);
         Assert.IsTrue(retainedPayload > restore, "Restored bytes must be pinned after replacement.");
-        Assert.IsTrue(cleanup > retainedPayload, "Backup deletion must happen under the retained payload lease.");
+        Assert.IsTrue(finalInventory > retainedPayload, "Restored inventory must be rechecked while pinned.");
+        Assert.IsTrue(cleanup > finalInventory, "Backup deletion must follow the final restored inventory check.");
         Assert.IsTrue(returnedLease > cleanup, "The payload lease must survive return for pinned process creation.");
     }
 
@@ -678,11 +682,13 @@ public sealed partial class ReleaseTrustAutomationTests
             "using var completedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(",
             completion,
             StringComparison.Ordinal);
+        var finalInventory = recovery.IndexOf("\"acknowledged installation cleanup\"", retained, StringComparison.Ordinal);
         var cleanup = recovery.IndexOf("Directory.Delete(transactionRoot, recursive: true);", retained, StringComparison.Ordinal);
         var nextBranch = recovery.IndexOf("if (!File.Exists(journalPath))", completion, StringComparison.Ordinal);
 
         Assert.IsTrue(retained > completion, "Completed startup cleanup must retain the installed inventory.");
-        Assert.IsTrue(cleanup > retained, "Residue deletion must occur while the installed inventory is retained.");
+        Assert.IsTrue(finalInventory > retained, "Completed startup cleanup must recheck the exact inventory.");
+        Assert.IsTrue(cleanup > finalInventory, "Residue deletion must follow the final inventory check.");
         Assert.IsTrue(cleanup < nextBranch, "The completion lease must protect the completion cleanup branch.");
     }
 
@@ -709,6 +715,49 @@ public sealed partial class ReleaseTrustAutomationTests
         var protectedLaunch = protectedRecovery.IndexOf("LauncherVerifiedExecutable.Start(", protectedRelease, StringComparison.Ordinal);
         Assert.IsTrue(protectedRelease > protectedRestore, "Protected recovery must remain leased until restoration completes.");
         Assert.IsTrue(protectedLaunch > protectedRelease, "Protected recovery restart must begin only after releasing the mutation lease.");
+    }
+
+    [TestMethod]
+    public void SuccessfulCompletionUsesTheExactChildProcessInsteadOfMutableAcknowledgementBytes()
+    {
+        var root = RepositoryRoot();
+        var updater = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var application = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "App.xaml.cs"));
+
+        StringAssert.Contains(updater, "WaitForResponsiveMainWindowAsync(updated, TimeSpan.FromSeconds(45))");
+        Assert.IsFalse(updater.Contains("File.Exists(plan.AcknowledgementPath)", StringComparison.Ordinal));
+        Assert.IsFalse(updater.Contains("File.ReadAllTextAsync(plan.AcknowledgementPath)", StringComparison.Ordinal));
+        Assert.IsFalse(application.Contains("File.WriteAllText(acknowledgementPath", StringComparison.Ordinal));
+        StringAssert.Contains(application, "--self-update-child");
+    }
+
+    [TestMethod]
+    public void MissingRecoveryBackupRequiresVerifiedRestoredTargetBeforeCleanup()
+    {
+        var recovery = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var missingBackup = recovery.IndexOf("if (!Directory.Exists(backupPath))", StringComparison.Ordinal);
+        var retained = recovery.IndexOf("\"completed recovery\"", missingBackup, StringComparison.Ordinal);
+        var authority = recovery.IndexOf(
+            "VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);",
+            retained,
+            StringComparison.Ordinal);
+        var cleanup = recovery.IndexOf("Directory.Delete(transactionRoot, recursive: true);", authority, StringComparison.Ordinal);
+
+        Assert.IsTrue(retained > missingBackup, "A missing backup must not imply completed recovery.");
+        Assert.IsTrue(authority > retained, "The restored launcher/verifier authority must be revalidated.");
+        Assert.IsTrue(cleanup > authority, "Recovery evidence may be cleaned only after target verification.");
     }
 
     [TestMethod]

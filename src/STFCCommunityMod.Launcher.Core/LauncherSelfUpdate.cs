@@ -155,6 +155,10 @@ public static class LauncherUpdateRecovery
                     completion.Files,
                     "acknowledged installation");
                 VerifyCompletedInstallationAuthority(completion, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    completion.TargetDirectory,
+                    completion.Files,
+                    "acknowledged installation cleanup");
                 Directory.Delete(transactionRoot, recursive: true);
                 continue;
             }
@@ -174,6 +178,15 @@ public static class LauncherUpdateRecovery
             VerifyBoundRunner(journal.RunnerUpdater, authenticityVerifier);
             if (!Directory.Exists(backupPath))
             {
+                using var restoredPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery");
+                VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery cleanup");
                 Directory.Delete(transactionRoot, recursive: true);
                 continue;
             }
@@ -252,6 +265,10 @@ public static class LauncherUpdateRecovery
         try
         {
             VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+            LauncherUpdatePayloadTransaction.VerifyPayload(
+                journal.TargetDirectory,
+                journal.PreviousFiles,
+                "restored payload cleanup");
             Directory.Delete(journal.BackupDirectory, recursive: true);
             var launcher = journal.PreviousFiles.Single(file =>
                 string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));

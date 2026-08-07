@@ -49,21 +49,23 @@ verifier with the embedded approved root. The candidate helper and mutable plan
 never authenticate their own replacement.
 
 The updater acquires the launcher's cross-process operation lease and holds it
-through re-verification, replacement, startup acknowledgement, and rollback. It
+through re-verification, replacement, exact-child startup observation, and
+rollback. It
 copies and verifies the old payload into transaction backup, writes a
 current-user DPAPI-protected recovery journal that independently binds the
 complete backup inventory and signed launcher/verifier pair, and only then
 begins replacement. Candidate files are committed through adjacent durable
 temporaries with the launcher replaced last. A complete launcher therefore
 remains at the stable shortcut path across every individual file boundary; the
-two-directory rename gap is not used. The new launcher acknowledges only after
-WPF activation. Missing acknowledgement or early exit revalidates the protected
-journal, backup inventory, Authenticode identities, and launcher/verifier
-pairing before restoring the prior payload. The complete restored inventory
-remains pinned through backup deletion and the verified launcher restart. No
-elevation is requested.
+two-directory rename gap is not used. Successful startup is accepted only when
+the exact pinned child process creates a responsive main window; no mutable file
+or public transaction ID is accepted as startup authority. Early exit or a
+startup timeout revalidates the protected journal, backup inventory,
+Authenticode identities, and launcher/verifier pairing before restoring the
+prior payload. The complete restored inventory remains pinned through backup
+deletion and the verified launcher restart. No elevation is requested.
 
-After a successful startup acknowledgement, the updater verifies the installed
+After successful exact-child startup, the updater verifies the installed
 payload again while retaining deny-write/deny-delete handles for every installed
 file, then durably writes a second current-user DPAPI-protected completion
 journal and deletes the backup before releasing those handles. That terminal
@@ -73,6 +75,16 @@ interrupted, the next startup validates the acknowledged installation and
 discards cleanup residue instead of misclassifying the partial backup as a
 rollback candidate. An invalid acknowledged installation fails closed without
 silently restoring stale bytes.
+
+The complete expected inventory is enumerated both before and after its file
+handles are retained, and is checked at cleanup boundaries under the
+cross-process operation lease. Windows does not provide a per-user process
+boundary that can prevent an arbitrary process running as the same user from
+adding a new child entry to this writable standalone directory. Such a process
+is outside this transaction's trust boundary; the mechanism does not claim to
+protect a compromised user session. Expected files remain deny-write/delete
+pinned, unexpected entries present at any verification boundary fail closed,
+and Authenticode remains the executable authority.
 
 The update plan, protected recovery journal, external updater, and backup live
 under the persistent state root, never inside the replaced program directory.
