@@ -110,8 +110,9 @@ before it can enter the release path.
 
 Before a production tag, capture the current settings or API output for:
 
-- a `main` ruleset that blocks deletion and force-push, requires pull requests,
-  requires the named CI checks, and requires review for CODEOWNERS-owned release
+- `main` protection that blocks deletion and force-push, requires pull requests,
+  requires signed commits, the named CI checks, and resolved conversations, and
+  records whether independent review is enforced for CODEOWNERS-owned release
   files;
 - a `v*` tag ruleset that restricts tag creation and blocks tag update/deletion;
 - immutable releases enabled for the repository, including a negative check
