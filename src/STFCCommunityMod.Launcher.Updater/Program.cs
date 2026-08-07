@@ -8,6 +8,15 @@ static async Task<int> RunAsync(string[] args)
 {
     try
     {
+        if (args.Length == 6
+            && args[0] == "--recover-journal"
+            && args[2] == "--journal-sha256"
+            && args[4] == "--parent-process-id"
+            && int.TryParse(args[5], out var recoveryParentProcessId)
+            && recoveryParentProcessId > 0)
+        {
+            return await RunRecoveryAsync(args[1], args[3], recoveryParentProcessId);
+        }
         if (args.Length != 4 || args[0] != "--plan" || args[2] != "--plan-sha256")
         {
             return 2;
@@ -35,17 +44,36 @@ static async Task<int> RunAsync(string[] args)
 
         await LauncherUpdateTransactionSecurity.VerifyImmediatelyBeforeSwapAsync(runtimePlan);
         VerifyPayload(plan.StageDirectory, plan.Files);
-        var hadPrevious = Directory.Exists(plan.TargetDirectory);
-        Process? updated = null;
-        var installedNewPayload = false;
+        if (!Directory.Exists(plan.TargetDirectory))
+        {
+            throw new InvalidDataException("The installed Mod Bridge payload disappeared before replacement.");
+        }
+        LauncherUpdatePayloadTransaction.CreateBackup(
+            plan.TargetDirectory,
+            plan.BackupDirectory,
+            plan.PreviousFiles);
+        string recoveryJournalPath;
+        string recoveryJournalSha256;
         try
         {
-            if (hadPrevious)
-            {
-                Directory.Move(plan.TargetDirectory, plan.BackupDirectory);
-            }
-            Directory.Move(plan.StageDirectory, plan.TargetDirectory);
-            installedNewPayload = true;
+            recoveryJournalPath = LauncherUpdateRecoveryJournalStore.Create(
+                plan,
+                new WindowsDpapiLauncherUpdateRecoveryJournalProtector());
+            recoveryJournalSha256 = LauncherUpdateRecoveryJournalStore.HashProtected(recoveryJournalPath);
+        }
+        catch
+        {
+            Directory.Delete(plan.BackupDirectory, recursive: true);
+            throw;
+        }
+        Process? updated = null;
+        try
+        {
+            LauncherUpdatePayloadTransaction.InstallPreservingLauncher(
+                plan.StageDirectory,
+                plan.TargetDirectory,
+                plan.Files,
+                plan.LauncherRelativePath);
             VerifyPayload(plan.TargetDirectory, plan.Files);
             var launcherPath = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
             var updatedStartInfo = new ProcessStartInfo(launcherPath)
@@ -67,10 +95,7 @@ static async Task<int> RunAsync(string[] args)
             if (File.Exists(plan.AcknowledgementPath)
                 && string.Equals(await File.ReadAllTextAsync(plan.AcknowledgementPath), plan.TransactionId, StringComparison.Ordinal))
             {
-                if (hadPrevious)
-                {
-                    Directory.Delete(plan.BackupDirectory, true);
-                }
+                Directory.Delete(plan.BackupDirectory, true);
                 return 0;
             }
             if (!updated.HasExited)
@@ -78,29 +103,26 @@ static async Task<int> RunAsync(string[] args)
                 updated.Kill(entireProcessTree: true);
                 await updated.WaitForExitAsync();
             }
-            Directory.Delete(plan.TargetDirectory, true);
-            if (hadPrevious)
+            var previousLauncher = LauncherUpdateRecovery.RestoreFromJournal(
+                recoveryJournalPath,
+                recoveryJournalSha256,
+                plan.StateRoot,
+                plan.TargetDirectory);
+            if (File.Exists(previousLauncher))
             {
-                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
-                Directory.Move(plan.BackupDirectory, plan.TargetDirectory);
-                var previousLauncher = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
-                if (File.Exists(previousLauncher))
-                {
-                    _ = Process.Start(new ProcessStartInfo(previousLauncher) { UseShellExecute = true });
-                }
+                _ = Process.Start(new ProcessStartInfo(previousLauncher) { UseShellExecute = true });
             }
             return 3;
         }
         catch
         {
-            if (installedNewPayload && Directory.Exists(plan.TargetDirectory))
+            if (Directory.Exists(plan.BackupDirectory))
             {
-                Directory.Delete(plan.TargetDirectory, true);
-            }
-            if (hadPrevious && Directory.Exists(plan.BackupDirectory) && !Directory.Exists(plan.TargetDirectory))
-            {
-                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
-                Directory.Move(plan.BackupDirectory, plan.TargetDirectory);
+                _ = LauncherUpdateRecovery.RestoreFromJournal(
+                    recoveryJournalPath,
+                    recoveryJournalSha256,
+                    plan.StateRoot,
+                    plan.TargetDirectory);
             }
             throw;
         }
@@ -108,6 +130,43 @@ static async Task<int> RunAsync(string[] args)
         {
             updated?.Dispose();
         }
+    }
+    catch
+    {
+        return 1;
+    }
+}
+
+static async Task<int> RunRecoveryAsync(
+    string journalPath,
+    string expectedJournalSha256,
+    int parentProcessId)
+{
+    try
+    {
+        try
+        {
+            using var parent = Process.GetProcessById(parentProcessId);
+            await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(2));
+        }
+        catch (ArgumentException)
+        {
+            // The launcher already exited.
+        }
+        var layout = PerUserInstallLayout.FromCurrentUser();
+        await using var lease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
+            ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+        var launcherPath = LauncherUpdateRecovery.RestoreFromJournal(
+            Path.GetFullPath(journalPath),
+            expectedJournalSha256,
+            layout.StateDirectory,
+            layout.ProgramDirectory);
+        _ = Process.Start(new ProcessStartInfo(launcherPath)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = layout.ProgramDirectory,
+        });
+        return 0;
     }
     catch
     {

@@ -37,7 +37,7 @@ public sealed class LauncherUpdateTransactionSecurityTests
         var roles = new[]
         {
             "plan", "manifest", "bundle", "receipt", "trusted-root", "archive",
-            "current-launcher", "current-verifier", "candidate-launcher", "candidate-updater",
+            "current-launcher", "current-verifier", "current-other", "candidate-launcher", "candidate-updater",
             "candidate-verifier", "runner-updater",
         };
         foreach (var role in roles)
@@ -59,7 +59,10 @@ public sealed class LauncherUpdateTransactionSecurityTests
                     () => fixture.ObservedAt));
 
             Assert.AreEqual(0, verifier.CallCount, $"{role} mutation reached the authority helper.");
-            Assert.AreEqual("healthy", File.ReadAllText(fixture.HealthySentinel), role);
+            Assert.AreEqual(
+                role == "current-other" ? "healthy\u007f" : "healthy",
+                File.ReadAllText(fixture.HealthySentinel),
+                role);
         }
     }
 
@@ -268,6 +271,7 @@ public sealed class LauncherUpdateTransactionSecurityTests
                 ["archive"] = archive,
                 ["current-launcher"] = currentLauncher,
                 ["current-verifier"] = currentVerifier,
+                ["current-other"] = HealthySentinel,
                 ["candidate-launcher"] = candidateLauncher,
                 ["candidate-updater"] = candidateUpdater,
                 ["candidate-verifier"] = candidateVerifier,

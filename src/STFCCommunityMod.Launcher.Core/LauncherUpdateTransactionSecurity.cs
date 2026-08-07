@@ -180,6 +180,7 @@ public static class LauncherUpdateTransactionSecurity
         VerifyBoundPortableExecutable(plan.CandidateUpdater, authenticityVerifier, "candidate updater");
         VerifyBoundPortableExecutable(plan.CandidateReleaseVerifier, authenticityVerifier, "candidate release verifier");
         VerifyBoundPortableExecutable(plan.RunnerUpdater, authenticityVerifier, "running updater");
+        VerifyPayload(plan.TargetDirectory, plan.PreviousFiles);
         VerifyPayload(plan.StageDirectory, plan.Files);
 
         var currentIdentity = identityReader.ReadIdentity(plan.CurrentLauncher.Path);
@@ -272,7 +273,7 @@ public static class LauncherUpdateTransactionSecurity
             Path.Combine(stageRoot, ModBridgeProductIdentity.ReleaseVerifierExecutableName));
         ValidateBoundPath(plan.RunnerUpdater, Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName));
         ValidatePayloadRecords(plan.Files, requireFiles: true);
-        ValidatePayloadRecords(plan.PreviousFiles, requireFiles: false);
+        ValidatePayloadRecords(plan.PreviousFiles, requireFiles: true);
         if (plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.ExecutableName) != 1
             || plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.UpdaterExecutableName) != 1
             || plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.ReleaseVerifierExecutableName) != 1)
@@ -281,7 +282,7 @@ public static class LauncherUpdateTransactionSecurity
         }
     }
 
-    private static void ValidatePayloadRecords(IReadOnlyList<LauncherUpdateFile> files, bool requireFiles)
+    internal static void ValidatePayloadRecords(IReadOnlyList<LauncherUpdateFile> files, bool requireFiles)
     {
         if (files.Count > MaximumPayloadFiles || (requireFiles && files.Count == 0))
         {

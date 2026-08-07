@@ -36,17 +36,27 @@ never authenticate their own replacement.
 
 The updater acquires the launcher's cross-process operation lease and holds it
 through re-verification, replacement, startup acknowledgement, and rollback. It
-then moves the old per-user
-program directory to transaction backup, and moves the stage into place. The
-new launcher acknowledges only after WPF activation. Missing acknowledgement
-or early exit removes the failed payload, verifies/restores the prior payload,
-and restarts it when available. No elevation is requested.
+copies and verifies the old payload into transaction backup, writes a
+current-user DPAPI-protected recovery journal that independently binds the
+complete backup inventory and signed launcher/verifier pair, and only then
+begins replacement. Candidate files are committed through adjacent durable
+temporaries with the launcher replaced last. A complete launcher therefore
+remains at the stable shortcut path across every individual file boundary; the
+two-directory rename gap is not used. The new launcher acknowledges only after
+WPF activation. Missing acknowledgement or early exit revalidates the protected
+journal, backup inventory, Authenticode identities, and launcher/verifier
+pairing before restoring the prior payload and restarting it. No elevation is
+requested.
 
-The update plan and backup live under the persistent state root, never inside
-the replaced program directory. Recovery strictly parses both legacy schema-v1
-and schema-v2 journals on the next normal startup and restores the verified
-prior payload when launch acknowledgement fails. Independent mod/configuration
-operation journals are not
+The update plan, protected recovery journal, external updater, and backup live
+under the persistent state root, never inside the replaced program directory.
+Normal startup first attempts the same cross-process operation lease; it skips
+recovery while an updater owns that lease. An abandoned protected journal is
+inspected without mutating the installation, then handed to the external
+updater while the launcher exits. The updater checks the exact protected-journal
+hash again before restoring. A backup without that independently protected
+journal fails closed for manual recovery instead of trusting mutable plan hashes.
+Independent mod/configuration operation journals are not
 moved or deleted by standalone self-update. App Installer and MSIX uninstall do
 not consume or remove those external state records.
 

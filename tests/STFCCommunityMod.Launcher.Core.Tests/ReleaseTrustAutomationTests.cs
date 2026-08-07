@@ -247,7 +247,7 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
-    public void UpdaterReverifiesAfterParentExitAndAfterTheDirectoryMoveBeforeLaunch()
+    public void UpdaterReverifiesAndProtectsRecoveryBeforeLauncherPreservingReplacement()
     {
         var updater = File.ReadAllText(Path.Combine(
             RepositoryRoot(),
@@ -257,15 +257,19 @@ public sealed partial class ReleaseTrustAutomationTests
         var retain = updater.IndexOf("LoadAndRetain(", StringComparison.Ordinal);
         var parentExit = updater.IndexOf("WaitForExitAsync()", StringComparison.Ordinal);
         var preSwap = updater.IndexOf("VerifyImmediatelyBeforeSwapAsync(runtimePlan)", StringComparison.Ordinal);
-        var move = updater.IndexOf("Directory.Move(plan.StageDirectory, plan.TargetDirectory)", StringComparison.Ordinal);
+        var backup = updater.IndexOf("LauncherUpdatePayloadTransaction.CreateBackup(", StringComparison.Ordinal);
+        var journal = updater.IndexOf("LauncherUpdateRecoveryJournalStore.Create(", StringComparison.Ordinal);
+        var replace = updater.IndexOf("LauncherUpdatePayloadTransaction.InstallPreservingLauncher(", StringComparison.Ordinal);
         var postMove = updater.IndexOf("VerifyPayload(plan.TargetDirectory, plan.Files)", StringComparison.Ordinal);
         var launch = updater.IndexOf("Process.Start(updatedStartInfo)", StringComparison.Ordinal);
 
         Assert.IsTrue(retain >= 0);
         Assert.IsTrue(parentExit > retain);
         Assert.IsTrue(preSwap > parentExit);
-        Assert.IsTrue(move > preSwap);
-        Assert.IsTrue(postMove > move);
+        Assert.IsTrue(backup > preSwap);
+        Assert.IsTrue(journal > backup);
+        Assert.IsTrue(replace > journal);
+        Assert.IsTrue(postMove > replace);
         Assert.IsTrue(launch > postMove);
     }
 
@@ -546,13 +550,30 @@ public sealed partial class ReleaseTrustAutomationTests
             "new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()",
             StringComparison.Ordinal);
         var wait = source.IndexOf("WaitForExitAsync()", StringComparison.Ordinal);
-        var replace = source.IndexOf(
-            "Directory.Move(plan.TargetDirectory, plan.BackupDirectory)",
-            StringComparison.Ordinal);
+        var replace = source.IndexOf("LauncherUpdatePayloadTransaction.CreateBackup(", StringComparison.Ordinal);
 
         Assert.IsTrue(lease >= 0, "Updater must acquire the launcher operation lease.");
         Assert.IsTrue(lease < wait, "Updater must acquire the lease before waiting for its parent.");
         Assert.IsTrue(lease < replace, "Updater must acquire the lease before replacing the installation.");
+    }
+
+    [TestMethod]
+    public void StartupRecoveryAcquiresSharedLeaseAndHandsOffToExternalUpdater()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher",
+            "App.xaml.cs"));
+        var lease = source.IndexOf("new LauncherOperationLock(layout.StateDirectory)", StringComparison.Ordinal);
+        var inspect = source.IndexOf("LauncherUpdateRecovery.InspectBeforeStartup(", StringComparison.Ordinal);
+        var handoff = source.IndexOf("--recover-journal", StringComparison.Ordinal);
+        var shutdown = source.IndexOf("Shutdown();", StringComparison.Ordinal);
+
+        Assert.IsTrue(lease >= 0, "Startup recovery must acquire the shared operation lease.");
+        Assert.IsTrue(inspect > lease, "Recovery inspection must occur under the shared lease.");
+        Assert.IsTrue(handoff > inspect, "Recovery must be handed to the external updater.");
+        Assert.IsTrue(shutdown > handoff, "The launcher must exit before the updater restores its executable.");
     }
 
     [TestMethod]
