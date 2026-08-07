@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Diagnostics;
@@ -10,6 +11,8 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherSelfUpdateTests
 {
     private const string TargetCommit = "0123456789abcdef0123456789abcdef01234567";
+    private static readonly ILauncherUpdateRecoveryJournalProtector JournalProtector =
+        new ReversingRecoveryJournalProtector();
     private static readonly JsonSerializerOptions PlanJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -19,16 +22,44 @@ public sealed class LauncherSelfUpdateTests
     public async Task VerifiedArchiveStagesPlanWithoutTouchingProgramDirectory()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var archive = CreateArchive(("STFCModBridge.exe", [1, 2, 3]), ("STFCModBridge.Updater.exe", [4, 5, 6]));
+        var archive = CreateArchive(
+            ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
+            ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
-        var result = await service.PrepareAsync(Discovery(artifact), new string('a', 40), 123);
+        using var result = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.Ready, result.State);
         Assert.IsTrue(File.Exists(result.PlanPath));
-        Assert.IsTrue(File.Exists(result.UpdaterPath));
-        Assert.IsFalse(Directory.Exists(Path.Combine(temporaryDirectory.Path, "program")));
+        Assert.IsNotNull(result.RunnerUpdater);
+        Assert.IsTrue(File.Exists(result.RunnerUpdater.Path));
+        Assert.AreEqual(
+            Path.Combine(Path.GetDirectoryName(result.PlanPath)!, LauncherUpdaterReadiness.FileName),
+            result.UpdaterReadyPath);
+        StringAssert.Matches(result.PlanSha256, new System.Text.RegularExpressions.Regex("^[0-9a-f]{64}$"));
+        var serializedPlan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
+            await File.ReadAllBytesAsync(result.PlanPath),
+            PlanJsonOptions)!;
+        var retained = LauncherUpdateTransactionSecurity.LoadAndRetain(
+            result.PlanPath,
+            result.PlanSha256,
+            serializedPlan.StateRoot,
+            serializedPlan.TargetDirectory);
+        Assert.IsTrue(LauncherUpdatePreparationOwner.IsLive(Path.Combine(
+            Path.GetDirectoryName(result.PlanPath)!,
+            LauncherUpdatePreparationOwner.FileName)));
+        Assert.IsNull(InspectRecovery(serializedPlan.StateRoot, serializedPlan.TargetDirectory));
+        Assert.IsTrue(File.Exists(result.PlanPath));
+        Assert.AreEqual(2, retained.Plan.SchemaVersion);
+        Assert.IsTrue(retained.Plan.Files.All(file => string.Equals(
+            file.Sha256,
+            file.Sha256.ToLowerInvariant(),
+            StringComparison.Ordinal)));
+        Assert.AreEqual(
+            "keep-current",
+            File.ReadAllText(Path.Combine(temporaryDirectory.Path, "program", "sentinel.txt")));
         StringAssert.Contains(result.Message, "Integrity:");
         StringAssert.Contains(result.Message, "Producer origin:");
         StringAssert.Contains(result.Message, "Freshness:");
@@ -45,10 +76,44 @@ public sealed class LauncherSelfUpdateTests
         var downloader = new FakeDownloader(archive);
         var service = CreateService(temporaryDirectory, archive, downloader);
 
-        var result = await service.PrepareAsync(Discovery(Artifact(archive)), TargetCommit, 123);
+        using var result = await service.PrepareAsync(Discovery(Artifact(archive)), TargetCommit, 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.UpToDate, result.State);
         Assert.AreEqual(0, downloader.CallCount);
+    }
+
+    [TestMethod]
+    public void RejectedUpdaterStartReleasesPreparationOwner()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            AssertRejectedUpdaterStartReleasesPreparationOwner();
+            return;
+        }
+        Assert.Inconclusive("Windows process handoff semantics are required for this check.");
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AssertRejectedUpdaterStartReleasesPreparationOwner()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var transactionRoot = temporaryDirectory.CreateDirectory(Guid.NewGuid().ToString("N"));
+        var ownerPath = Path.Combine(transactionRoot, LauncherUpdatePreparationOwner.FileName);
+        var preparation = new LauncherUpdatePreparation(
+            LauncherUpdatePreparationState.UpToDate,
+            "No update.",
+            "0.1.0",
+            temporaryDirectory.Path,
+            string.Empty,
+            null,
+            string.Empty,
+            string.Empty);
+        preparation.RetainPreparationOwner(LauncherUpdatePreparationOwner.Create(transactionRoot));
+        Assert.IsTrue(LauncherUpdatePreparationOwner.IsLive(ownerPath));
+
+        Assert.ThrowsException<InvalidOperationException>(() => LauncherSelfUpdateService.StartUpdater(preparation));
+
+        Assert.IsFalse(LauncherUpdatePreparationOwner.IsLive(ownerPath));
     }
 
     [TestMethod]
@@ -138,192 +203,639 @@ public sealed class LauncherSelfUpdateTests
         File.WriteAllText(journal, "preserve-me");
         var archive = CreateArchive(
             ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
             ("STFCModBridge.Updater.exe", [4, 5, 6]));
         var service = CreateService(temporaryDirectory, archive);
 
-        await service.PrepareAsync(Discovery(Artifact(archive)), new string('a', 40), 123);
+        using var preparation = await service.PrepareAsync(
+            Discovery(Artifact(archive), temporaryDirectory),
+            new string('a', 40),
+            123);
 
         Assert.AreEqual("preserve-me", File.ReadAllText(journal));
     }
 
     [TestMethod]
-    public void SetupRecoveryRestoresVerifiedBackupFromAbandonedSelfUpdate()
+    public void RecoveryInspectionFindsProtectedVerifiedBackupWithoutMutatingTarget()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        File.WriteAllText(Path.Combine(target, "current.txt"), "keep-current");
+        var recovery = CreateRecoveryTransaction(state, target, "trusted previous payload");
+
+        var preparation = InspectRecovery(state, target);
+
+        Assert.IsNotNull(preparation);
+        Assert.AreEqual(recovery.TransactionId, preparation.TransactionId);
+        Assert.AreEqual("keep-current", File.ReadAllText(Path.Combine(target, "current.txt")));
+        Assert.IsTrue(Directory.Exists(recovery.Backup));
+    }
+
+    [TestMethod]
+    public void RecoveryRestoreUsesProtectedJournalAndRevalidatesAuthority()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
         File.WriteAllText(Path.Combine(target, "new.txt"), "unacknowledged");
-        var transactionId = Guid.NewGuid().ToString("N");
-        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
-        var backup = Directory.CreateDirectory(Path.Combine(transactionRoot, "backup")).FullName;
-        var previousPath = Path.Combine(backup, "old.txt");
-        File.WriteAllText(previousPath, "trusted previous payload");
-        WritePlan(state, target, transactionId, transactionRoot, [FileRecord(backup, previousPath)]);
+        var recovery = CreateRecoveryTransaction(state, target, "trusted previous payload");
+        var preparation = InspectRecovery(state, target)!;
 
-        var result = LauncherUpdateRecovery.RecoverBeforeSetup(state, target);
+        using var restored = LauncherUpdateRecovery.RestoreFromJournal(
+            preparation.JournalPath,
+            preparation.JournalSha256,
+            state,
+            target,
+            JournalProtector,
+            new FakeAuthenticityVerifier(),
+            new FakeIdentityReader());
+        var launcher = restored.Launcher;
 
-        Assert.AreEqual(1, result.ExaminedTransactions);
-        Assert.AreEqual(1, result.RestoredBackups);
+        Assert.AreEqual(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), launcher.Path);
+        Assert.AreEqual(new FileInfo(launcher.Path).Length, launcher.Size);
+        Assert.AreEqual(BoundFile(launcher.Path).Sha256, launcher.Sha256);
         Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(File.Exists(Path.Combine(target, "new.txt")));
-        Assert.IsFalse(Directory.Exists(transactionRoot));
+        Assert.IsFalse(Directory.Exists(recovery.Backup));
+        Assert.ThrowsException<IOException>(
+            () => File.WriteAllText(Path.Combine(target, "old.txt"), "substituted-restored-payload"));
+
+        using var process = LauncherVerifiedExecutable.Start(
+            launcher,
+            new ProcessStartInfo(launcher.Path) { UseShellExecute = false },
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(() => File.WriteAllText(launcher.Path, "substituted"));
+                return Process.GetCurrentProcess();
+            });
     }
 
     [TestMethod]
-    public void SetupRecoveryVerifiesBackupBeforeRemovingCurrentPayload()
+    public void RecoveryRunnerIsBoundAndPinnedThroughProcessCreation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
-        var transactionId = Guid.NewGuid().ToString("N");
-        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
-        var backup = Directory.CreateDirectory(Path.Combine(transactionRoot, "backup")).FullName;
-        var previousPath = Path.Combine(backup, "old.txt");
-        File.WriteAllText(previousPath, "original");
-        var previous = FileRecord(backup, previousPath);
-        WritePlan(state, target, transactionId, transactionRoot, [previous]);
-        File.WriteAllText(previousPath, "tampered");
+        _ = CreateRecoveryTransaction(state, target, "trusted previous payload");
+        var preparation = InspectRecovery(state, target)!;
+        var startInfo = new ProcessStartInfo(preparation.RunnerUpdater.Path)
+        {
+            UseShellExecute = false,
+        };
+
+        using var process = LauncherVerifiedExecutable.Start(
+            preparation.RunnerUpdater,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(
+                    () => File.WriteAllText(preparation.RunnerUpdater.Path, "substituted"));
+                Assert.ThrowsException<IOException>(
+                    () => File.Move(preparation.RunnerUpdater.Path, preparation.RunnerUpdater.Path + ".moved"));
+                return Process.GetCurrentProcess();
+            });
+    }
+
+    [TestMethod]
+    public async Task PreparedRunnerRejectsSubstitutionAndIsPinnedThroughProcessCreation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var archive = CreateArchive(
+            ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
+            ("STFCModBridge.Updater.exe", [4, 5, 6]));
+        var artifact = Artifact(archive);
+        var service = CreateService(temporaryDirectory, archive);
+        using var preparation = await service.PrepareAsync(
+            Discovery(artifact, temporaryDirectory),
+            new string('a', 40),
+            123);
+        var runner = preparation.RunnerUpdater!;
+        var startInfo = new ProcessStartInfo(runner.Path) { UseShellExecute = false };
+
+        using var process = LauncherVerifiedExecutable.Start(
+            runner,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(() => File.WriteAllText(runner.Path, "substituted"));
+                Assert.ThrowsException<IOException>(() => File.Move(runner.Path, runner.Path + ".moved"));
+                return Process.GetCurrentProcess();
+            });
+
+        File.WriteAllText(runner.Path, "substituted-after-preparation");
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherVerifiedExecutable.Start(
+                runner,
+                startInfo,
+                new FakeAuthenticityVerifier(),
+                _ => Process.GetCurrentProcess()));
+    }
+
+    [TestMethod]
+    public void PinnedRunnerCanBeStartedByWindowsDirectProcessCreation()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows direct process creation is required for this pinned-runner check.");
+            return;
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var runnerPath = Path.Combine(temporaryDirectory.Path, "runner.exe");
+        File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), runnerPath);
+        var runner = BoundFile(runnerPath);
+        var startInfo = new ProcessStartInfo(runner.Path)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("/d");
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add("exit 0");
+
+        using var process = LauncherVerifiedExecutable.Start(
+            runner,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            Process.Start);
+        Assert.IsTrue(process.WaitForExit(10_000));
+        Assert.AreEqual(0, process.ExitCode);
+    }
+
+    [TestMethod]
+    public async Task UpdaterReadinessPublishesOnlyTheRetainedPlanIdentity()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var readyPath = Path.Combine(temporaryDirectory.Path, LauncherUpdaterReadiness.FileName);
+        var planSha256 = new string('a', 64);
+        using var process = Process.GetCurrentProcess();
+        var publisher = Task.Run(async () =>
+        {
+            await Task.Delay(50);
+            LauncherUpdaterReadiness.Publish(readyPath, planSha256);
+        });
+
+        LauncherUpdaterReadiness.WaitForReady(process, readyPath, planSha256, TimeSpan.FromSeconds(5));
+        await publisher;
+
+        Assert.AreEqual(planSha256, File.ReadAllText(readyPath));
+    }
+
+    [TestMethod]
+    public void UpdaterReadinessRejectsAnotherPlanIdentity()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var readyPath = Path.Combine(temporaryDirectory.Path, LauncherUpdaterReadiness.FileName);
+        LauncherUpdaterReadiness.Publish(readyPath, new string('b', 64));
+        using var process = Process.GetCurrentProcess();
 
         Assert.ThrowsException<InvalidDataException>(
-            () => LauncherUpdateRecovery.RecoverBeforeSetup(state, target));
+            () => LauncherUpdaterReadiness.WaitForReady(
+                process,
+                readyPath,
+                new string('a', 64),
+                TimeSpan.FromSeconds(1)));
+    }
 
-        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
+    [TestMethod]
+    public void RecoveryRejectsPlanAndBackupSubstitution()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "original");
+        var oldPath = Path.Combine(recovery.Backup, "old.txt");
+        File.WriteAllText(oldPath, "substituted");
+        WritePlan(
+            state,
+            target,
+            recovery.TransactionId,
+            recovery.TransactionRoot,
+            Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories)
+                .Select(path => FileRecord(recovery.Backup, path))
+                .ToArray(),
+            schemaVersion: 2);
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsBackupWithoutProtectedJournal()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var transactionId = Guid.NewGuid().ToString("N");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
+        Directory.CreateDirectory(Path.Combine(transactionRoot, "backup"));
+        WritePlan(state, target, transactionId, transactionRoot, [], schemaVersion: 1);
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
         Assert.IsTrue(Directory.Exists(transactionRoot));
     }
 
     [TestMethod]
-    public void SetupRecoveryRejectsInvalidPlanPathsBeforeRemovingCurrentPayload()
+    public void RecoveryRejectsUntrustedBackupAuthority()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
-        var transactionId = Guid.NewGuid().ToString("N");
-        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
-        var backup = Directory.CreateDirectory(Path.Combine(transactionRoot, "backup")).FullName;
-        var previousPath = Path.Combine(backup, "old.txt");
-        File.WriteAllText(previousPath, "trusted previous payload");
-        WritePlan(
-            state,
-            Path.Combine(temporaryDirectory.Path, "wrong-program"),
-            transactionId,
-            transactionRoot,
-            [FileRecord(backup, previousPath)]);
+        _ = CreateRecoveryTransaction(state, target, "trusted previous payload");
 
         Assert.ThrowsException<InvalidDataException>(
-            () => LauncherUpdateRecovery.RecoverBeforeSetup(state, target));
-
-        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
-        Assert.IsTrue(Directory.Exists(backup));
+            () => LauncherUpdateRecovery.InspectBeforeStartup(
+                state,
+                target,
+                JournalProtector,
+                new FakeAuthenticityVerifier(isTrusted: false),
+                new FakeIdentityReader()));
     }
 
     [TestMethod]
-    public void SetupRecoveryRejectsMultipleBackupsBeforeChoosingAnOrder()
+    public void RecoveryRejectsMultipleProtectedBackupsBeforeChoosingAnOrder()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
-        CreateRecoveryTransaction(state, target, "old-one");
-        CreateRecoveryTransaction(state, target, "old-two");
+        _ = CreateRecoveryTransaction(state, target, "old-one");
+        _ = CreateRecoveryTransaction(state, target, "old-two");
 
-        Assert.ThrowsException<InvalidDataException>(
-            () => LauncherUpdateRecovery.RecoverBeforeSetup(state, target));
-
-        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
         Assert.AreEqual(2, Directory.GetDirectories(Path.Combine(state, "self-update")).Length);
     }
 
     [TestMethod]
-    public void SetupRecoveryCleansVerifiedPlanThatNeverMovedTheOldPayload()
+    public void RecoveryCleansValidatedTransactionThatNeverCreatedBackup()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
         var transactionId = Guid.NewGuid().ToString("N");
         var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
-        WritePlan(state, target, transactionId, transactionRoot, []);
+        WritePlan(state, target, transactionId, transactionRoot, [], schemaVersion: 2);
 
-        var result = LauncherUpdateRecovery.RecoverBeforeSetup(state, target);
-
-        Assert.AreEqual(1, result.ExaminedTransactions);
-        Assert.AreEqual(0, result.RestoredBackups);
-        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
+        Assert.IsNull(InspectRecovery(state, target));
         Assert.IsFalse(Directory.Exists(transactionRoot));
     }
 
     [TestMethod]
-    public void SetupRecoveryRefusesReparsePointsBeforeRemovingCurrentPayload()
+    public void RecoveryDefersLivePreparationAndCleansItAfterOwnerRelease()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
-        var transactionId = Guid.NewGuid().ToString("N");
-        var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
-        WritePlan(state, target, transactionId, transactionRoot, []);
-        var linkTarget = temporaryDirectory.CreateDirectory("link-target");
-        var linkPath = Path.Combine(transactionRoot, "link");
-        CreateDirectoryLink(linkPath, linkTarget);
-        try
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(
+            state,
+            "self-update",
+            Guid.NewGuid().ToString("N"))).FullName;
+        using (LauncherUpdatePreparationOwner.Create(transactionRoot))
         {
-            Assert.ThrowsException<InvalidDataException>(
-                () => LauncherUpdateRecovery.RecoverBeforeSetup(state, target));
+            Directory.CreateDirectory(Path.Combine(transactionRoot, "stage"));
 
-            Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
+            Assert.IsNull(InspectRecovery(state, target));
             Assert.IsTrue(Directory.Exists(transactionRoot));
         }
-        finally
-        {
-            Directory.Delete(linkPath);
-        }
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
     }
 
     [TestMethod]
-    public void SetupRecoveryMoveFailureRestoresCurrentPayloadAndLeavesBackupForRetry()
+    public void RecoveryCleansPreparationCrashBeforePlanCreation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var state = temporaryDirectory.CreateDirectory("state");
         var target = temporaryDirectory.CreateDirectory("program");
-        var currentPath = Path.Combine(target, "current.txt");
-        File.WriteAllText(currentPath, "keep-current");
-        var transactionRoot = CreateRecoveryTransaction(state, target, "trusted previous payload");
+        var transactionRoot = Directory.CreateDirectory(Path.Combine(
+            state,
+            "self-update",
+            Guid.NewGuid().ToString("N"))).FullName;
+        Directory.CreateDirectory(Path.Combine(transactionRoot, "stage"));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsMissingBackupWithoutVerifiedRestoredTarget()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        Directory.Delete(recovery.Backup, recursive: true);
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.IsTrue(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansMissingBackupAfterVerifiedRestore()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
+        Directory.Delete(recovery.Backup, recursive: true);
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansVerifiedRestoreAfterRunnerDeletion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
+        Directory.Delete(recovery.Backup, recursive: true);
+        File.Delete(recovery.Plan.RunnerUpdater.Path);
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansPartialBackupAfterVerifiedRestore()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
+        File.Delete(Path.Combine(recovery.Backup, "old.txt"));
+        File.Delete(recovery.Plan.RunnerUpdater.Path);
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansEmptyTransactionRootAfterMarkerLastInterruption()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var transactionRoot = temporaryDirectory.CreateDirectory(
+            Path.Combine("state", "self-update", Guid.NewGuid().ToString("N")));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansInterruptedAcknowledgedBackupDeletionWithoutRollback()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.Delete(Path.Combine(recovery.Backup, "old.txt"));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsChangedAcknowledgedInstallationWithoutRollingBack()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.WriteAllText(Path.Combine(target, ModBridgeProductIdentity.ExecutableName), "changed-after-ack");
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.AreEqual(
+            "changed-after-ack",
+            File.ReadAllText(Path.Combine(target, ModBridgeProductIdentity.ExecutableName)));
+        Assert.IsTrue(Directory.Exists(recovery.Backup));
+    }
+
+    [TestMethod]
+    public void RecoveryRejectsAcknowledgedRecoveryJournalSubstitution()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        var recoveryJournalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        File.WriteAllText(recoveryJournalPath, "substituted-after-completion");
+
+        Assert.ThrowsException<InvalidDataException>(() => InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsTrue(Directory.Exists(recovery.Backup));
+    }
+
+    [TestMethod]
+    public void RecoveryCompletesAcknowledgedCleanupAfterRecoveryJournalDeletion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.Delete(Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void PayloadReplacementKeepsLauncherPresentAcrossInterruptedNonLauncherWrite()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stage = temporaryDirectory.CreateDirectory("stage");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var launcher = Path.Combine(target, ModBridgeProductIdentity.ExecutableName);
+        File.WriteAllText(launcher, "old-launcher");
+        WritePayload(stage, "new");
+        var expected = Directory.EnumerateFiles(stage)
+            .Select(path => FileRecord(stage, path))
+            .ToArray();
+
         Assert.ThrowsException<IOException>(
-            () => LauncherUpdateRecovery.RecoverBeforeSetup(
-                state,
+            () => LauncherUpdatePayloadTransaction.InstallPreservingLauncher(
+                stage,
                 target,
-                (source, destination) =>
+                expected,
+                ModBridgeProductIdentity.ExecutableName,
+                relativePath =>
                 {
-                    if (Path.GetFileName(source) == "backup")
+                    if (relativePath != ModBridgeProductIdentity.ExecutableName)
                     {
-                        throw new IOException("simulated backup move failure");
+                        throw new IOException("simulated power-loss boundary");
                     }
-                    Directory.Move(source, destination);
                 }));
 
-        Assert.AreEqual("keep-current", File.ReadAllText(currentPath));
-        Assert.IsTrue(Directory.Exists(Path.Combine(transactionRoot, "backup")));
-        Assert.IsTrue(Directory.Exists(transactionRoot));
+        Assert.IsTrue(File.Exists(launcher));
+        Assert.AreEqual("old-launcher", File.ReadAllText(launcher));
+    }
+
+    [TestMethod]
+    public void VerifiedPayloadLeasePinsEveryInstalledFileUntilDisposed()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var target = temporaryDirectory.CreateDirectory("program");
+        WritePayload(target, "installed");
+        var expected = Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories)
+            .Select(path => FileRecord(target, path))
+            .ToArray();
+        var payloadLease = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+            target,
+            expected,
+            "test installation");
+
+        foreach (var file in expected)
+        {
+            var path = Path.Combine(target, file.RelativePath);
+            Assert.ThrowsException<IOException>(() => File.WriteAllText(path, "substituted"));
+            Assert.ThrowsException<IOException>(() => File.Move(path, path + ".moved"));
+        }
+        var unexpected = Path.Combine(target, "unexpected.dll");
+        File.WriteAllText(unexpected, "added by another same-user process");
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdatePayloadTransaction.VerifyPayload(target, expected, "cleanup recheck"));
+        File.Delete(unexpected);
+
+        payloadLease.Dispose();
+        File.WriteAllText(Path.Combine(target, "old.txt"), "released");
+        Assert.AreEqual("released", File.ReadAllText(Path.Combine(target, "old.txt")));
+    }
+
+    [TestMethod]
+    public void PayloadReplacementRejectsChangedCandidateBeforeReplacingLauncher()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stage = temporaryDirectory.CreateDirectory("stage");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var launcher = Path.Combine(target, ModBridgeProductIdentity.ExecutableName);
+        File.WriteAllText(launcher, "old-launcher");
+        WritePayload(stage, "new");
+        var expected = Directory.EnumerateFiles(stage)
+            .Select(path => FileRecord(stage, path))
+            .ToArray();
+        File.WriteAllText(Path.Combine(stage, "old.txt"), "changed-after-verification");
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdatePayloadTransaction.InstallPreservingLauncher(
+                stage,
+                target,
+                expected,
+                ModBridgeProductIdentity.ExecutableName));
+
+        Assert.AreEqual("old-launcher", File.ReadAllText(launcher));
+    }
+
+    [TestMethod]
+    public void WindowsRecoveryJournalProtectionRejectsTampering()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows DPAPI is required for this recovery-journal check.");
+            return;
+        }
+        AssertWindowsRecoveryJournalProtectionRejectsTampering();
+    }
+
+    [TestMethod]
+    public void RecoveryJournalCreationRemovesFailedReadBack()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "original");
+        var journalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        File.Delete(journalPath);
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdateRecoveryJournalStore.Create(
+                recovery.Plan,
+                new FailedReadBackRecoveryJournalProtector()));
+
+        Assert.IsFalse(File.Exists(journalPath));
+    }
+
+    [TestMethod]
+    public void RecoveryJournalCreationPreservesPreexistingJournal()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "original");
+        var journalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        var original = File.ReadAllBytes(journalPath);
+
+        Assert.ThrowsException<IOException>(
+            () => LauncherUpdateRecoveryJournalStore.Create(recovery.Plan, JournalProtector));
+
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(journalPath));
+    }
+
+    [TestMethod]
+    public async Task SharedOperationLeaseRejectsConcurrentRecoveryInspection()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        await using var first = await new LauncherOperationLock(state).TryAcquireAsync();
+
+        await using var second = await new LauncherOperationLock(state).TryAcquireAsync();
+
+        Assert.IsNotNull(first);
+        Assert.IsNull(second);
     }
 
     private static LauncherSelfUpdateService CreateService(
         TemporaryDirectory temporaryDirectory,
         byte[] archive,
-        FakeDownloader? downloader = null) => new(
+        FakeDownloader? downloader = null)
+    {
+        var program = temporaryDirectory.CreateDirectory("program");
+        File.WriteAllBytes(Path.Combine(program, ModBridgeProductIdentity.ExecutableName), [10, 11, 12]);
+        File.WriteAllBytes(Path.Combine(program, ModBridgeProductIdentity.ReleaseVerifierExecutableName), [13, 14, 15]);
+        File.WriteAllText(Path.Combine(program, "sentinel.txt"), "keep-current");
+        return new(
             temporaryDirectory.CreateDirectory("state"),
-            Path.Combine(temporaryDirectory.Path, "program"),
+            program,
             downloader ?? new FakeDownloader(archive),
             new FakeAuthenticityVerifier(),
             new FakeIdentityReader());
+    }
 
-    private static LauncherReleaseDiscovery Discovery(LauncherReleaseArtifact artifact)
+    private static LauncherReleaseDiscovery Discovery(
+        LauncherReleaseArtifact artifact,
+        TemporaryDirectory? temporaryDirectory = null)
     {
         var manifest = new WindowsReleaseManifest(
             2,
@@ -347,7 +859,11 @@ public sealed class LauncherSelfUpdateTests
                     new(
                         "authenticode",
                         "contents",
-                        ["STFCModBridge.exe", "STFCModBridge.Updater.exe"])),
+                        [
+                            "STFCModBridge.exe",
+                            "STFCModBridge.ReleaseVerifier.exe",
+                            "STFCModBridge.Updater.exe",
+                        ])),
                 new(
                     "windows-mod-bridge-msix-x64",
                     "windows-mod-bridge-package",
@@ -377,6 +893,20 @@ public sealed class LauncherSelfUpdateTests
             AuthenticatedReleaseManifestPolicy.AuthenticityScheme,
             manifest.Artifacts,
             []);
+        var evidenceDirectory = temporaryDirectory is null
+            ? "unused"
+            : temporaryDirectory.CreateDirectory("evidence-" + Guid.NewGuid().ToString("N"));
+        var manifestPath = Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.ManifestName);
+        var bundlePath = Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.BundleName);
+        var manifestBytes = "test manifest"u8.ToArray();
+        var bundleBytes = "test bundle"u8.ToArray();
+        if (temporaryDirectory is not null)
+        {
+            File.WriteAllBytes(manifestPath, manifestBytes);
+            File.WriteAllBytes(bundlePath, bundleBytes);
+        }
+        var manifestSha256 = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+        var bundleSha256 = Convert.ToHexString(SHA256.HashData(bundleBytes)).ToLowerInvariant();
         var receipt = new ReleaseSelectionVerificationReceipt(
             1,
             true,
@@ -393,8 +923,8 @@ public sealed class LauncherSelfUpdateTests
             "https://slsa.dev/provenance/v1",
             "https://actions.github.io/buildtypes/workflow/v1",
             "stfc-mod-bridge-release-manifest.json",
-            new string('a', 64),
-            new string('b', 64),
+            manifestSha256,
+            bundleSha256,
             1,
             "844a1c6de3986c9f02070266b25e0d1a2fa99ceccc89f6b9ad90aae47b62a16e",
             "https://token.actions.githubusercontent.com",
@@ -417,9 +947,9 @@ public sealed class LauncherSelfUpdateTests
             receipt.VerificationMode,
             []);
         var authentication = new AuthenticatedLauncherReleaseEvidence(
-            "unused",
-            "unused-manifest",
-            "unused-bundle",
+            evidenceDirectory,
+            manifestPath,
+            bundlePath,
             "0.1.0",
             receipt,
             new(authenticatedManifest, state, observedAt));
@@ -454,17 +984,111 @@ public sealed class LauncherSelfUpdateTests
     private static LauncherUpdateFile FileRecord(string root, string path) => new(
         Path.GetRelativePath(root, path),
         new FileInfo(path).Length,
-        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant());
 
-    private static string CreateRecoveryTransaction(string state, string target, string contents)
+    private static LauncherUpdateRecoveryPreparation? InspectRecovery(string state, string target) =>
+        LauncherUpdateRecovery.InspectBeforeStartup(
+            state,
+            target,
+            JournalProtector,
+            new FakeAuthenticityVerifier(),
+            new FakeIdentityReader());
+
+    private static RecoveryFixture CreateRecoveryTransaction(string state, string target, string contents)
     {
         var transactionId = Guid.NewGuid().ToString("N");
         var transactionRoot = Directory.CreateDirectory(Path.Combine(state, "self-update", transactionId)).FullName;
         var backup = Directory.CreateDirectory(Path.Combine(transactionRoot, "backup")).FullName;
-        var previousPath = Path.Combine(backup, "old.txt");
-        File.WriteAllText(previousPath, contents);
-        WritePlan(state, target, transactionId, transactionRoot, [FileRecord(backup, previousPath)]);
-        return transactionRoot;
+        WritePayload(backup, contents);
+        var runnerPath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName);
+        File.WriteAllText(runnerPath, "recovery-runner");
+        var previousFiles = Directory.EnumerateFiles(backup, "*", SearchOption.AllDirectories)
+            .Select(path => FileRecord(backup, path))
+            .ToArray();
+        var launcherPath = Path.Combine(backup, ModBridgeProductIdentity.ExecutableName);
+        var verifierPath = Path.Combine(backup, ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+        var plan = new LauncherUpdatePlan(
+            2,
+            transactionId,
+            123,
+            state,
+            Path.Combine(transactionRoot, "stage"),
+            target,
+            backup,
+            Path.Combine(transactionRoot, "startup.ack"),
+            ModBridgeProductIdentity.ExecutableName,
+            ModBridgeProductIdentity.UpdaterExecutableName,
+            ModBridgeProductIdentity.ReleaseVerifierExecutableName,
+            "v0.2.0",
+            "0.1.0",
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            BoundFile(launcherPath),
+            BoundFile(verifierPath),
+            null!,
+            null!,
+            null!,
+            BoundFile(runnerPath),
+            [],
+            previousFiles);
+        File.WriteAllText(
+            Path.Combine(transactionRoot, "plan.json"),
+            JsonSerializer.Serialize(plan, PlanJsonOptions));
+        _ = LauncherUpdateRecoveryJournalStore.Create(plan, JournalProtector);
+        return new(transactionId, transactionRoot, backup, plan);
+    }
+
+    private static RecoveryFixture CreateAcknowledgedRecoveryTransaction(string state, string target)
+    {
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        WritePayload(target, "new");
+        var files = Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories)
+            .Select(path => FileRecord(target, path))
+            .ToArray();
+        var completedPlan = recovery.Plan with
+        {
+            CandidateLauncher = BoundFile(Path.Combine(target, ModBridgeProductIdentity.ExecutableName)),
+            CandidateReleaseVerifier = BoundFile(
+                Path.Combine(target, ModBridgeProductIdentity.ReleaseVerifierExecutableName)),
+            Files = files,
+        };
+        var recoveryJournalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        _ = LauncherUpdateCompletionJournalStore.Create(
+            completedPlan,
+            LauncherUpdateRecoveryJournalStore.HashProtected(recoveryJournalPath),
+            JournalProtector);
+        return recovery with { Plan = completedPlan };
+    }
+
+    private static LauncherUpdateBoundFile BoundFile(string path) => new(
+        path,
+        new FileInfo(path).Length,
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant());
+
+    [SupportedOSPlatform("windows")]
+    private static void AssertWindowsRecoveryJournalProtectionRejectsTampering()
+    {
+        var protector = new WindowsDpapiLauncherUpdateRecoveryJournalProtector();
+        var plaintext = "independent recovery authority"u8.ToArray();
+        var protectedBytes = protector.Protect(plaintext);
+
+        CollectionAssert.AreEqual(plaintext, protector.Unprotect(protectedBytes));
+        protectedBytes[^1] ^= 0x5a;
+        Assert.ThrowsException<CryptographicException>(() => protector.Unprotect(protectedBytes));
+    }
+
+    private static void WritePayload(string root, string marker)
+    {
+        File.WriteAllText(Path.Combine(root, ModBridgeProductIdentity.ExecutableName), $"launcher-{marker}");
+        File.WriteAllText(
+            Path.Combine(root, ModBridgeProductIdentity.ReleaseVerifierExecutableName),
+            $"verifier-{marker}");
+        File.WriteAllText(Path.Combine(root, "old.txt"), marker);
     }
 
     private static void CreateDirectoryLink(string linkPath, string targetPath)
@@ -501,10 +1125,11 @@ public sealed class LauncherSelfUpdateTests
         string target,
         string transactionId,
         string transactionRoot,
-        IReadOnlyList<LauncherUpdateFile> previousFiles)
+        IReadOnlyList<LauncherUpdateFile> previousFiles,
+        int schemaVersion = 1)
     {
         var plan = new LauncherUpdatePlan(
-            1,
+            schemaVersion,
             transactionId,
             123,
             state,
@@ -513,6 +1138,21 @@ public sealed class LauncherSelfUpdateTests
             Path.Combine(transactionRoot, "backup"),
             Path.Combine(transactionRoot, "startup.ack"),
             "STFCModBridge.exe",
+            schemaVersion == 2 ? ModBridgeProductIdentity.UpdaterExecutableName : string.Empty,
+            schemaVersion == 2 ? ModBridgeProductIdentity.ReleaseVerifierExecutableName : string.Empty,
+            string.Empty,
+            string.Empty,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
             [],
             previousFiles);
         File.WriteAllText(
@@ -531,13 +1171,41 @@ public sealed class LauncherSelfUpdateTests
         }
     }
 
-    private sealed class FakeAuthenticityVerifier : IModArtifactAuthenticityVerifier
+    private sealed record RecoveryFixture(
+        string TransactionId,
+        string TransactionRoot,
+        string Backup,
+        LauncherUpdatePlan Plan);
+
+    private sealed class ReversingRecoveryJournalProtector : ILauncherUpdateRecoveryJournalProtector
     {
-        public ModArtifactAuthenticityResult Verify(string artifactPath) => new(true, "trusted");
+        public byte[] Protect(byte[] contents) => [.. contents.Reverse()];
+
+        public byte[] Unprotect(byte[] protectedContents) => [.. protectedContents.Reverse()];
+    }
+
+    private sealed class FailedReadBackRecoveryJournalProtector : ILauncherUpdateRecoveryJournalProtector
+    {
+        public byte[] Protect(byte[] contents) => contents;
+
+        public byte[] Unprotect(byte[] protectedContents) => throw new CryptographicException("Test read-back failure.");
+    }
+
+    private sealed class FakeAuthenticityVerifier(bool isTrusted = true) : IModArtifactAuthenticityVerifier
+    {
+        public ModArtifactAuthenticityResult Verify(string artifactPath) => new(isTrusted, isTrusted ? "trusted" : "rejected");
     }
 
     private sealed class FakeIdentityReader : ILauncherArtifactIdentityReader
     {
-        public string? ReadSourceCommit(string executablePath) => TargetCommit;
+        public LauncherReleaseIdentity ReadIdentity(string executablePath)
+        {
+            var verifierPath = Path.Combine(
+                Path.GetDirectoryName(executablePath)!,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            return new(
+                TargetCommit,
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(verifierPath))).ToLowerInvariant());
+        }
     }
 }

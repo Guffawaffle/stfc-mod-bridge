@@ -14,7 +14,7 @@ tag, or the GitHub "Latest" label. `v0.1.0-rc.3` is rejected because of a
 provider-state projection regression.
 
 Use `STFCModBridge.appinstaller` for an MSIX-era release. The MSIX, ZIP, release
-manifest, SBOM, and attestation bundles are machine-consumed release inputs or a
+manifest, SBOMs, and attestation bundles are machine-consumed release inputs or a
 clearly labeled standalone fallback, not alternate installation entry points.
 The supported alpha environment is Windows 10 or 11 x64, a per-user Scopely
 STFC install, and the bundled Guffawaffle or NetniV stable provider.

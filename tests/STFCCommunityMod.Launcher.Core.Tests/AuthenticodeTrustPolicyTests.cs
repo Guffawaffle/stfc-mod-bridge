@@ -137,6 +137,7 @@ public sealed class AuthenticodeTrustPolicyTests
         var artifacts = new[]
         {
             Path.Combine(releaseRoot, "app", "STFCModBridge.exe"),
+            Path.Combine(releaseRoot, "app", "STFCModBridge.ReleaseVerifier.exe"),
             Path.Combine(releaseRoot, "app", "STFCModBridge.Updater.exe"),
         };
         foreach (var artifact in artifacts)

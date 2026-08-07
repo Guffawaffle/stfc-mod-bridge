@@ -2,6 +2,7 @@
 param(
   [string]$OutputDirectory = "artifacts/win-x64",
   [switch]$RequireSignatures,
+  [string]$ExpectedSourceRevisionId = "",
   [string]$ExpectedPublisherSubject = "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118"
 )
 
@@ -10,6 +11,9 @@ $expectedPackageIdentity = "Guffawaffle.STFCModBridge"
 $expectedPublisherName = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new(
   $ExpectedPublisherSubject)
 $expectedArtifactSigningIdentityEku = "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748"
+if ($ExpectedSourceRevisionId -and $ExpectedSourceRevisionId -cnotmatch '^[0-9a-f]{40}$') {
+  throw "ExpectedSourceRevisionId must be exactly 40 lowercase hexadecimal characters."
+}
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
@@ -119,6 +123,27 @@ function Assert-PortableExecutable {
   Assert-TrustedSignature $Path
 }
 
+function Assert-LauncherVerifierPairing {
+  param(
+    [string]$Root,
+    [string]$Context
+  )
+
+  $launcherPath = Join-Path $Root "STFCModBridge.exe"
+  $verifierPath = Join-Path $Root "STFCModBridge.ReleaseVerifier.exe"
+  $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($launcherPath).ProductVersion
+  if ($productVersion -cnotmatch '\+commit\.(?<commit>unknown|[0-9a-f]{40})\.verifier\.(?<digest>[0-9a-f]{64})$') {
+    throw "The $Context launcher does not carry the closed release-verifier identity."
+  }
+  if ($ExpectedSourceRevisionId -and $Matches.commit -cne $ExpectedSourceRevisionId) {
+    throw "The $Context launcher source identity does not match the expected release commit."
+  }
+  $actualDigest = (Get-FileHash -LiteralPath $verifierPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actualDigest -cne $Matches.digest) {
+    throw "The $Context launcher is not paired to the exact packaged release verifier."
+  }
+}
+
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
   throw "Mod Bridge fallback self-update archive was not found: $archive"
 }
@@ -131,7 +156,10 @@ try {
   $archiveExecutableNames = @($archiveExecutables | ForEach-Object {
     [System.IO.Path]::GetRelativePath($archiveInspectionRoot, $_.FullName).Replace('\', '/')
   })
-  $expectedArchiveExecutables = @("STFCModBridge.exe", "STFCModBridge.Updater.exe")
+  $expectedArchiveExecutables = @(
+    "STFCModBridge.exe",
+    "STFCModBridge.ReleaseVerifier.exe",
+    "STFCModBridge.Updater.exe")
   if ($archiveExecutableNames.Count -ne $expectedArchiveExecutables.Count `
       -or @($archiveExecutableNames | Where-Object { $expectedArchiveExecutables -cnotcontains $_ }).Count -ne 0) {
     throw "Fallback archive contains a portable executable outside the reviewed signing allowlist: $($archiveExecutableNames -join ', ')"
@@ -139,6 +167,7 @@ try {
   foreach ($executable in $archiveExecutables) {
     Assert-PortableExecutable $executable.FullName
   }
+  Assert-LauncherVerifierPairing $archiveInspectionRoot "fallback archive"
 } finally {
   if (Test-Path -LiteralPath $archiveInspectionRoot) {
     Remove-Item -LiteralPath $archiveInspectionRoot -Recurse -Force
@@ -162,15 +191,21 @@ try {
   }
   $portableExecutables = @(Get-ChildItem -LiteralPath $inspectionRoot -File -Recurse |
     Where-Object { Test-PortableExecutable $_.FullName })
-  if ($portableExecutables.Count -ne 1 `
-      -or $portableExecutables[0].Name -cne "STFCModBridge.exe" `
-      -or $portableExecutables[0].DirectoryName -cne $inspectionRoot) {
+  $packageExecutableNames = @($portableExecutables | ForEach-Object {
+    [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
+  })
+  $expectedPackageExecutables = @("STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe")
+  if ($packageExecutableNames.Count -ne $expectedPackageExecutables.Count `
+      -or @($packageExecutableNames | Where-Object { $expectedPackageExecutables -cnotcontains $_ }).Count -ne 0) {
     $relative = @($portableExecutables | ForEach-Object {
       [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
     })
     throw "MSIX contains a portable executable outside the reviewed allowlist: $($relative -join ', ')"
   }
-  Assert-PortableExecutable $portableExecutables[0].FullName
+  foreach ($executable in $portableExecutables) {
+    Assert-PortableExecutable $executable.FullName
+  }
+  Assert-LauncherVerifierPairing $inspectionRoot "MSIX"
 
   [xml]$manifest = Get-Content -Raw -LiteralPath (Join-Path $inspectionRoot "AppxManifest.xml")
   $namespaces = [System.Xml.XmlNamespaceManager]::new($manifest.NameTable)
@@ -234,4 +269,4 @@ try {
   }
 }
 
-Write-Host "Package inspection passed. App Installer is the user entry point; the signed MSIX contains one reviewed executable and enforces package integrity."
+Write-Host "Package inspection passed. App Installer is the user entry point; the signed MSIX contains the reviewed launcher and paired release verifier and enforces package integrity."

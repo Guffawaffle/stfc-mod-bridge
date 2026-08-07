@@ -479,7 +479,10 @@ public sealed class AuthenticatedReleaseManifestTests
                 "stfc-mod-bridge-win-x64.zip",
                 "application/zip",
                 "contents",
-                new JsonArray("STFCModBridge.exe", "STFCModBridge.Updater.exe")),
+                new JsonArray(
+                    "STFCModBridge.exe",
+                    "STFCModBridge.ReleaseVerifier.exe",
+                    "STFCModBridge.Updater.exe")),
             Artifact(
                 "windows-mod-bridge-msix-x64",
                 "windows-mod-bridge-package",

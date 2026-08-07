@@ -6,7 +6,7 @@ STFC Mod Bridge is distributed under the repository license. The components belo
 
 ## Coverage and open review
 
-Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and the direct sigstore-go module. The verifier's 71-module compiled graph is checksum-locked in dependencies.v1.txt; complete transitive module license classification remains review-pending under issue #97, while complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This inventory does not claim legal completeness.
+Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
 
 ## FluentIcons.Wpf and FluentIcons.Common
 
@@ -77,6 +77,17 @@ Copyright 2009 The Go Authors. All rights reserved. Redistribution and use in so
 
 ```text
 Copyright 2023 The Sigstore Authors. Licensed under the Apache License, Version 2.0. You may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an AS IS basis, without warranties or conditions of any kind. The linked upstream license contains the complete terms.
+```
+
+## STFC Mod Bridge Release Verifier module graph
+
+- Version: 71 exact modules in dependencies.v1.txt
+- License: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, and dual MIT/Apache-2.0 components
+- Source: https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/dependencies.v1.txt
+- Authoritative license information: https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/licenses.v1.json
+
+```text
+The closed release verifier compiles a checksum-locked 71-module Go graph. licenses.v1.json classifies every exact module under an SPDX expression and is cryptographically bound to dependencies.v1.txt; CI rejects graph, version, checksum, or classification drift. Each module retains its own copyright and authoritative license terms. This engineering inventory supports review and is not a legal-clearance claim.
 ```
 
 ## Attribution review boundary

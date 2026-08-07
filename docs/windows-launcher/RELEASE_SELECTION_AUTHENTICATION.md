@@ -1,8 +1,8 @@
 # Release-selection authentication
 
-Status: accepted implementation direction for issue #71. The consumer remains
-fail-closed until the verifier, producer schema, discovery, packaging, fixtures,
-and recovery policy land together.
+Status: implementation complete through issue #97. Production authorization
+remains deliberately fail-closed until issue #30 qualifies the protected-tag
+evidence, package, offline/root-recovery, and failure-survival gates.
 
 Issue #94 implements the non-authorizing verifier groundwork: a Go 1.26.5
 helper locked to `sigstore-go` v1.3.0 and a 71-module
@@ -14,9 +14,10 @@ and withdrawal policy, and atomic per-channel monotonic state. Issue #96 adds
 bounded authenticated standalone discovery, derived evidence URLs, independent
 digest binding, monotonic acceptance, and a truthful structured receipt. It
 also removes the legacy unauthenticated standalone client from application
-composition. Issue #97 remains responsible for packaging and digest-pairing the
-signed helper and for final external-updater revalidation; until then the
-standalone update command fails closed rather than falling back to schema v1.
+composition. Issue #97 packages the signed helper, embeds its final SHA-256 in
+the launcher, binds the external updater to plan schema v2, and reruns the
+already-installed helper immediately before replacement. The standalone update
+command remains disabled pending #30; it never falls back to schema v1.
 
 ## Decision
 

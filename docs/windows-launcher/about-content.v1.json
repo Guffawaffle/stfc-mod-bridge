@@ -73,6 +73,15 @@
       "sourceUrl": "https://github.com/sigstore/sigstore-go",
       "licenseUrl": "https://github.com/sigstore/sigstore-go/blob/v1.3.0/LICENSE",
       "noticeText": "Copyright 2023 The Sigstore Authors. Licensed under the Apache License, Version 2.0. You may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an AS IS basis, without warranties or conditions of any kind. The linked upstream license contains the complete terms."
+    },
+    {
+      "id": "release-verifier-module-graph",
+      "name": "STFC Mod Bridge Release Verifier module graph",
+      "version": "71 exact modules in dependencies.v1.txt",
+      "license": "Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, and dual MIT/Apache-2.0 components",
+      "sourceUrl": "https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/dependencies.v1.txt",
+      "licenseUrl": "https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/licenses.v1.json",
+      "noticeText": "The closed release verifier compiles a checksum-locked 71-module Go graph. licenses.v1.json classifies every exact module under an SPDX expression and is cryptographically bound to dependencies.v1.txt; CI rejects graph, version, checksum, or classification drift. Each module retains its own copyright and authoritative license terms. This engineering inventory supports review and is not a legal-clearance claim."
     }
   ],
   "dependencyInventory": [
@@ -163,8 +172,8 @@
     {
       "id": "STFCModBridge.ReleaseVerifier transitive module graph",
       "version": "71 exact modules in dependencies.v1.txt",
-      "noticeId": null,
-      "attributionStatus": "review-pending",
+      "noticeId": "release-verifier-module-graph",
+      "attributionStatus": "required",
       "evidenceKind": "go-build-graph"
     }
   ],
@@ -280,9 +289,16 @@
       "noticeId": null,
       "attributionStatus": "internal-build-input",
       "evidenceKind": "project-input"
+    },
+    {
+      "id": "STFCCommunityMod.Launcher.Core|EmbeddedResource|../STFCModBridge.ReleaseVerifier/trusted-root.public-good.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
     }
   ],
   "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Bridge is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
-  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and the direct sigstore-go module. The verifier's 71-module compiled graph is checksum-locked in dependencies.v1.txt; complete transitive module license classification remains review-pending under issue #97, while complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This inventory does not claim legal completeness.",
+  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.",
   "legalReviewStatus": "Attribution and non-endorsement copy is a factual compatibility statement, not a claim of legal clearance. Final wording and asset usage remain subject to the v1 release review tracked in issue #30."
 }

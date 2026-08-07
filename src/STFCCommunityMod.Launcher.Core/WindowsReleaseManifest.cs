@@ -412,9 +412,10 @@ public static partial class WindowsReleaseSelectionPolicy
             || artifact.Size > MaximumLauncherArtifactSize
             || artifact.Authenticity.Scheme != "authenticode"
             || artifact.Authenticity.Scope != "contents"
-            || artifact.Authenticity.SignedFiles.Count != 2
+            || artifact.Authenticity.SignedFiles.Count != 3
             || artifact.Authenticity.SignedFiles[0] != ModBridgeProductIdentity.ExecutableName
-            || artifact.Authenticity.SignedFiles[1] != ModBridgeProductIdentity.UpdaterExecutableName)
+            || artifact.Authenticity.SignedFiles[1] != ModBridgeProductIdentity.ReleaseVerifierExecutableName
+            || artifact.Authenticity.SignedFiles[2] != ModBridgeProductIdentity.UpdaterExecutableName)
         {
             throw new InvalidDataException("The Windows Mod Bridge artifact contract is invalid or unsupported.");
         }

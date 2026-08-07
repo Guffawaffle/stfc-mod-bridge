@@ -33,6 +33,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: src/STFCModBridge.ReleaseVerifier/go.sum
+
       - name: Resolve and validate tag identity
         id: release
         shell: pwsh
@@ -84,25 +89,13 @@ jobs:
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
-      - name: Run pre-signing security gates and generate SBOM
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          SOURCE_REVISION_ID: ${{ steps.release.outputs.commit }}
-        run: >-
-          ./scripts/run-release-security-gates.ps1
-          -ArtifactDirectory ./artifacts/win-x64/app
-          -OutputPath ./artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
-          -Version "$env:RELEASE_VERSION"
-          -SourceRevisionId "$env:SOURCE_REVISION_ID"
-
       - name: Upload unsigned Mod Bridge payload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-mod-bridge-unsigned-payload-x64
           path: |
             artifacts/win-x64/app
-            artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
+            artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json
           if-no-files-found: error
 
   sign:
@@ -163,19 +156,91 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sign Mod Bridge and updater
+      - name: Sign release verifier first
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
-          files-folder: artifacts/win-x64/app
-          files-folder-filter: exe
+          files: ${{ github.workspace }}\artifacts\win-x64\app\STFCModBridge.ReleaseVerifier.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
           description: STFC Mod Bridge
           description-url: https://github.com/Guffawaffle/stfc-mod-bridge
+
+      - name: Rebuild launcher and updater against final signed verifier
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: |
+          $source = "artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe"
+          $retained = "artifacts/win-x64/signed-release-verifier/STFCModBridge.ReleaseVerifier.exe"
+          New-Item -ItemType Directory -Path (Split-Path -Parent $retained) -Force | Out-Null
+          Copy-Item -LiteralPath $source -Destination $retained -Force
+          $expected = (Get-FileHash -LiteralPath $retained -Algorithm SHA256).Hash.ToLowerInvariant()
+          ./scripts/publish.ps1 `
+            -Version "$env:RELEASE_VERSION" `
+            -SourceRevisionId "$env:SOURCE_REVISION_ID" `
+            -ReleaseVerifierPath $retained
+          $actual = (Get-FileHash `
+            -LiteralPath "artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe" `
+            -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $expected) {
+            throw "Rebuilding the paired payload changed the signed release verifier."
+          }
+
+      - name: Regenerate verifier SBOM from final signed bytes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: >-
+          ./scripts/generate-release-verifier-sbom.ps1
+          -BinaryDirectory ./artifacts/win-x64/signed-release-verifier
+          -OutputPath ./artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json
+          -Version "$env:RELEASE_VERSION"
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
+
+      - name: Run final pre-signing security gates
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: >-
+          ./scripts/run-release-security-gates.ps1
+          -ArtifactDirectory ./artifacts/win-x64/app
+          -OutputPath ./artifacts/win-x64/stfc-mod-bridge-pre-signing-sbom.spdx.json
+          -Version "$env:RELEASE_VERSION"
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
+
+      - name: Sign paired Mod Bridge launcher and updater
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files: |
+            ${{ github.workspace }}\artifacts\win-x64\app\STFCModBridge.exe
+            ${{ github.workspace }}\artifacts\win-x64\app\STFCModBridge.Updater.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: STFC Mod Bridge
+          description-url: https://github.com/Guffawaffle/stfc-mod-bridge
+
+      - name: Generate payload SBOM from final signed inner bytes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: >-
+          ./scripts/generate-payload-sbom.ps1
+          -ArtifactDirectory ./artifacts/win-x64/app
+          -OutputPath ./artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
+          -Version "$env:RELEASE_VERSION"
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
       - name: Repackage signed fallback payload and build MSIX
         shell: pwsh
@@ -203,7 +268,12 @@ jobs:
 
       - name: Verify every release PE and inspect package boundary
         shell: pwsh
-        run: ./scripts/inspect-package.ps1 -RequireSignatures
+        env:
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: >-
+          ./scripts/inspect-package.ps1
+          -RequireSignatures
+          -ExpectedSourceRevisionId "$env:SOURCE_REVISION_ID"
 
       - name: Verify signed payload with the runtime Authenticode policy
         shell: pwsh
@@ -244,12 +314,14 @@ jobs:
         with:
           subject-path: |
             artifacts/win-x64/app/STFCModBridge.exe
+            artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
             artifacts/win-x64/package/STFCModBridge.msix
             artifacts/win-x64/package/STFCModBridge.appinstaller
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
             artifacts/win-x64/stfc-mod-bridge-release-manifest.json
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
+            artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json
 
       - name: Attest release-selection manifest only
         id: attest-release-selection
@@ -286,6 +358,7 @@ jobs:
           name: windows-mod-bridge-signed-release-x64
           path: |
             artifacts/win-x64/app/STFCModBridge.exe
+            artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
             artifacts/win-x64/package/STFCModBridge.msix
             artifacts/win-x64/package/STFCModBridge.appinstaller
@@ -294,6 +367,7 @@ jobs:
             artifacts/win-x64/stfc-mod-bridge-release-attestation.json
             artifacts/win-x64/stfc-mod-bridge-release-selection-attestation.json
             artifacts/win-x64/stfc-mod-bridge-sbom.spdx.json
+            artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json
           if-no-files-found: error
 
   stage:
@@ -328,10 +402,12 @@ jobs:
             "$root/package/STFCModBridge.msix",
             "$root/package/STFCModBridge.appinstaller",
             "$root/app/STFCModBridge.exe",
+            "$root/app/STFCModBridge.ReleaseVerifier.exe",
             "$root/app/STFCModBridge.Updater.exe",
             "$root/stfc-mod-bridge-win-x64.zip",
             "$root/stfc-mod-bridge-release-manifest.json",
-            "$root/stfc-mod-bridge-sbom.spdx.json"
+            "$root/stfc-mod-bridge-sbom.spdx.json",
+            "$root/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json"
           )
           if (-not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
             throw "The signed release payload is missing its attestation bundle."
@@ -398,7 +474,8 @@ jobs:
             "$root/stfc-mod-bridge-release-manifest.json",
             "$root/stfc-mod-bridge-release-attestation.json",
             "$root/stfc-mod-bridge-release-selection-attestation.json",
-            "$root/stfc-mod-bridge-sbom.spdx.json"
+            "$root/stfc-mod-bridge-sbom.spdx.json",
+            "$root/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json"
           )
           $notes = @"
           > [!WARNING]
@@ -406,7 +483,7 @@ jobs:
 
           Install STFC Mod Bridge with `STFCModBridge.appinstaller` after the published-release hosting check succeeds.
 
-          The MSIX, ZIP, manifest, SBOM, and attestation bundles are machine-consumed trust/update inputs, not alternate installation entry points.
+          The MSIX, ZIP, manifest, SBOMs, and attestation bundles are machine-consumed trust/update inputs, not alternate installation entry points.
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8NoBOM

@@ -24,16 +24,18 @@ The protected `windows-release` job attests these files only after Authenticode
 signing, final packaging, package inspection, and release-manifest generation:
 
 - `STFCModBridge.exe`;
+- `STFCModBridge.ReleaseVerifier.exe`;
 - `STFCModBridge.Updater.exe`;
 - `STFCModBridge.msix`;
 - `STFCModBridge.appinstaller`;
 - `stfc-mod-bridge-win-x64.zip`;
 - `stfc-mod-bridge-release-manifest.json`;
-- `stfc-mod-bridge-sbom.spdx.json`.
+- `stfc-mod-bridge-sbom.spdx.json`;
+- `STFCModBridge.ReleaseVerifier.spdx.json`.
 
 The workflow copies the signed bundle to
 `stfc-mod-bridge-release-attestation.json`. The App Installer descriptor is the
-user-facing install entry point. The MSIX, ZIP, manifest, SBOM, and attestation
+user-facing install entry point. The MSIX, ZIP, manifest, SBOMs, and attestation
 bundle are machine-consumed trust/update evidence or a standalone fallback.
 
 The workflow also creates
@@ -74,9 +76,9 @@ gh attestation verify .\STFCModBridge.msix `
   --bundle $bundle
 ```
 
-The descriptor, ZIP, manifest, and SBOM use the same command with their
-respective file paths. The inner launcher and updater can be extracted from the
-ZIP and verified against the same bundle.
+The descriptor, ZIP, manifest, both SBOMs, and each extracted launcher,
+release-verifier, and updater use the same command with their respective file
+paths.
 
 To verify the manifest-only evidence used by the planned authenticated release
 selection design, use the same command with the manifest as the subject and the
@@ -139,8 +141,9 @@ checks remain independent layers.
 records issue #71's accepted consumer direction, including trust-root rotation,
 expiry, replay, withdrawal, and offline policy. Issues #94 and #95 implement the
 verifier and schema/state seams; #96 connects them behind an injectable
-prevalidated-helper boundary and exposes a structured evidence receipt. The
-shipping composition remains deliberately fail-closed until #97 packages the
-signed helper, embeds its digest, and carries/reverifies evidence across the
-external updater boundary. Publishing the dedicated manifest-only bundle alone
-does not make an updater consume or trust it.
+prevalidated-helper boundary and exposes a structured evidence receipt. Issue
+#97 packages the signed helper, embeds its final digest, and carries/reverifies
+evidence across the external updater boundary. Shipping authorization remains
+deliberately fail-closed until #30 qualifies and activates that completed path.
+Publishing the dedicated manifest-only bundle alone does not authorize an
+update.

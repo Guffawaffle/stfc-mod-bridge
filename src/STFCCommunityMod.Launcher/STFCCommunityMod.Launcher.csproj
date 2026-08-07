@@ -17,7 +17,17 @@
     <PublishTrimmed>false</PublishTrimmed>
     <PublishReadyToRun>false</PublishReadyToRun>
     <Version>0.1.0</Version>
+    <ReleaseVerifierSha256 Condition="'$(ReleaseVerifierSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ReleaseVerifierSha256>
+    <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <InformationalVersion>$(Version)+commit.$(SourceRevisionId).verifier.$(ReleaseVerifierSha256)</InformationalVersion>
   </PropertyGroup>
+
+  <Target Name="ValidateReleaseVerifierIdentity" BeforeTargets="CoreCompile">
+    <Error
+      Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(ReleaseVerifierSha256)', '^[0-9a-f]{64}$')) != 'True'"
+      Text="ReleaseVerifierSha256 must be exactly 64 lowercase hexadecimal characters." />
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\STFCCommunityMod.Launcher.Core\STFCCommunityMod.Launcher.Core.csproj" />

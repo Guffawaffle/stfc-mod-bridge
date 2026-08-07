@@ -273,6 +273,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
+        pendingLauncherUpdate?.Dispose();
+        pendingLauncherUpdate = null;
         providerSessions.Dispose();
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
@@ -839,6 +841,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        pendingLauncherUpdate?.Dispose();
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null
             || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
@@ -870,7 +873,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
+                or InvalidDataException
                 or InvalidOperationException
+                or TimeoutException
                 or System.ComponentModel.Win32Exception)
         {
             SettingsUnavailableMessage.Text = $"The update helper could not start: {exception.Message}";

@@ -18,8 +18,8 @@ artifact identities:
 
 | ID | Role | User-facing? |
 |---|---|---|
-| `windows-mod-bridge-archive-x64` | ZIP containing signed Mod Bridge and its replace-on-exit helper | No; machine-consumed self-update input |
-| `windows-mod-bridge-msix-x64` | Signed Windows package containing the signed launcher | No; installed through the App Installer descriptor |
+| `windows-mod-bridge-archive-x64` | ZIP containing the signed launcher, paired release verifier, and replace-on-exit updater | No; machine-consumed self-update input |
+| `windows-mod-bridge-msix-x64` | Signed Windows package containing the signed launcher and paired release verifier | No; installed through the App Installer descriptor |
 
 The authenticated v2 metadata contract is:
 
@@ -37,15 +37,16 @@ than 24 hours behind its persisted observation floor as a material rollback.
 
 The manifest itself is also machine-consumed metadata. The package inspection
 gate checks that the signed MSIX has the reviewed identity, publisher,
-full-trust desktop declarations, content-integrity enforcement, and exactly one
-inner PE. It also checks that the fallback archive has exactly one root launcher
-and updater executable.
+full-trust desktop declarations, content-integrity enforcement, and exactly the
+root launcher and paired release-verifier PEs. It also checks that the fallback
+archive contains exactly those two PEs plus the root updater, and that each
+launcher embeds the exact SHA-256 of the adjacent verifier.
 The protected tag workflow repeats the inspection while requiring the reviewed
 Authenticode publisher.
 
 After those checks, the protected job generates GitHub/Sigstore provenance for
-the final MSIX, App Installer descriptor, update archive, manifest, SBOM,
-launcher, and updater bytes. It
+the final MSIX, App Installer descriptor, update archive, manifest, payload and
+verifier SBOMs, launcher, verifier, and updater bytes. It
 publishes the signed bundle as
 `stfc-mod-bridge-release-attestation.json`. The separate publication job
 reverifies every subject against the exact repository, release workflow, tag,
@@ -74,9 +75,10 @@ mod authority.
 
 The archive size and SHA-256 must match before extraction. Extraction is
 bounded and rejects traversal, links, duplicate identities, and unsafe paths.
-Both extracted PEs must pass Authenticode for the Mod Bridge-owned publisher, and
-the signed application's embedded source revision must match the manifest's tagged
-commit.
+All three extracted PEs must pass Authenticode for the Mod Bridge-owned
+publisher. The signed launcher's embedded source revision must match the
+manifest's tagged commit, and its embedded verifier SHA-256 must match the exact
+adjacent verifier bytes.
 
 ## Replay and withdrawal policy
 
@@ -108,9 +110,10 @@ Schema v1 declares `manifestAuthenticity.scheme: none` and remains ineligible
 for authenticated self-update. Schema v2 declares the exact GitHub/Sigstore
 scheme and is produced before its manifest-only attestation. Issue #96 adds the
 authenticated discovery/evidence/state consumer and removes the legacy
-standalone v1 client from application composition. Authorization remains
-unavailable in integration builds until issue #97 packages the signed,
-digest-paired verifier and implements final external-updater revalidation.
+standalone v1 client from application composition. Issue #97 packages the
+signed, digest-paired verifier and implements plan-v2 external-updater
+revalidation. Application composition remains unavailable until issue #30
+completes release qualification and explicitly activates it.
 
 ## Failure behavior
 

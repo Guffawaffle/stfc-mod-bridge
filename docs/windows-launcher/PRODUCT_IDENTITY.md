@@ -16,7 +16,7 @@ official application.
 | README, release title/copy, provider schema title, portfolio artwork | Public identity | Renamed |
 | OS-managed WindowsApps package directory | Program location | Canonical read-only MSIX install location |
 | `%LOCALAPPDATA%\\STFC Mod Bridge` | Persisted state | Canonical greenfield state, logs, journal, rollback, and preferences path |
-| `STFCModBridge.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.msix` | Signed release identity | Canonical filenames and process/package identity |
+| `STFCModBridge.exe`, `STFCModBridge.ReleaseVerifier.exe`, `STFCModBridge.Updater.exe`, and `STFCModBridge.msix` | Signed release identity | Canonical filenames and process/package identity |
 | .NET namespaces and solution/project directory names | Internal implementation identity | Retained because they are not player-visible or compatibility contracts |
 | `stfc-mod-bridge-win-x64.zip` and `stfc-mod-bridge-release-manifest.json` | Machine-consumed release identity | Canonical pre-v1 artifact names |
 | `Guffawaffle/stfc-mod-bridge` update endpoint and trust metadata | Repository/update compatibility | Canonical greenfield repository coordinate |
@@ -26,6 +26,14 @@ official application.
 and install/process/artifact identifiers. The WPF namespace and classes may
 continue to contain `Launcher`; those are implementation names, not display
 copy.
+
+Release builds also bind the launcher to its verifier without adding another
+mutable file. The launcher's `ProductVersion` ends with
+`+commit.<40-lowercase-hex>.verifier.<64-lowercase-hex>`, where the final value
+is the SHA-256 of the already signed verifier. Direct local builds use
+`commit.unknown` and an all-zero verifier sentinel and therefore cannot activate
+authenticated standalone authorization. Package inspection independently
+rehashes the adjacent verifier in both ZIP and MSIX layouts.
 
 ## Greenfield behavior
 

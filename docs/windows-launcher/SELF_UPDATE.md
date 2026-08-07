@@ -15,41 +15,127 @@ manifest and immutable GitHub asset URL. Provider packs cannot alter this
 authority. The archive response must match manifest status, declared/actual
 size, and SHA-256. Extraction rejects traversal, duplicate, link, excessive
 entry-count, expanded-size payloads, and every PE-header-bearing archive member
-outside the exact launcher/updater allowlist. Both the launcher and the updater
-helper must pass Authenticode for Joseph Gustavson, and the launcher's embedded
-source revision must exactly match `source.targetCommit`. Discovery evaluates
+outside the exact launcher/release-verifier/updater allowlist. All three PEs
+must pass Authenticode for Joseph Gustavson. The launcher's embedded source
+revision must exactly match `source.targetCommit`, and its embedded verifier
+SHA-256 must match the adjacent helper bytes. Discovery evaluates
 all matching release manifests and selects the highest active eligible channel
 version; API order, a lower release, or a withdrawn release cannot select or
 block another eligible release.
 
-The running executable is never overwritten. The launcher stages the verified
-archive under per-user state, copies the signed helper outside both old and new
-program directories, writes a file-hashed plan, and exits. The helper acquires
-the launcher's cross-process operation lease before waiting for that exact
-process and holds it through re-verification, replacement, startup
-acknowledgement, and rollback. It then moves the old per-user
-program directory to transaction backup, and moves the stage into place. The
-new launcher acknowledges only after WPF activation. Missing acknowledgement
-or early exit removes the failed payload, verifies/restores the prior payload,
-and restarts it when available. No elevation is requested.
+Every self-update executable handoff—the ordinary updater runner, recovery
+runner, newly installed launcher, and restored launcher—carries its exact size
+and SHA-256 from authenticated preparation or the protected recovery journal.
+Immediately before process creation, the caller rehashes and rechecks
+Authenticode while a deny-write/deny-delete file handle remains open through
+direct process creation. A verified executable pathname therefore cannot be
+substituted across the verify/execute boundary.
 
-The update plan and backup live under the persistent state root, never inside
-the replaced program directory. The helper validates exact state/program paths
-and recorded hashes, and it restores the verified prior payload when launch
-acknowledgement fails. Independent mod/configuration operation journals are not
+For the ordinary update handoff, the parent does not exit merely because
+process creation succeeded. The child atomically publishes a plan-SHA-bound
+readiness acknowledgement only after strict `LoadAndRetain` succeeds; the
+parent waits for that exact acknowledgement before allowing the UI shutdown
+that makes replacement possible.
+
+The running executable is never overwritten. The launcher stages the verified
+archive and exact manifest, bundle, receipt, and approved trust root under
+per-user state. Plan schema v2 binds their paths, sizes, and SHA-256 values plus
+the archive, current and candidate launcher/verifier pairs, candidate and runner
+updaters, and complete old/new file inventories. The updater parses and retains
+that closed plan before the parent exits. After the exact parent exits and
+immediately before replacement, it rehashes every bound input, rechecks
+Authenticode and both launcher/verifier pairings, and reruns the already-installed
+verifier with the embedded approved root. The candidate helper and mutable plan
+never authenticate their own replacement.
+
+The updater acquires the launcher's cross-process operation lease and holds it
+through re-verification, replacement, exact-child startup observation, and
+rollback. It
+copies and verifies the old payload into transaction backup, writes a
+current-user DPAPI-protected recovery journal that independently binds the
+complete backup inventory and signed launcher/verifier pair, and only then
+begins replacement. Candidate files are committed through adjacent durable
+temporaries with the launcher replaced last. A complete launcher therefore
+remains at the stable shortcut path across every individual file boundary; the
+two-directory rename gap is not used. Successful startup is accepted only when
+the exact pinned child process creates a responsive main window; no mutable file
+or public transaction ID is accepted as startup authority. Early exit or a
+startup timeout revalidates the protected journal, backup inventory,
+Authenticode identities, and launcher/verifier pairing before restoring the
+prior payload. The complete restored inventory remains pinned through backup
+deletion and the verified launcher restart. No elevation is requested.
+
+Preparation creates its transaction root under the same operation lease used by
+startup, then retains a durable owner marker with a deny-write/delete handle
+through confirmation and updater readiness. A concurrent launch therefore
+defers that live transaction instead of deleting staged evidence. If preparation
+crashes before `plan.json` is committed, the released marker or markerless
+partial root is recognized as abandoned and removed on the next leased startup.
+
+After successful exact-child startup, the updater verifies the installed
+payload again while retaining deny-write/deny-delete handles for every installed
+file, then durably writes a second current-user DPAPI-protected completion
+journal and deletes the backup before releasing those handles. That terminal
+record binds the exact recovery-journal digest and independently carries the
+complete installed inventory and launcher/verifier authority needed to finish
+cleanup after the recovery journal is removed. If backup cleanup is
+interrupted, the next startup validates the acknowledged installation and
+discards cleanup residue instead of misclassifying the partial backup as a
+rollback candidate. An invalid acknowledged installation fails closed without
+silently restoring stale bytes.
+
+Terminal cleanup removes staging, backup, and recovery residue before deleting
+the protected completion marker; an interruption therefore remains
+recognizable and retryable. The marker is removed only after it is the last file
+in the transaction root, and a final empty root is safe to discard on the next
+startup. Likewise, an incomplete recovery backup is not treated as authoritative:
+startup accepts completed rollback cleanup only when the installed target still
+matches the protected `PreviousFiles` inventory and signed launcher/verifier
+pair; otherwise it fails closed for manual recovery.
+
+A launcher restarted after rollback is passed the same strictly
+transaction-bound self-update child arguments as the forward-update child. That
+single child launch defers startup recovery so it cannot race deletion of the
+still-running transaction updater. The residue remains protected and is
+validated and removed on the next ordinary startup after the updater has exited.
+Completed-recovery cleanup validates the protected installed inventory before it
+requires a runner; once no authoritative backup remains, a runner already
+deleted by an interrupted marker-last cleanup is not needed to finish safely.
+
+The complete expected inventory is enumerated both before and after its file
+handles are retained, and is checked at cleanup boundaries under the
+cross-process operation lease. Windows does not provide a per-user process
+boundary that can prevent an arbitrary process running as the same user from
+adding a new child entry to this writable standalone directory. Such a process
+is outside this transaction's trust boundary; the mechanism does not claim to
+protect a compromised user session. Expected files remain deny-write/delete
+pinned, unexpected entries present at any verification boundary fail closed,
+and Authenticode remains the executable authority.
+
+The update plan, protected recovery journal, external updater, and backup live
+under the persistent state root, never inside the replaced program directory.
+Normal startup first attempts the same cross-process operation lease; it skips
+recovery and exits without opening a competing old launcher while an updater
+owns that lease. An abandoned protected journal is
+inspected without mutating the installation, then handed to the external
+updater while the launcher exits. The updater checks the exact protected-journal
+hash again before restoring. A backup without that independently protected
+journal fails closed for manual recovery instead of trusting mutable plan hashes.
+Independent mod/configuration operation journals are not
 moved or deleted by standalone self-update. App Installer and MSIX uninstall do
 not consume or remove those external state records.
 
 Stable is explicit and offline use is unaffected: update discovery is
-user-initiated from Diagnostics and has no bearing on local game launch.
+user-initiated from Diagnostics and has no bearing on local game launch. The
+authenticated standalone command remains deliberately disabled in application
+composition until issue #30 completes protected-release qualification.
 
 The discovery client requires a candidate version to advance the running
 launcher, preventing ordinary replay/downgrade. Emergency containment freezes
 publication and adds a reviewed entry to
 `docs/release-withdrawals/release-withdrawals.jsonl` without waiting for a
 replacement. Preserve immutable release evidence; a higher independently
-verified replacement is the normal recovery path. Runtime enforcement of
-authenticated withdrawal policy remains issue #71. See
+verified replacement is the normal recovery path. See
 [`COMPROMISE_RESPONSE.md`](COMPROMISE_RESPONSE.md).
 Manifest v1 is not detached-signed, so repository-control compromise remains a
 documented residual rather than being mislabeled as solved.

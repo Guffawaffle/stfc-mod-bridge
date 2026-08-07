@@ -1,27 +1,41 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text.Json;
 using STFCCommunityMod.Launcher.Core;
 
-var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-return await RunAsync(args, jsonOptions);
+return await RunAsync(args);
 
-static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions)
+static async Task<int> RunAsync(string[] args)
 {
+    IAsyncDisposable? operationLease = null;
     try
     {
-        if (args.Length != 2 || args[0] != "--plan")
+        if (args.Length == 6
+            && args[0] == "--recover-journal"
+            && args[2] == "--journal-sha256"
+            && args[4] == "--parent-process-id"
+            && int.TryParse(args[5], out var recoveryParentProcessId)
+            && recoveryParentProcessId > 0)
+        {
+            return await RunRecoveryAsync(args[1], args[3], recoveryParentProcessId);
+        }
+        if (args.Length != 4 || args[0] != "--plan" || args[2] != "--plan-sha256")
         {
             return 2;
         }
         var planPath = Path.GetFullPath(args[1]);
-        var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
-            await File.ReadAllTextAsync(planPath),
-            jsonOptions)
-            ?? throw new InvalidDataException("Update plan is empty.");
-        ValidatePlan(plan, planPath);
-        await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
+        var localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var expectedLayout = PerUserInstallLayout.FromLocalApplicationData(localApplicationData);
+        var runtimePlan = LauncherUpdateTransactionSecurity.LoadAndRetain(
+            planPath,
+            args[3],
+            expectedLayout.StateDirectory,
+            expectedLayout.ProgramDirectory);
+        var plan = runtimePlan.Plan;
+        operationLease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+        LauncherUpdaterReadiness.Publish(
+            Path.Combine(Path.GetDirectoryName(planPath)!, LauncherUpdaterReadiness.FileName),
+            args[3]);
         try
         {
             using var parent = Process.GetProcessById(plan.ParentProcessId);
@@ -32,39 +46,67 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
             // The parent already exited.
         }
 
+        await LauncherUpdateTransactionSecurity.VerifyImmediatelyBeforeSwapAsync(runtimePlan);
         VerifyPayload(plan.StageDirectory, plan.Files);
-        var hadPrevious = Directory.Exists(plan.TargetDirectory);
-        Process? updated = null;
-        var installedNewPayload = false;
+        if (!Directory.Exists(plan.TargetDirectory))
+        {
+            throw new InvalidDataException("The installed Mod Bridge payload disappeared before replacement.");
+        }
+        LauncherUpdatePayloadTransaction.CreateBackup(
+            plan.TargetDirectory,
+            plan.BackupDirectory,
+            plan.PreviousFiles);
+        string recoveryJournalPath;
+        string recoveryJournalSha256;
         try
         {
-            if (hadPrevious)
-            {
-                Directory.Move(plan.TargetDirectory, plan.BackupDirectory);
-            }
-            Directory.Move(plan.StageDirectory, plan.TargetDirectory);
-            installedNewPayload = true;
+            recoveryJournalPath = LauncherUpdateRecoveryJournalStore.Create(
+                plan,
+                new WindowsDpapiLauncherUpdateRecoveryJournalProtector());
+            recoveryJournalSha256 = LauncherUpdateRecoveryJournalStore.HashProtected(recoveryJournalPath);
+        }
+        catch
+        {
+            Directory.Delete(plan.BackupDirectory, recursive: true);
+            throw;
+        }
+        Process? updated = null;
+        var completionRecorded = false;
+        try
+        {
+            LauncherUpdatePayloadTransaction.InstallPreservingLauncher(
+                plan.StageDirectory,
+                plan.TargetDirectory,
+                plan.Files,
+                plan.LauncherRelativePath);
+            VerifyPayload(plan.TargetDirectory, plan.Files);
             var launcherPath = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
-            updated = Process.Start(new ProcessStartInfo(
+            var installedLauncher = new LauncherUpdateBoundFile(
                 launcherPath,
-                $"--self-update-ack \"{plan.AcknowledgementPath}\" {plan.TransactionId}")
+                plan.CandidateLauncher.Size,
+                plan.CandidateLauncher.Sha256);
+            var updatedStartInfo = CreateSelfUpdateChildStartInfo(
+                launcherPath,
+                plan.TargetDirectory,
+                plan.AcknowledgementPath,
+                plan.TransactionId);
+            updated = LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo);
+            if (await WaitForResponsiveMainWindowAsync(updated, TimeSpan.FromSeconds(45)))
             {
-                UseShellExecute = true,
-                WorkingDirectory = plan.TargetDirectory,
-            }) ?? throw new InvalidOperationException("The updated Mod Bridge did not start.");
-            var deadline = DateTime.UtcNow.AddSeconds(45);
-            while (DateTime.UtcNow < deadline && !File.Exists(plan.AcknowledgementPath) && !updated.HasExited)
-            {
-                await Task.Delay(200);
-                updated.Refresh();
-            }
-            if (File.Exists(plan.AcknowledgementPath)
-                && string.Equals(await File.ReadAllTextAsync(plan.AcknowledgementPath), plan.TransactionId, StringComparison.Ordinal))
-            {
-                if (hadPrevious)
-                {
-                    Directory.Delete(plan.BackupDirectory, true);
-                }
+                using var installedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    plan.TargetDirectory,
+                    plan.Files,
+                    "acknowledged installation");
+                _ = LauncherUpdateCompletionJournalStore.Create(
+                    plan,
+                    recoveryJournalSha256,
+                    new WindowsDpapiLauncherUpdateRecoveryJournalProtector());
+                completionRecorded = true;
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    plan.TargetDirectory,
+                    plan.Files,
+                    "acknowledged installation cleanup");
+                Directory.Delete(plan.BackupDirectory, true);
                 return 0;
             }
             if (!updated.HasExited)
@@ -72,29 +114,45 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
                 updated.Kill(entireProcessTree: true);
                 await updated.WaitForExitAsync();
             }
-            Directory.Delete(plan.TargetDirectory, true);
-            if (hadPrevious)
+            using var restored = LauncherUpdateRecovery.RestoreFromJournal(
+                recoveryJournalPath,
+                recoveryJournalSha256,
+                plan.StateRoot,
+                plan.TargetDirectory);
+            var previousLauncher = restored.Launcher;
+            var rollbackLease = operationLease;
+            operationLease = null;
+            await rollbackLease.DisposeAsync();
+            if (File.Exists(previousLauncher.Path))
             {
-                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
-                Directory.Move(plan.BackupDirectory, plan.TargetDirectory);
-                var previousLauncher = Path.Combine(plan.TargetDirectory, plan.LauncherRelativePath);
-                if (File.Exists(previousLauncher))
-                {
-                    _ = Process.Start(new ProcessStartInfo(previousLauncher) { UseShellExecute = true });
-                }
+                _ = LauncherVerifiedExecutable.Start(
+                    previousLauncher,
+                    CreateSelfUpdateChildStartInfo(
+                        previousLauncher.Path,
+                        plan.TargetDirectory,
+                        plan.AcknowledgementPath,
+                        plan.TransactionId));
             }
             return 3;
         }
         catch
         {
-            if (installedNewPayload && Directory.Exists(plan.TargetDirectory))
+            if (completionRecorded)
             {
-                Directory.Delete(plan.TargetDirectory, true);
+                return 0;
             }
-            if (hadPrevious && Directory.Exists(plan.BackupDirectory) && !Directory.Exists(plan.TargetDirectory))
+            if (updated is not null && !updated.HasExited)
             {
-                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
-                Directory.Move(plan.BackupDirectory, plan.TargetDirectory);
+                updated.Kill(entireProcessTree: true);
+                await updated.WaitForExitAsync();
+            }
+            if (Directory.Exists(plan.BackupDirectory))
+            {
+                using var restored = LauncherUpdateRecovery.RestoreFromJournal(
+                    recoveryJournalPath,
+                    recoveryJournalSha256,
+                    plan.StateRoot,
+                    plan.TargetDirectory);
             }
             throw;
         }
@@ -107,28 +165,82 @@ static async Task<int> RunAsync(string[] args, JsonSerializerOptions jsonOptions
     {
         return 1;
     }
+    finally
+    {
+        if (operationLease is not null)
+        {
+            await operationLease.DisposeAsync();
+        }
+    }
 }
 
-static void ValidatePlan(LauncherUpdatePlan plan, string planPath)
+static async Task<int> RunRecoveryAsync(
+    string journalPath,
+    string expectedJournalSha256,
+    int parentProcessId)
 {
-    if (plan.SchemaVersion != 1 || !Guid.TryParseExact(plan.TransactionId, "N", out _))
+    IAsyncDisposable? recoveryLease = null;
+    try
     {
-        throw new InvalidDataException("Update plan identity is invalid.");
+        try
+        {
+            using var parent = Process.GetProcessById(parentProcessId);
+            await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(2));
+        }
+        catch (ArgumentException)
+        {
+            // The launcher already exited.
+        }
+        var layout = PerUserInstallLayout.FromCurrentUser();
+        recoveryLease = await new LauncherOperationLock(layout.StateDirectory).TryAcquireAsync()
+            ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+        using var restored = LauncherUpdateRecovery.RestoreFromJournal(
+            Path.GetFullPath(journalPath),
+            expectedJournalSha256,
+            layout.StateDirectory,
+            layout.ProgramDirectory);
+        var launcher = restored.Launcher;
+        var handoffLease = recoveryLease;
+        recoveryLease = null;
+        await handoffLease.DisposeAsync();
+        var transactionRoot = Path.GetDirectoryName(Path.GetFullPath(journalPath))!;
+        _ = LauncherVerifiedExecutable.Start(
+            launcher,
+            CreateSelfUpdateChildStartInfo(
+                launcher.Path,
+                layout.ProgramDirectory,
+                Path.Combine(transactionRoot, "startup.ack"),
+                Path.GetFileName(transactionRoot)));
+        return 0;
     }
-    var stateRoot = Path.GetFullPath(plan.StateRoot);
-    var localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    var expectedLayout = PerUserInstallLayout.FromLocalApplicationData(localApplicationData);
-    var transactionRoot = Path.Combine(stateRoot, "self-update", plan.TransactionId);
-    if (!PathEquals(stateRoot, expectedLayout.StateDirectory)
-        || !PathEquals(plan.TargetDirectory, expectedLayout.ProgramDirectory)
-        || !PathEquals(Path.GetDirectoryName(planPath)!, transactionRoot)
-        || !PathEquals(plan.StageDirectory, Path.Combine(transactionRoot, "stage"))
-        || !PathEquals(plan.BackupDirectory, Path.Combine(transactionRoot, "backup"))
-        || !PathEquals(plan.AcknowledgementPath, Path.Combine(transactionRoot, "startup.ack"))
-        || plan.LauncherRelativePath != ModBridgeProductIdentity.ExecutableName)
+    catch
     {
-        throw new InvalidDataException("Update plan paths are invalid.");
+        return 1;
     }
+    finally
+    {
+        if (recoveryLease is not null)
+        {
+            await recoveryLease.DisposeAsync();
+        }
+    }
+}
+
+static ProcessStartInfo CreateSelfUpdateChildStartInfo(
+    string launcherPath,
+    string workingDirectory,
+    string acknowledgementPath,
+    string transactionId)
+{
+    var startInfo = new ProcessStartInfo(launcherPath)
+    {
+        UseShellExecute = false,
+        WorkingDirectory = workingDirectory,
+    };
+    startInfo.ArgumentList.Add("--self-update-child");
+    startInfo.ArgumentList.Add(acknowledgementPath);
+    startInfo.ArgumentList.Add(transactionId);
+    return startInfo;
 }
 
 static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
@@ -155,8 +267,43 @@ static IReadOnlyList<LauncherUpdateFile> EnumerateFiles(string root) =>
         .Select(path => new LauncherUpdateFile(
             Path.GetRelativePath(root, path),
             new FileInfo(path).Length,
-            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+            HashFile(path)))
         .ToArray();
 
-static bool PathEquals(string left, string right) =>
-    string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+static async Task<bool> WaitForResponsiveMainWindowAsync(Process process, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow.Add(timeout);
+    while (DateTime.UtcNow < deadline)
+    {
+        try
+        {
+            process.Refresh();
+            if (process.HasExited)
+            {
+                return false;
+            }
+            if (process.MainWindowHandle != IntPtr.Zero && process.Responding)
+            {
+                return true;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        await Task.Delay(200);
+    }
+    return false;
+}
+
+static string HashFile(string path)
+{
+    using var stream = new FileStream(
+        path,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        64 * 1024,
+        FileOptions.SequentialScan);
+    return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+}

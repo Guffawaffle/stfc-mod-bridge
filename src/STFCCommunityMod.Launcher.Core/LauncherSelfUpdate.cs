@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -15,6 +16,8 @@ public sealed record LauncherReleaseArtifact(
 
 public sealed record LauncherUpdateFile(string RelativePath, long Size, string Sha256);
 
+public sealed record LauncherUpdateBoundFile(string Path, long Size, string Sha256);
+
 public sealed record LauncherUpdatePlan(
     int SchemaVersion,
     string TransactionId,
@@ -25,6 +28,21 @@ public sealed record LauncherUpdatePlan(
     string BackupDirectory,
     string AcknowledgementPath,
     string LauncherRelativePath,
+    string UpdaterRelativePath,
+    string ReleaseVerifierRelativePath,
+    string ExpectedTag,
+    string InstalledReleaseVersion,
+    LauncherUpdateBoundFile Manifest,
+    LauncherUpdateBoundFile Bundle,
+    LauncherUpdateBoundFile Receipt,
+    LauncherUpdateBoundFile TrustedRoot,
+    LauncherUpdateBoundFile Archive,
+    LauncherUpdateBoundFile CurrentLauncher,
+    LauncherUpdateBoundFile CurrentReleaseVerifier,
+    LauncherUpdateBoundFile CandidateLauncher,
+    LauncherUpdateBoundFile CandidateUpdater,
+    LauncherUpdateBoundFile CandidateReleaseVerifier,
+    LauncherUpdateBoundFile RunnerUpdater,
     IReadOnlyList<LauncherUpdateFile> Files,
     IReadOnlyList<LauncherUpdateFile> PreviousFiles);
 
@@ -40,42 +58,127 @@ public sealed record LauncherUpdatePreparation(
     string ReleaseVersion,
     string TargetDirectory,
     string PlanPath,
-    string UpdaterPath);
+    LauncherUpdateBoundFile? RunnerUpdater,
+    string UpdaterReadyPath,
+    string PlanSha256) : IDisposable
+{
+    private IDisposable? preparationOwner;
 
-public sealed record LauncherUpdateRecoveryResult(int ExaminedTransactions, int RestoredBackups);
+    internal void RetainPreparationOwner(IDisposable owner) =>
+        preparationOwner = owner;
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref preparationOwner, null)?.Dispose();
+}
+
+public sealed record LauncherUpdateRecoveryPreparation(
+    int ExaminedTransactions,
+    string TransactionId,
+    LauncherUpdateBoundFile RunnerUpdater,
+    string JournalPath,
+    string JournalSha256);
+
+public sealed class LauncherRestoredPayload : IDisposable
+{
+    private IDisposable? payloadLease;
+
+    internal LauncherRestoredPayload(
+        LauncherUpdateBoundFile launcher,
+        IDisposable payloadLease)
+    {
+        Launcher = launcher;
+        this.payloadLease = payloadLease;
+    }
+
+    public LauncherUpdateBoundFile Launcher { get; }
+
+    public void Dispose() => Interlocked.Exchange(ref payloadLease, null)?.Dispose();
+}
+
+internal static class LauncherUpdatePreparationOwner
+{
+    internal const string FileName = "preparation.owner";
+
+    public static IDisposable Create(string transactionRoot)
+    {
+        var path = Path.Combine(Path.GetFullPath(transactionRoot), FileName);
+        var stream = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.Read,
+            1,
+            FileOptions.WriteThrough);
+        stream.Flush(flushToDisk: true);
+        return stream;
+    }
+
+    public static bool IsLive(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException("The Mod Bridge update preparation owner marker is unsafe.");
+        }
+        try
+        {
+            using var probe = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                1,
+                FileOptions.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
+}
 
 public static class LauncherUpdateRecovery
 {
-    private sealed record RecoveryTransaction(
-        string TransactionRoot,
-        LauncherUpdatePlan Plan,
-        bool HasBackup);
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
-    public static LauncherUpdateRecoveryResult RecoverBeforeSetup(
+    [SupportedOSPlatform("windows")]
+    public static LauncherUpdateRecoveryPreparation? InspectBeforeStartup(
         string stateDirectory,
-        string programDirectory) =>
-        RecoverBeforeSetup(stateDirectory, programDirectory, Directory.Move);
+        string programDirectory)
+    {
+        var verifier = new WindowsAuthenticodeVerifier(
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku);
+        return InspectBeforeStartup(
+            stateDirectory,
+            programDirectory,
+            new WindowsDpapiLauncherUpdateRecoveryJournalProtector(),
+            verifier,
+            new WindowsLauncherArtifactIdentityReader());
+    }
 
-    internal static LauncherUpdateRecoveryResult RecoverBeforeSetup(
+    internal static LauncherUpdateRecoveryPreparation? InspectBeforeStartup(
         string stateDirectory,
         string programDirectory,
-        Action<string, string> moveDirectory)
+        ILauncherUpdateRecoveryJournalProtector protector,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
     {
-        ArgumentNullException.ThrowIfNull(moveDirectory);
+        ArgumentNullException.ThrowIfNull(protector);
+        ArgumentNullException.ThrowIfNull(authenticityVerifier);
+        ArgumentNullException.ThrowIfNull(identityReader);
         var stateRoot = Path.GetFullPath(stateDirectory);
         var targetRoot = Path.GetFullPath(programDirectory);
         var updateRoot = Path.Combine(stateRoot, "self-update");
         if (!Directory.Exists(updateRoot))
         {
-            return new(0, 0);
+            return null;
         }
 
-        var transactions = new List<RecoveryTransaction>();
+        var examined = 0;
+        var recoveries = new List<(LauncherUpdateRecoveryJournal Journal, string JournalPath)>();
         foreach (var transactionRoot in Directory.EnumerateDirectories(updateRoot).Order(StringComparer.Ordinal))
         {
             var transactionId = Path.GetFileName(transactionRoot);
@@ -83,83 +186,227 @@ public static class LauncherUpdateRecovery
             {
                 continue;
             }
-            var planPath = Path.Combine(transactionRoot, "plan.json");
-            if (!File.Exists(planPath))
+            examined++;
+            LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge update recovery");
+            var backupPath = Path.Combine(transactionRoot, "backup");
+            var journalPath = Path.Combine(transactionRoot, LauncherUpdateRecoveryJournalStore.FileName);
+            var completionPath = Path.Combine(transactionRoot, LauncherUpdateCompletionJournalStore.FileName);
+            var preparationOwnerPath = Path.Combine(transactionRoot, LauncherUpdatePreparationOwner.FileName);
+            if (LauncherUpdatePreparationOwner.IsLive(preparationOwnerPath))
             {
                 continue;
             }
-
-            LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge update recovery");
-            var plan = JsonSerializer.Deserialize<LauncherUpdatePlan>(File.ReadAllText(planPath), JsonOptions)
-                ?? throw new InvalidDataException("An abandoned Mod Bridge update plan is empty.");
-            ValidateRecoveryPlan(plan, transactionId, transactionRoot, stateRoot, targetRoot);
-            if (Directory.Exists(Path.Combine(transactionRoot, "failed-target")))
+            if (File.Exists(completionPath))
             {
-                throw new InvalidDataException(
-                    "An abandoned Mod Bridge update contains an unexpected failed-target directory.");
+                var completion = LauncherUpdateCompletionJournalStore.Load(completionPath, protector);
+                if (!PathEquals(completion.StateRoot, stateRoot)
+                    || !PathEquals(completion.TargetDirectory, targetRoot))
+                {
+                    throw new InvalidDataException(
+                        "The protected completion journal does not match this installation.");
+                }
+                if (File.Exists(journalPath))
+                {
+                    var completedRecovery = LauncherUpdateRecoveryJournalStore.Load(
+                        journalPath,
+                        protector,
+                        completion.RecoveryJournalSha256);
+                    ValidateJournal(completedRecovery, transactionId, transactionRoot, stateRoot, targetRoot);
+                }
+                using var completedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    completion.TargetDirectory,
+                    completion.Files,
+                    "acknowledged installation");
+                VerifyCompletedInstallationAuthority(completion, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    completion.TargetDirectory,
+                    completion.Files,
+                    "acknowledged installation cleanup");
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    completionPath,
+                    "completed update cleanup");
+                continue;
             }
-            var hasBackup = Directory.Exists(plan.BackupDirectory);
-            if (hasBackup)
+            if (!File.Exists(journalPath))
             {
-                LauncherFilesystemSafety.RejectReparsePoints(plan.BackupDirectory, "Mod Bridge update recovery");
-                VerifyPayload(plan.BackupDirectory, plan.PreviousFiles);
+                if (Directory.Exists(backupPath))
+                {
+                    throw new InvalidDataException(
+                        "An abandoned Mod Bridge backup has no protected recovery journal and requires manual recovery.");
+                }
+                if (!Directory.EnumerateFileSystemEntries(transactionRoot).Any())
+                {
+                    Directory.Delete(transactionRoot, recursive: false);
+                    continue;
+                }
+                var planPath = Path.Combine(transactionRoot, "plan.json");
+                if (File.Exists(planPath))
+                {
+                    ValidateUncommittedPlan(transactionRoot, transactionId, stateRoot, targetRoot);
+                }
+                if (File.Exists(preparationOwnerPath))
+                {
+                    DeleteTransactionResidueMarkerLast(
+                        transactionRoot,
+                        preparationOwnerPath,
+                        "abandoned update preparation cleanup");
+                }
+                else
+                {
+                    Directory.Delete(transactionRoot, recursive: true);
+                }
+                continue;
             }
-            transactions.Add(new(transactionRoot, plan, hasBackup));
+            var journal = LauncherUpdateRecoveryJournalStore.Load(journalPath, protector);
+            ValidateJournal(journal, transactionId, transactionRoot, stateRoot, targetRoot);
+            if (!Directory.Exists(backupPath))
+            {
+                using var restoredPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery");
+                VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery cleanup");
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    journalPath,
+                    "completed recovery cleanup");
+                continue;
+            }
+            try
+            {
+                VerifyBackupAuthority(journal, authenticityVerifier, identityReader);
+            }
+            catch (InvalidDataException)
+            {
+                using var restoredPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery");
+                VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery cleanup");
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    journalPath,
+                    "completed recovery cleanup");
+                continue;
+            }
+            VerifyBoundRunner(journal.RunnerUpdater, authenticityVerifier);
+            recoveries.Add((journal, journalPath));
         }
 
-        var backups = transactions.Where(transaction => transaction.HasBackup).ToArray();
-        if (backups.Length > 1)
+        if (recoveries.Count > 1)
         {
             throw new InvalidDataException(
                 "Multiple abandoned Mod Bridge update backups require manual recovery.");
         }
-
-        var restored = 0;
-        if (backups.Length == 1)
+        if (recoveries.Count == 0)
         {
-            var recovery = backups[0];
-            var failedTarget = Path.Combine(recovery.TransactionRoot, "failed-target");
-            var movedCurrent = false;
-            if (Directory.Exists(targetRoot))
-            {
-                LauncherFilesystemSafety.RejectReparsePoints(targetRoot, "Mod Bridge update recovery");
-                moveDirectory(targetRoot, failedTarget);
-                movedCurrent = true;
-            }
-            try
-            {
-                moveDirectory(recovery.Plan.BackupDirectory, targetRoot);
-            }
-            catch
-            {
-                if (movedCurrent && Directory.Exists(failedTarget) && !Directory.Exists(targetRoot))
-                {
-                    Directory.Move(failedTarget, targetRoot);
-                }
-                throw;
-            }
-            if (movedCurrent)
-            {
-                Directory.Delete(failedTarget, recursive: true);
-            }
-            restored = 1;
+            return null;
         }
-
-        foreach (var transaction in transactions)
-        {
-            Directory.Delete(transaction.TransactionRoot, recursive: true);
-        }
-        return new(transactions.Count, restored);
+        var recovery = recoveries[0];
+        return new(
+            examined,
+            recovery.Journal.TransactionId,
+            recovery.Journal.RunnerUpdater,
+            recovery.JournalPath,
+            LauncherUpdateRecoveryJournalStore.HashProtected(recovery.JournalPath));
     }
 
-    private static void ValidateRecoveryPlan(
-        LauncherUpdatePlan plan,
-        string transactionId,
+    [SupportedOSPlatform("windows")]
+    public static LauncherRestoredPayload RestoreFromJournal(
+        string journalPath,
+        string expectedJournalSha256,
+        string expectedStateDirectory,
+        string expectedProgramDirectory)
+    {
+        var verifier = new WindowsAuthenticodeVerifier(
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku);
+        return RestoreFromJournal(
+            journalPath,
+            expectedJournalSha256,
+            expectedStateDirectory,
+            expectedProgramDirectory,
+            new WindowsDpapiLauncherUpdateRecoveryJournalProtector(),
+            verifier,
+            new WindowsLauncherArtifactIdentityReader());
+    }
+
+    internal static LauncherRestoredPayload RestoreFromJournal(
+        string journalPath,
+        string expectedJournalSha256,
+        string expectedStateDirectory,
+        string expectedProgramDirectory,
+        ILauncherUpdateRecoveryJournalProtector protector,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
+    {
+        var journal = LauncherUpdateRecoveryJournalStore.Load(
+            journalPath,
+            protector,
+            expectedJournalSha256);
+        var transactionRoot = Path.GetDirectoryName(Path.GetFullPath(journalPath))!;
+        ValidateJournal(
+            journal,
+            journal.TransactionId,
+            transactionRoot,
+            Path.GetFullPath(expectedStateDirectory),
+            Path.GetFullPath(expectedProgramDirectory));
+        VerifyBackupAuthority(journal, authenticityVerifier, identityReader);
+        LauncherUpdatePayloadTransaction.RestorePreservingLauncher(
+            journal.BackupDirectory,
+            journal.TargetDirectory,
+            journal.PreviousFiles,
+            journal.LauncherRelativePath);
+        var payloadLease = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+            journal.TargetDirectory,
+            journal.PreviousFiles,
+            "restored payload");
+        try
+        {
+            VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+            LauncherUpdatePayloadTransaction.VerifyPayload(
+                journal.TargetDirectory,
+                journal.PreviousFiles,
+                "restored payload cleanup");
+            Directory.Delete(journal.BackupDirectory, recursive: true);
+            var launcher = journal.PreviousFiles.Single(file =>
+                string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+            return new LauncherRestoredPayload(
+                new(
+                    Path.Combine(journal.TargetDirectory, journal.LauncherRelativePath),
+                    launcher.Size,
+                    launcher.Sha256),
+                payloadLease);
+        }
+        catch
+        {
+            payloadLease.Dispose();
+            throw;
+        }
+    }
+
+    private static void ValidateUncommittedPlan(
         string transactionRoot,
+        string transactionId,
         string stateRoot,
         string targetRoot)
     {
-        if (plan.SchemaVersion != 1
+        var planPath = Path.Combine(transactionRoot, "plan.json");
+        if (!File.Exists(planPath))
+        {
+            throw new InvalidDataException("An abandoned Mod Bridge transaction has no recovery identity.");
+        }
+        var plan = LauncherUpdateTransactionSecurity.ParseForRecovery(planPath);
+        if (plan.SchemaVersion is not (1 or 2)
             || !string.Equals(plan.TransactionId, transactionId, StringComparison.Ordinal)
             || !PathEquals(plan.StateRoot, stateRoot)
             || !PathEquals(plan.TargetDirectory, targetRoot)
@@ -170,36 +417,225 @@ public static class LauncherUpdateRecovery
         {
             throw new InvalidDataException("An abandoned Mod Bridge update plan has invalid recovery paths.");
         }
+        if (plan.SchemaVersion == 2
+            && (plan.UpdaterRelativePath != ModBridgeProductIdentity.UpdaterExecutableName
+                || plan.ReleaseVerifierRelativePath != ModBridgeProductIdentity.ReleaseVerifierExecutableName))
+        {
+            throw new InvalidDataException("An abandoned Mod Bridge update plan has invalid executable roles.");
+        }
     }
 
-    private static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
+    private static void DeleteTransactionResidueMarkerLast(
+        string transactionRoot,
+        string markerPath,
+        string context)
     {
-        var actual = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Select(path => new LauncherUpdateFile(
-                Path.GetRelativePath(root, path),
-                new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
-            .ToArray();
-        if (actual.Length != expected.Count)
+        var root = Path.GetFullPath(transactionRoot);
+        var marker = Path.GetFullPath(markerPath);
+        if (!PathEquals(Path.GetDirectoryName(marker)!, root) || !File.Exists(marker))
         {
-            throw new InvalidDataException("An abandoned Mod Bridge update backup changed file count.");
+            throw new InvalidDataException($"The Mod Bridge {context} marker is missing or misplaced.");
         }
-        foreach (var expectedFile in expected)
+        LauncherFilesystemSafety.RejectReparsePoints(root, $"Mod Bridge {context}");
+        foreach (var directory in Directory.EnumerateDirectories(root))
         {
-            var actualFile = actual.SingleOrDefault(file =>
-                string.Equals(file.RelativePath, expectedFile.RelativePath, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidDataException("An abandoned Mod Bridge update backup changed file identity.");
-            if (actualFile.Size != expectedFile.Size
-                || !string.Equals(actualFile.Sha256, expectedFile.Sha256, StringComparison.OrdinalIgnoreCase))
+            Directory.Delete(directory, recursive: true);
+        }
+        foreach (var file in Directory.EnumerateFiles(root))
+        {
+            if (!PathEquals(file, marker))
             {
-                throw new InvalidDataException("An abandoned Mod Bridge update backup failed verification.");
+                File.Delete(file);
             }
+        }
+        if (Directory.EnumerateDirectories(root).Any()
+            || Directory.EnumerateFiles(root).Any(file => !PathEquals(file, marker)))
+        {
+            throw new IOException($"The Mod Bridge {context} residue could not be removed safely.");
+        }
+        File.Delete(marker);
+        Directory.Delete(root, recursive: false);
+    }
+
+    private static void ValidateJournal(
+        LauncherUpdateRecoveryJournal journal,
+        string transactionId,
+        string transactionRoot,
+        string stateRoot,
+        string targetRoot)
+    {
+        if (!string.Equals(journal.TransactionId, transactionId, StringComparison.Ordinal)
+            || !PathEquals(journal.StateRoot, stateRoot)
+            || !PathEquals(journal.TargetDirectory, targetRoot)
+            || !PathEquals(journal.BackupDirectory, Path.Combine(transactionRoot, "backup")))
+        {
+            throw new InvalidDataException("The protected recovery journal does not match this installation.");
+        }
+    }
+
+    private static void VerifyBackupAuthority(
+        LauncherUpdateRecoveryJournal journal,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
+    {
+        LauncherUpdatePayloadTransaction.VerifyPayload(
+            journal.BackupDirectory,
+            journal.PreviousFiles,
+            "recovery backup");
+        VerifyAuthorityPair(
+            journal.BackupDirectory,
+            journal,
+            authenticityVerifier,
+            identityReader);
+    }
+
+    private static void VerifyInstalledAuthority(
+        LauncherUpdateRecoveryJournal journal,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader) =>
+        VerifyAuthorityPair(journal.TargetDirectory, journal, authenticityVerifier, identityReader);
+
+    private static void VerifyCompletedInstallationAuthority(
+        LauncherUpdateCompletionJournal completion,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
+    {
+        var launcher = completion.Files.Single(file =>
+            string.Equals(file.RelativePath, completion.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+        var verifier = completion.Files.Single(file =>
+            string.Equals(
+                file.RelativePath,
+                completion.ReleaseVerifierRelativePath,
+                StringComparison.OrdinalIgnoreCase));
+        VerifyAuthorityPair(
+            completion.TargetDirectory,
+            completion.LauncherRelativePath,
+            completion.ReleaseVerifierRelativePath,
+            completion.LauncherSha256,
+            launcher.Size,
+            completion.ReleaseVerifierSha256,
+            verifier.Size,
+            authenticityVerifier,
+            identityReader,
+            "acknowledged installation");
+    }
+
+    private static void VerifyAuthorityPair(
+        string root,
+        LauncherUpdateRecoveryJournal journal,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader)
+    {
+        var launcher = journal.PreviousFiles.Single(file =>
+            string.Equals(file.RelativePath, journal.LauncherRelativePath, StringComparison.OrdinalIgnoreCase));
+        var verifier = journal.PreviousFiles.Single(file =>
+            string.Equals(
+                file.RelativePath,
+                journal.ReleaseVerifierRelativePath,
+                StringComparison.OrdinalIgnoreCase));
+        VerifyAuthorityPair(
+            root,
+            journal.LauncherRelativePath,
+            journal.ReleaseVerifierRelativePath,
+            journal.LauncherSha256,
+            launcher.Size,
+            journal.ReleaseVerifierSha256,
+            verifier.Size,
+            authenticityVerifier,
+            identityReader,
+            "recovery");
+    }
+
+    private static void VerifyAuthorityPair(
+        string root,
+        string launcherRelativePath,
+        string releaseVerifierRelativePath,
+        string launcherSha256,
+        long launcherSize,
+        string releaseVerifierSha256,
+        long releaseVerifierSize,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ILauncherArtifactIdentityReader identityReader,
+        string context)
+    {
+        var launcherPath = Path.Combine(root, launcherRelativePath);
+        var verifierPath = Path.Combine(root, releaseVerifierRelativePath);
+        using var launcherLock = VerifySignedDigest(
+            launcherPath,
+            launcherSha256,
+            authenticityVerifier,
+            $"{context} launcher",
+            launcherSize);
+        using var verifierLock = VerifySignedDigest(
+            verifierPath,
+            releaseVerifierSha256,
+            authenticityVerifier,
+            $"{context} release verifier",
+            releaseVerifierSize);
+        var identity = identityReader.ReadIdentity(launcherPath);
+        if (!identity.HasReleaseVerifierPairing
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                identity.ReleaseVerifierSha256!,
+                releaseVerifierSha256))
+        {
+            throw new InvalidDataException(
+                $"The {context} launcher is not paired with its verified release verifier.");
+        }
+    }
+
+    private static void VerifyBoundRunner(
+        LauncherUpdateBoundFile runner,
+        IModArtifactAuthenticityVerifier authenticityVerifier)
+    {
+        using var runnerLock = VerifySignedDigest(
+            runner.Path,
+            runner.Sha256,
+            authenticityVerifier,
+            "recovery updater",
+            runner.Size);
+    }
+
+    private static FileStream VerifySignedDigest(
+        string path,
+        string expectedSha256,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        string context,
+        long? expectedSize = null)
+    {
+        var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.SequentialScan);
+        try
+        {
+            if (expectedSize is not null && stream.Length != expectedSize.Value)
+            {
+                throw new InvalidDataException($"The {context} size changed.");
+            }
+            var digest = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            if (!AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(digest, expectedSha256))
+            {
+                throw new InvalidDataException($"The {context} digest changed.");
+            }
+            var result = authenticityVerifier.Verify(path);
+            if (!result.IsTrusted)
+            {
+                throw new InvalidDataException($"The {context} Authenticode policy failed: {result.Message}");
+            }
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
         }
     }
 
     private static bool PathEquals(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
-
 }
 
 public interface ILauncherArchiveDownloader
@@ -241,17 +677,13 @@ public sealed class HttpLauncherArchiveDownloader(HttpClient httpClient) : ILaun
 
 public interface ILauncherArtifactIdentityReader
 {
-    string? ReadSourceCommit(string executablePath);
+    LauncherReleaseIdentity ReadIdentity(string executablePath);
 }
 
 public sealed class WindowsLauncherArtifactIdentityReader : ILauncherArtifactIdentityReader
 {
-    public string? ReadSourceCommit(string executablePath)
-    {
-        var productVersion = FileVersionInfo.GetVersionInfo(executablePath).ProductVersion;
-        var separator = productVersion?.LastIndexOf('+') ?? -1;
-        return separator >= 0 ? productVersion![(separator + 1)..] : null;
-    }
+    public LauncherReleaseIdentity ReadIdentity(string executablePath) =>
+        LauncherReleaseIdentityParser.Parse(FileVersionInfo.GetVersionInfo(executablePath).ProductVersion);
 }
 
 public sealed class LauncherSelfUpdateService(
@@ -290,6 +722,8 @@ public sealed class LauncherSelfUpdateService(
                 artifact.ReleaseVersion,
                 programDirectory,
                 string.Empty,
+                null,
+                string.Empty,
                 string.Empty);
         }
 
@@ -306,66 +740,224 @@ public sealed class LauncherSelfUpdateService(
 
         var transactionId = Guid.NewGuid().ToString("N");
         var transactionRoot = Path.Combine(stateDirectory, "self-update", transactionId);
-        var stageDirectory = Path.Combine(transactionRoot, "stage");
-        Directory.CreateDirectory(stageDirectory);
-        LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
-
-        var launcherPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.ExecutableName);
-        var updaterPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.UpdaterExecutableName);
-        VerifySignedExecutable(launcherPath);
-        VerifySignedExecutable(updaterPath);
-        if (!string.Equals(identityReader.ReadSourceCommit(launcherPath), artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
+        IDisposable? preparationOwner = null;
+        try
         {
-            throw new InvalidDataException("The signed Mod Bridge source identity does not match the release manifest.");
-        }
+            var initializationLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+            await using (initializationLease)
+            {
+                Directory.CreateDirectory(transactionRoot);
+                preparationOwner = LauncherUpdatePreparationOwner.Create(transactionRoot);
+            }
+            var stageDirectory = Path.Combine(transactionRoot, "stage");
+            var evidenceDirectory = Path.Combine(transactionRoot, "evidence");
+            Directory.CreateDirectory(stageDirectory);
+            Directory.CreateDirectory(evidenceDirectory);
+            LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update staging");
 
-        var files = Directory.EnumerateFiles(stageDirectory, "*", SearchOption.AllDirectories)
-            .Select(path => new LauncherUpdateFile(
-                Path.GetRelativePath(stageDirectory, path),
-                new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
-            .OrderBy(file => file.RelativePath, StringComparer.Ordinal)
-            .ToArray();
-        var plan = new LauncherUpdatePlan(
-            1,
-            transactionId,
-            parentProcessId,
-            stateDirectory,
-            stageDirectory,
-            programDirectory,
-            Path.Combine(transactionRoot, "backup"),
-            Path.Combine(transactionRoot, "startup.ack"),
-            ModBridgeProductIdentity.ExecutableName,
-            files,
-            Directory.Exists(programDirectory) ? EnumerateFiles(programDirectory) : []);
-        var planPath = Path.Combine(transactionRoot, "plan.json");
-        await File.WriteAllTextAsync(planPath, JsonSerializer.Serialize(plan, JsonOptions), cancellationToken);
-        var runnerPath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName);
-        File.Copy(updaterPath, runnerPath);
-        return new(
-            LauncherUpdatePreparationState.Ready,
-            $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
-            + "Action outcome: the archive is staged; installation has not started."
-            + Environment.NewLine
-            + authentication.Summary,
-            artifact.ReleaseVersion,
-            programDirectory,
-            planPath,
-            runnerPath);
+            var archivePath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdateArchiveName);
+            await WriteBoundBytesAsync(archivePath, download.Contents, artifact.Sha256, cancellationToken);
+            LauncherArchiveExtractor.Extract(download.Contents, stageDirectory);
+
+            var manifest = await CopyBoundFileAsync(
+                authentication.ManifestPath,
+                Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.ManifestName),
+                authentication.Receipt.ManifestSha256,
+                ReleaseSelectionAttestationPolicy.MaximumEvidenceBytes,
+                cancellationToken);
+            var bundle = await CopyBoundFileAsync(
+                authentication.BundlePath,
+                Path.Combine(evidenceDirectory, ReleaseSelectionAttestationPolicy.BundleName),
+                authentication.Receipt.BundleSha256,
+                ReleaseSelectionAttestationPolicy.MaximumEvidenceBytes,
+                cancellationToken);
+            var receiptPath = Path.Combine(evidenceDirectory, "release-selection-receipt.json");
+            var receiptBytes = ReleaseSelectionVerificationReceiptSerializer.Serialize(
+                authentication.Receipt,
+                writeIndented: true);
+            var receipt = await WriteBoundBytesAsync(receiptPath, receiptBytes, expectedSha256: null, cancellationToken);
+            var trustedRootPath = Path.Combine(evidenceDirectory, "trusted-root.public-good.v1.json");
+            var trustedRoot = await WriteBoundBytesAsync(
+                trustedRootPath,
+                ReleaseSelectionTrustedRoot.GetNormalizedBytes(),
+                ReleaseSelectionAttestationPolicy.TrustedRootSha256,
+                cancellationToken);
+
+            var launcherPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.ExecutableName);
+            var updaterPath = Path.Combine(stageDirectory, ModBridgeProductIdentity.UpdaterExecutableName);
+            var candidateVerifierPath = Path.Combine(
+                stageDirectory,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            VerifySignedExecutable(launcherPath);
+            VerifySignedExecutable(updaterPath);
+            VerifySignedExecutable(candidateVerifierPath);
+            var candidateIdentity = identityReader.ReadIdentity(launcherPath);
+            var candidateVerifier = BoundFile(candidateVerifierPath);
+            if (!string.Equals(
+                    candidateIdentity.SourceCommit,
+                    artifact.TargetCommit,
+                    StringComparison.OrdinalIgnoreCase)
+                || !candidateIdentity.HasReleaseVerifierPairing
+                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                    candidateIdentity.ReleaseVerifierSha256!,
+                    candidateVerifier.Sha256))
+            {
+                throw new InvalidDataException(
+                    "The signed candidate launcher identity does not match its source or paired release verifier.");
+            }
+
+            var currentLauncherPath = Path.Combine(programDirectory, ModBridgeProductIdentity.ExecutableName);
+            var currentVerifierPath = Path.Combine(
+                programDirectory,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName);
+            VerifySignedExecutable(currentLauncherPath);
+            VerifySignedExecutable(currentVerifierPath);
+            var currentIdentity = identityReader.ReadIdentity(currentLauncherPath);
+            var currentVerifier = BoundFile(currentVerifierPath);
+            if (!currentIdentity.HasReleaseVerifierPairing
+                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                    currentIdentity.ReleaseVerifierSha256!,
+                    currentVerifier.Sha256))
+            {
+                throw new InvalidDataException(
+                    "The installed launcher does not match its paired release verifier.");
+            }
+
+            var files = EnumerateFiles(stageDirectory);
+            var runnerPath = Path.Combine(transactionRoot, ModBridgeProductIdentity.UpdaterExecutableName);
+            File.Copy(updaterPath, runnerPath);
+            var plan = new LauncherUpdatePlan(
+                2,
+                transactionId,
+                parentProcessId,
+                stateDirectory,
+                stageDirectory,
+                programDirectory,
+                Path.Combine(transactionRoot, "backup"),
+                Path.Combine(transactionRoot, "startup.ack"),
+                ModBridgeProductIdentity.ExecutableName,
+                ModBridgeProductIdentity.UpdaterExecutableName,
+                ModBridgeProductIdentity.ReleaseVerifierExecutableName,
+                authentication.Acceptance.Manifest.Tag,
+                authentication.InstalledReleaseVersion,
+                manifest,
+                bundle,
+                receipt,
+                trustedRoot,
+                BoundFile(archivePath),
+                BoundFile(currentLauncherPath),
+                currentVerifier,
+                BoundFile(launcherPath),
+                BoundFile(updaterPath),
+                candidateVerifier,
+                BoundFile(runnerPath),
+                files,
+                Directory.Exists(programDirectory) ? EnumerateFiles(programDirectory) : []);
+            var planPath = Path.Combine(transactionRoot, "plan.json");
+            var planBytes = JsonSerializer.SerializeToUtf8Bytes(plan, JsonOptions);
+            var planFile = await WriteBoundBytesAsync(planPath, planBytes, expectedSha256: null, cancellationToken);
+            var preparation = new LauncherUpdatePreparation(
+                LauncherUpdatePreparationState.Ready,
+                $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
+                + "Action outcome: the archive is staged; installation has not started."
+                + Environment.NewLine
+                + authentication.Summary,
+                artifact.ReleaseVersion,
+                programDirectory,
+                planPath,
+                plan.RunnerUpdater,
+                Path.Combine(transactionRoot, LauncherUpdaterReadiness.FileName),
+                planFile.Sha256);
+            preparation.RetainPreparationOwner(preparationOwner);
+            preparationOwner = null;
+            return preparation;
+        }
+        catch
+        {
+            var cleanupLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync(CancellationToken.None);
+            if (cleanupLease is null)
+            {
+                preparationOwner?.Dispose();
+            }
+            else
+            {
+                await using (cleanupLease)
+                {
+                    preparationOwner?.Dispose();
+                    if (Directory.Exists(transactionRoot))
+                    {
+                        LauncherFilesystemSafety.RejectReparsePoints(transactionRoot, "Mod Bridge self-update cleanup");
+                        Directory.Delete(transactionRoot, recursive: true);
+                    }
+                }
+            }
+            throw;
+        }
     }
 
+    [SupportedOSPlatform("windows")]
     public static void StartUpdater(LauncherUpdatePreparation preparation)
     {
-        if (preparation.State != LauncherUpdatePreparationState.Ready)
+        try
+        {
+            StartUpdaterCore(preparation);
+        }
+        finally
+        {
+            preparation.Dispose();
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void StartUpdaterCore(LauncherUpdatePreparation preparation)
+    {
+        if (preparation.State != LauncherUpdatePreparationState.Ready
+            || preparation.RunnerUpdater is null)
         {
             throw new InvalidOperationException("Only a ready Mod Bridge update can start.");
         }
-        _ = Process.Start(new ProcessStartInfo(preparation.UpdaterPath, $"--plan \"{preparation.PlanPath}\"")
+        var expectedReadyPath = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(preparation.PlanPath))!,
+            LauncherUpdaterReadiness.FileName);
+        if (!string.Equals(
+                Path.GetFullPath(preparation.UpdaterReadyPath),
+                expectedReadyPath,
+                StringComparison.OrdinalIgnoreCase)
+            || File.Exists(expectedReadyPath))
+        {
+            throw new InvalidDataException("The update helper readiness path is invalid or stale.");
+        }
+        var startInfo = new ProcessStartInfo(preparation.RunnerUpdater.Path)
         {
             UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(preparation.UpdaterPath),
+            WorkingDirectory = Path.GetDirectoryName(preparation.RunnerUpdater.Path),
             CreateNoWindow = true,
-        }) ?? throw new InvalidOperationException("Windows did not start the Mod Bridge update helper.");
+        };
+        startInfo.ArgumentList.Add("--plan");
+        startInfo.ArgumentList.Add(preparation.PlanPath);
+        startInfo.ArgumentList.Add("--plan-sha256");
+        startInfo.ArgumentList.Add(preparation.PlanSha256);
+        using var updater = LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo);
+        try
+        {
+            LauncherUpdaterReadiness.WaitForReady(
+                updater,
+                expectedReadyPath,
+                preparation.PlanSha256,
+                TimeSpan.FromSeconds(30));
+        }
+        catch
+        {
+            if (!updater.HasExited)
+            {
+                updater.Kill(entireProcessTree: true);
+                updater.WaitForExit(5_000);
+            }
+            throw;
+        }
     }
 
     private void VerifySignedExecutable(string path)
@@ -458,7 +1050,81 @@ public sealed class LauncherSelfUpdateService(
             .Select(path => new LauncherUpdateFile(
                 Path.GetRelativePath(root, path),
                 new FileInfo(path).Length,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))))
+                HashFile(path)))
             .OrderBy(file => file.RelativePath, StringComparer.Ordinal)
             .ToArray();
+
+    private static LauncherUpdateBoundFile BoundFile(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var info = new FileInfo(fullPath);
+        if (!info.Exists || info.Length <= 0 || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException($"The bound update file is missing or unsafe: {Path.GetFileName(fullPath)}");
+        }
+        return new(
+            fullPath,
+            info.Length,
+            HashFile(fullPath));
+    }
+
+    private static string HashFile(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.SequentialScan);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static async Task<LauncherUpdateBoundFile> CopyBoundFileAsync(
+        string sourcePath,
+        string destinationPath,
+        string expectedSha256,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var source = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (source.Length is <= 0 || source.Length > maximumBytes)
+        {
+            throw new InvalidDataException("Authenticated release evidence is outside its accepted size bound.");
+        }
+        var bytes = new byte[checked((int)source.Length)];
+        await source.ReadExactlyAsync(bytes, cancellationToken);
+        return await WriteBoundBytesAsync(destinationPath, bytes, expectedSha256, cancellationToken);
+    }
+
+    private static async Task<LauncherUpdateBoundFile> WriteBoundBytesAsync(
+        string path,
+        byte[] bytes,
+        string? expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (expectedSha256 is not null
+            && !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(digest, expectedSha256))
+        {
+            throw new InvalidDataException("A staged update input disagrees with its authenticated digest.");
+        }
+        await using var destination = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await destination.WriteAsync(bytes, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
+        destination.Flush(flushToDisk: true);
+        return new(Path.GetFullPath(path), bytes.LongLength, digest);
+    }
 }

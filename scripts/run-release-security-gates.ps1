@@ -19,8 +19,6 @@ Set-StrictMode -Version Latest
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $artifactRoot = (Resolve-Path -LiteralPath $ArtifactDirectory).Path
-$outputFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputPath))
-$outputDirectory = Split-Path -Parent $outputFile
 
 if (Test-Path -LiteralPath (Join-Path $repositoryRoot ".gitmodules")) {
     throw "Release inputs must not contain unaudited Git submodules."
@@ -67,7 +65,7 @@ $defenderStatus = Get-MpComputerStatus
 if (-not $defenderStatus.AntivirusEnabled -or -not $defenderStatus.AntivirusSignatureVersion) {
     throw "Microsoft Defender must be enabled with loaded signatures for the pre-signing malware gate."
 }
-Write-Host "Scanning unsigned release payload with Microsoft Defender signatures $($defenderStatus.AntivirusSignatureVersion)."
+Write-Host "Scanning pre-signing release payload with Microsoft Defender signatures $($defenderStatus.AntivirusSignatureVersion)."
 $platformScanner = @(Get-ChildItem `
     -LiteralPath "C:\ProgramData\Microsoft\Windows Defender\Platform" `
     -Filter MpCmdRun.exe `
@@ -86,45 +84,12 @@ if (-not (Test-Path -LiteralPath $scanner -PathType Leaf)) {
 }
 & $scanner -Scan -ScanType 3 -File $artifactRoot -DisableRemediation
 if ($LASTEXITCODE -ne 0) {
-    throw "Microsoft Defender rejected or could not scan the unsigned release payload (exit $LASTEXITCODE)."
+    throw "Microsoft Defender rejected or could not scan the pre-signing release payload (exit $LASTEXITCODE)."
 }
 
-Write-Host "Restoring the repository-pinned SBOM generator."
-& dotnet tool restore
-if ($LASTEXITCODE -ne 0) {
-    throw "The pinned SBOM generator could not be restored."
-}
-
-New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-if (Test-Path -LiteralPath $outputFile -PathType Leaf) {
-    Remove-Item -LiteralPath $outputFile -Force
-}
-$manifestRoot = Join-Path $outputDirectory "sbom-generation"
-New-Item -ItemType Directory -Path $manifestRoot -Force | Out-Null
-& dotnet tool run sbom-tool -- generate `
-    -b $artifactRoot `
-    -bc $repositoryRoot `
-    -m $manifestRoot `
-    -pn "STFC Mod Bridge" `
-    -pv $Version `
-    -ps "Organization: Joseph Gustavson" `
-    -nsb "https://github.com/Guffawaffle/stfc-mod-bridge" `
-    -nsu $SourceRevisionId `
-    -D true `
-    -pm true `
-    -F false
-if ($LASTEXITCODE -ne 0) {
-    throw "SBOM generation failed."
-}
-
-$generatedSboms = @(Get-ChildItem -LiteralPath $manifestRoot -Recurse -Filter manifest.spdx.json -File)
-if ($generatedSboms.Count -ne 1) {
-    throw "Expected exactly one SPDX 2.2 SBOM, found $($generatedSboms.Count)."
-}
-Copy-Item -LiteralPath $generatedSboms[0].FullName -Destination $outputFile -Force
-$sbom = Get-Content -LiteralPath $outputFile -Raw | ConvertFrom-Json
-if ($sbom.spdxVersion -ne "SPDX-2.2" -or $sbom.name -ne "STFC Mod Bridge $Version") {
-    throw "Generated SBOM did not satisfy the reviewed SPDX package identity."
-}
-Remove-Item -LiteralPath $manifestRoot -Recurse -Force
-Write-Host "Pre-signing security gates passed and SPDX SBOM was written to '$outputFile'."
+& (Join-Path $PSScriptRoot "generate-payload-sbom.ps1") `
+    -ArtifactDirectory $artifactRoot `
+    -OutputPath $OutputPath `
+    -Version $Version `
+    -SourceRevisionId $SourceRevisionId
+Write-Host "Pre-signing security gates passed."

@@ -5,6 +5,29 @@ using System.Text.RegularExpressions;
 
 namespace STFCCommunityMod.Launcher.Core;
 
+public static class AuthenticatedLauncherReleaseDiscovery
+{
+    public static ILauncherReleaseDiscoveryClient Create(
+        HttpClient httpClient,
+        string stateDirectory,
+        string programDirectory,
+        string expectedReleaseVerifierSha256)
+    {
+        var authenticityVerifier = new WindowsAuthenticodeVerifier(
+            LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
+            LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku);
+        return new AuthenticatedGitHubLauncherReleaseClient(
+            httpClient,
+            stateDirectory,
+            new InstalledReleaseSelectionEvidenceVerifier(
+                Path.Combine(programDirectory, ModBridgeProductIdentity.ReleaseVerifierExecutableName),
+                expectedReleaseVerifierSha256,
+                authenticityVerifier,
+                TimeSpan.FromMinutes(2)),
+            new WindowsCurrentUserReleaseEvidenceStorageSecurity());
+    }
+}
+
 public sealed record AuthenticatedLauncherReleaseEvidence(
     string EvidenceDirectory,
     string ManifestPath,
