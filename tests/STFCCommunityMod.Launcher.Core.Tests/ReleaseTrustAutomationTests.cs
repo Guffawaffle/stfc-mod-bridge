@@ -683,7 +683,7 @@ public sealed partial class ReleaseTrustAutomationTests
             completion,
             StringComparison.Ordinal);
         var finalInventory = recovery.IndexOf("\"acknowledged installation cleanup\"", retained, StringComparison.Ordinal);
-        var cleanup = recovery.IndexOf("Directory.Delete(transactionRoot, recursive: true);", retained, StringComparison.Ordinal);
+        var cleanup = recovery.IndexOf("DeleteTransactionResidueMarkerLast(", retained, StringComparison.Ordinal);
         var nextBranch = recovery.IndexOf("if (!File.Exists(journalPath))", completion, StringComparison.Ordinal);
 
         Assert.IsTrue(retained > completion, "Completed startup cleanup must retain the installed inventory.");
@@ -758,6 +758,26 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsTrue(retained > missingBackup, "A missing backup must not imply completed recovery.");
         Assert.IsTrue(authority > retained, "The restored launcher/verifier authority must be revalidated.");
         Assert.IsTrue(cleanup > authority, "Recovery evidence may be cleaned only after target verification.");
+    }
+
+    [TestMethod]
+    public void TransactionCleanupDeletesItsDurableMarkerLast()
+    {
+        var recovery = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var helper = recovery.IndexOf("private static void DeleteTransactionResidueMarkerLast(", StringComparison.Ordinal);
+        var directories = recovery.IndexOf("foreach (var directory in Directory.EnumerateDirectories(root))", helper, StringComparison.Ordinal);
+        var files = recovery.IndexOf("foreach (var file in Directory.EnumerateFiles(root))", directories, StringComparison.Ordinal);
+        var marker = recovery.IndexOf("File.Delete(marker);", files, StringComparison.Ordinal);
+        var root = recovery.IndexOf("Directory.Delete(root, recursive: false);", marker, StringComparison.Ordinal);
+
+        Assert.IsTrue(directories > helper);
+        Assert.IsTrue(files > directories, "Transaction directories must be removed before the marker.");
+        Assert.IsTrue(marker > files, "The durable terminal marker must be the last file removed.");
+        Assert.IsTrue(root > marker, "Only an empty transaction root may remain after marker deletion.");
     }
 
     [TestMethod]

@@ -76,6 +76,15 @@ discards cleanup residue instead of misclassifying the partial backup as a
 rollback candidate. An invalid acknowledged installation fails closed without
 silently restoring stale bytes.
 
+Terminal cleanup removes staging, backup, and recovery residue before deleting
+the protected completion marker; an interruption therefore remains
+recognizable and retryable. The marker is removed only after it is the last file
+in the transaction root, and a final empty root is safe to discard on the next
+startup. Likewise, an incomplete recovery backup is not treated as authoritative:
+startup accepts completed rollback cleanup only when the installed target still
+matches the protected `PreviousFiles` inventory and signed launcher/verifier
+pair; otherwise it fails closed for manual recovery.
+
 The complete expected inventory is enumerated both before and after its file
 handles are retained, and is checked at cleanup boundaries under the
 cross-process operation lease. Windows does not provide a per-user process

@@ -470,6 +470,38 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void RecoveryCleansPartialBackupAfterVerifiedRestore()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "old");
+        foreach (var source in Directory.EnumerateFiles(recovery.Backup, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(recovery.Backup, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+        }
+        File.Delete(Path.Combine(recovery.Backup, "old.txt"));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
+    public void RecoveryCleansEmptyTransactionRootAfterMarkerLastInterruption()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var transactionRoot = temporaryDirectory.CreateDirectory(
+            Path.Combine("state", "self-update", Guid.NewGuid().ToString("N")));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.IsFalse(Directory.Exists(transactionRoot));
+    }
+
+    [TestMethod]
     public void RecoveryCleansInterruptedAcknowledgedBackupDeletionWithoutRollback()
     {
         using var temporaryDirectory = new TemporaryDirectory();

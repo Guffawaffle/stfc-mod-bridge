@@ -159,7 +159,10 @@ public static class LauncherUpdateRecovery
                     completion.TargetDirectory,
                     completion.Files,
                     "acknowledged installation cleanup");
-                Directory.Delete(transactionRoot, recursive: true);
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    completionPath,
+                    "completed update cleanup");
                 continue;
             }
             if (!File.Exists(journalPath))
@@ -168,6 +171,11 @@ public static class LauncherUpdateRecovery
                 {
                     throw new InvalidDataException(
                         "An abandoned Mod Bridge backup has no protected recovery journal and requires manual recovery.");
+                }
+                if (!Directory.EnumerateFileSystemEntries(transactionRoot).Any())
+                {
+                    Directory.Delete(transactionRoot, recursive: false);
+                    continue;
                 }
                 ValidateUncommittedPlan(transactionRoot, transactionId, stateRoot, targetRoot);
                 Directory.Delete(transactionRoot, recursive: true);
@@ -187,10 +195,33 @@ public static class LauncherUpdateRecovery
                     journal.TargetDirectory,
                     journal.PreviousFiles,
                     "completed recovery cleanup");
-                Directory.Delete(transactionRoot, recursive: true);
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    journalPath,
+                    "completed recovery cleanup");
                 continue;
             }
-            VerifyBackupAuthority(journal, authenticityVerifier, identityReader);
+            try
+            {
+                VerifyBackupAuthority(journal, authenticityVerifier, identityReader);
+            }
+            catch (InvalidDataException)
+            {
+                using var restoredPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery");
+                VerifyInstalledAuthority(journal, authenticityVerifier, identityReader);
+                LauncherUpdatePayloadTransaction.VerifyPayload(
+                    journal.TargetDirectory,
+                    journal.PreviousFiles,
+                    "completed recovery cleanup");
+                DeleteTransactionResidueMarkerLast(
+                    transactionRoot,
+                    journalPath,
+                    "completed recovery cleanup");
+                continue;
+            }
             recoveries.Add((journal, journalPath));
         }
 
@@ -315,6 +346,38 @@ public static class LauncherUpdateRecovery
         {
             throw new InvalidDataException("An abandoned Mod Bridge update plan has invalid executable roles.");
         }
+    }
+
+    private static void DeleteTransactionResidueMarkerLast(
+        string transactionRoot,
+        string markerPath,
+        string context)
+    {
+        var root = Path.GetFullPath(transactionRoot);
+        var marker = Path.GetFullPath(markerPath);
+        if (!PathEquals(Path.GetDirectoryName(marker)!, root) || !File.Exists(marker))
+        {
+            throw new InvalidDataException($"The Mod Bridge {context} marker is missing or misplaced.");
+        }
+        LauncherFilesystemSafety.RejectReparsePoints(root, $"Mod Bridge {context}");
+        foreach (var directory in Directory.EnumerateDirectories(root))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        foreach (var file in Directory.EnumerateFiles(root))
+        {
+            if (!PathEquals(file, marker))
+            {
+                File.Delete(file);
+            }
+        }
+        if (Directory.EnumerateDirectories(root).Any()
+            || Directory.EnumerateFiles(root).Any(file => !PathEquals(file, marker)))
+        {
+            throw new IOException($"The Mod Bridge {context} residue could not be removed safely.");
+        }
+        File.Delete(marker);
+        Directory.Delete(root, recursive: false);
     }
 
     private static void ValidateJournal(
