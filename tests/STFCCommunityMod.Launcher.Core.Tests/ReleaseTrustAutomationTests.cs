@@ -611,7 +611,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(selfUpdate, "LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo)");
         StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo)");
         StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(\n                    previousLauncher,");
-        StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)");
+        StringAssert.Contains(updater, "LauncherVerifiedExecutable.Start(\n            launcher,\n            CreateSelfUpdateChildStartInfo(");
         StringAssert.Contains(launchBoundary, "FileShare.Read");
         Assert.IsTrue(fileLock >= 0, "The runner must be opened with a restrictive sharing handle.");
         Assert.IsTrue(digest > fileLock, "The exact open runner must be hashed while pinned.");
@@ -715,6 +715,24 @@ public sealed partial class ReleaseTrustAutomationTests
         var protectedLaunch = protectedRecovery.IndexOf("LauncherVerifiedExecutable.Start(", protectedRelease, StringComparison.Ordinal);
         Assert.IsTrue(protectedRelease > protectedRestore, "Protected recovery must remain leased until restoration completes.");
         Assert.IsTrue(protectedLaunch > protectedRelease, "Protected recovery restart must begin only after releasing the mutation lease.");
+    }
+
+    [TestMethod]
+    public void RecoveryRestartsUseBoundChildStartupToDeferLiveUpdaterCleanup()
+    {
+        var updater = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher.Updater",
+            "Program.cs"));
+        var recoveryFunction = updater.IndexOf("static async Task<int> RunRecoveryAsync(", StringComparison.Ordinal);
+        var childHelper = updater.IndexOf("static ProcessStartInfo CreateSelfUpdateChildStartInfo(", StringComparison.Ordinal);
+        var ordinaryRollback = updater[..recoveryFunction];
+        var protectedRecovery = updater[recoveryFunction..childHelper];
+
+        StringAssert.Contains(ordinaryRollback, "CreateSelfUpdateChildStartInfo(");
+        StringAssert.Contains(protectedRecovery, "CreateSelfUpdateChildStartInfo(");
+        StringAssert.Contains(updater[childHelper..], "startInfo.ArgumentList.Add(\"--self-update-child\");");
     }
 
     [TestMethod]

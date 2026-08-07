@@ -69,8 +69,9 @@ After successful exact-child startup, the updater verifies the installed
 payload again while retaining deny-write/deny-delete handles for every installed
 file, then durably writes a second current-user DPAPI-protected completion
 journal and deletes the backup before releasing those handles. That terminal
-journal binds the exact recovery journal and complete installed inventory. If
-backup cleanup is
+record binds the exact recovery-journal digest and independently carries the
+complete installed inventory and launcher/verifier authority needed to finish
+cleanup after the recovery journal is removed. If backup cleanup is
 interrupted, the next startup validates the acknowledged installation and
 discards cleanup residue instead of misclassifying the partial backup as a
 rollback candidate. An invalid acknowledged installation fails closed without
@@ -84,6 +85,12 @@ startup. Likewise, an incomplete recovery backup is not treated as authoritative
 startup accepts completed rollback cleanup only when the installed target still
 matches the protected `PreviousFiles` inventory and signed launcher/verifier
 pair; otherwise it fails closed for manual recovery.
+
+A launcher restarted after rollback is passed the same strictly
+transaction-bound self-update child arguments as the forward-update child. That
+single child launch defers startup recovery so it cannot race deletion of the
+still-running transaction updater. The residue remains protected and is
+validated and removed on the next ordinary startup after the updater has exited.
 
 The complete expected inventory is enumerated both before and after its file
 handles are retained, and is checked at cleanup boundaries under the

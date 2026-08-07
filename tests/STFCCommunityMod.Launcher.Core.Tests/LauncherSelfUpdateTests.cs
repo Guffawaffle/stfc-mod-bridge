@@ -549,6 +549,22 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void RecoveryCompletesAcknowledgedCleanupAfterRecoveryJournalDeletion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateAcknowledgedRecoveryTransaction(state, target);
+        File.Delete(Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName));
+
+        Assert.IsNull(InspectRecovery(state, target));
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(target, "old.txt")));
+        Assert.IsFalse(Directory.Exists(recovery.TransactionRoot));
+    }
+
+    [TestMethod]
     public void PayloadReplacementKeepsLauncherPresentAcrossInterruptedNonLauncherWrite()
     {
         using var temporaryDirectory = new TemporaryDirectory();

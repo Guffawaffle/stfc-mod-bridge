@@ -145,11 +145,14 @@ public static class LauncherUpdateRecovery
                     throw new InvalidDataException(
                         "The protected completion journal does not match this installation.");
                 }
-                var completedRecovery = LauncherUpdateRecoveryJournalStore.Load(
-                    journalPath,
-                    protector,
-                    completion.RecoveryJournalSha256);
-                ValidateJournal(completedRecovery, transactionId, transactionRoot, stateRoot, targetRoot);
+                if (File.Exists(journalPath))
+                {
+                    var completedRecovery = LauncherUpdateRecoveryJournalStore.Load(
+                        journalPath,
+                        protector,
+                        completion.RecoveryJournalSha256);
+                    ValidateJournal(completedRecovery, transactionId, transactionRoot, stateRoot, targetRoot);
+                }
                 using var completedPayload = LauncherUpdatePayloadTransaction.RetainVerifiedPayload(
                     completion.TargetDirectory,
                     completion.Files,

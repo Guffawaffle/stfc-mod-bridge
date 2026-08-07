@@ -85,14 +85,11 @@ static async Task<int> RunAsync(string[] args)
                 launcherPath,
                 plan.CandidateLauncher.Size,
                 plan.CandidateLauncher.Sha256);
-            var updatedStartInfo = new ProcessStartInfo(launcherPath)
-            {
-                UseShellExecute = false,
-                WorkingDirectory = plan.TargetDirectory,
-            };
-            updatedStartInfo.ArgumentList.Add("--self-update-child");
-            updatedStartInfo.ArgumentList.Add(plan.AcknowledgementPath);
-            updatedStartInfo.ArgumentList.Add(plan.TransactionId);
+            var updatedStartInfo = CreateSelfUpdateChildStartInfo(
+                launcherPath,
+                plan.TargetDirectory,
+                plan.AcknowledgementPath,
+                plan.TransactionId);
             updated = LauncherVerifiedExecutable.Start(installedLauncher, updatedStartInfo);
             if (await WaitForResponsiveMainWindowAsync(updated, TimeSpan.FromSeconds(45)))
             {
@@ -130,11 +127,11 @@ static async Task<int> RunAsync(string[] args)
             {
                 _ = LauncherVerifiedExecutable.Start(
                     previousLauncher,
-                    new ProcessStartInfo(previousLauncher.Path)
-                    {
-                        UseShellExecute = false,
-                        WorkingDirectory = plan.TargetDirectory,
-                    });
+                    CreateSelfUpdateChildStartInfo(
+                        previousLauncher.Path,
+                        plan.TargetDirectory,
+                        plan.AcknowledgementPath,
+                        plan.TransactionId));
             }
             return 3;
         }
@@ -206,11 +203,14 @@ static async Task<int> RunRecoveryAsync(
         var handoffLease = recoveryLease;
         recoveryLease = null;
         await handoffLease.DisposeAsync();
-        _ = LauncherVerifiedExecutable.Start(launcher, new ProcessStartInfo(launcher.Path)
-        {
-            UseShellExecute = false,
-            WorkingDirectory = layout.ProgramDirectory,
-        });
+        var transactionRoot = Path.GetDirectoryName(Path.GetFullPath(journalPath))!;
+        _ = LauncherVerifiedExecutable.Start(
+            launcher,
+            CreateSelfUpdateChildStartInfo(
+                launcher.Path,
+                layout.ProgramDirectory,
+                Path.Combine(transactionRoot, "startup.ack"),
+                Path.GetFileName(transactionRoot)));
         return 0;
     }
     catch
@@ -224,6 +224,23 @@ static async Task<int> RunRecoveryAsync(
             await recoveryLease.DisposeAsync();
         }
     }
+}
+
+static ProcessStartInfo CreateSelfUpdateChildStartInfo(
+    string launcherPath,
+    string workingDirectory,
+    string acknowledgementPath,
+    string transactionId)
+{
+    var startInfo = new ProcessStartInfo(launcherPath)
+    {
+        UseShellExecute = false,
+        WorkingDirectory = workingDirectory,
+    };
+    startInfo.ArgumentList.Add("--self-update-child");
+    startInfo.ArgumentList.Add(acknowledgementPath);
+    startInfo.ArgumentList.Add(transactionId);
+    return startInfo;
 }
 
 static void VerifyPayload(string root, IReadOnlyList<LauncherUpdateFile> expected)
