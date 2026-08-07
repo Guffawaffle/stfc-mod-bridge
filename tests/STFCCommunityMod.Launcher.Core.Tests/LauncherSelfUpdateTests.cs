@@ -33,7 +33,8 @@ public sealed class LauncherSelfUpdateTests
 
         Assert.AreEqual(LauncherUpdatePreparationState.Ready, result.State);
         Assert.IsTrue(File.Exists(result.PlanPath));
-        Assert.IsTrue(File.Exists(result.UpdaterPath));
+        Assert.IsNotNull(result.RunnerUpdater);
+        Assert.IsTrue(File.Exists(result.RunnerUpdater.Path));
         StringAssert.Matches(result.PlanSha256, new System.Text.RegularExpressions.Regex("^[0-9a-f]{64}$"));
         var serializedPlan = JsonSerializer.Deserialize<LauncherUpdatePlan>(
             await File.ReadAllBytesAsync(result.PlanPath),
@@ -209,6 +210,97 @@ public sealed class LauncherSelfUpdateTests
         Assert.AreEqual("trusted previous payload", File.ReadAllText(Path.Combine(target, "old.txt")));
         Assert.IsFalse(File.Exists(Path.Combine(target, "new.txt")));
         Assert.IsFalse(Directory.Exists(recovery.Backup));
+    }
+
+    [TestMethod]
+    public void RecoveryRunnerIsBoundAndPinnedThroughProcessCreation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        _ = CreateRecoveryTransaction(state, target, "trusted previous payload");
+        var preparation = InspectRecovery(state, target)!;
+        var startInfo = new ProcessStartInfo(preparation.RunnerUpdater.Path)
+        {
+            UseShellExecute = false,
+        };
+
+        using var process = LauncherVerifiedExecutable.Start(
+            preparation.RunnerUpdater,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(
+                    () => File.WriteAllText(preparation.RunnerUpdater.Path, "substituted"));
+                Assert.ThrowsException<IOException>(
+                    () => File.Move(preparation.RunnerUpdater.Path, preparation.RunnerUpdater.Path + ".moved"));
+                return Process.GetCurrentProcess();
+            });
+    }
+
+    [TestMethod]
+    public async Task PreparedRunnerRejectsSubstitutionAndIsPinnedThroughProcessCreation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var archive = CreateArchive(
+            ("STFCModBridge.exe", [1, 2, 3]),
+            ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
+            ("STFCModBridge.Updater.exe", [4, 5, 6]));
+        var artifact = Artifact(archive);
+        var service = CreateService(temporaryDirectory, archive);
+        var preparation = await service.PrepareAsync(Discovery(artifact, temporaryDirectory), new string('a', 40), 123);
+        var runner = preparation.RunnerUpdater!;
+        var startInfo = new ProcessStartInfo(runner.Path) { UseShellExecute = false };
+
+        using var process = LauncherVerifiedExecutable.Start(
+            runner,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            _ =>
+            {
+                Assert.ThrowsException<IOException>(() => File.WriteAllText(runner.Path, "substituted"));
+                Assert.ThrowsException<IOException>(() => File.Move(runner.Path, runner.Path + ".moved"));
+                return Process.GetCurrentProcess();
+            });
+
+        File.WriteAllText(runner.Path, "substituted-after-preparation");
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherVerifiedExecutable.Start(
+                runner,
+                startInfo,
+                new FakeAuthenticityVerifier(),
+                _ => Process.GetCurrentProcess()));
+    }
+
+    [TestMethod]
+    public void PinnedRunnerCanBeStartedByWindowsDirectProcessCreation()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows direct process creation is required for this pinned-runner check.");
+            return;
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var runnerPath = Path.Combine(temporaryDirectory.Path, "runner.exe");
+        File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), runnerPath);
+        var runner = BoundFile(runnerPath);
+        var startInfo = new ProcessStartInfo(runner.Path)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("/d");
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add("exit 0");
+
+        using var process = LauncherVerifiedExecutable.Start(
+            runner,
+            startInfo,
+            new FakeAuthenticityVerifier(),
+            Process.Start);
+        Assert.IsTrue(process.WaitForExit(10_000));
+        Assert.AreEqual(0, process.ExitCode);
     }
 
     [TestMethod]

@@ -32,10 +32,10 @@ public partial class App : Application
                         layout.ProgramDirectory);
                     if (recovery is not null)
                     {
-                        var startInfo = new ProcessStartInfo(recovery.RunnerPath)
+                        var startInfo = new ProcessStartInfo(recovery.RunnerUpdater.Path)
                         {
                             UseShellExecute = false,
-                            WorkingDirectory = Path.GetDirectoryName(recovery.RunnerPath),
+                            WorkingDirectory = Path.GetDirectoryName(recovery.RunnerUpdater.Path),
                             CreateNoWindow = true,
                         };
                         startInfo.ArgumentList.Add("--recover-journal");
@@ -44,8 +44,7 @@ public partial class App : Application
                         startInfo.ArgumentList.Add(recovery.JournalSha256);
                         startInfo.ArgumentList.Add("--parent-process-id");
                         startInfo.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
-                        _ = Process.Start(startInfo)
-                            ?? throw new InvalidOperationException("Windows did not start Mod Bridge recovery.");
+                        _ = LauncherVerifiedExecutable.Start(recovery.RunnerUpdater, startInfo);
                         recoveryHandoffLease = lease;
                         handedOff = true;
                         Shutdown();

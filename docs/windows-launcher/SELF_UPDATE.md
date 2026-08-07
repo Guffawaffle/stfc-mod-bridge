@@ -23,6 +23,13 @@ all matching release manifests and selects the highest active eligible channel
 version; API order, a lower release, or a withdrawn release cannot select or
 block another eligible release.
 
+Both ordinary update handoff and abandoned-transaction recovery carry the
+runner's exact size and SHA-256 from their authenticated preparation. Immediately
+before process creation, the launcher rehashes and rechecks Authenticode while a
+deny-write/deny-delete file handle remains open through direct process creation.
+The verified runner pathname therefore cannot be substituted across the
+verify/execute boundary.
+
 The running executable is never overwritten. The launcher stages the verified
 archive and exact manifest, bundle, receipt, and approved trust root under
 per-user state. Plan schema v2 binds their paths, sizes, and SHA-256 values plus

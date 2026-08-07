@@ -58,13 +58,13 @@ public sealed record LauncherUpdatePreparation(
     string ReleaseVersion,
     string TargetDirectory,
     string PlanPath,
-    string UpdaterPath,
+    LauncherUpdateBoundFile? RunnerUpdater,
     string PlanSha256);
 
 public sealed record LauncherUpdateRecoveryPreparation(
     int ExaminedTransactions,
     string TransactionId,
-    string RunnerPath,
+    LauncherUpdateBoundFile RunnerUpdater,
     string JournalPath,
     string JournalSha256);
 
@@ -153,7 +153,7 @@ public static class LauncherUpdateRecovery
         return new(
             examined,
             recovery.Journal.TransactionId,
-            recovery.Journal.RunnerUpdater.Path,
+            recovery.Journal.RunnerUpdater,
             recovery.JournalPath,
             LauncherUpdateRecoveryJournalStore.HashProtected(recovery.JournalPath));
     }
@@ -445,7 +445,7 @@ public sealed class LauncherSelfUpdateService(
                 artifact.ReleaseVersion,
                 programDirectory,
                 string.Empty,
-                string.Empty,
+                null,
                 string.Empty);
         }
 
@@ -580,7 +580,7 @@ public sealed class LauncherSelfUpdateService(
                 artifact.ReleaseVersion,
                 programDirectory,
                 planPath,
-                runnerPath,
+                plan.RunnerUpdater,
                 planFile.Sha256);
         }
         catch
@@ -594,24 +594,25 @@ public sealed class LauncherSelfUpdateService(
         }
     }
 
+    [SupportedOSPlatform("windows")]
     public static void StartUpdater(LauncherUpdatePreparation preparation)
     {
-        if (preparation.State != LauncherUpdatePreparationState.Ready)
+        if (preparation.State != LauncherUpdatePreparationState.Ready
+            || preparation.RunnerUpdater is null)
         {
             throw new InvalidOperationException("Only a ready Mod Bridge update can start.");
         }
-        var startInfo = new ProcessStartInfo(preparation.UpdaterPath)
+        var startInfo = new ProcessStartInfo(preparation.RunnerUpdater.Path)
         {
             UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(preparation.UpdaterPath),
+            WorkingDirectory = Path.GetDirectoryName(preparation.RunnerUpdater.Path),
             CreateNoWindow = true,
         };
         startInfo.ArgumentList.Add("--plan");
         startInfo.ArgumentList.Add(preparation.PlanPath);
         startInfo.ArgumentList.Add("--plan-sha256");
         startInfo.ArgumentList.Add(preparation.PlanSha256);
-        _ = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Windows did not start the Mod Bridge update helper.");
+        _ = LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo);
     }
 
     private void VerifySignedExecutable(string path)

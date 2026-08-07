@@ -577,6 +577,39 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void SelfUpdateRunnerLaunchPinsVerifiedBytesThroughProcessCreation()
+    {
+        var root = RepositoryRoot();
+        var application = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher",
+            "App.xaml.cs"));
+        var selfUpdate = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherSelfUpdate.cs"));
+        var launchBoundary = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "STFCCommunityMod.Launcher.Core",
+            "LauncherVerifiedExecutable.cs"));
+        var fileLock = launchBoundary.IndexOf("using var executableLock = new FileStream(", StringComparison.Ordinal);
+        var digest = launchBoundary.IndexOf("SHA256.HashData(executableLock)", StringComparison.Ordinal);
+        var signature = launchBoundary.IndexOf("authenticityVerifier.Verify(executablePath)", StringComparison.Ordinal);
+        var process = launchBoundary.IndexOf("processStarter(startInfo)", StringComparison.Ordinal);
+
+        StringAssert.Contains(application, "LauncherVerifiedExecutable.Start(recovery.RunnerUpdater, startInfo)");
+        StringAssert.Contains(selfUpdate, "LauncherVerifiedExecutable.Start(preparation.RunnerUpdater, startInfo)");
+        StringAssert.Contains(launchBoundary, "FileShare.Read");
+        Assert.IsTrue(fileLock >= 0, "The runner must be opened with a restrictive sharing handle.");
+        Assert.IsTrue(digest > fileLock, "The exact open runner must be hashed while pinned.");
+        Assert.IsTrue(signature > digest, "Authenticode must be checked after the runner digest.");
+        Assert.IsTrue(process > signature, "The runner handle must remain alive through process creation.");
+    }
+
+    [TestMethod]
     [DataRow("payload.dll")]
     [DataRow("renamed-payload.bin")]
     public async Task PackageInspectionRejectsPortableExecutableOutsideExactAllowlist(string unexpectedName)
