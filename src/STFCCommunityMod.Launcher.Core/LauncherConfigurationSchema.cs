@@ -61,6 +61,16 @@ public enum LauncherConfigurationAliasPrecedence
     CanonicalReplacesWholePolicy,
 }
 
+public enum LauncherConfigurationRuntimeStatus
+{
+    Live,
+    Conditional,
+    ParsedUnused,
+    Ignored,
+    Legacy,
+    Removed,
+}
+
 public sealed record LauncherConfigurationAlias(
     string Path,
     LauncherConfigurationAliasStatus Status,
@@ -91,6 +101,13 @@ public sealed record LauncherConfigurationSource(
             _ => Id.ToString(),
         };
 }
+
+public sealed record LauncherConfigurationCatalogIdentity(
+    string CatalogId,
+    Version CatalogVersion,
+    string TrackId,
+    string ReleaseVersion,
+    string SourceCommit);
 
 public sealed record LauncherConfigurationNumericConstraints(
     double? Minimum,
@@ -130,7 +147,9 @@ public sealed class LauncherConfigurationSetting
         IReadOnlyList<LauncherConfigurationAlias> aliases,
         LauncherConfigurationProvenance provenance,
         LauncherConfigurationApplyBehavior applyBehavior,
-        LauncherConfigurationPresentation presentation)
+        LauncherConfigurationPresentation presentation,
+        LauncherConfigurationRuntimeStatus runtimeStatus = LauncherConfigurationRuntimeStatus.Live,
+        IReadOnlyList<string>? featureGates = null)
     {
         Path = path;
         Title = title;
@@ -151,6 +170,8 @@ public sealed class LauncherConfigurationSetting
         Provenance = provenance;
         ApplyBehavior = applyBehavior;
         Presentation = presentation;
+        RuntimeStatus = runtimeStatus;
+        FeatureGates = featureGates ?? Array.AsReadOnly(Array.Empty<string>());
         IsTemplate = path.Split('.').Contains("*", StringComparer.Ordinal);
     }
 
@@ -223,6 +244,10 @@ public sealed class LauncherConfigurationSetting
 
     public LauncherConfigurationPresentation Presentation { get; }
 
+    public LauncherConfigurationRuntimeStatus RuntimeStatus { get; }
+
+    public IReadOnlyList<string> FeatureGates { get; }
+
     /// <summary>
     /// True when the schema path contains a wildcard path segment that must be
     /// replaced with a concrete runtime identity before editing.
@@ -231,7 +256,9 @@ public sealed class LauncherConfigurationSetting
 
     public bool IsPlayerFacing =>
         Sensitivity == LauncherConfigurationSensitivity.Public
-        && Stability != LauncherConfigurationStability.Internal;
+        && Stability != LauncherConfigurationStability.Internal
+        && RuntimeStatus is LauncherConfigurationRuntimeStatus.Live
+            or LauncherConfigurationRuntimeStatus.Conditional;
 
     /// <summary>
     /// True when this catalog entry can be presented as a concrete editor row.
@@ -248,11 +275,18 @@ public sealed class LauncherConfigurationCatalog
     internal LauncherConfigurationCatalog(
         Version schemaVersion,
         LauncherConfigurationSource source,
-        IReadOnlyList<LauncherConfigurationSetting> settings)
+        IReadOnlyList<LauncherConfigurationSetting> settings,
+        LauncherConfigurationCatalogIdentity? identity = null)
     {
         SchemaVersion = schemaVersion;
         Source = source;
         Settings = settings;
+        Identity = identity ?? new(
+            $"{source.StableId}.configuration",
+            schemaVersion,
+            "unversioned",
+            "unknown",
+            "unknown");
         NotificationCatalog = LauncherNotificationCatalog.Create(settings);
         _visibleSettings = Array.AsReadOnly(settings.Where(setting => setting.IsDirectlyEditable).ToArray());
         Categories = Array.AsReadOnly(
@@ -266,6 +300,8 @@ public sealed class LauncherConfigurationCatalog
     public Version SchemaVersion { get; }
 
     public LauncherConfigurationSource Source { get; }
+
+    public LauncherConfigurationCatalogIdentity Identity { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> Settings { get; }
 

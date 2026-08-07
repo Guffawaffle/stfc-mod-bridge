@@ -106,6 +106,51 @@ public sealed class ConfigurationWorkspaceTests
     }
 
     [TestMethod]
+    public async Task DataSyncCommitPropagatesDurableBackupReceipt()
+    {
+        var snapshot = new ConfigurationDocumentSnapshot(
+            Path.Combine(Path.GetTempPath(), $"workspace-sync-{Guid.NewGuid():N}.toml"),
+            Encoding.UTF8.GetBytes("# receipt fixture\n"));
+        var receipt = new ConfigurationBackupReceipt(
+            "backup-id",
+            "installation-id",
+            "guffawaffle",
+            null,
+            new DateTimeOffset(2026, 8, 6, 0, 0, 0, TimeSpan.Zero),
+            snapshot.Revision.Sha256,
+            "data-sync-save",
+            "guffawaffle/stable");
+        var repository = new RecordingRepository(
+            snapshot,
+            static _ =>
+                new(
+                    AtomicTomlWriteState.IoFailure,
+                    Error: "Settings commit is not part of this fixture."),
+            request =>
+                new(
+                    AtomicTomlWriteState.Succeeded,
+                    new ConfigurationDocumentSnapshot(
+                        request.Path,
+                        request.DesiredContents),
+                    BackupReceipt: receipt));
+        var load = ConfigurationWorkspace.Load(
+            snapshot.Path,
+            LoadCatalog(),
+            repository,
+            out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+        var syncLoad = workspace!.CreateSyncTopologyEditSession(out var session);
+        Assert.IsTrue(syncLoad.IsValid, syncLoad.Error?.Message);
+        var added = session!.Desired.AddTarget("community", SyncTargetKind.LegacyCommunity);
+        session.Stage(added.Topology.SetTargetEnabled("community", true).Topology);
+
+        var result = await workspace.CommitSyncAsync(session);
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.AreEqual(receipt, result.BackupReceipt);
+    }
+
+    [TestMethod]
     public void DiscardPublishesOneBatchedStructuralTransition()
     {
         var catalog = LoadCatalog();
@@ -381,7 +426,8 @@ public sealed class ConfigurationWorkspaceTests
 
     private sealed class RecordingRepository(
         ConfigurationDocumentSnapshot snapshot,
-        Func<ConfigurationCommitRequest, ConfigurationRepositoryCommitResult> commit) :
+        Func<ConfigurationCommitRequest, ConfigurationRepositoryCommitResult> commit,
+        Func<ConfigurationDocumentCommitRequest, ConfigurationRepositoryCommitResult>? documentCommit = null) :
         IConfigurationRepository
     {
         public ConfigurationCommitRequest? LastCommitRequest { get; private set; }
@@ -396,6 +442,18 @@ public sealed class ConfigurationWorkspaceTests
             cancellationToken.ThrowIfCancellationRequested();
             LastCommitRequest = request;
             return Task.FromResult(commit(request));
+        }
+
+        public Task<ConfigurationRepositoryCommitResult> CommitDocumentAsync(
+            ConfigurationDocumentCommitRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                documentCommit?.Invoke(request)
+                    ?? new ConfigurationRepositoryCommitResult(
+                        AtomicTomlWriteState.Invalid,
+                        Error: "Document commit is not part of this fixture."));
         }
     }
 }

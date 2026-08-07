@@ -55,7 +55,7 @@ public sealed class LauncherProviderSelectionTests
     [DataRow("NetniV")]
     [DataRow("netniv ")]
     [DataRow("")]
-    public async Task SwitchRequiresExactStableIdConfirmationAndPreviewsRemainingUnknownCapabilities(
+    public async Task SwitchRequiresExactStableIdConfirmationAndPreviewsOnlyRemainingUnknownCapabilities(
         string incorrectConfirmation)
     {
         using var directory = new TemporaryDirectory();
@@ -71,8 +71,10 @@ public sealed class LauncherProviderSelectionTests
 
         Assert.IsTrue(preview.HasUnknownCompatibility);
         Assert.IsTrue(preview.Concerns.Any(concern =>
-            concern.CapabilityId == LauncherProviderCapabilityIds.ConfigurationCatalog
+            concern.CapabilityId == LauncherProviderCapabilityIds.ConfigurationMigration
             && concern.Kind == LauncherProviderCompatibilityKind.Unknown));
+        Assert.IsFalse(preview.Concerns.Any(concern =>
+            concern.CapabilityId == LauncherProviderCapabilityIds.ConfigurationCatalog));
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => service.ExecuteAsync(preview, incorrectConfirmation));
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());

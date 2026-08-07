@@ -17,10 +17,15 @@ provider-switch copies as an accepted recovery surface.
 | Scopely launcher service | supported per-user installation availability | Attention |
 | Mod deployment service | persisted journal, allowlisted target, installed identity | Unknown; never guess ownership |
 | Launcher-local health (#7) | provider compatibility, bounded update observation, native contract | explicit Unknown when unproven |
-| Configuration analyzer (#29) | revision-bound, provider-catalog-bound read-only diagnosis | Unknown for unsupported provider or syntax |
+| Configuration analyzer (#29/#8) | revision-bound, exact provider/catalog diagnosis plus catalog-authorized cleanup eligibility | Unknown for unsupported provider or syntax |
 | Mod log tail | at most 64 KiB / 200 lines from `community_patch.log` | Unknown or Attention |
 
-Configuration diagnosis reads a snapshot and does not create a mutation plan.
+Opening or refreshing Configuration diagnosis reads a snapshot and never
+mutates it. The separate **Review cleanup** action may build a pure plan only
+for eligible alias moves/removals identified by the exact diagnosis. Its
+preview contains paths, lines, and value-free summaries. Apply requires a
+second confirmation, rechecks the source/provider/catalog binding, creates and
+verifies a protected provider-scoped backup, commits atomically, and rescans.
 Provider behavior is selected by stable provider identity and catalog support,
 never display-name matching.
 
@@ -32,6 +37,9 @@ Control. Copy and export use immutable strings from the same
 
 - **Copy diagnostic summary** copies the displayed redacted summary.
 - **Export report** writes the exact redacted JSON shown under Technical report.
+- **Export effective configuration** is deliberately outside support export. It
+  warns that its local JSON is unredacted and may include credentials, private
+  endpoints, and paths; nothing uploads it automatically.
 - Known user/game paths, credential assignments, bearer tokens, cookies, and
   HTTP endpoints are scrubbed before either string is exposed.
 - Configuration findings structurally omit values and private paths before
@@ -57,9 +65,10 @@ does not mutate game files. Recovery and removal reuse the single existing
 - removal affects the managed `version.dll`, or restores an explicitly adopted
   predecessor, while preserving configuration, logs, and Mod Bridge state.
 
-Launcher self-update remains a separate trust and transaction domain from mod
-repair/removal. Automatic self-update residue recovery remains setup/helper
-owned; Diagnostics does not invent a second recovery implementation.
+Launcher delivery remains a separate trust and transaction domain from mod
+repair/removal. Windows owns packaged-app update recovery; the standalone
+fallback updater owns its own rollback. Diagnostics does not invent a second
+recovery implementation.
 
 An explicit protected-TOML restore will also reuse the common mutation lease,
 game-running exclusion, exact-target confirmation, and durable recovery
@@ -68,6 +77,7 @@ configuration editor save path.
 
 ## Deferred evidence
 
-Packaged screenshots, scaling, keyboard/UI Automation dogfood, folder opening,
-clipboard/export, and a safe recovery exercise are consolidated under v1
-qualification issue #30. This implementation branch runs headless tests only.
+Final packaged screenshots, scaling, file-picker dogfood, and a safe recovery
+exercise are consolidated under v1 qualification issue #30. The implementation
+gate includes packaged UI Automation of cleanup review/cancel/focus return on a
+disposable TOML and proves its SHA-256 remains unchanged.

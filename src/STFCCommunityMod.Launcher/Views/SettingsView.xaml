@@ -1365,6 +1365,69 @@
                       CommandParameter="{Binding About.RuntimeRepositoryUrl}"
                       Content="Runtime source"
                       automation:AutomationProperties.Name="Open active mod provider repository" />
+              <Button Style="{StaticResource AboutLinkButtonStyle}"
+                      Command="{Binding About.OpenReleaseSecurityGuidanceCommand}"
+                      Content="Verification &amp; _recovery guidance"
+                      ToolTip="Open the bundled offline independent-verification and compromise-response guides"
+                      automation:AutomationProperties.Name="Open bundled verification and recovery guidance" />
+            </WrapPanel>
+
+            <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"
+                       Text="Installation" />
+            <Border Height="1" Margin="0,0,0,12" Background="{DynamicResource BorderBrush}" />
+            <Grid MaxWidth="760" HorizontalAlignment="Stretch">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="128" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Text="Delivery" />
+              <TextBlock Grid.Column="1"
+                         Text="{Binding About.InstallationKind}" />
+              <TextBlock Grid.Row="1"
+                         Margin="0,8,0,0"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Application" />
+              <TextBlock Grid.Row="1"
+                         Grid.Column="1"
+                         Margin="0,8,0,0"
+                         FontFamily="Consolas"
+                         FontSize="11"
+                         Text="{Binding About.ProgramDirectory}"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Row="2"
+                          Margin="0,8,0,0"
+                          Foreground="{DynamicResource TextSecondaryBrush}"
+                          Text="Local data" />
+              <TextBlock Grid.Row="2"
+                          Grid.Column="1"
+                         Margin="0,8,0,0"
+                         FontFamily="Consolas"
+                         FontSize="11"
+                         Text="{Binding About.DataDirectory}"
+                         TextWrapping="Wrap" />
+            </Grid>
+            <TextBlock MaxWidth="760"
+                       Margin="0,12,0,0"
+                       HorizontalAlignment="Left"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding About.ApplicationManagementDescription}"
+                       TextWrapping="Wrap" />
+            <WrapPanel Margin="0,14,0,0">
+              <Button Style="{StaticResource UtilityActionButtonStyle}"
+                      Command="{Binding About.OpenDataFolderCommand}"
+                      Content="Open _data folder"
+                      automation:AutomationProperties.Name="Open Mod Bridge data folder" />
+              <Button Margin="10,0,0,0"
+                      Style="{StaticResource UtilityActionButtonStyle}"
+                      Command="{Binding About.ManageApplicationCommand}"
+                      Content="Open _Installed Apps"
+                      ToolTip="Open Windows Installed Apps to repair, reset, or uninstall Mod Bridge"
+                      automation:AutomationProperties.Name="Open Windows Installed Apps for STFC Mod Bridge" />
             </WrapPanel>
 
             <TextBlock Style="{StaticResource AboutSectionHeadingStyle}"

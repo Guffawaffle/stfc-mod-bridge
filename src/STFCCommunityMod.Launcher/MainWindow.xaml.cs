@@ -52,6 +52,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
     private LauncherDiagnosticPreview? diagnosticPreview;
+    private ConfigurationEffectiveExportDocument? pendingEffectiveConfigurationExport;
+    private ConfigurationDocumentSnapshot? pendingConfigurationMigrationSnapshot;
+    private LauncherConfigurationDiagnosisEvidence? pendingConfigurationMigrationEvidence;
+    private ConfigurationMigrationPlanResult? pendingConfigurationMigrationPlan;
+    private ConfigurationMigrationApplyCoordinator? pendingConfigurationMigrationCoordinator;
     private MaintenanceAction pendingMaintenanceAction;
     private LauncherUpdatePreparation? pendingLauncherUpdate;
     private LauncherProviderAtomicSwitchPreview? pendingProviderSwitch;
@@ -268,6 +273,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
+        pendingLauncherUpdate?.Dispose();
+        pendingLauncherUpdate = null;
         providerSessions.Dispose();
         processStateMonitor.StateChanged -= ProcessStateMonitor_StateChanged;
         processStateMonitor.Dispose();
@@ -498,6 +505,312 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
+    private void ReviewEffectiveConfigurationExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pendingEffectiveConfigurationExport = null;
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        if (!TryGetConfigurationFilePath(out var path))
+        {
+            viewModel.ReportDiagnosticAction(
+                false,
+                "Select a valid game folder before preparing an effective configuration export.");
+            return;
+        }
+
+        try
+        {
+            var capability = distributionProvider.GetCapabilityStatus(
+                LauncherProviderCapabilityIds.ConfigurationCatalog);
+            if (capability != LauncherProviderCapabilityStatus.Supported)
+            {
+                viewModel.ReportDiagnosticAction(
+                    false,
+                    "The selected provider has no verified configuration catalog, so effective values cannot be exported.");
+                return;
+            }
+
+            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var contents = File.Exists(path) ? File.ReadAllBytes(path) : [];
+            var result = ConfigurationEffectiveExportService.Build(
+                new ConfigurationDocumentSnapshot(path, contents),
+                LauncherConfigurationDiagnosisEvidence.Supported(
+                    distributionProvider.Id,
+                    distributionReleaseChannel.Id,
+                    catalog));
+            if (!result.IsSuccess)
+            {
+                viewModel.ReportDiagnosticAction(
+                    false,
+                    result.Error ?? "The effective configuration could not be established safely.");
+                return;
+            }
+
+            pendingEffectiveConfigurationExport = result.Document;
+            EffectiveConfigurationExportSummary.Text =
+                $"Provider {result.Document!.ProviderId} · {result.Document.ChannelId} · "
+                + $"catalog {result.Document.CatalogVersion} · {result.Document.Entries.Count} effective entries.";
+            EffectiveConfigurationExportRevision.Text = result.Document.SourceRevisionSha256;
+            EffectiveConfigurationExportDialog.IsOpen = true;
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Input,
+                () => ConfirmEffectiveConfigurationExportButton.Focus());
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or LauncherConfigurationSchemaException)
+        {
+            viewModel.ReportDiagnosticAction(
+                false,
+                $"The effective configuration export could not be prepared: {exception.Message}");
+        }
+    }
+
+    private async void ConfirmEffectiveConfigurationExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (pendingEffectiveConfigurationExport is null
+            || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var document = pendingEffectiveConfigurationExport;
+        pendingEffectiveConfigurationExport = null;
+        EffectiveConfigurationExportDialog.IsOpen = false;
+        var dialog = new SaveFileDialog
+        {
+            Title = "Save unredacted effective configuration",
+            FileName = $"stfc-mod-bridge-effective-config-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            DefaultExt = ".json",
+            Filter = "JSON effective configuration (*.json)|*.json",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            viewModel.ReportDiagnosticAction(true, "Effective configuration export canceled; no file was written.");
+            return;
+        }
+
+        try
+        {
+            await ConfigurationEffectiveExportService.ExportAsync(
+                document,
+                dialog.FileName,
+                lifetimeCancellation.Token);
+            viewModel.ReportDiagnosticAction(
+                true,
+                "Saved the explicitly unredacted effective configuration locally. Nothing was uploaded.");
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            viewModel.ReportDiagnosticAction(false, $"The effective configuration export failed: {exception.Message}");
+        }
+    }
+
+    private void ReviewConfigurationCleanupButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ClearPendingConfigurationMigration();
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        if (!TryGetConfigurationFilePath(out var path))
+        {
+            viewModel.ReportDiagnosticAction(
+                false,
+                "Select a valid game folder before reviewing configuration cleanup.");
+            return;
+        }
+        if (settingsViewModel is not null
+            && (settingsViewModel.HasPendingChanges || settingsViewModel.SyncWorkspace.HasPendingChanges))
+        {
+            viewModel.ReportDiagnosticAction(
+                false,
+                "Save or discard the current Settings and Data Sync edits before reviewing cleanup.");
+            return;
+        }
+
+        try
+        {
+            if (distributionProvider.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog)
+                != LauncherProviderCapabilityStatus.Supported)
+            {
+                viewModel.ReportDiagnosticAction(
+                    false,
+                    "Cleanup is unavailable because the selected provider has no verified configuration catalog.");
+                return;
+            }
+
+            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
+                distributionProvider.Id,
+                distributionReleaseChannel.Id,
+                catalog);
+            var backupStore = new ProviderScopedConfigurationBackupStore(
+                PerUserInstallLayout.FromCurrentUser().StateDirectory);
+            var mutationBackup = new ProviderScopedConfigurationMutationBackup(
+                backupStore,
+                distributionProvider.Id,
+                $"{distributionProvider.Id}/{distributionReleaseChannel.Id}",
+                "configuration-migration");
+            var repository = new TomlConfigurationRepository(mutationBackup: mutationBackup);
+            var read = repository.Read(path);
+            if (!read.IsSuccess || read.Snapshot is null)
+            {
+                viewModel.ReportDiagnosticAction(
+                    false,
+                    read.ValidationError?.Message
+                        ?? read.Error
+                        ?? "No safely editable configuration is selected.");
+                return;
+            }
+
+            var diagnosis = new ConfigurationHealthAnalyzer().Analyze(read.Snapshot, evidence);
+            var selectedRemediations = diagnosis.Findings
+                .Select(finding => finding.RemediationId)
+                .Where(remediationId => !string.IsNullOrWhiteSpace(remediationId))
+                .Cast<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var plan = new ConfigurationMigrationPlanner().Plan(
+                read.Snapshot,
+                evidence,
+                diagnosis,
+                selectedRemediations);
+            if (plan.State != ConfigurationMigrationPlanState.Ready)
+            {
+                viewModel.ReportDiagnosticAction(
+                    plan.State == ConfigurationMigrationPlanState.NoChange,
+                    plan.State == ConfigurationMigrationPlanState.NoChange
+                        ? "No catalog-authorized configuration cleanup is currently needed."
+                        : plan.Message ?? "Configuration cleanup is blocked by the current diagnosis.");
+                return;
+            }
+
+            pendingConfigurationMigrationSnapshot = read.Snapshot;
+            pendingConfigurationMigrationEvidence = evidence;
+            pendingConfigurationMigrationPlan = plan;
+            pendingConfigurationMigrationCoordinator = new(repository);
+            ConfigurationCleanupSummary.Text =
+                $"{plan.Operations.Count} catalog-authorized cleanup operation(s) are selected. "
+                + "Only recognized aliases will move or be removed; unknown content and values remain untouched.";
+            ConfigurationCleanupBinding.Text =
+                $"{plan.Binding!.ProviderId} · {plan.Binding.ChannelId} · catalog {plan.Binding.CatalogVersion} · "
+                + $"source {plan.Binding.Revision.Sha256}";
+            ConfigurationCleanupOperations.ItemsSource = plan.Operations;
+            ConfigurationCleanupPreview.ItemsSource = plan.PreviewLines;
+            ConfigurationCleanupDialog.IsOpen = true;
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Input,
+                () => ConfirmConfigurationCleanupButton.Focus());
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or LauncherConfigurationSchemaException)
+        {
+            viewModel.ReportDiagnosticAction(
+                false,
+                $"Configuration cleanup could not be prepared: {exception.Message}");
+        }
+    }
+
+    private async void ConfirmConfigurationCleanupButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is not MainWindowViewModel viewModel
+            || pendingConfigurationMigrationSnapshot is null
+            || pendingConfigurationMigrationEvidence is null
+            || pendingConfigurationMigrationPlan is null
+            || pendingConfigurationMigrationCoordinator is null)
+        {
+            return;
+        }
+
+        var request = new ConfigurationMigrationApplyRequest(
+            pendingConfigurationMigrationSnapshot,
+            pendingConfigurationMigrationPlan,
+            pendingConfigurationMigrationEvidence);
+        var coordinator = pendingConfigurationMigrationCoordinator;
+        ConfigurationCleanupDialog.IsOpen = false;
+        viewModel.ReportDiagnosticAction(true, "Applying the reviewed configuration cleanup…");
+        ClearPendingConfigurationMigration();
+        try
+        {
+            var result = await coordinator.ApplyAsync(request, lifetimeCancellation.Token);
+            if (result.IsSuccess)
+            {
+                var receipt = result.BackupReceipt is null
+                    ? "The configuration did not require replacement."
+                    : $"Protected backup {result.BackupReceipt.BackupId} verified as {result.BackupReceipt.ContentSha256}.";
+                viewModel.Refresh();
+                diagnosticPreview = viewModel.BuildDiagnosticPreview();
+                viewModel.ReportDiagnosticAction(
+                    true,
+                    result.State == AtomicTomlWriteState.NoChange
+                        ? "The configuration was already clean; no bytes changed."
+                        : $"Configuration cleanup applied and rescanned successfully. {receipt}");
+            }
+            else
+            {
+                viewModel.ReportDiagnosticAction(
+                    false,
+                    result.State == AtomicTomlWriteState.Conflict
+                        ? "The TOML changed after review. External edits were preserved; refresh and review again."
+                        : result.ValidationError?.Message
+                            ?? result.Error
+                            ?? "The reviewed cleanup failed without changing the configuration.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            viewModel.ReportDiagnosticAction(false, "Configuration cleanup was canceled; no unreviewed change was applied.");
+        }
+        finally
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Input,
+                () => ReviewConfigurationCleanupButton.Focus());
+        }
+    }
+
+    private void CancelConfigurationCleanupButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ConfigurationCleanupDialog.IsOpen = false;
+        ClearPendingConfigurationMigration();
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.ReportDiagnosticAction(true, "Configuration cleanup review canceled; no file was changed.");
+        }
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () => ReviewConfigurationCleanupButton.Focus());
+    }
+
+    private void ClearPendingConfigurationMigration()
+    {
+        pendingConfigurationMigrationSnapshot = null;
+        pendingConfigurationMigrationEvidence = null;
+        pendingConfigurationMigrationPlan = null;
+        pendingConfigurationMigrationCoordinator = null;
+    }
+
     private void DiagnosticsRecoverButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
@@ -528,6 +841,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        pendingLauncherUpdate?.Dispose();
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null
             || pendingLauncherUpdate.State != LauncherUpdatePreparationState.Ready)
@@ -559,7 +873,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
+                or InvalidDataException
                 or InvalidOperationException
+                or TimeoutException
                 or System.ComponentModel.Win32Exception)
         {
             SettingsUnavailableMessage.Text = $"The update helper could not start: {exception.Message}";
@@ -1100,7 +1416,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 startupComposition.SettingsDiagnostics,
                 repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
                 uiPreferencesStore: uiPreferencesStore,
-                openExternalUri: OpenExternalUri);
+                openExternalUri: OpenExternalUri,
+                openDataFolder: OpenApplicationDataFolder,
+                manageApplication: OpenWindowsInstalledApps,
+                openReleaseSecurityGuidance: OpenReleaseSecurityGuidance);
             SettingsWorkspace.DataContext = settingsViewModel;
             isSettingsWorkspaceInitialized = true;
             return true;
@@ -1138,6 +1457,57 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 $"Windows could not open this link: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
         }
+    }
+
+    private void OpenApplicationDataFolder()
+    {
+        try
+        {
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            Directory.CreateDirectory(stateDirectory);
+            _ = Process.Start(new ProcessStartInfo(stateDirectory) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text = $"Windows could not open the Mod Bridge data folder: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void OpenWindowsInstalledApps()
+    {
+        try
+        {
+            _ = Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            SettingsUnavailableMessage.Text =
+                $"Windows could not open Installed Apps: {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
+    }
+
+    private void OpenReleaseSecurityGuidance()
+    {
+        var guidance = new ReleaseSecurityGuidanceWindow
+        {
+            Owner = this,
+        };
+        _ = guidance.ShowDialog();
+    }
+
+    private void ReleaseSecurityGuidanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        OpenReleaseSecurityGuidance();
     }
 
     private void OpenRawConfiguration()

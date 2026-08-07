@@ -14,7 +14,7 @@
         MinHeight="620"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
-        Icon="Assets/stfc-community-mod.ico"
+        Icon="Assets/stfc-mod-bridge.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         TextOptions.TextFormattingMode="Display"
@@ -1130,6 +1130,32 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <Border Margin="0,18,0,0"
+                Padding="14"
+                Background="{DynamicResource SurfaceMutedBrush}"
+                CornerRadius="7">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Text="Configuration cleanup" />
+              <TextBlock Margin="0,4,16,0"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Review only provider-catalog-authorized alias cleanup. Opening this review never writes or normalizes the TOML."
+                         TextWrapping="Wrap" />
+            </StackPanel>
+            <Button x:Name="ReviewConfigurationCleanupButton"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource UtilityActionButtonStyle}"
+                    Click="ReviewConfigurationCleanupButton_Click"
+                    Content="Review _cleanup…"
+                    automation:AutomationProperties.Name="Review eligible configuration cleanup" />
+          </Grid>
+        </Border>
+
         <TextBlock Margin="0,30,0,8" FontSize="18" FontWeight="SemiBold" Text="Support actions" />
         <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
         <WrapPanel Margin="0,14,0,0">
@@ -1156,6 +1182,18 @@
                   Click="ExportDiagnosticsButton_Click"
                   Content="_Export report…"
                   automation:AutomationProperties.Name="Export the previewed redacted diagnostic report" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ReviewEffectiveConfigurationExportButton_Click"
+                  Content="Export effective _configuration…"
+                  automation:AutomationProperties.HelpText="Creates a separate local unredacted file after an explicit warning. It is never uploaded or included in support diagnostics."
+                  automation:AutomationProperties.Name="Review local unredacted effective configuration export" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ReleaseSecurityGuidanceButton_Click"
+                  Content="Verification &amp; _recovery guidance"
+                  ToolTip="Open the bundled offline independent-verification and compromise-response guides"
+                  automation:AutomationProperties.Name="Open bundled verification and recovery guidance" />
           <Button Margin="0,0,0,10"
                   Style="{StaticResource UtilityActionButtonStyle}"
                   Click="CheckLauncherUpdateButton_Click"
@@ -1297,6 +1335,122 @@
                 Content="_Install and restart"
                 automation:AutomationProperties.Name="Install verified Mod Bridge update and restart" />
       </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="EffectiveConfigurationExportDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Export sensitive configuration?"
+                          automation:AutomationProperties.Name="Unredacted effective configuration export warning">
+      <StackPanel>
+        <TextBlock Foreground="{DynamicResource WarningBrush}"
+                   FontWeight="SemiBold"
+                   Text="This file is intentionally unredacted."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,7,0,0"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   Text="It may contain credentials, private endpoints, local paths, and other secrets. Save it only for your own review; do not attach it to support requests. Nothing is uploaded automatically."
+                   TextWrapping="Wrap" />
+        <TextBlock x:Name="EffectiveConfigurationExportSummary"
+                   Margin="0,14,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,4"
+                   FontWeight="SemiBold"
+                   Text="Source revision (SHA-256)" />
+        <TextBlock x:Name="EffectiveConfigurationExportRevision"
+                   FontFamily="Consolas"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <Button x:Name="ConfirmEffectiveConfigurationExportButton"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="ConfirmEffectiveConfigurationExportButton_Click"
+                Content="_Choose save location"
+                automation:AutomationProperties.Name="Confirm unredacted effective configuration export" />
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="ConfigurationCleanupDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Review configuration cleanup"
+                          automation:AutomationProperties.Name="Configuration cleanup review dialog">
+      <Grid MaxHeight="620" MinWidth="620">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="ConfigurationCleanupSummary"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock x:Name="ConfigurationCleanupBinding"
+                   Grid.Row="1"
+                   Margin="0,8,0,0"
+                   FontFamily="Consolas"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="2"
+                      MaxHeight="390"
+                      Margin="0,16,0,0"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock FontWeight="SemiBold" Text="Selected fixes" />
+            <ItemsControl x:Name="ConfigurationCleanupOperations" Margin="0,6,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,3,0,0"
+                             TextWrapping="Wrap">
+                    <Run Text="{Binding Kind}" />
+                    <Run Text=": " />
+                    <Run Text="{Binding SourcePath}" />
+                    <Run Text=" → " />
+                    <Run Text="{Binding CanonicalPath}" />
+                    <Run Text=" (source line " />
+                    <Run Text="{Binding OriginalLineNumber}" />
+                    <Run Text=")" />
+                  </TextBlock>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Margin="0,16,0,0" FontWeight="SemiBold" Text="Redacted line preview" />
+            <ItemsControl x:Name="ConfigurationCleanupPreview" Margin="0,6,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,3,0,0"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             Text="{Binding Summary}"
+                             TextWrapping="Wrap" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="3" Margin="0,16,0,0">
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="Apply rechecks the exact provider, catalog, source revision, and selected fixes; creates and verifies a protected provider-scoped backup; writes atomically; then rescans. Changes take effect the next time the game reads the TOML. Mod Bridge does not restart."
+                     TextWrapping="Wrap" />
+          <WrapPanel Margin="0,16,0,0" HorizontalAlignment="Right">
+            <Button Margin="0,0,8,0"
+                    Style="{StaticResource QuietButtonStyle}"
+                    Click="CancelConfigurationCleanupButton_Click"
+                    Content="_Cancel"
+                    automation:AutomationProperties.Name="Cancel configuration cleanup without changing the file" />
+            <Button x:Name="ConfirmConfigurationCleanupButton"
+                    Style="{StaticResource UtilityActionButtonStyle}"
+                    Click="ConfirmConfigurationCleanupButton_Click"
+                    Content="_Apply reviewed cleanup"
+                    automation:AutomationProperties.Name="Apply selected reviewed configuration cleanup" />
+          </WrapPanel>
+        </StackPanel>
+      </Grid>
     </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="MaintenanceDialog"

@@ -473,6 +473,9 @@ try {
 [sync]
 jobs = true
 
+[shortcuts]
+set_hotkeys_disable = "M"
+
 [sidecar.sync]
 enabled = false
 
@@ -761,6 +764,75 @@ try {
     -Name "Copy the displayed redacted diagnostic summary" `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
+  $configurationCleanup = Find-AutomationElement `
+    -Root $root `
+    -Name "Review eligible configuration cleanup" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Review local unredacted effective configuration export" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  $securityGuidance = Find-AutomationElement `
+    -Root $root `
+    -Name "Open bundled verification and recovery guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $securityGuidance
+  $guidanceWindow = Find-AutomationElement `
+    -Root ([System.Windows.Automation.AutomationElement]::RootElement) `
+    -Name "Verification and recovery guidance window" `
+    -ControlType ([System.Windows.Automation.ControlType]::Window) `
+    -Deadline $deadline
+  [void](Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Bundled independent release verification guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline $deadline)
+  $compromiseTab = Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Compromise response guide" `
+    -ControlType ([System.Windows.Automation.ControlType]::TabItem) `
+    -Deadline $deadline
+  $selectionPattern = $null
+  if (-not $compromiseTab.TryGetCurrentPattern(
+      [System.Windows.Automation.SelectionItemPattern]::Pattern,
+      [ref]$selectionPattern)) {
+    throw "The compromise-response guidance tab does not expose SelectionItemPattern."
+  }
+  $selectionPattern.Select()
+  [void](Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Bundled compromise response guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+    -Deadline $deadline)
+  $closeGuidance = Find-AutomationElement `
+    -Root $guidanceWindow `
+    -Name "Close verification and recovery guidance" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $closeGuidance
+  Write-Host "PASS: bundled verification and recovery guidance opens offline as a selectable read-only surface."
+  Invoke-AutomationElement -Element $configurationCleanup
+  [void](Find-AutomationElement `
+    -Root $root `
+    -Name "Apply selected reviewed configuration cleanup" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline)
+  $cancelConfigurationCleanup = Find-AutomationElement `
+    -Root $root `
+    -Name "Cancel configuration cleanup without changing the file" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
+  Invoke-AutomationElement -Element $cancelConfigurationCleanup
+  Start-Sleep -Milliseconds 250
+  $focusedAfterCleanup = [System.Windows.Automation.AutomationElement]::FocusedElement
+  if ($null -eq $focusedAfterCleanup -or
+      $focusedAfterCleanup.Current.Name -ne "Review eligible configuration cleanup") {
+    throw "Canceling configuration cleanup did not return keyboard focus to its Diagnostics entry point."
+  }
+  Write-Host "PASS: catalog-authorized cleanup opens a focused redacted review and cancellation preserves focus without mutation."
   $technicalReport = $root.FindFirst(
     [System.Windows.Automation.TreeScope]::Descendants,
     [System.Windows.Automation.PropertyCondition]::new(
@@ -1199,9 +1271,21 @@ try {
   Invoke-AutomationElement -Element $aboutNavigation
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Open STFC Mod Bridge source repository" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Name "Standalone copy" `
+    -ControlType ([System.Windows.Automation.ControlType]::Text) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  foreach ($aboutAction in @(
+      "Open STFC Mod Bridge source repository",
+      "Open Mod Bridge data folder",
+      "Open Windows Installed Apps for STFC Mod Bridge",
+      "Open bundled verification and recovery guidance"
+    )) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name $aboutAction `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+  }
   $technicalDetails = Find-AutomationElement `
     -Root $root `
     -Name "Configuration ownership technical details" `

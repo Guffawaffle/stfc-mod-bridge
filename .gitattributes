@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Cryptographic fixtures must retain the exact public release bytes they attest.
+src/STFCModBridge.ReleaseVerifier/testdata/rc4-broad-attestation/stfc-mod-bridge-release-manifest.json binary
+src/STFCModBridge.ReleaseVerifier/testdata/rc4-broad-attestation/stfc-mod-bridge-release-selection-attestation.json binary

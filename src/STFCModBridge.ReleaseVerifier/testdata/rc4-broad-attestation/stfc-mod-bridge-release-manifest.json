@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "0.1.0-rc.4",
+  "tag": "v0.1.0-rc.4",
+  "channel": "preview",
+  "releaseState": "active",
+  "minimumLauncherVersion": "0.1.0",
+  "source": {
+    "repository": "Guffawaffle/stfc-mod-bridge",
+    "targetCommit": "37c61305a553ec155c05186a0e6549c70b4ed489"
+  },
+  "manifestAuthenticity": {
+    "scheme": "none"
+  },
+  "artifacts": [
+    {
+      "id": "windows-mod-bridge-archive-x64",
+      "kind": "windows-mod-bridge",
+      "platform": "windows",
+      "architecture": "x64",
+      "fileName": "stfc-mod-bridge-win-x64.zip",
+      "mediaType": "application/zip",
+      "size": 104870196,
+      "sha256": "72816a3b1a5a378f030906676eaa2028caab0106c8fea45f8f53900723d68a5e",
+      "authenticity": {
+        "scheme": "authenticode",
+        "scope": "contents",
+        "signedFiles": [
+          "STFCModBridge.exe",
+          "STFCModBridge.Updater.exe"
+        ]
+      }
+    },
+    {
+      "id": "windows-mod-bridge-setup-x64",
+      "kind": "windows-mod-bridge-setup",
+      "platform": "windows",
+      "architecture": "x64",
+      "fileName": "STFCModBridge.Setup.exe",
+      "mediaType": "application/vnd.microsoft.portable-executable",
+      "size": 176944824,
+      "sha256": "a6e8f3b028f4e0821e0222cfd9eed12cddd31d921e1d77e24d9ade27ffc274f6",
+      "authenticity": {
+        "scheme": "authenticode",
+        "scope": "artifact"
+      }
+    }
+  ]
+}

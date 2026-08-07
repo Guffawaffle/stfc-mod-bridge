@@ -36,9 +36,23 @@ closed; Mod Bridge never infers support from a provider's display name.
 
 The current build is a public canary for technically comfortable testers, not a
 stable or general release. Read the [pre-release testing guide](TESTING.md)
-before changing an installed mod. Download only `STFCModBridge.Setup.exe` from
-the linked RC.4 release; the ZIP, manifest, SBOM, and attestation bundle are
-machine-consumed release inputs rather than alternate installers.
+before changing an installed mod. MSIX-era releases use
+`STFCModBridge.appinstaller` as the installation entry point. Windows verifies
+the signed MSIX, owns update and uninstall, and installs the read-only program
+payload under WindowsApps. The ZIP, manifest, SBOMs, and attestation bundles are
+machine-consumed release inputs or a clearly labeled standalone fallback.
+
+Skeptical users can follow the
+[independent verification guide](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
+without trusting Bridge's own UI. The application also carries an offline copy
+of that guide and the
+[compromise-response procedure](docs/windows-launcher/COMPROMISE_RESPONSE.md).
+
+Preferences, journals, rollback data, and configuration backups live under
+`%LOCALAPPDATA%\STFC Mod Bridge`. Windows Installed Apps and Settings → About
+provide application management and uninstall access. Uninstall preserves that
+external local data and never removes the Community Mod DLL or TOML from the
+game.
 
 Use the [bug report](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=bug-report.yml)
 or [usability feedback](https://github.com/Guffawaffle/stfc-mod-bridge/issues/new?template=usability-feedback.yml)
@@ -48,7 +62,6 @@ described in [SECURITY.md](SECURITY.md).
 ## Projects
 
 - `STFCCommunityMod.Launcher` — WPF application.
-- `STFCCommunityMod.Launcher.Setup` — one-file, per-user installer.
 - `STFCCommunityMod.Launcher.Updater` — replace-on-exit update helper.
 - `STFCCommunityMod.Launcher.Core` — UI-independent contracts and services.
 - test projects under `tests/` — deterministic unit and WPF projection tests.
@@ -82,9 +95,10 @@ profile only for an explicitly supplied game directory. See the broader
 ./scripts/publish.ps1
 ```
 
-Package output is written under `artifacts/win-x64`. The setup executable is
-the sole user-facing install artifact; the ZIP is an internal self-update
-payload.
+Package output is written under `artifacts/win-x64`. The `.appinstaller`
+descriptor is the user-facing install artifact. Its signed MSIX is hosted at an
+immutable versioned URL; the ZIP remains a signed standalone/self-update
+fallback.
 
 ## Architecture and provenance
 
@@ -95,6 +109,9 @@ payload.
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
 - [Release security operations](docs/windows-launcher/RELEASE_SECURITY_OPERATIONS.md)
+- [Independent release verification](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
+- [Compromise response](docs/windows-launcher/COMPROMISE_RESPONSE.md)
+- [Google Cloud update hosting](docs/windows-launcher/GCP_UPDATE_HOSTING.md)
 - [Closed-alpha testing guide](TESTING.md)
 - [Security policy](SECURITY.md)
 - [Product identity inventory](docs/windows-launcher/PRODUCT_IDENTITY.md)

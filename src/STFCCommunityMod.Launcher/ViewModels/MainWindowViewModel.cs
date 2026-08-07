@@ -462,10 +462,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         IModManagementCoordinator modManagementCoordinator = new ProviderAwareModManagementCoordinator(
             distributionProvider.Id,
             providerEndpoints);
-        var launcherReleaseClient = new GitHubLauncherReleaseClient(
-            httpClient,
-            LauncherSelfUpdateAuthority.ReleaseRepository,
-            LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
+        ILauncherReleaseDiscoveryClient launcherReleaseClient = new UnavailableLauncherReleaseDiscoveryClient(
+            "Authenticated standalone update authorization remains disabled until release qualification is complete. "
+            + "Use the signed MSIX/App Installer channel or a separately verified installer.");
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,
@@ -758,6 +757,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             return null;
         }
+        if (WindowsPackageIdentity.IsCurrentProcessPackaged)
+        {
+            actionFeedback.LauncherUpdate.Complete(
+                false,
+                "Windows App Installer manages Mod Bridge updates and checks the signed package channel when the app starts.");
+            return null;
+        }
         try
         {
             var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
@@ -799,8 +805,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var informational = Assembly.GetEntryAssembly()?
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
-        var separator = informational?.LastIndexOf('+') ?? -1;
-        return separator >= 0 ? informational![(separator + 1)..] : string.Empty;
+        return LauncherReleaseIdentityParser.Parse(informational).SourceCommit ?? string.Empty;
     }
 
     private static Version CurrentLauncherVersion() =>

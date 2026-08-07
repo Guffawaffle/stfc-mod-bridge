@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - "integration/**"
 
 permissions:
   contents: read
@@ -23,6 +25,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: src/STFCModBridge.ReleaseVerifier/go.sum
+
       - name: Restore
         run: dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
 
@@ -30,12 +37,18 @@ jobs:
         shell: pwsh
         run: ./scripts/generate-third-party-notices.ps1 -Check
 
+      - name: Build and test closed release verifier
+        shell: pwsh
+        run: ./scripts/verify-release-verifier.ps1 -RunVulnerabilityAudit
+
       - name: Test
         run: dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
       - name: Publish Mod Bridge
         shell: pwsh
-        run: ./scripts/publish.ps1
+        run: >-
+          ./scripts/publish.ps1
+          -ReleaseVerifierPath ./artifacts/release-verifier/STFCModBridge.ReleaseVerifier.exe
 
       - name: Inspect unsigned package evidence
         shell: pwsh
@@ -50,9 +63,11 @@ jobs:
           -UseDisposableSyncFixture
           -TimeoutSeconds 60
 
-      - name: Upload setup evidence
+      - name: Upload MSIX packaging evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: windows-mod-bridge-setup-x64
-          path: artifacts/win-x64/setup/STFCModBridge.Setup.exe
+          name: windows-mod-bridge-msix-x64
+          path: |
+            artifacts/win-x64/package/STFCModBridge.appinstaller
+            artifacts/win-x64/package/STFCModBridge.msix
           if-no-files-found: error

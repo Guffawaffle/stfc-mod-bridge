@@ -138,7 +138,8 @@ public sealed record ConfigurationRepositoryCommitResult(
     ConfigurationDocumentSnapshot? CommittedSnapshot = null,
     string? BackupPath = null,
     SparseTomlError? ValidationError = null,
-    string? Error = null)
+    string? Error = null,
+    ConfigurationBackupReceipt? BackupReceipt = null)
 {
     public bool IsSuccess =>
         State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange
@@ -171,6 +172,8 @@ public sealed class ConfigurationDocumentCommitRequest
 
 public interface IConfigurationRepository
 {
+    bool ProducesVerifiedBackupReceipt => false;
+
     ConfigurationRepositoryReadResult Read(string? configurationPath);
 
     Task<ConfigurationRepositoryCommitResult> CommitAsync(

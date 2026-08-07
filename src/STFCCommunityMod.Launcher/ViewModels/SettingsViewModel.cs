@@ -50,7 +50,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherSettingsActivationDiagnostics settingsDiagnostics,
         IConfigurationRepository? repository = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null,
-        Action<Uri>? openExternalUri = null)
+        Action<Uri>? openExternalUri = null,
+        Action? openDataFolder = null,
+        Action? manageApplication = null,
+        Action? openReleaseSecurityGuidance = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -70,7 +73,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             BundledLauncherAboutCatalog.Load(),
             catalog,
             settingsDiagnostics,
-            openExternalUri);
+            openExternalUri,
+            openDataFolder,
+            manageApplication,
+            openReleaseSecurityGuidance);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
         discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
@@ -634,8 +640,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         var result = await workspace.CommitAsync();
         OperationStatus = result.State switch
         {
-            AtomicTomlWriteState.Succeeded =>
-                "Changes saved. A backup of the previous TOML is available beside the configuration.",
+            AtomicTomlWriteState.Succeeded when result.BackupReceipt is not null =>
+                $"Changes saved. Protected provider backup {result.BackupReceipt.BackupId} was verified.",
+            AtomicTomlWriteState.Succeeded => "Changes saved.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
                 "The TOML changed outside Mod Bridge. Those external edits were preserved; reload before saving.",

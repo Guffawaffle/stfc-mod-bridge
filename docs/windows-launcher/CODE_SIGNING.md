@@ -40,7 +40,9 @@ The GitHub environment is `windows-release`.
   `repo:Guffawaffle@105761663/stfc-mod-bridge@1320037274:environment:windows-release`
 - Signing job permission: `id-token: write` and `attestations: write` with
   `contents: read`
-- Publication job permission: `contents: write` without `id-token`
+- Draft-staging job permission: `contents: write` without `id-token`
+- Post-publication GCS job permission: `id-token: write`, `attestations: read`,
+  and `contents: read`, without GitHub contents-write authority
 
 GitHub's issued subject includes the immutable owner and repository IDs. The
 values above are the exact subject presented by the protected workflow and the
@@ -57,8 +59,9 @@ GitHub issues the environment-scoped OIDC token.
 The standalone tag workflow signs and verifies:
 
 - `STFCModBridge.exe`
+- `STFCModBridge.ReleaseVerifier.exe`
 - `STFCModBridge.Updater.exe`
-- `STFCModBridge.Setup.exe`
+- `STFCModBridge.msix` (after its inner launcher and verifier are signed)
 
 Future executable release components must be added to an explicit signing
 allowlist before release. Package inspection identifies PE files by their
@@ -68,22 +71,30 @@ cannot evade that allowlist.
 The release order is:
 
 ```text
-locked restore/test -> unsigned build -> vulnerability/malware gates -> SPDX SBOM
-      -> approve protected environment -> OIDC login -> sign inner executables
-      -> verify -> package -> embed package -> sign setup -> verify -> hash
-      -> attest final subjects -> transfer -> reverify attestations -> publish
+locked restore/test -> unsigned build -> approve protected environment -> OIDC
+      -> sign verifier -> embed final verifier SHA-256 -> rebuild launcher/updater
+      -> regenerate verifier SBOM -> vulnerability/malware gates -> sign launcher/updater
+      -> generate final payload SBOM
+      -> package MSIX -> sign MSIX -> verify package, pairing, and inner signatures
+      -> hash -> attest final subjects -> transfer -> reverify attestations -> publish
 ```
 
-Packaging and checksums must occur after signing because Authenticode modifies
-the PE file. The setup must be built only after the signed launcher ZIP exists,
-because that exact ZIP is embedded in its PE; the setup is then signed as the
-outermost artifact. The workflow verifies all embedded signatures with
+The verifier is signed first because Authenticode changes its bytes; the final
+verifier SHA-256 is embedded in the rebuilt launcher and its SBOM is regenerated
+from those final helper bytes before the launcher
+and updater are signed. The payload SBOM is regenerated after those signatures
+and checks its SHA-256 file entries against all three final inner PEs. Packaging
+and release checksums occur only after those inner signatures. The MSIX is then
+signed as the outermost artifact and
+enforces package-content integrity. The workflow verifies all inner and package
+signatures with
 SignTool's Authenticode policy and separately requires the exact subject DN,
 both reviewed EKUs, and a trusted timestamp before manifest generation or
-release publication. It then runs those same three signed PE files through the
-runtime verifier, which enumerates every signature and applies the complete
-consumer policy. A mixed-publisher secondary signature therefore fails the
-release before its manifest or attestations are created.
+release publication. It then runs the signed launcher, release verifier, and
+standalone updater through the runtime verifier, which enumerates every
+signature and applies the complete consumer policy. A mixed-publisher secondary
+signature therefore fails the release before its manifest or attestations are
+created.
 
 ## Consumer verification contract
 
@@ -147,10 +158,14 @@ Primary references:
 
 The same protected job grants `attestations: write` only alongside its existing
 environment-scoped OIDC authority. It generates GitHub/Sigstore provenance for
-the final setup, archive, manifest, launcher, and updater bytes using the
-official attestation Action pinned to a reviewed commit. The publication job
-has no OIDC/signing authority and refuses to publish transferred bytes that do
+the final MSIX, App Installer descriptor, archive, manifest, SBOM, launcher,
+and updater bytes using the
+official attestation Action pinned to a reviewed commit. The draft-staging job
+has no OIDC/signing authority and refuses to stage transferred bytes that do
 not verify against the release bundle, repository, workflow, tag, and commit.
+After a maintainer publishes the immutable GitHub release, a separately
+protected keyless GCP job repeats attestation verification before advancing the
+App Installer channel.
 
 ## Release manifest boundary
 
@@ -161,15 +176,18 @@ GitHub/Sigstore producer evidence, with replay and withdrawal policy, remains a
 separate release-control deliverable.
 
 Until that consumer is implemented and qualified, a manifest checksum must not
-be described as a manifest signature. Schema v1 therefore declares
-`manifestAuthenticity.scheme: none` while recording independent Authenticode
-expectations for each PE artifact or signed archive member. The complete
+be described as a manifest signature. Legacy schema v1 declares
+`manifestAuthenticity.scheme: none`. Bridge schema v2 declares the exact
+GitHub/Sigstore provenance scheme but remains rejected by the unauthenticated
+selection path until issue #96 verifies the manifest first. Both schemas record
+independent Authenticode expectations for each PE artifact or signed archive
+member. The complete
 producer and consumer contract is in
 `docs/windows-launcher/RELEASE_MANIFEST.md`; the proposed consumer design is in
 `docs/windows-launcher/RELEASE_SELECTION_AUTHENTICATION.md`; producer
 attestation evidence is documented in
 `docs/windows-launcher/ARTIFACT_ATTESTATIONS.md`. Native authenticated
-release-selection consumption remains issue #71.
+release-selection consumption remains issue #96 under the #71 parent.
 
 The workflow pins every external action to a reviewed commit and passes tag,
 commit, and repository contexts into PowerShell through environment variables.

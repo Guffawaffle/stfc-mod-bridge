@@ -6,7 +6,7 @@ STFC Mod Bridge is distributed under the repository license. The components belo
 
 ## Coverage and open review
 
-Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, and explicit project resource/content/embed/icon/manifest input. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30; this inventory does not claim legal completeness.
+Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
 
 ## FluentIcons.Wpf and FluentIcons.Common
 
@@ -55,6 +55,39 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ```text
 STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
+```
+
+## The Go Programming Language runtime
+
+- Version: 1.26.5
+- License: BSD 3-Clause License
+- Source: https://go.dev/
+- Authoritative license information: https://go.dev/LICENSE
+
+```text
+Copyright 2009 The Go Authors. All rights reserved. Redistribution and use in source and binary forms, with or without modification, are permitted subject to the conditions in the authoritative Go license. Neither the name of Google LLC nor the names of its contributors may be used to endorse or promote derived products without specific prior written permission. The software is provided without warranty; see the linked license for the complete terms.
+```
+
+## sigstore-go
+
+- Version: 1.3.0
+- License: Apache License 2.0
+- Source: https://github.com/sigstore/sigstore-go
+- Authoritative license information: https://github.com/sigstore/sigstore-go/blob/v1.3.0/LICENSE
+
+```text
+Copyright 2023 The Sigstore Authors. Licensed under the Apache License, Version 2.0. You may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0. The software is distributed on an AS IS basis, without warranties or conditions of any kind. The linked upstream license contains the complete terms.
+```
+
+## STFC Mod Bridge Release Verifier module graph
+
+- Version: 71 exact modules in dependencies.v1.txt
+- License: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, and dual MIT/Apache-2.0 components
+- Source: https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/dependencies.v1.txt
+- Authoritative license information: https://github.com/Guffawaffle/stfc-mod-bridge/blob/main/src/STFCModBridge.ReleaseVerifier/licenses.v1.json
+
+```text
+The closed release verifier compiles a checksum-locked 71-module Go graph. licenses.v1.json classifies every exact module under an SPDX expression and is cryptographically bound to dependencies.v1.txt; CI rejects graph, version, checksum, or classification drift. Each module retains its own copyright and authoritative license terms. This engineering inventory supports review and is not a legal-clearance claim.
 ```
 
 ## Attribution review boundary

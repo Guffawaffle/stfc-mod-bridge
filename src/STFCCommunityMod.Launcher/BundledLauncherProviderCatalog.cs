@@ -95,15 +95,75 @@ internal static class BundledLauncherProviderCatalog
                 + "Capability status is unknown, so settings editing is disabled rather than inferred.");
         }
 
+        var schemaContents = ReadConfigurationSchema(provider);
+        if (LauncherConfigurationSchemaSetLoader.IsSchemaSet(schemaContents))
+        {
+            var providerCatalog = Load();
+            var certification = LoadReviewedWindowsReleases(providerCatalog).Find(
+                provider.Id,
+                provider.DefaultReleaseChannelId)
+                ?? throw new LauncherConfigurationSchemaException(
+                    $"{provider.DisplayName} has no exact reviewed release identity for its configuration catalog.");
+            return LoadConfigurationCatalog(
+                provider,
+                new(
+                    provider.Id,
+                    certification.ChannelId,
+                    certification.ReleaseVersion,
+                    certification.SourceCommit));
+        }
+
+        using var schemaStream = new MemoryStream(schemaContents, writable: false);
+        return ValidateCatalogOwner(
+            provider,
+            LauncherConfigurationSchemaLoader.Load(schemaStream));
+    }
+
+    internal static LauncherConfigurationCatalog LoadConfigurationCatalog(
+        LauncherDistributionProvider provider,
+        LauncherConfigurationCatalogApplicability applicability)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(applicability);
+        if (provider.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog)
+                != LauncherProviderCapabilityStatus.Supported
+            || provider.ConfigurationSchema.Status != LauncherProviderCapabilityStatus.Supported
+            || string.IsNullOrWhiteSpace(provider.ConfigurationSchema.ResourceName))
+        {
+            throw new LauncherConfigurationSchemaException(
+                $"{provider.DisplayName} has no versioned configuration catalog set.");
+        }
+
+        var schemaContents = ReadConfigurationSchema(provider);
+        if (!LauncherConfigurationSchemaSetLoader.IsSchemaSet(schemaContents))
+        {
+            throw new LauncherConfigurationSchemaException(
+                $"{provider.DisplayName} configuration metadata is not a versioned schema set.");
+        }
+        using var schemaStream = new MemoryStream(schemaContents, writable: false);
+        return ValidateCatalogOwner(
+            provider,
+            LauncherConfigurationSchemaSetLoader.Load(schemaStream, applicability));
+    }
+
+    private static byte[] ReadConfigurationSchema(LauncherDistributionProvider provider)
+    {
         using var schemaStream = typeof(BundledLauncherProviderCatalog).Assembly.GetManifestResourceStream(
-            provider.ConfigurationSchema.ResourceName);
+            provider.ConfigurationSchema.ResourceName!);
         if (schemaStream is null)
         {
             throw new LauncherConfigurationSchemaException(
                 $"The packaged {provider.DisplayName} configuration catalog is missing.");
         }
+        using var buffer = new MemoryStream();
+        schemaStream.CopyTo(buffer);
+        return buffer.ToArray();
+    }
 
-        var catalog = LauncherConfigurationSchemaLoader.Load(schemaStream);
+    private static LauncherConfigurationCatalog ValidateCatalogOwner(
+        LauncherDistributionProvider provider,
+        LauncherConfigurationCatalog catalog)
+    {
         if (!string.Equals(catalog.Source.StableId, provider.Id, StringComparison.Ordinal))
         {
             throw new LauncherConfigurationSchemaException(

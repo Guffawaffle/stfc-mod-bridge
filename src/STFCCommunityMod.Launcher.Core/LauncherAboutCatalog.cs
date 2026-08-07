@@ -92,7 +92,9 @@ public static class LauncherAboutCatalogLoader
         RequireUnique(assets.Select(item => item.Id), "asset inventory ID");
         RequireEvidenceKind(
             dependencies,
-            new HashSet<string>(["resolved-package", "runtime-pack"], StringComparer.Ordinal));
+            new HashSet<string>(
+                ["resolved-package", "runtime-pack", "go-build-toolchain", "go-build-module", "go-build-graph"],
+                StringComparer.Ordinal));
         RequireEvidenceKind(
             assets,
             new HashSet<string>(["project-input", "package-transitive"], StringComparer.Ordinal));

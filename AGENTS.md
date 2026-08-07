@@ -25,8 +25,10 @@ dotnet test STFCCommunityMod.Launcher.sln -c Release
 git diff --check
 ```
 
-For packaging changes, also run `./scripts/publish.ps1` and verify the setup
-executable is the only user-facing install artifact.
+For packaging changes, also run `./scripts/publish.ps1` and verify the
+`.appinstaller` descriptor is the user-facing install artifact, the signed
+MSIX contains only reviewed package executables, and the standalone ZIP remains
+explicitly labeled as a fallback artifact.
 
 ## Safety boundary
 
