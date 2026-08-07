@@ -685,15 +685,35 @@ public sealed partial class ReleaseTrustAutomationTests
             "STFCCommunityMod.Launcher",
             "MainWindow.xaml.cs"));
         var retained = updater.IndexOf("LoadAndRetain(", StringComparison.Ordinal);
+        var lease = updater.IndexOf("new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()", StringComparison.Ordinal);
         var ready = updater.IndexOf("LauncherUpdaterReadiness.Publish(", StringComparison.Ordinal);
         var waitsForReady = selfUpdate.Contains("LauncherUpdaterReadiness.WaitForReady(", StringComparison.Ordinal);
         var start = window.IndexOf("MainWindowViewModel.StartLauncherUpdate(preparation);", StringComparison.Ordinal);
         var shutdown = window.IndexOf("Application.Current.Shutdown();", start, StringComparison.Ordinal);
 
         Assert.IsTrue(ready > retained, "The child may signal readiness only after retaining the authenticated plan.");
+        Assert.IsTrue(lease > retained, "The child must bind the retained plan before acquiring transaction ownership.");
+        Assert.IsTrue(ready > lease, "The child may signal readiness only after acquiring the mutation lease.");
         Assert.IsTrue(waitsForReady, "The parent handoff must wait for the child readiness acknowledgement.");
         Assert.IsTrue(start >= 0);
         Assert.IsTrue(shutdown > start, "The UI may shut down only after the blocking ready handoff returns.");
+    }
+
+    [TestMethod]
+    public void LauncherUpdateHandoffFailuresRemainUserVisible()
+    {
+        var window = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "STFCCommunityMod.Launcher",
+            "MainWindow.xaml.cs"));
+        var handler = window.IndexOf("ConfirmLauncherUpdateButton_Click", StringComparison.Ordinal);
+        var nextHandler = window.IndexOf("ShowMaintenanceConfirmation", handler, StringComparison.Ordinal);
+        var handoff = window[handler..nextHandler];
+
+        StringAssert.Contains(handoff, "or InvalidDataException");
+        StringAssert.Contains(handoff, "or TimeoutException");
+        StringAssert.Contains(handoff, "The update helper could not start:");
     }
 
     [TestMethod]

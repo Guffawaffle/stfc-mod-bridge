@@ -870,7 +870,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
+                or InvalidDataException
                 or InvalidOperationException
+                or TimeoutException
                 or System.ComponentModel.Win32Exception)
         {
             SettingsUnavailableMessage.Text = $"The update helper could not start: {exception.Message}";

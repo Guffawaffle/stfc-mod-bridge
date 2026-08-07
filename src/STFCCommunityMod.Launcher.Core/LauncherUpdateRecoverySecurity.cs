@@ -95,7 +95,15 @@ internal static class LauncherUpdateRecoveryJournalStore
         }
         var path = Path.Combine(Path.GetDirectoryName(plan.RunnerUpdater.Path)!, FileName);
         WriteDurably(path, protectedBytes);
-        _ = Load(path, protector);
+        try
+        {
+            _ = Load(path, protector);
+        }
+        catch
+        {
+            File.Delete(path);
+            throw;
+        }
         return path;
     }
 
@@ -214,15 +222,28 @@ internal static class LauncherUpdateRecoveryJournalStore
 
     private static void WriteDurably(string path, byte[] contents)
     {
-        using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            64 * 1024,
-            FileOptions.WriteThrough);
-        stream.Write(contents);
-        stream.Flush(flushToDisk: true);
+        var created = false;
+        try
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.WriteThrough);
+            created = true;
+            stream.Write(contents);
+            stream.Flush(flushToDisk: true);
+        }
+        catch
+        {
+            if (created)
+            {
+                File.Delete(path);
+            }
+            throw;
+        }
     }
 
     private static void RejectDuplicateProperties(byte[] bytes)

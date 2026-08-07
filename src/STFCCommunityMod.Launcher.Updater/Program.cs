@@ -29,12 +29,12 @@ static async Task<int> RunAsync(string[] args)
             args[3],
             expectedLayout.StateDirectory,
             expectedLayout.ProgramDirectory);
-        LauncherUpdaterReadiness.Publish(
-            Path.Combine(Path.GetDirectoryName(planPath)!, LauncherUpdaterReadiness.FileName),
-            args[3]);
         var plan = runtimePlan.Plan;
         await using var lease = await new LauncherOperationLock(plan.StateRoot).TryAcquireAsync()
             ?? throw new InvalidOperationException("Another Mod Bridge operation is already in progress.");
+        LauncherUpdaterReadiness.Publish(
+            Path.Combine(Path.GetDirectoryName(planPath)!, LauncherUpdaterReadiness.FileName),
+            args[3]);
         try
         {
             using var parent = Process.GetProcessById(plan.ParentProcessId);

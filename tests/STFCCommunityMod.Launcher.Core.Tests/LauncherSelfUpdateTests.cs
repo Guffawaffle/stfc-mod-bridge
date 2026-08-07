@@ -590,6 +590,44 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void RecoveryJournalCreationRemovesFailedReadBack()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "original");
+        var journalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        File.Delete(journalPath);
+
+        Assert.ThrowsException<InvalidDataException>(
+            () => LauncherUpdateRecoveryJournalStore.Create(
+                recovery.Plan,
+                new FailedReadBackRecoveryJournalProtector()));
+
+        Assert.IsFalse(File.Exists(journalPath));
+    }
+
+    [TestMethod]
+    public void RecoveryJournalCreationPreservesPreexistingJournal()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var state = temporaryDirectory.CreateDirectory("state");
+        var target = temporaryDirectory.CreateDirectory("program");
+        var recovery = CreateRecoveryTransaction(state, target, "original");
+        var journalPath = Path.Combine(
+            recovery.TransactionRoot,
+            LauncherUpdateRecoveryJournalStore.FileName);
+        var original = File.ReadAllBytes(journalPath);
+
+        Assert.ThrowsException<IOException>(
+            () => LauncherUpdateRecoveryJournalStore.Create(recovery.Plan, JournalProtector));
+
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(journalPath));
+    }
+
+    [TestMethod]
     public async Task SharedOperationLeaseRejectsConcurrentRecoveryInspection()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -968,6 +1006,13 @@ public sealed class LauncherSelfUpdateTests
         public byte[] Protect(byte[] contents) => [.. contents.Reverse()];
 
         public byte[] Unprotect(byte[] protectedContents) => [.. protectedContents.Reverse()];
+    }
+
+    private sealed class FailedReadBackRecoveryJournalProtector : ILauncherUpdateRecoveryJournalProtector
+    {
+        public byte[] Protect(byte[] contents) => contents;
+
+        public byte[] Unprotect(byte[] protectedContents) => throw new CryptographicException("Test read-back failure.");
     }
 
     private sealed class FakeAuthenticityVerifier(bool isTrusted = true) : IModArtifactAuthenticityVerifier
