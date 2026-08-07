@@ -10,10 +10,13 @@ compiled checksum inventory, the embedded public-good root at Bridge trust
 epoch 1, bounded local request and receipt contracts, a strict .NET process and
 receipt boundary, and a captured real-release rejection fixture. Issue #95 adds
 the deterministic schema-v2 producer, strict authenticated parser, freshness
-and withdrawal policy, and atomic per-channel monotonic state. Neither slice is
-packaged or consumed by discovery or update selection. Issues #96 and #97 remain
-responsible for authenticated discovery and final signed package/updater
-integration respectively.
+and withdrawal policy, and atomic per-channel monotonic state. Issue #96 adds
+bounded authenticated standalone discovery, derived evidence URLs, independent
+digest binding, monotonic acceptance, and a truthful structured receipt. It
+also removes the legacy unauthenticated standalone client from application
+composition. Issue #97 remains responsible for packaging and digest-pairing the
+signed helper and for final external-updater revalidation; until then the
+standalone update command fails closed rather than falling back to schema v1.
 
 ## Decision
 

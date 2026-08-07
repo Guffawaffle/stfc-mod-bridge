@@ -276,13 +276,17 @@ public sealed class LauncherSelfUpdateService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(discovery);
-        var artifact = discovery.LauncherArtifact
-            ?? throw new InvalidDataException("The release does not provide a supported Mod Bridge artifact.");
+        var authentication = discovery.Authentication
+            ?? throw new InvalidDataException(
+                "Mod Bridge standalone updates require authenticated release-selection evidence.");
+        var artifact = BindAuthenticatedArtifact(discovery, authentication);
         if (string.Equals(currentSourceCommit, artifact.TargetCommit, StringComparison.OrdinalIgnoreCase))
         {
             return new(
                 LauncherUpdatePreparationState.UpToDate,
-                $"Mod Bridge {artifact.ReleaseVersion} is already current.",
+                $"Mod Bridge {artifact.ReleaseVersion} is already current. Action outcome: no replacement is needed."
+                + Environment.NewLine
+                + authentication.Summary,
                 artifact.ReleaseVersion,
                 programDirectory,
                 string.Empty,
@@ -340,7 +344,10 @@ public sealed class LauncherSelfUpdateService(
         File.Copy(updaterPath, runnerPath);
         return new(
             LauncherUpdatePreparationState.Ready,
-            $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit.",
+            $"Mod Bridge {artifact.ReleaseVersion} is verified and ready to install after exit. "
+            + "Action outcome: the archive is staged; installation has not started."
+            + Environment.NewLine
+            + authentication.Summary,
             artifact.ReleaseVersion,
             programDirectory,
             planPath,
@@ -372,6 +379,78 @@ public sealed class LauncherSelfUpdateService(
         {
             throw new InvalidDataException($"Mod Bridge update signature verification failed: {result.Message}");
         }
+    }
+
+    private static LauncherReleaseArtifact BindAuthenticatedArtifact(
+        LauncherReleaseDiscovery discovery,
+        AuthenticatedLauncherReleaseEvidence authentication)
+    {
+        var manifest = authentication.Acceptance.Manifest;
+        var state = authentication.Acceptance.State;
+        var receipt = authentication.Receipt;
+        AuthenticatedReleaseManifestPolicy.ValidateState(state);
+        _ = AuthenticatedReleaseManifestPolicy.Evaluate(
+            manifest,
+            receipt,
+            authentication.InstalledReleaseVersion,
+            DateTimeOffset.UtcNow,
+            state);
+        var matches = manifest.Artifacts
+            .Where(candidate => candidate.Id == "windows-mod-bridge-archive-x64")
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException("Authenticated evidence does not select exactly one Mod Bridge archive.");
+        }
+        var selected = matches[0];
+        if (selected.Size <= 0
+            || !ReleaseSelectionAttestationPolicy.Sha256Pattern().IsMatch(selected.Sha256))
+        {
+            throw new InvalidDataException("Authenticated Mod Bridge archive metadata is invalid.");
+        }
+        var expected = new LauncherReleaseArtifact(
+            new Uri(
+                $"https://github.com/{ReleaseSelectionAttestationPolicy.Repository}/releases/download/"
+                + $"{Uri.EscapeDataString(manifest.Tag)}/{ModBridgeProductIdentity.UpdateArchiveName}"),
+            ModBridgeProductIdentity.UpdateArchiveName,
+            selected.Size,
+            selected.Sha256,
+            manifest.ReleaseVersion,
+            manifest.Source.TargetCommit);
+        var supplied = discovery.LauncherArtifact;
+        if (discovery.Manifest.Tag != manifest.Tag
+            || discovery.Manifest.ReleaseVersion != manifest.ReleaseVersion
+            || discovery.Manifest.Channel != manifest.Channel
+            || discovery.Manifest.Source != manifest.Source
+            || discovery.Manifest.ManifestAuthenticityScheme != AuthenticatedReleaseManifestPolicy.AuthenticityScheme
+            || receipt.SourceCommit != manifest.Source.TargetCommit
+            || state.HighestReleaseSequence != manifest.ReleaseSequence
+            || state.HighestReleaseVersion != manifest.ReleaseVersion
+            || state.SourceCommit != manifest.Source.TargetCommit
+            || state.Tag != manifest.Tag
+            || state.TrustEpoch != receipt.TrustEpoch
+            || state.VerificationMode != receipt.VerificationMode
+            || authentication.Acceptance.EffectiveObservationUtc != state.LastObservedUtc
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                state.ManifestSha256,
+                receipt.ManifestSha256)
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                state.BundleSha256,
+                receipt.BundleSha256)
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                state.TrustedRootSha256,
+                receipt.TrustedRootSha256)
+            || supplied.DownloadUri != expected.DownloadUri
+            || supplied.FileName != expected.FileName
+            || supplied.Size != expected.Size
+            || supplied.ReleaseVersion != expected.ReleaseVersion
+            || supplied.TargetCommit != expected.TargetCommit
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(supplied.Sha256, expected.Sha256))
+        {
+            throw new InvalidDataException(
+                "The staged Mod Bridge archive selection disagrees with authenticated release evidence.");
+        }
+        return expected;
     }
 
     private static LauncherUpdateFile[] EnumerateFiles(string root) =>

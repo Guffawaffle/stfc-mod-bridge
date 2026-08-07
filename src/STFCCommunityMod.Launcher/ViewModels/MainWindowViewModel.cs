@@ -462,10 +462,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         IModManagementCoordinator modManagementCoordinator = new ProviderAwareModManagementCoordinator(
             distributionProvider.Id,
             providerEndpoints);
-        var launcherReleaseClient = new GitHubLauncherReleaseClient(
-            httpClient,
-            LauncherSelfUpdateAuthority.ReleaseRepository,
-            LauncherSelfUpdateAuthority.ReleaseManifestAssetName);
+        ILauncherReleaseDiscoveryClient launcherReleaseClient = new UnavailableLauncherReleaseDiscoveryClient(
+            "Authenticated standalone update verification is not packaged in this build. "
+            + "Use the signed MSIX/App Installer channel or a separately verified installer.");
         var officialLauncherService = WindowsOfficialLauncherService.FromCurrentUser();
         var launchCoordinator = new GameLaunchHandoffCoordinator(
             installLayout.StateDirectory,

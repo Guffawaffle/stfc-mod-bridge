@@ -85,6 +85,22 @@ public sealed class UnavailableWindowsReleaseDiscoveryClient(string reason)
     }
 }
 
+public sealed class UnavailableLauncherReleaseDiscoveryClient(string reason)
+    : ILauncherReleaseDiscoveryClient
+{
+    public Task<LauncherReleaseDiscovery> DiscoverLatestAsync(
+        string channel,
+        Version currentLauncherVersion,
+        CancellationToken cancellationToken = default)
+    {
+        _ = channel;
+        _ = currentLauncherVersion;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<LauncherReleaseDiscovery>(
+            new InvalidOperationException(reason));
+    }
+}
+
 public sealed class FailClosedModArtifactAuthenticityVerifier(string reason)
     : IModArtifactAuthenticityVerifier
 {

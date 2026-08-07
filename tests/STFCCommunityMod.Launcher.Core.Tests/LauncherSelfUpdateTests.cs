@@ -29,6 +29,12 @@ public sealed class LauncherSelfUpdateTests
         Assert.IsTrue(File.Exists(result.PlanPath));
         Assert.IsTrue(File.Exists(result.UpdaterPath));
         Assert.IsFalse(Directory.Exists(Path.Combine(temporaryDirectory.Path, "program")));
+        StringAssert.Contains(result.Message, "Integrity:");
+        StringAssert.Contains(result.Message, "Producer origin:");
+        StringAssert.Contains(result.Message, "Freshness:");
+        StringAssert.Contains(result.Message, "Runtime lock:");
+        StringAssert.Contains(result.Message, "Action outcome:");
+        StringAssert.Contains(result.Message, "not software safety");
     }
 
     [TestMethod]
@@ -42,6 +48,43 @@ public sealed class LauncherSelfUpdateTests
         var result = await service.PrepareAsync(Discovery(Artifact(archive)), TargetCommit, 123);
 
         Assert.AreEqual(LauncherUpdatePreparationState.UpToDate, result.State);
+        Assert.AreEqual(0, downloader.CallCount);
+    }
+
+    [TestMethod]
+    public async Task MissingAuthenticatedSelectionEvidenceFailsBeforeArchiveDownload()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var archive = CreateArchive(("STFCModBridge.exe", [1]), ("STFCModBridge.Updater.exe", [2]));
+        var downloader = new FakeDownloader(archive);
+        var service = CreateService(temporaryDirectory, archive, downloader);
+        var discovery = Discovery(Artifact(archive)) with { Authentication = null };
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => service.PrepareAsync(discovery, new string('a', 40), 123));
+
+        Assert.AreEqual(0, downloader.CallCount);
+    }
+
+    [TestMethod]
+    public async Task AuthenticatedEvidenceCannotBeReboundToAnotherArchiveSelection()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var archive = CreateArchive(("STFCModBridge.exe", [1]), ("STFCModBridge.Updater.exe", [2]));
+        var downloader = new FakeDownloader(archive);
+        var service = CreateService(temporaryDirectory, archive, downloader);
+        var discovery = Discovery(Artifact(archive));
+        discovery = discovery with
+        {
+            LauncherArtifact = discovery.LauncherArtifact with
+            {
+                Sha256 = new string('f', 64),
+            },
+        };
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => service.PrepareAsync(discovery, new string('a', 40), 123));
+
         Assert.AreEqual(0, downloader.CallCount);
     }
 
@@ -283,14 +326,14 @@ public sealed class LauncherSelfUpdateTests
     private static LauncherReleaseDiscovery Discovery(LauncherReleaseArtifact artifact)
     {
         var manifest = new WindowsReleaseManifest(
-            1,
-            "2.1.0-guffa.8",
-            "v2.1.0-guffa.8",
+            2,
+            artifact.ReleaseVersion,
+            $"v{artifact.ReleaseVersion}",
             "stable",
             "active",
             new Version(0, 1, 0),
             new("Guffawaffle/stfc-mod-bridge", TargetCommit),
-            "none",
+            AuthenticatedReleaseManifestPolicy.AuthenticityScheme,
             [
                 new(
                     "windows-mod-bridge-archive-x64",
@@ -305,16 +348,92 @@ public sealed class LauncherSelfUpdateTests
                         "authenticode",
                         "contents",
                         ["STFCModBridge.exe", "STFCModBridge.Updater.exe"])),
+                new(
+                    "windows-mod-bridge-msix-x64",
+                    "windows-mod-bridge-package",
+                    "windows",
+                    "x64",
+                    "STFCModBridge.msix",
+                    "application/msix",
+                    123,
+                    new string('e', 64),
+                    new("authenticode", "artifact", [])),
             ]);
-        return new(manifest, artifact);
+        var issuedAt = new DateTimeOffset(
+            DateTimeOffset.UtcNow.AddMinutes(-35).Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond,
+            TimeSpan.Zero);
+        var observedAt = issuedAt.AddMinutes(35);
+        var authenticatedManifest = new AuthenticatedWindowsReleaseManifest(
+            2,
+            42,
+            issuedAt,
+            issuedAt.AddDays(45),
+            manifest.ReleaseVersion,
+            manifest.Tag,
+            manifest.Channel,
+            manifest.ReleaseState,
+            manifest.MinimumLauncherVersion,
+            manifest.Source,
+            AuthenticatedReleaseManifestPolicy.AuthenticityScheme,
+            manifest.Artifacts,
+            []);
+        var receipt = new ReleaseSelectionVerificationReceipt(
+            1,
+            true,
+            "offline",
+            "Guffawaffle/stfc-mod-bridge",
+            "1320037274",
+            "105761663",
+            ".github/workflows/release.yml",
+            $"refs/tags/{manifest.Tag}",
+            TargetCommit,
+            "push",
+            "github-hosted",
+            "https://in-toto.io/Statement/v1",
+            "https://slsa.dev/provenance/v1",
+            "https://actions.github.io/buildtypes/workflow/v1",
+            "stfc-mod-bridge-release-manifest.json",
+            new string('a', 64),
+            new string('b', 64),
+            1,
+            "844a1c6de3986c9f02070266b25e0d1a2fa99ceccc89f6b9ad90aae47b62a16e",
+            "https://token.actions.githubusercontent.com",
+            $"https://github.com/Guffawaffle/stfc-mod-bridge/.github/workflows/release.yml@refs/tags/{manifest.Tag}",
+            [new("c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d", 1, observedAt)],
+            ReleaseSelectionAttestationPolicy.RequiredChecks);
+        var state = new AuthenticatedReleaseChannelState(
+            1,
+            manifest.Channel,
+            42,
+            manifest.ReleaseVersion,
+            receipt.ManifestSha256,
+            receipt.BundleSha256,
+            TargetCommit,
+            manifest.Tag,
+            1,
+            receipt.TrustedRootSha256,
+            observedAt,
+            observedAt,
+            receipt.VerificationMode,
+            []);
+        var authentication = new AuthenticatedLauncherReleaseEvidence(
+            "unused",
+            "unused-manifest",
+            "unused-bundle",
+            "0.1.0",
+            receipt,
+            new(authenticatedManifest, state, observedAt));
+        return new(manifest, artifact, authentication);
     }
 
     private static LauncherReleaseArtifact Artifact(byte[] archive) => new(
-        new Uri("https://example.invalid/launcher.zip"),
+        new Uri(
+            "https://github.com/Guffawaffle/stfc-mod-bridge/releases/download/v0.2.0/"
+            + "stfc-mod-bridge-win-x64.zip"),
         "stfc-mod-bridge-win-x64.zip",
         archive.LongLength,
         Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant(),
-        "2.1.0-guffa.8",
+        "0.2.0",
         TargetCommit);
 
     private static byte[] CreateArchive(params (string Name, byte[] Contents)[] entries)

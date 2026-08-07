@@ -10,7 +10,8 @@ public sealed record WindowsReleaseDiscovery(
 
 public sealed record LauncherReleaseDiscovery(
     WindowsReleaseManifest Manifest,
-    LauncherReleaseArtifact LauncherArtifact);
+    LauncherReleaseArtifact LauncherArtifact,
+    AuthenticatedLauncherReleaseEvidence? Authentication = null);
 
 public interface IWindowsReleaseDiscoveryClient
 {
@@ -96,51 +97,6 @@ public sealed class GitHubWindowsReleaseClient : IWindowsReleaseDiscoveryClient
             ? WindowsReleaseSelectionPolicy.SelectLauncherArtifact(manifest, channel, currentLauncherVersion, repository)
             : null;
         return new(manifest, artifact, launcherArtifact);
-    }
-}
-
-public sealed class GitHubLauncherReleaseClient : ILauncherReleaseDiscoveryClient
-{
-    private readonly GitHubReleaseManifestClient manifestClient;
-    private readonly string repository;
-
-    public GitHubLauncherReleaseClient(HttpClient httpClient, string repository, string manifestFileName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(repository);
-        this.repository = repository;
-        manifestClient = new(httpClient, repository, manifestFileName);
-    }
-
-    public async Task<LauncherReleaseDiscovery> DiscoverLatestAsync(
-        string channel,
-        Version currentLauncherVersion,
-        CancellationToken cancellationToken = default)
-    {
-        var manifests = await manifestClient.DiscoverCandidatesAsync(channel, cancellationToken);
-        var manifest = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
-            manifests,
-            channel,
-            currentLauncherVersion,
-            repository);
-        var artifact = WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
-            manifest,
-            channel,
-            currentLauncherVersion,
-            repository);
-        var candidateVersion = Version.Parse(
-            WindowsReleaseSelectionPolicy.DeriveEmbeddedFileVersion(artifact.ReleaseVersion));
-        var installedVersion = new Version(
-            currentLauncherVersion.Major,
-            currentLauncherVersion.Minor,
-            Math.Max(currentLauncherVersion.Build, 0),
-            Math.Max(currentLauncherVersion.Revision, 0));
-        if (candidateVersion <= installedVersion)
-        {
-            throw new InvalidDataException(
-                $"No newer {channel} Mod Bridge release is eligible; {artifact.ReleaseVersion} does not advance "
-                + $"the installed Mod Bridge {currentLauncherVersion}.");
-        }
-        return new(manifest, artifact);
     }
 }
 

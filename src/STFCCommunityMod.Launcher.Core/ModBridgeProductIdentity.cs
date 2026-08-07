@@ -15,6 +15,7 @@ public static class ModBridgeProductIdentity
     public const string StateDirectoryName = ProductName;
     public const string ExecutableName = "STFCModBridge.exe";
     public const string UpdaterExecutableName = "STFCModBridge.Updater.exe";
+    public const string ReleaseVerifierExecutableName = "STFCModBridge.ReleaseVerifier.exe";
     public const string ProcessName = "STFCModBridge";
     public const string PackageName = "STFCModBridge.msix";
     public const string AppInstallerName = "STFCModBridge.appinstaller";
