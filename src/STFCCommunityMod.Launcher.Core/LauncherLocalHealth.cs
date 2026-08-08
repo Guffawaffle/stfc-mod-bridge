@@ -723,8 +723,7 @@ public static class LauncherHealthResolver
                 provider.CanMutate,
                 provider.CanMutate
                     ? installation.IsGameRunning
-                        ? "Check for a community mod update; close Star Trek Fleet Command only before installing one. "
-                            + $"Installed version {installation.InstalledVersion}"
+                        ? $"Check for updates; close STFC only before installing one. Installed {installation.InstalledVersion}"
                         : $"Check for a community mod update; installed version {installation.InstalledVersion}"
                     : providerReason),
             _ => throw new ArgumentOutOfRangeException(nameof(installation)),

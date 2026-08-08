@@ -9,10 +9,5 @@ public enum GameProcessInspectionState
 
 public interface IGameProcessInspector
 {
-    bool IsGameRunning(string gameDirectory);
-
-    GameProcessInspectionState Inspect(string gameDirectory) =>
-        IsGameRunning(gameDirectory)
-            ? GameProcessInspectionState.RunningTarget
-            : GameProcessInspectionState.NotRunning;
+    GameProcessInspectionState Inspect(string gameDirectory);
 }

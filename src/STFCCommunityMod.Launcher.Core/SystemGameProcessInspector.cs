@@ -20,9 +20,6 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
             ?? throw new ArgumentNullException(nameof(captureProcesses));
     }
 
-    public bool IsGameRunning(string gameDirectory)
-        => Inspect(gameDirectory) != GameProcessInspectionState.NotRunning;
-
     public GameProcessInspectionState Inspect(string gameDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);

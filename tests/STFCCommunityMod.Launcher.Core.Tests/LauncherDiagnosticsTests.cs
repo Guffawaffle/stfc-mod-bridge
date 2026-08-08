@@ -329,8 +329,6 @@ public sealed class LauncherDiagnosticsTests
     private sealed class FakeGameProcessInspector(
         GameProcessInspectionState state = GameProcessInspectionState.NotRunning) : IGameProcessInspector
     {
-        public bool IsGameRunning(string gameDirectory) => state != GameProcessInspectionState.NotRunning;
-
         public GameProcessInspectionState Inspect(string gameDirectory) => state;
     }
 

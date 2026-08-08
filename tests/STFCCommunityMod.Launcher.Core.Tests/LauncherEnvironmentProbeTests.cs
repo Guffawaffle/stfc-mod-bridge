@@ -147,12 +147,6 @@ public sealed class LauncherEnvironmentProbeTests
     {
         public string? InspectedDirectory { get; private set; }
 
-        public bool IsGameRunning(string gameDirectory)
-        {
-            InspectedDirectory = gameDirectory;
-            return state != GameProcessInspectionState.NotRunning;
-        }
-
         public GameProcessInspectionState Inspect(string gameDirectory)
         {
             InspectedDirectory = gameDirectory;

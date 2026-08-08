@@ -64,6 +64,33 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task UnattributablePrimeBlocksLaunchAsAttentionWithoutStartingAnything()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(
+            temporaryDirectory,
+            gameProcessState: GameProcessInspectionState.Unattributable);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("Needs attention", presentation.Status);
+        Assert.AreEqual(LauncherHomeTone.Warning, presentation.Tone);
+        Assert.IsFalse(presentation.CanExecute);
+        StringAssert.Contains(presentation.Reason, "could not be attributed safely");
+        Assert.AreEqual(LauncherLaunchRecoveryAction.CloseRunningGame, presentation.NextAction);
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+        Assert.AreEqual(0, fixture.ScopelyService.StartCount);
+    }
+
+    [TestMethod]
     public async Task MissingTargetsReportDiagnosticRecoveryWithoutStartingAnything()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -254,7 +281,8 @@ public sealed class GameLaunchHandoffTests
         bool isGameRunning = false,
         Exception? scopelyFailure = null,
         OfficialLauncherStartKind scopelyStartKind = OfficialLauncherStartKind.StartedNew,
-        int? scopelyAvailabilityReadsBeforeMissing = null)
+        int? scopelyAvailabilityReadsBeforeMissing = null,
+        GameProcessInspectionState? gameProcessState = null)
     {
         var stateDirectory = temporaryDirectory.CreateDirectory("state");
         var deploymentService = new ModDeploymentService(
@@ -275,7 +303,11 @@ public sealed class GameLaunchHandoffTests
             deploymentService,
             gameService,
             scopelyService,
-            new FakeGameProcessInspector(isGameRunning));
+            new FakeGameProcessInspector(
+                gameProcessState
+                    ?? (isGameRunning
+                        ? GameProcessInspectionState.RunningTarget
+                        : GameProcessInspectionState.NotRunning)));
         return new(coordinator, deploymentService, gameService, scopelyService);
     }
 
@@ -307,9 +339,9 @@ public sealed class GameLaunchHandoffTests
         FakeGameExecutableLaunchService GameService,
         FakeOfficialLauncherService ScopelyService);
 
-    private sealed class FakeGameProcessInspector(bool isRunning) : IGameProcessInspector
+    private sealed class FakeGameProcessInspector(GameProcessInspectionState state) : IGameProcessInspector
     {
-        public bool IsGameRunning(string gameDirectory) => isRunning;
+        public GameProcessInspectionState Inspect(string gameDirectory) => state;
     }
 
     private sealed class FakeGameExecutableLaunchService(bool isAvailable) : IGameExecutableLaunchService

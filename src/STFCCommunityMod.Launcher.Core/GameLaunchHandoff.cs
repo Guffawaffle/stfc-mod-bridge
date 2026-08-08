@@ -462,7 +462,18 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherLaunchRecoveryAction.SelectGameFolder);
         }
 
-        if (gameProcessInspector.IsGameRunning(validation.GameDirectory))
+        var processState = gameProcessInspector.Inspect(validation.GameDirectory);
+        if (processState == GameProcessInspectionState.Unattributable)
+        {
+            return Blocked(
+                "Needs attention",
+                "Launch prime.exe",
+                "A prime.exe process is running but could not be attributed safely.",
+                target,
+                LauncherLaunchRecoveryAction.CloseRunningGame,
+                LauncherHomeTone.Warning);
+        }
+        if (processState == GameProcessInspectionState.RunningTarget)
         {
             return Blocked(
                 "Running",

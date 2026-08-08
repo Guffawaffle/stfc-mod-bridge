@@ -270,7 +270,7 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(LauncherHomeTone.Success, snapshot.ModManagement.Tone);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, snapshot.ModManagement.ActionKind);
         Assert.IsTrue(snapshot.ModManagement.CanExecute, "Read-only update discovery remains safe while the game runs.");
-        StringAssert.Contains(snapshot.ModManagement.AutomationName, "close Star Trek Fleet Command only before installing");
+        StringAssert.Contains(snapshot.ModManagement.AutomationName, "close STFC only before installing");
     }
 
     [TestMethod]

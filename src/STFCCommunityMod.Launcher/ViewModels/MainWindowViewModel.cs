@@ -427,7 +427,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 artifactDownloader,
                 new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
                 artifactVerifier,
-                processInspector.IsGameRunning,
+                gameDirectory =>
+                    processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId));
             var providerHealth = new LauncherHealthService(
                 new ModInstallationInspector(
