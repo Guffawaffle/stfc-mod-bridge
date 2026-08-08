@@ -212,6 +212,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool CanUninstallMod =>
         !HasIncompleteProviderSwitch
+        && !IsGameRunning
         && modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
         && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
@@ -426,7 +427,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 artifactDownloader,
                 new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
                 artifactVerifier,
-                processInspector.IsGameRunning,
+                gameDirectory =>
+                    processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId));
             var providerHealth = new LauncherHealthService(
                 new ModInstallationInspector(
@@ -623,7 +625,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 snapshot.SelectedGameDirectory,
                 snapshot.IsGameRunning,
                 cancellationToken);
-            if (preparation.State == ModOperationPreparationState.UpToDate)
+            if (preparation.State is ModOperationPreparationState.UpToDate
+                or ModOperationPreparationState.MutationBlocked)
             {
                 actionFeedback.Mod.Complete(false, preparation.Message);
             }

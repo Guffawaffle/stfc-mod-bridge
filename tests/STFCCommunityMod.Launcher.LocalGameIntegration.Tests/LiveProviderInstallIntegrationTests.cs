@@ -28,7 +28,7 @@ public sealed class LiveProviderInstallIntegrationTests
             Assert.Inconclusive(
                 "Live provider releases are disabled. Add -UseLiveProviderReleases to the local runner.");
         }
-        if (new SystemGameProcessInspector().IsGameRunning(gameDirectory))
+        if (new SystemGameProcessInspector().Inspect(gameDirectory) != GameProcessInspectionState.NotRunning)
         {
             Assert.Fail(
                 "The exact opted-in integration installation is running or cannot be attributed safely.");
@@ -322,7 +322,8 @@ public sealed class LiveProviderInstallIntegrationTests
             downloader,
             new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
             verifier,
-            processInspector.IsGameRunning,
+            gameDirectory =>
+                processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
             attribution);
         var health = new LauncherHealthService(
             new ModInstallationInspector(

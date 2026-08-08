@@ -8,4 +8,9 @@ public sealed record LauncherEnvironmentSnapshot(
     PerUserInstallLayout InstallLayout,
     string? SelectedGameDirectory,
     GameInstallDiscoverySnapshot Discovery,
-    IReadOnlyList<LauncherHealthDimension> HealthDimensions);
+    IReadOnlyList<LauncherHealthDimension> HealthDimensions)
+{
+    public GameProcessInspectionState GameProcessState { get; init; } = IsGameRunning
+        ? GameProcessInspectionState.RunningTarget
+        : GameProcessInspectionState.NotRunning;
+}

@@ -9,7 +9,7 @@ public sealed class LauncherEnvironmentProbeTests
         PerUserInstallLayout.FromLocalApplicationData(Path.Combine(Path.GetTempPath(), "launcher-tests"));
 
     [TestMethod]
-    public void CaptureWhenGameIsRunningReportsMutationBlockInText()
+    public void CaptureWhenGameIsRunningReportsNormalInformationalState()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         TemporaryDirectory.CreateFile(temporaryDirectory.Path, "prime.exe");
@@ -23,7 +23,12 @@ public sealed class LauncherEnvironmentProbeTests
         Assert.AreEqual(LauncherHealthCode.GameRunning, result.HealthCode);
         Assert.IsTrue(result.IsGameRunning);
         StringAssert.Contains(result.StatusTitle, "GAME CLIENT");
-        StringAssert.Contains(result.StatusDetail, "blocked");
+        StringAssert.Contains(result.StatusDetail, "running normally");
+        Assert.IsTrue(
+            result.HealthDimensions.Any(
+                dimension =>
+                    dimension.Category == LauncherHealthDimensionCategory.ProcessSafety
+                    && dimension.Severity == LauncherHealthSeverity.Informational));
     }
 
     [TestMethod]
@@ -46,7 +51,7 @@ public sealed class LauncherEnvironmentProbeTests
         TemporaryDirectory.CreateFile(temporaryDirectory.Path, "prime.exe");
         var selection = GameInstallSelectionLoadResult.Loaded(
             new(temporaryDirectory.Path, DateTimeOffset.UtcNow));
-        var processInspector = new FakeProcessInspector(true);
+        var processInspector = new FakeProcessInspector(GameProcessInspectionState.RunningTarget);
         var probe = CreateProbe(processInspector, selection);
 
         var result = probe.Capture();
@@ -58,7 +63,7 @@ public sealed class LauncherEnvironmentProbeTests
             result.HealthDimensions.Any(
                 dimension =>
                     dimension.Category == LauncherHealthDimensionCategory.ProcessSafety
-                    && dimension.Severity == LauncherHealthSeverity.ActionRequired));
+                    && dimension.Severity == LauncherHealthSeverity.Informational));
         Assert.IsTrue(
             result.HealthDimensions.Any(
                 dimension =>
@@ -93,10 +98,37 @@ public sealed class LauncherEnvironmentProbeTests
         StringAssert.Contains(result.StatusDetail, "could not be read");
     }
 
+    [TestMethod]
+    public void CaptureWhenPrimeCannotBeAttributedRequiresAttentionAndBlocksMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        TemporaryDirectory.CreateFile(temporaryDirectory.Path, "prime.exe");
+        var probe = CreateProbe(
+            new FakeProcessInspector(GameProcessInspectionState.Unattributable),
+            GameInstallSelectionLoadResult.Loaded(
+                new(temporaryDirectory.Path, DateTimeOffset.UtcNow)));
+
+        var result = probe.Capture();
+
+        Assert.AreEqual(LauncherHealthCode.GameProcessUnattributable, result.HealthCode);
+        Assert.AreEqual(GameProcessInspectionState.Unattributable, result.GameProcessState);
+        Assert.IsTrue(result.IsGameRunning, "Unattributable prime.exe processes must still fail closed for mutation.");
+        Assert.IsTrue(
+            result.HealthDimensions.Any(
+                dimension =>
+                    dimension.Category == LauncherHealthDimensionCategory.ProcessSafety
+                    && dimension.Severity == LauncherHealthSeverity.ActionRequired));
+    }
+
     private static LauncherEnvironmentProbe CreateProbe(
         bool gameRunning,
         GameInstallSelectionLoadResult? selection = null)
-        => CreateProbe(new FakeProcessInspector(gameRunning), selection);
+        => CreateProbe(
+            new FakeProcessInspector(
+                gameRunning
+                    ? GameProcessInspectionState.RunningTarget
+                    : GameProcessInspectionState.NotRunning),
+            selection);
 
     private static LauncherEnvironmentProbe CreateProbe(
         FakeProcessInspector processInspector,
@@ -111,14 +143,14 @@ public sealed class LauncherEnvironmentProbeTests
             discovery);
     }
 
-    private sealed class FakeProcessInspector(bool isRunning) : IGameProcessInspector
+    private sealed class FakeProcessInspector(GameProcessInspectionState state) : IGameProcessInspector
     {
         public string? InspectedDirectory { get; private set; }
 
-        public bool IsGameRunning(string gameDirectory)
+        public GameProcessInspectionState Inspect(string gameDirectory)
         {
             InspectedDirectory = gameDirectory;
-            return isRunning;
+            return state;
         }
     }
 

@@ -20,25 +20,28 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
             ?? throw new ArgumentNullException(nameof(captureProcesses));
     }
 
-    public bool IsGameRunning(string gameDirectory)
+    public GameProcessInspectionState Inspect(string gameDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
         var targetExecutable = Path.GetFullPath(Path.Combine(gameDirectory, "prime.exe"));
+        var targetIsRunning = false;
         foreach (var process in captureProcesses())
         {
             if (!process.IsInspectable)
             {
                 // A prime.exe process that cannot be attributed safely blocks mutation.
-                return true;
+                return GameProcessInspectionState.Unattributable;
             }
             if (!string.IsNullOrWhiteSpace(process.ExecutablePath)
                 && PathEquals(targetExecutable, process.ExecutablePath))
             {
-                return true;
+                targetIsRunning = true;
             }
         }
 
-        return false;
+        return targetIsRunning
+            ? GameProcessInspectionState.RunningTarget
+            : GameProcessInspectionState.NotRunning;
     }
 
     private static IReadOnlyList<GameProcessObservation> CaptureProcesses()

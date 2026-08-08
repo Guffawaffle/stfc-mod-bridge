@@ -7,4 +7,5 @@ public enum LauncherHealthCode
     InstallationReady,
     SelectionInvalid,
     GameRunning,
+    GameProcessUnattributable,
 }

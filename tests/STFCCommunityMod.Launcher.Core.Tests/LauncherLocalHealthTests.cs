@@ -259,15 +259,18 @@ public sealed class LauncherLocalHealthTests
     }
 
     [TestMethod]
-    public void MissingNativeContractIsExplicitlyUnknownWhileGameRuns()
+    public void MissingNativeContractDoesNotDowngradeVerifiedInstallationWhileGameRuns()
     {
         var snapshot = LauncherHealthResolver.Resolve(ManagedInstallation(isGameRunning: true), Provider());
 
         Assert.AreEqual(LauncherNativeEvidenceState.Unknown, snapshot.GameCompatibility);
         Assert.AreEqual(LauncherNativeEvidenceState.Unknown, snapshot.RuntimeActivation);
         Assert.AreEqual(LauncherNativeEvidenceState.Unknown, snapshot.NativeSupport);
-        Assert.AreEqual("Running health unknown", snapshot.ModManagement.Status);
-        Assert.AreEqual(ModManagementActionKind.None, snapshot.ModManagement.ActionKind);
+        Assert.AreEqual("Installed 2.1.0.8", snapshot.ModManagement.Status);
+        Assert.AreEqual(LauncherHomeTone.Success, snapshot.ModManagement.Tone);
+        Assert.AreEqual(ModManagementActionKind.CheckForUpdate, snapshot.ModManagement.ActionKind);
+        Assert.IsTrue(snapshot.ModManagement.CanExecute, "Read-only update discovery remains safe while the game runs.");
+        StringAssert.Contains(snapshot.ModManagement.AutomationName, "close STFC only before installing");
     }
 
     [TestMethod]
@@ -312,12 +315,36 @@ public sealed class LauncherLocalHealthTests
                 LauncherNativeEvidenceState.Unknown,
                 LauncherNativeEvidenceState.Unknown));
 
-        Assert.AreEqual("Running healthy", healthy.ModManagement.Status);
+        Assert.AreEqual("Installed 2.1.0.8", healthy.ModManagement.Status);
         Assert.AreEqual(LauncherHomeTone.Success, healthy.ModManagement.Tone);
         Assert.AreEqual("Running degraded", degraded.ModManagement.Status);
         Assert.AreEqual(LauncherHomeTone.Warning, degraded.ModManagement.Tone);
         Assert.AreEqual("Incompatible", incompatible.ModManagement.Status);
         Assert.AreEqual(LauncherHomeTone.Error, incompatible.ModManagement.Tone);
+    }
+
+    [TestMethod]
+    public void KnownUpdateDisablesMutationButPreservesVerifiedIntegrityWhileRunning()
+    {
+        var installation = ManagedInstallation(isGameRunning: true);
+        var snapshot = LauncherHealthResolver.Resolve(
+            installation,
+            Provider(),
+            UpdateEvidence(ModUpdateEvidenceState.UpdateAvailable),
+            nowUtc: ObservationTime.AddMinutes(5));
+
+        Assert.AreEqual("Update available", snapshot.ModManagement.Status);
+        Assert.AreEqual(ModManagementActionKind.CheckForUpdate, snapshot.ModManagement.ActionKind);
+        Assert.IsFalse(snapshot.ModManagement.CanExecute);
+        StringAssert.Contains(snapshot.ModManagement.AutomationName, "Close Star Trek Fleet Command");
+        Assert.AreEqual(
+            LauncherHealthSeverity.Healthy,
+            snapshot.Dimensions.Single(
+                dimension => dimension.Category == LauncherHealthDimensionCategory.ModInstallation).Severity);
+        Assert.AreEqual(
+            LauncherHealthSeverity.Healthy,
+            snapshot.Dimensions.Single(
+                dimension => dimension.Category == LauncherHealthDimensionCategory.ProviderCompatibility).Severity);
     }
 
     [TestMethod]
