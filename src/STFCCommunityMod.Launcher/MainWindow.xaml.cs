@@ -21,6 +21,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 680;
+    private const double HomeMinWidth = 560;
+    private const double HomeMinHeight = 620;
     internal const double SettingsMinWidth = 960;
     internal const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
@@ -111,6 +113,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         };
         shellLifecycleController = new(this);
         InitializeComponent();
+        ApplyWorkspaceSizing(LauncherWorkspace.Home);
         uiPreferencesStore = new JsonLauncherUiPreferencesStore(
             PerUserInstallLayout.FromCurrentUser().StateDirectory);
         selectedColorMode = uiPreferencesStore.Load().ColorMode;
@@ -1313,19 +1316,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             viewModel.Refresh();
         }
 
-        MinWidth = isOpen ? SettingsMinWidth : 560;
-        MinHeight = isOpen ? SettingsMinHeight : 620;
-        if (WindowState != WindowState.Normal)
-        {
-            return;
-        }
-
-        Width = Math.Min(
-            isOpen ? Math.Max(ActualWidth, SettingsWidth) : HomeWidth,
-            SystemParameters.WorkArea.Width);
-        Height = Math.Min(
-            isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
-            SystemParameters.WorkArea.Height);
+        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Settings : LauncherWorkspace.Home);
     }
 
     private void SetDiagnosticsWorkspaceOpen(bool isOpen)
@@ -1355,20 +1346,51 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             diagnosticsFocusTransition.Exit();
         }
 
-        MinWidth = isOpen ? SettingsMinWidth : 560;
-        MinHeight = SettingsMinHeight;
+        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Diagnostics : LauncherWorkspace.Home);
+    }
+
+    private void ApplyWorkspaceSizing(LauncherWorkspace workspace)
+    {
+        var sizing = ResolveWorkspaceSizing(
+            workspace,
+            ActualWidth,
+            ActualHeight,
+            SystemParameters.WorkArea.Width,
+            SystemParameters.WorkArea.Height);
+        MinWidth = sizing.MinWidth;
+        MinHeight = sizing.MinHeight;
         if (WindowState != WindowState.Normal)
         {
             return;
         }
 
-        Width = Math.Min(
-            isOpen ? Math.Max(ActualWidth, SettingsWidth) : HomeWidth,
-            SystemParameters.WorkArea.Width);
-        Height = Math.Min(
-            isOpen ? Math.Max(ActualHeight, SettingsHeight) : HomeHeight,
-            SystemParameters.WorkArea.Height);
+        Width = sizing.Width;
+        Height = sizing.Height;
     }
+
+    internal static WorkspaceWindowSizing ResolveWorkspaceSizing(
+        LauncherWorkspace workspace,
+        double currentWidth,
+        double currentHeight,
+        double workAreaWidth,
+        double workAreaHeight)
+    {
+        var isHome = workspace == LauncherWorkspace.Home;
+        var availableWidth = NormalizeWorkAreaDimension(workAreaWidth);
+        var availableHeight = NormalizeWorkAreaDimension(workAreaHeight);
+        var minWidth = Math.Min(isHome ? HomeMinWidth : SettingsMinWidth, availableWidth);
+        var minHeight = Math.Min(isHome ? HomeMinHeight : SettingsMinHeight, availableHeight);
+        var requestedWidth = isHome ? HomeWidth : Math.Max(currentWidth, SettingsWidth);
+        var requestedHeight = isHome ? HomeHeight : Math.Max(currentHeight, SettingsHeight);
+        return new(
+            minWidth,
+            minHeight,
+            Math.Clamp(requestedWidth, minWidth, availableWidth),
+            Math.Clamp(requestedHeight, minHeight, availableHeight));
+    }
+
+    private static double NormalizeWorkAreaDimension(double dimension) =>
+        double.IsFinite(dimension) && dimension > 0 ? dimension : 1;
 
     private void ScheduleFocus(IInputElement target)
     {
@@ -1603,3 +1625,16 @@ internal enum MaintenanceAction
     Recover,
     Uninstall,
 }
+
+internal enum LauncherWorkspace
+{
+    Home,
+    Settings,
+    Diagnostics,
+}
+
+internal readonly record struct WorkspaceWindowSizing(
+    double MinWidth,
+    double MinHeight,
+    double Width,
+    double Height);
