@@ -1077,7 +1077,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
                 ? $"{result.Message} The {selectedProvider.DisplayName} workspace is active."
                 : $"{result.Message} The prior TOML is protected in the {result.ConfigurationBackup.ProviderId} history. The {selectedProvider.DisplayName} workspace is active.";
-            ProviderSwitchActionButton.IsEnabled = false;
+            SetProviderSwitchAction("Switch", targetProvider: null, enabled: false);
             UpdateProviderCapabilityText();
         }
         catch (OperationCanceledException)

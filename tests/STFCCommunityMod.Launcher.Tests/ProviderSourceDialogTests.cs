@@ -148,12 +148,27 @@ public sealed class ProviderSourceDialogTests
         var recomposeIndex = actionHandler.IndexOf(
             "providerSessions.Recompose(result.Selection)",
             StringComparison.Ordinal);
+        var selectedValueIndex = actionHandler.IndexOf(
+            "ProviderSourceSelector.SelectedValue = selectedProvider.Id;",
+            recomposeIndex,
+            StringComparison.Ordinal);
+        var canonicalActionIndex = actionHandler.IndexOf(
+            "SetProviderSwitchAction(\"Switch\", targetProvider: null, enabled: false);",
+            selectedValueIndex,
+            StringComparison.Ordinal);
+        var capabilityUpdateIndex = actionHandler.IndexOf(
+            "UpdateProviderCapabilityText();",
+            canonicalActionIndex,
+            StringComparison.Ordinal);
         var finalizerIndex = actionHandler.IndexOf("finally", StringComparison.Ordinal);
 
         Assert.IsTrue(executeIndex >= 0);
         Assert.IsTrue(consumeIndex > executeIndex);
         Assert.IsTrue(recomposeIndex > consumeIndex);
-        Assert.IsTrue(finalizerIndex > recomposeIndex);
+        Assert.IsTrue(selectedValueIndex > recomposeIndex);
+        Assert.IsTrue(canonicalActionIndex > selectedValueIndex);
+        Assert.IsTrue(capabilityUpdateIndex > canonicalActionIndex);
+        Assert.IsTrue(finalizerIndex > capabilityUpdateIndex);
         StringAssert.Contains(
             actionHandler[finalizerIndex..],
             "if (pendingProviderSwitch is not null)");
