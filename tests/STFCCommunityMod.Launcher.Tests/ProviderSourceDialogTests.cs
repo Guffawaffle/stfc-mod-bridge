@@ -160,6 +160,38 @@ public sealed class ProviderSourceDialogTests
     }
 
     [TestMethod]
+    public void ProviderReviewAcknowledgementIsCachedAndAdvancesOnlyAfterPersistence()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var constructor = Slice(
+            source,
+            "private MainWindow(",
+            "private LauncherProviderSession CreateProviderSession");
+        var reviewFlow = Slice(
+            source,
+            "private void ProviderSourceSelector_SelectionChanged",
+            "private void SetProviderSwitchAction");
+        var acknowledge = Slice(
+            source,
+            "private void AcknowledgeProviderSwitchReview",
+            "private void UpdateProviderCapabilityText");
+        var loadIndex = acknowledge.IndexOf("var preferences = uiPreferencesStore.Load();", StringComparison.Ordinal);
+        var saveIndex = acknowledge.IndexOf("uiPreferencesStore.Save(", StringComparison.Ordinal);
+        var cacheIndex = acknowledge.IndexOf("providerSwitchReviewAcknowledged = true;", StringComparison.Ordinal);
+
+        StringAssert.Contains(constructor, "var initialPreferences = uiPreferencesStore.Load();");
+        StringAssert.Contains(
+            constructor,
+            "providerSwitchReviewAcknowledged = initialPreferences.ProviderSwitchReviewAcknowledged;");
+        Assert.IsFalse(reviewFlow.Contains("uiPreferencesStore.Load()", StringComparison.Ordinal));
+        Assert.IsTrue(loadIndex >= 0);
+        Assert.IsTrue(saveIndex > loadIndex);
+        Assert.IsTrue(cacheIndex > saveIndex);
+        StringAssert.Contains(acknowledge, "or NotSupportedException");
+    }
+
+    [TestMethod]
     public void ProviderSwitchFlowNeverRequestsABridgeRestart()
     {
         var sources = new[]

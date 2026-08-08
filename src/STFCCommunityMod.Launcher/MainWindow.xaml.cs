@@ -45,6 +45,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private RelayCommand? openRawTomlCommand;
     private SettingsViewModel? settingsViewModel;
     private LauncherColorMode selectedColorMode = LauncherColorMode.System;
+    private bool providerSwitchReviewAcknowledged;
     private bool isDisposed;
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
@@ -114,7 +115,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         InitializeComponent();
         uiPreferencesStore = new JsonLauncherUiPreferencesStore(
             PerUserInstallLayout.FromCurrentUser().StateDirectory);
-        selectedColorMode = uiPreferencesStore.Load().ColorMode;
+        var initialPreferences = uiPreferencesStore.Load();
+        selectedColorMode = initialPreferences.ColorMode;
+        providerSwitchReviewAcknowledged = initialPreferences.ProviderSwitchReviewAcknowledged;
         currentTheme = LauncherThemeManager.ApplyColorMode(selectedColorMode);
         ColorModeSelector.ItemsSource = ColorModeChoices;
         ColorModeSelector.SelectedValue = selectedColorMode;
@@ -975,7 +978,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             && ProviderSourceSelector.SelectedItem is LauncherDistributionProvider targetProvider)
         {
             SetProviderSwitchAction(
-                uiPreferencesStore.Load().ProviderSwitchReviewAcknowledged ? "Switch" : "Review",
+                providerSwitchReviewAcknowledged ? "Switch" : "Review",
                 targetProvider,
                 enabled: !isProviderSwitchOperationPending);
         }
@@ -1008,7 +1011,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ProviderSwitchPreviewText.Text =
                 "Save or discard staged Settings and Data Sync changes before switching sources.";
             SetProviderSwitchAction(
-                uiPreferencesStore.Load().ProviderSwitchReviewAcknowledged ? "Switch" : "Review",
+                providerSwitchReviewAcknowledged ? "Switch" : "Review",
                 targetProvider,
                 enabled: true);
             return;
@@ -1044,7 +1047,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 var review = ProviderSwitchReviewPresentation.From(
                     pendingProviderSwitch,
                     targetProvider.DefaultReleaseChannel.DisplayName,
-                    uiPreferencesStore.Load().ProviderSwitchReviewAcknowledged);
+                    providerSwitchReviewAcknowledged);
                 ProviderSwitchPreviewText.Text = review.Summary;
                 if (review.RequiresReview)
                 {
@@ -1125,7 +1128,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             && ProviderSwitchActionButton.IsEnabled)
         {
             SetProviderSwitchAction(
-                uiPreferencesStore.Load().ProviderSwitchReviewAcknowledged ? "Switch" : "Review",
+                providerSwitchReviewAcknowledged ? "Switch" : "Review",
                 targetProvider,
                 enabled: true);
         }
@@ -1159,6 +1162,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void AcknowledgeProviderSwitchReview()
     {
+        if (providerSwitchReviewAcknowledged)
+        {
+            return;
+        }
+
         try
         {
             var preferences = uiPreferencesStore.Load();
@@ -1166,9 +1174,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             {
                 uiPreferencesStore.Save(preferences with { ProviderSwitchReviewAcknowledged = true });
             }
+            providerSwitchReviewAcknowledged = true;
         }
         catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException)
         {
             // The switch is already committed. A preferences failure must not
             // misreport it as a failed or incomplete provider transaction.
