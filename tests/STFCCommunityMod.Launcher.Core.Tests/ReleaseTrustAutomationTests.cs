@@ -8,6 +8,19 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed partial class ReleaseTrustAutomationTests
 {
     [TestMethod]
+    public void PublishScriptBuildsTheReleaseVerifierWithoutCapturingItsInformationalOutput()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryRoot(), "scripts", "publish.ps1"));
+
+        StringAssert.Contains(
+            script,
+            "& (Join-Path $PSScriptRoot \"verify-release-verifier.ps1\") -OutputDirectory $verifierBuild | Out-Host");
+        StringAssert.Contains(
+            script,
+            "$verifier = Join-Path $verifierBuild \"STFCModBridge.ReleaseVerifier.exe\"");
+    }
+
+    [TestMethod]
     public void WorkflowPassesGitHubIdentityThroughEnvironmentInsteadOfInlinePowerShell()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
