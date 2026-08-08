@@ -8,10 +8,6 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:STFCCommunityMod.Launcher.Views"
         Title="STFC Mod Bridge"
-        Width="960"
-        Height="680"
-        MinWidth="960"
-        MinHeight="620"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
         Icon="Assets/stfc-mod-bridge.ico"
@@ -1486,76 +1482,71 @@
                           Style="{StaticResource InAppDialogStyle}"
                           DialogTitle="Community mod source"
                           automation:AutomationProperties.Name="Community mod source dialog">
-      <StackPanel>
-        <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Choose where Mod Bridge checks for community mod releases. A switch protects the current provider's TOML, may restore the target provider's latest TOML history, and refreshes this workspace immediately."
-                   TextWrapping="Wrap" />
-        <TextBlock Margin="0,14,0,4"
-                   FontWeight="SemiBold"
-                   Text="Release source" />
-        <ComboBox x:Name="ProviderSourceSelector"
-                  HorizontalAlignment="Stretch"
-                  Style="{StaticResource TitleBarColorModeComboBoxStyle}"
-                  SelectedValuePath="Id"
-                  SelectionChanged="ProviderSourceSelector_SelectionChanged"
-                  automation:AutomationProperties.Name="Community mod provider">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding DisplayName}" />
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-          <ComboBox.ItemContainerStyle>
-            <Style TargetType="ComboBoxItem"
-                   BasedOn="{StaticResource TitleBarColorModeItemStyle}">
-              <Setter Property="automation:AutomationProperties.Name"
-                      Value="{Binding DisplayName}" />
-            </Style>
-          </ComboBox.ItemContainerStyle>
-        </ComboBox>
-        <TextBlock x:Name="ProviderCapabilityText"
-                   Margin="0,12,0,0"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   TextWrapping="Wrap"
-                   automation:AutomationProperties.LiveSetting="Polite" />
-        <Border Margin="0,14,0,0"
-                Padding="12"
-                Background="{DynamicResource SurfaceMutedBrush}"
-                CornerRadius="7">
-          <TextBlock x:Name="ProviderSwitchPreviewText"
-                     Foreground="{DynamicResource TextSecondaryBrush}"
-                     Text="Choose another provider, then review compatibility before switching."
-                     TextWrapping="Wrap"
-                     automation:AutomationProperties.LiveSetting="Polite" />
-        </Border>
-        <StackPanel x:Name="ProviderSwitchConfirmationPanel"
-                    Margin="0,14,0,0"
-                    Visibility="Collapsed">
-          <TextBlock x:Name="ProviderSwitchConfirmationPrompt"
-                     Margin="0,0,0,5"
-                     FontWeight="SemiBold"
-                     Text="Type the provider ID to confirm" />
-          <TextBox x:Name="ProviderSwitchConfirmationInput"
-                   Style="{StaticResource ProviderConfirmationTextBoxStyle}"
-                   TextChanged="ProviderSwitchConfirmationInput_TextChanged"
-                   automation:AutomationProperties.Name="Exact provider ID confirmation" />
-        </StackPanel>
-        <WrapPanel Margin="0,18,0,0"
-                   HorizontalAlignment="Right">
-          <Button x:Name="ReviewProviderSwitchButton"
-                  Margin="0,0,8,0"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="ReviewProviderSwitchButton_Click"
-                  Content="_Review switch"
-                  automation:AutomationProperties.Name="Review provider compatibility" />
-          <Button x:Name="ConfirmProviderSwitchButton"
-                  Style="{StaticResource UtilityActionButtonStyle}"
-                  Click="ConfirmProviderSwitchButton_Click"
-                  Content="_Switch source"
-                  IsEnabled="False"
-                  automation:AutomationProperties.Name="Confirm provider source switch" />
-        </WrapPanel>
-      </StackPanel>
+      <Grid MaxHeight="390">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ScrollViewer x:Name="ProviderSwitchReviewScroller"
+                      Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly"
+                      automation:AutomationProperties.Name="Provider switch information">
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="Choose where Mod Bridge checks for community mod releases. Your existing TOML is preserved when the managed source changes."
+                       TextWrapping="Wrap" />
+            <TextBlock Margin="0,14,0,4"
+                       FontWeight="SemiBold"
+                       Text="Release source" />
+            <ComboBox x:Name="ProviderSourceSelector"
+                      HorizontalAlignment="Stretch"
+                      Style="{StaticResource TitleBarColorModeComboBoxStyle}"
+                      SelectedValuePath="Id"
+                      SelectionChanged="ProviderSourceSelector_SelectionChanged"
+                      automation:AutomationProperties.Name="Community mod provider">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayName}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+              <ComboBox.ItemContainerStyle>
+                <Style TargetType="ComboBoxItem"
+                       BasedOn="{StaticResource TitleBarColorModeItemStyle}">
+                  <Setter Property="automation:AutomationProperties.Name"
+                          Value="{Binding DisplayName}" />
+                </Style>
+              </ComboBox.ItemContainerStyle>
+            </ComboBox>
+            <TextBlock x:Name="ProviderCapabilityText"
+                       Margin="0,12,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       automation:AutomationProperties.LiveSetting="Polite" />
+            <Border Margin="0,14,0,0"
+                    Padding="12"
+                    Background="{DynamicResource SurfaceMutedBrush}"
+                    CornerRadius="7">
+              <TextBlock x:Name="ProviderSwitchPreviewText"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="Choose another provider to continue."
+                         TextWrapping="Wrap"
+                         automation:AutomationProperties.LiveSetting="Polite" />
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+        <Button x:Name="ProviderSwitchActionButton"
+                Grid.Row="1"
+                Margin="0,18,0,0"
+                HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="ProviderSwitchActionButton_Click"
+                Content="_Switch source"
+                IsEnabled="False"
+                automation:AutomationProperties.Name="Switch community mod source" />
+      </Grid>
     </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="SettingsUnavailableDialog"

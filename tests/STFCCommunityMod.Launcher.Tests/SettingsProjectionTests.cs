@@ -287,6 +287,49 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public async Task ExistingShortcutDiagnosticsDoNotBlockAnUnrelatedSparseSave()
+    {
+        const string source =
+            "# preserve the player's existing shortcut diagnostics\n"
+            + "[graphics]\n"
+            + "free_resize = true\n"
+            + "\n"
+            + "[shortcuts]\n"
+            + "action_primary = \"MOUSE1\"\n"
+            + "action_queue = \"MOUSE4|MOUSE1\"\n"
+            + "action_queue_clear = \"CTRL-C|MOUSE3\"\n"
+            + "action_repair = \"MOUSE3\"\n"
+            + "zoom_in = \"EQUAL\"\n"
+            + "\n"
+            + "[custom]\n"
+            + "keep = \"verbatim\"\n";
+        using var fixture = SettingsFixture.Create(source, LoadNetniVStableCatalog());
+
+        fixture.Select(LauncherSettingsSection.Hotkeys);
+        var primary = fixture.Row("shortcuts.action_primary");
+        var zoomIn = fixture.Row("shortcuts.zoom_in");
+        Assert.IsTrue(primary.KeybindingNeedsAttention);
+        StringAssert.Contains(primary.KeybindingValidationMessage, "conflicts with");
+        Assert.IsTrue(zoomIn.KeybindingNeedsAttention);
+        StringAssert.Contains(zoomIn.KeybindingValidationMessage, "configured shortcut is invalid");
+        Assert.IsFalse(
+            fixture.ViewModel.HasInvalidInput,
+            "Pre-existing shortcut diagnostics must remain visible without becoming staged-input blockers.");
+
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+
+        Assert.IsTrue(fixture.ViewModel.CanSave, fixture.ViewModel.SaveAvailability);
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+
+        Assert.AreEqual(
+            source.Replace("free_resize = true", "free_resize = false", StringComparison.Ordinal),
+            await File.ReadAllTextAsync(fixture.ConfigurationPath));
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+    }
+
+    [TestMethod]
     public void SearchProjectionRetainsConflictsWithHiddenCommands()
     {
         using var fixture = SettingsFixture.Create();
@@ -613,6 +656,40 @@ public sealed class SettingsProjectionTests
             ? LauncherSettingsSection.Interface
             : LauncherSettingsSection.General;
 
+    private static LauncherConfigurationCatalog LoadNetniVStableCatalog()
+    {
+        var path = FindRepositoryFile(
+            "providers",
+            "netniv",
+            "configuration-schema-set.v1.json");
+        using var stream = File.OpenRead(path);
+        return LauncherConfigurationSchemaSetLoader.Load(
+            stream,
+            new(
+                "netniv",
+                "stable",
+                "1.1.4",
+                "d912611fa1eca49fc54f363bdf8377dfebf8def0"));
+    }
+
+    private static string FindRepositoryFile(params string[] relativeParts)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine([directory.FullName, .. relativeParts]);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"Could not find repository file '{Path.Combine(relativeParts)}'.");
+        return string.Empty;
+    }
+
     private sealed class SettingsFixture : IDisposable
     {
         private SettingsFixture(
@@ -641,12 +718,16 @@ public sealed class SettingsProjectionTests
         public IReadOnlyDictionary<string, LauncherConfigurationSetting> SettingsByPath { get; }
 
         public static SettingsFixture Create(
-            string contents = "# disposable launcher projection fixture\n")
+            string contents = "# disposable launcher projection fixture\n",
+            LauncherConfigurationCatalog? catalog = null)
         {
-            using var schema = typeof(SettingsViewModel).Assembly
-                .GetManifestResourceStream(SchemaResource);
-            Assert.IsNotNull(schema);
-            var catalog = LauncherConfigurationSchemaLoader.Load(schema);
+            if (catalog is null)
+            {
+                using var schema = typeof(SettingsViewModel).Assembly
+                    .GetManifestResourceStream(SchemaResource);
+                Assert.IsNotNull(schema);
+                catalog = LauncherConfigurationSchemaLoader.Load(schema);
+            }
             var layout = new PrincipalCatalogSettingsLayoutProvider();
             var configurationPath = Path.Combine(
                 Path.GetTempPath(),

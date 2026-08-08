@@ -17,6 +17,7 @@ public sealed class LauncherUiPreferencesStoreTests
         Assert.IsFalse(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.System, result.ColorMode);
         Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
+        Assert.IsFalse(result.ProviderSwitchReviewAcknowledged);
     }
 
     [TestMethod]
@@ -69,6 +70,27 @@ public sealed class LauncherUiPreferencesStoreTests
         StringAssert.Contains(
             File.ReadAllText(Path.Combine(stateDirectory, "ui-preferences.json")),
             "PrimeExecutable");
+    }
+
+    [TestMethod]
+    public void ProviderSwitchReviewAcknowledgementRoundTripsAsOneGlobalPreference()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+
+        new JsonLauncherUiPreferencesStore(stateDirectory)
+            .Save(
+                new LauncherUiPreferences(
+                    SettingsSearchVisible: false,
+                    ProviderSwitchReviewAcknowledged: true));
+
+        var result = new JsonLauncherUiPreferencesStore(stateDirectory).Load();
+
+        Assert.IsTrue(result.ProviderSwitchReviewAcknowledged);
+        var contents = File.ReadAllText(Path.Combine(stateDirectory, "ui-preferences.json"));
+        StringAssert.Contains(contents, "providerSwitchReviewAcknowledged");
+        Assert.IsFalse(contents.Contains("providerPair", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(contents.Contains("providerVersion", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
@@ -133,6 +155,7 @@ public sealed class LauncherUiPreferencesStoreTests
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
         Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
+        Assert.IsFalse(result.ProviderSwitchReviewAcknowledged);
     }
 
     [TestMethod]
@@ -156,6 +179,7 @@ public sealed class LauncherUiPreferencesStoreTests
         Assert.IsTrue(result.SettingsSearchVisible);
         Assert.AreEqual(LauncherColorMode.Light, result.ColorMode);
         Assert.AreEqual(LauncherLaunchTarget.ScopelyLauncher, result.LaunchTarget);
+        Assert.IsFalse(result.ProviderSwitchReviewAcknowledged);
     }
 
     [TestMethod]
