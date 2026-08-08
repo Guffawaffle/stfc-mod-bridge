@@ -69,6 +69,7 @@ function Invoke-Gcloud {
 }
 
 $expectedPackageHash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
+$expectedDescriptorHash = (Get-FileHash -LiteralPath $appInstaller -Algorithm SHA256).Hash
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
   "stfc-mod-bridge-gcs-publish-" + [Guid]::NewGuid().ToString("N"))
 try {
@@ -108,8 +109,12 @@ try {
     throw "The public GCS package bytes do not match the attested release package."
   }
 
+  $existingDescriptor = Join-Path $temporaryRoot "existing.appinstaller"
   try {
-    $existingDescriptorResponse = Invoke-WebRequest -Uri $appInstallerUri -UseBasicParsing
+    $existingDescriptorResponse = Invoke-WebRequest `
+      -Uri $appInstallerUri `
+      -OutFile $existingDescriptor `
+      -UseBasicParsing
   } catch {
     if ($_.Exception.Response.StatusCode -ne 404) {
       throw
@@ -117,10 +122,10 @@ try {
     $existingDescriptorResponse = $null
   }
   if ($existingDescriptorResponse) {
-    [xml]$existingDescriptor = $existingDescriptorResponse.Content
-    $existingNamespace = [System.Xml.XmlNamespaceManager]::new($existingDescriptor.NameTable)
+    [xml]$existingDescriptorXml = Get-Content -Raw -LiteralPath $existingDescriptor
+    $existingNamespace = [System.Xml.XmlNamespaceManager]::new($existingDescriptorXml.NameTable)
     $existingNamespace.AddNamespace("a", "http://schemas.microsoft.com/appx/appinstaller/2021")
-    $existingRoot = $existingDescriptor.SelectSingleNode("/a:AppInstaller", $existingNamespace)
+    $existingRoot = $existingDescriptorXml.SelectSingleNode("/a:AppInstaller", $existingNamespace)
     if ([version]$existingRoot.Version -gt [version]$root.Version) {
       throw "The published $channel App Installer version is newer; refusing a channel downgrade."
     }
@@ -133,10 +138,11 @@ try {
     "--quiet")
 
   $descriptorHead = Invoke-WebRequest -Uri $appInstallerUri -Method Head -UseBasicParsing
-  $publishedDescriptor = Invoke-WebRequest -Uri $appInstallerUri -UseBasicParsing
+  $publishedDescriptor = Join-Path $temporaryRoot "published.appinstaller"
+  Invoke-WebRequest -Uri $appInstallerUri -OutFile $publishedDescriptor -UseBasicParsing
   if ($descriptorHead.StatusCode -ne 200 `
       -or $descriptorHead.Headers["Content-Type"] -notcontains "application/appinstaller" `
-      -or $publishedDescriptor.Content -cne (Get-Content -Raw -LiteralPath $appInstaller)) {
+      -or (Get-FileHash -LiteralPath $publishedDescriptor -Algorithm SHA256).Hash -cne $expectedDescriptorHash) {
     throw "The public GCS App Installer pointer does not match the released descriptor."
   }
 } finally {
