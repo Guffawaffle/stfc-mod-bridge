@@ -19,11 +19,12 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
 $payload = Join-Path $outputRoot "app"
 $updaterPublish = Join-Path $outputRoot "updater-publish"
 $verifierBuild = Join-Path $outputRoot "release-verifier"
-$verifier = if ($ReleaseVerifierPath) {
+$verifier = ""
+if ($ReleaseVerifierPath) {
   if ([System.IO.Path]::IsPathRooted($ReleaseVerifierPath)) {
-    [System.IO.Path]::GetFullPath($ReleaseVerifierPath)
+    $verifier = [System.IO.Path]::GetFullPath($ReleaseVerifierPath)
   } else {
-    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ReleaseVerifierPath))
+    $verifier = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ReleaseVerifierPath))
   }
 } else {
   & (Join-Path $PSScriptRoot "verify-release-verifier.ps1") -OutputDirectory $verifierBuild | Out-Host
