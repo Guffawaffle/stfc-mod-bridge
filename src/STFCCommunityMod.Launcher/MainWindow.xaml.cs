@@ -21,6 +21,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 {
     private const double HomeWidth = 680;
     private const double HomeHeight = 680;
+    private const double HomeMinWidth = 560;
+    private const double HomeMinHeight = 620;
     internal const double SettingsMinWidth = 960;
     internal const double SettingsMinHeight = 620;
     private const double SettingsWidth = 1120;
@@ -1374,8 +1376,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         double workAreaHeight)
     {
         var isHome = workspace == LauncherWorkspace.Home;
-        var minWidth = isHome ? 560 : SettingsMinWidth;
-        var minHeight = SettingsMinHeight;
+        var minWidth = isHome ? HomeMinWidth : SettingsMinWidth;
+        var minHeight = isHome ? HomeMinHeight : SettingsMinHeight;
         var requestedWidth = isHome ? HomeWidth : Math.Max(currentWidth, SettingsWidth);
         var requestedHeight = isHome ? HomeHeight : Math.Max(currentHeight, SettingsHeight);
         return new(

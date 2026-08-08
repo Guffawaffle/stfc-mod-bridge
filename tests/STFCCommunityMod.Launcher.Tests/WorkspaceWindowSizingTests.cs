@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using STFCCommunityMod.Launcher;
 
@@ -57,16 +58,25 @@ public sealed class WorkspaceWindowSizingTests
         Assert.IsNull(root.Attribute("MinHeight"));
 
         var source = File.ReadAllText(RepositoryPath("src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
-        var initialization = source.IndexOf("InitializeComponent();", StringComparison.Ordinal);
-        var initialSizing = source.IndexOf(
-            "ApplyWorkspaceSizing(LauncherWorkspace.Home);",
-            initialization,
+        var initialization = source.IndexOf("InitializeComponent", StringComparison.Ordinal);
+        var initialSizing = Regex.Match(
+            source,
+            @"ApplyWorkspaceSizing\s*\(\s*LauncherWorkspace\s*\.\s*Home\s*\)",
+            RegexOptions.CultureInvariant);
+        var preferences = source.IndexOf(
+            "uiPreferencesStore",
+            initialSizing.Index + initialSizing.Length,
             StringComparison.Ordinal);
-        var preferences = source.IndexOf("uiPreferencesStore =", initialization, StringComparison.Ordinal);
+        var providers = source.IndexOf(
+            "providerSessions",
+            initialSizing.Index + initialSizing.Length,
+            StringComparison.Ordinal);
 
         Assert.IsTrue(initialization >= 0);
-        Assert.IsTrue(initialSizing > initialization);
-        Assert.IsTrue(preferences > initialSizing);
+        Assert.IsTrue(initialSizing.Success);
+        Assert.IsTrue(initialSizing.Index > initialization);
+        Assert.IsTrue(preferences > initialSizing.Index);
+        Assert.IsTrue(providers > preferences);
     }
 
     private static string RepositoryPath(string relativePath) =>
