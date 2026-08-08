@@ -26,8 +26,8 @@ $verifier = if ($ReleaseVerifierPath) {
     [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ReleaseVerifierPath))
   }
 } else {
-  & (Join-Path $PSScriptRoot "verify-release-verifier.ps1") -OutputDirectory $verifierBuild
-  Join-Path $verifierBuild "STFCModBridge.ReleaseVerifier.exe"
+  & (Join-Path $PSScriptRoot "verify-release-verifier.ps1") -OutputDirectory $verifierBuild | Out-Host
+  $verifier = Join-Path $verifierBuild "STFCModBridge.ReleaseVerifier.exe"
 }
 if (-not (Test-Path -LiteralPath $verifier -PathType Leaf) `
     -or [System.IO.Path]::GetFileName($verifier) -cne "STFCModBridge.ReleaseVerifier.exe") {
