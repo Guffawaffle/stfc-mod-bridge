@@ -692,20 +692,30 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 && setting.ValueKind == LauncherConfigurationValueKind.Keybinding)
             .ToArray();
 
-        var assignments = keybindings
-            .Select(ReadKeybindingAssignment)
+        var projections = keybindings
+            .Select(setting =>
+            {
+                var state = GetValueState(setting);
+                return (
+                    Setting: setting,
+                    State: state,
+                    Assignment: ReadKeybindingAssignment(setting, state));
+            })
+            .ToArray();
+        var assignments = projections
+            .Select(projection => projection.Assignment)
             .OfType<LauncherKeybindingAssignment>()
             .ToArray();
         var conflicts = LauncherKeybindingConflictDetector.FindConflicts(assignments);
         var previousInvalidCount = keybindingInvalidPaths.Count;
         keybindingInvalidPaths.Clear();
         keybindingIssueMessages.Clear();
-        foreach (var setting in keybindings)
+        foreach (var projection in projections)
         {
-            var isDirty = GetValueState(setting).IsDirty;
-            if (ReadKeybindingAssignment(setting) is null)
+            var setting = projection.Setting;
+            if (projection.Assignment is null)
             {
-                if (isDirty)
+                if (projection.State.IsDirty)
                 {
                     keybindingInvalidPaths.Add(setting.Path);
                 }
@@ -732,7 +742,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 .ToArray();
             if (settingConflicts.Length > 0)
             {
-                if (isDirty)
+                if (projection.State.IsDirty)
                 {
                     keybindingInvalidPaths.Add(setting.Path);
                 }
@@ -753,10 +763,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    private LauncherKeybindingAssignment? ReadKeybindingAssignment(
-        LauncherConfigurationSetting setting)
+    private static LauncherKeybindingAssignment? ReadKeybindingAssignment(
+        LauncherConfigurationSetting setting,
+        SettingsValueState state)
     {
-        var state = GetValueState(setting);
         if (state.DraftValue is not string text)
         {
             return null;
