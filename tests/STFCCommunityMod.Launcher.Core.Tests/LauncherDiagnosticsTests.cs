@@ -185,6 +185,45 @@ public sealed class LauncherDiagnosticsTests
     }
 
     [TestMethod]
+    public void SafelyAttributedRunningGameIsInformationalInsteadOfAttention()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(GameProcessInspectionState.RunningTarget),
+            "0.1.0");
+
+        var process = diagnostics.BuildPreview(gameDirectory).Document.Health
+            .Single(fact => fact.Id == "game-process");
+
+        Assert.AreEqual(LauncherDiagnosticLevel.Informational, process.Level);
+        StringAssert.Contains(process.Summary, "running normally");
+        StringAssert.Contains(process.NextAction, "only before");
+    }
+
+    [TestMethod]
+    public void UnattributablePrimeProcessRemainsDiagnosticAttention()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(GameProcessInspectionState.Unattributable),
+            "0.1.0");
+
+        var process = diagnostics.BuildPreview(gameDirectory).Document.Health
+            .Single(fact => fact.Id == "game-process");
+
+        Assert.AreEqual(LauncherDiagnosticLevel.Attention, process.Level);
+        StringAssert.Contains(process.Summary, "could not be attributed safely");
+    }
+
+    [TestMethod]
     public void ReportSurfacesUnknownProviderDiagnosisWithoutReadingValues()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -287,9 +326,12 @@ public sealed class LauncherDiagnosticsTests
             throw new AssertFailedException("Diagnostics must not start the official launcher.");
     }
 
-    private sealed class FakeGameProcessInspector : IGameProcessInspector
+    private sealed class FakeGameProcessInspector(
+        GameProcessInspectionState state = GameProcessInspectionState.NotRunning) : IGameProcessInspector
     {
-        public bool IsGameRunning(string gameDirectory) => false;
+        public bool IsGameRunning(string gameDirectory) => state != GameProcessInspectionState.NotRunning;
+
+        public GameProcessInspectionState Inspect(string gameDirectory) => state;
     }
 
     private sealed class FixedTimeProvider : TimeProvider

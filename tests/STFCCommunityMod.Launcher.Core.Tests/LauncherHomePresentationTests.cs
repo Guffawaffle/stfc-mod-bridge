@@ -109,7 +109,33 @@ public sealed class LauncherHomePresentationTests
         Assert.AreEqual("Installation found · Running", result.GameSectionStatus);
         Assert.AreEqual("●", result.GameClientIcon);
         Assert.AreEqual(LauncherHomeTone.Success, result.GameClientTone);
-        Assert.AreEqual("STFC game client is running", result.GameClientStatusAutomationName);
+        Assert.AreEqual("STFC game client is running normally", result.GameClientStatusAutomationName);
+        Assert.IsTrue(result.IsGameRunning);
+    }
+
+    [TestMethod]
+    public void UnattributablePrimeProcessRemainsGenuineAttention()
+    {
+        var candidate = CreateCandidate(
+            @"D:\Games\STFC",
+            GameInstallCandidateSource.PersistedSelection,
+            isValid: true);
+        var snapshot = CreateSnapshot(
+            LauncherHealthCode.GameProcessUnattributable,
+            isGameRunning: true,
+            candidate.GameDirectory,
+            [candidate],
+            GameInstallSelectionLoadResult.Loaded(
+                new(candidate.GameDirectory, DateTimeOffset.UtcNow))) with
+        {
+            GameProcessState = GameProcessInspectionState.Unattributable,
+        };
+
+        var result = LauncherHomePresentation.FromSnapshot(snapshot);
+
+        Assert.AreEqual("Needs attention", result.GameClientStatus);
+        Assert.AreEqual(LauncherHomeTone.Warning, result.GameClientTone);
+        StringAssert.Contains(result.GameClientStatusAutomationName, "could not be attributed safely");
         Assert.IsTrue(result.IsGameRunning);
     }
 

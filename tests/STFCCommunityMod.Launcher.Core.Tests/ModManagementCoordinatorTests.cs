@@ -150,6 +150,41 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task RunningVerifiedInstallationCanCheckButCannotPrepareMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(UpdatedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+
+        var presentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: true);
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: true);
+
+        Assert.AreEqual(LauncherHomeTone.Success, presentation.Tone);
+        Assert.AreEqual("Installed 2.1.0.8", presentation.Status);
+        Assert.AreEqual("Check for updates", presentation.ActionLabel);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        StringAssert.Contains(preparation.Message, "Close Star Trek Fleet Command");
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => coordinator.ExecuteAsync(preparation));
+    }
+
+    [TestMethod]
     public async Task ReleaseCheckRecordsIdentityBoundUpdateObservation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -260,6 +295,28 @@ public sealed class ModManagementCoordinatorTests
                 "none",
                 []),
             ReleaseArtifact());
+
+    private static WindowsReleaseDiscovery UpdatedReleaseDiscovery()
+    {
+        byte[] updatedContents = [2, 7, 1, 8, 2, 8];
+        return new(
+            new WindowsReleaseManifest(
+                1,
+                "2.1.0-guffa.9",
+                "v2.1.0-guffa.9",
+                "stable",
+                "active",
+                new Version(0, 1, 0),
+                new("Guffawaffle/stfc-mod", "1123456789abcdef0123456789abcdef01234567"),
+                "none",
+                []),
+            new(
+                new Uri("https://example.invalid/updated-version.dll"),
+                "version.dll",
+                updatedContents.LongLength,
+                Convert.ToHexString(SHA256.HashData(updatedContents)),
+                "2.1.0.9"));
+    }
 
     private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
     {

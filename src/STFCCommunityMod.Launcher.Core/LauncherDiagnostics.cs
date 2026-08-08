@@ -178,10 +178,21 @@ public sealed class LauncherDiagnosticService(
             }
         }
 
-        health.Add(validGameDirectory is not null
-            && gameProcessInspector.IsGameRunning(validGameDirectory)
-            ? Attention("Game process", "Star Trek Fleet Command is running.", "Close the game before repair or removal.")
-            : Healthy("Game process", "Star Trek Fleet Command is not running."));
+        var processState = validGameDirectory is null
+            ? GameProcessInspectionState.NotRunning
+            : gameProcessInspector.Inspect(validGameDirectory);
+        health.Add(processState switch
+        {
+            GameProcessInspectionState.RunningTarget => Informational(
+                "Game process",
+                "Star Trek Fleet Command is running normally.",
+                "Close the game only before installing, updating, repairing, or removing the community mod."),
+            GameProcessInspectionState.Unattributable => Attention(
+                "Game process",
+                "A prime.exe process is running but could not be attributed safely.",
+                "Close the unattributable process before changing the community mod."),
+            _ => Healthy("Game process", "Star Trek Fleet Command is not running."),
+        });
         health.Add(officialLauncherService.IsAvailable
             ? Healthy("Scopely launcher", "The supported per-user Scopely launcher is available.")
             : Attention(

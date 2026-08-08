@@ -13,6 +13,7 @@ public sealed class SystemGameProcessInspectorTests
         var inspector = CreateInspector(executable);
 
         Assert.IsTrue(inspector.IsGameRunning(target.Path));
+        Assert.AreEqual(GameProcessInspectionState.RunningTarget, inspector.Inspect(target.Path));
     }
 
     [TestMethod]
@@ -23,6 +24,7 @@ public sealed class SystemGameProcessInspectorTests
         var inspector = CreateInspector(Path.Combine(other.Path, "prime.exe"));
 
         Assert.IsFalse(inspector.IsGameRunning(target.Path));
+        Assert.AreEqual(GameProcessInspectionState.NotRunning, inspector.Inspect(target.Path));
     }
 
     [TestMethod]
@@ -33,6 +35,21 @@ public sealed class SystemGameProcessInspectorTests
             () => [new(null, IsInspectable: false)]);
 
         Assert.IsTrue(inspector.IsGameRunning(target.Path));
+        Assert.AreEqual(GameProcessInspectionState.Unattributable, inspector.Inspect(target.Path));
+    }
+
+    [TestMethod]
+    public void UninspectablePrimeTakesPrecedenceOverAttributedTarget()
+    {
+        using var target = new TemporaryDirectory();
+        var inspector = new SystemGameProcessInspector(
+            () =>
+            [
+                new(Path.Combine(target.Path, "prime.exe")),
+                new(null, IsInspectable: false),
+            ]);
+
+        Assert.AreEqual(GameProcessInspectionState.Unattributable, inspector.Inspect(target.Path));
     }
 
     private static SystemGameProcessInspector CreateInspector(string executablePath) =>

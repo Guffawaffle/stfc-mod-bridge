@@ -22,6 +22,7 @@ public enum ModOperationPreparationState
 {
     Ready,
     UpToDate,
+    MutationBlocked,
 }
 
 public sealed record ModOperationPreparation(
@@ -148,6 +149,19 @@ public sealed class ModManagementCoordinator(
             return new(
                 ModOperationPreparationState.UpToDate,
                 $"Community mod {discovery.Manifest.ReleaseVersion} is already installed.",
+                Path.GetFullPath(gameDirectory),
+                discovery.Manifest.ReleaseVersion,
+                discovery.ModArtifact,
+                ExistingArtifactPolicy.Reject,
+                presentation.ActionKind,
+                healthService.ProviderId);
+        }
+
+        if (isGameRunning)
+        {
+            return new(
+                ModOperationPreparationState.MutationBlocked,
+                $"Community mod {discovery.Manifest.ReleaseVersion} is available. Close Star Trek Fleet Command before updating.",
                 Path.GetFullPath(gameDirectory),
                 discovery.Manifest.ReleaseVersion,
                 discovery.ModArtifact,

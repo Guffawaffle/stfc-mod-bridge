@@ -17,10 +17,12 @@ public sealed class LauncherEnvironmentProbe(
         var selectedGameDirectory = persistedCandidate?.Validation.IsValid == true
             ? persistedCandidate.GameDirectory
             : null;
-        var gameRunning = selectedGameDirectory is not null
-            && processInspector.IsGameRunning(selectedGameDirectory);
-        var dimensions = CreateHealthDimensions(gameRunning, discovery, persistedCandidate);
-        var aggregate = CreateAggregateState(gameRunning, discovery, persistedCandidate);
+        var processState = selectedGameDirectory is null
+            ? GameProcessInspectionState.NotRunning
+            : processInspector.Inspect(selectedGameDirectory);
+        var gameRunning = processState != GameProcessInspectionState.NotRunning;
+        var dimensions = CreateHealthDimensions(processState, discovery, persistedCandidate);
+        var aggregate = CreateAggregateState(processState, discovery, persistedCandidate);
 
         return new(
             aggregate.Code,
@@ -30,7 +32,10 @@ public sealed class LauncherEnvironmentProbe(
             installLayout,
             selectedGameDirectory,
             discovery,
-            dimensions);
+            dimensions)
+        {
+            GameProcessState = processState,
+        };
     }
 
     public GameInstallCandidate ConfirmManualSelection(string gameDirectory)
@@ -39,21 +44,28 @@ public sealed class LauncherEnvironmentProbe(
     }
 
     private static IReadOnlyList<LauncherHealthDimension> CreateHealthDimensions(
-        bool gameRunning,
+        GameProcessInspectionState processState,
         GameInstallDiscoverySnapshot discovery,
         GameInstallCandidate? persistedCandidate)
     {
-        var processDimension = gameRunning
-            ? new LauncherHealthDimension(
+        var processDimension = processState switch
+        {
+            GameProcessInspectionState.RunningTarget => new LauncherHealthDimension(
+                LauncherHealthDimensionCategory.ProcessSafety,
+                LauncherHealthSeverity.Informational,
+                "Game client is running",
+                "Normal play remains available; close the game only before a mod mutation."),
+            GameProcessInspectionState.Unattributable => new(
                 LauncherHealthDimensionCategory.ProcessSafety,
                 LauncherHealthSeverity.ActionRequired,
-                "Game client is running",
-                "Read-only checks remain available; deployment mutations must remain blocked.")
-            : new(
+                "Game process needs attention",
+                "A prime.exe process could not be attributed safely; mod mutations remain blocked."),
+            _ => new(
                 LauncherHealthDimensionCategory.ProcessSafety,
                 LauncherHealthSeverity.Healthy,
                 "Game client is stopped",
-                "The process boundary currently permits later transactional work.");
+                "The process boundary currently permits later transactional work."),
+        };
 
         LauncherHealthDimension selectionDimension;
         if (discovery.PersistedSelection.State == GameInstallSelectionState.Invalid)
@@ -106,16 +118,24 @@ public sealed class LauncherEnvironmentProbe(
     }
 
     private static (LauncherHealthCode Code, string Title, string Detail) CreateAggregateState(
-        bool gameRunning,
+        GameProcessInspectionState processState,
         GameInstallDiscoverySnapshot discovery,
         GameInstallCandidate? persistedCandidate)
     {
-        if (gameRunning)
+        if (processState == GameProcessInspectionState.Unattributable)
+        {
+            return (
+                LauncherHealthCode.GameProcessUnattributable,
+                "GAME PROCESS NEEDS ATTENTION",
+                "A prime.exe process could not be attributed safely. Mod mutations remain blocked.");
+        }
+
+        if (processState == GameProcessInspectionState.RunningTarget)
         {
             return (
                 LauncherHealthCode.GameRunning,
                 "GAME CLIENT DETECTED",
-                "STFC is running. Discovery is read-only and deployment changes remain blocked.");
+                "STFC is running normally. Close it only before installing, updating, repairing, or removing the mod.");
         }
 
         if (discovery.PersistedSelection.State == GameInstallSelectionState.Invalid

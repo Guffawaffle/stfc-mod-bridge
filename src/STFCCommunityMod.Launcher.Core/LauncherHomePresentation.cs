@@ -68,18 +68,27 @@ public sealed record LauncherHomePresentation(
                             "_Set folder",
                             "Set STFC game folder");
 
-        var (clientStatus, clientIcon, clientTone, clientAutomationName) =
-            snapshot.IsGameRunning
-                ? (
+        var (clientStatus, clientIcon, clientTone, clientAutomationName) = snapshot.GameProcessState switch
+        {
+            GameProcessInspectionState.RunningTarget =>
+                (
                     "Running",
                     "●",
                     LauncherHomeTone.Success,
-                    "STFC game client is running")
-                : (
+                    "STFC game client is running normally"),
+            GameProcessInspectionState.Unattributable =>
+                (
+                    "Needs attention",
+                    "!",
+                    LauncherHomeTone.Warning,
+                    "A running prime.exe process could not be attributed safely"),
+            _ =>
+                (
                     "Not running",
                     "○",
                     LauncherHomeTone.Neutral,
-                    "STFC game client is not running");
+                    "STFC game client is not running"),
+        };
 
         var installationStatus = gameFolderIsSet
             ? "Installation found"

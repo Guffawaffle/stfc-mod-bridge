@@ -704,41 +704,27 @@ public static class LauncherHealthResolver
                     false,
                     "Authoritative runtime evidence reports degraded community mod operation. Open Diagnostics."),
             ModInstallationEvidenceState.ManagedVerified
-                when installation.IsGameRunning
-                    && nativeHealth.RuntimeActivation == LauncherNativeEvidenceState.Healthy
-                    && nativeHealth.NativeSupport == LauncherNativeEvidenceState.Healthy => new(
-                    "Running healthy",
-                    LauncherHomeTone.Success,
-                    "Unavailable",
-                    ModManagementActionKind.None,
-                    false,
-                    "Authoritative runtime evidence reports healthy community mod operation."),
-            ModInstallationEvidenceState.ManagedVerified when installation.IsGameRunning => new(
-                "Running health unknown",
-                LauncherHomeTone.Warning,
-                "Unavailable",
-                ModManagementActionKind.None,
-                false,
-                "The game is running, but no authoritative live hook-health evidence is available."),
-            ModInstallationEvidenceState.ManagedVerified
                 when updateAvailability == ModUpdateEvidenceState.UpdateAvailable => new(
                     "Update available",
                     LauncherHomeTone.Warning,
                     provider.CanMutate ? "Update" : "Unavailable",
                     provider.CanMutate ? ModManagementActionKind.CheckForUpdate : ModManagementActionKind.None,
-                    provider.CanMutate,
+                    canMutate,
                     provider.CanMutate
-                        ? "Install the observed community mod update."
+                        ? installation.IsGameRunning
+                            ? "Close Star Trek Fleet Command before installing the observed community mod update."
+                            : "Install the observed community mod update."
                         : providerReason),
             ModInstallationEvidenceState.ManagedVerified => new(
                 $"Installed {installation.InstalledVersion}",
                 LauncherHomeTone.Success,
                 provider.CanMutate ? "Check for updates" : "Unavailable",
                 provider.CanMutate ? ModManagementActionKind.CheckForUpdate : ModManagementActionKind.None,
-                canMutate,
+                provider.CanMutate,
                 provider.CanMutate
                     ? installation.IsGameRunning
-                        ? "Close Star Trek Fleet Command before changing the community mod."
+                        ? "Check for a community mod update; close Star Trek Fleet Command only before installing one. "
+                            + $"Installed version {installation.InstalledVersion}"
                         : $"Check for a community mod update; installed version {installation.InstalledVersion}"
                     : providerReason),
             _ => throw new ArgumentOutOfRangeException(nameof(installation)),
