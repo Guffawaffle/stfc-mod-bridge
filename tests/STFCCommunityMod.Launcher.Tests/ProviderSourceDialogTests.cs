@@ -91,6 +91,24 @@ public sealed class ProviderSourceDialogTests
     }
 
     [TestMethod]
+    public void OpeningProviderDialogResetsVisibleAndAutomationActionLabels()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var openHandler = Slice(
+            source,
+            "private void ReleaseSourceButton_Click",
+            "private void ProviderSourceSelector_SelectionChanged");
+
+        StringAssert.Contains(
+            openHandler,
+            "SetProviderSwitchAction(\"Switch\", targetProvider: null, enabled: false);");
+        Assert.IsFalse(openHandler.Contains(
+            "ProviderSwitchActionButton.IsEnabled = false",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void StagedChangesKeepTheContextualActionRetryable()
     {
         var source = File.ReadAllText(

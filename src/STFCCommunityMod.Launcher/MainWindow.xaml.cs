@@ -953,7 +953,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             .ToArray();
         ProviderSourceSelector.SelectedValue =
             providerSelectionResolution.IsResolved ? distributionProvider.Id : null;
-        ProviderSwitchActionButton.IsEnabled = false;
+        SetProviderSwitchAction("Switch", targetProvider: null, enabled: false);
         ProviderSwitchPreviewText.Text = "Choose another provider to continue.";
         UpdateProviderCapabilityText();
         ProviderSwitchDialog.IsOpen = true;
