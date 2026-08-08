@@ -48,6 +48,38 @@ public sealed class WorkspaceWindowSizingTests
     }
 
     [TestMethod]
+    public void HomeClampsItsMinimumAndRequestedSizeToASubMinimumWorkArea()
+    {
+        var sizing = MainWindow.ResolveWorkspaceSizing(
+            LauncherWorkspace.Home,
+            currentWidth: 0,
+            currentHeight: 0,
+            workAreaWidth: 480,
+            workAreaHeight: 400);
+
+        Assert.AreEqual(new WorkspaceWindowSizing(480, 400, 480, 400), sizing);
+        Assert.IsTrue(sizing.MinWidth > 0);
+        Assert.IsTrue(sizing.MinHeight > 0);
+    }
+
+    [TestMethod]
+    public void ExpandedWorkspaceClampsItsMinimumAndRequestedSizeAtHighDpi()
+    {
+        var sizing = MainWindow.ResolveWorkspaceSizing(
+            LauncherWorkspace.Settings,
+            currentWidth: 680,
+            currentHeight: 680,
+            workAreaWidth: 720,
+            workAreaHeight: 480);
+
+        Assert.AreEqual(new WorkspaceWindowSizing(720, 480, 720, 480), sizing);
+        Assert.IsTrue(sizing.MinWidth <= sizing.Width);
+        Assert.IsTrue(sizing.Width <= 720);
+        Assert.IsTrue(sizing.MinHeight <= sizing.Height);
+        Assert.IsTrue(sizing.Height <= 480);
+    }
+
+    [TestMethod]
     public void XamlDoesNotOwnACompetingStartupSizeContract()
     {
         var root = XDocument.Load(RepositoryPath("src/STFCCommunityMod.Launcher/MainWindow.xaml")).Root!;

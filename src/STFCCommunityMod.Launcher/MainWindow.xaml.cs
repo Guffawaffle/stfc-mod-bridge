@@ -1376,16 +1376,21 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         double workAreaHeight)
     {
         var isHome = workspace == LauncherWorkspace.Home;
-        var minWidth = isHome ? HomeMinWidth : SettingsMinWidth;
-        var minHeight = isHome ? HomeMinHeight : SettingsMinHeight;
+        var availableWidth = NormalizeWorkAreaDimension(workAreaWidth);
+        var availableHeight = NormalizeWorkAreaDimension(workAreaHeight);
+        var minWidth = Math.Min(isHome ? HomeMinWidth : SettingsMinWidth, availableWidth);
+        var minHeight = Math.Min(isHome ? HomeMinHeight : SettingsMinHeight, availableHeight);
         var requestedWidth = isHome ? HomeWidth : Math.Max(currentWidth, SettingsWidth);
         var requestedHeight = isHome ? HomeHeight : Math.Max(currentHeight, SettingsHeight);
         return new(
             minWidth,
             minHeight,
-            Math.Max(minWidth, Math.Min(requestedWidth, workAreaWidth)),
-            Math.Max(minHeight, Math.Min(requestedHeight, workAreaHeight)));
+            Math.Clamp(requestedWidth, minWidth, availableWidth),
+            Math.Clamp(requestedHeight, minHeight, availableHeight));
     }
+
+    private static double NormalizeWorkAreaDimension(double dimension) =>
+        double.IsFinite(dimension) && dimension > 0 ? dimension : 1;
 
     private void ScheduleFocus(IInputElement target)
     {
