@@ -702,9 +702,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         keybindingIssueMessages.Clear();
         foreach (var setting in keybindings)
         {
+            var isDirty = GetValueState(setting).IsDirty;
             if (ReadKeybindingAssignment(setting) is null)
             {
-                keybindingInvalidPaths.Add(setting.Path);
+                if (isDirty)
+                {
+                    keybindingInvalidPaths.Add(setting.Path);
+                }
                 keybindingIssueMessages[setting.Path] =
                     "The configured shortcut is invalid; the runtime default is shown.";
                 continue;
@@ -728,7 +732,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 .ToArray();
             if (settingConflicts.Length > 0)
             {
-                keybindingInvalidPaths.Add(setting.Path);
+                if (isDirty)
+                {
+                    keybindingInvalidPaths.Add(setting.Path);
+                }
                 keybindingIssueMessages[setting.Path] =
                     string.Join(' ', settingConflicts);
             }
