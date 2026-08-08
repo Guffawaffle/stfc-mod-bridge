@@ -72,6 +72,46 @@ public sealed class ProviderSourceDialogTests
     }
 
     [TestMethod]
+    public void PreparedReviewAllowsRetargetingAndSelectionInvalidatesThePreview()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var selectionHandler = Slice(
+            source,
+            "private void ProviderSourceSelector_SelectionChanged",
+            "private async void ProviderSwitchActionButton_Click");
+        var reviewBranch = Slice(
+            source,
+            "if (review.RequiresReview)",
+            "operationWasPrepared = true;");
+
+        StringAssert.Contains(selectionHandler, "pendingProviderSwitch = null;");
+        StringAssert.Contains(reviewBranch, "ProviderSourceSelector.IsEnabled = true;");
+        StringAssert.Contains(reviewBranch, "SetProviderSwitchAction(\"Switch\"");
+    }
+
+    [TestMethod]
+    public void StagedChangesKeepTheContextualActionRetryable()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var actionHandler = Slice(
+            source,
+            "private async void ProviderSwitchActionButton_Click",
+            "private void ResetProviderSwitchReviewControls");
+        var stagedChangesGuard = Slice(
+            actionHandler,
+            "if (settingsViewModel is not null",
+            "if (DataContext is not MainWindowViewModel viewModel");
+
+        StringAssert.Contains(stagedChangesGuard, "SetProviderSwitchAction(");
+        StringAssert.Contains(stagedChangesGuard, "enabled: true");
+        Assert.IsFalse(stagedChangesGuard.Contains(
+            "ProviderSwitchActionButton.IsEnabled = false",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void ProviderSwitchFlowNeverRequestsABridgeRestart()
     {
         var sources = new[]
@@ -101,6 +141,15 @@ public sealed class ProviderSourceDialogTests
         element.Attributes().SingleOrDefault(
             attribute => attribute.Name.LocalName == "AutomationProperties.Name"
                 && attribute.Name.NamespaceName.Contains("automation", StringComparison.OrdinalIgnoreCase))?.Value;
+
+    private static string Slice(string source, string start, string end)
+    {
+        var startIndex = source.IndexOf(start, StringComparison.Ordinal);
+        Assert.IsTrue(startIndex >= 0, $"Could not find source marker '{start}'.");
+        var endIndex = source.IndexOf(end, startIndex + start.Length, StringComparison.Ordinal);
+        Assert.IsTrue(endIndex > startIndex, $"Could not find source marker '{end}'.");
+        return source[startIndex..endIndex];
+    }
 
     private static string RepositoryRoot()
     {

@@ -1007,7 +1007,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             ProviderSwitchPreviewText.Text =
                 "Save or discard staged Settings and Data Sync changes before switching sources.";
-            ProviderSwitchActionButton.IsEnabled = false;
+            SetProviderSwitchAction(
+                uiPreferencesStore.Load().ProviderSwitchReviewAcknowledged ? "Switch" : "Review",
+                targetProvider,
+                enabled: true);
             return;
         }
         if (DataContext is not MainWindowViewModel viewModel
@@ -1045,6 +1048,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 ProviderSwitchPreviewText.Text = review.Summary;
                 if (review.RequiresReview)
                 {
+                    ProviderSourceSelector.IsEnabled = true;
                     SetProviderSwitchAction("Switch", targetProvider, enabled: true);
                     ProviderSwitchActionButton.Focus();
                     return;
