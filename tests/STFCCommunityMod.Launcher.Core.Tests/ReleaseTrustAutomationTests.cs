@@ -18,6 +18,9 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(
             script,
             "$verifier = Join-Path $verifierBuild \"STFCModBridge.ReleaseVerifier.exe\"");
+        Assert.IsFalse(
+            Regex.IsMatch(script, @"\$verifier\s*=\s*if\s*\(\s*\$ReleaseVerifierPath\b", RegexOptions.CultureInvariant),
+            "The internal verifier-build path must assign the canonical path directly, not through expression output.");
     }
 
     [TestMethod]
