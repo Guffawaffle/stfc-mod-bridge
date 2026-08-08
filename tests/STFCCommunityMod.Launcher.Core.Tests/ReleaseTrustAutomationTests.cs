@@ -549,6 +549,9 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(publisher, "application/appinstaller");
         StringAssert.Contains(publisher, "bytes=0-1023");
         StringAssert.Contains(publisher, "refusing a channel downgrade");
+        StringAssert.Contains(publisher, "$expectedDescriptorHash");
+        StringAssert.Contains(publisher, "published.appinstaller");
+        Assert.IsFalse(publisher.Contains("$publishedDescriptor.Content", StringComparison.Ordinal));
     }
 
     [TestMethod]

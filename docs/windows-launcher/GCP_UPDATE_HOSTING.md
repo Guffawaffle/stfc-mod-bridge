@@ -88,10 +88,14 @@ Only then does `.github/workflows/publish-update-channel.yml`:
 5. verify the bytes through the public endpoint; and
 6. advance and re-read the channel descriptor.
 
-If any check fails, the channel pointer is not advanced. A GitHub release may be
-visible briefly while this post-publication check runs, so release notes direct
-testers to wait for the update-hosting workflow to succeed before using the App
-Installer entry point.
+Release, attestation, immutable-package, and downgrade checks all pass before
+the channel object is replaced. The final public byte check necessarily occurs
+after that replacement. If it fails, the workflow remains red and the channel
+must not be treated as qualified, although the uploaded descriptor may already
+be publicly visible. Bucket object versioning preserves the prior generation
+for operator recovery. A GitHub release may be visible briefly while this
+post-publication check runs, so release notes direct testers to wait for the
+update-hosting workflow to succeed before using the App Installer entry point.
 
 ## Trust boundary
 
