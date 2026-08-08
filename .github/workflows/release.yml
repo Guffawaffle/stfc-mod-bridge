@@ -203,6 +203,9 @@ jobs:
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
 
+      - name: Restore locked solution for vulnerability audit
+        run: dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
+
       - name: Run final pre-signing security gates
         shell: pwsh
         env:

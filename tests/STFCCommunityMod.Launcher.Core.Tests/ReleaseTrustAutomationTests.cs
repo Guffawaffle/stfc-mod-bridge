@@ -167,6 +167,9 @@ public sealed partial class ReleaseTrustAutomationTests
         var verifierSbom = workflow.IndexOf(
             "- name: Regenerate verifier SBOM from final signed bytes",
             StringComparison.Ordinal);
+        var auditRestore = workflow.IndexOf(
+            "- name: Restore locked solution for vulnerability audit",
+            StringComparison.Ordinal);
         var security = workflow.IndexOf(
             "- name: Run final pre-signing security gates",
             StringComparison.Ordinal);
@@ -184,7 +187,8 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsTrue(verifierSigning > oidc);
         Assert.IsTrue(pairedBuild > verifierSigning);
         Assert.IsTrue(verifierSbom > pairedBuild);
-        Assert.IsTrue(security > verifierSbom);
+        Assert.IsTrue(auditRestore > verifierSbom);
+        Assert.IsTrue(security > auditRestore);
         Assert.IsTrue(pairedSigning > security);
         Assert.IsTrue(finalPayloadSbom > pairedSigning);
         StringAssert.Contains(
@@ -194,6 +198,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(workflow, "generate-release-verifier-sbom.ps1");
         StringAssert.Contains(workflow, "generate-payload-sbom.ps1");
         StringAssert.Contains(workflow, "STFCModBridge.ReleaseVerifier.spdx.json");
+        StringAssert.Contains(workflow, "dotnet restore STFCCommunityMod.Launcher.sln --locked-mode");
         StringAssert.Contains(workflow, "git merge-base --is-ancestor $tagCommit refs/remotes/origin/main");
         Assert.IsTrue(
             Regex.Matches(workflow, "stfc-mod-bridge-sbom.spdx.json", RegexOptions.CultureInvariant).Count >= 5,
