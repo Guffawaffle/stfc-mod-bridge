@@ -1059,6 +1059,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 pendingProviderSwitch,
                 pendingProviderSwitch.ConfirmationText,
                 lifetimeCancellation.Token);
+            pendingProviderSwitch = null;
             var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
             ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
                 ? result.Message

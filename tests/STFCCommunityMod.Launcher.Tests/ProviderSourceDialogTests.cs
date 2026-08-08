@@ -130,6 +130,36 @@ public sealed class ProviderSourceDialogTests
     }
 
     [TestMethod]
+    public void SuccessfulExecutionConsumesPreviewBeforeRecompositionAndFinalizer()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var actionHandler = Slice(
+            source,
+            "private async void ProviderSwitchActionButton_Click",
+            "private void ResetProviderSwitchReviewControls");
+        var executeIndex = actionHandler.IndexOf(
+            "var result = await providerSourceSwitchCoordinator.ExecuteAsync(",
+            StringComparison.Ordinal);
+        var consumeIndex = actionHandler.IndexOf(
+            "pendingProviderSwitch = null;",
+            executeIndex,
+            StringComparison.Ordinal);
+        var recomposeIndex = actionHandler.IndexOf(
+            "providerSessions.Recompose(result.Selection)",
+            StringComparison.Ordinal);
+        var finalizerIndex = actionHandler.IndexOf("finally", StringComparison.Ordinal);
+
+        Assert.IsTrue(executeIndex >= 0);
+        Assert.IsTrue(consumeIndex > executeIndex);
+        Assert.IsTrue(recomposeIndex > consumeIndex);
+        Assert.IsTrue(finalizerIndex > recomposeIndex);
+        StringAssert.Contains(
+            actionHandler[finalizerIndex..],
+            "if (pendingProviderSwitch is not null)");
+    }
+
+    [TestMethod]
     public void ProviderSwitchFlowNeverRequestsABridgeRestart()
     {
         var sources = new[]
