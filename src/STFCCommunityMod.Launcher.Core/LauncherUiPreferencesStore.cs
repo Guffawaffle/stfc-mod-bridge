@@ -12,10 +12,11 @@ public enum LauncherColorMode
 public sealed record LauncherUiPreferences(
     bool SettingsSearchVisible,
     LauncherColorMode ColorMode = LauncherColorMode.System,
-    LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher)
+    LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher,
+    bool ProviderSwitchReviewAcknowledged = false)
 {
     public static LauncherUiPreferences Default { get; } =
-        new(false, LauncherColorMode.System, LauncherLaunchTarget.ScopelyLauncher);
+        new(false, LauncherColorMode.System, LauncherLaunchTarget.ScopelyLauncher, false);
 }
 
 public interface ILauncherUiPreferencesStore
@@ -27,7 +28,7 @@ public interface ILauncherUiPreferencesStore
 
 public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILauncherUiPreferencesStore
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -58,7 +59,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                 return new(document.SettingsSearchVisible, LauncherColorMode.System);
             }
 
-            if (document.SchemaVersion is not (2 or CurrentSchemaVersion))
+            if (document.SchemaVersion is not (2 or 3 or CurrentSchemaVersion))
             {
                 return LauncherUiPreferences.Default;
             }
@@ -73,7 +74,12 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
             var launchTarget = document.SchemaVersion == 2
                 ? LauncherLaunchTarget.ScopelyLauncher
                 : ParseLaunchTarget(document.LaunchTarget);
-            return new(document.SettingsSearchVisible, colorMode, launchTarget);
+            return new(
+                document.SettingsSearchVisible,
+                colorMode,
+                launchTarget,
+                document.SchemaVersion == CurrentSchemaVersion
+                    && document.ProviderSwitchReviewAcknowledged);
         }
         catch (Exception exception) when (
             exception is IOException
@@ -100,7 +106,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
             CurrentSchemaVersion,
             preferences.SettingsSearchVisible,
             preferences.ColorMode.ToString(),
-            preferences.LaunchTarget.ToString());
+            preferences.LaunchTarget.ToString(),
+            preferences.ProviderSwitchReviewAcknowledged);
 
         try
         {
@@ -129,7 +136,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         int SchemaVersion,
         bool SettingsSearchVisible,
         string? ColorMode = null,
-        string? LaunchTarget = null);
+        string? LaunchTarget = null,
+        bool ProviderSwitchReviewAcknowledged = false);
 
     private static LauncherLaunchTarget ParseLaunchTarget(string? value) =>
         Enum.TryParse<LauncherLaunchTarget>(value, ignoreCase: true, out var parsed)
