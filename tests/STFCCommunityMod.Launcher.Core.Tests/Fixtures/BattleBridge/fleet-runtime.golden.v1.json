@@ -1,0 +1,125 @@
+{
+  "fixtureSchema": "stfc.battle-bridge.payload-fixture.v1",
+  "evidence": [
+    {"label": "ingest.stfc-sidecar.v1", "schema": "stfc.sidecar.ingest.v1"},
+    {"label": "fleet.runtime-snapshot.v1", "schema": "stfc.fleet.runtime_snapshot.v1"}
+  ],
+  "synthetic": true,
+  "redacted": true,
+  "envelope": {
+    "protocolVersion": "stfc.sidecar.ingest.v1",
+    "kind": "fleet.runtime",
+    "batchId": "golden-fleet-batch-17",
+    "producedAt": "2026-05-18T12:05:00.000Z",
+    "sessionId": "golden-session-1",
+    "source": "stfc-community-mod",
+    "modVersion": "fixture-only",
+    "payloadProtocol": "stfc.fleet.runtime_snapshot.v1",
+    "payload": {
+      "type": "fleet.runtime",
+      "schemaVersion": "stfc.fleet.runtime_snapshot.v1",
+      "source": "fleet-slot-warping",
+      "observedAtMs": 1779105900000,
+      "fleetBarTracked": true,
+      "selectedIndex": 0,
+      "slots": [
+        {
+          "slotIndex": 0,
+          "present": true,
+          "fleetId": 4001,
+          "currentStateName": "Warping",
+          "hullName": "Redacted Test Ship",
+          "hullSpecId": 1307832955,
+          "shipIdentityProbe": {
+            "shipId": "9007199254740993888",
+            "source": "FleetPlayerData.Ship.ID"
+          },
+          "activeTimer": {
+            "remainingTicks": 905000000,
+            "remainingMs": 90500,
+            "remainingSeconds": 90.5,
+            "source": "FleetPlayerData.Timer.RemainingTime"
+          }
+        },
+        {
+          "slotIndex": 1,
+          "present": false
+        }
+      ]
+    }
+  },
+  "expectedParsedEnvelope": {
+    "protocolVersion": "stfc.sidecar.ingest.v1",
+    "kind": "fleet.runtime",
+    "batchId": "golden-fleet-batch-17",
+    "producedAt": "2026-05-18T12:05:00.000Z",
+    "sessionId": "golden-session-1",
+    "source": "stfc-community-mod",
+    "modVersion": "fixture-only",
+    "payloadProtocol": "stfc.fleet.runtime_snapshot.v1",
+    "payload": {
+      "type": "fleet.runtime",
+      "schemaVersion": "stfc.fleet.runtime_snapshot.v1",
+      "source": "fleet-slot-warping",
+      "observedAtMs": 1779105900000,
+      "fleetBarTracked": true,
+      "selectedIndex": 0,
+      "slots": [
+        {
+          "slotIndex": 0,
+          "present": true,
+          "fleetId": 4001,
+          "currentStateName": "Warping",
+          "hullName": "Redacted Test Ship",
+          "hullSpecId": 1307832955,
+          "shipIdentityProbe": {"shipId": "9007199254740993888", "source": "FleetPlayerData.Ship.ID"},
+          "activeTimer": {"remainingTicks": 905000000, "remainingMs": 90500, "remainingSeconds": 90.5, "source": "FleetPlayerData.Timer.RemainingTime"}
+        },
+        {"slotIndex": 1, "present": false}
+      ]
+    }
+  },
+  "projectorContext": {
+    "installId": "golden-install-1",
+    "sessionId": "golden-session-1",
+    "sidecarVersion": "fixture-sidecar",
+    "timestamp": "2026-05-18T12:05:00.000Z",
+    "initialSequence": 0
+  },
+  "expectedTelemetryEvents": [
+    {
+      "protocolVersion": "stfc.telemetry.v1",
+      "schemaVersion": "stfc.telemetry.fleet-snapshot.v1",
+      "type": "fleet.snapshot",
+      "timestamp": "2026-05-18T12:05:00.000Z",
+      "installId": "golden-install-1",
+      "sessionId": "golden-session-1",
+      "source": "stfc-sidecar",
+      "classification": "cloud_private",
+      "idempotencyKey": "sidecar:fleet.snapshot:db7e1c5e567f3dc6aeb9c6e937a9ec57c1c771b0e6b5bf1c",
+      "snapshotId": "sidecar-runtime-a5c8b4d39f55a468b2513290",
+      "snapshotVersion": 1,
+      "observedAt": "2026-05-18T12:05:00.000Z",
+      "sidecarVersion": "fixture-sidecar",
+      "fleetCount": 1,
+      "slots": [
+        {
+          "slotKey": "slot-0",
+          "fleetKey": "fleet-91d9c9b95bba5fe6",
+          "state": "warping",
+          "assignmentKind": "player_ship",
+          "updatedAt": "2026-05-18T12:05:00.000Z",
+          "shipKeyHash": "91d9c9b95bba5fe669d6e7707a27ef8e",
+          "shipIdentityId": "9007199254740993888",
+          "hullSpecId": 1307832955,
+          "shipType": "hull:Redacted Test Ship",
+          "activeTimerRemainingMs": 90500,
+          "activeTimerSource": "FleetPlayerData.Timer.RemainingTime"
+        },
+        {"slotKey": "slot-1", "fleetKey": "fleet-slot-1", "state": "empty", "assignmentKind": "slot", "updatedAt": "2026-05-18T12:05:00.000Z"}
+      ],
+      "capabilities": {"fleetProjection": true, "battleSummary": true},
+      "coalesceKey": "golden-install-1:fleet.snapshot:golden-session-1"
+    }
+  ]
+}

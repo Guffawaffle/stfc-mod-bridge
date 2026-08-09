@@ -60,12 +60,13 @@ internal static partial class ArtifactBoundRuntimeManifestParser
     private static readonly Dictionary<string, (string Schema, string[]? PayloadKinds, string? EnvelopeKind)>
         SupportedRuntimeCapabilities = new Dictionary<string, (string, string[]?, string?)>(StringComparer.Ordinal)
         {
-            ["ingest.stfc-sidecar.v1"] = (
+            [LauncherCapabilityIds.SidecarIngestV1] = (
                 "stfc.sidecar.ingest.v1",
                 ["battle.events", "fleet.runtime", "transport.chunk"],
                 null),
-            ["battle.capture.v1"] = ("stfc.battle.capture.v1", null, "battle.events"),
-            ["fleet.runtime-snapshot.v1"] = ("stfc.fleet.runtime_snapshot.v1", null, "fleet.runtime"),
+            [LauncherCapabilityIds.BattleCaptureV1] = ("stfc.battle.capture.v1", null, "battle.events"),
+            [LauncherCapabilityIds.FleetRuntimeSnapshotV1] = (
+                "stfc.fleet.runtime_snapshot.v1", null, "fleet.runtime"),
         };
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,159}$", RegexOptions.CultureInvariant)]
