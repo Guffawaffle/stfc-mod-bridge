@@ -76,6 +76,7 @@ public sealed class AboutSurfaceTests
         Assert.IsFalse(aboutText.Contains("OpenRawTomlCommand", StringComparison.Ordinal));
         Assert.IsFalse(aboutText.Contains("CopyDiagnosticsButton_Click", StringComparison.Ordinal));
         Assert.IsFalse(aboutText.Contains("DiagnosticsRecoverButton_Click", StringComparison.Ordinal));
+        Assert.IsFalse(aboutText.Contains("DiagnosticsCandidateRecoveryButton_Click", StringComparison.Ordinal));
         Assert.IsFalse(aboutText.Contains("DiagnosticsUninstallButton_Click", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.OpenDataFolderCommand", StringComparison.Ordinal));
         Assert.IsTrue(aboutText.Contains("About.ManageApplicationCommand", StringComparison.Ordinal));

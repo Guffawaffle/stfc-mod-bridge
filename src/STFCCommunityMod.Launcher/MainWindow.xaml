@@ -1248,6 +1248,13 @@
                   IsEnabled="{Binding CanRecoverMod}"
                   ToolTip="Available only when an incomplete deployment transaction is detected and the game is closed."
                   automation:AutomationProperties.Name="Recover incomplete journaled mod transaction" />
+          <Button Margin="0,0,10,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="DiagnosticsCandidateRecoveryButton_Click"
+                  Content="Retry _candidate recovery"
+                  IsEnabled="{Binding CanRetryCandidateRecovery}"
+                  ToolTip="Explicitly reconciles only exact launcher-owned reviewed-download residue; it does not scan during passive Diagnostics or change the game installation."
+                  automation:AutomationProperties.Name="Retry exact reviewed candidate recovery" />
           <Button Margin="0,0,0,10"
                   Style="{StaticResource UtilityActionButtonStyle}"
                   Click="DiagnosticsUninstallButton_Click"
@@ -1260,6 +1267,11 @@
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="{Binding DiagnosticRecoveryAvailability}"
                    automation:AutomationProperties.Name="{Binding DiagnosticRecoveryAvailability}" />
+        <TextBlock Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding DiagnosticCandidateRecoveryAvailability}"
+                   automation:AutomationProperties.Name="{Binding DiagnosticCandidateRecoveryAvailability}" />
         <TextBlock Margin="0,4,0,0"
                    FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"

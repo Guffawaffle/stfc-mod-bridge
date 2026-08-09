@@ -128,11 +128,13 @@ unknown runtime with no inferred capabilities. A compatible manifest whose
 settings-catalog schema is unsupported retains its positively detected
 distribution identity but loses the principal-taxonomy capability.
 
-The embedded manifest represents the currently packaged release source. When
-source switching and mod installation are implemented, the same detector
-contract should consume the selected runtime's embedded or adjacent manifest.
-Git remote, repository path, and directory-name guesses must remain
-development evidence only and must never elevate an unknown runtime.
+The embedded manifest is the packaged base fallback. A launcher-certified,
+installed exact DLL/runtime-manifest pair can replace that base evidence for
+the current provider session; local health revalidates and revokes it when the
+adjacent bytes change. The exact-pair candidate review uses the same detector
+and resolver before live mutation. Git remote, repository path, and
+directory-name guesses remain development evidence only and never elevate an
+unknown runtime.
 
 This manifest is a compatibility contract, not a security boundary. Signing it
 is unnecessary unless a future capability must resist local tampering.
@@ -154,6 +156,37 @@ The activation decision records:
 - human-readable reason;
 - selected implementation;
 - fallback implementation when inactive.
+
+## Exact-pair feature remediation review
+
+An unavailable feature can start provider remediation only from an explicit
+feature action. The remediation coordinator first uses the existing provider
+switch preview for the target release, then the session-owned reviewed
+candidate acquirer downloads and verifies the exact DLL/runtime-manifest pair.
+Passive health, startup, Settings, Diagnostics preview, and source selection do
+not acquire or inspect candidate bytes.
+
+The immutable review retains the current and target typed eligibility and
+implementation-selection evidence, checked-in catalog and product-policy
+source identities, provider/channel/runtime attribution, repository, tag,
+source revision, and both exact SHA-256 identities. The current and target
+decisions come from the existing resolver; provider names, display copy, remote
+flags, and player-facing reason strings are not resolver inputs. A target plan
+may truthfully remain inactive because of policy, dependency, or implementation
+availability even when its runtime advertises additional capability.
+
+Confirmation is bound to that exact evidence and transfers the same single-use
+candidate lease into the existing atomic provider transaction. Deployment
+restages and re-verifies those locked bytes without another download. Cancel,
+validation failure, or a stale/replayed receipt invokes exact candidate cleanup
+before any provider selection, TOML, journal, game file, preference, or runtime
+composition mutation. Player preference is intentionally outside this review
+and is considered only after a successful transaction by the future #132
+feature surface.
+
+This reviewed release acquisition is narrow launcher update infrastructure. It
+does not grant Bridge or Battle Bridge general outbound Internet authority, add
+a provider-name gate, or establish a local HTTP service.
 
 About exposes the detected runtime, semantic-grouping state, selected layout,
 and decision reason for support evidence. The complete profile and activation

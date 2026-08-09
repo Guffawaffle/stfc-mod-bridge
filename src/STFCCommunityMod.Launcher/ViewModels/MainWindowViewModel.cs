@@ -23,6 +23,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
+    private readonly LauncherFeatureRemediationCandidates? featureRemediationCandidates;
     private readonly string selectedModSourceMetadata;
     private readonly IDiagnosticFolderService diagnosticFolderService;
     private LauncherEnvironmentSnapshot snapshot;
@@ -44,6 +45,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator { get; private set; }
 
+    internal LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator { get; private set; }
+
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
         IModManagementCoordinator modManagementCoordinator,
@@ -53,6 +56,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
         ILauncherUiPreferencesStore uiPreferencesStore,
         LauncherDistributionProviderCatalog distributionProviderCatalog,
+        LauncherFeatureRemediationCandidates? featureRemediationCandidates,
         string modSourceMetadata,
         IDiagnosticFolderService diagnosticFolderService)
     {
@@ -64,6 +68,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.uiPreferencesStore = uiPreferencesStore;
         this.distributionProviderCatalog = distributionProviderCatalog;
+        this.featureRemediationCandidates = featureRemediationCandidates;
         selectedModSourceMetadata = modSourceMetadata;
         this.diagnosticFolderService = diagnosticFolderService;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
@@ -121,6 +126,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         actionFeedback.Launch.PropertyChanged -= LaunchActionState_PropertyChanged;
         actionFeedback.LauncherUpdate.PropertyChanged -= LauncherUpdateActionState_PropertyChanged;
         homeFeedback.PropertyChanged -= HomeFeedback_PropertyChanged;
+        if (featureRemediationCandidates is not null)
+        {
+            ObserveDisposal(featureRemediationCandidates.DisposeAsync().AsTask());
+        }
         GC.SuppressFinalize(this);
     }
 
@@ -232,6 +241,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         : IsGameRunning
             ? "Close Star Trek Fleet Command before removing the managed community mod."
             : "Removal is available only for a verified Mod Bridge-managed installation owned by the selected provider.";
+
+    public bool CanRetryCandidateRecovery =>
+        featureRemediationCandidates is not null
+        && !actionFeedback.Mod.IsWorking
+        && !actionFeedback.Launch.IsWorking;
+
+    public string DiagnosticCandidateRecoveryAvailability =>
+        featureRemediationCandidates is null
+            ? "Candidate recovery is unavailable because no reviewed release source is configured."
+            : "Use Retry candidate recovery only after an interrupted reviewed download. It removes only exact launcher-owned candidate residue and does not change the game installation.";
 
     public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
 
@@ -435,6 +454,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId),
                 reviewedCertification: binding.ReviewedCertification);
+            var candidateAcquirer = binding.IsAvailable
+                && binding.ReviewedCertification is not null
+                    ? new ReviewedModArtifactCandidateAcquirer(
+                        installLayout.StateDirectory,
+                        artifactDownloader,
+                        new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
+                        artifactVerifier,
+                        new(
+                            binding.ProviderId,
+                            binding.ReleaseChannelId,
+                            provider.RuntimeDistributionId),
+                        binding.ReviewedCertification)
+                    : null;
             var providerHealth = new LauncherHealthService(
                 new ModInstallationInspector(
                     providerDeployment,
@@ -462,7 +494,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     provider.RuntimeDistributionId,
                     management),
                 SwitchEndpoint: new LauncherProviderSwitchEndpoint(provider.Id, management),
-                Deployment: providerDeployment);
+                Deployment: providerDeployment,
+                CandidateEndpoint: candidateAcquirer is null
+                    ? null
+                    : new LauncherFeatureRemediationEndpoint(provider.Id, candidateAcquirer));
         }).ToArray();
         var providerEndpoints = providerComponents.Select(component => component.Endpoint).ToArray();
         var deploymentService = providerComponents.Single(component =>
@@ -470,6 +505,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         IModManagementCoordinator modManagementCoordinator = new ProviderAwareModManagementCoordinator(
             distributionProvider.Id,
             providerEndpoints);
+        var candidateEndpoints = providerComponents
+            .Select(component => component.CandidateEndpoint)
+            .OfType<LauncherFeatureRemediationEndpoint>()
+            .ToArray();
+        var featureRemediationCandidates = candidateEndpoints.Length == 0
+            ? null
+            : new LauncherFeatureRemediationCandidates(candidateEndpoints);
         ILauncherReleaseDiscoveryClient launcherReleaseClient = new UnavailableLauncherReleaseDiscoveryClient(
             "Authenticated standalone update authorization remains disabled until release qualification is complete. "
             + "Use the signed MSIX/App Installer channel or a separately verified installer.");
@@ -529,6 +571,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             launcherReleaseClient,
             uiPreferencesStore,
             distributionProviderCatalog,
+            featureRemediationCandidates,
             string.IsNullOrWhiteSpace(providerResolutionFailure)
                 ? $"{distributionProvider.DisplayName} · {releaseChannel.DisplayName}"
                 : "Source needs attention",
@@ -542,6 +585,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             providerComponents.Select(component => component.SwitchEndpoint),
             installLayout.StateDirectory);
         return viewModel;
+    }
+
+    internal void ConfigureFeatureRemediation(Func<LauncherActivationPlan> currentPlan)
+    {
+        ArgumentNullException.ThrowIfNull(currentPlan);
+        if (ProviderSwitchCoordinator is null || featureRemediationCandidates is null)
+        {
+            return;
+        }
+        if (FeatureRemediationCoordinator is not null)
+        {
+            throw new InvalidOperationException("Feature remediation is already composed for this provider session.");
+        }
+        FeatureRemediationCoordinator = new(
+            ProviderSwitchCoordinator,
+            currentPlan,
+            featureRemediationCandidates.Endpoints);
     }
 
     public void ConfirmManualSelection(string gameDirectory)
@@ -847,6 +907,47 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             cancellationToken);
     }
 
+    public async Task<ReviewedCandidateRecoveryResult?> RetryCandidateRecoveryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanRetryCandidateRecovery || featureRemediationCandidates is null)
+        {
+            return null;
+        }
+        if (!actionFeedback.Mod.TryBegin(
+                "Candidate recovery accepted. Checking exact launcher-owned residue…"))
+        {
+            return null;
+        }
+        try
+        {
+            var result = await featureRemediationCandidates.RecoverAsync(cancellationToken);
+            actionFeedback.Mod.Complete(result.CanAcquire, result.Message);
+            SetDiagnosticActionStatus(result.CanAcquire, result.Message);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            actionFeedback.Mod.Cancel("Candidate recovery was canceled; no game or provider state was changed.");
+            SetDiagnosticActionStatus(
+                false,
+                "Candidate recovery was canceled; no game or provider state was changed.");
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            actionFeedback.Mod.Fail($"Candidate recovery could not finish: {exception.Message}");
+            SetDiagnosticActionStatus(
+                false,
+                $"Candidate recovery could not finish: {exception.Message}");
+            return null;
+        }
+    }
+
     private bool HasIncompleteProviderSwitch
     {
         get
@@ -928,6 +1029,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(CanUninstallMod));
         OnPropertyChanged(nameof(DiagnosticRecoveryAvailability));
         OnPropertyChanged(nameof(DiagnosticRemovalAvailability));
+        OnPropertyChanged(nameof(CanRetryCandidateRecovery));
+        OnPropertyChanged(nameof(DiagnosticCandidateRecoveryAvailability));
         UpdateModActionAvailability();
     }
 
@@ -1071,6 +1174,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
                 OnPropertyChanged(nameof(CanLaunchGame));
+                OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(ModActionAutomationName));
@@ -1085,6 +1189,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanManageMod));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
         }
     }
@@ -1120,6 +1225,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanManageMod));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(LaunchActionAutomationName));
@@ -1141,6 +1247,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             OnPropertyChanged(nameof(HasHomeOperationFeedback));
         }
+    }
+
+    private static void ObserveDisposal(Task disposal)
+    {
+        _ = disposal.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private void NotifyLaunchPresentationChanged()

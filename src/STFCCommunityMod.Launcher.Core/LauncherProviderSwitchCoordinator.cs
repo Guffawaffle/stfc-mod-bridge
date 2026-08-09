@@ -167,7 +167,47 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     public async Task<LauncherProviderAtomicSwitchResult> ExecuteAsync(
         LauncherProviderAtomicSwitchPreview preview,
         string confirmationText,
+        CancellationToken cancellationToken = default) =>
+        await ExecuteCoreAsync(
+            preview,
+            confirmationText,
+            candidateLease: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<LauncherProviderAtomicSwitchResult> ExecuteCandidateAsync(
+        LauncherProviderAtomicSwitchPreview preview,
+        ReviewedModArtifactCandidateLease candidateLease,
+        string confirmationText,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateLease);
+        ArgumentNullException.ThrowIfNull(preview);
+        if (preview.Artifact is null
+            || candidateLease.Receipt.Artifact != preview.Artifact.Artifact
+            || !string.Equals(
+                candidateLease.Receipt.InstallationAttribution.ProviderId,
+                preview.Configuration.Target.ProviderId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                candidateLease.Receipt.InstallationAttribution.ReleaseChannelId,
+                preview.Configuration.Target.ReleaseChannelId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The exact candidate does not match the reviewed provider-switch target.");
+        }
+        return await ExecuteCoreAsync(
+            preview,
+            confirmationText,
+            candidateLease,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<LauncherProviderAtomicSwitchResult> ExecuteCoreAsync(
+        LauncherProviderAtomicSwitchPreview preview,
+        string confirmationText,
+        ReviewedModArtifactCandidateLease? candidateLease,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preview);
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
@@ -215,11 +255,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         ModDeploymentResult deployment;
         try
         {
-            deployment = await targetEndpoint.ExecuteCoordinatedAsync(
-                preview.Artifact,
-                preview.Configuration.TransactionId,
-                participant,
-                cancellationToken).ConfigureAwait(false);
+            deployment = candidateLease is null
+                ? await targetEndpoint.ExecuteCoordinatedAsync(
+                    preview.Artifact,
+                    preview.Configuration.TransactionId,
+                    participant,
+                    cancellationToken).ConfigureAwait(false)
+                : await targetEndpoint.ExecuteCandidateCoordinatedAsync(
+                    preview.Artifact,
+                    candidateLease,
+                    preview.Configuration.TransactionId,
+                    participant,
+                    cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

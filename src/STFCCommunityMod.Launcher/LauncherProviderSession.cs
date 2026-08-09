@@ -31,6 +31,8 @@ internal sealed class LauncherProviderSession : IDisposable
             releaseChannel,
             startupComposition,
             reviewedRuntimeActivation?.EvidenceSourceSha256);
+        viewModel.ConfigureFeatureRemediation(
+            () => runtimeComposition.Current.ActivationPlan);
         ApplicationComposition = new(
             new(viewModel, () => settingsFactory(runtimeComposition.Current)),
             () => runtimeComposition.Current.ActivationPlan);
@@ -53,6 +55,9 @@ internal sealed class LauncherProviderSession : IDisposable
     public LauncherProviderAtomicSwitchCoordinator SwitchCoordinator =>
         ViewModel.ProviderSwitchCoordinator
         ?? throw new InvalidOperationException("Provider-switch composition is unavailable.");
+
+    public LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator =>
+        ViewModel.FeatureRemediationCoordinator;
 
     public bool RefreshRuntimeActivation(ReviewedRuntimeActivation? activation) =>
         runtimeComposition.Refresh(activation);

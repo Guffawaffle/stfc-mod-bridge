@@ -162,6 +162,7 @@ public sealed class SettingsShellAccessibilityTests
         CollectionAssert.Contains(names, "Review local unredacted effective configuration export");
         CollectionAssert.Contains(names, "Confirm unredacted effective configuration export");
         CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
+        CollectionAssert.Contains(names, "Retry exact reviewed candidate recovery");
         CollectionAssert.Contains(names, "Review removal of the Mod Bridge-managed community mod");
 
         Assert.IsFalse(
