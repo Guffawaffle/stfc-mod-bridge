@@ -1,8 +1,8 @@
 # Battle Bridge local IPC boundary
 
-Status: authenticated named pipes are the accepted direction; operational
-activation remains blocked on lifecycle, producer, credential, and package
-qualification
+Status: authenticated named-pipe transport proof implemented but dormant;
+operational activation remains blocked on lifecycle, producer, credential, and
+signed-package qualification
 
 Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
 
@@ -79,6 +79,56 @@ proves all of the following together:
 
 The proof must also demonstrate that inactive and merely `available` features
 create no pipe, database, timer, thread, worker, or network activity.
+
+## Implemented dormant proof
+
+`BattleNamedPipeIngestHost` is the current transport proof. It is not registered
+in launcher startup, a Home, Settings, Diagnostics, or any runtime-composition
+factory. Construction is passive, and an inactive activation returns without
+creating a pipe or worker.
+
+The proof currently accepts only one role and operation:
+
+| Role | Operation | Authorization |
+|---|---|---|
+| `stfc-mod-runtime` | `ingest` | Windows current-user pipe isolation, exact 32-byte credential, and a lifecycle-supplied receipt binding process ID, process start time, executable path, and reviewed runtime-evidence SHA-256 |
+
+Bridge management remains in-process and optional-module roles are denied; the
+proof does not invent unused pipe APIs. A future module capability adds a new
+closed role/operation contract rather than inheriting runtime or Bridge
+authority.
+
+Each connection is one bounded request. It first sends a maximum-4-KiB closed
+JSON header containing the exact protocol version, role, operation, and
+credential. Duplicate (including escaped-equivalent), unknown, missing,
+non-string, control-bearing, or noncanonical properties reject. Only after
+fixed-time credential comparison, OS client-PID lookup, and exact process
+receipt authorization does the server return `ready`. The client then sends one
+length-prefixed exact ingest envelope, capped by the existing 512-KiB request
+limit. The shared parser retains exact bytes, family/capability validation,
+chunk limits, and whole-batch atomicity before the existing sink is called.
+
+Pipe instances use `PipeOptions.CurrentUserOnly`, asynchronous byte mode, and
+`FirstPipeInstance` for collision failure. Handler admission is capped by the
+existing 16-request limit. Stop ends acceptance, drains within the reviewed
+bound, then cancels and joins the cancellation-compliant sink. Health contains
+only state, bounded counters, a typed failure, and transition; it exposes no
+pipe name, PID, executable path, evidence hash, credential, payload, event ID,
+or endpoint.
+
+The proof deliberately does not create/rotate the credential, select the pipe
+name, discover a game process, inspect a runtime artifact, acquire
+`runtime.lock`, open SQLite, edit TOML, or decide eligibility. Those receipts
+must be injected by the accepted lifecycle and activation owners. Real signed
+MSIX and standalone medium-integrity child-process qualification remains a
+release gate before composition.
+
+The pipe host rejects the older #62 capability-plus-demand activation object.
+Its only accepted activation is derived from `LauncherBattleFeatureSnapshot`,
+which already combines normalized runtime capability, checked-in product
+policy, and independent per-feature player preference. An unavailable,
+available/unset, or disabled feature therefore cannot create an accepted ingest
+family even if a caller invokes the legacy helper directly.
 
 ## Current composition
 

@@ -1,11 +1,24 @@
 # Battle Bridge Native Ingest Boundary
 
-Status: native transport component implemented for Sidecar issue #62; dormant
-until the activation and repository owners supply an eligible composition
+Status: historical bounded loopback proof from Sidecar issue #62; dormant and
+superseded as the product transport direction by authenticated named pipes
+
+## Supersession
+
+This `HttpListener` implementation remains checked-in test evidence for the
+accepted envelope parser, memory accounting, queue, and shutdown behavior. It
+is not the current local communication architecture and must not be composed or
+activated by runtime capability, product policy, or player preference. The
+current local-only direction and activation gates are defined in
+[BATTLE_BRIDGE_LOCAL_IPC.md](BATTLE_BRIDGE_LOCAL_IPC.md).
+
+Reusing HTTP locally now requires a new explicit reviewed decision. Existing
+release/update HTTPS is unrelated narrow launcher infrastructure and does not
+authorize this listener or any general Bridge/Battle Bridge outbound route.
 
 ## Component decision
 
-Battle Bridge uses the Windows `HttpListener` surface and the operating system's
+The #62 proof used the Windows `HttpListener` surface and the operating system's
 HTTP parser. It reserves only `http://127.0.0.1:<port>/`, then accepts exactly
 `POST /api/sidecar/ingest` with no query or trailing slash. Every other method,
 path, or query is rejected. A medium-integrity, non-elevated bind was proven on

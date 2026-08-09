@@ -131,6 +131,40 @@ public sealed class LauncherBattleFeatureCompositionTests
                 new((LauncherPlayerFeaturePreference)99, LauncherPlayerFeaturePreference.Unset)));
     }
 
+    [TestMethod]
+    public void LocalIpcActivationConsumesOnlyEnabledReviewedFeatureProjections()
+    {
+        var eligiblePlan = Plan(
+            LauncherRuntimeManifestDetector.NetnivDistributionId,
+            LauncherCapabilityIds.SidecarIngestV1,
+            LauncherCapabilityIds.BattleCaptureV1,
+            LauncherCapabilityIds.FleetRuntimeSnapshotV1);
+
+        var unset = BattleIngestActivation.Resolve(
+            LauncherBattleFeatureComposer.Compose(eligiblePlan));
+        var battleOnly = BattleIngestActivation.Resolve(
+            LauncherBattleFeatureComposer.Compose(
+                eligiblePlan,
+                new(
+                    LauncherPlayerFeaturePreference.Enabled,
+                    LauncherPlayerFeaturePreference.Disabled)));
+        var fleetOnly = BattleIngestActivation.Resolve(
+            LauncherBattleFeatureComposer.Compose(
+                eligiblePlan,
+                new(
+                    LauncherPlayerFeaturePreference.Disabled,
+                    LauncherPlayerFeaturePreference.Enabled)));
+
+        Assert.IsTrue(unset.IsReviewedFeatureComposition);
+        Assert.IsFalse(unset.ShouldListen);
+        CollectionAssert.AreEqual(
+            new[] { BattleIngestProtocol.BattleEventsKind },
+            battleOnly.AcceptedKinds.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { BattleIngestProtocol.FleetRuntimeKind },
+            fleetOnly.AcceptedKinds.ToArray());
+    }
+
     private static LauncherActivationPlan Plan(string distributionId, params string[] capabilities) =>
         LauncherFeatureResolver.Resolve(
             Profile(distributionId, capabilities),
