@@ -1,6 +1,7 @@
 # Battle Bridge Feature-Capability Activation Decision
 
-Status: accepted architecture; feature inventory and evidence pending
+Status: accepted architecture; first collection features composed; operational
+IPC and Battle Home baseline pending
 
 ## Context
 
@@ -61,6 +62,25 @@ The distribution ID remains available for provenance, diagnostics, release
 selection, trust, and migration. Application workspaces and renderers must not
 use it, a provider display name, or a repository name to decide whether a
 Battle feature is available.
+
+The first composed feature inventory is deliberately per outcome:
+
+| Feature | Required runtime capabilities | Player preference | Native shell implementation | Fallback |
+|---|---|---|---|---|
+| `battle.collection` | `ingest.stfc-sidecar.v1` + `battle.capture.v1` | explicit `unset` / `enabled` / `disabled` | `native-battle-collection-shell` | `no-battle-collection` |
+| `fleet.collection` | `ingest.stfc-sidecar.v1` + `fleet.runtime-snapshot.v1` | explicit `unset` / `enabled` / `disabled` | `native-fleet-collection-shell` | `no-fleet-collection` |
+
+These are independent gates. A runtime can make Battle collection available
+without Fleet collection, or the reverse. An eligible feature with an unset
+preference is `available`, not operationally enabled. A retained `enabled`
+preference remains visible when capability or product policy is lost, but it
+cannot elevate the feature and the resulting state is `unavailable`.
+
+Product-policy provenance is first-class typed evidence. Every decision records
+whether it came from `catalog-default-enabled`, `catalog-default-disabled`,
+`checked-in-override-enabled`, or `checked-in-override-disabled`, along with the
+exact catalog and policy source identity/version. Player preference remains a
+separate launcher-owned input after that decision.
 
 ## Feature contract
 
@@ -141,6 +161,10 @@ for the replacement. Retirement follows that proof.
   player-facing behavior, and fail-closed fallback.
 - Remote polling, percentage rollout, mutable global flags, and
   preference-as-feature-flag behavior remain out of scope.
+- The local communication direction is the authenticated named-pipe boundary
+  in [BATTLE_BRIDGE_LOCAL_IPC.md](BATTLE_BRIDGE_LOCAL_IPC.md). This composition
+  does not start it; an eligible feature and player intent still do not grant
+  listener authority.
 
 ## Reserved decisions and evidence owners
 
@@ -149,7 +173,7 @@ inventory or measurement:
 
 | Decision | Owner and evidence gate |
 |---|---|
-| Exact Battle feature/capability IDs and the minimum Battle Home baseline | [Sidecar #55](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/55), accepted against the cross-provider fixtures in [#75](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/75) |
+| Additional Battle feature/capability IDs and the minimum Battle Home baseline | [Sidecar #55](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/55), accepted against the cross-provider fixtures in [#75](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/75). The two collection features above do not imply a Battle Home baseline. |
 | Integrated MSIX versus a separately signed optional package | The [package-topology evidence](BATTLE_BRIDGE_PACKAGE_TOPOLOGY.md) accepts one integrated package as the v1 default. [Sidecar #66](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/66) remains open for the real Battle delta and zero-cost base-mode measurements. |
 | Runtime lifetime after the Bridge window closes | [Sidecar #59](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/59), with lifecycle, locking, crash-recovery, and player-expectation evidence |
 | Storage budget and retention defaults | The [SQLite v1 storage contract](BATTLE_BRIDGE_STORAGE.md), tracked by [Sidecar #61](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/61) and [#78](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/78), after corpus-size, query, cleanup, and soak measurements |

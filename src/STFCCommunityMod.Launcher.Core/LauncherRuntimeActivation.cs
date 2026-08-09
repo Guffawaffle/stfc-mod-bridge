@@ -24,6 +24,12 @@ public static class LauncherFeatureIds
 {
     public const string SemanticSettingsGrouping =
         "settings.semantic-grouping";
+
+    public const string BattleCollection =
+        "battle.collection";
+
+    public const string FleetCollection =
+        "fleet.collection";
 }
 
 public static class LauncherFeatureImplementations
@@ -33,6 +39,18 @@ public static class LauncherFeatureImplementations
 
     public const string AlphabeticalSettingsLayout =
         "alphabetical-settings-layout";
+
+    public const string NativeBattleCollectionShell =
+        "native-battle-collection-shell";
+
+    public const string NoBattleCollection =
+        "no-battle-collection";
+
+    public const string NativeFleetCollectionShell =
+        "native-fleet-collection-shell";
+
+    public const string NoFleetCollection =
+        "no-fleet-collection";
 }
 
 public sealed record LauncherRuntimeDetectionEvidence(
@@ -343,7 +361,59 @@ public sealed record LauncherFeatureDefinition(
     LauncherFeatureDefault Default,
     string ActiveImplementation,
     string FallbackImplementation,
-    bool ActiveImplementationAvailable = true);
+    bool ActiveImplementationAvailable = true,
+    bool RequiresPlayerPreference = false);
+
+[JsonConverter(typeof(LauncherFeaturePolicyDispositionJsonConverter))]
+public enum LauncherFeaturePolicyDisposition
+{
+    CatalogDefaultEnabled = 1,
+    CatalogDefaultDisabled = 2,
+    CheckedInOverrideEnabled = 3,
+    CheckedInOverrideDisabled = 4,
+}
+
+public sealed class LauncherFeaturePolicyDispositionJsonConverter :
+    JsonConverter<LauncherFeaturePolicyDisposition>
+{
+    public override LauncherFeaturePolicyDisposition Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Feature policy disposition must be a canonical string.");
+        }
+        return reader.GetString() switch
+        {
+            "catalog-default-enabled" => LauncherFeaturePolicyDisposition.CatalogDefaultEnabled,
+            "catalog-default-disabled" => LauncherFeaturePolicyDisposition.CatalogDefaultDisabled,
+            "checked-in-override-enabled" => LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled,
+            "checked-in-override-disabled" => LauncherFeaturePolicyDisposition.CheckedInOverrideDisabled,
+            _ => throw new JsonException("Feature policy disposition is unsupported."),
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        LauncherFeaturePolicyDisposition value,
+        JsonSerializerOptions options) =>
+        writer.WriteStringValue(LauncherFeaturePolicyDispositionContract.ToWireValue(value));
+}
+
+internal static class LauncherFeaturePolicyDispositionContract
+{
+    public static string ToWireValue(LauncherFeaturePolicyDisposition value) =>
+        value switch
+        {
+            LauncherFeaturePolicyDisposition.CatalogDefaultEnabled => "catalog-default-enabled",
+            LauncherFeaturePolicyDisposition.CatalogDefaultDisabled => "catalog-default-disabled",
+            LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled => "checked-in-override-enabled",
+            LauncherFeaturePolicyDisposition.CheckedInOverrideDisabled => "checked-in-override-disabled",
+            _ => throw new JsonException("Feature policy disposition is unsupported."),
+        };
+}
 
 [JsonConverter(typeof(LauncherFeatureReasonCodeJsonConverter))]
 public enum LauncherFeatureReasonCode
@@ -496,7 +566,9 @@ public sealed record LauncherFeatureDecision
         LauncherFeatureActivationState state,
         LauncherFeatureDecisionEvidence eligibilityEvidence,
         LauncherFeatureDecisionEvidence selectionEvidence,
-        string selectedImplementation)
+        string selectedImplementation,
+        LauncherFeaturePolicyDisposition policyDisposition =
+            LauncherFeaturePolicyDisposition.CatalogDefaultEnabled)
     {
         LauncherFeatureContractText.Require(id, nameof(id), 160);
         ArgumentNullException.ThrowIfNull(eligibilityEvidence);
@@ -527,11 +599,25 @@ public sealed record LauncherFeatureDecision
         {
             throw new ArgumentException("Feature decision evidence context is invalid.");
         }
+        if (!Enum.IsDefined(policyDisposition))
+        {
+            throw new ArgumentOutOfRangeException(nameof(policyDisposition));
+        }
+        var policyEnabled = policyDisposition is
+            LauncherFeaturePolicyDisposition.CatalogDefaultEnabled
+            or LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled;
+        if (eligibilityEvidence.Code == LauncherFeatureReasonCode.PolicyDenied
+            ? policyEnabled
+            : !policyEnabled)
+        {
+            throw new ArgumentException("Feature policy disposition contradicts its eligibility evidence.");
+        }
         Id = id;
         State = state;
         EligibilityEvidence = eligibilityEvidence;
         SelectionEvidence = selectionEvidence;
         SelectedImplementation = selectedImplementation;
+        PolicyDisposition = policyDisposition;
     }
 
     public string Id { get; }
@@ -543,6 +629,8 @@ public sealed record LauncherFeatureDecision
     public LauncherFeatureDecisionEvidence SelectionEvidence { get; }
 
     public string SelectedImplementation { get; }
+
+    public LauncherFeaturePolicyDisposition PolicyDisposition { get; }
 
     public bool IsActive => State == LauncherFeatureActivationState.Active;
 
@@ -607,9 +695,23 @@ public sealed class LauncherFeaturePolicy
     public LauncherFeatureSourceIdentity Source { get; }
 
     public bool IsEnabled(LauncherFeatureDefinition feature) =>
-        overrides.TryGetValue(feature.Id, out var enabled)
-            ? enabled
-            : feature.Default == LauncherFeatureDefault.EnabledWhenEligible;
+        GetDisposition(feature) is
+            LauncherFeaturePolicyDisposition.CatalogDefaultEnabled
+            or LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled;
+
+    public LauncherFeaturePolicyDisposition GetDisposition(LauncherFeatureDefinition feature)
+    {
+        ArgumentNullException.ThrowIfNull(feature);
+        if (overrides.TryGetValue(feature.Id, out var enabled))
+        {
+            return enabled
+                ? LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled
+                : LauncherFeaturePolicyDisposition.CheckedInOverrideDisabled;
+        }
+        return feature.Default == LauncherFeatureDefault.EnabledWhenEligible
+            ? LauncherFeaturePolicyDisposition.CatalogDefaultEnabled
+            : LauncherFeaturePolicyDisposition.CatalogDefaultDisabled;
+    }
 
     public static LauncherFeaturePolicy Default { get; } = new();
 }
@@ -656,11 +758,25 @@ public static class LauncherFeatureCatalog
     public static LauncherFeatureSourceIdentity Source { get; } =
         new(
             "src/STFCCommunityMod.Launcher.Core/LauncherRuntimeActivation.cs#LauncherFeatureCatalog",
-            "1");
+            "2");
 
     private static readonly IReadOnlySet<string> PrincipalTaxonomyRequirement =
         new[] { LauncherCapabilityIds.PrincipalSettingsTaxonomyV1 }
             .ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly IReadOnlySet<string> BattleCollectionRequirements =
+        new[]
+        {
+            LauncherCapabilityIds.SidecarIngestV1,
+            LauncherCapabilityIds.BattleCaptureV1,
+        }.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly IReadOnlySet<string> FleetCollectionRequirements =
+        new[]
+        {
+            LauncherCapabilityIds.SidecarIngestV1,
+            LauncherCapabilityIds.FleetRuntimeSnapshotV1,
+        }.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly IReadOnlySet<string> NoDependencies =
         Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal);
@@ -677,6 +793,26 @@ public static class LauncherFeatureCatalog
                 LauncherFeatureDefault.EnabledWhenEligible,
                 LauncherFeatureImplementations.PrincipalCatalogSettingsLayout,
                 LauncherFeatureImplementations.AlphabeticalSettingsLayout),
+            new(
+                LauncherFeatureIds.BattleCollection,
+                LauncherFeatureKind.CompatibilityGate,
+                LauncherFeatureActivationMode.StartupLatched,
+                BattleCollectionRequirements,
+                NoDependencies,
+                LauncherFeatureDefault.EnabledWhenEligible,
+                LauncherFeatureImplementations.NativeBattleCollectionShell,
+                LauncherFeatureImplementations.NoBattleCollection,
+                RequiresPlayerPreference: true),
+            new(
+                LauncherFeatureIds.FleetCollection,
+                LauncherFeatureKind.CompatibilityGate,
+                LauncherFeatureActivationMode.StartupLatched,
+                FleetCollectionRequirements,
+                NoDependencies,
+                LauncherFeatureDefault.EnabledWhenEligible,
+                LauncherFeatureImplementations.NativeFleetCollectionShell,
+                LauncherFeatureImplementations.NoFleetCollection,
+                RequiresPlayerPreference: true),
         ]);
 }
 
@@ -792,11 +928,13 @@ public static class LauncherFeatureResolver
         IReadOnlyDictionary<string, LauncherFeatureDecision> decisions,
         LauncherFeaturePolicy policy)
     {
+        var policyDisposition = policy.GetDisposition(definition);
         if (!policy.IsEnabled(definition))
         {
             return Inactive(
                 definition,
-                new(LauncherFeatureReasonCode.PolicyDenied, [definition.Id]));
+                new(LauncherFeatureReasonCode.PolicyDenied, [definition.Id]),
+                policyDisposition);
         }
 
         var missingCapabilities = definition.RequiredCapabilities
@@ -810,7 +948,8 @@ public static class LauncherFeatureResolver
                 new(
                     LauncherFeatureReasonCode.MissingCapability,
                     missingCapabilities,
-                    runtime.DistributionDisplayName));
+                    runtime.DistributionDisplayName),
+                policyDisposition);
         }
 
         var inactiveDependencies = definition.Dependencies
@@ -825,7 +964,8 @@ public static class LauncherFeatureResolver
                 definition,
                 new(
                     LauncherFeatureReasonCode.MissingDependency,
-                    inactiveDependencies));
+                    inactiveDependencies),
+                policyDisposition);
         }
 
         if (!definition.ActiveImplementationAvailable)
@@ -834,7 +974,8 @@ public static class LauncherFeatureResolver
                 definition,
                 new(
                     LauncherFeatureReasonCode.UnavailableImplementation,
-                    [definition.ActiveImplementation]));
+                    [definition.ActiveImplementation]),
+                policyDisposition);
         }
 
         return new(
@@ -848,12 +989,14 @@ public static class LauncherFeatureResolver
             new(
                 LauncherFeatureReasonCode.Active,
                 [definition.ActiveImplementation]),
-            definition.ActiveImplementation);
+            definition.ActiveImplementation,
+            policyDisposition);
     }
 
     private static LauncherFeatureDecision Inactive(
         LauncherFeatureDefinition definition,
-        LauncherFeatureDecisionEvidence evidence) =>
+        LauncherFeatureDecisionEvidence evidence,
+        LauncherFeaturePolicyDisposition policyDisposition) =>
         new(
             definition.Id,
             LauncherFeatureActivationState.Inactive,
@@ -861,7 +1004,8 @@ public static class LauncherFeatureResolver
             new(
                 LauncherFeatureReasonCode.Fallback,
                 [definition.FallbackImplementation]),
-            definition.FallbackImplementation);
+            definition.FallbackImplementation,
+            policyDisposition);
 
     private static void ValidateSource(
         LauncherFeatureSourceIdentity source,

@@ -238,6 +238,49 @@ public sealed class LauncherDiagnosticsTests
     }
 
     [TestMethod]
+    public void BattleFeatureDiagnosticsUseTheResolvedPlanWithoutStartingInfrastructure()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var profile = new LauncherRuntimeProfile(
+            LauncherRuntimeManifestDetector.NetnivDistributionId,
+            new Version(9, 0),
+            "battle-diagnostics",
+            new(1, "battle-diagnostics"),
+            [LauncherCapabilityIds.SidecarIngestV1, LauncherCapabilityIds.BattleCaptureV1],
+            [new("test", "battle diagnostics")]);
+        var snapshot = LauncherBattleFeatureComposer.Compose(
+            LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All),
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Enabled));
+        var diagnostics = new LauncherDiagnosticService(
+            new ModDeploymentService(
+                stateDirectory,
+                new FakeDownloader(),
+                new FakeVersionReader(),
+                new FakeAuthenticityVerifier(),
+                _ => false,
+                new("netniv", "main", LauncherRuntimeManifestDetector.NetnivDistributionId)),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(),
+            "0.1.0",
+            new FixedTimeProvider());
+
+        var before = Directory.EnumerateFileSystemEntries(stateDirectory).Order().ToArray();
+        var preview = diagnostics.BuildPreview(null, battleFeatures: snapshot);
+        var after = Directory.EnumerateFileSystemEntries(stateDirectory).Order().ToArray();
+
+        CollectionAssert.AreEqual(before, after);
+        var battle = preview.Document.Health.Single(fact => fact.Id == "feature.battle.collection");
+        var fleet = preview.Document.Health.Single(fact => fact.Id == "feature.fleet.collection");
+        StringAssert.Contains(battle.Summary, "remains dormant");
+        StringAssert.Contains(fleet.Summary, "unavailable");
+        Assert.IsFalse(preview.RedactedJson.Contains("http://", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(preview.RedactedJson.Contains("https://", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public void SafelyAttributedRunningGameIsInformationalInsteadOfAttention()
     {
         using var temporaryDirectory = new TemporaryDirectory();

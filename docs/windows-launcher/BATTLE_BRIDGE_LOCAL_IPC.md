@@ -1,0 +1,102 @@
+# Battle Bridge local IPC boundary
+
+Status: authenticated named pipes are the accepted direction; operational
+activation remains blocked on lifecycle, producer, credential, and package
+qualification
+
+Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
+
+## Boundary
+
+Local component-to-component communication is authenticated IPC. Network
+communication, when separately authorized, is HTTPS. The current product gives
+neither Bridge nor Battle Bridge general outbound Internet-service authority.
+Existing reviewed release and update downloads remain narrow launcher
+infrastructure and do not grant that authority to a feature, module, or runtime.
+
+The current Windows IPC direction is named pipes, not HTTP, HTTPS, WebSockets,
+or a localhost TCP listener. The dormant #62 loopback HTTP proof is retained as
+bounded implementation evidence only. Runtime capability evidence, product
+policy, or player preference cannot start it.
+
+This distinction is intentional:
+
+```text
+local machine
+
+STFC mod -------- authenticated named pipe --------> Battle Bridge authority
+Bridge ---------- authenticated named pipe --------> Battle Bridge authority
+reviewed module -- authenticated named pipe --------> Battle Bridge authority
+
+external
+
+no Bridge or Battle Bridge product-feature route is currently authorized
+```
+
+Binary signing contributes to executable provenance, but there is no "signed
+socket." The IPC owner must independently authenticate the connecting local
+identity, negotiate an accepted protocol version, authorize the requested
+operation for that identity's role, and fail closed.
+
+## Roles and least authority
+
+Participants are not interchangeable merely because they use the same
+transport:
+
+| Authenticated role | Candidate capability set |
+|---|---|
+| STFC mod runtime | Submit only the positively negotiated telemetry/event families for the current session |
+| Bridge shell | Read bounded health, manage explicit player intent, and request reviewed lifecycle operations |
+| Reviewed optional module | Only individually granted module capabilities; no inherited Bridge or runtime authority |
+
+The eventual authorization table must be closed and versioned. Unknown caller
+identity, unknown role, unknown operation, undeclared event family, protocol
+version mismatch, stale credential, or capability loss rejects the request.
+There is no generic command execution, arbitrary filesystem operation, or
+forward proxy capability.
+
+## Required activation proof
+
+No operational local endpoint is enabled until one reviewed implementation
+proves all of the following together:
+
+- an exact per-user pipe name derived by the lifecycle owner without a second
+  state-root resolver;
+- an explicit pipe ACL for the intended Windows principal/package boundary;
+- caller provenance and role binding, with signed binaries used only as one
+  provenance input rather than the authorization decision by themselves;
+- a bounded closed protocol with explicit version negotiation, message and
+  concurrency limits, duplicate-field rejection, and whole-message atomicity;
+- per-role, per-operation, and per-feature capability authorization;
+- launcher-owned credential creation, DPAPI protection, rotation, revocation,
+  and plaintext-runtime handoff boundaries;
+- one lifecycle owner, deterministic shutdown/drain, capability-loss
+  revocation, crash recovery, and no inactive-mode resource creation;
+- MSIX and standalone behavior at medium integrity, including collision,
+  upgrade, uninstall, and package-content inspection;
+- diagnostics that expose bounded state and reason codes without pipe names,
+  credentials, raw event payloads, paths, or endpoints.
+
+The proof must also demonstrate that inactive and merely `available` features
+create no pipe, database, timer, thread, worker, or network activity.
+
+## Current composition
+
+`battle.collection` and `fleet.collection` are now first-class, independent
+feature decisions. Their readiness projection combines the immutable runtime
+activation plan with launcher-owned player preference only after capability and
+product-policy resolution. Diagnostics can truthfully show `unavailable`,
+`available`, `disabled`, or `enabled` intent.
+
+Even the `enabled` intent state remains operationally dormant today. It is not
+a listener-activation receipt. The accepted Battle Home baseline, local IPC
+implementation, runtime lifecycle owner, producer alignment, and release
+qualification must land before collection can start.
+
+## Future external communication
+
+If Bridge or Battle Bridge later needs an Internet service, that work requires
+a separate feature contract covering endpoint ownership, authentication,
+disclosed data, retention, consent, product policy, diagnostics, offline
+behavior, and a fail-closed fallback. It must use outbound HTTPS and must not
+turn the named-pipe broker into a remotely invokable service.

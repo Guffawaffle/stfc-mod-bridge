@@ -473,7 +473,8 @@ public sealed class LauncherRuntimeActivationTests
     [TestMethod]
     public void CustomCatalogAndPolicyCannotMasqueradeAsCheckedInSources()
     {
-        var definition = LauncherFeatureCatalog.All.Single();
+        var definition = LauncherFeatureCatalog.All.Single(feature =>
+            feature.Id == LauncherFeatureIds.SemanticSettingsGrouping);
         Assert.ThrowsException<ArgumentException>(() =>
             LauncherFeatureResolver.Resolve(
                 LauncherRuntimeProfile.Unknown("test", "test"),
@@ -481,6 +482,131 @@ public sealed class LauncherRuntimeActivationTests
         Assert.ThrowsException<ArgumentException>(() =>
             new LauncherFeaturePolicy(
                 [new KeyValuePair<string, bool>(definition.Id, false)]));
+    }
+
+    [TestMethod]
+    public void BattleCollectionFeaturesAreStableIndependentCapabilityGates()
+    {
+        var battle = LauncherFeatureCatalog.All.Single(feature =>
+            feature.Id == LauncherFeatureIds.BattleCollection);
+        var fleet = LauncherFeatureCatalog.All.Single(feature =>
+            feature.Id == LauncherFeatureIds.FleetCollection);
+
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                LauncherCapabilityIds.SidecarIngestV1,
+                LauncherCapabilityIds.BattleCaptureV1,
+            },
+            battle.RequiredCapabilities.ToArray());
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                LauncherCapabilityIds.SidecarIngestV1,
+                LauncherCapabilityIds.FleetRuntimeSnapshotV1,
+            },
+            fleet.RequiredCapabilities.ToArray());
+        Assert.IsTrue(battle.RequiresPlayerPreference);
+        Assert.IsTrue(fleet.RequiresPlayerPreference);
+        Assert.AreEqual(LauncherFeatureDefault.EnabledWhenEligible, battle.Default);
+        Assert.AreEqual(LauncherFeatureDefault.EnabledWhenEligible, fleet.Default);
+    }
+
+    [TestMethod]
+    public void BattleFeaturesResolvePerCapabilityWithoutProviderOwnershipBranch()
+    {
+        static LauncherRuntimeProfile Profile(string distributionId, params string[] capabilities) =>
+            new(
+                distributionId,
+                new Version(9, 0),
+                "feature-matrix",
+                new(1, "feature-matrix"),
+                capabilities,
+                [new("test", "feature matrix")]);
+
+        foreach (var distributionId in new[]
+                 {
+                     LauncherRuntimeManifestDetector.GuffawaffleDistributionId,
+                     LauncherRuntimeManifestDetector.NetnivDistributionId,
+                     "custom.compatible-runtime",
+                 })
+        {
+            var battleOnly = LauncherFeatureResolver.Resolve(
+                Profile(
+                    distributionId,
+                    LauncherCapabilityIds.SidecarIngestV1,
+                    LauncherCapabilityIds.BattleCaptureV1),
+                LauncherFeatureCatalog.All);
+            Assert.IsTrue(battleOnly.IsActive(LauncherFeatureIds.BattleCollection), distributionId);
+            Assert.IsFalse(battleOnly.IsActive(LauncherFeatureIds.FleetCollection), distributionId);
+
+            var fleetOnly = LauncherFeatureResolver.Resolve(
+                Profile(
+                    distributionId,
+                    LauncherCapabilityIds.SidecarIngestV1,
+                    LauncherCapabilityIds.FleetRuntimeSnapshotV1),
+                LauncherFeatureCatalog.All);
+            Assert.IsFalse(fleetOnly.IsActive(LauncherFeatureIds.BattleCollection), distributionId);
+            Assert.IsTrue(fleetOnly.IsActive(LauncherFeatureIds.FleetCollection), distributionId);
+        }
+    }
+
+    [TestMethod]
+    public void PolicyDispositionDistinguishesCatalogDefaultsFromCheckedInOverrides()
+    {
+        var profile = new LauncherRuntimeProfile(
+            LauncherRuntimeManifestDetector.NetnivDistributionId,
+            new Version(9, 0),
+            "policy-disposition",
+            new(1, "policy-disposition"),
+            [LauncherCapabilityIds.SidecarIngestV1, LauncherCapabilityIds.BattleCaptureV1],
+            [new("test", "policy disposition")]);
+
+        var defaultDecision = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All)
+            .GetDecision(LauncherFeatureIds.BattleCollection);
+        var deniedPolicy = new LauncherFeaturePolicy(
+            [new(LauncherFeatureIds.BattleCollection, false)],
+            new("tests/battle-policy", "1"));
+        var deniedDecision = LauncherFeatureResolver.Resolve(
+                profile,
+                LauncherFeatureCatalog.All,
+                deniedPolicy)
+            .GetDecision(LauncherFeatureIds.BattleCollection);
+
+        Assert.AreEqual(
+            LauncherFeaturePolicyDisposition.CatalogDefaultEnabled,
+            defaultDecision.PolicyDisposition);
+        Assert.AreEqual(
+            LauncherFeaturePolicyDisposition.CheckedInOverrideDisabled,
+            deniedDecision.PolicyDisposition);
+        Assert.AreEqual(LauncherFeatureReasonCode.PolicyDenied, deniedDecision.EligibilityEvidence.Code);
+        Assert.IsFalse(deniedDecision.IsActive);
+    }
+
+    [TestMethod]
+    public void PolicyDispositionHasAClosedCanonicalWireContract()
+    {
+        var expected = new Dictionary<LauncherFeaturePolicyDisposition, string>
+        {
+            [LauncherFeaturePolicyDisposition.CatalogDefaultEnabled] = "catalog-default-enabled",
+            [LauncherFeaturePolicyDisposition.CatalogDefaultDisabled] = "catalog-default-disabled",
+            [LauncherFeaturePolicyDisposition.CheckedInOverrideEnabled] = "checked-in-override-enabled",
+            [LauncherFeaturePolicyDisposition.CheckedInOverrideDisabled] = "checked-in-override-disabled",
+        };
+
+        foreach (var (disposition, wireValue) in expected)
+        {
+            Assert.AreEqual($"\"{wireValue}\"", JsonSerializer.Serialize(disposition));
+            Assert.AreEqual(
+                disposition,
+                JsonSerializer.Deserialize<LauncherFeaturePolicyDisposition>($"\"{wireValue}\""));
+        }
+
+        foreach (var hostile in new[] { "1", "\"CatalogDefaultEnabled\"", "\"catalog_default_enabled\"" })
+        {
+            Assert.ThrowsException<JsonException>(() =>
+                JsonSerializer.Deserialize<LauncherFeaturePolicyDisposition>(hostile));
+        }
     }
 
     [TestMethod]
