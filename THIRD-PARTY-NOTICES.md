@@ -6,7 +6,7 @@ STFC Mod Bridge is distributed under the repository license. The components belo
 
 ## Coverage and open review
 
-Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
+Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
 
 ## FluentIcons.Wpf and FluentIcons.Common
 
@@ -55,6 +55,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ```text
 STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
+```
+
+## Microsoft.Data.Sqlite.Core
+
+- Version: 8.0.29
+- License: MIT License
+- Source: https://github.com/dotnet/efcore/tree/v8.0.29/src/Microsoft.Data.Sqlite.Core
+- Authoritative license information: https://github.com/dotnet/efcore/blob/v8.0.29/LICENSE.txt
+
+```text
+Microsoft.Data.Sqlite.Core is part of the .NET Entity Framework Core repository and is licensed under the MIT License. The linked upstream license is authoritative.
+```
+
+## SQLitePCLRaw core and dynamic C-declaration provider
+
+- Version: 2.1.11
+- License: Apache License 2.0
+- Source: https://github.com/ericsink/SQLitePCL.raw/tree/v2.1.11
+- Authoritative license information: https://github.com/ericsink/SQLitePCL.raw/blob/v2.1.11/LICENSE.TXT
+
+```text
+SQLitePCLRaw.core and SQLitePCLRaw.provider.dynamic_cdecl are licensed under the Apache License, Version 2.0. The provider binds the Windows-serviced winsqlite3 module; this application does not redistribute native SQLite bytes.
 ```
 
 ## The Go Programming Language runtime

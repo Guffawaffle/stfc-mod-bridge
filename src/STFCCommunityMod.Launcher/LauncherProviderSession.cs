@@ -3,31 +3,52 @@ using STFCCommunityMod.Launcher.ViewModels;
 
 namespace STFCCommunityMod.Launcher;
 
-internal sealed class LauncherProviderSession(
-    LauncherProviderSelectionResolution resolution,
-    LauncherProviderShellAccess shellAccess,
-    LauncherDistributionProvider provider,
-    LauncherProviderReleaseChannel releaseChannel,
-    LauncherStartupComposition startupComposition,
-    ReviewedRuntimeActivation? reviewedRuntimeActivation,
-    MainWindowViewModel viewModel) : IDisposable
+internal sealed class LauncherProviderSession : IDisposable
 {
-    private readonly LauncherRuntimeCompositionSlot runtimeComposition = new(
-        provider,
-        releaseChannel,
-        startupComposition,
-        reviewedRuntimeActivation?.EvidenceSourceSha256);
-    public LauncherProviderSelectionResolution Resolution { get; } = resolution;
+    private readonly LauncherRuntimeCompositionSlot runtimeComposition;
 
-    public LauncherProviderShellAccess ShellAccess { get; } = shellAccess;
+    public LauncherProviderSession(
+        LauncherProviderSelectionResolution resolution,
+        LauncherProviderShellAccess shellAccess,
+        LauncherDistributionProvider provider,
+        LauncherProviderReleaseChannel releaseChannel,
+        LauncherStartupComposition startupComposition,
+        ReviewedRuntimeActivation? reviewedRuntimeActivation,
+        MainWindowViewModel viewModel,
+        Func<LauncherStartupComposition, SettingsViewModel> settingsFactory)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(releaseChannel);
+        ArgumentNullException.ThrowIfNull(startupComposition);
+        ArgumentNullException.ThrowIfNull(viewModel);
+        ArgumentNullException.ThrowIfNull(settingsFactory);
+        Resolution = resolution;
+        ShellAccess = shellAccess;
+        Provider = provider;
+        ReleaseChannel = releaseChannel;
+        runtimeComposition = new(
+            provider,
+            releaseChannel,
+            startupComposition,
+            reviewedRuntimeActivation?.EvidenceSourceSha256);
+        ApplicationComposition = new(
+            new(viewModel, () => settingsFactory(runtimeComposition.Current)),
+            () => runtimeComposition.Current.ActivationPlan);
+    }
 
-    public LauncherDistributionProvider Provider { get; } = provider;
+    public LauncherApplicationComposition ApplicationComposition { get; }
 
-    public LauncherProviderReleaseChannel ReleaseChannel { get; } = releaseChannel;
+    public LauncherProviderSelectionResolution Resolution { get; }
+
+    public LauncherProviderShellAccess ShellAccess { get; }
+
+    public LauncherDistributionProvider Provider { get; }
+
+    public LauncherProviderReleaseChannel ReleaseChannel { get; }
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
 
-    public MainWindowViewModel ViewModel { get; } = viewModel;
+    public MainWindowViewModel ViewModel => ApplicationComposition.SharedServices.Foundation;
 
     public LauncherProviderAtomicSwitchCoordinator SwitchCoordinator =>
         ViewModel.ProviderSwitchCoordinator
@@ -36,7 +57,7 @@ internal sealed class LauncherProviderSession(
     public bool RefreshRuntimeActivation(ReviewedRuntimeActivation? activation) =>
         runtimeComposition.Refresh(activation);
 
-    public void Dispose() => ViewModel.Dispose();
+    public void Dispose() => ApplicationComposition.Dispose();
 }
 
 internal sealed class LauncherRuntimeCompositionSlot(

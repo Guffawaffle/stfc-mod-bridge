@@ -40,13 +40,18 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private readonly Func<ConfigurationWorkspace?> configurationWorkspaceProvider;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
+    private readonly object lifecycleSync = new();
     private readonly HashSet<string> customProxyEditors = new(StringComparer.Ordinal);
     private SyncTopologyEditSession? workspace;
+    private Task? activeSave;
+    private Task? invalidationTask;
     private string operationStatus = string.Empty;
     private bool migrateLegacyRoot;
     private SyncWorkspaceTabViewModel? selectedTab;
     private SyncAddDestinationWizardViewModel? addWizard;
     private bool restartRequired;
+    private bool isInvalidating;
+    private bool isInvalidated;
 
     public SyncWorkspaceViewModel(
         Func<string?> configurationPathProvider,
@@ -59,7 +64,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
         this.hasSiblingPendingChanges = hasSiblingPendingChanges ?? (() => false);
         this.configurationWorkspaceProvider = configurationWorkspaceProvider ?? (() => null);
-        discardCommand = new(Discard, () => HasPendingChanges);
+        discardCommand = new(Discard, () => !isInvalidating && !isInvalidated && HasPendingChanges);
         saveCommand = new(SaveAsync, () => CanSave);
         OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => IsConfigurationReady);
         Reload();
@@ -85,7 +90,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     public ICommand SaveCommand => saveCommand;
 
-    public bool IsConfigurationReady => workspace is not null;
+    public bool IsConfigurationReady => !isInvalidating && !isInvalidated && workspace is not null;
 
     public bool HasPendingChanges => workspace?.HasPendingChanges ?? false;
 
@@ -144,6 +149,10 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         get => migrateLegacyRoot;
         set
         {
+            if (isInvalidating || isInvalidated)
+            {
+                return;
+            }
             if (SetField(ref migrateLegacyRoot, value))
             {
                 Rebuild();
@@ -228,7 +237,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     public void Reload()
     {
-        if (HasPendingChanges)
+        if (isInvalidating || isInvalidated || HasPendingChanges)
         {
             return;
         }
@@ -269,6 +278,30 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
 
         Rebuild();
+    }
+
+    internal Task InvalidateAsync()
+    {
+        TaskCompletionSource completion;
+        Task? save;
+        lock (lifecycleSync)
+        {
+            if (invalidationTask is not null)
+            {
+                return invalidationTask;
+            }
+            if (isInvalidated)
+            {
+                return Task.CompletedTask;
+            }
+            isInvalidating = true;
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            invalidationTask = completion.Task;
+            save = activeSave;
+        }
+        Rebuild();
+        _ = CompleteInvalidationAsync(save, completion);
+        return completion.Task;
     }
 
     internal SyncTargetDraft? GetTarget(string name) =>
@@ -444,7 +477,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     private void Stage(SyncDesiredTopology desired)
     {
-        workspace!.Stage(desired);
+        if (isInvalidating || isInvalidated || workspace is null)
+        {
+            return;
+        }
+        workspace.Stage(desired);
         OperationStatus = string.Empty;
         Rebuild();
     }
@@ -457,18 +494,38 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Rebuild();
     }
 
-    private async Task SaveAsync()
+    private Task SaveAsync()
     {
-        if (workspace is null)
+        TaskCompletionSource completion;
+        SyncTopologyEditSession editingSession;
+        ConfigurationWorkspace? configurationWorkspace;
+        lock (lifecycleSync)
+        {
+            if (isInvalidating || isInvalidated || activeSave is not null || workspace is null)
+            {
+                return Task.CompletedTask;
+            }
+            editingSession = workspace;
+            configurationWorkspace = configurationWorkspaceProvider();
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            activeSave = completion.Task;
+        }
+        _ = CompleteSaveAsync(editingSession, configurationWorkspace, completion);
+        return completion.Task;
+    }
+
+    private async Task SaveCoreAsync(
+        SyncTopologyEditSession editingSession,
+        ConfigurationWorkspace? configurationWorkspace)
+    {
+        OperationStatus = "Saving Data Sync…";
+        var result = configurationWorkspace is null
+            ? await editingSession.CommitAsync(MigrateLegacyRoot)
+            : await configurationWorkspace.CommitSyncAsync(editingSession, MigrateLegacyRoot);
+        if (isInvalidating || isInvalidated)
         {
             return;
         }
-
-        OperationStatus = "Saving Data Sync…";
-        var configurationWorkspace = configurationWorkspaceProvider();
-        var result = configurationWorkspace is null
-            ? await workspace.CommitAsync(MigrateLegacyRoot)
-            : await configurationWorkspace.CommitSyncAsync(workspace, MigrateLegacyRoot);
         OperationStatus = result.State switch
         {
             AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
@@ -484,6 +541,71 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             Committed?.Invoke(this, EventArgs.Empty);
         }
         Rebuild();
+    }
+
+    private async Task CompleteSaveAsync(
+        SyncTopologyEditSession editingSession,
+        ConfigurationWorkspace? configurationWorkspace,
+        TaskCompletionSource completion)
+    {
+        Exception? failure = null;
+        try
+        {
+            await SaveCoreAsync(editingSession, configurationWorkspace);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            lock (lifecycleSync)
+            {
+                activeSave = null;
+            }
+        }
+        if (failure is not null && !isInvalidating && !isInvalidated)
+        {
+            OperationStatus = $"Data Sync could not be saved: {failure.Message}";
+            Rebuild();
+        }
+        completion.SetResult();
+    }
+
+    private async Task CompleteInvalidationAsync(Task? save, TaskCompletionSource completion)
+    {
+        Exception? failure = null;
+        try
+        {
+            await (save ?? Task.CompletedTask);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            workspace?.Discard();
+            workspace = null;
+            AddWizard = null;
+            customProxyEditors.Clear();
+            isInvalidated = true;
+            isInvalidating = false;
+            OperationStatus = "This Data Sync workspace was replaced by newer runtime or provider evidence.";
+            Rebuild();
+            lock (lifecycleSync)
+            {
+                invalidationTask = null;
+            }
+        }
+        if (failure is null)
+        {
+            completion.SetResult();
+        }
+        else
+        {
+            completion.SetException(failure);
+        }
     }
 
     private void Rebuild()

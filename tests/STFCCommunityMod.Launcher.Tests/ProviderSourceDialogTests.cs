@@ -119,14 +119,53 @@ public sealed class ProviderSourceDialogTests
             "private void ResetProviderSwitchReviewControls");
         var stagedChangesGuard = Slice(
             actionHandler,
-            "if (settingsViewModel is not null",
+            "if (SharedSettings.HasPendingChanges)",
             "if (DataContext is not MainWindowViewModel viewModel");
 
+        StringAssert.Contains(stagedChangesGuard, "if (SharedSettings.HasPendingChanges)");
         StringAssert.Contains(stagedChangesGuard, "SetProviderSwitchAction(");
         StringAssert.Contains(stagedChangesGuard, "enabled: true");
         Assert.IsFalse(stagedChangesGuard.Contains(
             "ProviderSwitchActionButton.IsEnabled = false",
             StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RuntimeEvidenceRefreshCopyDoesNotClaimAnInFlightSaveLeftTheFileUnchanged()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var refresh = Slice(
+            source,
+            "private async Task RefreshRuntimeCompositionConsumersAsync",
+            "private void ShowProviderRecompositionFailure");
+
+        StringAssert.Contains(refresh, "waited for any active save to finish");
+        StringAssert.Contains(refresh, "Review the saved Settings before continuing");
+        Assert.IsFalse(refresh.Contains("the saved TOML file was not changed", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void RuntimeRevalidationAndAsyncRefreshShareTheBoundedRecoveryBoundary()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var handler = Slice(
+            source,
+            "private async void MainViewModel_PropertyChanged",
+            "private async Task RefreshRuntimeCompositionConsumersAsync");
+        var tryIndex = handler.IndexOf("try", StringComparison.Ordinal);
+        var revalidateIndex = handler.IndexOf(
+            "ProviderSession.ApplicationComposition.RevalidateHomes();",
+            StringComparison.Ordinal);
+        var refreshIndex = handler.IndexOf(
+            "await RefreshRuntimeCompositionConsumersAsync();",
+            StringComparison.Ordinal);
+        var catchIndex = handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal);
+
+        Assert.IsTrue(tryIndex >= 0 && tryIndex < revalidateIndex);
+        Assert.IsTrue(revalidateIndex < refreshIndex && refreshIndex < catchIndex);
+        StringAssert.Contains(handler, "ShowProviderRecompositionFailure(exception);");
     }
 
     [TestMethod]

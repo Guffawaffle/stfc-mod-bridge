@@ -132,6 +132,13 @@ for the replacement. Retirement follows that proof.
 - Base Mod Bridge stays usable when all Battle capabilities are absent.
 - Battle code remains subject to the same native trust, packaging,
   accessibility, diagnostics, and lifecycle contracts as the rest of Bridge.
+- The current product grants neither Battle Bridge nor Bridge general outbound
+  Internet-service authority. Existing reviewed release and update transports
+  remain narrowly scoped launcher infrastructure; they do not authorize a
+  Battle feature, workspace, module, or runtime capability to contact an
+  external service. Any future external integration requires its own explicit
+  feature contract, data-disclosure and endpoint trust review, product policy,
+  player-facing behavior, and fail-closed fallback.
 - Remote polling, percentage rollout, mutable global flags, and
   preference-as-feature-flag behavior remain out of scope.
 

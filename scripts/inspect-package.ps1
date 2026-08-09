@@ -144,6 +144,24 @@ function Assert-LauncherVerifierPairing {
   }
 }
 
+function Assert-NoPackagedBattleStorageState {
+  param(
+    [string]$Root,
+    [string]$Context
+  )
+
+  $forbidden = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
+      $_.Name -match '^(?i:sqlite3.*\.dll|winsqlite3\.dll|e_sqlite3\.dll|Microsoft\.Data\.Sqlite.*\.dll|SQLitePCLRaw.*\.dll)$' `
+        -or $_.Name -match '(?i:\.(?:sqlite|sqlite3|db)(?:-(?:wal|shm))?$|-(?:wal|shm)$)'
+    })
+  if ($forbidden.Count -ne 0) {
+    $relative = @($forbidden | ForEach-Object {
+        [System.IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\', '/')
+      })
+    throw "$Context contains packaged Battle state or a loose SQLite/provider binary: $($relative -join ', ')"
+  }
+}
+
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
   throw "Mod Bridge fallback self-update archive was not found: $archive"
 }
@@ -167,6 +185,7 @@ try {
   foreach ($executable in $archiveExecutables) {
     Assert-PortableExecutable $executable.FullName
   }
+  Assert-NoPackagedBattleStorageState $archiveInspectionRoot "Fallback archive"
   Assert-LauncherVerifierPairing $archiveInspectionRoot "fallback archive"
 } finally {
   if (Test-Path -LiteralPath $archiveInspectionRoot) {
@@ -205,6 +224,7 @@ try {
   foreach ($executable in $portableExecutables) {
     Assert-PortableExecutable $executable.FullName
   }
+  Assert-NoPackagedBattleStorageState $inspectionRoot "MSIX"
   Assert-LauncherVerifierPairing $inspectionRoot "MSIX"
 
   [xml]$manifest = Get-Content -Raw -LiteralPath (Join-Path $inspectionRoot "AppxManifest.xml")

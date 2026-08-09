@@ -66,12 +66,40 @@ cleanup never recursively claims the directory or a foreign sibling. A failed
 exact-handle cleanup remains locked and retryable, and blocks another acquisition
 through that acquirer instance until the retry succeeds. The #138 composition
 must therefore retain one acquirer owner rather than constructing a parallel
-acquisition path. Forced process termination can still leave inert
-candidate residue because Bridge deliberately does not make a retained Windows
-handle delete-pending; that technique has a reproducible namespace teardown
-race. Stale-candidate reconciliation and a total on-disk bound are a required
-focused follow-up in issue #143 before this acquisition path is activated operationally.
-Passive startup performs no candidate scan or cleanup.
+acquisition path.
+
+Candidate acquisition now holds a launcher-owned, cross-process admission lock
+from explicit acquisition through confirmation and exact cleanup. A forced
+termination releases that operating-system lock but can leave inert candidate
+files because Bridge deliberately does not make retained Windows handles
+delete-pending; that technique has a reproducible namespace teardown race. The
+next explicit acquisition, or the explicit recovery API supplied for #138
+composition, reconciles abandoned residue before another download starts. The
+future UI caller should label that action **Retry candidate recovery**; this
+Core slice does not claim the button is wired yet. Passive startup, health,
+update checks, and source selection do not create the candidate root, take its
+lock, scan it, or clean it.
+
+Each candidate directory has a closed-schema Windows DPAPI `CurrentUser`
+ownership receipt written before its artifact members. The receipt binds the
+candidate ID, reviewed-certification fingerprint, stable provider/channel/runtime
+IDs, expected names/sizes/SHA-256 values, write stage, and Windows volume/file
+identity. Recovery read-locks and validates that receipt before touching a
+member, then deletes only an exact retained handle. A `Prepared` member is
+recoverable without a file identity only when it is exactly empty; every
+non-empty partial requires its pre-write file identity, and a completed member
+requires its final exact size and SHA-256. Changed metadata, changed completed
+bytes, non-empty unidentified files, foreign siblings, unknown directories,
+and reparse points remain untouched and produce a bounded, plain-language
+recovery result.
+
+Candidate storage is checked in at no more than four directories and an
+aggregate 514 MiB ceiling (four times one 128 MiB DLL, one 256 KiB runtime manifest,
+and two 64 KiB ownership-receipt slots). Recovery refuses another acquisition
+when count, byte, schema, or ownership checks fail, so repeated crash/retry
+cycles cannot grow Bridge-owned residue without bound. The contract is the same
+for standalone ZIP and MSIX execution because both use the supplied per-user
+state root, the same downloader, and the same candidate/deployment services.
 
 For a reviewed ZIP release, the ZIP remains the certified one-DLL archive. An
 optional runtime manifest is a distinct release asset derived only from the

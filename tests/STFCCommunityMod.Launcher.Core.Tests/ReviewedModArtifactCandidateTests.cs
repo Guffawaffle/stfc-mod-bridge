@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -10,6 +11,9 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class ReviewedModArtifactCandidateTests
 {
+    private const string CrashStageEnvironment = "STFC_BRIDGE_CANDIDATE_CRASH_STAGE";
+    private const string CrashStateEnvironment = "STFC_BRIDGE_CANDIDATE_CRASH_STATE";
+    private const string CrashReadyEnvironment = "STFC_BRIDGE_CANDIDATE_CRASH_READY";
     private static readonly byte[] DllBytes = Encoding.UTF8.GetBytes("exact reviewed candidate DLL");
     private static readonly JsonSerializerOptions StateJsonOptions = new()
     {
@@ -561,6 +565,39 @@ public sealed class ReviewedModArtifactCandidateTests
     }
 
     [TestMethod]
+    public async Task RecoveryMapsPendingExactCleanupFailureWithoutLosingRetryOwnership()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: false);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var deleteMarker = new DelayedDeleteMarker(failures: 2);
+        var downloader = new CountingDownloader(fixture.Downloads);
+        var acquirer = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            downloader,
+            new StaticVersionReader("9.9.9.9"),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification,
+            afterCandidateFileOpened: null,
+            markCandidateDelete: deleteMarker.Mark);
+
+        await Assert.ThrowsExceptionAsync<AggregateException>(() => acquirer.AcquireAsync(fixture.Artifact));
+        Assert.IsTrue(acquirer.HasPendingCleanup);
+
+        var blocked = await acquirer.RecoverAbandonedCandidatesAsync();
+
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Blocked, blocked.State);
+        Assert.IsTrue(acquirer.HasPendingCleanup);
+        Assert.AreEqual(1, downloader.CallCount);
+
+        var recovered = await acquirer.RecoverAbandonedCandidatesAsync();
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Ready, recovered.State, recovered.Message);
+        Assert.IsFalse(acquirer.HasPendingCleanup);
+        Assert.AreEqual(1, downloader.CallCount);
+    }
+
+    [TestMethod]
     public void ConstructionIsPassiveAndCreatesNoCandidateRoot()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -576,6 +613,207 @@ public sealed class ReviewedModArtifactCandidateTests
             fixture.Certification);
 
         Assert.IsFalse(Directory.Exists(stateDirectory));
+    }
+
+    [TestMethod]
+    public async Task ActiveAndCleanupPendingLeaseBlocksSameAndSecondInstanceRecovery()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: false);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var deleteMarker = new DelayedDeleteMarker(failures: 1);
+        var owner = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            new CountingDownloader(fixture.Downloads),
+            new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification,
+            afterCandidateFileOpened: null,
+            markCandidateDelete: deleteMarker.Mark);
+        var secondInstance = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            new ThrowingDownloader(),
+            new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification);
+        var lease = await owner.AcquireAsync(fixture.Artifact);
+
+        var sameActive = await owner.RecoverAbandonedCandidatesAsync();
+        var secondActive = await secondInstance.RecoverAbandonedCandidatesAsync();
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Busy, sameActive.State);
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Busy, secondActive.State);
+
+        await Assert.ThrowsExceptionAsync<IOException>(async () => await lease.DisposeAsync());
+        var sameCleanupPending = await owner.RecoverAbandonedCandidatesAsync();
+        var secondCleanupPending = await secondInstance.RecoverAbandonedCandidatesAsync();
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Busy, sameCleanupPending.State);
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Busy, secondCleanupPending.State);
+
+        await lease.DisposeAsync();
+        var ready = await secondInstance.RecoverAbandonedCandidatesAsync();
+        Assert.AreEqual(ReviewedCandidateRecoveryState.Ready, ready.State);
+    }
+
+    [TestMethod]
+    public async Task ProductionAcquisitionPersistsPreparedThenWritingIdentityBeforeFirstByte()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: false);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var ownershipStore = new CandidateOwnershipStore(new WindowsDpapiCandidateOwnershipProtector());
+        var observedPrepared = false;
+        var observedWriting = false;
+        var acquirer = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            new CountingDownloader(fixture.Downloads),
+            new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification,
+            afterCandidateFileOpened: (path, _) =>
+            {
+                var ownership = ownershipStore.Load(Path.Combine(
+                    Path.GetDirectoryName(path)!,
+                    CandidateOwnershipStore.FileName));
+                observedWriting = ownership.Dll.Stage == CandidateMemberStage.Writing
+                    && ownership.Dll.FileIdentity is not null
+                    && new FileInfo(path).Length == 0;
+                return ValueTask.CompletedTask;
+            },
+            afterCandidateFileCreatedBeforeOwnershipPersisted: (path, _) =>
+            {
+                var ownership = ownershipStore.Load(Path.Combine(
+                    Path.GetDirectoryName(path)!,
+                    CandidateOwnershipStore.FileName));
+                observedPrepared = ownership.Dll.Stage == CandidateMemberStage.Prepared
+                    && ownership.Dll.FileIdentity is null
+                    && new FileInfo(path).Length == 0;
+                return ValueTask.CompletedTask;
+            });
+
+        var lease = await acquirer.AcquireAsync(fixture.Artifact);
+
+        Assert.IsTrue(observedPrepared);
+        Assert.IsTrue(observedWriting);
+        await lease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task UnsafeAbandonedResidueBlocksBeforeNetworkAndRemainsUntouched()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: false);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var unknown = Directory.CreateDirectory(Path.Combine(
+            stateDirectory,
+            "artifact-candidates",
+            Guid.NewGuid().ToString("N"))).FullName;
+        var foreignPath = Path.Combine(unknown, "foreign.txt");
+        File.WriteAllText(foreignPath, "foreign");
+        var downloader = new CountingDownloader(fixture.Downloads);
+        var acquirer = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            downloader,
+            new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => acquirer.AcquireAsync(fixture.Artifact));
+
+        Assert.AreEqual(0, downloader.CallCount);
+        Assert.AreEqual("foreign", File.ReadAllText(foreignPath));
+        StringAssert.Contains(exception.Message, "try the mod download again");
+    }
+
+    [DataTestMethod]
+    [DataRow("partial-write")]
+    [DataRow("verified-dll")]
+    [DataRow("verified-pair")]
+    [DataRow("confirmation-wait")]
+    public async Task ForcedTerminationOfProductionAcquirerRecoversExactStage(string crashStage)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Reviewed candidate crash recovery is Windows-specific.");
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var readyPath = Path.Combine(temporaryDirectory.Path, "child-ready.txt");
+        using var child = StartCrashProbe(crashStage, stateDirectory, readyPath);
+        try
+        {
+            await WaitForCrashProbeAsync(child, readyPath);
+            var candidateRoot = Path.Combine(stateDirectory, "artifact-candidates");
+            Assert.AreEqual(1, Directory.GetDirectories(candidateRoot).Length);
+
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync();
+
+            var fixture = CandidateFixture.Create(includeRuntimeManifest: true);
+            var recoveryOwner = new ReviewedModArtifactCandidateAcquirer(
+                stateDirectory,
+                new ThrowingDownloader(),
+                new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+                new TrustedVerifier(),
+                fixture.Attribution,
+                fixture.Certification);
+            var recovered = await recoveryOwner.RecoverAbandonedCandidatesAsync();
+
+            Assert.AreEqual(ReviewedCandidateRecoveryState.Recovered, recovered.State, recovered.Message);
+            Assert.AreEqual(1, recovered.RecoveredCandidateCount);
+            Assert.AreEqual(0, Directory.GetDirectories(candidateRoot).Length);
+        }
+        finally
+        {
+            if (!child.HasExited)
+            {
+                child.Kill(entireProcessTree: true);
+                await child.WaitForExitAsync();
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task CandidateAcquirerCrashProbe()
+    {
+        var crashStage = Environment.GetEnvironmentVariable(CrashStageEnvironment);
+        if (string.IsNullOrWhiteSpace(crashStage))
+        {
+            return;
+        }
+        var stateDirectory = Environment.GetEnvironmentVariable(CrashStateEnvironment)
+            ?? throw new InvalidOperationException("The candidate crash state path is missing.");
+        var readyPath = Environment.GetEnvironmentVariable(CrashReadyEnvironment)
+            ?? throw new InvalidOperationException("The candidate crash ready path is missing.");
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: true);
+        var acquirer = new ReviewedModArtifactCandidateAcquirer(
+            stateDirectory,
+            new CountingDownloader(fixture.Downloads),
+            new StaticVersionReader(fixture.Artifact.ExpectedVersion),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification,
+            afterCandidateFileOpened: null,
+            afterCandidatePartialWrite: (path, token) =>
+                BlockCrashProbeAsync(crashStage, "partial-write", path, readyPath, token),
+            afterCandidateMemberVerified: (path, token) =>
+            {
+                var stage = Path.GetFileName(path) == "version.dll" ? "verified-dll" : "verified-pair";
+                return BlockCrashProbeAsync(crashStage, stage, path, readyPath, token);
+            });
+
+        var lease = await acquirer.AcquireAsync(fixture.Artifact);
+        await BlockCrashProbeAsync(
+            crashStage,
+            "confirmation-wait",
+            Path.Combine(lease.CandidateDirectory, "version.dll"),
+            readyPath,
+            CancellationToken.None);
+        Assert.Fail("The candidate crash probe was configured for an unknown stage.");
     }
 
     [TestMethod]
@@ -638,6 +876,65 @@ public sealed class ReviewedModArtifactCandidateTests
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
             duplicateAcquirer.AcquireAsync(duplicate.Artifact));
+    }
+
+    private static Process StartCrashProbe(string crashStage, string stateDirectory, string readyPath)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = AppContext.BaseDirectory,
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(ReviewedModArtifactCandidateTests).Assembly.Location);
+        start.ArgumentList.Add(
+            "--Tests:STFCCommunityMod.Launcher.Core.Tests.ReviewedModArtifactCandidateTests.CandidateAcquirerCrashProbe");
+        start.Environment[CrashStageEnvironment] = crashStage;
+        start.Environment[CrashStateEnvironment] = stateDirectory;
+        start.Environment[CrashReadyEnvironment] = readyPath;
+        return Process.Start(start) ?? throw new InvalidOperationException("Could not start the candidate crash probe.");
+    }
+
+    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (!File.Exists(readyPath))
+        {
+            if (child.HasExited)
+            {
+                var output = await child.StandardOutput.ReadToEndAsync();
+                var error = await child.StandardError.ReadToEndAsync();
+                Assert.Fail($"Candidate crash probe exited before its hold point. Output: {output} Error: {error}");
+            }
+            await Task.Delay(50, timeout.Token);
+        }
+        Assert.AreEqual("READY", File.ReadAllText(readyPath));
+    }
+
+    private static async ValueTask BlockCrashProbeAsync(
+        string configuredStage,
+        string currentStage,
+        string candidatePath,
+        string readyPath,
+        CancellationToken cancellationToken)
+    {
+        if (configuredStage != currentStage)
+        {
+            return;
+        }
+        if (currentStage == "partial-write")
+        {
+            var length = new FileInfo(candidatePath).Length;
+            if (length is <= 0 || length >= DllBytes.Length)
+            {
+                throw new InvalidDataException("The production partial-write hold did not contain a strict prefix.");
+            }
+        }
+        File.WriteAllText(readyPath, "READY");
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
     }
 
     private static ReviewedModArtifactCandidateAcquirer CreateAcquirer(

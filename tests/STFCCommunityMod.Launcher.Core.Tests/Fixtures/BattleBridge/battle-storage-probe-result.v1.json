@@ -1,0 +1,20 @@
+{
+  "schema": "stfc.battle-storage-probe-result.v1",
+  "recordedAtUtc": "2026-08-09T00:00:00Z",
+  "environment": {
+    "runtime": "8.0.29",
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "architecture": "x64"
+  },
+  "synthetic": true,
+  "eventCount": 64,
+  "sourceSha256": "3da1cad51d7db637afcf38ae3097d87268c370d48fad8c10a327184803647545",
+  "roundTripSha256": "3da1cad51d7db637afcf38ae3097d87268c370d48fad8c10a327184803647545",
+  "rawBytes": 541110,
+  "compressedBytes": 10634,
+  "finalDatabaseBytes": 389120,
+  "journalPeakBytes": 103112,
+  "elapsedMilliseconds": 103.8302,
+  "allocatedBytes": 4541848,
+  "interpretation": "Bounded qualification evidence only; these values are not a retention, latency, or SSD-write budget."
+}

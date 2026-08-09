@@ -636,6 +636,188 @@ public sealed class SettingsProjectionTests
         StringAssert.Contains(persisted, "[custom]\nkeep = \"verbatim\"");
     }
 
+    [TestMethod]
+    public async Task SharedSettingsInvalidationDiscardsAndMakesRetainedWorkspaceInert()
+    {
+        const string source = "[graphics]\nfree_resize = true\n";
+        using var fixture = SettingsFixture.Create(source);
+        var replacement = fixture.CreateAdditionalViewModel();
+        var instances = new Queue<SettingsViewModel>([fixture.ViewModel, replacement]);
+        var owner = new LauncherSettingsWorkspace(() => instances.Dequeue());
+        LauncherSettingsInvalidatedEventArgs? invalidation = null;
+        owner.Invalidated += (_, value) => invalidation = value;
+        var retained = owner.GetOrCreate();
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        Assert.IsTrue(owner.HasPendingChanges);
+
+        await owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+
+        Assert.IsFalse(owner.HasPendingChanges);
+        Assert.IsFalse(retained.HasPendingChanges);
+        Assert.IsFalse(retained.CanSave);
+        Assert.IsFalse(retained.SyncWorkspace.CanSave);
+        retained.ReloadConfiguration();
+        retained.SyncWorkspace.Reload();
+        Assert.IsFalse(retained.IsConfigurationReady);
+        Assert.IsFalse(retained.SyncWorkspace.IsConfigurationReady);
+        Assert.AreSame(retained, invalidation?.Workspace);
+        Assert.AreEqual(LauncherSettingsInvalidationReason.RuntimeActivationChanged, invalidation?.Reason);
+        Assert.AreSame(replacement, owner.GetOrCreate());
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public void SharedSettingsCompositionReturnsOneInstanceAcrossConcurrentConsumers()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        var factoryCalls = 0;
+        var owner = new LauncherSettingsWorkspace(() =>
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return fixture.ViewModel;
+        });
+        var resolved = new SettingsViewModel[16];
+
+        Parallel.For(0, resolved.Length, index => resolved[index] = owner.GetOrCreate());
+
+        Assert.AreEqual(1, factoryCalls);
+        Assert.IsTrue(resolved.All(item => ReferenceEquals(fixture.ViewModel, item)));
+    }
+
+    [TestMethod]
+    public async Task SharedSettingsInvalidationWaitsForPausedSettingsSaveBeforeReplacement()
+    {
+        const string source = "[graphics]\nfree_resize = true\n";
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        var replacement = fixture.CreateAdditionalViewModel();
+        var instances = new Queue<SettingsViewModel>([fixture.ViewModel, replacement]);
+        var owner = new LauncherSettingsWorkspace(() => instances.Dequeue());
+        var retained = owner.GetOrCreate();
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        retained.SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var invalidation = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+
+        Assert.IsFalse(invalidation.IsCompleted);
+        Assert.IsFalse(retained.IsConfigurationReady);
+        Assert.IsFalse(retained.CanSave);
+        Assert.ThrowsException<InvalidOperationException>(() => owner.GetOrCreate());
+        fixture.Row("graphics.free_resize").BooleanValue = true;
+        retained.SaveCommand.Execute(null);
+        pause.Release();
+        await invalidation.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(1, pause.SaveCount);
+        StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "free_resize = false");
+        Assert.IsFalse(retained.HasPendingChanges);
+        Assert.AreSame(replacement, owner.GetOrCreate());
+    }
+
+    [TestMethod]
+    public async Task SharedSettingsInvalidationWaitsForPausedDataSyncSaveBeforeReplacement()
+    {
+        const string source = "[sync]\njobs = true\n";
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        var replacement = fixture.CreateAdditionalViewModel();
+        var instances = new Queue<SettingsViewModel>([fixture.ViewModel, replacement]);
+        var owner = new LauncherSettingsWorkspace(() => instances.Dequeue());
+        var retained = owner.GetOrCreate();
+        var jobs = retained.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs");
+        jobs.IsEnabled = false;
+        retained.SyncWorkspace.SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var invalidation = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+
+        Assert.IsFalse(invalidation.IsCompleted);
+        Assert.IsFalse(retained.SyncWorkspace.IsConfigurationReady);
+        Assert.IsFalse(retained.SyncWorkspace.CanSave);
+        Assert.ThrowsException<InvalidOperationException>(() => owner.GetOrCreate());
+        jobs.IsEnabled = true;
+        retained.SyncWorkspace.SaveCommand.Execute(null);
+        pause.Release();
+        await invalidation.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(1, pause.SaveCount);
+        StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "jobs = false");
+        Assert.IsFalse(retained.SyncWorkspace.HasPendingChanges);
+        Assert.AreSame(replacement, owner.GetOrCreate());
+    }
+
+    [TestMethod]
+    public async Task OverlappingInvalidationWaitsForFailingPausedSaveAndStillAllowsOneReplacement()
+    {
+        const string source = "[graphics]\nfree_resize = true\n";
+        var pause = new PausedAtomicSave(failAfterRelease: true);
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        var replacement = fixture.CreateAdditionalViewModel();
+        var instances = new Queue<SettingsViewModel>([fixture.ViewModel, replacement]);
+        var owner = new LauncherSettingsWorkspace(() => instances.Dequeue());
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        owner.GetOrCreate().SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var first = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+        var overlapping = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+
+        Assert.AreSame(first, overlapping);
+        Assert.IsNull(owner.Current);
+        Assert.ThrowsException<InvalidOperationException>(() => owner.GetOrCreate());
+        pause.Release();
+        await first.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+        Assert.AreSame(replacement, owner.GetOrCreate());
+    }
+
+    [TestMethod]
+    public async Task ProviderSessionEndPermanentlyClosesRetainedSettingsOwner()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        var owner = new LauncherSettingsWorkspace(() => fixture.ViewModel);
+        _ = owner.GetOrCreate();
+
+        await owner.InvalidateAsync(LauncherSettingsInvalidationReason.ProviderSessionEnded);
+
+        Assert.IsNull(owner.Current);
+        Assert.ThrowsException<ObjectDisposedException>(() => owner.GetOrCreate());
+        Assert.ThrowsException<ObjectDisposedException>(() => owner.GetOrCreate());
+    }
+
+    [TestMethod]
+    public async Task SessionEndDuringPausedRuntimeInvalidationPermanentlyClosesOwner()
+    {
+        const string source = "[graphics]\nfree_resize = true\n";
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        var owner = new LauncherSettingsWorkspace(() => fixture.ViewModel);
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        owner.GetOrCreate().SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+        var runtimeInvalidation = owner.InvalidateAsync(
+            LauncherSettingsInvalidationReason.RuntimeActivationChanged);
+
+        var sessionEnd = owner.InvalidateAsync(LauncherSettingsInvalidationReason.ProviderSessionEnded);
+
+        Assert.AreSame(runtimeInvalidation, sessionEnd);
+        Assert.ThrowsException<ObjectDisposedException>(() => owner.GetOrCreate());
+        pause.Release();
+        await sessionEnd.WaitAsync(TimeSpan.FromSeconds(5));
+        StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "free_resize = false");
+        Assert.ThrowsException<ObjectDisposedException>(() => owner.GetOrCreate());
+    }
+
     private static bool IsPatchSetting(LauncherConfigurationSetting setting) =>
         string.Equals(setting.Category, "patches", StringComparison.OrdinalIgnoreCase);
 
@@ -719,7 +901,8 @@ public sealed class SettingsProjectionTests
 
         public static SettingsFixture Create(
             string contents = "# disposable launcher projection fixture\n",
-            LauncherConfigurationCatalog? catalog = null)
+            LauncherConfigurationCatalog? catalog = null,
+            IConfigurationRepository? repository = null)
         {
             if (catalog is null)
             {
@@ -743,7 +926,8 @@ public sealed class SettingsProjectionTests
                 command,
                 () => configurationPath,
                 layout,
-                new("Guffawaffle test", "Active", "Test fixture", layout.DisplayName));
+                new("Guffawaffle test", "Active", "Test fixture", layout.DisplayName),
+                repository: repository);
             return new(configurationPath, catalog, layout, viewModel);
         }
 
@@ -791,6 +975,34 @@ public sealed class SettingsProjectionTests
                 File.Delete(backupPath);
             }
         }
+    }
+
+    private sealed class PausedAtomicSave(bool failAfterRelease = false)
+    {
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => started.Task;
+
+        public int SaveCount { get; private set; }
+
+        public async ValueTask BeforeReplaceAsync(
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken)
+        {
+            _ = temporaryPath;
+            _ = destinationPath;
+            SaveCount++;
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            if (failAfterRelease)
+            {
+                throw new IOException("Deterministic paused-save failure.");
+            }
+        }
+
+        public void Release() => release.TrySetResult();
     }
 
     private sealed class TestCommand : ICommand

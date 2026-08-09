@@ -48,5 +48,9 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="Fixtures\BattleBridge\fleet-runtime.golden.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\BattleBridge\battle-storage-probe-result.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\BattleBridge\battle-storage-schema.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

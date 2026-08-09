@@ -33,12 +33,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly SettingsActionCommand searchClearCommand;
     private readonly SettingsActionCommand enablePatchEditingCommand;
     private readonly SettingsActionCommand lockPatchEditingCommand;
+    private readonly object lifecycleSync = new();
     private ConfigurationWorkspace? workspace;
+    private Task? activeSave;
+    private Task? invalidationTask;
     private string searchText = string.Empty;
     private LauncherSettingsSection selectedSection = LauncherSettingsSection.General;
     private string operationStatus = string.Empty;
     private bool isSearchVisible;
     private bool isPatchEditingUnlocked;
+    private bool isInvalidating;
+    private bool isInvalidated;
     private int projectionRevision;
 
     public SettingsViewModel(
@@ -79,7 +84,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             openReleaseSecurityGuidance);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         Sections = CreateSections();
-        discardCommand = new SettingsActionCommand(Discard, () => HasPendingChanges);
+        discardCommand = new SettingsActionCommand(
+            Discard,
+            () => !isInvalidating && !isInvalidated && HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
         enablePatchEditingCommand = new SettingsActionCommand(
             EnablePatchEditing,
@@ -252,7 +259,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? "Open the active configuration as raw TOML."
             : "Raw TOML becomes available after Mod Bridge selects an active configuration.";
 
-    public bool IsConfigurationReady => workspace is not null;
+    public bool IsConfigurationReady => !isInvalidating && !isInvalidated && workspace is not null;
 
     public string DetectedRuntime => settingsDiagnostics.DetectedRuntime;
 
@@ -293,7 +300,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .Text;
 
     public bool CanSave =>
-        IsConfigurationReady
+        !isInvalidating
+        && !isInvalidated
+        && IsConfigurationReady
         && HasPendingChanges
         && !HasInvalidInput
         && !SyncWorkspace.HasPendingChanges
@@ -325,6 +334,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public void ReloadConfiguration()
     {
+        if (isInvalidating || isInvalidated)
+        {
+            return;
+        }
         if (HasPendingChanges)
         {
             if (!ConfigurationPathMatchesLoadedSession())
@@ -342,6 +355,33 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         SyncWorkspace.Reload();
         RefreshAllStates();
         NotifySessionChanged();
+    }
+
+    internal Task InvalidateAsync()
+    {
+        TaskCompletionSource completion;
+        Task? settingsSave;
+        Task syncInvalidation;
+        lock (lifecycleSync)
+        {
+            if (invalidationTask is not null)
+            {
+                return invalidationTask;
+            }
+            if (isInvalidated)
+            {
+                return Task.CompletedTask;
+            }
+            isInvalidating = true;
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            invalidationTask = completion.Task;
+            settingsSave = activeSave;
+            syncInvalidation = SyncWorkspace.InvalidateAsync();
+        }
+        RefreshAllStates();
+        NotifySessionChanged();
+        _ = CompleteInvalidationAsync(settingsSave, syncInvalidation, completion);
+        return completion.Task;
     }
 
     private SettingsSectionViewModel SelectedSectionItem =>
@@ -457,6 +497,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void TryLoadConfiguration()
     {
+        if (isInvalidating || isInvalidated)
+        {
+            return;
+        }
         workspace = null;
         var path = configurationPathProvider();
         var load = ConfigurationWorkspace.Load(
@@ -542,7 +586,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
-        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
+        if (isInvalidating
+            || isInvalidated
+            || workspace is null
+            || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -562,7 +609,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
-        if (workspace is null || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
+        if (isInvalidating
+            || isInvalidated
+            || workspace is null
+            || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
             return false;
         }
@@ -622,13 +672,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
-    private async Task SaveAsync()
+    private Task SaveAsync()
     {
-        if (workspace is null)
+        TaskCompletionSource completion;
+        ConfigurationWorkspace editingSession;
+        lock (lifecycleSync)
         {
-            return;
+            if (isInvalidating || isInvalidated || activeSave is not null || workspace is null)
+            {
+                return Task.CompletedTask;
+            }
+            editingSession = workspace;
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            activeSave = completion.Task;
         }
+        _ = CompleteSaveAsync(editingSession, completion);
+        return completion.Task;
+    }
 
+    private async Task SaveCoreAsync(ConfigurationWorkspace editingSession)
+    {
         if (!ConfigurationPathMatchesLoadedSession())
         {
             OperationStatus =
@@ -637,7 +700,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         OperationStatus = "Saving changes…";
-        var result = await workspace.CommitAsync();
+        var result = await editingSession.CommitAsync();
+        if (isInvalidating || isInvalidated)
+        {
+            return;
+        }
         OperationStatus = result.State switch
         {
             AtomicTomlWriteState.Succeeded when result.BackupReceipt is not null =>
@@ -661,12 +728,80 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
+    private async Task CompleteSaveAsync(
+        ConfigurationWorkspace editingSession,
+        TaskCompletionSource completion)
+    {
+        Exception? failure = null;
+        try
+        {
+            await SaveCoreAsync(editingSession);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            lock (lifecycleSync)
+            {
+                activeSave = null;
+            }
+        }
+        if (failure is not null && !isInvalidating && !isInvalidated)
+        {
+            OperationStatus = $"The changes could not be saved: {failure.Message}";
+            RefreshAllStates();
+            NotifySessionChanged();
+        }
+        completion.SetResult();
+    }
+
+    private async Task CompleteInvalidationAsync(
+        Task? settingsSave,
+        Task syncInvalidation,
+        TaskCompletionSource completion)
+    {
+        Exception? failure = null;
+        try
+        {
+            await Task.WhenAll(settingsSave ?? Task.CompletedTask, syncInvalidation);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            workspace?.Discard();
+            ClearEditorDrafts();
+            workspace = null;
+            isInvalidated = true;
+            isInvalidating = false;
+            OperationStatus = "This Settings workspace was replaced by newer runtime or provider evidence.";
+            RefreshAllStates();
+            NotifySessionChanged();
+            lock (lifecycleSync)
+            {
+                invalidationTask = null;
+            }
+        }
+        if (failure is null)
+        {
+            completion.SetResult();
+        }
+        else
+        {
+            completion.SetException(failure);
+        }
+    }
+
     private void RefreshAllStates()
     {
         var hasPatchGate = projectedItems.OfType<AdvancedPatchEditingGateViewModel>().Any();
         foreach (var setting in projectedRowsByPath.Values)
         {
-            setting.UpdateState(GetValueState(setting.Setting), workspace is not null);
+            setting.UpdateState(GetValueState(setting.Setting), IsConfigurationReady);
         }
 
         RefreshKeybindingConflicts();
@@ -829,6 +964,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         _ = sender;
         _ = e;
+        if (isInvalidating || isInvalidated)
+        {
+            return;
+        }
         NotifySessionChanged();
     }
 
@@ -836,6 +975,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         _ = sender;
         _ = e;
+        if (isInvalidating || isInvalidated)
+        {
+            return;
+        }
         if (!HasPendingChanges)
         {
             TryLoadConfiguration();

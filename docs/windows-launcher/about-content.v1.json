@@ -57,6 +57,24 @@
       "noticeText": "STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms."
     },
     {
+      "id": "microsoft-data-sqlite",
+      "name": "Microsoft.Data.Sqlite.Core",
+      "version": "8.0.29",
+      "license": "MIT License",
+      "sourceUrl": "https://github.com/dotnet/efcore/tree/v8.0.29/src/Microsoft.Data.Sqlite.Core",
+      "licenseUrl": "https://github.com/dotnet/efcore/blob/v8.0.29/LICENSE.txt",
+      "noticeText": "Microsoft.Data.Sqlite.Core is part of the .NET Entity Framework Core repository and is licensed under the MIT License. The linked upstream license is authoritative."
+    },
+    {
+      "id": "sqlitepclraw",
+      "name": "SQLitePCLRaw core and dynamic C-declaration provider",
+      "version": "2.1.11",
+      "license": "Apache License 2.0",
+      "sourceUrl": "https://github.com/ericsink/SQLitePCL.raw/tree/v2.1.11",
+      "licenseUrl": "https://github.com/ericsink/SQLitePCL.raw/blob/v2.1.11/LICENSE.TXT",
+      "noticeText": "SQLitePCLRaw.core and SQLitePCLRaw.provider.dynamic_cdecl are licensed under the Apache License, Version 2.0. The provider binds the Windows-serviced winsqlite3 module; this application does not redistribute native SQLite bytes."
+    },
+    {
       "id": "go-runtime",
       "name": "The Go Programming Language runtime",
       "version": "1.26.5",
@@ -109,6 +127,34 @@
     {
       "id": "System.Security.Cryptography.ProtectedData",
       "version": "8.0.0",
+      "noticeId": "dotnet-windows-runtime",
+      "attributionStatus": "review-pending",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "Microsoft.Data.Sqlite.Core",
+      "version": "8.0.29",
+      "noticeId": "microsoft-data-sqlite",
+      "attributionStatus": "required",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "SQLitePCLRaw.core",
+      "version": "2.1.11",
+      "noticeId": "sqlitepclraw",
+      "attributionStatus": "required",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "SQLitePCLRaw.provider.dynamic_cdecl",
+      "version": "2.1.11",
+      "noticeId": "sqlitepclraw",
+      "attributionStatus": "required",
+      "evidenceKind": "resolved-package"
+    },
+    {
+      "id": "System.Memory",
+      "version": "4.5.3",
       "noticeId": "dotnet-windows-runtime",
       "attributionStatus": "review-pending",
       "evidenceKind": "resolved-package"
@@ -299,6 +345,6 @@
     }
   ],
   "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Bridge is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
-  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.",
+  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, and all 71 checksum-locked release-verifier modules. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.",
   "legalReviewStatus": "Attribution and non-endorsement copy is a factual compatibility statement, not a claim of legal clearance. Final wording and asset usage remain subject to the v1 release review tracked in issue #30."
 }
