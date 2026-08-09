@@ -1,8 +1,9 @@
 # Battle Bridge local IPC boundary
 
-Status: authenticated named-pipe transport proof implemented but dormant;
-operational activation remains blocked on lifecycle, producer, credential, and
-signed-package qualification
+Status: authenticated named-pipe transport and provisioned-runtime composition
+proofs implemented but dormant; operational activation remains blocked on the
+marker/credential/config transaction, producer alignment, and signed-package
+qualification
 
 Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
 
@@ -129,6 +130,24 @@ which already combines normalized runtime capability, checked-in product
 policy, and independent per-feature player preference. An unavailable,
 available/unset, or disabled feature therefore cannot create an accepted ingest
 family even if a caller invokes the legacy helper directly.
+
+`BattleRuntimeCompositionCoordinator` is the dormant process-owned orchestration
+proof above the pipe host. It asks for provisioned resources only when at least
+one reviewed feature projection is `enabled`; unchanged family sets are a no-op.
+Changing the enabled family set drains and closes the prior host, releases its
+exact provisioning lease, obtains a new lease for the new typed snapshot, and
+starts a new host with only the requested Battle and/or Fleet sink. Capability,
+policy, or preference loss drains collection and releases the lease. Shutdown or
+provisioning cleanup failure retains ownership for an explicit serialized retry
+rather than forgetting an uncertain resource.
+
+The provisioning interface is intentionally internal and has no production
+registration. It accepts only an already-provisioned pipe name, 32-byte
+credential, caller authorizer, runtime-evidence digest, exact family sinks, and
+lifetime owner. It cannot resolve a state root, create or read a credential,
+create a store, discover a process, edit TOML, acquire `runtime.lock`, or decide
+eligibility. Supplying that lease remains the marker-first lifecycle transaction
+defined by Sidecar document 27; launcher startup continues to compose none.
 
 ## Current composition
 
