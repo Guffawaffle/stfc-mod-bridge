@@ -215,6 +215,12 @@ internal sealed class LauncherDiagnosticsWorkspace(MainWindowViewModel foundatio
         foundation ?? throw new ArgumentNullException(nameof(foundation));
 
     public LauncherDiagnosticPreview BuildPreview() => foundation.BuildDiagnosticPreview();
+
+    public bool CanRetryCandidateRecovery => foundation.CanRetryCandidateRecovery;
+
+    public Task<ReviewedCandidateRecoveryResult?> RetryCandidateRecoveryAsync(
+        CancellationToken cancellationToken = default) =>
+        foundation.RetryCandidateRecoveryAsync(cancellationToken);
 }
 
 internal sealed record LauncherWorkspaceRegistration<TServices, TWorkspace>

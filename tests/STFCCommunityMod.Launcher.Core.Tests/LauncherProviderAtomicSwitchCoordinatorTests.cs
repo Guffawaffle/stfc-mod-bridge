@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -41,6 +42,44 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             LauncherProviderAtomicSwitchPhase.Completed,
             fixture.Coordinator.ReadJournal()!.Phase);
         Assert.IsFalse(Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+    }
+
+    [TestMethod]
+    public async Task ExactCandidateCommitsThroughProviderTransactionWithoutSecondDownload()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, reviewedTarget: true);
+        var candidateDownloader = new CountingDownloader(NetnivArtifact);
+        var candidateAcquirer = new ReviewedModArtifactCandidateAcquirer(
+            fixture.StateDirectory,
+            candidateDownloader,
+            new FakeVersionReader(fixture.TargetArtifact.ExpectedVersion),
+            new FakeAuthenticityVerifier(),
+            fixture.TargetAttribution,
+            fixture.TargetCertification!);
+        var candidate = await candidateAcquirer.AcquireAsync(fixture.TargetArtifact);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+
+        var result = await fixture.Coordinator.ExecuteCandidateAsync(
+            preview,
+            candidate,
+            preview.ConfirmationText);
+
+        Assert.AreEqual(1, candidateDownloader.CallCount);
+        Assert.AreEqual("netniv", result.InstalledArtifact!.ProviderId);
+        CollectionAssert.AreEqual(
+            NetnivArtifact,
+            File.ReadAllBytes(Path.Combine(fixture.GameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), fixture.SelectionStore.Load());
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.Completed,
+            fixture.Coordinator.ReadJournal()!.Phase);
     }
 
     [TestMethod]
@@ -263,7 +302,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         TemporaryDirectory directory,
         ILauncherProviderSelectionStore? selectionStore = null,
         bool installSource = true,
-        IModArtifactDownloader? targetDownloader = null)
+        IModArtifactDownloader? targetDownloader = null,
+        bool reviewedTarget = false)
     {
         var gameDirectory = directory.CreateDirectory("game");
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
@@ -288,7 +328,15 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             "test-seed"));
 
         var sourceArtifact = Artifact(GuffawaffleArtifact, "2.1.0.8");
-        var targetArtifact = Artifact(NetnivArtifact, "1.1.5.1");
+        var targetCertification = reviewedTarget
+            ? Certification(NetnivArtifact, "1.1.5.1")
+            : null;
+        var targetArtifact = reviewedTarget
+            ? Artifact(
+                NetnivArtifact,
+                "1.1.5.1",
+                targetCertification!.DownloadUri)
+            : Artifact(NetnivArtifact, "1.1.5.1");
         var sourceDeployment = Deployment(
             stateDirectory,
             GuffawaffleArtifact,
@@ -299,7 +347,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             NetnivArtifact,
             targetArtifact.ExpectedVersion,
             new("netniv", "stable", "netniv.stfc-community-mod"),
-            targetDownloader);
+            targetDownloader ?? (reviewedTarget ? new ThrowingDownloader() : null),
+            targetCertification);
         if (installSource)
         {
             Assert.AreEqual(
@@ -342,7 +391,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             backupStore,
             sourceDeployment,
             targetDeployment,
-            coordinator);
+            coordinator,
+            targetArtifact,
+            new("netniv", "stable", "netniv.stfc-community-mod"),
+            targetCertification);
     }
 
     private static ModManagementCoordinator Management(
@@ -370,21 +422,44 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         byte[] contents,
         string version,
         ModInstallationAttribution attribution,
-        IModArtifactDownloader? downloader = null) =>
+        IModArtifactDownloader? downloader = null,
+        ReviewedReleaseCertification? reviewedCertification = null) =>
         new(
             stateDirectory,
             downloader ?? new FakeDownloader(contents),
             new FakeVersionReader(version),
             new FakeAuthenticityVerifier(),
             _ => false,
-            attribution);
+            attribution,
+            reviewedCertification: reviewedCertification);
 
-    private static ModReleaseArtifact Artifact(byte[] contents, string version) => new(
-        new Uri("https://example.invalid/version.dll"),
+    private static ModReleaseArtifact Artifact(byte[] contents, string version, Uri? uri = null) => new(
+        uri ?? new Uri("https://example.invalid/version.dll"),
         "version.dll",
         contents.LongLength,
         Convert.ToHexString(SHA256.HashData(contents)),
         version);
+
+    private static ReviewedReleaseCertification Certification(byte[] contents, string version)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(contents));
+        return new(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod",
+            "NetniV/stfc-mod",
+            "v1.1.5.1",
+            "1.1.5.1",
+            new string('1', 40),
+            "version.dll",
+            contents.LongLength,
+            hash,
+            "version.dll",
+            contents.LongLength,
+            hash,
+            version,
+            DateTimeOffset.Parse("2026-08-09T00:00:00Z", CultureInfo.InvariantCulture));
+    }
 
     private sealed record Fixture(
         string GameDirectory,
@@ -396,7 +471,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         ProviderScopedConfigurationBackupStore BackupStore,
         ModDeploymentService SourceDeployment,
         ModDeploymentService TargetDeployment,
-        LauncherProviderAtomicSwitchCoordinator Coordinator);
+        LauncherProviderAtomicSwitchCoordinator Coordinator,
+        ModReleaseArtifact TargetArtifact,
+        ModInstallationAttribution TargetAttribution,
+        ReviewedReleaseCertification? TargetCertification);
 
     private static void WriteJson<T>(string path, T value)
     {
@@ -431,6 +509,24 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     {
         public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken) =>
             Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
+    }
+
+    private sealed class CountingDownloader(byte[] contents) : IModArtifactDownloader
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
+        }
+    }
+
+    private sealed class ThrowingDownloader : IModArtifactDownloader
+    {
+        public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken) =>
+            throw new AssertFailedException("Provider transaction attempted a second download.");
     }
 
     private sealed class BlockingDownloader(byte[] contents) : IModArtifactDownloader

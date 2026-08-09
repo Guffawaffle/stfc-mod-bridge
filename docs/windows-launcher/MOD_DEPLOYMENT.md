@@ -73,12 +73,12 @@ from explicit acquisition through confirmation and exact cleanup. A forced
 termination releases that operating-system lock but can leave inert candidate
 files because Bridge deliberately does not make retained Windows handles
 delete-pending; that technique has a reproducible namespace teardown race. The
-next explicit acquisition, or the explicit recovery API supplied for #138
-composition, reconciles abandoned residue before another download starts. The
-future UI caller should label that action **Retry candidate recovery**; this
-Core slice does not claim the button is wired yet. Passive startup, health,
-update checks, and source selection do not create the candidate root, take its
-lock, scan it, or clean it.
+next explicit acquisition, or the explicit **Retry candidate recovery** action
+in Diagnostics, reconciles abandoned residue before another download starts.
+The action projects only the bounded typed #143 result and does not expose a
+candidate path or mutate the game installation. Passive startup, health,
+Diagnostics preview, update checks, and source selection do not create the
+candidate root, take its lock, scan it, or clean it.
 
 Each candidate directory has a closed-schema Windows DPAPI `CurrentUser`
 ownership receipt written before its artifact members. The receipt binds the

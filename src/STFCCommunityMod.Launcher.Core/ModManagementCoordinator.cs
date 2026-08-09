@@ -283,6 +283,39 @@ public sealed class ModManagementCoordinator(
             cancellationToken);
     }
 
+    public Task<ModDeploymentResult> ExecuteCandidateCoordinatedAsync(
+        ModOperationPreparation preparation,
+        ReviewedModArtifactCandidateLease candidateLease,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preparation);
+        ArgumentNullException.ThrowIfNull(candidateLease);
+        ArgumentNullException.ThrowIfNull(commitParticipant);
+        if (preparation.State != ModOperationPreparationState.Ready)
+        {
+            throw new InvalidOperationException("Only a ready provider-switch artifact can execute.");
+        }
+        if (!string.Equals(preparation.ProviderId, ProviderId, StringComparison.Ordinal)
+            || candidateLease.Receipt.Artifact != preparation.Artifact
+            || !string.Equals(
+                candidateLease.Receipt.InstallationAttribution.ProviderId,
+                ProviderId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The exact candidate does not match the prepared provider-switch target.");
+        }
+        return deploymentService.DeployCandidateCoordinatedAsync(
+            preparation.GameDirectory,
+            candidateLease,
+            preparation.ExistingArtifactPolicy,
+            transactionId,
+            commitParticipant,
+            cancellationToken);
+    }
+
     public Task<ModDeploymentResult> RollBackCoordinatedAsync(
         string transactionId,
         CancellationToken cancellationToken = default) =>

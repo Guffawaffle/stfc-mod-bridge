@@ -904,6 +904,17 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
     }
 
+    private async void DiagnosticsCandidateRecoveryButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        var diagnostics = ProviderSession.ApplicationComposition.SharedServices.Diagnostics;
+        if (diagnostics.CanRetryCandidateRecovery)
+        {
+            await diagnostics.RetryCandidateRecoveryAsync(lifetimeCancellation.Token);
+        }
+    }
+
     private void DiagnosticsUninstallButton_Click(object sender, RoutedEventArgs e)
     {
         _ = sender;
