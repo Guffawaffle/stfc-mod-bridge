@@ -187,6 +187,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             || !string.Equals(
                 candidateLease.Receipt.InstallationAttribution.ProviderId,
                 preview.Configuration.Target.ProviderId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                candidateLease.Receipt.InstallationAttribution.ReleaseChannelId,
+                preview.Configuration.Target.ReleaseChannelId,
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(

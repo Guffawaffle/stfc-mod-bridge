@@ -83,6 +83,48 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ExactCandidateFromAnotherReleaseChannelFailsBeforeProviderTransaction()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, reviewedTarget: true);
+        var candidateDownloader = new CountingDownloader(NetnivArtifact);
+        var candidateAcquirer = new ReviewedModArtifactCandidateAcquirer(
+            fixture.StateDirectory,
+            candidateDownloader,
+            new FakeVersionReader(fixture.TargetArtifact.ExpectedVersion),
+            new FakeAuthenticityVerifier(),
+            fixture.TargetAttribution,
+            fixture.TargetCertification!);
+        await using var candidate = await candidateAcquirer.AcquireAsync(fixture.TargetArtifact);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var mismatchedPreview = preview with
+        {
+            Configuration = preview.Configuration with
+            {
+                Target = preview.Configuration.Target with { ReleaseChannelId = "preview" },
+            },
+        };
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.ExecuteCandidateAsync(
+                mismatchedPreview,
+                candidate,
+                mismatchedPreview.ConfirmationText));
+
+        Assert.AreEqual(1, candidateDownloader.CallCount);
+        Assert.IsNull(fixture.Coordinator.ReadJournal());
+        CollectionAssert.AreEqual(
+            GuffawaffleArtifact,
+            File.ReadAllBytes(Path.Combine(fixture.GameDirectory, "version.dll")));
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), fixture.SelectionStore.Load());
+    }
+
+    [TestMethod]
     public async Task SelectionCommitFailureRestoresExactDllStateAndToml()
     {
         using var directory = new TemporaryDirectory();
