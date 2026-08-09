@@ -154,7 +154,8 @@ public sealed class LauncherDiagnosticService(
 
     public LauncherDiagnosticPreview BuildPreview(
         string? gameDirectory,
-        LauncherHealthSnapshot? localHealth = null)
+        LauncherHealthSnapshot? localHealth = null,
+        LauncherBattleFeatureSnapshot? battleFeatures = null)
     {
         var health = new List<LauncherDiagnosticFact>();
         string? validGameDirectory = null;
@@ -212,6 +213,10 @@ public sealed class LauncherDiagnosticService(
             validGameDirectory,
             configurationEvidence,
             runtimeDistributionId);
+        if (battleFeatures is not null)
+        {
+            health.AddRange(battleFeatures.BuildDiagnosticFacts());
+        }
         var recentLog = ReadRecentModLog(health, validGameDirectory);
         for (var index = 0; index < health.Count; index++)
         {

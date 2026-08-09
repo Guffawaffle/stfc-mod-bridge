@@ -180,13 +180,20 @@ candidate lease into the existing atomic provider transaction. Deployment
 restages and re-verifies those locked bytes without another download. Cancel,
 validation failure, or a stale/replayed receipt invokes exact candidate cleanup
 before any provider selection, TOML, journal, game file, preference, or runtime
-composition mutation. Player preference is intentionally outside this review
-and is considered only after a successful transaction by the future #132
-feature surface.
+composition mutation. Player preference is intentionally outside this review.
+The #132 composition surface considers it only after a successful transaction
+and after the typed runtime capability and checked-in product-policy decision.
+A retained player preference cannot elevate an inactive feature.
 
 This reviewed release acquisition is narrow launcher update infrastructure. It
 does not grant Bridge or Battle Bridge general outbound Internet authority, add
 a provider-name gate, or establish a local HTTP service.
+
+The first per-feature collection projections and their local-only transport
+boundary are documented in
+[BATTLE_BRIDGE_ACTIVATION_ADR.md](BATTLE_BRIDGE_ACTIVATION_ADR.md) and
+[BATTLE_BRIDGE_LOCAL_IPC.md](BATTLE_BRIDGE_LOCAL_IPC.md). They remain dormant;
+no runtime capability, policy decision, or preference starts a listener.
 
 About exposes the detected runtime, semantic-grouping state, selected layout,
 and decision reason for support evidence. The complete profile and activation

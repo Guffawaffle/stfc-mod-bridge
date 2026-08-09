@@ -9,14 +9,39 @@ public enum LauncherColorMode
     Dark,
 }
 
+public enum LauncherPlayerFeaturePreference
+{
+    Unset,
+    Enabled,
+    Disabled,
+}
+
+public sealed record LauncherBattlePreferences(
+    LauncherPlayerFeaturePreference BattleCollection,
+    LauncherPlayerFeaturePreference FleetCollection)
+{
+    public static LauncherBattlePreferences Default { get; } = new(
+        LauncherPlayerFeaturePreference.Unset,
+        LauncherPlayerFeaturePreference.Unset);
+}
+
 public sealed record LauncherUiPreferences(
     bool SettingsSearchVisible,
     LauncherColorMode ColorMode = LauncherColorMode.System,
     LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher,
-    bool ProviderSwitchReviewAcknowledged = false)
+    bool ProviderSwitchReviewAcknowledged = false,
+    LauncherBattlePreferences? BattlePreferences = null)
 {
     public static LauncherUiPreferences Default { get; } =
-        new(false, LauncherColorMode.System, LauncherLaunchTarget.ScopelyLauncher, false);
+        new(
+            false,
+            LauncherColorMode.System,
+            LauncherLaunchTarget.ScopelyLauncher,
+            false,
+            LauncherBattlePreferences.Default);
+
+    public LauncherBattlePreferences EffectiveBattlePreferences =>
+        BattlePreferences ?? LauncherBattlePreferences.Default;
 }
 
 public interface ILauncherUiPreferencesStore
@@ -28,7 +53,7 @@ public interface ILauncherUiPreferencesStore
 
 public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILauncherUiPreferencesStore
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -59,7 +84,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                 return new(document.SettingsSearchVisible, LauncherColorMode.System);
             }
 
-            if (document.SchemaVersion is not (2 or 3 or CurrentSchemaVersion))
+            if (document.SchemaVersion is not (2 or 3 or 4 or CurrentSchemaVersion))
             {
                 return LauncherUiPreferences.Default;
             }
@@ -78,8 +103,13 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
                 document.SettingsSearchVisible,
                 colorMode,
                 launchTarget,
+                (document.SchemaVersion is 4 or CurrentSchemaVersion)
+                && document.ProviderSwitchReviewAcknowledged,
                 document.SchemaVersion == CurrentSchemaVersion
-                    && document.ProviderSwitchReviewAcknowledged);
+                    ? new(
+                        ParseFeaturePreference(document.BattleCollectionPreference),
+                        ParseFeaturePreference(document.FleetCollectionPreference))
+                    : LauncherBattlePreferences.Default);
         }
         catch (Exception exception) when (
             exception is IOException
@@ -94,6 +124,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
     public void Save(LauncherUiPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        RequireFeaturePreference(preferences.EffectiveBattlePreferences.BattleCollection);
+        RequireFeaturePreference(preferences.EffectiveBattlePreferences.FleetCollection);
 
         var parentDirectory = Path.GetDirectoryName(preferencesPath)
             ?? throw new InvalidOperationException("The Mod Bridge preferences file has no parent directory.");
@@ -107,7 +139,9 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
             preferences.SettingsSearchVisible,
             preferences.ColorMode.ToString(),
             preferences.LaunchTarget.ToString(),
-            preferences.ProviderSwitchReviewAcknowledged);
+            preferences.ProviderSwitchReviewAcknowledged,
+            preferences.EffectiveBattlePreferences.BattleCollection.ToString(),
+            preferences.EffectiveBattlePreferences.FleetCollection.ToString());
 
         try
         {
@@ -137,11 +171,27 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         bool SettingsSearchVisible,
         string? ColorMode = null,
         string? LaunchTarget = null,
-        bool ProviderSwitchReviewAcknowledged = false);
+        bool ProviderSwitchReviewAcknowledged = false,
+        string? BattleCollectionPreference = null,
+        string? FleetCollectionPreference = null);
 
     private static LauncherLaunchTarget ParseLaunchTarget(string? value) =>
         Enum.TryParse<LauncherLaunchTarget>(value, ignoreCase: true, out var parsed)
         && Enum.IsDefined(parsed)
             ? parsed
             : LauncherLaunchTarget.ScopelyLauncher;
+
+    private static LauncherPlayerFeaturePreference ParseFeaturePreference(string? value) =>
+        Enum.TryParse<LauncherPlayerFeaturePreference>(value, ignoreCase: false, out var parsed)
+        && Enum.IsDefined(parsed)
+            ? parsed
+            : LauncherPlayerFeaturePreference.Unset;
+
+    private static void RequireFeaturePreference(LauncherPlayerFeaturePreference value)
+    {
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value));
+        }
+    }
 }
