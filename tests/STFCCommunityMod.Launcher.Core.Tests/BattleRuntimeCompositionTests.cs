@@ -82,6 +82,36 @@ public sealed class BattleRuntimeCompositionTests
     }
 
     [TestMethod]
+    public async Task BothEnabledFamiliesShareOneHostAndRouteToIndependentSinks()
+    {
+        RequireWindows();
+        var factory = new RecordingProvisioningFactory();
+        await using var coordinator = new BattleRuntimeCompositionCoordinator(factory, SmallLimits());
+
+        await coordinator.RecomposeAsync(Snapshot(
+            LauncherPlayerFeaturePreference.Enabled,
+            LauncherPlayerFeaturePreference.Enabled));
+
+        var opened = factory.Opened.Single();
+        using var battle = await SendAsync(
+            opened.PipeName,
+            opened.Credential,
+            Encoding.UTF8.GetBytes(BattleEnvelope("shared-battle")));
+        using var fleet = await SendAsync(
+            opened.PipeName,
+            opened.Credential,
+            Encoding.UTF8.GetBytes(FleetEnvelope("shared-fleet")));
+        Assert.AreEqual("accepted", battle.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual("accepted", fleet.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual(1, opened.BattleSink.Envelopes.Count);
+        Assert.AreEqual(1, opened.FleetSink.Envelopes.Count);
+        Assert.AreEqual(1, factory.OpenCount);
+        CollectionAssert.AreEquivalent(
+            new[] { BattleIngestProtocol.BattleEventsKind, BattleIngestProtocol.FleetRuntimeKind },
+            coordinator.GetHealth().AcceptedKinds.ToArray());
+    }
+
+    [TestMethod]
     public async Task CapabilityLossStopsCollectionAndReleasesProvisionedLifetime()
     {
         RequireWindows();
