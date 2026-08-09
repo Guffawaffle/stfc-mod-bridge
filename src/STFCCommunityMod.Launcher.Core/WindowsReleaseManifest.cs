@@ -35,7 +35,10 @@ public sealed record WindowsReleaseManifest(
 
 public static partial class WindowsReleaseManifestParser
 {
+    public const int MaximumManifestBytes = 1024 * 1024;
     private const int SupportedSchemaVersion = 1;
+    private const int MaximumArtifacts = 32;
+    private const int MaximumStringLength = 256;
     private static readonly HashSet<string> RootProperties =
     [
         "schemaVersion",
@@ -78,7 +81,8 @@ public static partial class WindowsReleaseManifestParser
         ArgumentNullException.ThrowIfNull(manifestStream);
         try
         {
-            using var document = JsonDocument.Parse(manifestStream, new JsonDocumentOptions
+            using var bounded = ReadBounded(manifestStream);
+            using var document = JsonDocument.Parse(bounded, new JsonDocumentOptions
             {
                 AllowTrailingCommas = false,
                 CommentHandling = JsonCommentHandling.Disallow,
@@ -145,14 +149,19 @@ public static partial class WindowsReleaseManifestParser
             }
 
             var artifactArray = ReadProperty(root, "artifacts", "release manifest");
-            if (artifactArray.ValueKind != JsonValueKind.Array || artifactArray.GetArrayLength() == 0)
+            if (artifactArray.ValueKind != JsonValueKind.Array
+                || artifactArray.GetArrayLength() is <= 0 or > MaximumArtifacts)
             {
-                throw new InvalidDataException("Release manifest artifacts must be a non-empty array.");
+                throw new InvalidDataException("Release manifest artifacts must be a bounded non-empty array.");
             }
             var artifacts = artifactArray.EnumerateArray().Select(ParseArtifact).ToArray();
             if (artifacts.Select(artifact => artifact.Id).Distinct(StringComparer.Ordinal).Count() != artifacts.Length)
             {
                 throw new InvalidDataException("Release artifact IDs must be unique.");
+            }
+            if (artifacts.Select(artifact => artifact.FileName).Distinct(StringComparer.Ordinal).Count() != artifacts.Length)
+            {
+                throw new InvalidDataException("Release artifact file names must be unique.");
             }
 
             return new(
@@ -245,7 +254,9 @@ public static partial class WindowsReleaseManifestParser
     private static string ReadString(JsonElement parent, string name, string context)
     {
         var value = ReadProperty(parent, name, context);
-        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+        if (value.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(value.GetString())
+            || value.GetString()!.Length > MaximumStringLength)
         {
             throw new InvalidDataException($"{context}.{name} must be a non-empty string.");
         }
@@ -277,12 +288,38 @@ public static partial class WindowsReleaseManifestParser
         HashSet<string> allowed,
         string context)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var property in element.EnumerateObject())
         {
+            if (!seen.Add(property.Name))
+            {
+                throw new InvalidDataException($"{context} contains duplicate property '{property.Name}'.");
+            }
             if (!allowed.Contains(property.Name))
             {
                 throw new InvalidDataException($"{context} contains unknown property '{property.Name}'.");
             }
+        }
+    }
+
+    private static MemoryStream ReadBounded(Stream source)
+    {
+        var destination = new MemoryStream();
+        var buffer = new byte[81920];
+        while (true)
+        {
+            var count = source.Read(buffer, 0, buffer.Length);
+            if (count == 0)
+            {
+                destination.Position = 0;
+                return destination;
+            }
+            if (destination.Length + count > MaximumManifestBytes)
+            {
+                destination.Dispose();
+                throw new InvalidDataException("Release manifest exceeds its bounded size limit.");
+            }
+            destination.Write(buffer, 0, count);
         }
     }
 }
@@ -293,6 +330,7 @@ public static partial class WindowsReleaseSelectionPolicy
     private const long MaximumModArtifactSize = 128L * 1024L * 1024L;
     private const string LauncherArtifactId = "windows-mod-bridge-archive-x64";
     private const long MaximumLauncherArtifactSize = 512L * 1024L * 1024L;
+    private const string RuntimeManifestArtifactId = "windows-mod-runtime-manifest-x64";
 
     [GeneratedRegex(
         "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
@@ -385,6 +423,59 @@ public static partial class WindowsReleaseSelectionPolicy
             artifact.Size,
             artifact.Sha256,
             expectedFileVersion);
+    }
+
+    public static ModRuntimeManifestArtifact SelectReviewedRuntimeManifestArtifact(
+        WindowsReleaseManifest manifest,
+        ModReleaseArtifact dll,
+        ReviewedReleaseCertification certification)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(dll);
+        ArgumentNullException.ThrowIfNull(certification);
+        var reviewed = certification.RuntimeManifest
+            ?? throw new InvalidDataException("The launcher-reviewed release does not authorize a runtime manifest.");
+        if (manifest.Tag != certification.Tag
+            || manifest.Source.Repository != certification.Repository
+            || manifest.Source.TargetCommit != certification.SourceCommit
+            || dll.FileName != certification.PayloadFileName
+            || dll.Size != certification.PayloadSize
+            || !string.Equals(dll.Sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase)
+            || dll.ExpectedVersion != certification.PayloadVersion)
+        {
+            throw new InvalidDataException("The discovered DLL does not match the launcher-reviewed pair certification.");
+        }
+        var matches = manifest.Artifacts.Where(artifact => artifact.Id == RuntimeManifestArtifactId).ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException("The reviewed release must contain exactly one runtime manifest artifact.");
+        }
+        var artifact = matches[0];
+        if (artifact.Kind != "windows-mod-runtime-manifest"
+            || artifact.Platform != "windows"
+            || artifact.Architecture != "x64"
+            || artifact.FileName != ArtifactBoundRuntimeManifestParser.ManagedFileName
+            || artifact.MediaType != "application/json"
+            || artifact.Size is <= 0 or > ArtifactBoundRuntimeManifestParser.MaximumManifestBytes
+            || artifact.Authenticity.Scheme != "none"
+            || artifact.Authenticity.Scope != "none"
+            || artifact.Authenticity.SignedFiles.Count != 0
+            || reviewed.FileName != artifact.FileName
+            || reviewed.Size != artifact.Size
+            || !string.Equals(reviewed.Sha256, artifact.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The runtime manifest artifact does not match the launcher-reviewed pair certification.");
+        }
+        return new(
+            new Uri(
+                $"https://github.com/{manifest.Source.Repository}/releases/download/"
+                + $"{Uri.EscapeDataString(manifest.Tag)}/{Uri.EscapeDataString(artifact.FileName)}"),
+            artifact.FileName,
+            artifact.Size,
+            artifact.Sha256,
+            manifest.Source.TargetCommit,
+            manifest.Source.Repository,
+            manifest.Tag);
     }
 
     public static LauncherReleaseArtifact SelectLauncherArtifact(

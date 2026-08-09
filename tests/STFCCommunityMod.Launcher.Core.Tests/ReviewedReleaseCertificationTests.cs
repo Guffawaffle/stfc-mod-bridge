@@ -149,6 +149,32 @@ public sealed class ReviewedReleaseCertificationTests
         Assert.AreEqual(0, fallback.CallCount);
     }
 
+    [TestMethod]
+    public async Task RuntimeManifestRouteUsesItsDedicatedBoundedDownloader()
+    {
+        var bytes = new byte[ArtifactBoundRuntimeManifestParser.MaximumManifestBytes + 1];
+        var certification = Certification() with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                12,
+                new string('A', 64)),
+        };
+        var downloader = new ManifestWithReviewedFallbackArtifactDownloader(
+            new(new ByteHandler(bytes)),
+            certification);
+        var uri = new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{certification.Tag}/{ArtifactBoundRuntimeManifestParser.ManagedFileName}");
+
+        var result = await downloader.DownloadAsync(uri, CancellationToken.None);
+
+        Assert.AreEqual(bytes.LongLength, result.DeclaredContentLength);
+        Assert.AreEqual(0, result.Contents.Length);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(new Uri("https://example.invalid/file.json"), CancellationToken.None));
+    }
+
     private static ReviewedReleaseCertification Certification(byte[]? archive = null, byte[]? payload = null)
     {
         payload ??= Encoding.UTF8.GetBytes("reviewed dll bytes");

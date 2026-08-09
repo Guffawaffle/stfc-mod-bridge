@@ -68,6 +68,16 @@ and DLL entry plus the normal Authenticode publisher check. An invalid or
 tampered manifest never falls back. A future manifest-bearing release removes
 the need for this temporary reviewed-release entry.
 
+An optional `runtimeManifest` member in a launcher-bundled reviewed release
+certification authorizes one exact `stfc-runtime-manifest.json` companion by
+file name, size, and SHA-256. It composes with that certification's existing
+DLL, version, repository, tag, source-commit, provider, channel, and runtime
+distribution binding. The mod's schema-v1 release manifest remains
+discovery/integrity metadata (`manifestAuthenticity.scheme: none`) and cannot
+activate runtime capabilities on its own. A new producer release therefore
+remains base-only until its exact DLL/JSON pair is deliberately reviewed and
+the bundled certification is updated.
+
 `providers/known-windows-artifacts.v1.json` separately recognizes reviewed
 stable and dev DLL hashes for local provenance display. The dev entry is
 recognition-only because GitHub Actions artifacts expire and are not a durable

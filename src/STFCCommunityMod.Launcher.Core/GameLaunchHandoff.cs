@@ -278,6 +278,18 @@ public sealed class GameLaunchHandoffCoordinator(
         LauncherLaunchTarget target,
         ModInstallationEvidence? capturedInstallation = null)
     {
+        if (HasIncompleteDeployment())
+        {
+            var action = target == LauncherLaunchTarget.ScopelyLauncher
+                ? "Open Scopely launcher"
+                : "Launch prime.exe";
+            return Blocked(
+                "Recovery required",
+                action,
+                "Recover the incomplete mod transaction before launching.",
+                target,
+                LauncherLaunchRecoveryAction.RecoverModTransaction);
+        }
         if (target == LauncherLaunchTarget.ScopelyLauncher)
         {
             return officialLauncherService.IsAvailable
@@ -308,6 +320,28 @@ public sealed class GameLaunchHandoffCoordinator(
             target,
             "The selected game and community mod are ready for a direct launch.",
             LauncherLaunchRecoveryAction.None);
+    }
+
+    private bool HasIncompleteDeployment()
+    {
+        try
+        {
+            var journal = deploymentService.ReadJournal();
+            return journal is not null
+                && journal.Phase is not (ModDeploymentPhase.Committed
+                    or ModDeploymentPhase.RolledBack
+                    or ModDeploymentPhase.Failed);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or System.Text.Json.JsonException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            return true;
+        }
     }
 
     public async Task<GameLaunchHandoffResult> LaunchAsync(

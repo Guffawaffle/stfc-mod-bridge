@@ -40,6 +40,14 @@ public enum ModUpdateEvidenceState
     UpdateAvailable,
 }
 
+public enum ManagedRuntimeManifestEvidenceState
+{
+    NotManaged,
+    MissingOrChanged,
+    ExactButNotReviewed,
+    ReviewedPairVerified,
+}
+
 public sealed record LauncherProviderHealthContext(
     string ProviderId,
     string ReleaseChannelId,
@@ -55,7 +63,9 @@ public sealed record ModInstallationEvidence(
     string? InstalledReleaseChannelId = null,
     string? InstalledRuntimeDistributionId = null,
     string? InstalledSha256 = null,
-    ModBinaryProvenance? BinaryProvenance = null)
+    ModBinaryProvenance? BinaryProvenance = null,
+    ManagedRuntimeManifestEvidenceState RuntimeManifestState = ManagedRuntimeManifestEvidenceState.NotManaged,
+    ReviewedRuntimeActivation? RuntimeActivation = null)
 {
     public bool HasCompleteAttribution =>
         !string.IsNullOrWhiteSpace(InstalledProviderId)
@@ -137,7 +147,9 @@ public sealed class ModInstallationInspector(
     IModDeploymentStateReader stateReader,
     IModInstallationFileSystem fileSystem,
     IGameTargetHealthInspector? gameTargetInspector = null,
-    ModBinaryProvenanceResolver? provenanceResolver = null)
+    ModBinaryProvenanceResolver? provenanceResolver = null,
+    ReviewedReleaseCertification? reviewedCertification = null,
+    Func<string, byte[]>? readAllBytes = null)
 {
     private const long MaximumArtifactBytes = 128L * 1024L * 1024L;
     private readonly IGameTargetHealthInspector gameTargetInspector =
@@ -145,6 +157,7 @@ public sealed class ModInstallationInspector(
     private readonly ModBinaryProvenanceResolver provenanceResolver = provenanceResolver ?? new(
         new WindowsModBinaryVersionMetadataReader(),
         KnownModArtifactCatalog.Empty);
+    private readonly Func<string, byte[]> readAllBytes = readAllBytes ?? ReadRuntimeManifestBounded;
 
     public ModInstallationEvidence Capture(string? gameDirectory, bool isGameRunning)
     {
@@ -215,6 +228,66 @@ public sealed class ModInstallationInspector(
                     actualSha256!,
                     artifactLength)
                 : null;
+            var runtimeManifestState = ManagedRuntimeManifestEvidenceState.NotManaged;
+            ReviewedRuntimeActivation? runtimeActivation = null;
+            if (verified && installedState.RuntimeManifest is not null)
+            {
+                var installedManifest = installedState.RuntimeManifest;
+                var manifestPath = Path.Combine(
+                    normalizedGameDirectory,
+                    ArtifactBoundRuntimeManifestParser.ManagedFileName);
+                runtimeManifestState = ManagedRuntimeManifestEvidenceState.MissingOrChanged;
+                if (fileSystem.FileExists(manifestPath))
+                {
+                    try
+                    {
+                        var bytes = readAllBytes(manifestPath);
+                        var manifestActualSha256 = Convert.ToHexString(SHA256.HashData(bytes));
+                        if (bytes.LongLength == installedManifest.Size
+                            && string.Equals(
+                                manifestActualSha256,
+                                installedManifest.Sha256,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            var discovery = new ModRuntimeManifestArtifact(
+                                new Uri(
+                                    $"https://github.com/{installedManifest.Repository}/releases/download/"
+                                    + $"{Uri.EscapeDataString(installedManifest.Tag)}/"
+                                    + Uri.EscapeDataString(installedManifest.FileName)),
+                                installedManifest.FileName,
+                                installedManifest.Size,
+                                installedManifest.Sha256,
+                                installedManifest.SourceRevision,
+                                installedManifest.Repository,
+                                installedManifest.Tag);
+                            var dll = new ModReleaseArtifact(
+                                new Uri("https://local.invalid/managed-version.dll"),
+                                installedState.FileName,
+                                installedState.Size,
+                                installedState.Sha256,
+                                installedState.Version,
+                                discovery);
+                            var parsed = ArtifactBoundRuntimeManifestParser.Parse(
+                                bytes,
+                                dll,
+                                discovery,
+                                installedState.RuntimeDistributionId);
+                            runtimeActivation = ArtifactBoundRuntimeManifestParser.AuthorizeActivation(
+                                parsed,
+                                dll,
+                                discovery,
+                                reviewedCertification);
+                            runtimeManifestState = runtimeActivation is null
+                                ? ManagedRuntimeManifestEvidenceState.ExactButNotReviewed
+                                : ManagedRuntimeManifestEvidenceState.ReviewedPairVerified;
+                        }
+                    }
+                    catch (Exception exception) when (IsInspectionFailure(exception))
+                    {
+                        runtimeManifestState = ManagedRuntimeManifestEvidenceState.MissingOrChanged;
+                    }
+                }
+            }
             return new(
                 verified
                     ? ModInstallationEvidenceState.ManagedVerified
@@ -225,12 +298,36 @@ public sealed class ModInstallationInspector(
                 installedState.ReleaseChannelId,
                 installedState.RuntimeDistributionId,
                 actualSha256,
-                actualProvenance);
+                actualProvenance,
+                runtimeManifestState,
+                runtimeActivation);
         }
         catch (Exception exception) when (IsInspectionFailure(exception))
         {
             return new(ModInstallationEvidenceState.Unavailable, isGameRunning);
         }
+    }
+
+    private static byte[] ReadRuntimeManifestBounded(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            4096,
+            FileOptions.SequentialScan);
+        if (stream.Length is <= 0 or > ArtifactBoundRuntimeManifestParser.MaximumManifestBytes)
+        {
+            throw new InvalidDataException("The runtime manifest is empty or oversized.");
+        }
+        var bytes = new byte[stream.Length];
+        stream.ReadExactly(bytes);
+        if (stream.Position != stream.Length)
+        {
+            throw new InvalidDataException("The runtime manifest changed while it was read.");
+        }
+        return bytes;
     }
 
     private static bool PathsEqual(string left, string right) =>
@@ -254,6 +351,7 @@ public sealed class ModInstallationInspector(
         exception is IOException
             or UnauthorizedAccessException
             or InvalidDataException
+            or System.Text.Json.JsonException
             or ArgumentException
             or NotSupportedException;
 }
@@ -685,6 +783,12 @@ public static class LauncherHealthResolver
                     ModManagementActionKind.None,
                     false,
                     "The installed mod belongs to a different provider. Review provider migration before updating."),
+            ModInstallationEvidenceState.ManagedVerified
+                when installation.RuntimeManifestState == ManagedRuntimeManifestEvidenceState.MissingOrChanged =>
+                RepairRequired(
+                    "The managed runtime compatibility file is missing or changed. Repair restores the exact reviewed pair.",
+                    canMutate,
+                    providerReason),
             ModInstallationEvidenceState.ManagedVerified
                 when nativeHealth.GameCompatibility == LauncherNativeEvidenceState.Incompatible => new(
                     "Incompatible",

@@ -185,6 +185,59 @@ public sealed class LauncherDiagnosticsTests
     }
 
     [TestMethod]
+    public void ReviewedRuntimeDiagnosticsNameExactDescriptiveEvidenceSourceRevisionAndHash()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = temporaryDirectory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var sourceRevision = "0123456789abcdef0123456789abcdef01234567";
+        var evidenceHash = new string('a', 64);
+        var profile = new LauncherRuntimeProfile(
+            "guffawaffle.stfc-community-mod",
+            new Version(2, 1, 0, 8),
+            sourceRevision,
+            new(1, "reviewed"),
+            [LauncherCapabilityIds.PrincipalSettingsTaxonomyV1],
+            [new($"managed-pair:sha256:{evidenceHash}", "reviewed compatibility evidence")]);
+        var installation = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: false,
+            InstalledVersion: "2.1.0.8",
+            InstalledProviderId: "guffawaffle",
+            InstalledReleaseChannelId: "stable",
+            InstalledRuntimeDistributionId: "guffawaffle.stfc-community-mod",
+            InstalledSha256: new string('b', 64),
+            RuntimeManifestState: ManagedRuntimeManifestEvidenceState.ReviewedPairVerified,
+            RuntimeActivation: new(
+                evidenceHash,
+                profile,
+                LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All)));
+        var localHealth = LauncherHealthResolver.Resolve(
+            installation,
+            new(
+                "guffawaffle",
+                "stable",
+                "guffawaffle.stfc-community-mod",
+                CanMutate: true,
+                UnavailableReason: string.Empty));
+        var diagnostics = new LauncherDiagnosticService(
+            CreateDeploymentService(temporaryDirectory),
+            new FakeOfficialLauncherService(),
+            new FakeGameProcessInspector(),
+            "0.1.0",
+            new FixedTimeProvider());
+
+        var fact = diagnostics.BuildPreview(gameDirectory, localHealth).Document.Health
+            .Single(item => item.Id == "runtime-capability-evidence");
+
+        Assert.AreEqual(LauncherDiagnosticLevel.Healthy, fact.Level);
+        StringAssert.Contains(fact.Summary, $"managed-pair:sha256:{evidenceHash}");
+        StringAssert.Contains(fact.Summary, sourceRevision);
+        StringAssert.Contains(fact.Summary, evidenceHash);
+        StringAssert.Contains(fact.Summary, "not authenticity or software-safety proof");
+    }
+
+    [TestMethod]
     public void SafelyAttributedRunningGameIsInformationalInsteadOfAttention()
     {
         using var temporaryDirectory = new TemporaryDirectory();

@@ -148,7 +148,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var shellAccess = LauncherProviderShellAccess.From(resolution);
         var provider = resolution.Provider ?? distributionProviderCatalog.DefaultProvider;
         var releaseChannel = resolution.ReleaseChannel ?? provider.DefaultReleaseChannel;
-        var composition = LauncherStartupComposition.Create(provider, releaseChannel);
         var viewModel = MainWindowViewModel.CreateDefault(
             httpClient,
             distributionProviderCatalog,
@@ -159,19 +158,29 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
             providerSelectionStore);
+        var composition = LauncherStartupComposition.Create(
+            provider,
+            releaseChannel,
+            viewModel.ReviewedRuntimeActivation);
         return new(
             resolution,
             shellAccess,
             provider,
             releaseChannel,
             composition,
+            viewModel.ReviewedRuntimeActivation,
             viewModel);
     }
 
     private void ApplyProviderSession(LauncherProviderSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (DataContext is MainWindowViewModel previousViewModel)
+        {
+            previousViewModel.PropertyChanged -= MainViewModel_PropertyChanged;
+        }
         DataContext = session.ViewModel;
+        session.ViewModel.PropertyChanged += MainViewModel_PropertyChanged;
         pendingProviderSwitch = null;
         pendingModOperation = null;
         diagnosticPreview = null;
@@ -191,6 +200,49 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             : session.ShellAccess.RestrictionReason;
         ModActionButton.IsHitTestVisible = true;
         ModActionButton.Focusable = true;
+    }
+
+    private void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation)
+            || sender is not MainWindowViewModel viewModel
+            || !ReferenceEquals(viewModel, ProviderSession.ViewModel))
+        {
+            return;
+        }
+        if (!ProviderSession.RefreshRuntimeActivation(viewModel.ReviewedRuntimeActivation))
+        {
+            return;
+        }
+        RefreshRuntimeCompositionConsumers();
+    }
+
+    private void RefreshRuntimeCompositionConsumers()
+    {
+        diagnosticPreview = null;
+        if (settingsViewModel is null)
+        {
+            return;
+        }
+        var wasOpen = isSettingsWorkspaceOpen;
+        var discardedDrafts = settingsViewModel.HasPendingChanges
+            || settingsViewModel.SyncWorkspace.HasPendingChanges;
+        SettingsWorkspace.DataContext = null;
+        settingsViewModel = null;
+        openRawTomlCommand = null;
+        isSettingsWorkspaceInitialized = false;
+        if (wasOpen && !EnsureSettingsWorkspaceInitialized())
+        {
+            SetSettingsWorkspaceOpen(false);
+        }
+        if (discardedDrafts)
+        {
+            SettingsUnavailableMessage.Text =
+                "Runtime compatibility changed while Settings had unsaved drafts. "
+                + "Mod Bridge reloaded the reviewed settings contract and discarded only those unsaved drafts; "
+                + "the saved TOML file was not changed.";
+            SettingsUnavailableDialog.IsOpen = true;
+        }
     }
 
     private void ShowProviderRecompositionFailure(Exception exception)
@@ -340,6 +392,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is not MainWindowViewModel viewModel)
         {
+            return;
+        }
+        if (settingsViewModel is not null
+            && (settingsViewModel.HasPendingChanges
+                || settingsViewModel.SyncWorkspace.HasPendingChanges))
+        {
+            SettingsUnavailableMessage.Text =
+                "Save or discard your pending Settings and Data Sync changes before changing the community mod.";
+            SettingsUnavailableDialog.IsOpen = true;
             return;
         }
 

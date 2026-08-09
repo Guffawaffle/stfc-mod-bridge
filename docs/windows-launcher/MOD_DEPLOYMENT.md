@@ -7,13 +7,50 @@ production-ready. Installed-client mutation smoke remains in progress.
 
 ## Ownership boundary
 
-Mod Bridge manages only `version.dll` plus its transaction-scoped stage and
-rollback names listed in
-[`GAME_DIRECTORY_FILE_ALLOWLIST.md`](../GAME_DIRECTORY_FILE_ALLOWLIST.md).
+Mod Bridge manages `version.dll` and, only for a launcher-reviewed exact pair,
+the adjacent `stfc-runtime-manifest.json`, plus transaction-scoped stage and
+rollback names for those two files.
 It never treats the selected game directory as Mod Bridge-owned. Existing
 manual `version.dll` files are compared only after the user chooses **Check for
 updates**. A separately confirmed replacement preserves the prior bytes under
 Mod Bridge-owned rollback state.
+
+## Artifact-bound runtime compatibility evidence
+
+The optional runtime manifest is descriptive compatibility evidence. It is not
+Authenticode, authenticity proof, a safety claim, or gameplay authorization.
+The mod's schema-v1 release manifest supplies discovery/integrity metadata only;
+by itself, it cannot authorize capabilities. Mod Bridge downloads the companion
+only when its bundled `ReviewedReleaseCertification` names the exact JSON
+file/size/SHA-256 and the same certification binds the DLL size/SHA-256/version,
+repository, tag, source commit, and runtime distribution. Existing
+certifications omit that companion, so current and legacy releases remain
+healthy base-only installations.
+
+Before any live-file mutation, Bridge strictly parses the bounded JSON, rejects
+duplicate/unknown/oversized structures, validates the supported capability
+schema and payload shapes, binds the inner DLL identity to the exact staged
+DLL, then runs `LauncherRuntimeManifestDetector` and `LauncherFeatureResolver`.
+That produces a reviewed activation receipt for those exact bytes. An adjacent
+loose, custom, changed, missing, or merely release-listed JSON file never
+elevates capabilities.
+
+The deployment journal treats the reviewed DLL and JSON as one compensating
+transaction. Install, update, repair, provider switch, rollback, recovery, and
+uninstall move or restore both members from deterministic paths. A manual loose
+JSON file replaced during explicit adoption is preserved with the adopted DLL
+and restored on uninstall. Pair-to-legacy transitions remove the old managed
+JSON. If a managed JSON later changes or disappears, local health withholds its
+capabilities while preserving safe base Bridge behavior; repair is required
+before uninstall can mutate either member. Both direct and Scopely launch paths
+block while the deployment journal is incomplete.
+
+Provider-switch review remains truthful about timing: its pre-download preview
+shows release metadata only. The target activation receipt is created only
+after the exact DLL and JSON have both downloaded and verified, before staging
+or commit. Surfacing that post-download receipt in the confirmation UI is the
+separate provider-transition UX handoff tracked by issue #132; no metadata-only
+preview claims target capabilities.
 
 ## Mod source-selection lifecycle
 
