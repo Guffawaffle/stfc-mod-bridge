@@ -23,14 +23,19 @@ public sealed class BattleIngestActivation
 {
     private readonly FrozenSet<string> acceptedKinds;
 
-    private BattleIngestActivation(IEnumerable<string> acceptedKinds)
+    private BattleIngestActivation(
+        IEnumerable<string> acceptedKinds,
+        bool reviewedFeatureComposition)
     {
         this.acceptedKinds = acceptedKinds.ToFrozenSet(StringComparer.Ordinal);
+        IsReviewedFeatureComposition = reviewedFeatureComposition;
     }
 
     public bool ShouldListen => acceptedKinds.Count > 0;
 
     public IReadOnlySet<string> AcceptedKinds => acceptedKinds;
+
+    public bool IsReviewedFeatureComposition { get; }
 
     public bool Accepts(string kind) => acceptedKinds.Contains(kind);
 
@@ -42,7 +47,7 @@ public sealed class BattleIngestActivation
         ArgumentNullException.ThrowIfNull(demand);
         if (!runtime.HasCapability(LauncherCapabilityIds.SidecarIngestV1))
         {
-            return new([]);
+            return new([], reviewedFeatureComposition: false);
         }
 
         var kinds = new List<string>(2);
@@ -56,7 +61,22 @@ public sealed class BattleIngestActivation
         {
             kinds.Add(BattleIngestProtocol.FleetRuntimeKind);
         }
-        return new(kinds);
+        return new(kinds, reviewedFeatureComposition: false);
+    }
+
+    public static BattleIngestActivation Resolve(LauncherBattleFeatureSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var kinds = new List<string>(2);
+        if (snapshot.BattleCollection.State == LauncherPlayerFeatureState.Enabled)
+        {
+            kinds.Add(BattleIngestProtocol.BattleEventsKind);
+        }
+        if (snapshot.FleetCollection.State == LauncherPlayerFeatureState.Enabled)
+        {
+            kinds.Add(BattleIngestProtocol.FleetRuntimeKind);
+        }
+        return new(kinds, reviewedFeatureComposition: true);
     }
 }
 
