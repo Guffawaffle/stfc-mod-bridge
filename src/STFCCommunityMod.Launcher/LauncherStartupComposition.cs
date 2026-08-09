@@ -10,7 +10,8 @@ internal sealed record LauncherStartupComposition(
 {
     public static LauncherStartupComposition Create(
         LauncherDistributionProvider provider,
-        LauncherProviderReleaseChannel releaseChannel)
+        LauncherProviderReleaseChannel releaseChannel,
+        ReviewedRuntimeActivation? reviewedRuntimeActivation = null)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
@@ -32,14 +33,16 @@ internal sealed record LauncherStartupComposition(
             : typeof(LauncherStartupComposition)
                 .Assembly
                 .GetManifestResourceStream(manifestResourceName);
-        var runtimeProfile = LauncherRuntimeManifestDetector.Detect(
-            manifest,
-            manifestResourceName is null
-                ? $"provider:{provider.Id}:runtime-manifest-unknown"
-                : $"embedded:{manifestResourceName}");
-        var activationPlan = LauncherFeatureResolver.Resolve(
-            runtimeProfile,
-            LauncherFeatureCatalog.All);
+        var runtimeProfile = reviewedRuntimeActivation?.RuntimeProfile
+            ?? LauncherRuntimeManifestDetector.Detect(
+                manifest,
+                manifestResourceName is null
+                    ? $"provider:{provider.Id}:runtime-manifest-unknown"
+                    : $"embedded:{manifestResourceName}");
+        var activationPlan = reviewedRuntimeActivation?.ActivationPlan
+            ?? LauncherFeatureResolver.Resolve(
+                runtimeProfile,
+                LauncherFeatureCatalog.All);
         var settingsLayout = LauncherSettingsLayoutComposer.Select(
             activationPlan);
         var semanticGrouping = activationPlan.GetDecision(

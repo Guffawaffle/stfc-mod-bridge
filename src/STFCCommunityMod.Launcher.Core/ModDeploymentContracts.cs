@@ -33,6 +33,7 @@ public enum ModDeploymentPhase
     RollingBack,
     RolledBack,
     Failed,
+    CleanupPending,
 }
 
 public enum ModDeploymentOperation
@@ -46,7 +47,17 @@ public sealed record ModReleaseArtifact(
     string FileName,
     long Size,
     string Sha256,
-    string ExpectedVersion);
+    string ExpectedVersion,
+    ModRuntimeManifestArtifact? RuntimeManifest = null);
+
+public sealed record ModRuntimeManifestArtifact(
+    Uri DownloadUri,
+    string FileName,
+    long Size,
+    string Sha256,
+    string ExpectedSourceRevision,
+    string ExpectedRepository,
+    string ExpectedTag);
 
 public sealed record ModArtifactDownload(
     HttpStatusCode StatusCode,
@@ -64,7 +75,21 @@ public sealed record ModInstalledArtifactState(
     string? PreviousArtifactBackupPath,
     string ProviderId,
     string ReleaseChannelId,
-    string RuntimeDistributionId);
+    string RuntimeDistributionId,
+    ModInstalledRuntimeManifestState? RuntimeManifest = null,
+    string? PreviousRuntimeManifestBackupPath = null,
+    ModArtifactIdentityReceipt? PreviousArtifactBackupIdentity = null,
+    ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null);
+
+public sealed record ModArtifactIdentityReceipt(long Size, string Sha256);
+
+public sealed record ModInstalledRuntimeManifestState(
+    string FileName,
+    long Size,
+    string Sha256,
+    string SourceRevision,
+    string Repository,
+    string Tag);
 
 public sealed record ModInstallationAttribution(
     string ProviderId,
@@ -84,13 +109,20 @@ public sealed record ModDeploymentJournal(
     bool HadExistingArtifact,
     ModInstalledArtifactState? PreviousInstalledState,
     DateTimeOffset UpdatedAtUtc,
-    string? Error = null);
+    string? Error = null,
+    bool HadExistingRuntimeManifest = false,
+    bool HasCommitParticipant = false,
+    bool CommitParticipantCompleted = false,
+    ModArtifactIdentityReceipt? ExistingArtifactIdentity = null,
+    ModArtifactIdentityReceipt? ExistingRuntimeManifestIdentity = null,
+    ModInstallationAttribution? TargetInstallationAttribution = null);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,
     string Message,
     ModInstalledArtifactState? InstalledState = null,
-    bool Changed = false)
+    bool Changed = false,
+    ReviewedRuntimeActivation? RuntimeActivation = null)
 {
     public bool IsSuccess => State == ModDeploymentResultState.Succeeded;
 }

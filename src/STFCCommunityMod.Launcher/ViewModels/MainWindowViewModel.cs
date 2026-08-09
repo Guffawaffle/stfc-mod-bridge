@@ -151,6 +151,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public LauncherProviderCompatibilityState ModProviderCompatibility =>
         localHealth.ProviderCompatibility;
 
+    public ReviewedRuntimeActivation? ReviewedRuntimeActivation =>
+        localHealth.Installation.RuntimeActivation;
+
     public string ModProviderCompatibilityStatus => homeHealth.ProviderCompatibilityStatus;
 
     public ModUpdateEvidenceState ModUpdateAvailability => localHealth.UpdateAvailability;
@@ -406,7 +409,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                                     binding.ManifestAssetName!),
                                 new ReviewedGitHubReleaseAssetClient(
                                     httpClient,
-                                    binding.ReviewedCertification)),
+                                    binding.ReviewedCertification),
+                                binding.ReviewedCertification),
                     LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
                         new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
                     _ => new UnavailableWindowsReleaseDiscoveryClient("Unsupported release discovery kind."),
@@ -429,14 +433,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 artifactVerifier,
                 gameDirectory =>
                     processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
-                new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId));
+                new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId),
+                reviewedCertification: binding.ReviewedCertification);
             var providerHealth = new LauncherHealthService(
                 new ModInstallationInspector(
                     providerDeployment,
                     new SystemModInstallationFileSystem(),
                     provenanceResolver: new(
                         new WindowsModBinaryVersionMetadataReader(),
-                        knownArtifacts)),
+                        knownArtifacts),
+                    reviewedCertification: binding.ReviewedCertification),
                 new(
                     binding.ProviderId,
                     binding.ReleaseChannelId,
@@ -587,6 +593,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
         OnPropertyChanged(nameof(ModProviderCompatibility));
+        OnPropertyChanged(nameof(ReviewedRuntimeActivation));
         OnPropertyChanged(nameof(ModProviderCompatibilityStatus));
         OnPropertyChanged(nameof(ModUpdateAvailability));
         OnPropertyChanged(nameof(ModUpdateAvailabilityStatus));

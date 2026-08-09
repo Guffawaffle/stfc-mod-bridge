@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
@@ -7,6 +8,7 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class GameLaunchHandoffTests
 {
     private static readonly byte[] ArtifactContents = [2, 7, 1, 8, 2, 8];
+    private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
     [TestMethod]
     public async Task HealthyManagedInstallLaunchesPrimeDirectly()
@@ -45,6 +47,61 @@ public sealed class GameLaunchHandoffTests
         Assert.IsTrue(result.Changed);
         Assert.AreEqual(1, fixture.ScopelyService.StartCount);
         Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public void IncompleteDeploymentBlocksScopelyWhenGameTargetIsKnown()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        var transactionId = Guid.NewGuid().ToString("N");
+        var stateDirectory = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
+        var journal = new ModDeploymentJournal(
+            1,
+            transactionId,
+            ModDeploymentOperation.Deploy,
+            ModDeploymentPhase.Committing,
+            gameDirectory,
+            ReleaseArtifact(),
+            Path.Combine(gameDirectory, $".version.dll.{transactionId}.stage"),
+            Path.Combine(gameDirectory, $".version.dll.{transactionId}.rollback"),
+            Path.Combine(stateDirectory, "rollback", transactionId, "version.dll"),
+            HadExistingArtifact: false,
+            PreviousInstalledState: null,
+            DateTimeOffset.UtcNow);
+        File.WriteAllText(
+            fixture.DeploymentService.JournalPath,
+            JsonSerializer.Serialize(journal, WebJsonOptions));
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            null,
+            LauncherLaunchTarget.ScopelyLauncher);
+
+        Assert.IsFalse(presentation.CanExecute);
+        Assert.AreEqual("Recovery required", presentation.Status);
+        Assert.AreEqual(LauncherLaunchRecoveryAction.RecoverModTransaction, presentation.NextAction);
+    }
+
+    [TestMethod]
+    public void MalformedDeploymentJournalBlocksEveryLaunchTargetWithoutThrowing()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        File.WriteAllText(fixture.DeploymentService.JournalPath, "{\"phase\":");
+
+        var prime = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var scopely = fixture.Coordinator.CapturePresentation(
+            null,
+            LauncherLaunchTarget.ScopelyLauncher);
+
+        Assert.IsFalse(prime.CanExecute);
+        Assert.IsFalse(scopely.CanExecute);
+        Assert.AreEqual("Recovery required", prime.Status);
+        Assert.AreEqual("Recovery required", scopely.Status);
     }
 
     [TestMethod]

@@ -423,6 +423,42 @@ public sealed class LauncherDiagnosticService(
                 "launcher-local-health",
                 dimension.TechnicalDetail));
         }
+
+        var runtimeManifest = localHealth.Installation;
+        health.Add(runtimeManifest.RuntimeManifestState switch
+        {
+            ManagedRuntimeManifestEvidenceState.ReviewedPairVerified when runtimeManifest.RuntimeActivation is not null =>
+                Healthy(
+                    "Runtime capability evidence",
+                    "The exact managed runtime manifest is bound to the installed DLL and the launcher-bundled "
+                    + $"reviewed pair certification. Evidence source: "
+                    + (runtimeManifest.RuntimeActivation.RuntimeProfile.Evidence.Count == 0
+                        ? "managed-pair"
+                        : runtimeManifest.RuntimeActivation.RuntimeProfile.Evidence[0].Source)
+                    + "; source revision: "
+                    + runtimeManifest.RuntimeActivation.RuntimeProfile.SourceRevision
+                    + "; SHA-256: "
+                    + runtimeManifest.RuntimeActivation.EvidenceSourceSha256
+                    + ". This is descriptive compatibility evidence, not authenticity or software-safety proof.",
+                    "runtime-capability-evidence"),
+            ManagedRuntimeManifestEvidenceState.MissingOrChanged => Attention(
+                "Runtime capability evidence",
+                "The managed runtime manifest is missing, changed, unreadable, or invalid. "
+                + "Its capabilities were withheld; base mod behavior remains available.",
+                "Use Repair to restore the exact reviewed pair before using dependent features.",
+                "runtime-capability-evidence"),
+            ManagedRuntimeManifestEvidenceState.ExactButNotReviewed => Informational(
+                "Runtime capability evidence",
+                "The adjacent runtime manifest matches managed state but has no matching launcher-bundled reviewed "
+                + "pair certification. Its capabilities were withheld.",
+                "No action is required for base mod behavior.",
+                "runtime-capability-evidence"),
+            _ => Informational(
+                "Runtime capability evidence",
+                "This installation has no managed runtime capability manifest; it uses the base Bridge contract.",
+                "No action is required for base mod behavior.",
+                "runtime-capability-evidence"),
+        });
     }
 
     private static void AddConfigurationFact(

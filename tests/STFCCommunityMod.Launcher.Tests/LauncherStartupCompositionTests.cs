@@ -27,4 +27,34 @@ public sealed class LauncherStartupCompositionTests
         _ = Assert.ThrowsException<ArgumentException>(
             () => LauncherStartupComposition.Create(provider, foreignChannel));
     }
+
+    [TestMethod]
+    public void RuntimeCompositionSlotRevokesChangedReviewedEvidenceInProcess()
+    {
+        var provider = BundledLauncherProviderCatalog.Load().GetProvider("guffawaffle");
+        var channel = provider.DefaultReleaseChannel;
+        var profile = new LauncherRuntimeProfile(
+            LauncherRuntimeManifestDetector.GuffawaffleDistributionId,
+            new Version(2, 1, 0, 8),
+            "0123456789abcdef0123456789abcdef01234567",
+            new(1, "reviewed-pair"),
+            [LauncherCapabilityIds.PrincipalSettingsTaxonomyV1, "battle.capture.v1"],
+            [new("managed-pair:sha256:test", "reviewed compatibility evidence")]);
+        var plan = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All);
+        var reviewed = new LauncherStartupComposition(
+            profile,
+            plan,
+            LauncherSettingsLayoutComposer.Select(plan),
+            LauncherStartupComposition.Create(provider, channel).SettingsDiagnostics);
+        var slot = new LauncherRuntimeCompositionSlot(
+            provider,
+            channel,
+            reviewed,
+            new string('a', 64));
+
+        Assert.IsTrue(slot.Refresh(null));
+        Assert.AreNotEqual(profile.SourceRevision, slot.Current.RuntimeProfile.SourceRevision);
+        Assert.IsFalse(slot.Current.RuntimeProfile.HasCapability("battle.capture.v1"));
+        Assert.IsFalse(slot.Refresh(null));
+    }
 }

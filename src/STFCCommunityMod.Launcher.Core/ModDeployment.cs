@@ -3,6 +3,37 @@ using System.Security.Cryptography;
 
 namespace STFCCommunityMod.Launcher.Core;
 
+internal enum ModDeploymentFileCheckpoint
+{
+    PriorDllBackedUp,
+    PriorRuntimeManifestBackedUp,
+    TargetDllInstalled,
+    TargetRuntimeManifestInstalled,
+    DurableDllBackupCopyStarted,
+    DurableRuntimeManifestBackupCopyStarted,
+    DurableDllBackupPromoted,
+    DurableRuntimeManifestBackupPromoted,
+    DurableDllSourceRemoved,
+    DurableRuntimeManifestSourceRemoved,
+    ManagedDllRemoved,
+    ManagedRuntimeManifestRemoved,
+    AdoptedDllRestoreCopyStarted,
+    AdoptedRuntimeManifestRestoreCopyStarted,
+    AdoptedDllRestoreStaged,
+    AdoptedRuntimeManifestRestoreStaged,
+    AdoptedDllRestored,
+    AdoptedRuntimeManifestRestored,
+    RollbackDllRestoreStaged,
+    RollbackRuntimeManifestRestoreStaged,
+    RollbackDllRestoreCopyStarted,
+    RollbackRuntimeManifestRestoreCopyStarted,
+    RollbackDllRestored,
+    RollbackRuntimeManifestRestored,
+}
+
+internal sealed class SimulatedProcessTerminationException(ModDeploymentFileCheckpoint checkpoint)
+    : Exception($"Simulated process termination after {checkpoint}.");
+
 public sealed partial class ModDeploymentService : IModDeploymentStateReader
 {
     private const int SchemaVersion = 1;
@@ -16,7 +47,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly Func<string, bool> isGameRunning;
     private readonly TimeProvider timeProvider;
     private readonly ModInstallationAttribution installationAttribution;
+    private readonly ReviewedReleaseCertification? reviewedCertification;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
+    private readonly Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint;
 
     public ModDeploymentService(
         string stateDirectory,
@@ -26,7 +59,33 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         Func<string, bool> isGameRunning,
         ModInstallationAttribution installationAttribution,
         TimeProvider? timeProvider = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null)
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
+        ReviewedReleaseCertification? reviewedCertification = null)
+        : this(
+            stateDirectory,
+            downloader,
+            versionReader,
+            authenticityVerifier,
+            isGameRunning,
+            installationAttribution,
+            timeProvider,
+            afterPhasePersisted,
+            reviewedCertification,
+            afterFileCheckpoint: null)
+    {
+    }
+
+    internal ModDeploymentService(
+        string stateDirectory,
+        IModArtifactDownloader downloader,
+        IModArtifactVersionReader versionReader,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        Func<string, bool> isGameRunning,
+        ModInstallationAttribution installationAttribution,
+        TimeProvider? timeProvider,
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted,
+        ReviewedReleaseCertification? reviewedCertification,
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -39,6 +98,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.afterPhasePersisted = afterPhasePersisted;
         this.installationAttribution = installationAttribution
             ?? throw new ArgumentNullException(nameof(installationAttribution));
+        this.reviewedCertification = reviewedCertification;
+        this.afterFileCheckpoint = afterFileCheckpoint;
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -153,15 +214,30 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.RecoveryRequired,
                 $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
-        if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
+        if (incompleteJournal is not null
+            && (!IsTerminal(incompleteJournal.Phase)
+                || incompleteJournal.Phase == ModDeploymentPhase.Committed
+                    && HasSameVolumeTransactionResidue(incompleteJournal)))
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
+        var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState);
+        if (legacyUpgrade.Failure is not null)
+        {
+            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
+        }
+        previousInstalledState = legacyUpgrade.State;
 
         var targetPath = Path.Combine(normalizedGameDirectory, ManagedFileName);
+        var runtimeManifestPath = RuntimeManifestTargetPath(normalizedGameDirectory);
         var hadExistingArtifact = File.Exists(targetPath);
+        var hadExistingRuntimeManifest = File.Exists(runtimeManifestPath);
+        var existingArtifactIdentity = hadExistingArtifact ? CaptureIdentity(targetPath) : null;
+        var existingRuntimeManifestIdentity = hadExistingRuntimeManifest
+            ? CaptureIdentity(runtimeManifestPath)
+            : null;
         var isManagedUpdate = false;
         if (previousInstalledState is not null)
         {
@@ -182,16 +258,47 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ModDeploymentResultState.ManagedArtifactChanged,
                     "The installed version.dll no longer matches Mod Bridge-managed state; repair is required.");
             }
+            if (previousInstalledState.RuntimeManifest is not null
+                && (!hadExistingRuntimeManifest
+                    || !string.Equals(
+                        ComputeFileSha256(runtimeManifestPath),
+                        previousInstalledState.RuntimeManifest.Sha256,
+                        StringComparison.OrdinalIgnoreCase))
+                && !allowManagedRepair)
+            {
+                return new(
+                    ModDeploymentResultState.ManagedArtifactChanged,
+                    "The managed runtime manifest no longer matches Mod Bridge state; repair is required.");
+            }
             isManagedUpdate = true;
         }
 
-        if (hadExistingArtifact
-            && !isManagedUpdate
+        if (previousInstalledState is not null)
+        {
+            var retainedBackupFailure = ValidateDeclaredBackup(
+                previousInstalledState.PreviousArtifactBackupPath,
+                previousInstalledState.PreviousArtifactBackupIdentity,
+                "adopted DLL");
+            retainedBackupFailure ??= ValidateDeclaredBackup(
+                previousInstalledState.PreviousRuntimeManifestBackupPath,
+                previousInstalledState.PreviousRuntimeManifestBackupIdentity,
+                "adopted runtime manifest");
+            if (retainedBackupFailure is not null)
+            {
+                return new(ModDeploymentResultState.RecoveryRequired, retainedBackupFailure);
+            }
+        }
+
+        var requiresExplicitAdoption = hadExistingArtifact && !isManagedUpdate
+            || hadExistingRuntimeManifest
+                && artifact.RuntimeManifest is not null
+                && previousInstalledState?.RuntimeManifest is null;
+        if (requiresExplicitAdoption
             && existingArtifactPolicy == ExistingArtifactPolicy.Reject)
         {
             return new(
                 ModDeploymentResultState.ExistingArtifactRequiresAdoption,
-                "An existing version.dll requires explicit adoption before Mod Bridge can replace it.");
+                "An existing mod file requires explicit adoption before Mod Bridge can replace it.");
         }
 
         Directory.CreateDirectory(stateDirectory);
@@ -201,19 +308,32 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             normalizedGameDirectory,
             $".{ManagedFileName}.{transactionId}.rollback");
         var durableBackupPath = Path.Combine(stateDirectory, "rollback", transactionId, ManagedFileName);
+        var normalizedRuntimeManifest = artifact.RuntimeManifest is null
+            ? null
+            : artifact.RuntimeManifest with { Sha256 = NormalizeSha256(artifact.RuntimeManifest.Sha256) };
         var journal = new ModDeploymentJournal(
             SchemaVersion,
             transactionId,
             ModDeploymentOperation.Deploy,
             ModDeploymentPhase.Planned,
             normalizedGameDirectory,
-            artifact with { Sha256 = NormalizeSha256(artifact.Sha256) },
+            artifact with
+            {
+                Sha256 = NormalizeSha256(artifact.Sha256),
+                RuntimeManifest = normalizedRuntimeManifest,
+            },
             stagePath,
             sameVolumeBackupPath,
             durableBackupPath,
             hadExistingArtifact,
             previousInstalledState,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            HadExistingRuntimeManifest: hadExistingRuntimeManifest,
+            HasCommitParticipant: commitParticipant is not null,
+            CommitParticipantCompleted: commitParticipant is null,
+            ExistingArtifactIdentity: existingArtifactIdentity,
+            ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
+            TargetInstallationAttribution: installationAttribution);
 
         try
         {
@@ -242,27 +362,148 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 return downloadFailure;
             }
 
+            ModArtifactDownload? runtimeManifestDownload = null;
+            ParsedRuntimeManifest? parsedRuntimeManifest = null;
+            ReviewedRuntimeActivation? reviewedRuntimeActivation = null;
+            if (journal.Artifact.RuntimeManifest is not null)
+            {
+                runtimeManifestDownload = await downloader.DownloadAsync(
+                    journal.Artifact.RuntimeManifest.DownloadUri,
+                    cancellationToken);
+                var runtimeFailure = VerifyDownload(runtimeManifestDownload, journal.Artifact.RuntimeManifest);
+                if (runtimeFailure is not null)
+                {
+                    await PersistPhaseAsync(
+                        journal with { Error = runtimeFailure.Message },
+                        ModDeploymentPhase.Failed,
+                        cancellationToken);
+                    return runtimeFailure;
+                }
+                parsedRuntimeManifest = ArtifactBoundRuntimeManifestParser.Parse(
+                    runtimeManifestDownload.Contents,
+                    journal.Artifact,
+                    journal.Artifact.RuntimeManifest,
+                    installationAttribution.RuntimeDistributionId);
+                reviewedRuntimeActivation = ArtifactBoundRuntimeManifestParser.AuthorizeActivation(
+                    parsedRuntimeManifest,
+                    journal.Artifact,
+                    journal.Artifact.RuntimeManifest,
+                    reviewedCertification);
+                if (reviewedRuntimeActivation is null)
+                {
+                    throw new InvalidDataException(
+                        "The runtime manifest pair is not authorized by the launcher-bundled reviewed certification.");
+                }
+            }
+
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Verified, cancellationToken);
             await WriteStageAsync(stagePath, download.Contents, cancellationToken);
             VerifyFile(stagePath, journal.Artifact);
             VerifyAuthenticity(stagePath);
+            if (runtimeManifestDownload is not null && journal.Artifact.RuntimeManifest is not null)
+            {
+                await WriteStageAsync(
+                    RuntimeManifestStagePath(journal),
+                    runtimeManifestDownload.Contents,
+                    cancellationToken);
+                VerifyFile(RuntimeManifestStagePath(journal), journal.Artifact.RuntimeManifest);
+            }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Staged, cancellationToken);
+            try
+            {
+                ValidateCommitPreconditions(journal);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            {
+                try
+                {
+                    DeleteVerifiedResidue(journal.StagePath, Identity(journal.Artifact), "DLL stage");
+                    DeleteVerifiedResidue(
+                        RuntimeManifestStagePath(journal),
+                        journal.Artifact.RuntimeManifest is null
+                            ? null
+                            : Identity(journal.Artifact.RuntimeManifest),
+                        "runtime-manifest stage");
+                    await PersistPhaseAsync(
+                        journal with { Error = exception.Message },
+                        ModDeploymentPhase.Failed,
+                        cancellationToken);
+                    return new(
+                        exception is InvalidOperationException
+                            ? ModDeploymentResultState.GameRunning
+                            : ModDeploymentResultState.ManagedArtifactChanged,
+                        exception.Message);
+                }
+                catch (Exception cleanupException)
+                {
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        $"The live files were not changed, but verified staging cleanup requires recovery: "
+                            + cleanupException.Message);
+                }
+            }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committing, cancellationToken);
 
             if (hadExistingArtifact)
             {
                 File.Move(targetPath, sameVolumeBackupPath);
+                VerifyFile(sameVolumeBackupPath, existingArtifactIdentity!, "prior DLL");
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.PriorDllBackedUp,
+                    cancellationToken);
+            }
+            if (ShouldMutateRuntimeManifest(journal) && hadExistingRuntimeManifest)
+            {
+                File.Move(runtimeManifestPath, RuntimeManifestSameVolumeBackupPath(journal));
+                VerifyFile(
+                    RuntimeManifestSameVolumeBackupPath(journal),
+                    existingRuntimeManifestIdentity!,
+                    "prior runtime manifest");
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.PriorRuntimeManifestBackedUp,
+                    cancellationToken);
             }
 
             File.Move(stagePath, targetPath);
+            await CheckpointAsync(ModDeploymentFileCheckpoint.TargetDllInstalled, cancellationToken);
+            if (journal.Artifact.RuntimeManifest is not null)
+            {
+                File.Move(RuntimeManifestStagePath(journal), runtimeManifestPath);
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.TargetRuntimeManifestInstalled,
+                    cancellationToken);
+            }
             VerifyFile(targetPath, journal.Artifact);
             VerifyVersion(targetPath, journal.Artifact.ExpectedVersion);
+            if (journal.Artifact.RuntimeManifest is not null)
+            {
+                VerifyFile(runtimeManifestPath, journal.Artifact.RuntimeManifest);
+            }
 
             var retainedBackupPath = isManagedUpdate
                 ? previousInstalledState?.PreviousArtifactBackupPath
                 : hadExistingArtifact
                     ? durableBackupPath
                     : null;
+            var retainNewRuntimeBackup = ShouldMutateRuntimeManifest(journal)
+                && hadExistingRuntimeManifest
+                && (!isManagedUpdate || previousInstalledState?.RuntimeManifest is null);
+            var retainedRuntimeBackupPath = isManagedUpdate
+                ? previousInstalledState?.PreviousRuntimeManifestBackupPath
+                    ?? (retainNewRuntimeBackup ? RuntimeManifestDurableBackupPath(journal) : null)
+                : retainNewRuntimeBackup
+                    ? RuntimeManifestDurableBackupPath(journal)
+                    : null;
+
+            var installedRuntimeManifest = journal.Artifact.RuntimeManifest is null
+                ? null
+                : new ModInstalledRuntimeManifestState(
+                    journal.Artifact.RuntimeManifest.FileName,
+                    journal.Artifact.RuntimeManifest.Size,
+                    journal.Artifact.RuntimeManifest.Sha256,
+                    parsedRuntimeManifest!.SourceRevision,
+                    journal.Artifact.RuntimeManifest.ExpectedRepository,
+                    journal.Artifact.RuntimeManifest.ExpectedTag);
 
             var installedState = new ModInstalledArtifactState(
                 SchemaVersion,
@@ -275,7 +516,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 retainedBackupPath,
                 installationAttribution.ProviderId,
                 installationAttribution.ReleaseChannelId,
-                installationAttribution.RuntimeDistributionId);
+                installationAttribution.RuntimeDistributionId,
+                installedRuntimeManifest,
+                retainedRuntimeBackupPath,
+                isManagedUpdate
+                    ? previousInstalledState?.PreviousArtifactBackupIdentity
+                    : retainedBackupPath is null ? null : existingArtifactIdentity,
+                isManagedUpdate
+                    ? previousInstalledState?.PreviousRuntimeManifestBackupIdentity
+                        ?? (retainedRuntimeBackupPath is null ? null : existingRuntimeManifestIdentity)
+                    : retainedRuntimeBackupPath is null ? null : existingRuntimeManifestIdentity);
             WriteJsonAtomically(InstalledStatePath, installedState);
 
             if (commitParticipant is not null)
@@ -286,23 +536,104 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
             if (!isManagedUpdate && File.Exists(sameVolumeBackupPath))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(durableBackupPath)!);
-                File.Move(sameVolumeBackupPath, durableBackupPath);
+                await PromoteDurableBackupAsync(
+                    sameVolumeBackupPath,
+                    durableBackupPath,
+                    existingArtifactIdentity!,
+                    ModDeploymentFileCheckpoint.DurableDllBackupCopyStarted,
+                    ModDeploymentFileCheckpoint.DurableDllBackupPromoted,
+                    ModDeploymentFileCheckpoint.DurableDllSourceRemoved,
+                    cancellationToken);
             }
-            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
+            if (retainNewRuntimeBackup && File.Exists(RuntimeManifestSameVolumeBackupPath(journal)))
+            {
+                await PromoteDurableBackupAsync(
+                    RuntimeManifestSameVolumeBackupPath(journal),
+                    RuntimeManifestDurableBackupPath(journal),
+                    existingRuntimeManifestIdentity!,
+                    ModDeploymentFileCheckpoint.DurableRuntimeManifestBackupCopyStarted,
+                    ModDeploymentFileCheckpoint.DurableRuntimeManifestBackupPromoted,
+                    ModDeploymentFileCheckpoint.DurableRuntimeManifestSourceRemoved,
+                    cancellationToken);
+            }
+            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.CleanupPending, cancellationToken);
+            var preCompletionFailure = ValidateCommittedOutcome(journal);
+            if (preCompletionFailure is not null)
+            {
+                throw new InvalidDataException(preCompletionFailure);
+            }
             if (commitParticipant is not null)
             {
-                await commitParticipant.CompleteAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await commitParticipant.CompleteAsync(cancellationToken).ConfigureAwait(false);
+                    journal = journal with
+                    {
+                        CommitParticipantCompleted = true,
+                        UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    };
+                    WriteJsonAtomically(JournalPath, journal);
+                }
+                catch (Exception exception)
+                {
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        $"The mod pair committed, but provider-switch finalization requires recovery: {exception.Message}",
+                        installedState,
+                        Changed: true,
+                        RuntimeActivation: reviewedRuntimeActivation);
+                }
             }
-            if (isManagedUpdate)
+            var outcomeFailure = ValidateCommittedOutcome(journal);
+            if (outcomeFailure is not null)
             {
-                DeleteIfExists(sameVolumeBackupPath);
+                WriteCleanupPendingError(journal, outcomeFailure);
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    outcomeFailure,
+                    installedState,
+                    Changed: true,
+                    RuntimeActivation: reviewedRuntimeActivation);
+            }
+            var cleanup = CleanupCommittedResidue(journal);
+            if (!cleanup.IsSuccess)
+            {
+                WriteCleanupPendingError(journal, cleanup.Message);
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    cleanup.Message,
+                    installedState,
+                    Changed: true,
+                    RuntimeActivation: reviewedRuntimeActivation);
+            }
+            try
+            {
+                journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                WriteCleanupPendingError(journal, exception.Message);
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    $"The mod pair committed, but final cleanup recording requires recovery: {exception.Message}",
+                    installedState,
+                    Changed: true,
+                    RuntimeActivation: reviewedRuntimeActivation);
             }
             return new(
                 ModDeploymentResultState.Succeeded,
-                "The community mod was installed successfully.",
+                reviewedRuntimeActivation is null
+                    ? "The community mod was installed successfully with the base Bridge contract."
+                    : "The community mod and reviewed runtime compatibility evidence were installed successfully. "
+                        + $"Evidence SHA-256: {reviewedRuntimeActivation.EvidenceSourceSha256}. "
+                        + "This describes compatibility; it does not prove authenticity or software safety.",
                 installedState,
-                Changed: true);
+                Changed: true,
+                RuntimeActivation: reviewedRuntimeActivation);
+        }
+        catch (SimulatedProcessTerminationException)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -376,12 +707,22 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.RecoveryRequired,
                 $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
-        if (incompleteJournal is not null && !IsTerminal(incompleteJournal.Phase))
+        if (incompleteJournal is not null
+            && (!IsTerminal(incompleteJournal.Phase)
+                || incompleteJournal.Phase == ModDeploymentPhase.Committed
+                    && HasSameVolumeTransactionResidue(incompleteJournal)))
         {
             return new(
                 ModDeploymentResultState.RecoveryRequired,
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
+
+        var legacyUpgrade = UpgradeLegacyBackupReceipts(installedState);
+        if (legacyUpgrade.Failure is not null)
+        {
+            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
+        }
+        installedState = legacyUpgrade.State;
 
         if (installedState is null)
         {
@@ -406,6 +747,31 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.ManagedArtifactChanged,
                 "The installed version.dll no longer matches Mod Bridge-managed state; it was not removed.");
         }
+        var runtimeManifestPath = RuntimeManifestTargetPath(installedState.GameDirectory);
+        var managedRuntimeManifestMatches = installedState.RuntimeManifest is not null
+            && File.Exists(runtimeManifestPath)
+            && string.Equals(
+                ComputeFileSha256(runtimeManifestPath),
+                installedState.RuntimeManifest.Sha256,
+                StringComparison.OrdinalIgnoreCase);
+        if (installedState.RuntimeManifest is not null && !managedRuntimeManifestMatches)
+        {
+            return new(
+                ModDeploymentResultState.ManagedArtifactChanged,
+                "The managed runtime manifest is missing or changed; repair it before uninstalling the managed pair.");
+        }
+        var priorBackupFailure = ValidateDeclaredBackup(
+            installedState.PreviousArtifactBackupPath,
+            installedState.PreviousArtifactBackupIdentity,
+            "adopted DLL");
+        priorBackupFailure ??= ValidateDeclaredBackup(
+            installedState.PreviousRuntimeManifestBackupPath,
+            installedState.PreviousRuntimeManifestBackupIdentity,
+            "adopted runtime manifest");
+        if (priorBackupFailure is not null)
+        {
+            return new(ModDeploymentResultState.RecoveryRequired, priorBackupFailure);
+        }
 
         var transactionId = Guid.NewGuid().ToString("N");
         var removedArtifactPath = Path.Combine(
@@ -428,27 +794,117 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             Path.Combine(stateDirectory, "rollback", transactionId, ManagedFileName),
             true,
             installedState,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            HadExistingRuntimeManifest: managedRuntimeManifestMatches,
+            CommitParticipantCompleted: true,
+            ExistingArtifactIdentity: new(installedState.Size, installedState.Sha256),
+            ExistingRuntimeManifestIdentity: installedState.RuntimeManifest is null
+                ? null
+                : new(installedState.RuntimeManifest.Size, installedState.RuntimeManifest.Sha256));
 
         try
         {
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Planned, cancellationToken);
+            try
+            {
+                ValidateUninstallCommitPreconditions(journal, installedState);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            {
+                await PersistPhaseAsync(
+                    journal with { Error = exception.Message },
+                    ModDeploymentPhase.Failed,
+                    cancellationToken);
+                return new(
+                    exception is InvalidOperationException
+                        ? ModDeploymentResultState.GameRunning
+                        : ModDeploymentResultState.ManagedArtifactChanged,
+                    exception.Message,
+                    installedState);
+            }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committing, cancellationToken);
             File.Move(targetPath, removedArtifactPath);
+            VerifyFile(removedArtifactPath, journal.ExistingArtifactIdentity!, "managed DLL rollback");
+            await CheckpointAsync(ModDeploymentFileCheckpoint.ManagedDllRemoved, cancellationToken);
+            if (managedRuntimeManifestMatches)
+            {
+                File.Move(runtimeManifestPath, RuntimeManifestSameVolumeBackupPath(journal));
+                VerifyFile(
+                    RuntimeManifestSameVolumeBackupPath(journal),
+                    journal.ExistingRuntimeManifestIdentity!,
+                    "managed runtime-manifest rollback");
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved,
+                    cancellationToken);
+            }
 
             if (!string.IsNullOrWhiteSpace(installedState.PreviousArtifactBackupPath)
                 && File.Exists(installedState.PreviousArtifactBackupPath))
             {
-                File.Move(installedState.PreviousArtifactBackupPath, targetPath);
+                await CopyBackupToSameVolumeStageAsync(
+                    installedState.PreviousArtifactBackupPath,
+                    journal.StagePath,
+                    installedState.PreviousArtifactBackupIdentity!,
+                    ModDeploymentFileCheckpoint.AdoptedDllRestoreCopyStarted,
+                    ModDeploymentFileCheckpoint.AdoptedDllRestoreStaged,
+                    cancellationToken);
+                File.Move(journal.StagePath, targetPath);
+                await CheckpointAsync(ModDeploymentFileCheckpoint.AdoptedDllRestored, cancellationToken);
+            }
+            if (!File.Exists(runtimeManifestPath)
+                && !string.IsNullOrWhiteSpace(installedState.PreviousRuntimeManifestBackupPath)
+                && File.Exists(installedState.PreviousRuntimeManifestBackupPath))
+            {
+                await CopyBackupToSameVolumeStageAsync(
+                    installedState.PreviousRuntimeManifestBackupPath,
+                    RuntimeManifestStagePath(journal),
+                    installedState.PreviousRuntimeManifestBackupIdentity!,
+                    ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestoreCopyStarted,
+                    ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestoreStaged,
+                    cancellationToken);
+                File.Move(RuntimeManifestStagePath(journal), runtimeManifestPath);
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestored,
+                    cancellationToken);
             }
 
             DeleteIfExists(InstalledStatePath);
-            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
-            DeleteIfExists(removedArtifactPath);
+            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.CleanupPending, cancellationToken);
+            var outcomeFailure = ValidateCommittedOutcome(journal);
+            if (outcomeFailure is not null)
+            {
+                WriteCleanupPendingError(journal, outcomeFailure);
+                return new(ModDeploymentResultState.RecoveryRequired, outcomeFailure, Changed: true);
+            }
+            var cleanup = CleanupCommittedResidue(journal);
+            if (!cleanup.IsSuccess)
+            {
+                WriteCleanupPendingError(journal, cleanup.Message);
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    cleanup.Message,
+                    Changed: true);
+            }
+            try
+            {
+                journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                WriteCleanupPendingError(journal, exception.Message);
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    $"The uninstall committed, but final cleanup recording requires recovery: {exception.Message}",
+                    Changed: true);
+            }
             return new(
                 ModDeploymentResultState.Succeeded,
                 "The Mod Bridge-managed mod was removed.",
                 Changed: true);
+        }
+        catch (SimulatedProcessTerminationException)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -538,7 +994,75 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.RecoveryRequired,
                 $"Mod Bridge deployment state could not be read: {exception.Message}");
         }
-        if (journal is null || IsTerminal(journal.Phase))
+        if (journal is null)
+        {
+            return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
+        }
+        if (journal.Phase == ModDeploymentPhase.Committed)
+        {
+            if (HasSameVolumeTransactionResidue(journal))
+            {
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    "A legacy committed transaction has preserved staging residue that requires manual review.",
+                    installedState);
+            }
+            return new(
+                ModDeploymentResultState.Succeeded,
+                "No incomplete mod transaction was found.",
+                installedState);
+        }
+        if (journal.Phase == ModDeploymentPhase.CleanupPending)
+        {
+            if (CanCleanCommittedResidue(journal))
+            {
+                var outcomeFailure = ValidateCommittedOutcome(journal);
+                if (outcomeFailure is not null)
+                {
+                    WriteCleanupPendingError(journal, outcomeFailure);
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        outcomeFailure,
+                        installedState);
+                }
+                var cleanup = CleanupCommittedResidue(journal);
+                if (!cleanup.IsSuccess)
+                {
+                    WriteCleanupPendingError(journal, cleanup.Message);
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        cleanup.Message,
+                        installedState);
+                }
+                try
+                {
+                    journal = await PersistPhaseAsync(
+                        journal,
+                        ModDeploymentPhase.Committed,
+                        cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    WriteCleanupPendingError(journal, exception.Message);
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        $"Cleanup completed, but its durable completion record failed: {exception.Message}",
+                        installedState);
+                }
+                return new(
+                    ModDeploymentResultState.Succeeded,
+                    cleanup.Changed
+                        ? "Completed transaction residue was removed."
+                        : "No incomplete mod transaction was found.",
+                    installedState,
+                    Changed: cleanup.Changed);
+            }
+            return new(
+                ModDeploymentResultState.Succeeded,
+                "The coordinated transaction is committed; its outer recovery boundary owns final cleanup.",
+                installedState);
+        }
+        if (IsTerminal(journal.Phase))
         {
             return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
         }
@@ -567,10 +1091,28 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             || artifact.Size > MaximumArtifactSize
             || string.IsNullOrWhiteSpace(artifact.ExpectedVersion)
             || !TryNormalizeSha256(artifact.Sha256, out _)
+            || artifact.DownloadUri is null
             || !artifact.DownloadUri.IsAbsoluteUri
             || artifact.DownloadUri.Scheme != Uri.UriSchemeHttps)
         {
             return new(ModDeploymentResultState.VerificationFailed, "The selected release artifact metadata is invalid.");
+        }
+        if (artifact.RuntimeManifest is not null
+            && (artifact.RuntimeManifest.FileName != ArtifactBoundRuntimeManifestParser.ManagedFileName
+                || artifact.RuntimeManifest.Size is <= 0 or > ArtifactBoundRuntimeManifestParser.MaximumManifestBytes
+                || !TryNormalizeSha256(artifact.RuntimeManifest.Sha256, out _)
+                || artifact.RuntimeManifest.ExpectedSourceRevision is not { Length: 40 }
+                || !artifact.RuntimeManifest.ExpectedSourceRevision.All(Uri.IsHexDigit)
+                || artifact.RuntimeManifest.ExpectedRepository is not { Length: > 0 and <= 160 }
+                || artifact.RuntimeManifest.ExpectedRepository.Count(character => character == '/') != 1
+                || artifact.RuntimeManifest.ExpectedTag is not { Length: > 0 and <= 160 }
+                || artifact.RuntimeManifest.DownloadUri is null
+                || !artifact.RuntimeManifest.DownloadUri.IsAbsoluteUri
+                || artifact.RuntimeManifest.DownloadUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return new(
+                ModDeploymentResultState.VerificationFailed,
+                "The selected runtime-manifest metadata is invalid.");
         }
 
         try
@@ -592,30 +1134,48 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     }
 
     private static ModDeploymentResult? VerifyDownload(ModArtifactDownload download, ModReleaseArtifact artifact)
+        => VerifyDownload(download, artifact.Size, artifact.Sha256, "artifact");
+
+    private static ModDeploymentResult? VerifyDownload(
+        ModArtifactDownload download,
+        ModRuntimeManifestArtifact artifact) =>
+        VerifyDownload(download, artifact.Size, artifact.Sha256, "runtime manifest");
+
+    private static ModDeploymentResult? VerifyDownload(
+        ModArtifactDownload download,
+        long expectedSize,
+        string expectedSha256,
+        string subject)
     {
         if (download.StatusCode != HttpStatusCode.OK)
         {
             return new(
                 ModDeploymentResultState.DownloadRejected,
-                $"The artifact request returned HTTP {(int)download.StatusCode}.");
+                $"The {subject} request returned HTTP {(int)download.StatusCode}.");
         }
 
-        if (download.DeclaredContentLength is not null && download.DeclaredContentLength != artifact.Size)
+        if (download.DeclaredContentLength is not null && download.DeclaredContentLength != expectedSize)
         {
-            return new(ModDeploymentResultState.VerificationFailed, "The HTTP content length does not match the release manifest.");
+            return new(
+                ModDeploymentResultState.VerificationFailed,
+                $"The {subject} HTTP content length does not match release metadata.");
         }
 
-        if (download.Contents.LongLength != artifact.Size)
+        if (download.Contents.LongLength != expectedSize)
         {
-            return new(ModDeploymentResultState.VerificationFailed, "The downloaded artifact size does not match the release manifest.");
+            return new(
+                ModDeploymentResultState.VerificationFailed,
+                $"The downloaded {subject} size does not match release metadata.");
         }
 
         var actualHash = Convert.ToHexString(SHA256.HashData(download.Contents));
         if (!CryptographicOperations.FixedTimeEquals(
                 Convert.FromHexString(actualHash),
-                Convert.FromHexString(artifact.Sha256)))
+                Convert.FromHexString(expectedSha256)))
         {
-            return new(ModDeploymentResultState.VerificationFailed, "The downloaded artifact SHA-256 does not match the release manifest.");
+            return new(
+                ModDeploymentResultState.VerificationFailed,
+                $"The downloaded {subject} SHA-256 does not match release metadata.");
         }
 
         return null;
@@ -635,6 +1195,110 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         return updated;
     }
 
+    private ValueTask CheckpointAsync(
+        ModDeploymentFileCheckpoint checkpoint,
+        CancellationToken cancellationToken) => afterFileCheckpoint is null
+        ? ValueTask.CompletedTask
+        : afterFileCheckpoint(checkpoint, cancellationToken);
+
+    private void ValidateCommitPreconditions(ModDeploymentJournal journal)
+    {
+        var gameValidation = GameInstallValidator.Validate(journal.GameDirectory);
+        if (!gameValidation.IsValid)
+        {
+            throw new InvalidDataException(
+                $"The game installation changed while the release was being prepared: {gameValidation.Message}");
+        }
+        if (isGameRunning(journal.GameDirectory))
+        {
+            throw new InvalidOperationException(
+                "Star Trek Fleet Command started while the release was being prepared; no mod files were changed.");
+        }
+        ValidateUnchangedLiveMember(
+            Path.Combine(journal.GameDirectory, ManagedFileName),
+            journal.HadExistingArtifact,
+            journal.ExistingArtifactIdentity,
+            "DLL");
+        ValidateUnchangedLiveMember(
+            RuntimeManifestTargetPath(journal.GameDirectory),
+            journal.HadExistingRuntimeManifest,
+            journal.ExistingRuntimeManifestIdentity,
+            "runtime manifest");
+        VerifyFile(journal.StagePath, journal.Artifact);
+        if (journal.Artifact.RuntimeManifest is not null)
+        {
+            VerifyFile(RuntimeManifestStagePath(journal), journal.Artifact.RuntimeManifest);
+        }
+        var previous = journal.PreviousInstalledState;
+        var failure = ValidateDeclaredBackup(
+            previous?.PreviousArtifactBackupPath,
+            previous?.PreviousArtifactBackupIdentity,
+            "adopted DLL");
+        failure ??= ValidateDeclaredBackup(
+            previous?.PreviousRuntimeManifestBackupPath,
+            previous?.PreviousRuntimeManifestBackupIdentity,
+            "adopted runtime manifest");
+        if (failure is not null)
+        {
+            throw new InvalidDataException(failure);
+        }
+    }
+
+    private void ValidateUninstallCommitPreconditions(
+        ModDeploymentJournal journal,
+        ModInstalledArtifactState installedState)
+    {
+        var validation = GameInstallValidator.Validate(journal.GameDirectory);
+        if (!validation.IsValid)
+        {
+            throw new InvalidDataException(
+                $"The game installation changed before uninstall: {validation.Message}");
+        }
+        if (isGameRunning(journal.GameDirectory))
+        {
+            throw new InvalidOperationException(
+                "Star Trek Fleet Command started before uninstall; no mod files were changed.");
+        }
+        ValidateUnchangedLiveMember(
+            Path.Combine(journal.GameDirectory, ManagedFileName),
+            existed: true,
+            journal.ExistingArtifactIdentity,
+            "managed DLL");
+        if (installedState.RuntimeManifest is not null)
+        {
+            ValidateUnchangedLiveMember(
+                RuntimeManifestTargetPath(journal.GameDirectory),
+                existed: true,
+                journal.ExistingRuntimeManifestIdentity,
+                "managed runtime manifest");
+        }
+        var backupFailure = ValidateDeclaredBackup(
+            installedState.PreviousArtifactBackupPath,
+            installedState.PreviousArtifactBackupIdentity,
+            "adopted DLL");
+        backupFailure ??= ValidateDeclaredBackup(
+            installedState.PreviousRuntimeManifestBackupPath,
+            installedState.PreviousRuntimeManifestBackupIdentity,
+            "adopted runtime manifest");
+        if (backupFailure is not null)
+        {
+            throw new InvalidDataException(backupFailure);
+        }
+    }
+
+    private static void ValidateUnchangedLiveMember(
+        string path,
+        bool existed,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (existed ? identity is null || !MatchesIdentity(path, identity) : File.Exists(path))
+        {
+            throw new InvalidDataException(
+                $"The live {subject} changed while the release was being prepared; no live files were replaced.");
+        }
+    }
+
     private async Task<bool> RollBackAsync(
         ModDeploymentJournal journal,
         string targetPath,
@@ -642,45 +1306,64 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     {
         try
         {
+            NormalizeIncompleteOwnedCopyStages(journal);
+            var runtimeManifestPath = RuntimeManifestTargetPath(journal.GameDirectory);
+            var plan = BuildRollbackPlan(journal, targetPath, runtimeManifestPath);
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.RollingBack, cancellationToken);
-            var backupPath = File.Exists(journal.DurableBackupPath)
-                ? journal.DurableBackupPath
-                : File.Exists(journal.SameVolumeBackupPath)
-                    ? journal.SameVolumeBackupPath
-                    : null;
+            plan = await MaterializeSameVolumeRollbackStagesAsync(plan, journal, cancellationToken);
 
-            if (backupPath is not null)
-            {
-                if (File.Exists(targetPath))
-                {
-                    if (journal.Operation == ModDeploymentOperation.Uninstall
-                        && !string.IsNullOrWhiteSpace(journal.PreviousInstalledState?.PreviousArtifactBackupPath))
-                    {
-                        var priorBackupPath = journal.PreviousInstalledState.PreviousArtifactBackupPath;
-                        Directory.CreateDirectory(Path.GetDirectoryName(priorBackupPath)!);
-                        File.Move(targetPath, priorBackupPath, true);
-                    }
-                    else
-                    {
-                        File.Delete(targetPath);
-                    }
-                }
-                File.Move(backupPath, targetPath);
-            }
-            else if (!journal.HadExistingArtifact && File.Exists(targetPath))
-            {
-                var targetHash = ComputeFileSha256(targetPath);
-                if (string.Equals(targetHash, journal.Artifact.Sha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    File.Delete(targetPath);
-                }
-            }
+            ApplyRollbackMember(plan.Dll);
+            await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackDllRestored, cancellationToken);
+            ApplyRollbackMember(plan.RuntimeManifest);
+            await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestored, cancellationToken);
+            VerifyRollbackMember(plan.Dll);
+            VerifyRollbackMember(plan.RuntimeManifest);
 
-            DeleteIfExists(journal.StagePath);
-            DeleteIfExists(journal.SameVolumeBackupPath);
+            DeleteVerifiedResidue(
+                journal.StagePath,
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? journal.PreviousInstalledState?.PreviousArtifactBackupIdentity
+                    : Identity(journal.Artifact),
+                "DLL stage");
+            DeleteVerifiedResidue(
+                RuntimeManifestStagePath(journal),
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity
+                    : journal.Artifact.RuntimeManifest is null
+                        ? null
+                        : Identity(journal.Artifact.RuntimeManifest),
+                "runtime-manifest stage");
+            DeleteVerifiedResidue(
+                DurablePromotionStagePath(journal),
+                journal.ExistingArtifactIdentity,
+                "durable DLL promotion stage");
+            DeleteVerifiedResidue(
+                RuntimeManifestDurablePromotionStagePath(journal),
+                journal.ExistingRuntimeManifestIdentity,
+                "durable runtime-manifest promotion stage");
+            DeleteVerifiedResidue(
+                RollbackRestoreStagePath(journal),
+                journal.ExistingArtifactIdentity,
+                "DLL rollback restore stage");
+            DeleteVerifiedResidue(
+                RuntimeManifestRollbackRestoreStagePath(journal),
+                journal.ExistingRuntimeManifestIdentity,
+                "runtime-manifest rollback restore stage");
+            DeleteVerifiedResidue(
+                journal.DurableBackupPath,
+                journal.ExistingArtifactIdentity,
+                "redundant durable DLL rollback");
+            DeleteVerifiedResidue(
+                RuntimeManifestDurableBackupPath(journal),
+                journal.ExistingRuntimeManifestIdentity,
+                "redundant durable runtime-manifest rollback");
             RestoreInstalledState(journal.PreviousInstalledState);
             await PersistPhaseAsync(journal, ModDeploymentPhase.RolledBack, cancellationToken);
             return true;
+        }
+        catch (SimulatedProcessTerminationException)
+        {
+            throw;
         }
         catch (Exception rollbackException)
         {
@@ -703,6 +1386,386 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
     }
 
+    private RollbackPlan BuildRollbackPlan(
+        ModDeploymentJournal journal,
+        string targetPath,
+        string runtimeManifestPath)
+    {
+        if (journal.Operation == ModDeploymentOperation.Deploy
+            && journal.PreviousInstalledState is not null)
+        {
+            var retainedFailure = ValidateDeclaredBackup(
+                journal.PreviousInstalledState.PreviousArtifactBackupPath,
+                journal.PreviousInstalledState.PreviousArtifactBackupIdentity,
+                "retained adopted DLL");
+            retainedFailure ??= ValidateDeclaredBackup(
+                journal.PreviousInstalledState.PreviousRuntimeManifestBackupPath,
+                journal.PreviousInstalledState.PreviousRuntimeManifestBackupIdentity,
+                "retained adopted runtime manifest");
+            if (retainedFailure is not null)
+            {
+                throw new InvalidDataException(retainedFailure);
+            }
+        }
+        var priorDllIdentity = journal.ExistingArtifactIdentity
+            ?? (journal.PreviousInstalledState is null
+                ? null
+                : new(journal.PreviousInstalledState.Size, journal.PreviousInstalledState.Sha256));
+        var priorRuntimeIdentity = journal.ExistingRuntimeManifestIdentity
+            ?? (journal.PreviousInstalledState?.RuntimeManifest is null
+                ? null
+                : new(
+                    journal.PreviousInstalledState.RuntimeManifest.Size,
+                    journal.PreviousInstalledState.RuntimeManifest.Sha256));
+        var dll = BuildRollbackMember(
+            targetPath,
+            journal.HadExistingArtifact,
+            priorDllIdentity,
+            Identity(journal.Artifact),
+            FindExactBackup(
+                journal.DurableBackupPath,
+                journal.SameVolumeBackupPath,
+                priorDllIdentity,
+                "prior DLL"),
+            journal.Operation == ModDeploymentOperation.Uninstall
+                ? journal.PreviousInstalledState?.PreviousArtifactBackupPath
+                : null,
+            journal.PreviousInstalledState?.PreviousArtifactBackupIdentity,
+            "DLL");
+        var shouldHandleRuntime = ShouldMutateRuntimeManifest(journal) || journal.HadExistingRuntimeManifest;
+        var runtime = shouldHandleRuntime
+            ? BuildRollbackMember(
+                runtimeManifestPath,
+                journal.HadExistingRuntimeManifest,
+                priorRuntimeIdentity,
+                journal.Artifact.RuntimeManifest is null ? null : Identity(journal.Artifact.RuntimeManifest),
+                FindExactBackup(
+                    RuntimeManifestDurableBackupPath(journal),
+                    RuntimeManifestSameVolumeBackupPath(journal),
+                    priorRuntimeIdentity,
+                    "prior runtime manifest"),
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? journal.PreviousInstalledState?.PreviousRuntimeManifestBackupPath
+                    : null,
+                journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity,
+                "runtime manifest")
+            : null;
+        ValidateResidue(
+            journal.StagePath,
+            journal.Operation == ModDeploymentOperation.Uninstall
+                ? journal.PreviousInstalledState?.PreviousArtifactBackupIdentity
+                : Identity(journal.Artifact),
+            "DLL stage");
+        ValidateResidue(
+            RuntimeManifestStagePath(journal),
+            journal.Operation == ModDeploymentOperation.Uninstall
+                ? journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity
+                : journal.Artifact.RuntimeManifest is null ? null : Identity(journal.Artifact.RuntimeManifest),
+            "runtime-manifest stage");
+        ValidateResidue(
+            DurablePromotionStagePath(journal),
+            journal.ExistingArtifactIdentity,
+            "durable DLL promotion stage");
+        ValidateResidue(
+            RuntimeManifestDurablePromotionStagePath(journal),
+            journal.ExistingRuntimeManifestIdentity,
+            "durable runtime-manifest promotion stage");
+        return new(dll, runtime);
+    }
+
+    private void NormalizeIncompleteOwnedCopyStages(ModDeploymentJournal journal)
+    {
+        NormalizeIncompleteOwnedCopyStage(
+            DurablePromotionStagePath(journal),
+            journal.ExistingArtifactIdentity,
+            journal.SameVolumeBackupPath,
+            journal.DurableBackupPath);
+        NormalizeIncompleteOwnedCopyStage(
+            RuntimeManifestDurablePromotionStagePath(journal),
+            journal.ExistingRuntimeManifestIdentity,
+            RuntimeManifestSameVolumeBackupPath(journal),
+            RuntimeManifestDurableBackupPath(journal));
+        NormalizeIncompleteOwnedCopyStage(
+            RollbackRestoreStagePath(journal),
+            journal.ExistingArtifactIdentity,
+            journal.DurableBackupPath);
+        NormalizeIncompleteOwnedCopyStage(
+            RuntimeManifestRollbackRestoreStagePath(journal),
+            journal.ExistingRuntimeManifestIdentity,
+            RuntimeManifestDurableBackupPath(journal));
+        if (journal.Operation == ModDeploymentOperation.Uninstall)
+        {
+            NormalizeIncompleteOwnedCopyStage(
+                journal.StagePath,
+                journal.PreviousInstalledState?.PreviousArtifactBackupIdentity,
+                journal.PreviousInstalledState?.PreviousArtifactBackupPath);
+            NormalizeIncompleteOwnedCopyStage(
+                RuntimeManifestStagePath(journal),
+                journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity,
+                journal.PreviousInstalledState?.PreviousRuntimeManifestBackupPath);
+        }
+    }
+
+    private static void NormalizeIncompleteOwnedCopyStage(
+        string stagePath,
+        ModArtifactIdentityReceipt? identity,
+        params string?[] authoritativeSources)
+    {
+        if (!File.Exists(stagePath) || identity is null || MatchesIdentity(stagePath, identity))
+        {
+            return;
+        }
+        if (!authoritativeSources.Any(path =>
+                !string.IsNullOrWhiteSpace(path) && MatchesIdentity(path, identity)))
+        {
+            throw new InvalidDataException(
+                "An incomplete copy stage has no exact authoritative source and was preserved.");
+        }
+        File.Delete(stagePath);
+    }
+
+    private static RollbackMember BuildRollbackMember(
+        string livePath,
+        bool hadExisting,
+        ModArtifactIdentityReceipt? priorIdentity,
+        ModArtifactIdentityReceipt? targetIdentity,
+        string? backupPath,
+        string? displacedLiveDestination,
+        ModArtifactIdentityReceipt? displacedLiveIdentity,
+        string subject)
+    {
+        var liveExists = File.Exists(livePath);
+        if (hadExisting && priorIdentity is null)
+        {
+            throw new InvalidDataException($"The {subject} rollback has no exact prior identity receipt.");
+        }
+        if (displacedLiveDestination is not null)
+        {
+            if (displacedLiveIdentity is null)
+            {
+                throw new InvalidDataException($"The displaced {subject} has no exact backup identity receipt.");
+            }
+            var displacedExists = File.Exists(displacedLiveDestination);
+            if (displacedExists && !MatchesIdentity(displacedLiveDestination, displacedLiveIdentity))
+            {
+                throw new InvalidDataException($"The retained adopted {subject} backup changed.");
+            }
+            if (backupPath is null)
+            {
+                if (!liveExists || !MatchesIdentity(livePath, priorIdentity!) || !displacedExists)
+                {
+                    throw new InvalidDataException($"The completed {subject} rollback pair is incomplete.");
+                }
+                return new(
+                    livePath,
+                    null,
+                    RestoreExisting: true,
+                    displacedLiveDestination,
+                    displacedLiveIdentity,
+                    priorIdentity);
+            }
+            if (liveExists)
+            {
+                if (!MatchesIdentity(livePath, displacedLiveIdentity))
+                {
+                    throw new InvalidDataException($"The live/displaced {subject} rollback state is ambiguous.");
+                }
+            }
+            else if (!displacedExists)
+            {
+                throw new InvalidDataException($"The adopted {subject} is missing from both rollback locations.");
+            }
+            return new(
+                livePath,
+                backupPath,
+                RestoreExisting: true,
+                displacedLiveDestination,
+                displacedLiveIdentity,
+                priorIdentity);
+        }
+        if (backupPath is null)
+        {
+            if (hadExisting && (!liveExists || !MatchesIdentity(livePath, priorIdentity!)))
+            {
+                throw new InvalidDataException($"The exact prior {subject} backup is missing.");
+            }
+            if (!hadExisting && liveExists && (targetIdentity is null || !MatchesIdentity(livePath, targetIdentity)))
+            {
+                throw new InvalidDataException($"The live {subject} is not an exact transaction artifact.");
+            }
+            return new(livePath, null, hadExisting, null, null, priorIdentity);
+        }
+        if (liveExists
+            && (targetIdentity is null || !MatchesIdentity(livePath, targetIdentity))
+            && (priorIdentity is null || !MatchesIdentity(livePath, priorIdentity)))
+        {
+            throw new InvalidDataException($"The live {subject} changed during rollback.");
+        }
+        return new(livePath, backupPath, RestoreExisting: true, null, null, priorIdentity);
+    }
+
+    private static string? FindExactBackup(
+        string durablePath,
+        string sameVolumePath,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        var existing = new[] { durablePath, sameVolumePath }.Where(File.Exists).ToArray();
+        if (existing.Length == 0)
+        {
+            return null;
+        }
+        if (identity is null || existing.Any(path => !MatchesIdentity(path, identity)))
+        {
+            throw new InvalidDataException($"The {subject} rollback copy is unrecognized or changed.");
+        }
+        return File.Exists(sameVolumePath) ? sameVolumePath : durablePath;
+    }
+
+    private async Task<RollbackPlan> MaterializeSameVolumeRollbackStagesAsync(
+        RollbackPlan plan,
+        ModDeploymentJournal journal,
+        CancellationToken cancellationToken)
+    {
+        var dll = await MaterializeSameVolumeRollbackStageAsync(
+            plan.Dll,
+            journal.DurableBackupPath,
+            RollbackRestoreStagePath(journal),
+            ModDeploymentFileCheckpoint.RollbackDllRestoreCopyStarted,
+            ModDeploymentFileCheckpoint.RollbackDllRestoreStaged,
+            cancellationToken);
+        var runtime = plan.RuntimeManifest is null
+            ? null
+            : await MaterializeSameVolumeRollbackStageAsync(
+                plan.RuntimeManifest,
+                RuntimeManifestDurableBackupPath(journal),
+                RuntimeManifestRollbackRestoreStagePath(journal),
+                ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestoreCopyStarted,
+                ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestoreStaged,
+                cancellationToken);
+        return new(dll, runtime);
+    }
+
+    private async Task<RollbackMember> MaterializeSameVolumeRollbackStageAsync(
+        RollbackMember member,
+        string durablePath,
+        string restoreStagePath,
+        ModDeploymentFileCheckpoint copyStartedCheckpoint,
+        ModDeploymentFileCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        if (member.BackupPath is null || !PathEquals(member.BackupPath, durablePath))
+        {
+            return member;
+        }
+        if (member.PriorIdentity is null)
+        {
+            throw new InvalidDataException("A durable rollback copy has no exact identity receipt.");
+        }
+        if (!File.Exists(restoreStagePath))
+        {
+            await CopyFileDurablyAsync(
+                durablePath,
+                restoreStagePath,
+                copyStartedCheckpoint,
+                cancellationToken);
+        }
+        VerifyFile(restoreStagePath, member.PriorIdentity, "same-volume rollback restore stage");
+        await CheckpointAsync(checkpoint, cancellationToken);
+        return member with { BackupPath = restoreStagePath };
+    }
+
+    private static void ApplyRollbackMember(RollbackMember? member)
+    {
+        if (member is null)
+        {
+            return;
+        }
+        if (member.BackupPath is null)
+        {
+            if (!member.RestoreExisting)
+            {
+                DeleteIfExists(member.LivePath);
+            }
+            return;
+        }
+        if (File.Exists(member.LivePath))
+        {
+            if (member.DisplacedLiveDestination is not null)
+            {
+                if (File.Exists(member.DisplacedLiveDestination))
+                {
+                    File.Delete(member.LivePath);
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(member.DisplacedLiveDestination)!);
+                    File.Move(member.LivePath, member.DisplacedLiveDestination);
+                }
+            }
+            else
+            {
+                File.Delete(member.LivePath);
+            }
+        }
+        File.Move(member.BackupPath, member.LivePath);
+    }
+
+    private static void VerifyRollbackMember(RollbackMember? member)
+    {
+        if (member is null)
+        {
+            return;
+        }
+        if (member.RestoreExisting)
+        {
+            if (member.PriorIdentity is null || !MatchesIdentity(member.LivePath, member.PriorIdentity))
+            {
+                throw new InvalidDataException("Rollback did not restore the exact prior managed artifact.");
+            }
+        }
+        else if (File.Exists(member.LivePath))
+        {
+            throw new InvalidDataException("Rollback did not remove the transaction artifact.");
+        }
+        if (member.DisplacedLiveDestination is not null
+            && (member.DisplacedLiveIdentity is null
+                || !MatchesIdentity(member.DisplacedLiveDestination, member.DisplacedLiveIdentity)))
+        {
+            throw new InvalidDataException("Rollback did not preserve the exact adopted artifact.");
+        }
+    }
+
+    private static void ValidateResidue(
+        string path,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (File.Exists(path) && (identity is null || !MatchesIdentity(path, identity)))
+        {
+            throw new InvalidDataException($"The {subject} is unrecognized and was preserved.");
+        }
+    }
+
+    private static void DeleteVerifiedResidue(
+        string path,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        ValidateResidue(path, identity, subject);
+        DeleteIfExists(path);
+    }
+
+    private sealed record RollbackPlan(RollbackMember Dll, RollbackMember? RuntimeManifest);
+
+    private sealed record RollbackMember(
+        string LivePath,
+        string? BackupPath,
+        bool RestoreExisting,
+        string? DisplacedLiveDestination,
+        ModArtifactIdentityReceipt? DisplacedLiveIdentity,
+        ModArtifactIdentityReceipt? PriorIdentity);
+
     private void RestoreInstalledState(ModInstalledArtifactState? state)
     {
         if (state is null)
@@ -714,6 +1777,53 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             WriteJsonAtomically(InstalledStatePath, state);
         }
     }
+
+    private LegacyStateUpgrade UpgradeLegacyBackupReceipts(ModInstalledArtifactState? state)
+    {
+        if (state is null)
+        {
+            return new(null, null);
+        }
+        try
+        {
+            var dllReceipt = state.PreviousArtifactBackupIdentity;
+            if (!string.IsNullOrWhiteSpace(state.PreviousArtifactBackupPath) && dllReceipt is null)
+            {
+                if (!File.Exists(state.PreviousArtifactBackupPath))
+                {
+                    return new(state, "The adopted DLL backup is missing; it was not replaced or discarded.");
+                }
+                dllReceipt = CaptureIdentity(state.PreviousArtifactBackupPath);
+            }
+            var runtimeReceipt = state.PreviousRuntimeManifestBackupIdentity;
+            if (!string.IsNullOrWhiteSpace(state.PreviousRuntimeManifestBackupPath) && runtimeReceipt is null)
+            {
+                if (!File.Exists(state.PreviousRuntimeManifestBackupPath))
+                {
+                    return new(state, "The adopted runtime-manifest backup is missing; it was not replaced or discarded.");
+                }
+                runtimeReceipt = CaptureIdentity(state.PreviousRuntimeManifestBackupPath);
+            }
+            if (dllReceipt == state.PreviousArtifactBackupIdentity
+                && runtimeReceipt == state.PreviousRuntimeManifestBackupIdentity)
+            {
+                return new(state, null);
+            }
+            var upgraded = state with
+            {
+                PreviousArtifactBackupIdentity = dllReceipt,
+                PreviousRuntimeManifestBackupIdentity = runtimeReceipt,
+            };
+            WriteJsonAtomically(InstalledStatePath, upgraded);
+            return new(upgraded, null);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new(state, $"The adopted backup identity could not be migrated safely: {exception.Message}");
+        }
+    }
+
+    private sealed record LegacyStateUpgrade(ModInstalledArtifactState? State, string? Failure);
 
     private static async Task WriteStageAsync(string path, byte[] contents, CancellationToken cancellationToken)
     {
@@ -729,18 +1839,438 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         stream.Flush(true);
     }
 
+    private async Task PromoteDurableBackupAsync(
+        string sameVolumeSource,
+        string durablePath,
+        ModArtifactIdentityReceipt identity,
+        ModDeploymentFileCheckpoint copyStartedCheckpoint,
+        ModDeploymentFileCheckpoint promotedCheckpoint,
+        ModDeploymentFileCheckpoint sourceRemovedCheckpoint,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(durablePath)!);
+        var promotionStage = durablePath + ".stage";
+        await CopyFileDurablyAsync(
+            sameVolumeSource,
+            promotionStage,
+            copyStartedCheckpoint,
+            cancellationToken);
+        VerifyFile(promotionStage, identity, "durable backup promotion stage");
+        File.Move(promotionStage, durablePath);
+        await CheckpointAsync(promotedCheckpoint, cancellationToken);
+        VerifyFile(sameVolumeSource, identity, "same-volume rollback source");
+        File.Delete(sameVolumeSource);
+        await CheckpointAsync(sourceRemovedCheckpoint, cancellationToken);
+    }
+
+    private async Task CopyBackupToSameVolumeStageAsync(
+        string durableSource,
+        string stagePath,
+        ModArtifactIdentityReceipt identity,
+        ModDeploymentFileCheckpoint copyStartedCheckpoint,
+        ModDeploymentFileCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        await CopyFileDurablyAsync(
+            durableSource,
+            stagePath,
+            copyStartedCheckpoint,
+            cancellationToken);
+        VerifyFile(stagePath, identity, "adopted restore stage");
+        await CheckpointAsync(checkpoint, cancellationToken);
+    }
+
+    private async Task CopyFileDurablyAsync(
+        string sourcePath,
+        string destinationPath,
+        ModDeploymentFileCheckpoint copyStartedCheckpoint,
+        CancellationToken cancellationToken)
+    {
+        await using var source = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var destination = new FileStream(
+            destinationPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            81920,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await CheckpointAsync(copyStartedCheckpoint, cancellationToken);
+        await source.CopyToAsync(destination, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
+        destination.Flush(true);
+    }
+
     private static void VerifyFile(string path, ModReleaseArtifact artifact)
+        => VerifyFile(path, artifact.Size, artifact.Sha256, "artifact");
+
+    private static void VerifyFile(string path, ModRuntimeManifestArtifact artifact) =>
+        VerifyFile(path, artifact.Size, artifact.Sha256, "runtime manifest");
+
+    private static void VerifyFile(
+        string path,
+        ModArtifactIdentityReceipt identity,
+        string subject) => VerifyFile(path, identity.Size, identity.Sha256, subject);
+
+    private static void VerifyFile(string path, long expectedSize, string expectedSha256, string subject)
     {
         var info = new FileInfo(path);
-        if (!info.Exists || info.Length != artifact.Size)
+        if (!info.Exists || info.Length != expectedSize)
         {
-            throw new InvalidDataException("The staged artifact size changed before commit.");
+            throw new InvalidDataException($"The staged {subject} size changed before commit.");
         }
-        if (!string.Equals(ComputeFileSha256(path), artifact.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(ComputeFileSha256(path), expectedSha256, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("The staged artifact SHA-256 changed before commit.");
+            throw new InvalidDataException($"The staged {subject} SHA-256 changed before commit.");
         }
     }
+
+    private static string RuntimeManifestTargetPath(string gameDirectory) =>
+        Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName);
+
+    private static string RuntimeManifestStagePath(ModDeploymentJournal journal) =>
+        Path.Combine(
+            journal.GameDirectory,
+            $".{ArtifactBoundRuntimeManifestParser.ManagedFileName}.{journal.TransactionId}.stage");
+
+    private static string RuntimeManifestSameVolumeBackupPath(ModDeploymentJournal journal) =>
+        Path.Combine(
+            journal.GameDirectory,
+            $".{ArtifactBoundRuntimeManifestParser.ManagedFileName}.{journal.TransactionId}.rollback");
+
+    private string RuntimeManifestDurableBackupPath(ModDeploymentJournal journal) =>
+        Path.Combine(
+            stateDirectory,
+            "rollback",
+            journal.TransactionId,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+
+    private static string DurablePromotionStagePath(ModDeploymentJournal journal) =>
+        journal.DurableBackupPath + ".stage";
+
+    private string RuntimeManifestDurablePromotionStagePath(ModDeploymentJournal journal) =>
+        RuntimeManifestDurableBackupPath(journal) + ".stage";
+
+    private static string RollbackRestoreStagePath(ModDeploymentJournal journal) =>
+        Path.Combine(journal.GameDirectory, $".{ManagedFileName}.{journal.TransactionId}.restore");
+
+    private static string RuntimeManifestRollbackRestoreStagePath(ModDeploymentJournal journal) =>
+        Path.Combine(
+            journal.GameDirectory,
+            $".{ArtifactBoundRuntimeManifestParser.ManagedFileName}.{journal.TransactionId}.restore");
+
+    private static bool ShouldMutateRuntimeManifest(ModDeploymentJournal journal) =>
+        journal.Artifact.RuntimeManifest is not null
+        || journal.PreviousInstalledState?.RuntimeManifest is not null;
+
+    private bool CanCleanCommittedResidue(ModDeploymentJournal journal)
+    {
+        if (!journal.HasCommitParticipant || journal.CommitParticipantCompleted)
+        {
+            return true;
+        }
+        try
+        {
+            var outer = ReadJson<LauncherProviderAtomicSwitchJournal>(
+                Path.Combine(stateDirectory, "provider-switch-journal.json"));
+            return outer is not null
+                && outer.TransactionId == journal.TransactionId
+                && outer.Phase == LauncherProviderAtomicSwitchPhase.Completed;
+        }
+        catch (Exception exception) when (IsStateReadFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool HasSameVolumeTransactionResidue(ModDeploymentJournal journal) =>
+        File.Exists(journal.StagePath)
+        || File.Exists(journal.SameVolumeBackupPath)
+        || File.Exists(RuntimeManifestStagePath(journal))
+        || File.Exists(RuntimeManifestSameVolumeBackupPath(journal))
+        || File.Exists(DurablePromotionStagePath(journal))
+        || File.Exists(RuntimeManifestDurablePromotionStagePath(journal))
+        || File.Exists(RollbackRestoreStagePath(journal))
+        || File.Exists(RuntimeManifestRollbackRestoreStagePath(journal));
+
+    private void WriteCleanupPendingError(ModDeploymentJournal journal, string error)
+    {
+        try
+        {
+            WriteJsonAtomically(
+                JournalPath,
+                journal with
+                {
+                    Phase = ModDeploymentPhase.CleanupPending,
+                    Error = error,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                });
+        }
+        catch
+        {
+            // Preserve the last durable journal when the error update itself cannot be recorded.
+        }
+    }
+
+    private string? ValidateCommittedOutcome(ModDeploymentJournal journal)
+    {
+        try
+        {
+            var dllPath = Path.Combine(journal.GameDirectory, ManagedFileName);
+            var runtimePath = RuntimeManifestTargetPath(journal.GameDirectory);
+            if (journal.Operation == ModDeploymentOperation.Deploy)
+            {
+                if (!MatchesIdentity(dllPath, Identity(journal.Artifact)))
+                {
+                    return "Committed cleanup was blocked because the installed DLL changed or is missing.";
+                }
+                if (journal.Artifact.RuntimeManifest is null)
+                {
+                    var preserveLooseRuntime = journal.PreviousInstalledState?.RuntimeManifest is null
+                        && journal.HadExistingRuntimeManifest;
+                    if (preserveLooseRuntime
+                        ? journal.ExistingRuntimeManifestIdentity is null
+                            || !MatchesIdentity(runtimePath, journal.ExistingRuntimeManifestIdentity)
+                        : File.Exists(runtimePath))
+                    {
+                        return "Committed cleanup was blocked because the final runtime-manifest state changed.";
+                    }
+                }
+                else if (!MatchesIdentity(runtimePath, Identity(journal.Artifact.RuntimeManifest)))
+                {
+                    return "Committed cleanup was blocked because the installed runtime manifest changed or is missing.";
+                }
+                var state = ReadInstalledState();
+                var targetAttribution = journal.TargetInstallationAttribution
+                    ?? (journal.Phase == ModDeploymentPhase.Committed ? installationAttribution : null);
+                if (state is null
+                    || targetAttribution is null
+                    || !PathEquals(state.GameDirectory, journal.GameDirectory)
+                    || state.Size != journal.Artifact.Size
+                    || !string.Equals(state.Sha256, journal.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+                    || state.Version != journal.Artifact.ExpectedVersion
+                    || !string.Equals(state.ProviderId, targetAttribution.ProviderId, StringComparison.Ordinal)
+                    || !string.Equals(
+                        state.ReleaseChannelId,
+                        targetAttribution.ReleaseChannelId,
+                        StringComparison.Ordinal)
+                    || !string.Equals(
+                        state.RuntimeDistributionId,
+                        targetAttribution.RuntimeDistributionId,
+                        StringComparison.Ordinal)
+                    || !RuntimeInstalledStateMatches(state.RuntimeManifest, journal.Artifact.RuntimeManifest))
+                {
+                    return "Committed cleanup was blocked because installed-mod state does not match the live pair.";
+                }
+                var lineageFailure = ValidateRetainedBackupLineage(journal, state);
+                if (lineageFailure is not null)
+                {
+                    return lineageFailure;
+                }
+                return null;
+            }
+
+            if (ReadInstalledState() is not null)
+            {
+                return "Committed uninstall cleanup was blocked because managed installed state still exists.";
+            }
+            var previous = journal.PreviousInstalledState;
+            var runtimeOutcomeMatches = previous?.RuntimeManifest is null
+                && string.IsNullOrWhiteSpace(previous?.PreviousRuntimeManifestBackupPath)
+                || MatchesExpectedRestoredArtifact(
+                    runtimePath,
+                    previous?.PreviousRuntimeManifestBackupPath,
+                    previous?.PreviousRuntimeManifestBackupIdentity);
+            if (!MatchesExpectedRestoredArtifact(
+                    dllPath,
+                    previous?.PreviousArtifactBackupPath,
+                    previous?.PreviousArtifactBackupIdentity)
+                || !runtimeOutcomeMatches)
+            {
+                return "Committed uninstall cleanup was blocked because the restored adopted files changed or are incomplete.";
+            }
+            return null;
+        }
+        catch (Exception exception) when (IsStateReadFailure(exception))
+        {
+            return $"Committed cleanup could not verify the final managed state: {exception.Message}";
+        }
+    }
+
+    private static bool RuntimeInstalledStateMatches(
+        ModInstalledRuntimeManifestState? installed,
+        ModRuntimeManifestArtifact? target) => target is null
+        ? installed is null
+        : installed is not null
+            && installed.Size == target.Size
+            && string.Equals(installed.Sha256, target.Sha256, StringComparison.OrdinalIgnoreCase)
+            && installed.SourceRevision == target.ExpectedSourceRevision
+            && installed.Repository == target.ExpectedRepository
+            && installed.Tag == target.ExpectedTag;
+
+    private string? ValidateRetainedBackupLineage(
+        ModDeploymentJournal journal,
+        ModInstalledArtifactState installed)
+    {
+        var previous = journal.PreviousInstalledState;
+        var expectedDllPath = previous is not null
+            ? previous.PreviousArtifactBackupPath
+            : journal.HadExistingArtifact ? journal.DurableBackupPath : null;
+        var expectedDllIdentity = previous is not null
+            ? previous.PreviousArtifactBackupIdentity
+            : expectedDllPath is null ? null : journal.ExistingArtifactIdentity;
+        var retainNewRuntime = ShouldMutateRuntimeManifest(journal)
+            && journal.HadExistingRuntimeManifest
+            && (previous is null || previous.RuntimeManifest is null);
+        var expectedRuntimePath = previous is not null
+            ? previous.PreviousRuntimeManifestBackupPath
+                ?? (retainNewRuntime ? RuntimeManifestDurableBackupPath(journal) : null)
+            : retainNewRuntime ? RuntimeManifestDurableBackupPath(journal) : null;
+        var expectedRuntimeIdentity = previous is not null
+            ? previous.PreviousRuntimeManifestBackupIdentity
+                ?? (expectedRuntimePath is null ? null : journal.ExistingRuntimeManifestIdentity)
+            : expectedRuntimePath is null ? null : journal.ExistingRuntimeManifestIdentity;
+        if (!OptionalPathEquals(installed.PreviousArtifactBackupPath, expectedDllPath)
+            || installed.PreviousArtifactBackupIdentity != expectedDllIdentity
+            || !OptionalPathEquals(installed.PreviousRuntimeManifestBackupPath, expectedRuntimePath)
+            || installed.PreviousRuntimeManifestBackupIdentity != expectedRuntimeIdentity)
+        {
+            return "Committed cleanup was blocked because retained rollback lineage does not match the transaction.";
+        }
+        var failure = ValidateDeclaredBackup(expectedDllPath, expectedDllIdentity, "retained adopted DLL");
+        failure ??= ValidateDeclaredBackup(
+            expectedRuntimePath,
+            expectedRuntimeIdentity,
+            "retained adopted runtime manifest");
+        return failure;
+    }
+
+    private static bool OptionalPathEquals(string? left, string? right) =>
+        string.IsNullOrWhiteSpace(left) && string.IsNullOrWhiteSpace(right)
+        || left is not null && right is not null && PathEquals(left, right);
+
+    private static bool MatchesExpectedRestoredArtifact(
+        string livePath,
+        string? priorBackupPath,
+        ModArtifactIdentityReceipt? priorIdentity) => string.IsNullOrWhiteSpace(priorBackupPath)
+        ? !File.Exists(livePath)
+        : priorIdentity is not null && MatchesIdentity(livePath, priorIdentity);
+
+    private CommittedCleanupResult CleanupCommittedResidue(ModDeploymentJournal journal)
+    {
+        var previous = journal.PreviousInstalledState;
+        var candidates = new[]
+        {
+            new CleanupCandidate(
+                journal.StagePath,
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousArtifactBackupIdentity?.Size
+                    : journal.Artifact.Size,
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousArtifactBackupIdentity?.Sha256
+                    : journal.Artifact.Sha256,
+                "DLL stage"),
+            new CleanupCandidate(
+                journal.SameVolumeBackupPath,
+                journal.ExistingArtifactIdentity?.Size ?? previous?.Size,
+                journal.ExistingArtifactIdentity?.Sha256 ?? previous?.Sha256,
+                "DLL rollback"),
+            new CleanupCandidate(
+                RuntimeManifestStagePath(journal),
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousRuntimeManifestBackupIdentity?.Size
+                    : journal.Artifact.RuntimeManifest?.Size,
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousRuntimeManifestBackupIdentity?.Sha256
+                    : journal.Artifact.RuntimeManifest?.Sha256,
+                "runtime-manifest stage"),
+            new CleanupCandidate(
+                RuntimeManifestSameVolumeBackupPath(journal),
+                journal.ExistingRuntimeManifestIdentity?.Size ?? previous?.RuntimeManifest?.Size,
+                journal.ExistingRuntimeManifestIdentity?.Sha256 ?? previous?.RuntimeManifest?.Sha256,
+                "runtime-manifest rollback"),
+            new CleanupCandidate(
+                DurablePromotionStagePath(journal),
+                journal.ExistingArtifactIdentity?.Size,
+                journal.ExistingArtifactIdentity?.Sha256,
+                "durable DLL promotion stage"),
+            new CleanupCandidate(
+                RuntimeManifestDurablePromotionStagePath(journal),
+                journal.ExistingRuntimeManifestIdentity?.Size,
+                journal.ExistingRuntimeManifestIdentity?.Sha256,
+                "durable runtime-manifest promotion stage"),
+            new CleanupCandidate(
+                RollbackRestoreStagePath(journal),
+                journal.ExistingArtifactIdentity?.Size,
+                journal.ExistingArtifactIdentity?.Sha256,
+                "DLL rollback restore stage"),
+            new CleanupCandidate(
+                RuntimeManifestRollbackRestoreStagePath(journal),
+                journal.ExistingRuntimeManifestIdentity?.Size,
+                journal.ExistingRuntimeManifestIdentity?.Sha256,
+                "runtime-manifest rollback restore stage"),
+            new CleanupCandidate(
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousArtifactBackupPath ?? string.Empty
+                    : string.Empty,
+                previous?.PreviousArtifactBackupIdentity?.Size,
+                previous?.PreviousArtifactBackupIdentity?.Sha256,
+                "retired adopted DLL backup"),
+            new CleanupCandidate(
+                journal.Operation == ModDeploymentOperation.Uninstall
+                    ? previous?.PreviousRuntimeManifestBackupPath ?? string.Empty
+                    : string.Empty,
+                previous?.PreviousRuntimeManifestBackupIdentity?.Size,
+                previous?.PreviousRuntimeManifestBackupIdentity?.Sha256,
+                "retired adopted runtime-manifest backup"),
+        };
+        try
+        {
+            var existing = candidates.Where(candidate => File.Exists(candidate.Path)).ToArray();
+            foreach (var candidate in existing)
+            {
+                if (candidate.ExpectedSize is null
+                    || candidate.ExpectedSha256 is null
+                    || new FileInfo(candidate.Path).Length != candidate.ExpectedSize
+                    || !string.Equals(
+                        ComputeFileSha256(candidate.Path),
+                        candidate.ExpectedSha256,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return new(
+                        false,
+                        false,
+                        $"Committed cleanup preserved an unrecognized {candidate.Description}; manual recovery is required.");
+                }
+            }
+            foreach (var candidate in existing)
+            {
+                DeleteIfExists(candidate.Path);
+            }
+            return new(true, existing.Length > 0, string.Empty);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return new(
+                false,
+                false,
+                $"Committed cleanup could not finish safely: {exception.Message}");
+        }
+    }
+
+    private sealed record CleanupCandidate(
+        string Path,
+        long? ExpectedSize,
+        string? ExpectedSha256,
+        string Description);
+
+    private sealed record CommittedCleanupResult(bool IsSuccess, bool Changed, string Message);
 
     private void VerifyVersion(string path, string expectedVersion)
     {
@@ -765,6 +2295,65 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     {
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    private static ModArtifactIdentityReceipt CaptureIdentity(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None,
+            81920,
+            FileOptions.SequentialScan);
+        var size = stream.Length;
+        if (size is <= 0 or > MaximumArtifactSize)
+        {
+            throw new InvalidDataException("The prior artifact is outside the supported backup size boundary.");
+        }
+        return new(size, Convert.ToHexString(SHA256.HashData(stream)));
+    }
+
+    private static ModArtifactIdentityReceipt Identity(ModReleaseArtifact artifact) =>
+        new(artifact.Size, artifact.Sha256);
+
+    private static ModArtifactIdentityReceipt Identity(ModRuntimeManifestArtifact artifact) =>
+        new(artifact.Size, artifact.Sha256);
+
+    private static bool MatchesIdentity(string path, ModArtifactIdentityReceipt identity)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None,
+            81920,
+            FileOptions.SequentialScan);
+        return stream.Length == identity.Size
+            && string.Equals(
+                Convert.ToHexString(SHA256.HashData(stream)),
+                identity.Sha256,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ValidateDeclaredBackup(
+        string? path,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return identity is null ? null : $"The {subject} identity has no owned backup path.";
+        }
+        if (identity is null || !MatchesIdentity(path, identity))
+        {
+            return $"The {subject} backup is missing or changed; no managed files were modified.";
+        }
+        return null;
     }
 
     private static bool IsTerminal(ModDeploymentPhase phase) =>

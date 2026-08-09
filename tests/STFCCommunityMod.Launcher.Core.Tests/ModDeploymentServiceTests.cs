@@ -334,7 +334,7 @@ public sealed class ModDeploymentServiceTests
     [DataRow(ModDeploymentPhase.Verified)]
     [DataRow(ModDeploymentPhase.Staged)]
     [DataRow(ModDeploymentPhase.Committing)]
-    [DataRow(ModDeploymentPhase.Committed)]
+    [DataRow(ModDeploymentPhase.CleanupPending)]
     public async Task FaultAtEveryPersistedBoundaryRestoresPreviousArtifact(ModDeploymentPhase faultPhase)
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -405,7 +405,7 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
-    public async Task DeploymentFinalizationFailureCompensatesCommittedParticipant()
+    public async Task DeploymentFinalizationFailureLeavesCommittedStateForRecovery()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -435,11 +435,19 @@ public sealed class ModDeploymentServiceTests
             Guid.NewGuid().ToString("N"),
             participant);
 
-        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State);
-        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
-        Assert.AreEqual("guffawaffle", targetService.ReadInstalledState()!.ProviderId);
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State);
+        CollectionAssert.AreEqual(targetContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual("netniv", targetService.ReadInstalledState()!.ProviderId);
         Assert.AreEqual(1, participant.CommitCount);
-        Assert.AreEqual(1, participant.RollbackCount);
+        Assert.AreEqual(0, participant.RollbackCount);
+        Assert.AreEqual(ModDeploymentPhase.CleanupPending, targetService.ReadJournal()!.Phase);
+        var recoveryService = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, targetContents, targetContents.LongLength),
+            versionReader: new FakeVersionReader(targetArtifact.ExpectedVersion),
+            installationAttribution: new("netniv", "stable", "netniv.stfc-community-mod"));
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recoveryService.RecoverAsync()).State);
+        Assert.AreEqual(ModDeploymentPhase.Committed, recoveryService.ReadJournal()!.Phase);
     }
 
     [TestMethod]
@@ -538,7 +546,7 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
-    public async Task FailedUninstallRestoresManagedAndPreviouslyAdoptedArtifacts()
+    public async Task UninstallFinalizationFailureLeavesRemovalCommittedForRecovery()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -567,15 +575,18 @@ public sealed class ModDeploymentServiceTests
 
         var result = await uninstallService.UninstallAsync();
 
-        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State);
-        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
-        Assert.IsTrue(File.Exists(priorBackupPath));
-        CollectionAssert.AreEqual(previous, File.ReadAllBytes(priorBackupPath));
-        Assert.IsNotNull(uninstallService.ReadInstalledState());
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State);
+        CollectionAssert.AreEqual(previous, File.ReadAllBytes(targetPath));
+        Assert.IsFalse(File.Exists(priorBackupPath));
+        Assert.IsNull(uninstallService.ReadInstalledState());
+        Assert.AreEqual(ModDeploymentPhase.CleanupPending, uninstallService.ReadJournal()!.Phase);
+        var recoveryService = CreateService(temporaryDirectory, SuccessfulDownload());
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recoveryService.RecoverAsync()).State);
+        Assert.AreEqual(ModDeploymentPhase.Committed, recoveryService.ReadJournal()!.Phase);
     }
 
     [TestMethod]
-    public async Task StartupRecoveryRestoresBackupFromIncompleteCommit()
+    public async Task LegacyIncompleteAdoptionWithoutIdentityFailsClosed()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -612,10 +623,70 @@ public sealed class ModDeploymentServiceTests
 
         var result = await service.RecoverAsync();
 
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State);
+        Assert.IsFalse(result.Changed);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+        CollectionAssert.AreEqual(previous, File.ReadAllBytes(sameVolumeBackupPath));
+        Assert.AreEqual(ModDeploymentPhase.RollingBack, service.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
+    public async Task LegacyInstalledAdoptionReceiptIsMigratedDuringDirectUninstall()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        var managedPath = Path.Combine(gameDirectory, "version.dll");
+        var adopted = new byte[] { 4, 4, 2, 1 };
+        var adoptedPath = Path.Combine(
+            temporaryDirectory.CreateDirectory("state"),
+            "rollback",
+            "legacy-adopted-version.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(adoptedPath)!);
+        File.WriteAllBytes(adoptedPath, adopted);
+        File.WriteAllBytes(managedPath, ArtifactContents);
+        var oldState = new ModInstalledArtifactState(
+            1,
+            gameDirectory,
+            "version.dll",
+            ReleaseArtifact().ExpectedVersion,
+            ArtifactContents.LongLength,
+            Convert.ToHexString(SHA256.HashData(ArtifactContents)),
+            DateTimeOffset.UtcNow,
+            adoptedPath,
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows");
+        File.WriteAllText(
+            service.InstalledStatePath,
+            JsonSerializer.Serialize(oldState, JournalJsonOptions));
+
+        var result = await service.UninstallAsync();
+
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
-        Assert.IsTrue(result.Changed);
-        CollectionAssert.AreEqual(previous, File.ReadAllBytes(targetPath));
-        Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+        CollectionAssert.AreEqual(adopted, File.ReadAllBytes(managedPath));
+        Assert.IsFalse(File.Exists(adoptedPath));
+        Assert.IsNull(service.ReadInstalledState());
+    }
+
+    [TestMethod]
+    public async Task NullArtifactJournalFailsClosedWithoutMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var existing = new byte[] { 6, 6, 6 };
+        File.WriteAllBytes(targetPath, existing);
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        File.WriteAllText(
+            service.JournalPath,
+            "{\"schemaVersion\":1,\"artifact\":null}");
+
+        var result = await service.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State);
+        Assert.IsFalse(result.Changed);
+        CollectionAssert.AreEqual(existing, File.ReadAllBytes(targetPath));
     }
 
     [TestMethod]

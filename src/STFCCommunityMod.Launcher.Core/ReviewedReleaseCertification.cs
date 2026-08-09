@@ -21,11 +21,17 @@ public sealed record ReviewedReleaseCertification(
     long PayloadSize,
     string PayloadSha256,
     string PayloadVersion,
-    DateTimeOffset ObservedAtUtc)
+    DateTimeOffset ObservedAtUtc,
+    ReviewedRuntimeManifestCertification? RuntimeManifest = null)
 {
     public Uri DownloadUri => new(
         $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(Tag)}/{Uri.EscapeDataString(AssetName)}");
 }
+
+public sealed record ReviewedRuntimeManifestCertification(
+    string FileName,
+    long Size,
+    string Sha256);
 
 public sealed class ReviewedReleaseCertificationCatalog
 {
@@ -64,8 +70,9 @@ public static class ReviewedReleaseCertificationCatalogLoader
     [
         "providerId", "channelId", "runtimeDistributionId", "repository", "tag", "releaseVersion",
         "sourceCommit", "assetName", "assetSize", "assetSha256", "payloadFileName", "payloadSize",
-        "payloadSha256", "payloadVersion", "observedAtUtc",
+        "payloadSha256", "payloadVersion", "observedAtUtc", "runtimeManifest",
     ];
+    private static readonly HashSet<string> RuntimeManifestProperties = ["fileName", "size", "sha256"];
 
     public static ReviewedReleaseCertificationCatalog Load(
         Stream stream,
@@ -147,10 +154,33 @@ public static class ReviewedReleaseCertificationCatalogLoader
         }
         var assetSha256 = ReadSha256(element, "assetSha256");
         var payloadSha256 = ReadSha256(element, "payloadSha256");
+        ReviewedRuntimeManifestCertification? runtimeManifest = null;
+        if (element.TryGetProperty("runtimeManifest", out var runtimeManifestElement))
+        {
+            RequireObject(runtimeManifestElement, "reviewed runtime manifest certification");
+            RejectUnknown(
+                runtimeManifestElement,
+                RuntimeManifestProperties,
+                "reviewed runtime manifest certification");
+            var runtimeManifestSize = ReadPositiveInt64(runtimeManifestElement, "size");
+            if (runtimeManifestSize > ArtifactBoundRuntimeManifestParser.MaximumManifestBytes)
+            {
+                throw new InvalidDataException("Reviewed runtime manifest exceeds its bounded safety limit.");
+            }
+            runtimeManifest = new(
+                ReadFileName(runtimeManifestElement, "fileName"),
+                runtimeManifestSize,
+                ReadSha256(runtimeManifestElement, "sha256"));
+            if (runtimeManifest.FileName != ArtifactBoundRuntimeManifestParser.ManagedFileName)
+            {
+                throw new InvalidDataException("Reviewed runtime manifest has an unsupported file name.");
+            }
+        }
         return new(
             providerId, channelId, runtimeDistributionId, repository, tag, releaseVersion,
             sourceCommit.ToLowerInvariant(), assetName, assetSize, assetSha256, payloadFileName,
-            payloadSize, payloadSha256, ReadString(element, "payloadVersion"), observedAtUtc);
+            payloadSize, payloadSha256, ReadString(element, "payloadVersion"), observedAtUtc,
+            runtimeManifest);
     }
 
     private static JsonElement RequireObject(JsonElement element, string context)
@@ -201,8 +231,13 @@ public static class ReviewedReleaseCertificationCatalogLoader
 
     private static void RejectUnknown(JsonElement element, HashSet<string> allowed, string context)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var property in element.EnumerateObject())
         {
+            if (!seen.Add(property.Name))
+            {
+                throw new InvalidDataException($"{context} contains duplicate property '{property.Name}'.");
+            }
             if (!allowed.Contains(property.Name))
             {
                 throw new InvalidDataException($"{context} contains unknown property '{property.Name}'.");
@@ -385,7 +420,8 @@ public sealed class ReviewedZipModArtifactDownloader(
 
 public sealed class ManifestWithReviewedFallbackReleaseClient(
     IWindowsReleaseDiscoveryClient manifestClient,
-    IWindowsReleaseDiscoveryClient reviewedFallback) : IWindowsReleaseDiscoveryClient
+    IWindowsReleaseDiscoveryClient reviewedFallback,
+    ReviewedReleaseCertification? reviewedCertification = null) : IWindowsReleaseDiscoveryClient
 {
     public async Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
         string channel,
@@ -394,10 +430,22 @@ public sealed class ManifestWithReviewedFallbackReleaseClient(
     {
         try
         {
-            return await manifestClient.DiscoverLatestAsync(
+            var discovery = await manifestClient.DiscoverLatestAsync(
                 channel,
                 currentLauncherVersion,
                 cancellationToken).ConfigureAwait(false);
+            if (reviewedCertification?.RuntimeManifest is null)
+            {
+                return discovery;
+            }
+            var runtimeManifest = WindowsReleaseSelectionPolicy.SelectReviewedRuntimeManifestArtifact(
+                discovery.Manifest,
+                discovery.ModArtifact,
+                reviewedCertification);
+            return discovery with
+            {
+                ModArtifact = discovery.ModArtifact with { RuntimeManifest = runtimeManifest },
+            };
         }
         catch (InvalidDataException exception) when (
             ReleaseManifestFallbackPolicy.IsMissingManifest(exception))
@@ -410,20 +458,59 @@ public sealed class ManifestWithReviewedFallbackReleaseClient(
     }
 }
 
-public sealed class ManifestWithReviewedFallbackArtifactDownloader(
-    HttpClient httpClient,
-    ReviewedReleaseCertification certification) : IModArtifactDownloader
+public sealed class ManifestWithReviewedFallbackArtifactDownloader : IModArtifactDownloader
 {
-    private readonly HttpModArtifactDownloader manifestDownloader = new(httpClient);
-    private readonly ReviewedZipModArtifactDownloader reviewedDownloader =
-        new(httpClient, certification);
+    private readonly ReviewedReleaseCertification certification;
+    private readonly HttpModArtifactDownloader dllDownloader;
+    private readonly HttpModArtifactDownloader runtimeManifestDownloader;
+    private readonly ReviewedZipModArtifactDownloader reviewedDownloader;
+
+    public ManifestWithReviewedFallbackArtifactDownloader(
+        HttpClient httpClient,
+        ReviewedReleaseCertification certification)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        this.certification = certification ?? throw new ArgumentNullException(nameof(certification));
+        dllDownloader = new(httpClient);
+        runtimeManifestDownloader = new(
+            httpClient,
+            ArtifactBoundRuntimeManifestParser.MaximumManifestBytes);
+        reviewedDownloader = new(httpClient, certification);
+    }
 
     public Task<ModArtifactDownload> DownloadAsync(
         Uri uri,
-        CancellationToken cancellationToken) =>
-        uri == certification.DownloadUri
-            ? reviewedDownloader.DownloadAsync(uri, cancellationToken)
-            : manifestDownloader.DownloadAsync(uri, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        if (uri == certification.DownloadUri)
+        {
+            return reviewedDownloader.DownloadAsync(uri, cancellationToken);
+        }
+        if (uri == RuntimeManifestUri())
+        {
+            return runtimeManifestDownloader.DownloadAsync(uri, cancellationToken);
+        }
+        if (IsRepositoryDllUri(uri))
+        {
+            return dllDownloader.DownloadAsync(uri, cancellationToken);
+        }
+        throw new InvalidDataException("Artifact URI is outside the reviewed repository release boundary.");
+    }
+
+    private Uri? RuntimeManifestUri() => certification.RuntimeManifest is null
+        ? null
+        : new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{Uri.EscapeDataString(certification.Tag)}/"
+            + Uri.EscapeDataString(certification.RuntimeManifest.FileName));
+
+    private bool IsRepositoryDllUri(Uri uri)
+    {
+        return uri == new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{Uri.EscapeDataString(certification.Tag)}/version.dll");
+    }
 }
 
 public sealed class ReviewedExactHashAuthenticityVerifier(
