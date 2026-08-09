@@ -149,6 +149,34 @@ create a store, discover a process, edit TOML, acquire `runtime.lock`, or decide
 eligibility. Supplying that lease remains the marker-first lifecycle transaction
 defined by Sidecar document 27; launcher startup continues to compose none.
 
+## Credential foundation
+
+The dormant Core now has a closed-schema credential codec and passive reader
+for the lifecycle-owned `battle\ingest-credential-v1.dpapi` record. Candidate
+creation uses 32 bytes from the Windows cryptographic RNG, a lowercase opaque
+credential ID, a positive generation, the exact local-IPC protocol and pipe
+name, canonical UTC timestamps, and a closed rotation reason. The canonical
+JSON plaintext is protected with DPAPI `CurrentUser` and exact UTF-8 entropy
+`STFC Mod Bridge Battle ingest credential v1`; the protected record is limited
+to 16 KiB. Plaintext credential buffers are owned by disposable leases and are
+zeroed on disposal.
+
+Loading is passive: construction and an absent read create no directory or
+file. A present record is opened through a no-follow locked handle, bounded
+before DPAPI, parsed with exact case-sensitive properties, and rejected for
+duplicate (including escaped-equivalent), unknown, missing, noncanonical, or
+out-of-contract values. Results expose only bounded state codes and metadata;
+they never expose the credential, arbitrary exception text, or a path through
+diagnostics.
+
+This foundation does not write the final record, set its DACL, generate or edit
+TOML, acquire `runtime.lock`, create a marker, start IPC, or register the runtime
+composition coordinator. The marker-first lifecycle owner must atomically
+promote the protected candidate, apply and verify the current-user plus SYSTEM
+ACL, bind its generation and protected-byte hash to the transaction, and hand
+the resulting lease to composition. Until that owner lands, this code remains
+non-operational.
+
 ## Current composition
 
 `battle.collection` and `fleet.collection` are now first-class, independent
