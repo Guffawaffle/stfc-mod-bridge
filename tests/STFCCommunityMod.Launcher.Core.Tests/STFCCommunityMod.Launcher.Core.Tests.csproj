@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\STFCCommunityMod.Launcher.Core\STFCCommunityMod.Launcher.Core.csproj" />
+    <ProjectReference Include="..\STFCCommunityMod.Launcher.StorageProbe\STFCCommunityMod.Launcher.StorageProbe.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

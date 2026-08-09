@@ -750,8 +750,7 @@ public sealed class ReviewedModArtifactCandidateTests
             var candidateRoot = Path.Combine(stateDirectory, "artifact-candidates");
             Assert.AreEqual(1, Directory.GetDirectories(candidateRoot).Length);
 
-            child.Kill(entireProcessTree: true);
-            await child.WaitForExitAsync();
+            await TerminateCrashProbeAsync(child, stateDirectory);
 
             var fixture = CandidateFixture.Create(includeRuntimeManifest: true);
             var recoveryOwner = new ReviewedModArtifactCandidateAcquirer(
@@ -769,11 +768,7 @@ public sealed class ReviewedModArtifactCandidateTests
         }
         finally
         {
-            if (!child.HasExited)
-            {
-                child.Kill(entireProcessTree: true);
-                await child.WaitForExitAsync();
-            }
+            await TerminateCrashProbeAsync(child, stateDirectory);
         }
     }
 
@@ -912,6 +907,47 @@ public sealed class ReviewedModArtifactCandidateTests
             await Task.Delay(50, timeout.Token);
         }
         Assert.AreEqual("READY", File.ReadAllText(readyPath));
+    }
+
+    private static async Task TerminateCrashProbeAsync(Process child, string stateDirectory)
+    {
+        if (!child.HasExited)
+        {
+            child.Kill(entireProcessTree: true);
+        }
+        await child.WaitForExitAsync();
+
+        var candidateRoot = Path.Combine(stateDirectory, "artifact-candidates");
+        var timeout = Stopwatch.StartNew();
+        Exception? lastFailure = null;
+        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            try
+            {
+                if (Directory.Exists(candidateRoot))
+                {
+                    foreach (var path in Directory.EnumerateFiles(
+                                 candidateRoot,
+                                 "*",
+                                 SearchOption.AllDirectories))
+                    {
+                        using var stream = new FileStream(
+                            path,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.None);
+                    }
+                }
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                lastFailure = exception;
+                await Task.Delay(50);
+            }
+        }
+
+        Assert.Fail($"Candidate crash-probe handles were not released after process-tree termination: {lastFailure}");
     }
 
     private static async ValueTask BlockCrashProbeAsync(
