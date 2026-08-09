@@ -52,6 +52,8 @@ public sealed class LauncherBattleFeatureCompositionTests
         var deniedSnapshot = LauncherBattleFeatureComposer.Compose(denied, requested);
 
         Assert.AreEqual(LauncherPlayerFeatureState.Unavailable, missingSnapshot.BattleCollection.State);
+        Assert.IsFalse(missingSnapshot.BattleCollection.IsEligible);
+        Assert.IsTrue(missingSnapshot.BattleCollection.IsRequested);
         Assert.AreEqual(
             LauncherFeatureReasonCode.MissingCapability,
             missingSnapshot.BattleCollection.Decision.EligibilityEvidence.Code);

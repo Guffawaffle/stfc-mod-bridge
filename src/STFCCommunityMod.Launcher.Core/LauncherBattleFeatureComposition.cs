@@ -18,7 +18,7 @@ public sealed record LauncherPlayerFeatureProjection(
 {
     public bool IsEligible => Decision.IsActive;
 
-    public bool IsRequested => State == LauncherPlayerFeatureState.Enabled;
+    public bool IsRequested => Preference == LauncherPlayerFeaturePreference.Enabled;
 }
 
 public sealed class LauncherBattleFeatureSnapshot
