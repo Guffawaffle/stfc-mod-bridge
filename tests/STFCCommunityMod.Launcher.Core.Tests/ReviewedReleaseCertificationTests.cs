@@ -39,6 +39,51 @@ public sealed class ReviewedReleaseCertificationTests
         Assert.AreEqual(certification.PayloadSize, result.ModArtifact.Size);
         Assert.AreEqual(certification.PayloadSha256, result.ModArtifact.Sha256);
         Assert.AreEqual(certification.PayloadVersion, result.ModArtifact.ExpectedVersion);
+        Assert.IsNull(result.ModArtifact.RuntimeManifest);
+    }
+
+    [TestMethod]
+    public async Task ExactLatestReleaseDiscoversSeparatelyCertifiedRuntimeManifest()
+    {
+        var manifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var certification = Certification() with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                manifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(manifest))),
+        };
+        var client = new ReviewedGitHubReleaseAssetClient(
+            new(new StaticHandler(JsonResponse(certification))),
+            certification);
+
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+
+        var selected = result.ModArtifact.RuntimeManifest;
+        Assert.IsNotNull(selected);
+        Assert.AreEqual(certification.SourceCommit, selected.ExpectedSourceRevision);
+        Assert.AreEqual(certification.Repository, selected.ExpectedRepository);
+        Assert.AreEqual(certification.Tag, selected.ExpectedTag);
+        Assert.AreEqual(certification.RuntimeManifest.Sha256, selected.Sha256);
+    }
+
+    [TestMethod]
+    public async Task CertifiedRuntimeManifestMustBePresentExactlyOnce()
+    {
+        var certification = Certification() with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                12,
+                new string('A', 64)),
+        };
+        var response = JsonResponse(certification, includeRuntimeManifest: false);
+        var client = new ReviewedGitHubReleaseAssetClient(
+            new(new StaticHandler(response)),
+            certification);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
     }
 
     [TestMethod]
@@ -116,6 +161,66 @@ public sealed class ReviewedReleaseCertificationTests
             () => downloader.DownloadAsync(certification.DownloadUri, CancellationToken.None));
 
         StringAssert.Contains(exception.Message, "does not match the reviewed release certification");
+    }
+
+    [TestMethod]
+    public async Task ReviewedZipDownloaderRoutesOnlyCertifiedCompanionWithoutSecondArchiveDownload()
+    {
+        var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
+        var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var archive = CreateArchive("version.dll", payload);
+        var certification = Certification(archive, payload) with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                runtimeManifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(runtimeManifest))),
+        };
+        var manifestUri = ReviewedGitHubReleaseAssetClient.RuntimeManifestUri(certification);
+        var handler = new RoutingByteHandler(new Dictionary<Uri, byte[]>
+        {
+            [certification.DownloadUri] = archive,
+            [manifestUri] = runtimeManifest,
+        });
+        var downloader = new ReviewedZipModArtifactDownloader(new(handler), certification);
+
+        var dll = await downloader.DownloadAsync(certification.DownloadUri, CancellationToken.None);
+        var companion = await downloader.DownloadAsync(manifestUri, CancellationToken.None);
+
+        CollectionAssert.AreEqual(payload, dll.Contents);
+        CollectionAssert.AreEqual(runtimeManifest, companion.Contents);
+        Assert.AreEqual(1, handler.Requests.Count(uri => uri == certification.DownloadUri));
+        Assert.AreEqual(1, handler.Requests.Count(uri => uri == manifestUri));
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() => downloader.DownloadAsync(
+            new Uri("https://example.invalid/runtime.json"),
+            CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task ReviewedZipDownloaderRejectsChangedCertifiedCompanion()
+    {
+        var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
+        var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var changedManifest = (byte[])runtimeManifest.Clone();
+        changedManifest[0] ^= 0x01;
+        var archive = CreateArchive("version.dll", payload);
+        var certification = Certification(archive, payload) with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                runtimeManifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(runtimeManifest))),
+        };
+        var manifestUri = ReviewedGitHubReleaseAssetClient.RuntimeManifestUri(certification);
+        var downloader = new ReviewedZipModArtifactDownloader(
+            new(new RoutingByteHandler(new Dictionary<Uri, byte[]>
+            {
+                [manifestUri] = changedManifest,
+            })),
+            certification);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(manifestUri, CancellationToken.None));
     }
 
     [TestMethod]
@@ -197,8 +302,21 @@ public sealed class ReviewedReleaseCertificationTests
             DateTimeOffset.Parse("2026-07-19T15:55:25Z", CultureInfo.InvariantCulture));
     }
 
-    private static string JsonResponse(ReviewedReleaseCertification certification) =>
-        $$"""
+    private static string JsonResponse(
+        ReviewedReleaseCertification certification,
+        bool includeRuntimeManifest = true)
+    {
+        var runtimeAsset = certification.RuntimeManifest is not null && includeRuntimeManifest
+            ? $$"""
+            ,{
+              "name": "{{certification.RuntimeManifest.FileName}}",
+              "size": {{certification.RuntimeManifest.Size}},
+              "digest": "sha256:{{certification.RuntimeManifest.Sha256}}",
+              "browser_download_url": "{{ReviewedGitHubReleaseAssetClient.RuntimeManifestUri(certification)}}"
+            }
+            """
+            : string.Empty;
+        return $$"""
         {
           "tag_name": "{{certification.Tag}}",
           "draft": false,
@@ -208,9 +326,10 @@ public sealed class ReviewedReleaseCertificationTests
             "size": {{certification.AssetSize}},
             "digest": "sha256:{{certification.AssetSha256}}",
             "browser_download_url": "{{certification.DownloadUri}}"
-          }]
+          }{{runtimeAsset}}]
         }
         """;
+    }
 
     private static WindowsReleaseDiscovery Discovery(
         ReviewedReleaseCertification certification) =>
@@ -276,6 +395,23 @@ public sealed class ReviewedReleaseCertificationTests
             {
                 Content = new ByteArrayContent(contents),
             });
+    }
+
+    private sealed class RoutingByteHandler(IReadOnlyDictionary<Uri, byte[]> contents) : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            Requests.Add(uri);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(contents[uri]),
+            });
+        }
     }
 
     private sealed class RecordingDiscoveryClient : IWindowsReleaseDiscoveryClient

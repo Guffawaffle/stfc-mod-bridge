@@ -312,6 +312,41 @@ public sealed class ReviewedGitHubReleaseAssetClient(
         {
             throw new InvalidDataException("GitHub latest release asset does not match the reviewed certification.");
         }
+        ModRuntimeManifestArtifact? runtimeManifest = null;
+        if (certification.RuntimeManifest is not null)
+        {
+            var manifestMatches = assets.EnumerateArray()
+                .Where(asset => string.Equals(
+                    ReadString(asset, "name"),
+                    certification.RuntimeManifest.FileName,
+                    StringComparison.Ordinal))
+                .ToArray();
+            if (manifestMatches.Length != 1)
+            {
+                throw new InvalidDataException(
+                    "GitHub latest release does not contain exactly one reviewed runtime-manifest asset.");
+            }
+            var manifestAsset = manifestMatches[0];
+            var manifestUri = RuntimeManifestUri(certification);
+            if (ReadInt64(manifestAsset, "size") != certification.RuntimeManifest.Size
+                || !string.Equals(
+                    ReadString(manifestAsset, "digest"),
+                    $"sha256:{certification.RuntimeManifest.Sha256}",
+                    StringComparison.OrdinalIgnoreCase)
+                || new Uri(ReadString(manifestAsset, "browser_download_url")) != manifestUri)
+            {
+                throw new InvalidDataException(
+                    "GitHub latest release runtime manifest does not match the reviewed certification.");
+            }
+            runtimeManifest = new(
+                manifestUri,
+                certification.RuntimeManifest.FileName,
+                certification.RuntimeManifest.Size,
+                certification.RuntimeManifest.Sha256,
+                certification.SourceCommit,
+                certification.Repository,
+                certification.Tag);
+        }
         var manifest = new WindowsReleaseManifest(
             1,
             certification.ReleaseVersion,
@@ -329,8 +364,15 @@ public sealed class ReviewedGitHubReleaseAssetClient(
                 certification.PayloadFileName,
                 certification.PayloadSize,
                 certification.PayloadSha256,
-                certification.PayloadVersion));
+                certification.PayloadVersion,
+                runtimeManifest));
     }
+
+    internal static Uri RuntimeManifestUri(ReviewedReleaseCertification certification) =>
+        new(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{Uri.EscapeDataString(certification.Tag)}/"
+            + Uri.EscapeDataString(certification.RuntimeManifest!.FileName));
 
     private static async Task<byte[]> ReadBoundedAsync(
         HttpContent content,
@@ -376,9 +418,29 @@ public sealed class ReviewedZipModArtifactDownloader(
     ReviewedReleaseCertification certification) : IModArtifactDownloader
 {
     private readonly HttpModArtifactDownloader downloader = new(httpClient);
+    private readonly HttpModArtifactDownloader runtimeManifestDownloader = new(
+        httpClient,
+        ArtifactBoundRuntimeManifestParser.MaximumManifestBytes);
 
     public async Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken)
     {
+        if (certification.RuntimeManifest is not null
+            && uri == ReviewedGitHubReleaseAssetClient.RuntimeManifestUri(certification))
+        {
+            var manifest = await runtimeManifestDownloader.DownloadAsync(uri, cancellationToken);
+            if (manifest.StatusCode == HttpStatusCode.OK
+                && (manifest.DeclaredContentLength is not null
+                        && manifest.DeclaredContentLength != certification.RuntimeManifest.Size
+                    || manifest.Contents.LongLength != certification.RuntimeManifest.Size
+                    || !CryptographicOperations.FixedTimeEquals(
+                        SHA256.HashData(manifest.Contents),
+                        Convert.FromHexString(certification.RuntimeManifest.Sha256))))
+            {
+                throw new InvalidDataException(
+                    "Downloaded runtime manifest does not match the reviewed release certification.");
+            }
+            return manifest;
+        }
         if (uri != certification.DownloadUri)
         {
             throw new InvalidDataException("Download URI is outside the reviewed release certification.");

@@ -1,0 +1,941 @@
+using System.Buffers.Binary;
+using System.ComponentModel;
+using System.Globalization;
+using System.Net;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace STFCCommunityMod.Launcher.Core;
+
+public sealed class ReviewedModArtifactCandidateReceipt
+{
+    internal ReviewedModArtifactCandidateReceipt(
+        string receiptId,
+        ModReleaseArtifact artifact,
+        string certificationFingerprint,
+        ModArtifactIdentityReceipt dllIdentity,
+        ModArtifactIdentityReceipt? runtimeManifestIdentity,
+        ReviewedRuntimeActivation? runtimeActivation,
+        ModInstallationAttribution installationAttribution)
+    {
+        ReceiptId = receiptId;
+        Artifact = artifact;
+        CertificationFingerprint = certificationFingerprint;
+        DllIdentity = dllIdentity;
+        RuntimeManifestIdentity = runtimeManifestIdentity;
+        RuntimeActivation = runtimeActivation;
+        InstallationAttribution = installationAttribution;
+    }
+
+    public string ReceiptId { get; }
+
+    public ModReleaseArtifact Artifact { get; }
+
+    public string CertificationFingerprint { get; }
+
+    public ModArtifactIdentityReceipt DllIdentity { get; }
+
+    public ModArtifactIdentityReceipt? RuntimeManifestIdentity { get; }
+
+    public ReviewedRuntimeActivation? RuntimeActivation { get; }
+
+    public ModInstallationAttribution InstallationAttribution { get; }
+}
+
+public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
+{
+    private const int Available = 0;
+    private const int Claimed = 1;
+    private const int CleanupPending = 2;
+    private const int Disposed = 3;
+    private readonly string candidateDirectory;
+    private readonly string dllPath;
+    private readonly string? runtimeManifestPath;
+    private readonly Func<SafeFileHandle, bool> markDeleteOnClose;
+    private readonly Func<CancellationToken, ValueTask>? afterDeploymentClaimed;
+    private FileStream? dllStream;
+    private FileStream? runtimeManifestStream;
+    private readonly SemaphoreSlim operationGate = new(1, 1);
+    private object? activeClaim;
+    private int state;
+
+    internal ReviewedModArtifactCandidateLease(
+        string candidateDirectory,
+        string dllPath,
+        string? runtimeManifestPath,
+        FileStream? dllStream,
+        FileStream? runtimeManifestStream,
+        ReviewedModArtifactCandidateReceipt receipt,
+        Func<SafeFileHandle, bool> markDeleteOnClose,
+        Func<CancellationToken, ValueTask>? afterDeploymentClaimed)
+    {
+        this.candidateDirectory = candidateDirectory;
+        this.dllPath = dllPath;
+        this.runtimeManifestPath = runtimeManifestPath;
+        this.dllStream = dllStream;
+        this.runtimeManifestStream = runtimeManifestStream;
+        Receipt = receipt;
+        this.markDeleteOnClose = markDeleteOnClose;
+        this.afterDeploymentClaimed = afterDeploymentClaimed;
+    }
+
+    public ReviewedModArtifactCandidateReceipt Receipt { get; }
+
+    internal string CandidateDirectory => candidateDirectory;
+
+    internal bool TryClaim(out object? claim)
+    {
+        claim = new object();
+        if (Interlocked.CompareExchange(ref state, Claimed, Available) != Available)
+        {
+            claim = null;
+            return false;
+        }
+        Volatile.Write(ref activeClaim, claim);
+        return true;
+    }
+
+    internal ValueTask AfterClaimedAsync(CancellationToken cancellationToken) =>
+        afterDeploymentClaimed?.Invoke(cancellationToken) ?? ValueTask.CompletedTask;
+
+    internal async Task<ReviewedModArtifactCandidateContents> ConsumeAsync(
+        object claim,
+        string expectedCertificationFingerprint,
+        ModInstallationAttribution expectedInstallationAttribution,
+        CancellationToken cancellationToken)
+    {
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (state != Claimed || !ReferenceEquals(Volatile.Read(ref activeClaim), claim))
+            {
+                throw new InvalidOperationException(
+                    "The reviewed artifact candidate is not owned by this deployment claim.");
+            }
+            if (!FixedTimeEquals(Receipt.CertificationFingerprint, expectedCertificationFingerprint)
+                || Receipt.InstallationAttribution != expectedInstallationAttribution)
+            {
+                throw new InvalidDataException("The reviewed artifact candidate authority has changed.");
+            }
+
+            var dll = await ReadExactAsync(
+                dllStream!,
+                Receipt.DllIdentity,
+                "DLL candidate",
+                cancellationToken).ConfigureAwait(false);
+            byte[]? runtimeManifest = null;
+            if (Receipt.RuntimeManifestIdentity is not null)
+            {
+                runtimeManifest = await ReadExactAsync(
+                    runtimeManifestStream!,
+                    Receipt.RuntimeManifestIdentity,
+                    "runtime-manifest candidate",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            return new(dll, runtimeManifest, Receipt.RuntimeActivation);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await operationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (state == Disposed)
+            {
+                return;
+            }
+            if (state == Claimed)
+            {
+                throw new InvalidOperationException(
+                    "The reviewed artifact candidate is owned by an active deployment.");
+            }
+            if (state == Available)
+            {
+                state = CleanupPending;
+            }
+            await CleanupUnderGateAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    internal async ValueTask CleanupClaimAsync(object claim)
+    {
+        await operationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (state == Disposed)
+            {
+                return;
+            }
+            if (state is not (Claimed or CleanupPending)
+                || !ReferenceEquals(Volatile.Read(ref activeClaim), claim))
+            {
+                throw new InvalidOperationException(
+                    "The reviewed artifact candidate cleanup claim is invalid.");
+            }
+            state = CleanupPending;
+            await CleanupUnderGateAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async ValueTask CleanupUnderGateAsync()
+    {
+        Exception? cleanupFailure = null;
+        try
+        {
+            await CloseExactStreamAsync(
+                runtimeManifestStream,
+                runtimeManifestPath,
+                Receipt.RuntimeManifestIdentity).ConfigureAwait(false);
+            runtimeManifestStream = null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            cleanupFailure = exception;
+        }
+        try
+        {
+            await CloseExactStreamAsync(dllStream, dllPath, Receipt.DllIdentity).ConfigureAwait(false);
+            dllStream = null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            cleanupFailure = cleanupFailure is null
+                ? exception
+                : new AggregateException(cleanupFailure, exception);
+        }
+        if (cleanupFailure is not null)
+        {
+            state = CleanupPending;
+            throw new IOException("Reviewed candidate cleanup could not delete every exact owned member.", cleanupFailure);
+        }
+        try
+        {
+            Directory.Delete(candidateDirectory, recursive: false);
+        }
+        catch (IOException)
+        {
+            // A changed or foreign file is not receipt-owned and must survive cleanup.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Cleanup is best effort; never broaden ownership after access changed.
+        }
+        Volatile.Write(ref activeClaim, null);
+        state = Disposed;
+    }
+
+    private static async Task<byte[]> ReadExactAsync(
+        FileStream stream,
+        ModArtifactIdentityReceipt identity,
+        string subject,
+        CancellationToken cancellationToken)
+    {
+        if (stream.Length != identity.Size || identity.Size > int.MaxValue)
+        {
+            throw new InvalidDataException($"The locked {subject} no longer matches its receipt.");
+        }
+        stream.Position = 0;
+        var bytes = new byte[checked((int)identity.Size)];
+        await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
+        if (!FixedTimeEquals(Convert.ToHexString(SHA256.HashData(bytes)), identity.Sha256))
+        {
+            throw new InvalidDataException($"The locked {subject} no longer matches its receipt.");
+        }
+        return bytes;
+    }
+
+    private async ValueTask CloseExactStreamAsync(
+        FileStream? stream,
+        string? path,
+        ModArtifactIdentityReceipt? identity)
+    {
+        if (stream is null)
+        {
+            return;
+        }
+        if (OperatingSystem.IsWindows() && !markDeleteOnClose(stream.SafeFileHandle))
+        {
+            throw new IOException("The exact reviewed candidate file could not be marked for deletion.");
+        }
+        await stream.DisposeAsync().ConfigureAwait(false);
+        if (!OperatingSystem.IsWindows())
+        {
+            DeleteIfOwned(path, identity);
+        }
+    }
+
+    private static void DeleteIfOwned(string? path, ModArtifactIdentityReceipt? identity)
+    {
+        if (path is null || identity is null || !File.Exists(path))
+        {
+            return;
+        }
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length != identity.Size)
+            {
+                return;
+            }
+            string hash;
+            using (var stream = File.OpenRead(path))
+            {
+                hash = Convert.ToHexString(SHA256.HashData(stream));
+            }
+            if (FixedTimeEquals(hash, identity.Sha256)
+                && new FileInfo(path).Length == identity.Size)
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        if (left.Length != 64 || right.Length != 64)
+        {
+            return false;
+        }
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(left),
+            Convert.FromHexString(right));
+    }
+}
+
+internal sealed record ReviewedModArtifactCandidateContents(
+    byte[] Dll,
+    byte[]? RuntimeManifest,
+    ReviewedRuntimeActivation? RuntimeActivation);
+
+public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
+{
+    private const long MaximumArtifactBytes = 128L * 1024L * 1024L;
+    private readonly string candidateRoot;
+    private readonly IModArtifactDownloader downloader;
+    private readonly IModArtifactVersionReader versionReader;
+    private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
+    private readonly ModInstallationAttribution installationAttribution;
+    private readonly ReviewedReleaseCertification certification;
+    private readonly string certificationFingerprint;
+    private readonly Func<string, CancellationToken, ValueTask>? afterCandidateFileOpened;
+    private readonly Func<SafeFileHandle, bool> markCandidateDelete;
+    private readonly Func<CancellationToken, ValueTask>? afterDeploymentClaimed;
+    private readonly SemaphoreSlim acquisitionGate = new(1, 1);
+    private ReviewedModArtifactCandidateLease? pendingCleanup;
+    private bool disposed;
+
+    public ReviewedModArtifactCandidateAcquirer(
+        string stateDirectory,
+        IModArtifactDownloader downloader,
+        IModArtifactVersionReader versionReader,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ModInstallationAttribution installationAttribution,
+        ReviewedReleaseCertification certification)
+        : this(
+            stateDirectory,
+            downloader,
+            versionReader,
+            authenticityVerifier,
+            installationAttribution,
+            certification,
+            afterCandidateFileOpened: null,
+            markCandidateDelete: null,
+            afterDeploymentClaimed: null)
+    {
+    }
+
+    internal ReviewedModArtifactCandidateAcquirer(
+        string stateDirectory,
+        IModArtifactDownloader downloader,
+        IModArtifactVersionReader versionReader,
+        IModArtifactAuthenticityVerifier authenticityVerifier,
+        ModInstallationAttribution installationAttribution,
+        ReviewedReleaseCertification certification,
+        Func<string, CancellationToken, ValueTask>? afterCandidateFileOpened,
+        Func<SafeFileHandle, bool>? markCandidateDelete = null,
+        Func<CancellationToken, ValueTask>? afterDeploymentClaimed = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
+        candidateRoot = Path.Combine(Path.GetFullPath(stateDirectory), "artifact-candidates");
+        this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
+        this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
+        this.authenticityVerifier = authenticityVerifier ?? throw new ArgumentNullException(nameof(authenticityVerifier));
+        this.installationAttribution = installationAttribution
+            ?? throw new ArgumentNullException(nameof(installationAttribution));
+        this.certification = certification ?? throw new ArgumentNullException(nameof(certification));
+        this.afterCandidateFileOpened = afterCandidateFileOpened;
+        this.markCandidateDelete = markCandidateDelete ?? CandidateFileNative.TryMarkDeleteOnClose;
+        this.afterDeploymentClaimed = afterDeploymentClaimed;
+        certificationFingerprint = CertificationFingerprint(certification);
+    }
+
+    public bool HasPendingCleanup => Volatile.Read(ref pendingCleanup) is not null;
+
+    public async ValueTask DisposeAsync()
+    {
+        await acquisitionGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (disposed)
+            {
+                return;
+            }
+            await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
+            disposed = true;
+        }
+        finally
+        {
+            acquisitionGate.Release();
+        }
+    }
+
+    public async ValueTask RetryPendingCleanupAsync(CancellationToken cancellationToken = default)
+    {
+        await acquisitionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            acquisitionGate.Release();
+        }
+    }
+
+    public async Task<ReviewedModArtifactCandidateLease> AcquireAsync(
+        ModReleaseArtifact artifact,
+        CancellationToken cancellationToken = default)
+    {
+        await acquisitionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
+            return await AcquireCoreAsync(artifact, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            acquisitionGate.Release();
+        }
+    }
+
+    private async ValueTask RetryPendingCleanupUnderGateAsync()
+    {
+        var cleanup = pendingCleanup;
+        if (cleanup is null)
+        {
+            return;
+        }
+        await cleanup.DisposeAsync().ConfigureAwait(false);
+        pendingCleanup = null;
+    }
+
+    private async Task<ReviewedModArtifactCandidateLease> AcquireCoreAsync(
+        ModReleaseArtifact artifact,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ValidateReviewedCoordinates(artifact);
+
+        var receiptId = Guid.NewGuid().ToString("N");
+        var directory = Path.Combine(candidateRoot, receiptId);
+        var dllPath = Path.Combine(directory, artifact.FileName);
+        var runtimePath = artifact.RuntimeManifest is null
+            ? null
+            : Path.Combine(directory, artifact.RuntimeManifest.FileName);
+        FileStream? dllLock = null;
+        FileStream? runtimeLock = null;
+        FileStream? dllWrite = null;
+        FileStream? runtimeWrite = null;
+        var dllOwned = false;
+        var runtimeOwned = false;
+        var dllWritten = false;
+        var runtimeWritten = false;
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var dll = await downloader.DownloadAsync(artifact.DownloadUri, cancellationToken).ConfigureAwait(false);
+            VerifyDownload(dll, artifact.Size, artifact.Sha256, "DLL");
+            dllWrite = CreateOwnedWrite(dllPath);
+            await WriteOwnedAsync(dllWrite, dllPath, dll.Contents, cancellationToken).ConfigureAwait(false);
+            await dllWrite.DisposeAsync().ConfigureAwait(false);
+            dllWrite = null;
+            dllWritten = true;
+            await using (var verificationLock = new FileStream(
+                dllPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.Asynchronous))
+            {
+                VerifyLockedStream(verificationLock, artifact.Size, artifact.Sha256, "DLL");
+                VerifyVersionAndAuthenticity(dllPath, artifact.ExpectedVersion);
+            }
+            dllLock = OpenLockedRead(dllPath);
+            VerifyLockedStream(dllLock, artifact.Size, artifact.Sha256, "DLL");
+            dllOwned = true;
+
+            ModArtifactDownload? runtime = null;
+            ParsedRuntimeManifest? parsed = null;
+            ReviewedRuntimeActivation? activation = null;
+            if (artifact.RuntimeManifest is not null)
+            {
+                runtime = await downloader.DownloadAsync(
+                    artifact.RuntimeManifest.DownloadUri,
+                    cancellationToken).ConfigureAwait(false);
+                VerifyDownload(
+                    runtime,
+                    artifact.RuntimeManifest.Size,
+                    artifact.RuntimeManifest.Sha256,
+                    "runtime manifest");
+                parsed = ArtifactBoundRuntimeManifestParser.Parse(
+                    runtime.Contents,
+                    artifact,
+                    artifact.RuntimeManifest,
+                    installationAttribution.RuntimeDistributionId);
+                activation = ArtifactBoundRuntimeManifestParser.AuthorizeActivation(
+                    parsed,
+                    artifact,
+                    artifact.RuntimeManifest,
+                    certification) ?? throw new InvalidDataException(
+                        "The runtime manifest pair is not authorized by the launcher-bundled reviewed certification.");
+                runtimeWrite = CreateOwnedWrite(runtimePath!);
+                await WriteOwnedAsync(
+                    runtimeWrite,
+                    runtimePath!,
+                    runtime.Contents,
+                    cancellationToken).ConfigureAwait(false);
+                await runtimeWrite.DisposeAsync().ConfigureAwait(false);
+                runtimeWrite = null;
+                runtimeWritten = true;
+                runtimeLock = OpenLockedRead(runtimePath!);
+                VerifyLockedStream(
+                    runtimeLock,
+                    artifact.RuntimeManifest.Size,
+                    artifact.RuntimeManifest.Sha256,
+                    "runtime manifest");
+                runtimeOwned = true;
+            }
+
+            var dllIdentity = new ModArtifactIdentityReceipt(artifact.Size, artifact.Sha256.ToUpperInvariant());
+            var runtimeIdentity = artifact.RuntimeManifest is null
+                ? null
+                : new ModArtifactIdentityReceipt(
+                    artifact.RuntimeManifest.Size,
+                    artifact.RuntimeManifest.Sha256.ToUpperInvariant());
+            var receipt = new ReviewedModArtifactCandidateReceipt(
+                receiptId,
+                artifact,
+                certificationFingerprint,
+                dllIdentity,
+                runtimeIdentity,
+                activation,
+                installationAttribution);
+            var lease = new ReviewedModArtifactCandidateLease(
+                directory,
+                dllPath,
+                runtimePath,
+                dllLock,
+                runtimeLock,
+                receipt,
+                markCandidateDelete,
+                afterDeploymentClaimed);
+            dllLock = null;
+            runtimeLock = null;
+            return lease;
+        }
+        catch (Exception acquisitionFailure)
+        {
+            var runtimeCleanup = await CleanupAcquisitionMemberAsync(
+                runtimeLock ?? runtimeWrite,
+                runtimeOwned || runtimeWrite is not null,
+                runtimeWritten,
+                runtimePath,
+                artifact.RuntimeManifest?.Size,
+                artifact.RuntimeManifest?.Sha256).ConfigureAwait(false);
+            var dllCleanup = await CleanupAcquisitionMemberAsync(
+                dllLock ?? dllWrite,
+                dllOwned || dllWrite is not null,
+                dllWritten,
+                dllPath,
+                artifact.Size,
+                artifact.Sha256).ConfigureAwait(false);
+            DeleteCandidateDirectory(directory);
+            var cleanupFailure = runtimeCleanup.Failure is null
+                ? dllCleanup.Failure
+                : dllCleanup.Failure is null
+                    ? runtimeCleanup.Failure
+                    : new AggregateException(runtimeCleanup.Failure, dllCleanup.Failure);
+            if (cleanupFailure is null)
+            {
+                throw;
+            }
+            if (runtimeCleanup.Pending is not null || dllCleanup.Pending is not null)
+            {
+                var cleanupReceipt = new ReviewedModArtifactCandidateReceipt(
+                    receiptId,
+                    artifact,
+                    certificationFingerprint,
+                    new(artifact.Size, artifact.Sha256.ToUpperInvariant()),
+                    artifact.RuntimeManifest is null
+                        ? null
+                        : new(
+                            artifact.RuntimeManifest.Size,
+                            artifact.RuntimeManifest.Sha256.ToUpperInvariant()),
+                    runtimeActivation: null,
+                    installationAttribution);
+                pendingCleanup = new(
+                    directory,
+                    dllPath,
+                    runtimePath,
+                    dllCleanup.Pending,
+                    runtimeCleanup.Pending,
+                    cleanupReceipt,
+                    markCandidateDelete,
+                    afterDeploymentClaimed: null);
+            }
+            throw new AggregateException(
+                "Reviewed candidate acquisition failed and exact cleanup was incomplete.",
+                acquisitionFailure,
+                cleanupFailure);
+        }
+    }
+
+    private async ValueTask<AcquisitionCleanupAttempt> CleanupAcquisitionMemberAsync(
+        FileStream? stream,
+        bool exactLocked,
+        bool written,
+        string? path,
+        long? size,
+        string? sha256)
+    {
+        if (path is null || size is null || sha256 is null)
+        {
+            return new(null, null);
+        }
+        try
+        {
+            if (stream is null && written)
+            {
+                stream = OpenLockedRead(path);
+                VerifyLockedStream(stream, size.Value, sha256, "candidate cleanup member");
+                exactLocked = true;
+            }
+            if (stream is null)
+            {
+                return new(null, null);
+            }
+            if (!exactLocked)
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                return new(null, null);
+            }
+            await DeleteLockedStreamAsync(stream, path).ConfigureAwait(false);
+            return new(null, null);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            if (!exactLocked && stream is not null)
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                stream = null;
+            }
+            return exactLocked
+                ? new(stream, exception)
+                : new(null, exception);
+        }
+    }
+
+    private sealed record AcquisitionCleanupAttempt(FileStream? Pending, Exception? Failure);
+
+    internal static string CertificationFingerprint(ReviewedReleaseCertification value)
+    {
+        var fields = new[]
+        {
+            "stfc-mod-bridge.reviewed-candidate-certification.v1",
+            value.ProviderId, value.ChannelId, value.RuntimeDistributionId, value.Repository, value.Tag,
+            value.ReleaseVersion, value.SourceCommit, value.AssetName,
+            value.AssetSize.ToString(CultureInfo.InvariantCulture), value.AssetSha256,
+            value.PayloadFileName, value.PayloadSize.ToString(CultureInfo.InvariantCulture), value.PayloadSha256,
+            value.PayloadVersion,
+            value.ObservedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            value.RuntimeManifest?.FileName ?? string.Empty,
+            value.RuntimeManifest?.Size.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            value.RuntimeManifest?.Sha256 ?? string.Empty,
+        };
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        foreach (var field in fields)
+        {
+            var bytes = Encoding.UTF8.GetBytes(field);
+            BinaryPrimitives.WriteInt32BigEndian(length, bytes.Length);
+            hash.AppendData(length);
+            hash.AppendData(bytes);
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private void ValidateReviewedCoordinates(ModReleaseArtifact artifact)
+    {
+        var runtime = certification.RuntimeManifest;
+        if (artifact.FileName != "version.dll"
+            || artifact.Size is <= 0 or > MaximumArtifactBytes
+            || artifact.Sha256.Length != 64
+            || !artifact.Sha256.All(Uri.IsHexDigit)
+            || string.IsNullOrWhiteSpace(artifact.ExpectedVersion)
+            || !artifact.DownloadUri.IsAbsoluteUri
+            || artifact.DownloadUri.Scheme != Uri.UriSchemeHttps
+            || installationAttribution.ProviderId != certification.ProviderId
+            || installationAttribution.ReleaseChannelId != certification.ChannelId
+            || installationAttribution.RuntimeDistributionId != certification.RuntimeDistributionId
+            || artifact.DownloadUri != certification.DownloadUri
+            || artifact.FileName != certification.PayloadFileName
+            || artifact.Size != certification.PayloadSize
+            || !FixedTimeEquals(artifact.Sha256, certification.PayloadSha256)
+            || artifact.ExpectedVersion != certification.PayloadVersion
+            || (runtime is null) != (artifact.RuntimeManifest is null))
+        {
+            throw new InvalidDataException("The candidate does not match the selected reviewed release certification.");
+        }
+        if (runtime is not null
+            && (artifact.RuntimeManifest!.DownloadUri
+                    != ReviewedGitHubReleaseAssetClient.RuntimeManifestUri(certification)
+                || artifact.RuntimeManifest.FileName != runtime.FileName
+                || artifact.RuntimeManifest.Size != runtime.Size
+                || !FixedTimeEquals(artifact.RuntimeManifest.Sha256, runtime.Sha256)
+                || artifact.RuntimeManifest.ExpectedSourceRevision != certification.SourceCommit
+                || artifact.RuntimeManifest.ExpectedRepository != certification.Repository
+                || artifact.RuntimeManifest.ExpectedTag != certification.Tag))
+        {
+            throw new InvalidDataException("The candidate runtime manifest does not match the reviewed exact-pair certification.");
+        }
+    }
+
+    private void VerifyVersionAndAuthenticity(string path, string expectedVersion)
+    {
+        if (versionReader.ReadVersion(path) != expectedVersion)
+        {
+            throw new InvalidDataException("The candidate DLL embedded version does not match the reviewed release.");
+        }
+        var result = authenticityVerifier.Verify(path);
+        if (!result.IsTrusted)
+        {
+            throw new InvalidDataException($"The candidate DLL authenticity check failed: {result.Message}");
+        }
+    }
+
+    private static void VerifyDownload(
+        ModArtifactDownload download,
+        long expectedSize,
+        string expectedSha256,
+        string subject)
+    {
+        if (download.StatusCode != HttpStatusCode.OK
+            || download.DeclaredContentLength is not null && download.DeclaredContentLength != expectedSize
+            || download.Contents.LongLength != expectedSize
+            || !FixedTimeEquals(Convert.ToHexString(SHA256.HashData(download.Contents)), expectedSha256))
+        {
+            throw new InvalidDataException($"The downloaded {subject} does not match reviewed release metadata.");
+        }
+    }
+
+    private static FileStream CreateOwnedWrite(string path)
+    {
+        return OperatingSystem.IsWindows()
+            ? new FileStream(CandidateFileNative.CreateWriteDelete(path), FileAccess.Write, 81920, isAsync: true)
+            : new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                81920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough);
+    }
+
+    private async Task WriteOwnedAsync(
+        FileStream stream,
+        string path,
+        byte[] contents,
+        CancellationToken cancellationToken)
+    {
+        if (afterCandidateFileOpened is not null)
+        {
+            await afterCandidateFileOpened(path, cancellationToken).ConfigureAwait(false);
+        }
+        await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        stream.Flush(flushToDisk: true);
+    }
+
+    private static FileStream OpenLockedRead(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+        }
+        var handle = CandidateFileNative.OpenReadDelete(path);
+        return new(handle, FileAccess.Read, 81920, isAsync: false);
+    }
+
+    private static void VerifyLockedStream(
+        FileStream stream,
+        long expectedSize,
+        string expectedSha256,
+        string subject)
+    {
+        if (stream.Length != expectedSize)
+        {
+            throw new InvalidDataException($"The locked {subject} does not match reviewed release metadata.");
+        }
+        stream.Position = 0;
+        var hash = Convert.ToHexString(SHA256.HashData(stream));
+        stream.Position = 0;
+        if (!FixedTimeEquals(hash, expectedSha256))
+        {
+            throw new InvalidDataException($"The locked {subject} does not match reviewed release metadata.");
+        }
+    }
+
+    private async ValueTask DeleteLockedStreamAsync(FileStream stream, string path)
+    {
+        if (OperatingSystem.IsWindows() && !markCandidateDelete(stream.SafeFileHandle))
+        {
+            throw new IOException("The exact reviewed candidate file could not be marked for deletion.");
+        }
+        await stream.DisposeAsync().ConfigureAwait(false);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static void DeleteCandidateDirectory(string directory)
+    {
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+        try
+        {
+            Directory.Delete(directory, recursive: false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        if (left.Length != 64 || right.Length != 64 || !left.All(Uri.IsHexDigit) || !right.All(Uri.IsHexDigit))
+        {
+            return false;
+        }
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(left),
+            Convert.FromHexString(right));
+    }
+}
+
+internal static class CandidateFileNative
+{
+    private const uint GenericRead = 0x80000000;
+    private const uint GenericWrite = 0x40000000;
+    private const uint Delete = 0x00010000;
+    private const uint FileFlagOverlapped = 0x40000000;
+
+    public static SafeFileHandle OpenReadDelete(string path)
+    {
+        var handle = CreateFile(
+            path,
+            GenericRead | Delete,
+            FileShare.Read,
+            IntPtr.Zero,
+            FileMode.Open,
+            0,
+            IntPtr.Zero);
+        return handle.IsInvalid
+            ? throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not lock the reviewed candidate file.")
+            : handle;
+    }
+
+    public static SafeFileHandle CreateWriteDelete(string path)
+    {
+        var handle = CreateFile(
+            path,
+            GenericWrite | Delete,
+            FileShare.None,
+            IntPtr.Zero,
+            FileMode.CreateNew,
+            FileFlagOverlapped,
+            IntPtr.Zero);
+        return handle.IsInvalid
+            ? throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not create the reviewed candidate file.")
+            : handle;
+    }
+
+    public static bool TryMarkDeleteOnClose(SafeFileHandle handle)
+    {
+        var disposition = new FileDispositionInfo { DeleteFile = 1 };
+        return SetFileInformationByHandle(
+            handle,
+            FileInfoByHandleClass.FileDispositionInfo,
+            ref disposition,
+            Marshal.SizeOf<FileDispositionInfo>());
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern SafeFileHandle CreateFile(
+        string fileName,
+        uint desiredAccess,
+        FileShare shareMode,
+        IntPtr securityAttributes,
+        FileMode creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(
+        SafeFileHandle file,
+        FileInfoByHandleClass fileInformationClass,
+        ref FileDispositionInfo fileInformation,
+        int bufferSize);
+
+    private enum FileInfoByHandleClass
+    {
+        FileDispositionInfo = 4,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileDispositionInfo
+    {
+        public byte DeleteFile;
+    }
+
+}

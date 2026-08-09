@@ -52,6 +52,34 @@ or commit. Surfacing that post-download receipt in the confirmation UI is the
 separate provider-transition UX handoff tracked by issue #132; no metadata-only
 preview claims target capabilities.
 
+Reviewed release execution can acquire that exact DLL/optional-manifest pair
+into a receipt-owned candidate directory beneath the per-user state root
+before any deployment journal or game file is touched. Acquisition validates
+the same reviewed coordinates, bounded downloads, exact hashes, DLL version
+and authenticity, strict manifest schema, and exact-pair authorization used by
+deployment. It then returns an immutable, single-use receipt bound to the
+reviewed certification, installation attribution, and read-locked exact bytes.
+Normal, repair, and coordinated provider-switch deployment consume those same
+locked bytes without a second download. Receipt disposal, cancellation, and
+failure delete only the exact handle-owned candidate members; candidate
+cleanup never recursively claims the directory or a foreign sibling. A failed
+exact-handle cleanup remains locked and retryable, and blocks another acquisition
+through that acquirer instance until the retry succeeds. The #138 composition
+must therefore retain one acquirer owner rather than constructing a parallel
+acquisition path. Forced process termination can still leave inert
+candidate residue because Bridge deliberately does not make a retained Windows
+handle delete-pending; that technique has a reproducible namespace teardown
+race. Stale-candidate reconciliation and a total on-disk bound are a required
+focused follow-up in issue #143 before this acquisition path is activated operationally.
+Passive startup performs no candidate scan or cleanup.
+
+For a reviewed ZIP release, the ZIP remains the certified one-DLL archive. An
+optional runtime manifest is a distinct release asset derived only from the
+certification's repository, tag, and fixed file name. Discovery requires
+exactly one matching asset with the certified size, digest, and canonical URL;
+the bounded downloader accepts only that companion URL. Certifications that
+omit the companion preserve the existing DLL-only behavior.
+
 ## Mod source-selection lifecycle
 
 This is the authoritative lifecycle contract for issue #45. Provider-pack capability data remains authoritative for
