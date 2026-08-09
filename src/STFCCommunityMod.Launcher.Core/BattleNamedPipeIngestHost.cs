@@ -16,6 +16,19 @@ public static class BattleLocalIpcProtocol
     public const string RuntimeRole = "stfc-mod-runtime";
     public const string IngestOperation = "ingest";
     public const int MaximumHeaderBytes = 4096;
+
+    internal static string RequirePipeName(string value, string parameterName = "value")
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > 128
+            || value.Any(character =>
+                !char.IsAsciiLetterOrDigit(character)
+                && character is not ('.' or '-' or '_')))
+        {
+            throw new ArgumentException("Battle local IPC pipe name is invalid.", parameterName);
+        }
+        return value;
+    }
 }
 
 public sealed record BattleNamedPipeClientIdentity(
@@ -228,7 +241,7 @@ public sealed class BattleNamedPipeIngestHost : IAsyncDisposable
                     "Battle local IPC requires the reviewed capability, policy, and player-intent composition.",
                     nameof(activation));
             }
-            this.pipeName = RequirePipeName(pipeName);
+            this.pipeName = BattleLocalIpcProtocol.RequirePipeName(pipeName, nameof(pipeName));
             this.credential = credential;
             this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
             this.authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
@@ -791,19 +804,6 @@ public sealed class BattleNamedPipeIngestHost : IAsyncDisposable
         await stream.WriteAsync(length, cancellationToken).ConfigureAwait(false);
         await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string RequirePipeName(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value)
-            || value.Length > 128
-            || value.Any(character =>
-                !char.IsAsciiLetterOrDigit(character)
-                && character is not ('.' or '-' or '_')))
-        {
-            throw new ArgumentException("Battle local IPC pipe name is invalid.", nameof(value));
-        }
-        return value;
     }
 
     private static byte[] DecodeCredential(string value)

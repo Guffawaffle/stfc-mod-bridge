@@ -47,7 +47,7 @@ internal sealed class BattleRuntimeProvisioningLease : IAsyncDisposable
         IBattleIngestSink? fleetSink,
         IAsyncDisposable lifetime)
     {
-        var normalizedPipeName = RequirePipeName(pipeName);
+        var normalizedPipeName = BattleLocalIpcProtocol.RequirePipeName(pipeName, nameof(pipeName));
         if (credential.Length != 32)
         {
             throw new ArgumentException("The provisioned Battle credential must contain exactly 32 bytes.",
@@ -102,19 +102,6 @@ internal sealed class BattleRuntimeProvisioningLease : IAsyncDisposable
         {
             disposeGate.Release();
         }
-    }
-
-    private static string RequirePipeName(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value)
-            || value.Length > 128
-            || value.Any(character =>
-                !char.IsAsciiLetterOrDigit(character)
-                && character is not ('.' or '-' or '_')))
-        {
-            throw new ArgumentException("The provisioned Battle pipe name is invalid.", nameof(value));
-        }
-        return value;
     }
 
     private static string RequireSha256(string value)
