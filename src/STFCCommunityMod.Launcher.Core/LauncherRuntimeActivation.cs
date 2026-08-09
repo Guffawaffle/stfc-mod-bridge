@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace STFCCommunityMod.Launcher.Core;
 
@@ -341,15 +342,238 @@ public sealed record LauncherFeatureDefinition(
     IReadOnlySet<string> Dependencies,
     LauncherFeatureDefault Default,
     string ActiveImplementation,
-    string FallbackImplementation);
+    string FallbackImplementation,
+    bool ActiveImplementationAvailable = true);
 
-public sealed record LauncherFeatureDecision(
-    string Id,
-    LauncherFeatureActivationState State,
-    string Reason,
-    string SelectedImplementation)
+[JsonConverter(typeof(LauncherFeatureReasonCodeJsonConverter))]
+public enum LauncherFeatureReasonCode
 {
+    Active = 1,
+    MissingCapability = 2,
+    PolicyDenied = 3,
+    MissingDependency = 4,
+    UnavailableImplementation = 5,
+    Fallback = 6,
+}
+
+public sealed class LauncherFeatureReasonCodeJsonConverter :
+    JsonConverter<LauncherFeatureReasonCode>
+{
+    public override LauncherFeatureReasonCode Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Feature reason code must be a canonical string.");
+        }
+        return reader.GetString() switch
+        {
+            "active" => LauncherFeatureReasonCode.Active,
+            "missing-capability" => LauncherFeatureReasonCode.MissingCapability,
+            "policy-denied" => LauncherFeatureReasonCode.PolicyDenied,
+            "missing-dependency" => LauncherFeatureReasonCode.MissingDependency,
+            "unavailable-implementation" => LauncherFeatureReasonCode.UnavailableImplementation,
+            "fallback" => LauncherFeatureReasonCode.Fallback,
+            _ => throw new JsonException("Feature reason code is unsupported."),
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        LauncherFeatureReasonCode value,
+        JsonSerializerOptions options) =>
+        writer.WriteStringValue(value switch
+        {
+            LauncherFeatureReasonCode.Active => "active",
+            LauncherFeatureReasonCode.MissingCapability => "missing-capability",
+            LauncherFeatureReasonCode.PolicyDenied => "policy-denied",
+            LauncherFeatureReasonCode.MissingDependency => "missing-dependency",
+            LauncherFeatureReasonCode.UnavailableImplementation => "unavailable-implementation",
+            LauncherFeatureReasonCode.Fallback => "fallback",
+            _ => throw new JsonException("Feature reason code is unsupported."),
+        });
+}
+
+public sealed class LauncherFeatureDecisionEvidence :
+    IEquatable<LauncherFeatureDecisionEvidence>
+{
+    private readonly ReadOnlyCollection<string> subjects;
+
+    [JsonConstructor]
+    public LauncherFeatureDecisionEvidence(
+        LauncherFeatureReasonCode code,
+        IReadOnlyList<string> subjects,
+        string context = "")
+    {
+        ArgumentNullException.ThrowIfNull(subjects);
+        ArgumentNullException.ThrowIfNull(context);
+        if (!Enum.IsDefined(code))
+        {
+            throw new ArgumentOutOfRangeException(nameof(code));
+        }
+        var minimumSubjects = code == LauncherFeatureReasonCode.Active ? 0 : 1;
+        var maximumSubjects = code is LauncherFeatureReasonCode.PolicyDenied
+            or LauncherFeatureReasonCode.UnavailableImplementation
+            or LauncherFeatureReasonCode.Fallback
+                ? 1
+                : 256;
+        if (subjects.Count < minimumSubjects || subjects.Count > maximumSubjects)
+        {
+            throw new ArgumentException("Reason subjects have invalid cardinality.", nameof(subjects));
+        }
+        var copiedSubjects = subjects.ToArray();
+        foreach (var subject in copiedSubjects)
+        {
+            LauncherFeatureContractText.Require(subject, nameof(subjects), 160);
+        }
+        if (!copiedSubjects.SequenceEqual(
+                copiedSubjects.OrderBy(subject => subject, StringComparer.Ordinal),
+                StringComparer.Ordinal)
+            || copiedSubjects.Distinct(StringComparer.Ordinal).Count() != copiedSubjects.Length)
+        {
+            throw new ArgumentException("Reason subjects must be unique and ordinally sorted.", nameof(subjects));
+        }
+        if (!string.IsNullOrEmpty(context))
+        {
+            LauncherFeatureContractText.RequireDisplayText(context, nameof(context), 160);
+        }
+        Code = code;
+        this.subjects = Array.AsReadOnly(copiedSubjects);
+        Context = context;
+    }
+
+    public LauncherFeatureReasonCode Code { get; }
+
+    public IReadOnlyList<string> Subjects => subjects;
+
+    public string Context { get; }
+
+    public bool Equals(LauncherFeatureDecisionEvidence? other) =>
+        other is not null
+        && Code == other.Code
+        && Context == other.Context
+        && subjects.SequenceEqual(other.subjects, StringComparer.Ordinal);
+
+    public override bool Equals(object? obj) =>
+        Equals(obj as LauncherFeatureDecisionEvidence);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Code);
+        hash.Add(Context, StringComparer.Ordinal);
+        foreach (var subject in subjects)
+        {
+            hash.Add(subject, StringComparer.Ordinal);
+        }
+        return hash.ToHashCode();
+    }
+}
+
+public sealed record LauncherFeatureSourceIdentity
+{
+    [JsonConstructor]
+    public LauncherFeatureSourceIdentity(string id, string version)
+    {
+        LauncherFeatureContractText.Require(id, nameof(id), 256);
+        LauncherFeatureContractText.Require(version, nameof(version), 64);
+        Id = id;
+        Version = version;
+    }
+
+    public string Id { get; }
+
+    public string Version { get; }
+}
+
+public sealed record LauncherFeatureDecision
+{
+    [JsonConstructor]
+    public LauncherFeatureDecision(
+        string id,
+        LauncherFeatureActivationState state,
+        LauncherFeatureDecisionEvidence eligibilityEvidence,
+        LauncherFeatureDecisionEvidence selectionEvidence,
+        string selectedImplementation)
+    {
+        LauncherFeatureContractText.Require(id, nameof(id), 160);
+        ArgumentNullException.ThrowIfNull(eligibilityEvidence);
+        ArgumentNullException.ThrowIfNull(selectionEvidence);
+        LauncherFeatureContractText.Require(selectedImplementation, nameof(selectedImplementation), 160);
+        var coherent = state switch
+        {
+            LauncherFeatureActivationState.Active =>
+                eligibilityEvidence.Code == LauncherFeatureReasonCode.Active
+                && selectionEvidence.Code == LauncherFeatureReasonCode.Active,
+            LauncherFeatureActivationState.Inactive =>
+                eligibilityEvidence.Code is LauncherFeatureReasonCode.MissingCapability
+                    or LauncherFeatureReasonCode.PolicyDenied
+                    or LauncherFeatureReasonCode.MissingDependency
+                    or LauncherFeatureReasonCode.UnavailableImplementation
+                && selectionEvidence.Code == LauncherFeatureReasonCode.Fallback,
+            _ => false,
+        };
+        if (!coherent
+            || selectionEvidence.Subjects.Count != 1
+            || selectionEvidence.Subjects[0] != selectedImplementation)
+        {
+            throw new ArgumentException("Feature decision evidence is contradictory.");
+        }
+        if (eligibilityEvidence.Code == LauncherFeatureReasonCode.MissingCapability
+            ? string.IsNullOrEmpty(eligibilityEvidence.Context)
+            : !string.IsNullOrEmpty(eligibilityEvidence.Context))
+        {
+            throw new ArgumentException("Feature decision evidence context is invalid.");
+        }
+        Id = id;
+        State = state;
+        EligibilityEvidence = eligibilityEvidence;
+        SelectionEvidence = selectionEvidence;
+        SelectedImplementation = selectedImplementation;
+    }
+
+    public string Id { get; }
+
+    public LauncherFeatureActivationState State { get; }
+
+    public LauncherFeatureDecisionEvidence EligibilityEvidence { get; }
+
+    public LauncherFeatureDecisionEvidence SelectionEvidence { get; }
+
+    public string SelectedImplementation { get; }
+
     public bool IsActive => State == LauncherFeatureActivationState.Active;
+
+    public string Reason => LauncherFeatureDecisionPresenter.Present(this);
+}
+
+internal static class LauncherFeatureContractText
+{
+    private const string Punctuation = "._:/#+-@";
+
+    public static void Require(string value, string parameterName, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > maximumLength
+            || value.Any(character =>
+                !char.IsAsciiLetterOrDigit(character)
+                && !Punctuation.Contains(character)))
+        {
+            throw new ArgumentException("Feature contract value is empty, oversized, or unsafe.", parameterName);
+        }
+    }
+
+    public static void RequireDisplayText(string value, string parameterName, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > maximumLength
+            || value.Any(char.IsControl))
+        {
+            throw new ArgumentException("Feature display context is empty, oversized, or unsafe.", parameterName);
+        }
+    }
 }
 
 public sealed class LauncherFeaturePolicy
@@ -357,14 +581,30 @@ public sealed class LauncherFeaturePolicy
     private readonly FrozenDictionary<string, bool> overrides;
 
     public LauncherFeaturePolicy(
-        IEnumerable<KeyValuePair<string, bool>>? overrides = null)
+        IEnumerable<KeyValuePair<string, bool>>? overrides = null,
+        LauncherFeatureSourceIdentity? source = null)
     {
-        this.overrides = (overrides ?? [])
+        var entries = (overrides ?? []).ToArray();
+        if (entries.Length > 0 && source is null)
+        {
+            throw new ArgumentException(
+                "Feature policy overrides must provide their exact source identity and version.",
+                nameof(source));
+        }
+        Source = source ?? DefaultSource;
+        this.overrides = entries
             .ToFrozenDictionary(
                 pair => pair.Key,
                 pair => pair.Value,
                 StringComparer.Ordinal);
     }
+
+    public static LauncherFeatureSourceIdentity DefaultSource { get; } =
+        new(
+            "src/STFCCommunityMod.Launcher.Core/LauncherRuntimeActivation.cs#LauncherFeaturePolicy",
+            "1");
+
+    public LauncherFeatureSourceIdentity Source { get; }
 
     public bool IsEnabled(LauncherFeatureDefinition feature) =>
         overrides.TryGetValue(feature.Id, out var enabled)
@@ -380,15 +620,23 @@ public sealed class LauncherActivationPlan
 
     internal LauncherActivationPlan(
         LauncherRuntimeProfile runtime,
+        LauncherFeatureSourceIdentity catalogSource,
+        LauncherFeatureSourceIdentity policySource,
         IEnumerable<LauncherFeatureDecision> features)
     {
         Runtime = runtime;
+        CatalogSource = catalogSource;
+        PolicySource = policySource;
         this.features = features.ToFrozenDictionary(
             feature => feature.Id,
             StringComparer.Ordinal);
     }
 
     public LauncherRuntimeProfile Runtime { get; }
+
+    public LauncherFeatureSourceIdentity CatalogSource { get; }
+
+    public LauncherFeatureSourceIdentity PolicySource { get; }
 
     public IReadOnlyDictionary<string, LauncherFeatureDecision> Features =>
         features;
@@ -405,6 +653,11 @@ public sealed class LauncherActivationPlan
 
 public static class LauncherFeatureCatalog
 {
+    public static LauncherFeatureSourceIdentity Source { get; } =
+        new(
+            "src/STFCCommunityMod.Launcher.Core/LauncherRuntimeActivation.cs#LauncherFeatureCatalog",
+            "1");
+
     private static readonly IReadOnlySet<string> PrincipalTaxonomyRequirement =
         new[] { LauncherCapabilityIds.PrincipalSettingsTaxonomyV1 }
             .ToFrozenSet(StringComparer.Ordinal);
@@ -427,16 +680,61 @@ public static class LauncherFeatureCatalog
         ]);
 }
 
+public static class LauncherFeatureDecisionPresenter
+{
+    public static string Present(LauncherFeatureDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+        var reason = decision.EligibilityEvidence.Code switch
+        {
+            LauncherFeatureReasonCode.Active =>
+                $"Runtime provides {string.Join(", ", decision.EligibilityEvidence.Subjects)}.",
+            LauncherFeatureReasonCode.PolicyDenied =>
+                "Product policy disabled this feature.",
+            LauncherFeatureReasonCode.MissingCapability =>
+                $"Required capability {string.Join(", ", decision.EligibilityEvidence.Subjects)} is unavailable. "
+                + $"Detected distribution: {decision.EligibilityEvidence.Context}.",
+            LauncherFeatureReasonCode.MissingDependency =>
+                $"Required feature {string.Join(", ", decision.EligibilityEvidence.Subjects)} is inactive.",
+            LauncherFeatureReasonCode.UnavailableImplementation =>
+                $"Required implementation {decision.EligibilityEvidence.Subjects.Single()} is unavailable.",
+            _ => throw new InvalidOperationException(
+                $"Reason code '{decision.EligibilityEvidence.Code}' cannot establish eligibility."),
+        };
+        return decision.SelectionEvidence.Code switch
+        {
+            LauncherFeatureReasonCode.Active => reason,
+            LauncherFeatureReasonCode.Fallback =>
+                $"{reason} Fallback: {decision.SelectionEvidence.Subjects.Single()}.",
+            _ => throw new InvalidOperationException(
+                $"Reason code '{decision.SelectionEvidence.Code}' cannot select an implementation."),
+        };
+    }
+}
+
 public static class LauncherFeatureResolver
 {
     public static LauncherActivationPlan Resolve(
         LauncherRuntimeProfile runtime,
         IEnumerable<LauncherFeatureDefinition> features,
-        LauncherFeaturePolicy? policy = null)
+        LauncherFeaturePolicy? policy = null,
+        LauncherFeatureSourceIdentity? catalogSource = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(features);
         policy ??= LauncherFeaturePolicy.Default;
+        if (catalogSource is null)
+        {
+            if (!ReferenceEquals(features, LauncherFeatureCatalog.All))
+            {
+                throw new ArgumentException(
+                    "A non-default feature catalog must provide its exact source identity and version.",
+                    nameof(catalogSource));
+            }
+            catalogSource = LauncherFeatureCatalog.Source;
+        }
+        ValidateSource(catalogSource, nameof(catalogSource));
+        ValidateSource(policy.Source, nameof(policy));
 
         var definitions = features.ToArray();
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -485,7 +783,7 @@ public static class LauncherFeatureResolver
                 ResolveDecision(runtime, definition, decisions, policy));
         }
 
-        return new(runtime, decisions.Values);
+        return new(runtime, catalogSource, policy.Source, decisions.Values);
     }
 
     private static LauncherFeatureDecision ResolveDecision(
@@ -498,7 +796,7 @@ public static class LauncherFeatureResolver
         {
             return Inactive(
                 definition,
-                "Product policy disabled this feature.");
+                new(LauncherFeatureReasonCode.PolicyDenied, [definition.Id]));
         }
 
         var missingCapabilities = definition.RequiredCapabilities
@@ -509,8 +807,10 @@ public static class LauncherFeatureResolver
         {
             return Inactive(
                 definition,
-                $"Required capability {string.Join(", ", missingCapabilities)} is unavailable. "
-                + $"Detected distribution: {runtime.DistributionDisplayName}.");
+                new(
+                    LauncherFeatureReasonCode.MissingCapability,
+                    missingCapabilities,
+                    runtime.DistributionDisplayName));
         }
 
         var inactiveDependencies = definition.Dependencies
@@ -523,22 +823,56 @@ public static class LauncherFeatureResolver
         {
             return Inactive(
                 definition,
-                $"Required feature {string.Join(", ", inactiveDependencies)} is inactive.");
+                new(
+                    LauncherFeatureReasonCode.MissingDependency,
+                    inactiveDependencies));
+        }
+
+        if (!definition.ActiveImplementationAvailable)
+        {
+            return Inactive(
+                definition,
+                new(
+                    LauncherFeatureReasonCode.UnavailableImplementation,
+                    [definition.ActiveImplementation]));
         }
 
         return new(
             definition.Id,
             LauncherFeatureActivationState.Active,
-            $"Runtime provides {string.Join(", ", definition.RequiredCapabilities)}.",
+            new(
+                LauncherFeatureReasonCode.Active,
+                definition.RequiredCapabilities.OrderBy(
+                    capability => capability,
+                    StringComparer.Ordinal).ToArray()),
+            new(
+                LauncherFeatureReasonCode.Active,
+                [definition.ActiveImplementation]),
             definition.ActiveImplementation);
     }
 
     private static LauncherFeatureDecision Inactive(
         LauncherFeatureDefinition definition,
-        string reason) =>
+        LauncherFeatureDecisionEvidence evidence) =>
         new(
             definition.Id,
             LauncherFeatureActivationState.Inactive,
-            $"{reason} Fallback: {definition.FallbackImplementation}.",
+            evidence,
+            new(
+                LauncherFeatureReasonCode.Fallback,
+                [definition.FallbackImplementation]),
             definition.FallbackImplementation);
+
+    private static void ValidateSource(
+        LauncherFeatureSourceIdentity source,
+        string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(source.Id)
+            || string.IsNullOrWhiteSpace(source.Version))
+        {
+            throw new ArgumentException(
+                "Feature source identity and version must be non-empty.",
+                parameterName);
+        }
+    }
 }

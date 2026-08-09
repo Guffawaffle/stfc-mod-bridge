@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
@@ -61,6 +62,10 @@ public sealed class LauncherRuntimeActivationTests
         StringAssert.Contains(
             decision.Reason,
             LauncherCapabilityIds.PrincipalSettingsTaxonomyV1);
+        Assert.AreEqual(
+            "Required capability settings.principal-taxonomy.v1 is unavailable. "
+            + "Detected distribution: Unknown. Fallback: alphabetical-settings-layout.",
+            decision.Reason);
     }
 
     [TestMethod]
@@ -129,7 +134,8 @@ public sealed class LauncherRuntimeActivationTests
             new KeyValuePair<string, bool>(
                 LauncherFeatureIds.SemanticSettingsGrouping,
                 false),
-        ]);
+        ],
+        new("tests/product-policy-disabled", "1"));
 
         var plan = LauncherFeatureResolver.Resolve(
             profile,
@@ -143,6 +149,7 @@ public sealed class LauncherRuntimeActivationTests
                 LauncherCapabilityIds.PrincipalSettingsTaxonomyV1));
         Assert.IsFalse(decision.IsActive);
         StringAssert.Contains(decision.Reason, "Product policy disabled");
+        Assert.AreEqual(policy.Source, plan.PolicySource);
     }
 
     [TestMethod]
@@ -181,7 +188,8 @@ public sealed class LauncherRuntimeActivationTests
 
         var plan = LauncherFeatureResolver.Resolve(
             profile,
-            [dependentFeature, baseFeature]);
+            [dependentFeature, baseFeature],
+            catalogSource: new("tests/dependency-order", "1"));
 
         Assert.IsTrue(plan.IsActive("settings.base"));
         Assert.IsTrue(plan.IsActive("settings.dependent"));
@@ -213,9 +221,266 @@ public sealed class LauncherRuntimeActivationTests
         var exception = Assert.ThrowsException<InvalidOperationException>(
             () => LauncherFeatureResolver.Resolve(
                 LauncherRuntimeProfile.Unknown("test", "test"),
-                [first, second]));
+                [first, second],
+                catalogSource: new("tests/dependency-cycle", "1")));
 
         StringAssert.Contains(exception.Message, "cycle");
+    }
+
+    [TestMethod]
+    public void TypedEvidenceSerializationEqualityAndSourceIdentityAreStable()
+    {
+        using var manifest = JsonStream(Manifest(
+            LauncherRuntimeManifestDetector.GuffawaffleDistributionId,
+            settingsCatalogSchema: 1));
+        var profile = LauncherRuntimeManifestDetector.Detect(manifest, "typed evidence test");
+
+        var first = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All);
+        var second = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All);
+        var firstDecision = first.GetDecision(LauncherFeatureIds.SemanticSettingsGrouping);
+        var secondDecision = second.GetDecision(LauncherFeatureIds.SemanticSettingsGrouping);
+        var json = JsonSerializer.Serialize(firstDecision);
+
+        Assert.AreEqual(firstDecision, secondDecision);
+        Assert.AreEqual(LauncherFeatureCatalog.Source, first.CatalogSource);
+        Assert.AreEqual(LauncherFeaturePolicy.DefaultSource, first.PolicySource);
+        StringAssert.Contains(json, "\"Code\":\"active\"");
+        StringAssert.Contains(json, "\"Reason\":\"Runtime provides settings.principal-taxonomy.v1.\"");
+        Assert.AreEqual(firstDecision, JsonSerializer.Deserialize<LauncherFeatureDecision>(json));
+        var planJson = JsonSerializer.Serialize(first);
+        StringAssert.Contains(planJson, LauncherFeatureCatalog.Source.Id);
+        StringAssert.Contains(planJson, LauncherFeaturePolicy.DefaultSource.Id);
+        StringAssert.Contains(planJson, "\"Version\":\"1\"");
+    }
+
+    [TestMethod]
+    public void EveryReasonCodeHasAStableNonNumericWireValue()
+    {
+        var expected = new Dictionary<LauncherFeatureReasonCode, string>
+        {
+            [LauncherFeatureReasonCode.Active] = "active",
+            [LauncherFeatureReasonCode.MissingCapability] = "missing-capability",
+            [LauncherFeatureReasonCode.PolicyDenied] = "policy-denied",
+            [LauncherFeatureReasonCode.MissingDependency] = "missing-dependency",
+            [LauncherFeatureReasonCode.UnavailableImplementation] = "unavailable-implementation",
+            [LauncherFeatureReasonCode.Fallback] = "fallback",
+        };
+        foreach (var (code, wireValue) in expected)
+        {
+            var json = JsonSerializer.Serialize(code);
+            Assert.AreEqual($"\"{wireValue}\"", json);
+            Assert.AreEqual(code, JsonSerializer.Deserialize<LauncherFeatureReasonCode>(json));
+        }
+        Assert.ThrowsException<JsonException>(() =>
+            JsonSerializer.Deserialize<LauncherFeatureReasonCode>("1"));
+        foreach (var hostile in new[] { "\"ACTIVE\"", "\"Active\"", "\"unknown\"", "\"missing_capability\"" })
+        {
+            Assert.ThrowsException<JsonException>(() =>
+                JsonSerializer.Deserialize<LauncherFeatureReasonCode>(hostile));
+        }
+    }
+
+    [TestMethod]
+    public void PublicEvidenceDecisionAndSourceConstructorsRejectContradictions()
+    {
+        Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            new LauncherFeatureDecisionEvidence((LauncherFeatureReasonCode)999, ["test"]));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureDecisionEvidence(
+                LauncherFeatureReasonCode.MissingCapability,
+                []));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureDecisionEvidence(
+                LauncherFeatureReasonCode.MissingCapability,
+                ["z-capability", "a-capability"],
+                "Unknown"));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureDecisionEvidence(
+                LauncherFeatureReasonCode.Fallback,
+                ["unsafe fallback"]));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureSourceIdentity("unsafe source", "1"));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureSourceIdentity("test/source", new string('x', 65)));
+
+        var activeEligibility = new LauncherFeatureDecisionEvidence(
+            LauncherFeatureReasonCode.Active,
+            ["test.capability"]);
+        var activeSelection = new LauncherFeatureDecisionEvidence(
+            LauncherFeatureReasonCode.Active,
+            ["active-implementation"]);
+        var fallbackSelection = new LauncherFeatureDecisionEvidence(
+            LauncherFeatureReasonCode.Fallback,
+            ["fallback-implementation"]);
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureDecision(
+                "test.feature",
+                LauncherFeatureActivationState.Inactive,
+                activeEligibility,
+                fallbackSelection,
+                "fallback-implementation"));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeatureDecision(
+                "test.feature",
+                LauncherFeatureActivationState.Active,
+                activeEligibility,
+                activeSelection,
+                "different-implementation"));
+    }
+
+    [TestMethod]
+    public void MalformedJsonCannotForgeDecisionStateOrPresentation()
+    {
+        var contradictory =
+            """
+            {
+              "Id": "test.feature",
+              "State": 0,
+              "EligibilityEvidence": {
+                "Code": "missing-capability",
+                "Subjects": ["test.capability"],
+                "Context": "Unknown"
+              },
+              "SelectionEvidence": {
+                "Code": "fallback",
+                "Subjects": ["fallback-implementation"],
+                "Context": ""
+              },
+              "SelectedImplementation": "fallback-implementation"
+            }
+            """;
+        Assert.ThrowsException<ArgumentException>(() =>
+            JsonSerializer.Deserialize<LauncherFeatureDecision>(contradictory));
+
+        var validWithForgedReason = contradictory
+            .Replace("\"State\": 0", "\"State\": 1", StringComparison.Ordinal)
+            .Replace(
+                "\"SelectedImplementation\": \"fallback-implementation\"",
+                "\"SelectedImplementation\": \"fallback-implementation\", \"Reason\": \"forged\"",
+                StringComparison.Ordinal);
+        var decision = JsonSerializer.Deserialize<LauncherFeatureDecision>(validWithForgedReason)!;
+        Assert.AreEqual(
+            "Required capability test.capability is unavailable. "
+            + "Detected distribution: Unknown. Fallback: fallback-implementation.",
+            decision.Reason);
+    }
+
+    [TestMethod]
+    public void ResolverEmitsDistinctPolicyDependencyImplementationAndFallbackEvidence()
+    {
+        var noRequirements = new HashSet<string>(StringComparer.Ordinal);
+        var baseFeature = new LauncherFeatureDefinition(
+            "test.base",
+            LauncherFeatureKind.CompatibilityGate,
+            LauncherFeatureActivationMode.StartupLatched,
+            noRequirements,
+            noRequirements,
+            LauncherFeatureDefault.Disabled,
+            "base-active",
+            "base-fallback");
+        var dependent = new LauncherFeatureDefinition(
+            "test.dependent",
+            LauncherFeatureKind.CompatibilityGate,
+            LauncherFeatureActivationMode.StartupLatched,
+            noRequirements,
+            new HashSet<string>([baseFeature.Id], StringComparer.Ordinal),
+            LauncherFeatureDefault.EnabledWhenEligible,
+            "dependent-active",
+            "dependent-fallback");
+        var unavailable = new LauncherFeatureDefinition(
+            "test.unavailable",
+            LauncherFeatureKind.CompatibilityGate,
+            LauncherFeatureActivationMode.StartupLatched,
+            noRequirements,
+            noRequirements,
+            LauncherFeatureDefault.EnabledWhenEligible,
+            "unavailable-active",
+            "unavailable-fallback",
+            ActiveImplementationAvailable: false);
+
+        var plan = LauncherFeatureResolver.Resolve(
+            LauncherRuntimeProfile.Unknown("typed evidence test", "unknown"),
+            [dependent, unavailable, baseFeature],
+            catalogSource: new("tests/typed-feature-evidence", "1"));
+
+        AssertDecision(
+            plan.GetDecision(baseFeature.Id),
+            LauncherFeatureReasonCode.PolicyDenied,
+            "Product policy disabled this feature. Fallback: base-fallback.");
+        AssertDecision(
+            plan.GetDecision(dependent.Id),
+            LauncherFeatureReasonCode.MissingDependency,
+            "Required feature test.base is inactive. Fallback: dependent-fallback.");
+        AssertDecision(
+            plan.GetDecision(unavailable.Id),
+            LauncherFeatureReasonCode.UnavailableImplementation,
+            "Required implementation unavailable-active is unavailable. Fallback: unavailable-fallback.");
+    }
+
+    [TestMethod]
+    public void ProviderAndEvidenceClassesUseOneNeutralResolverPath()
+    {
+        var cases = new[]
+        {
+            ("current-guff", LauncherRuntimeManifestDetector.GuffawaffleDistributionId, true, true),
+            ("current-netniv", LauncherRuntimeManifestDetector.NetnivDistributionId, false, false),
+            ("future-netniv", LauncherRuntimeManifestDetector.NetnivDistributionId, true, true),
+            ("partial-custom", "custom.partial-runtime", false, false),
+            ("legacy-guff", LauncherRuntimeManifestDetector.GuffawaffleDistributionId, false, false),
+            ("unknown", LauncherRuntimeManifestDetector.UnknownDistributionId, false, false),
+        };
+
+        foreach (var (id, distribution, hasCapability, expectedActive) in cases)
+        {
+            var profile = new LauncherRuntimeProfile(
+                distribution,
+                hasCapability ? new Version(9, 0) : null,
+                id,
+                hasCapability ? new(1, id) : null,
+                hasCapability ? [LauncherCapabilityIds.PrincipalSettingsTaxonomyV1] : [],
+                [new("typed evidence matrix", id)]);
+
+            var decision = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All)
+                .GetDecision(LauncherFeatureIds.SemanticSettingsGrouping);
+
+            Assert.AreEqual(expectedActive, decision.IsActive, id);
+            Assert.AreEqual(
+                expectedActive
+                    ? LauncherFeatureReasonCode.Active
+                    : LauncherFeatureReasonCode.MissingCapability,
+                decision.EligibilityEvidence.Code,
+                id);
+            Assert.AreEqual(
+                expectedActive
+                    ? LauncherFeatureReasonCode.Active
+                    : LauncherFeatureReasonCode.Fallback,
+                decision.SelectionEvidence.Code,
+                id);
+        }
+    }
+
+    [TestMethod]
+    public void PlayerPreferenceIsNotAnEligibilityOrPolicyInput()
+    {
+        var parameters = typeof(LauncherFeatureResolver)
+            .GetMethod(nameof(LauncherFeatureResolver.Resolve))!
+            .GetParameters();
+
+        Assert.IsFalse(parameters.Any(parameter =>
+            parameter.Name!.Contains("preference", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void CustomCatalogAndPolicyCannotMasqueradeAsCheckedInSources()
+    {
+        var definition = LauncherFeatureCatalog.All.Single();
+        Assert.ThrowsException<ArgumentException>(() =>
+            LauncherFeatureResolver.Resolve(
+                LauncherRuntimeProfile.Unknown("test", "test"),
+                [definition]));
+        Assert.ThrowsException<ArgumentException>(() =>
+            new LauncherFeaturePolicy(
+                [new KeyValuePair<string, bool>(definition.Id, false)]));
     }
 
     [TestMethod]
@@ -245,6 +510,16 @@ public sealed class LauncherRuntimeActivationTests
             profile.DistributionId);
         Assert.AreEqual(0, profile.Capabilities.Count);
         StringAssert.Contains(profile.Evidence.Single().Detail, "invalid");
+    }
+
+    private static void AssertDecision(
+        LauncherFeatureDecision decision,
+        LauncherFeatureReasonCode reasonCode,
+        string expectedPresentation)
+    {
+        Assert.AreEqual(reasonCode, decision.EligibilityEvidence.Code);
+        Assert.AreEqual(LauncherFeatureReasonCode.Fallback, decision.SelectionEvidence.Code);
+        Assert.AreEqual(expectedPresentation, decision.Reason);
     }
 
     private static string Manifest(

@@ -50,7 +50,12 @@ public sealed class BattleBridgeActivationCorpusTests
             var profile = LauncherRuntimeManifestDetector.Detect(
                 stream,
                 $"golden corpus: {id}");
-            var plan = LauncherFeatureResolver.Resolve(profile, definitions);
+            var plan = LauncherFeatureResolver.Resolve(
+                profile,
+                definitions,
+                catalogSource: new(
+                    "tests/Fixtures/BattleBridge/battle-bridge-activation-cases.v1.json",
+                    "1"));
             var expectedActive = scenario.GetProperty("expectedActive")
                 .EnumerateArray()
                 .Select(item => item.GetString()!)

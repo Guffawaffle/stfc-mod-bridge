@@ -50,6 +50,7 @@ immutable LauncherRuntimeProfile (identity + normalized capabilities)
         +---- LauncherFeaturePolicy (product eligibility)
         v
 immutable LauncherActivationPlan
+(typed evidence + exact catalog/policy source identity and version)
         |
         +---- optional launcher-owned player preference
         v
@@ -70,7 +71,8 @@ Each Battle feature added to `LauncherFeatureCatalog` must have:
 - explicit feature dependencies;
 - a feature kind, activation mode, and default product policy;
 - one active implementation and one safe fallback implementation;
-- a deterministic activation or fallback reason suitable for diagnostics;
+- deterministic typed eligibility and implementation-selection evidence;
+- player-facing reason copy derived only from that typed evidence;
 - a documented removal or graduation contract for temporary gates and flags;
 - a separately modelled player preference only when the feature is optional.
 
@@ -86,8 +88,13 @@ feature while lacking an alert capability: history composes, alerts select
 their explicit fallback, and ordinary Mod Bridge behavior remains available.
 Feature dependencies apply the same rule transitively and deterministically.
 
-The feature decision reason must remain visible in support evidence. UI code
-may present a friendly summary, but it must not recalculate eligibility.
+The feature decision reason must remain visible in support evidence. Stable
+reason codes distinguish active, missing-capability, policy-denied,
+missing-dependency, unavailable-implementation, and fallback outcomes without
+parsing player copy. Each activation plan also carries the exact checked-in
+catalog and product-policy source identity and contract version used to resolve
+it. UI code may present a friendly summary derived from that evidence, but it
+must not recalculate eligibility or treat the presentation as control input.
 
 ## Provider and source-transition behavior
 
