@@ -2,6 +2,11 @@
 
 Status: first compatibility gate implemented
 
+The accepted [Battle Bridge activation decision](BATTLE_BRIDGE_ACTIVATION_ADR.md)
+extends this seam per feature. Provider identity, runtime capability, product
+feature policy, and player preference remain separate inputs; Guffawaffle is
+the first expected Battle producer, not a permanent owner gate.
+
 ## Purpose
 
 The launcher resolves runtime-dependent behavior once during startup. Runtime
