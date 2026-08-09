@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>STFCCommunityMod.Launcher.StorageProbe</AssemblyName>
+    <RootNamespace>STFCCommunityMod.Launcher.StorageProbe</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\STFCCommunityMod.Launcher.Core\STFCCommunityMod.Launcher.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -398,8 +398,8 @@ Required indexes are:
   evidence_id)`, and indexed exact event hashes;
 - unique live-batch lookup on `(source_namespace, producer_scope, batch_id)` with
   the derived live-batch key and envelope hash/count checked on retry;
-- receipt traversal by live batch/import attempt and reverse traversal from an
-  occurrence to every accepting receipt;
+- one receipt per live-batch event ordinal and per import-attempt entry ordinal,
+  plus reverse traversal from an occurrence to every accepting receipt;
 - recent history on `(captured_at_unix_ms DESC, battle_record_id DESC)`;
 - unique battle-alias lookup on `(source_namespace, alias_identity)` plus unique
   `(battle_record_id, alias_kind)`;
@@ -721,6 +721,59 @@ MSIX package integrity protects package files, not the external player database.
 The database uses hashes, SQLite recovery, backups, and current-user storage for
 integrity and privacy; it is not evidence of mod or launcher authenticity and is
 not promised to be encrypted at rest.
+
+### Narrow #63 implementation qualification
+
+The first native foundation deliberately uses `Microsoft.Data.Sqlite.Core`
+8.0.29, `SQLitePCLRaw.core` 2.1.11, and
+`SQLitePCLRaw.provider.dynamic_cdecl` 2.1.11. It does **not** use the earlier
+`bundle_winsqlite3` candidate: that bundle's fixed-name P/Invoke initialization
+cannot satisfy the stronger retained-System32-handle gate above. The dynamic
+provider is initialized only after an explicit storage operation. Bridge loads
+`winsqlite3.dll` with `LOAD_LIBRARY_SEARCH_SYSTEM32`, verifies the loaded module
+path is exactly the Windows System32 file, resolves every SQLite entry point
+from that retained handle, and then installs the provider. Hostile app/current
+directory, PATH, and LocalAppData shadow files therefore are not candidates.
+The managed dependency closure and notices are locked; neither provider package
+contains native SQLite bytes.
+
+This implementation qualifies SQLite 3.31 or newer with thread-safe support,
+positively reads back the required connection pragmas, creates a v1 candidate
+only at a path supplied by the #59 lifecycle owner, inspects existing stores
+read-only, and exposes an intentionally empty migration dispatcher. Explicit
+inspection verifies the frozen schema surface, SQLite quick-check, and foreign
+keys. The schema gate hashes every `sqlite_schema` object, including automatic
+indexes and complete table/index SQL, so columns, foreign keys, checks, unique
+constraints, partial-index predicates, and the absence of triggers/views are one
+reviewed manifest rather than a partial name list. A repository session retains
+that qualification instead of rescanning the whole database on every hot-path
+operation. Candidate creation retains its
+`CreateNew` file-identity handle while SQLite initializes and inspection runs;
+the handle denies path replacement. Success permits no journal/WAL/SHM residue,
+and a failed cleanup is surfaced to the #59 lifecycle owner rather than deleting
+an unverified path. It streams
+one transport-owned exact `battle.capture` slice at a time through SHA-256,
+two-pass Brotli quality 5/window 22, and incremental SQLite BLOB I/O. Detail
+delivery rejects counts outside the accepted 16 MiB ingest bound, stops decode
+as soon as output exceeds the declared raw length, and performs a complete
+verification pass before bytes reach the caller. A durable batch retry is a
+no-op only after its exact receipt ordinals, occurrence/evidence metadata, and
+retained BLOB bytes all re-verify. Fleet remains a separate sink.
+
+The checked-in synthetic 64-capture result at
+`tests/STFCCommunityMod.Launcher.Core.Tests/Fixtures/BattleBridge/battle-storage-probe-result.v1.json`
+records source/round-trip hashes, raw/compressed/final-database and rollback-
+journal observations, elapsed time, and managed allocations. It is bounded
+qualification evidence, not a retention, latency, or SSD-write budget. Hard-
+crash probes cover both sides of the repository commit boundary, and frozen
+query-plan tests use the reviewed indexes at the observed 306-battle scale.
+
+This narrowed foundation does not activate storage, choose a live path, own a
+cross-process lifecycle lock or recovery marker, import legacy stores, persist
+supplemental families, expose catalog/export adapters, or implement retention,
+backup, restore, migration, compaction, or UI. Those remain with #59 and the
+explicit follow-ups (#78, #84, and #85); no dormant worker, timer, database, or
+module load is added by this issue.
 
 ## Exact #63 acceptance handoff
 

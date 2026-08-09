@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\STFCCommunityMod.Launcher.Core\STFCCommunityMod.Launcher.Core.csproj" />
+    <ProjectReference Include="..\STFCCommunityMod.Launcher.StorageProbe\STFCCommunityMod.Launcher.StorageProbe.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +49,10 @@
     <None Include="Fixtures\BattleBridge\battle-capture.golden.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="Fixtures\BattleBridge\fleet-runtime.golden.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\BattleBridge\battle-storage-probe-result.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\BattleBridge\battle-storage-schema.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

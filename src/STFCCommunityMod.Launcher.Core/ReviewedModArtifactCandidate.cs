@@ -53,10 +53,14 @@ public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
     private readonly string candidateDirectory;
     private readonly string dllPath;
     private readonly string? runtimeManifestPath;
+    private readonly string ownershipPath;
     private readonly Func<SafeFileHandle, bool> markDeleteOnClose;
     private readonly Func<CancellationToken, ValueTask>? afterDeploymentClaimed;
+    private readonly CandidateAcquisitionLifetime? candidateLifetime;
+    private readonly Action<ReviewedModArtifactCandidateLease>? afterReleased;
     private FileStream? dllStream;
     private FileStream? runtimeManifestStream;
+    private FileStream? ownershipStream;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private object? activeClaim;
     private int state;
@@ -67,18 +71,25 @@ public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
         string? runtimeManifestPath,
         FileStream? dllStream,
         FileStream? runtimeManifestStream,
+        FileStream? ownershipStream,
         ReviewedModArtifactCandidateReceipt receipt,
         Func<SafeFileHandle, bool> markDeleteOnClose,
-        Func<CancellationToken, ValueTask>? afterDeploymentClaimed)
+        Func<CancellationToken, ValueTask>? afterDeploymentClaimed,
+        CandidateAcquisitionLifetime? candidateLifetime,
+        Action<ReviewedModArtifactCandidateLease>? afterReleased)
     {
         this.candidateDirectory = candidateDirectory;
         this.dllPath = dllPath;
         this.runtimeManifestPath = runtimeManifestPath;
+        ownershipPath = Path.Combine(candidateDirectory, CandidateOwnershipStore.FileName);
         this.dllStream = dllStream;
         this.runtimeManifestStream = runtimeManifestStream;
+        this.ownershipStream = ownershipStream;
         Receipt = receipt;
         this.markDeleteOnClose = markDeleteOnClose;
         this.afterDeploymentClaimed = afterDeploymentClaimed;
+        this.candidateLifetime = candidateLifetime;
+        this.afterReleased = afterReleased;
     }
 
     public ReviewedModArtifactCandidateReceipt Receipt { get; }
@@ -225,6 +236,16 @@ public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
         }
         try
         {
+            await CloseExactMetadataStreamAsync(ownershipStream).ConfigureAwait(false);
+            ownershipStream = null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            state = CleanupPending;
+            throw new IOException("Reviewed candidate cleanup could not delete its exact ownership receipt.", exception);
+        }
+        try
+        {
             Directory.Delete(candidateDirectory, recursive: false);
         }
         catch (IOException)
@@ -237,6 +258,11 @@ public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
         }
         Volatile.Write(ref activeClaim, null);
         state = Disposed;
+        if (candidateLifetime is not null)
+        {
+            await candidateLifetime.DisposeAsync().ConfigureAwait(false);
+        }
+        afterReleased?.Invoke(this);
     }
 
     private static async Task<byte[]> ReadExactAsync(
@@ -276,6 +302,23 @@ public sealed class ReviewedModArtifactCandidateLease : IAsyncDisposable
         if (!OperatingSystem.IsWindows())
         {
             DeleteIfOwned(path, identity);
+        }
+    }
+
+    private async ValueTask CloseExactMetadataStreamAsync(FileStream? stream)
+    {
+        if (stream is null)
+        {
+            return;
+        }
+        if (OperatingSystem.IsWindows() && !markDeleteOnClose(stream.SafeFileHandle))
+        {
+            throw new IOException("The exact reviewed candidate ownership receipt could not be marked for deletion.");
+        }
+        await stream.DisposeAsync().ConfigureAwait(false);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.Delete(ownershipPath);
         }
     }
 
@@ -332,6 +375,7 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
 {
     private const long MaximumArtifactBytes = 128L * 1024L * 1024L;
     private readonly string candidateRoot;
+    private readonly string stateDirectory;
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
     private readonly IModArtifactAuthenticityVerifier authenticityVerifier;
@@ -339,10 +383,16 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
     private readonly ReviewedReleaseCertification certification;
     private readonly string certificationFingerprint;
     private readonly Func<string, CancellationToken, ValueTask>? afterCandidateFileOpened;
+    private readonly Func<string, CancellationToken, ValueTask>? afterCandidateFileCreatedBeforeOwnershipPersisted;
+    private readonly Func<string, CancellationToken, ValueTask>? afterCandidatePartialWrite;
+    private readonly Func<string, CancellationToken, ValueTask>? afterCandidateMemberVerified;
     private readonly Func<SafeFileHandle, bool> markCandidateDelete;
     private readonly Func<CancellationToken, ValueTask>? afterDeploymentClaimed;
+    private readonly CandidateOwnershipStore ownershipStore;
+    private readonly CandidateRecoveryService recoveryService;
     private readonly SemaphoreSlim acquisitionGate = new(1, 1);
     private ReviewedModArtifactCandidateLease? pendingCleanup;
+    private ReviewedModArtifactCandidateLease? activeLease;
     private bool disposed;
 
     public ReviewedModArtifactCandidateAcquirer(
@@ -361,7 +411,11 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
             certification,
             afterCandidateFileOpened: null,
             markCandidateDelete: null,
-            afterDeploymentClaimed: null)
+            afterDeploymentClaimed: null,
+            ownershipProtector: null,
+            afterCandidateFileCreatedBeforeOwnershipPersisted: null,
+            afterCandidatePartialWrite: null,
+            afterCandidateMemberVerified: null)
     {
     }
 
@@ -374,10 +428,15 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         ReviewedReleaseCertification certification,
         Func<string, CancellationToken, ValueTask>? afterCandidateFileOpened,
         Func<SafeFileHandle, bool>? markCandidateDelete = null,
-        Func<CancellationToken, ValueTask>? afterDeploymentClaimed = null)
+        Func<CancellationToken, ValueTask>? afterDeploymentClaimed = null,
+        ICandidateOwnershipProtector? ownershipProtector = null,
+        Func<string, CancellationToken, ValueTask>? afterCandidateFileCreatedBeforeOwnershipPersisted = null,
+        Func<string, CancellationToken, ValueTask>? afterCandidatePartialWrite = null,
+        Func<string, CancellationToken, ValueTask>? afterCandidateMemberVerified = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
-        candidateRoot = Path.Combine(Path.GetFullPath(stateDirectory), "artifact-candidates");
+        this.stateDirectory = Path.GetFullPath(stateDirectory);
+        candidateRoot = Path.Combine(this.stateDirectory, "artifact-candidates");
         this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
         this.authenticityVerifier = authenticityVerifier ?? throw new ArgumentNullException(nameof(authenticityVerifier));
@@ -385,8 +444,14 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
             ?? throw new ArgumentNullException(nameof(installationAttribution));
         this.certification = certification ?? throw new ArgumentNullException(nameof(certification));
         this.afterCandidateFileOpened = afterCandidateFileOpened;
+        this.afterCandidateFileCreatedBeforeOwnershipPersisted =
+            afterCandidateFileCreatedBeforeOwnershipPersisted;
+        this.afterCandidatePartialWrite = afterCandidatePartialWrite;
+        this.afterCandidateMemberVerified = afterCandidateMemberVerified;
         this.markCandidateDelete = markCandidateDelete ?? CandidateFileNative.TryMarkDeleteOnClose;
         this.afterDeploymentClaimed = afterDeploymentClaimed;
+        ownershipStore = new(ownershipProtector ?? new WindowsDpapiCandidateOwnershipProtector());
+        recoveryService = new(candidateRoot, ownershipStore, this.markCandidateDelete);
         certificationFingerprint = CertificationFingerprint(certification);
     }
 
@@ -400,6 +465,11 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
             if (disposed)
             {
                 return;
+            }
+            if (activeLease is not null)
+            {
+                await activeLease.DisposeAsync().ConfigureAwait(false);
+                activeLease = null;
             }
             await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
             disposed = true;
@@ -433,7 +503,88 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
-            return await AcquireCoreAsync(artifact, cancellationToken).ConfigureAwait(false);
+            if (activeLease is not null)
+            {
+                throw new InvalidOperationException(
+                    "Finish or cancel the current reviewed mod download before starting another one.");
+            }
+            var lifetime = await CandidateAcquisitionLifetime.TryAcquireAsync(
+                stateDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (lifetime is null)
+            {
+                throw new InvalidOperationException(
+                    "Another Mod Bridge window is preparing or confirming a mod download. Finish or cancel it, then try again.");
+            }
+            var transferred = false;
+            try
+            {
+                var recovery = await recoveryService.RecoverUnderLifetimeAsync(cancellationToken).ConfigureAwait(false);
+                if (!recovery.CanAcquire)
+                {
+                    throw new InvalidDataException(recovery.Message);
+                }
+                var lease = await AcquireCoreAsync(artifact, lifetime, cancellationToken).ConfigureAwait(false);
+                activeLease = lease;
+                transferred = true;
+                return lease;
+            }
+            finally
+            {
+                if (!transferred && pendingCleanup is null)
+                {
+                    await lifetime.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            acquisitionGate.Release();
+        }
+    }
+
+    public async Task<ReviewedCandidateRecoveryResult> RecoverAbandonedCandidatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await acquisitionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            try
+            {
+                await RetryPendingCleanupUnderGateAsync().ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                return new(
+                    ReviewedCandidateRecoveryState.Blocked,
+                    0,
+                    0,
+                    1,
+                    "Mod Bridge still owns an exact cleanup retry that Windows could not finish. Close other Bridge windows, then try recovery again; no new download or game change was started.");
+            }
+            if (activeLease is not null)
+            {
+                return new(
+                    ReviewedCandidateRecoveryState.Busy,
+                    0,
+                    0,
+                    0,
+                    "A reviewed mod download is waiting for confirmation. Finish or cancel it before retrying recovery.");
+            }
+            await using var lifetime = await CandidateAcquisitionLifetime.TryAcquireAsync(
+                stateDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (lifetime is null)
+            {
+                return new(
+                    ReviewedCandidateRecoveryState.Busy,
+                    0,
+                    0,
+                    0,
+                    "Another Mod Bridge window is preparing or confirming a mod download. Close it or finish that action, then retry recovery.");
+            }
+            return await recoveryService.RecoverUnderLifetimeAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -454,6 +605,7 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
 
     private async Task<ReviewedModArtifactCandidateLease> AcquireCoreAsync(
         ModReleaseArtifact artifact,
+        CandidateAcquisitionLifetime lifetime,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -469,16 +621,44 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         FileStream? runtimeLock = null;
         FileStream? dllWrite = null;
         FileStream? runtimeWrite = null;
+        FileStream? ownershipLock = null;
         var dllOwned = false;
         var runtimeOwned = false;
         var dllWritten = false;
         var runtimeWritten = false;
         try
         {
+            Directory.CreateDirectory(candidateRoot);
+            if ((File.GetAttributes(candidateRoot) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException("Reviewed candidate storage refuses filesystem links or reparse points.");
+            }
             Directory.CreateDirectory(directory);
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException("Reviewed candidate storage refuses filesystem links or reparse points.");
+            }
+            var ownership = CandidateOwnershipStore.Create(
+                receiptId,
+                certificationFingerprint,
+                installationAttribution,
+                artifact);
+            ownershipStore.Save(directory, ownership);
             var dll = await downloader.DownloadAsync(artifact.DownloadUri, cancellationToken).ConfigureAwait(false);
             VerifyDownload(dll, artifact.Size, artifact.Sha256, "DLL");
             dllWrite = CreateOwnedWrite(dllPath);
+            if (afterCandidateFileCreatedBeforeOwnershipPersisted is not null)
+            {
+                await afterCandidateFileCreatedBeforeOwnershipPersisted(
+                    dllPath,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            var dllFileIdentity = CandidateFileNative.ReadIdentity(dllWrite.SafeFileHandle);
+            ownership = CandidateOwnershipStore.UpdateDll(
+                ownership,
+                CandidateMemberStage.Writing,
+                dllFileIdentity);
+            ownershipStore.Save(directory, ownership);
             await WriteOwnedAsync(dllWrite, dllPath, dll.Contents, cancellationToken).ConfigureAwait(false);
             await dllWrite.DisposeAsync().ConfigureAwait(false);
             dllWrite = null;
@@ -497,6 +677,15 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
             dllLock = OpenLockedRead(dllPath);
             VerifyLockedStream(dllLock, artifact.Size, artifact.Sha256, "DLL");
             dllOwned = true;
+            ownership = CandidateOwnershipStore.UpdateDll(
+                ownership,
+                CandidateMemberStage.Complete,
+                dllFileIdentity);
+            ownershipStore.Save(directory, ownership);
+            if (afterCandidateMemberVerified is not null)
+            {
+                await afterCandidateMemberVerified(dllPath, cancellationToken).ConfigureAwait(false);
+            }
 
             ModArtifactDownload? runtime = null;
             ParsedRuntimeManifest? parsed = null;
@@ -523,6 +712,18 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                     certification) ?? throw new InvalidDataException(
                         "The runtime manifest pair is not authorized by the launcher-bundled reviewed certification.");
                 runtimeWrite = CreateOwnedWrite(runtimePath!);
+                if (afterCandidateFileCreatedBeforeOwnershipPersisted is not null)
+                {
+                    await afterCandidateFileCreatedBeforeOwnershipPersisted(
+                        runtimePath!,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                var runtimeFileIdentity = CandidateFileNative.ReadIdentity(runtimeWrite.SafeFileHandle);
+                ownership = CandidateOwnershipStore.UpdateRuntimeManifest(
+                    ownership,
+                    CandidateMemberStage.Writing,
+                    runtimeFileIdentity);
+                ownershipStore.Save(directory, ownership);
                 await WriteOwnedAsync(
                     runtimeWrite,
                     runtimePath!,
@@ -538,7 +739,18 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                     artifact.RuntimeManifest.Sha256,
                     "runtime manifest");
                 runtimeOwned = true;
+                ownership = CandidateOwnershipStore.UpdateRuntimeManifest(
+                    ownership,
+                    CandidateMemberStage.Complete,
+                    runtimeFileIdentity);
+                ownershipStore.Save(directory, ownership);
+                if (afterCandidateMemberVerified is not null)
+                {
+                    await afterCandidateMemberVerified(runtimePath!, cancellationToken).ConfigureAwait(false);
+                }
             }
+
+            ownershipLock = OpenValidatedOwnershipLock(directory);
 
             var dllIdentity = new ModArtifactIdentityReceipt(artifact.Size, artifact.Sha256.ToUpperInvariant());
             var runtimeIdentity = artifact.RuntimeManifest is null
@@ -560,11 +772,15 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                 runtimePath,
                 dllLock,
                 runtimeLock,
+                ownershipLock,
                 receipt,
                 markCandidateDelete,
-                afterDeploymentClaimed);
+                afterDeploymentClaimed,
+                lifetime,
+                OnLeaseReleased);
             dllLock = null;
             runtimeLock = null;
+            ownershipLock = null;
             return lease;
         }
         catch (Exception acquisitionFailure)
@@ -583,12 +799,24 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                 dllPath,
                 artifact.Size,
                 artifact.Sha256).ConfigureAwait(false);
+            Exception? ownershipCleanup = null;
+            if (runtimeCleanup.Pending is null && dllCleanup.Pending is null)
+            {
+                ownershipCleanup = await CleanupOwnershipMetadataAsync(directory, ownershipLock).ConfigureAwait(false);
+                ownershipLock = null;
+            }
             DeleteCandidateDirectory(directory);
             var cleanupFailure = runtimeCleanup.Failure is null
                 ? dllCleanup.Failure
                 : dllCleanup.Failure is null
                     ? runtimeCleanup.Failure
                     : new AggregateException(runtimeCleanup.Failure, dllCleanup.Failure);
+            if (ownershipCleanup is not null)
+            {
+                cleanupFailure = cleanupFailure is null
+                    ? ownershipCleanup
+                    : new AggregateException(cleanupFailure, ownershipCleanup);
+            }
             if (cleanupFailure is null)
             {
                 throw;
@@ -607,21 +835,107 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                             artifact.RuntimeManifest.Sha256.ToUpperInvariant()),
                     runtimeActivation: null,
                     installationAttribution);
+                var pendingOwnership = ownershipLock ?? OpenOwnershipLockIfValid(directory);
+                ownershipLock = null;
                 pendingCleanup = new(
                     directory,
                     dllPath,
                     runtimePath,
                     dllCleanup.Pending,
                     runtimeCleanup.Pending,
+                    pendingOwnership,
                     cleanupReceipt,
                     markCandidateDelete,
-                    afterDeploymentClaimed: null);
+                    afterDeploymentClaimed: null,
+                    lifetime,
+                    afterReleased: null);
             }
             throw new AggregateException(
                 "Reviewed candidate acquisition failed and exact cleanup was incomplete.",
                 acquisitionFailure,
                 cleanupFailure);
         }
+    }
+
+    private async ValueTask<Exception?> CleanupOwnershipMetadataAsync(
+        string directory,
+        FileStream? stream)
+    {
+        var path = Path.Combine(directory, CandidateOwnershipStore.FileName);
+        if (stream is null && File.Exists(path))
+        {
+            try
+            {
+                stream = OpenValidatedOwnershipLock(directory);
+            }
+            catch (Exception exception) when (exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException)
+            {
+                return exception;
+            }
+        }
+        if (stream is null)
+        {
+            return null;
+        }
+        try
+        {
+            await DeleteLockedStreamAsync(stream, path).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+            return exception;
+        }
+    }
+
+    private FileStream? OpenOwnershipLockIfValid(string directory)
+    {
+        var path = Path.Combine(directory, CandidateOwnershipStore.FileName);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+        try
+        {
+            return OpenValidatedOwnershipLock(directory);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    private FileStream OpenValidatedOwnershipLock(string directory)
+    {
+        var path = Path.Combine(directory, CandidateOwnershipStore.FileName);
+        var stream = OpenLockedRead(path);
+        try
+        {
+            if (stream.Length is <= 0 or > CandidateOwnershipStore.MaximumProtectedBytes)
+            {
+                throw new InvalidDataException("Candidate ownership metadata is outside its size bound.");
+            }
+            var bytes = new byte[checked((int)stream.Length)];
+            stream.ReadExactly(bytes);
+            stream.Position = 0;
+            _ = ownershipStore.LoadProtectedBytes(bytes, Path.GetFileName(directory));
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    private void OnLeaseReleased(ReviewedModArtifactCandidateLease lease)
+    {
+        Interlocked.CompareExchange(ref activeLease, null, lease);
     }
 
     private async ValueTask<AcquisitionCleanupAttempt> CleanupAcquisitionMemberAsync(
@@ -785,7 +1099,19 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         {
             await afterCandidateFileOpened(path, cancellationToken).ConfigureAwait(false);
         }
-        await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
+        if (afterCandidatePartialWrite is not null && contents.Length > 1)
+        {
+            var firstLength = contents.Length / 2;
+            await stream.WriteAsync(contents.AsMemory(0, firstLength), cancellationToken).ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            stream.Flush(flushToDisk: true);
+            await afterCandidatePartialWrite(path, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(contents.AsMemory(firstLength), cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
+        }
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         stream.Flush(flushToDisk: true);
     }
@@ -798,6 +1124,15 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         }
         var handle = CandidateFileNative.OpenReadDelete(path);
         return new(handle, FileAccess.Read, 81920, isAsync: false);
+    }
+
+    internal static FileStream OpenLockedReadForRecovery(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return OpenLockedRead(path);
+        }
+        return new(CandidateFileNative.OpenRecoveryReadDeleteNoFollow(path), FileAccess.Read, 81920, isAsync: false);
     }
 
     private static void VerifyLockedStream(
@@ -868,6 +1203,9 @@ internal static class CandidateFileNative
     private const uint GenericWrite = 0x40000000;
     private const uint Delete = 0x00010000;
     private const uint FileFlagOverlapped = 0x40000000;
+    private const uint FileFlagBackupSemantics = 0x02000000;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileAttributeReparsePoint = 0x00000400;
 
     public static SafeFileHandle OpenReadDelete(string path)
     {
@@ -899,6 +1237,67 @@ internal static class CandidateFileNative
             : handle;
     }
 
+    public static SafeFileHandle OpenRecoveryReadNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead,
+        FileShare.Read,
+        flags: FileFlagOpenReparsePoint,
+        "Could not lock the reviewed candidate recovery member.");
+
+    public static SafeFileHandle OpenRecoveryReadDeleteNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead | Delete,
+        FileShare.Read,
+        flags: FileFlagOpenReparsePoint,
+        "Could not lock the reviewed candidate recovery member for deletion.");
+
+    public static SafeFileHandle OpenRecoveryDirectoryReadNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead,
+        FileShare.Read,
+        flags: FileFlagBackupSemantics | FileFlagOpenReparsePoint,
+        "Could not lock the reviewed candidate recovery root.");
+
+    public static SafeFileHandle OpenRecoveryDirectoryReadDeleteNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead | Delete,
+        FileShare.Read,
+        flags: FileFlagBackupSemantics | FileFlagOpenReparsePoint,
+        "Could not lock the reviewed candidate recovery directory.");
+
+    private static SafeFileHandle OpenNoFollow(
+        string path,
+        uint desiredAccess,
+        FileShare shareMode,
+        uint flags,
+        string errorMessage)
+    {
+        var handle = CreateFile(
+            path,
+            desiredAccess,
+            shareMode,
+            IntPtr.Zero,
+            FileMode.Open,
+            flags,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), errorMessage);
+        }
+        if (!GetFileInformationByHandle(handle, out var information))
+        {
+            var error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "Could not validate the reviewed candidate recovery handle.");
+        }
+        if ((information.FileAttributes & FileAttributeReparsePoint) != 0)
+        {
+            handle.Dispose();
+            throw new InvalidDataException("Reviewed candidate recovery refuses filesystem links or reparse points.");
+        }
+        return handle;
+    }
+
     public static bool TryMarkDeleteOnClose(SafeFileHandle handle)
     {
         var disposition = new FileDispositionInfo { DeleteFile = 1 };
@@ -907,6 +1306,22 @@ internal static class CandidateFileNative
             FileInfoByHandleClass.FileDispositionInfo,
             ref disposition,
             Marshal.SizeOf<FileDispositionInfo>());
+    }
+
+    public static CandidateFileIdentity ReadIdentity(SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Reviewed candidate file identity requires Windows.");
+        }
+        if (!GetFileInformationByHandle(handle, out var information))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the reviewed candidate file identity.");
+        }
+        var fileIndex = ((ulong)information.FileIndexHigh << 32) | information.FileIndexLow;
+        return new(
+            information.VolumeSerialNumber.ToString("X8", CultureInfo.InvariantCulture),
+            fileIndex.ToString("X16", CultureInfo.InvariantCulture));
     }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -927,6 +1342,12 @@ internal static class CandidateFileNative
         ref FileDispositionInfo fileInformation,
         int bufferSize);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle file,
+        out ByHandleFileInformation fileInformation);
+
     private enum FileInfoByHandleClass
     {
         FileDispositionInfo = 4,
@@ -936,6 +1357,21 @@ internal static class CandidateFileNative
     private struct FileDispositionInfo
     {
         public byte DeleteFile;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
     }
 
 }

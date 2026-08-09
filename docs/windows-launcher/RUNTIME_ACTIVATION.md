@@ -61,11 +61,56 @@ settings view model receives the selected `ILauncherSettingsLayoutProvider`;
 ordinary row and rendering paths do not inspect distribution IDs, versions, or
 feature flags.
 
-Feature activation is provider-session-latched. Changing release source,
-runtime manifest, or provider policy replaces the provider session inside the
-current process while preserving launcher-owned window, theme, navigation, and
-preference state. Only updating the Bridge executable itself uses the separate
-verified updater handoff and process relaunch.
+Feature activation is provider-session-owned. Changing release source replaces
+the provider session inside the current process while preserving launcher-owned
+window, theme, navigation, and preference state. Newly reviewed runtime-manifest
+evidence refreshes the runtime composition within the current provider session;
+it does not pretend a source switch occurred. Only updating the Bridge executable
+itself uses the separate verified updater handoff and process relaunch.
+
+## Native application and workspace composition
+
+Each provider session owns one `LauncherApplicationComposition`. Its
+`LauncherWorkspaceServices` instance remains the sole native foundation for
+mod lifecycle, provider selection, launch, trust, transaction, Settings/TOML,
+and Diagnostics behavior. The built-in Mod Bridge Home and any future optional
+Home receive that same service instance; optional Homes do not copy or replace
+those implementations.
+
+`LauncherWorkspaceRegistry` is the registration and activation seam. The base
+application registers only `home.mod-bridge`. An optional Home registration
+must name an exact feature ID and selected implementation ID from the immutable
+activation plan. The registry evaluates that typed decision before invoking a
+lazy workspace factory, returns an explicit unavailable result for a missing or
+inactive feature or an implementation mismatch, and reuses the single composed
+workspace instance after activation.
+
+Consequently, a normal Mod Bridge launch has no optional Home registration or
+factory to invoke. Even a registered-but-ineligible optional Home performs no
+factory construction, file I/O, service startup, timer, listener, or network
+work. This seam does not add a Battle feature ID, preference, surface, database,
+or legacy Sidecar dependency; those remain separately reviewed future work.
+The composition boundary grants no general outbound Internet transport authority.
+Any future networked Battle capability requires its own explicit feature-level
+policy; the existing reviewed release and update transport remains separate.
+
+Settings stays lazy and provider-session-owned. Both Home modes resolve the
+same Settings and Diagnostics contracts, while runtime-evidence refresh resets
+the lazy Settings instance through the existing shell path. Before that reset,
+the registry revalidates every activated optional Home against the replacement
+typed plan and disposes/removes any workspace whose feature became inactive or
+whose selected implementation changed. The ungated Mod Bridge Home remains
+alive. The shared Settings owner is authoritative for draft guards and reloads;
+invalidation discards staged drafts, makes retained old view models unable to
+start another write, and notifies consumers before a replacement is created. If
+an atomic Settings or Data Sync save is already active, invalidation marks the
+old editor unavailable immediately, waits for that save to finish, and only then
+tears down its edit session; replacement composition remains blocked throughout.
+Synchronous provider-session disposal initiates the same idempotent barrier
+without blocking the UI thread, and the disposed owner cannot compose a
+replacement. Current window sizing, accessibility, staged Save/Discard,
+diagnostic recovery, and provider recomposition behavior therefore remain owned
+by the existing native shell.
 
 ## Runtime manifest
 

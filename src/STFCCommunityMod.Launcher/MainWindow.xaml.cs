@@ -45,7 +45,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private readonly JsonLauncherUiPreferencesStore uiPreferencesStore;
     private readonly WorkspaceFocusTransition diagnosticsFocusTransition = new();
     private RelayCommand? openRawTomlCommand;
-    private SettingsViewModel? settingsViewModel;
     private LauncherColorMode selectedColorMode = LauncherColorMode.System;
     private bool providerSwitchReviewAcknowledged;
     private bool isDisposed;
@@ -67,6 +66,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private LauncherProviderSession ProviderSession => providerSessions.Current;
 
+    private LauncherSettingsWorkspace SharedSettings =>
+        ProviderSession.ApplicationComposition.SharedServices.Settings;
+
     private LauncherDistributionProvider distributionProvider => ProviderSession.Provider;
 
     private LauncherProviderSelectionResolution providerSelectionResolution => ProviderSession.Resolution;
@@ -77,8 +79,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private LauncherProviderAtomicSwitchCoordinator providerSourceSwitchCoordinator =>
         ProviderSession.SwitchCoordinator;
-
-    private LauncherStartupComposition startupComposition => ProviderSession.StartupComposition;
 
     public MainWindow()
         : this(
@@ -169,7 +169,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             releaseChannel,
             composition,
             viewModel.ReviewedRuntimeActivation,
-            viewModel);
+            viewModel,
+            runtimeComposition => CreateSettingsViewModel(
+                provider,
+                releaseChannel,
+                runtimeComposition));
     }
 
     private void ApplyProviderSession(LauncherProviderSession session)
@@ -179,13 +183,18 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             previousViewModel.PropertyChanged -= MainViewModel_PropertyChanged;
         }
-        DataContext = session.ViewModel;
+        var homeActivation = session.ApplicationComposition.ActivateHome(
+            LauncherHomeWorkspaceIds.ModBridge);
+        if (!homeActivation.IsActive || homeActivation.Workspace is null)
+        {
+            throw new InvalidOperationException("The built-in Mod Bridge Home workspace is unavailable.");
+        }
+        DataContext = homeActivation.Workspace.SharedServices.Foundation;
         session.ViewModel.PropertyChanged += MainViewModel_PropertyChanged;
         pendingProviderSwitch = null;
         pendingModOperation = null;
         diagnosticPreview = null;
         SettingsWorkspace.DataContext = null;
-        settingsViewModel = null;
         openRawTomlCommand = null;
         isSettingsWorkspaceInitialized = false;
         isProviderSwitchOperationPending = false;
@@ -202,7 +211,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ModActionButton.Focusable = true;
     }
 
-    private void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private async void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation)
             || sender is not MainWindowViewModel viewModel
@@ -214,23 +223,33 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        RefreshRuntimeCompositionConsumers();
+        try
+        {
+            ProviderSession.ApplicationComposition.RevalidateHomes();
+            await RefreshRuntimeCompositionConsumersAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowProviderRecompositionFailure(exception);
+        }
     }
 
-    private void RefreshRuntimeCompositionConsumers()
+    private async Task RefreshRuntimeCompositionConsumersAsync()
     {
         diagnosticPreview = null;
-        if (settingsViewModel is null)
+        var sharedSettings = SharedSettings;
+        var currentSettings = sharedSettings.Current;
+        if (currentSettings is null)
         {
             return;
         }
         var wasOpen = isSettingsWorkspaceOpen;
-        var discardedDrafts = settingsViewModel.HasPendingChanges
-            || settingsViewModel.SyncWorkspace.HasPendingChanges;
+        var discardedDrafts = currentSettings.HasPendingChanges
+            || currentSettings.SyncWorkspace.HasPendingChanges;
         SettingsWorkspace.DataContext = null;
-        settingsViewModel = null;
         openRawTomlCommand = null;
         isSettingsWorkspaceInitialized = false;
+        await sharedSettings.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
         if (wasOpen && !EnsureSettingsWorkspaceInitialized())
         {
             SetSettingsWorkspaceOpen(false);
@@ -239,8 +258,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             SettingsUnavailableMessage.Text =
                 "Runtime compatibility changed while Settings had unsaved drafts. "
-                + "Mod Bridge reloaded the reviewed settings contract and discarded only those unsaved drafts; "
-                + "the saved TOML file was not changed.";
+                + "Mod Bridge waited for any active save to finish, reloaded the reviewed settings contract, "
+                + "and discarded any remaining unsaved drafts. Review the saved Settings before continuing.";
             SettingsUnavailableDialog.IsOpen = true;
         }
     }
@@ -394,9 +413,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (settingsViewModel is not null
-            && (settingsViewModel.HasPendingChanges
-                || settingsViewModel.SyncWorkspace.HasPendingChanges))
+        if (SharedSettings.HasPendingChanges)
         {
             SettingsUnavailableMessage.Text =
                 "Save or discard your pending Settings and Data Sync changes before changing the community mod.";
@@ -448,7 +465,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         try
         {
             var focusReturnTarget = sender as IInputElement ?? Keyboard.FocusedElement;
-            diagnosticPreview = viewModel.BuildDiagnosticPreview();
+            diagnosticPreview = ProviderSession.ApplicationComposition.SharedServices.Diagnostics.BuildPreview();
             SetDiagnosticsWorkspaceOpen(true);
             diagnosticsFocusTransition.Enter(
                 () => ScheduleFocus(RefreshDiagnosticsButton),
@@ -472,7 +489,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.Refresh();
-            diagnosticPreview = viewModel.BuildDiagnosticPreview();
+            diagnosticPreview = ProviderSession.ApplicationComposition.SharedServices.Diagnostics.BuildPreview();
             viewModel.ReportDiagnosticAction(true, "Diagnostics checks refreshed from current local evidence.");
         }
     }
@@ -699,8 +716,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "Select a valid game folder before reviewing configuration cleanup.");
             return;
         }
-        if (settingsViewModel is not null
-            && (settingsViewModel.HasPendingChanges || settingsViewModel.SyncWorkspace.HasPendingChanges))
+        if (SharedSettings.HasPendingChanges)
         {
             viewModel.ReportDiagnosticAction(
                 false,
@@ -824,7 +840,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     ? "The configuration did not require replacement."
                     : $"Protected backup {result.BackupReceipt.BackupId} verified as {result.BackupReceipt.ContentSha256}.";
                 viewModel.Refresh();
-                diagnosticPreview = viewModel.BuildDiagnosticPreview();
+                diagnosticPreview = ProviderSession.ApplicationComposition.SharedServices.Diagnostics.BuildPreview();
                 viewModel.ReportDiagnosticAction(
                     true,
                     result.State == AtomicTomlWriteState.NoChange
@@ -1068,9 +1084,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (settingsViewModel is not null
-            && (settingsViewModel.HasPendingChanges
-                || settingsViewModel.SyncWorkspace.HasPendingChanges))
+        if (SharedSettings.HasPendingChanges)
         {
             ProviderSwitchPreviewText.Text =
                 "Save or discard staged Settings and Data Sync changes before switching sources.";
@@ -1509,28 +1523,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     $"Settings are disabled until the release source is repaired. "
                     + providerSelectionResolution.Message);
             }
-            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
-            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
-            var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
-            var mutationBackup = new ProviderScopedConfigurationMutationBackup(
-                backupStore,
-                distributionProvider.Id,
-                $"{distributionProvider.Id}/{distributionReleaseChannel.Id}");
-            openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
-            settingsViewModel = new SettingsViewModel(
-                catalog,
-                new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
-                openRawTomlCommand,
-                GetConfigurationFilePath,
-                startupComposition.SettingsLayout,
-                startupComposition.SettingsDiagnostics,
-                repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
-                uiPreferencesStore: uiPreferencesStore,
-                openExternalUri: OpenExternalUri,
-                openDataFolder: OpenApplicationDataFolder,
-                manageApplication: OpenWindowsInstalledApps,
-                openReleaseSecurityGuidance: OpenReleaseSecurityGuidance);
-            SettingsWorkspace.DataContext = settingsViewModel;
+            SettingsWorkspace.DataContext = SharedSettings.GetOrCreate();
             isSettingsWorkspaceInitialized = true;
             return true;
         }
@@ -1540,6 +1533,34 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SettingsUnavailableDialog.IsOpen = true;
             return false;
         }
+    }
+
+    private SettingsViewModel CreateSettingsViewModel(
+        LauncherDistributionProvider provider,
+        LauncherProviderReleaseChannel releaseChannel,
+        LauncherStartupComposition runtimeComposition)
+    {
+        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
+        var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+        var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
+        var mutationBackup = new ProviderScopedConfigurationMutationBackup(
+            backupStore,
+            provider.Id,
+            $"{provider.Id}/{releaseChannel.Id}");
+        openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
+        return new(
+            catalog,
+            new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
+            openRawTomlCommand,
+            GetConfigurationFilePath,
+            runtimeComposition.SettingsLayout,
+            runtimeComposition.SettingsDiagnostics,
+            repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
+            uiPreferencesStore: uiPreferencesStore,
+            openExternalUri: OpenExternalUri,
+            openDataFolder: OpenApplicationDataFolder,
+            manageApplication: OpenWindowsInstalledApps,
+            openReleaseSecurityGuidance: OpenReleaseSecurityGuidance);
     }
 
     private bool CanOpenRawConfiguration()
@@ -1698,7 +1719,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     void ILauncherShellRefreshTarget.ReloadConfigurationDocument()
     {
-        settingsViewModel?.ReloadConfiguration();
+        SharedSettings.Current?.ReloadConfiguration();
     }
 }
 
