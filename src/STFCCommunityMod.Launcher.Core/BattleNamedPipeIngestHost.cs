@@ -176,24 +176,74 @@ public sealed class BattleNamedPipeIngestHost : IAsyncDisposable
         string runtimeEvidenceSha256,
         BattleIngestLimits? limits = null,
         TimeProvider? timeProvider = null)
+        : this(
+            activation,
+            pipeName,
+            DecodeCredential(credential),
+            sink,
+            authorizer,
+            runtimeEvidenceSha256,
+            limits,
+            timeProvider)
     {
-        this.activation = activation ?? throw new ArgumentNullException(nameof(activation));
-        if (!activation.IsReviewedFeatureComposition)
+    }
+
+    internal BattleNamedPipeIngestHost(
+        BattleIngestActivation activation,
+        string pipeName,
+        ReadOnlySpan<byte> credential,
+        IBattleIngestSink sink,
+        IBattleNamedPipeClientAuthorizer authorizer,
+        string runtimeEvidenceSha256,
+        BattleIngestLimits? limits = null,
+        TimeProvider? timeProvider = null)
+        : this(
+            activation,
+            pipeName,
+            CopyCredential(credential),
+            sink,
+            authorizer,
+            runtimeEvidenceSha256,
+            limits,
+            timeProvider)
+    {
+    }
+
+    private BattleNamedPipeIngestHost(
+        BattleIngestActivation activation,
+        string pipeName,
+        byte[] credential,
+        IBattleIngestSink sink,
+        IBattleNamedPipeClientAuthorizer authorizer,
+        string runtimeEvidenceSha256,
+        BattleIngestLimits? limits,
+        TimeProvider? timeProvider)
+    {
+        try
         {
-            throw new ArgumentException(
-                "Battle local IPC requires the reviewed capability, policy, and player-intent composition.",
-                nameof(activation));
+            this.activation = activation ?? throw new ArgumentNullException(nameof(activation));
+            if (!activation.IsReviewedFeatureComposition)
+            {
+                throw new ArgumentException(
+                    "Battle local IPC requires the reviewed capability, policy, and player-intent composition.",
+                    nameof(activation));
+            }
+            this.pipeName = RequirePipeName(pipeName);
+            this.credential = credential;
+            this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
+            this.authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
+            this.runtimeEvidenceSha256 = RequireSha256(runtimeEvidenceSha256);
+            this.limits = limits ?? BattleIngestLimits.Default;
+            this.limits.Validate();
+            this.timeProvider = timeProvider ?? TimeProvider.System;
+            processor = new(activation, this.limits, this.timeProvider);
+            requestSlots = new(this.limits.MaximumConcurrentRequests, this.limits.MaximumConcurrentRequests);
         }
-        this.pipeName = RequirePipeName(pipeName);
-        this.credential = DecodeCredential(credential);
-        this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
-        this.authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
-        this.runtimeEvidenceSha256 = RequireSha256(runtimeEvidenceSha256);
-        this.limits = limits ?? BattleIngestLimits.Default;
-        this.limits.Validate();
-        this.timeProvider = timeProvider ?? TimeProvider.System;
-        processor = new(activation, this.limits, this.timeProvider);
-        requestSlots = new(this.limits.MaximumConcurrentRequests, this.limits.MaximumConcurrentRequests);
+        catch
+        {
+            CryptographicOperations.ZeroMemory(credential);
+            throw;
+        }
     }
 
     public BattleLocalIpcHealth GetHealth()
@@ -778,6 +828,16 @@ public sealed class BattleNamedPipeIngestHost : IAsyncDisposable
             throw new ArgumentException("Battle local IPC credential is invalid.", nameof(value));
         }
         return bytes;
+    }
+
+    private static byte[] CopyCredential(ReadOnlySpan<byte> value)
+    {
+        if (value.Length != 32)
+        {
+            throw new ArgumentException("Battle local IPC credential must contain exactly 32 bytes.",
+                nameof(value));
+        }
+        return value.ToArray();
     }
 
     private static string ToBase64Url(ReadOnlySpan<byte> bytes) =>
