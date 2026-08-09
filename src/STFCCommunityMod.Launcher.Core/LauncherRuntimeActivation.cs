@@ -8,6 +8,15 @@ public static class LauncherCapabilityIds
 {
     public const string PrincipalSettingsTaxonomyV1 =
         "settings.principal-taxonomy.v1";
+
+    public const string SidecarIngestV1 =
+        "ingest.stfc-sidecar.v1";
+
+    public const string BattleCaptureV1 =
+        "battle.capture.v1";
+
+    public const string FleetRuntimeSnapshotV1 =
+        "fleet.runtime-snapshot.v1";
 }
 
 public static class LauncherFeatureIds

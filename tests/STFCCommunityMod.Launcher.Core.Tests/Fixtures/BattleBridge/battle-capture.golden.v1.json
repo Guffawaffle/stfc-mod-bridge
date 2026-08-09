@@ -1,0 +1,98 @@
+{
+  "fixtureSchema": "stfc.battle-bridge.payload-fixture.v1",
+  "evidence": [
+    {"label": "ingest.stfc-sidecar.v1", "schema": "stfc.sidecar.ingest.v1"},
+    {"label": "battle.capture.v1", "schema": "stfc.battle.capture.v1"}
+  ],
+  "synthetic": true,
+  "redacted": true,
+  "envelope": {
+    "protocolVersion": "stfc.sidecar.ingest.v1",
+    "kind": "battle.events",
+    "batchId": "golden-battle-batch-1",
+    "producedAt": "2026-05-18T12:05:00.000Z",
+    "sessionId": "golden-session-1",
+    "source": "stfc-community-mod",
+    "modVersion": "fixture-only",
+    "payloadProtocol": "stfc.sidecar.events.v0",
+    "payload": [
+      {
+        "protocolVersion": "stfc.sidecar.events.v0",
+        "type": "battle.capture",
+        "schemaVersion": "stfc.battle.capture.v1",
+        "timestamp": "2026-05-18T12:05:00.000Z",
+        "sessionId": "golden-session-1",
+        "modVersion": "fixture-only",
+        "source": "scopely.journal.battle",
+        "journalId": "9007199254740993123",
+        "battleId": "9007199254740993555",
+        "battleType": 1,
+        "capturedAtUnixMs": 1779105900000,
+        "capture": {
+          "sourceKind": "scopely.journal.battle",
+          "capturedAtUnixMs": 1779105900000,
+          "participants": [
+            {
+              "participantKind": "player",
+              "participantId": "redacted-player-1"
+            },
+            {
+              "participantKind": "hostile",
+              "participantId": "redacted-hostile-1"
+            }
+          ],
+          "battleLog": {
+            "encoding": "string_tokens.v1",
+            "tokenCount": 6,
+            "tokens": [
+              "9007199254740993123",
+              "1",
+              "42",
+              "0",
+              "9007199254740993555",
+              "7"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "expectedParsedEnvelope": {
+    "protocolVersion": "stfc.sidecar.ingest.v1",
+    "kind": "battle.events",
+    "batchId": "golden-battle-batch-1",
+    "producedAt": "2026-05-18T12:05:00.000Z",
+    "sessionId": "golden-session-1",
+    "source": "stfc-community-mod",
+    "modVersion": "fixture-only",
+    "payloadProtocol": "stfc.sidecar.events.v0",
+    "payload": [
+      {
+        "protocolVersion": "stfc.sidecar.events.v0",
+        "type": "battle.capture",
+        "schemaVersion": "stfc.battle.capture.v1",
+        "timestamp": "2026-05-18T12:05:00.000Z",
+        "sessionId": "golden-session-1",
+        "modVersion": "fixture-only",
+        "source": "scopely.journal.battle",
+        "journalId": "9007199254740993123",
+        "battleId": "9007199254740993555",
+        "battleType": 1,
+        "capturedAtUnixMs": 1779105900000,
+        "capture": {
+          "sourceKind": "scopely.journal.battle",
+          "capturedAtUnixMs": 1779105900000,
+          "participants": [
+            {"participantKind": "player", "participantId": "redacted-player-1"},
+            {"participantKind": "hostile", "participantId": "redacted-hostile-1"}
+          ],
+          "battleLog": {
+            "encoding": "string_tokens.v1",
+            "tokenCount": 6,
+            "tokens": ["9007199254740993123", "1", "42", "0", "9007199254740993555", "7"]
+          }
+        }
+      }
+    ]
+  }
+}
