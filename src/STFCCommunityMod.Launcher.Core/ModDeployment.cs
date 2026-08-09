@@ -138,7 +138,30 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             allowManagedRepair: false,
             commitParticipant: null,
             coordinatedTransactionId: null,
+            candidateLease: null,
+            candidateClaim: null,
             cancellationToken);
+
+    public async Task<ModDeploymentResult> DeployCandidateAsync(
+        string gameDirectory,
+        ReviewedModArtifactCandidateLease candidateLease,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateLease);
+        return await ExecuteCandidateLeaseAsync(
+            candidateLease,
+            claim => DeployCoreAsync(
+                gameDirectory,
+                candidateLease.Receipt.Artifact,
+                existingArtifactPolicy,
+                allowManagedRepair: false,
+                commitParticipant: null,
+                coordinatedTransactionId: null,
+                candidateLease,
+                claim,
+                cancellationToken)).ConfigureAwait(false);
+    }
 
     public async Task<ModDeploymentResult> DeployCoordinatedAsync(
         string gameDirectory,
@@ -154,7 +177,32 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             allowManagedRepair: false,
             commitParticipant ?? throw new ArgumentNullException(nameof(commitParticipant)),
             ValidateTransactionId(transactionId),
+            candidateLease: null,
+            candidateClaim: null,
             cancellationToken);
+
+    public async Task<ModDeploymentResult> DeployCandidateCoordinatedAsync(
+        string gameDirectory,
+        ReviewedModArtifactCandidateLease candidateLease,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateLease);
+        return await ExecuteCandidateLeaseAsync(
+            candidateLease,
+            claim => DeployCoreAsync(
+                gameDirectory,
+                candidateLease.Receipt.Artifact,
+                existingArtifactPolicy,
+                allowManagedRepair: false,
+                commitParticipant ?? throw new ArgumentNullException(nameof(commitParticipant)),
+                ValidateTransactionId(transactionId),
+                candidateLease,
+                claim,
+                cancellationToken)).ConfigureAwait(false);
+    }
 
     public async Task<ModDeploymentResult> RepairAsync(
         string gameDirectory,
@@ -167,7 +215,72 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             allowManagedRepair: true,
             commitParticipant: null,
             coordinatedTransactionId: null,
+            candidateLease: null,
+            candidateClaim: null,
             cancellationToken);
+
+    public async Task<ModDeploymentResult> RepairCandidateAsync(
+        string gameDirectory,
+        ReviewedModArtifactCandidateLease candidateLease,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateLease);
+        return await ExecuteCandidateLeaseAsync(
+            candidateLease,
+            claim => DeployCoreAsync(
+                gameDirectory,
+                candidateLease.Receipt.Artifact,
+                ExistingArtifactPolicy.Reject,
+                allowManagedRepair: true,
+                commitParticipant: null,
+                coordinatedTransactionId: null,
+                candidateLease,
+                claim,
+                cancellationToken)).ConfigureAwait(false);
+    }
+
+    private static async Task<ModDeploymentResult> ExecuteCandidateLeaseAsync(
+        ReviewedModArtifactCandidateLease candidateLease,
+        Func<object, Task<ModDeploymentResult>> operation)
+    {
+        if (!candidateLease.TryClaim(out var claim) || claim is null)
+        {
+            return new(
+                ModDeploymentResultState.VerificationFailed,
+                "The reviewed artifact candidate is already claimed, consumed, or awaiting cleanup.");
+        }
+        try
+        {
+            await candidateLease.AfterClaimedAsync(CancellationToken.None).ConfigureAwait(false);
+            var result = await operation(claim).ConfigureAwait(false);
+            try
+            {
+                await candidateLease.CleanupClaimAsync(claim).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return new(
+                    ModDeploymentResultState.VerificationFailed,
+                    "The reviewed candidate could not be cleaned safely; deployment did not start.");
+            }
+            return result;
+        }
+        catch (Exception operationFailure)
+        {
+            try
+            {
+                await candidateLease.CleanupClaimAsync(claim).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure) when (cleanupFailure is IOException or UnauthorizedAccessException)
+            {
+                throw new AggregateException(
+                    "Reviewed candidate execution and exact cleanup both failed.",
+                    operationFailure,
+                    cleanupFailure);
+            }
+            throw;
+        }
+    }
 
     private async Task<ModDeploymentResult> DeployCoreAsync(
         string gameDirectory,
@@ -176,6 +289,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         bool allowManagedRepair,
         IModDeploymentCommitParticipant? commitParticipant,
         string? coordinatedTransactionId,
+        ReviewedModArtifactCandidateLease? candidateLease,
+        object? candidateClaim,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -222,6 +337,38 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             return new(
                 ModDeploymentResultState.RecoveryRequired,
                 "An incomplete mod transaction must be recovered before another mutation can start.");
+        }
+        ReviewedModArtifactCandidateContents? candidateContents = null;
+        if (candidateLease is not null)
+        {
+            if (reviewedCertification is null)
+            {
+                return new(
+                    ModDeploymentResultState.VerificationFailed,
+                    "The reviewed artifact candidate has no matching launcher certification authority.");
+            }
+            try
+            {
+                candidateContents = await candidateLease.ConsumeAsync(
+                    candidateClaim ?? throw new InvalidOperationException("The candidate deployment claim is missing."),
+                    ReviewedModArtifactCandidateAcquirer.CertificationFingerprint(reviewedCertification),
+                    installationAttribution,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            {
+                return new(ModDeploymentResultState.VerificationFailed, exception.Message);
+            }
+            try
+            {
+                await candidateLease.CleanupClaimAsync(candidateClaim!).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return new(
+                    ModDeploymentResultState.VerificationFailed,
+                    "The verified candidate could not be cleaned safely; deployment did not start.");
+            }
         }
         var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState);
         if (legacyUpgrade.Failure is not null)
@@ -351,7 +498,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Downloading, cancellationToken);
 
-            var download = await downloader.DownloadAsync(artifact.DownloadUri, cancellationToken);
+            var download = candidateContents is null
+                ? await downloader.DownloadAsync(artifact.DownloadUri, cancellationToken)
+                : new ModArtifactDownload(HttpStatusCode.OK, candidateContents.Dll, candidateContents.Dll.LongLength);
             var downloadFailure = VerifyDownload(download, journal.Artifact);
             if (downloadFailure is not null)
             {
@@ -367,9 +516,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ReviewedRuntimeActivation? reviewedRuntimeActivation = null;
             if (journal.Artifact.RuntimeManifest is not null)
             {
-                runtimeManifestDownload = await downloader.DownloadAsync(
-                    journal.Artifact.RuntimeManifest.DownloadUri,
-                    cancellationToken);
+                runtimeManifestDownload = candidateContents is null
+                    ? await downloader.DownloadAsync(
+                        journal.Artifact.RuntimeManifest.DownloadUri,
+                        cancellationToken)
+                    : new ModArtifactDownload(
+                        HttpStatusCode.OK,
+                        candidateContents.RuntimeManifest
+                            ?? throw new InvalidDataException("The reviewed candidate pair is incomplete."),
+                        candidateContents.RuntimeManifest?.LongLength);
                 var runtimeFailure = VerifyDownload(runtimeManifestDownload, journal.Artifact.RuntimeManifest);
                 if (runtimeFailure is not null)
                 {
@@ -384,11 +539,12 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     journal.Artifact,
                     journal.Artifact.RuntimeManifest,
                     installationAttribution.RuntimeDistributionId);
-                reviewedRuntimeActivation = ArtifactBoundRuntimeManifestParser.AuthorizeActivation(
-                    parsedRuntimeManifest,
-                    journal.Artifact,
-                    journal.Artifact.RuntimeManifest,
-                    reviewedCertification);
+                reviewedRuntimeActivation = candidateContents?.RuntimeActivation
+                    ?? ArtifactBoundRuntimeManifestParser.AuthorizeActivation(
+                        parsedRuntimeManifest,
+                        journal.Artifact,
+                        journal.Artifact.RuntimeManifest,
+                        reviewedCertification);
                 if (reviewedRuntimeActivation is null)
                 {
                     throw new InvalidDataException(
