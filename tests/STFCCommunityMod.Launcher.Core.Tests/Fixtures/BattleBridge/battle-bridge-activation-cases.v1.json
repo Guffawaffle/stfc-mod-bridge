@@ -1,0 +1,155 @@
+{
+  "fixtureSchema": "stfc.mod-bridge.battle-activation-cases.v1",
+  "provisional": true,
+  "provisionalCapabilityIds": [
+    "ingest.stfc-sidecar.v1",
+    "battle.capture.v1",
+    "fleet.runtime-snapshot.v1",
+    "fleet.alert-evidence.v0"
+  ],
+  "capabilityInventoryPin": {
+    "schema": "stfc.battle-bridge.capability-evidence-pin.v1",
+    "entries": [
+      {"id": "battle.analytics.v0", "schema": "sidecar-source-observation"},
+      {"id": "battle.capture.v1", "schema": "stfc.battle.capture.v1"},
+      {"id": "battle.catalog-snapshot.v0", "schema": "sidecar-source-observation"},
+      {"id": "battle.report.v0", "schema": "sidecar-source-observation"},
+      {"id": "fleet.alert-evidence.v0", "schema": "unproven"},
+      {"id": "fleet.runtime-snapshot.v1", "schema": "stfc.fleet.runtime_snapshot.v1"},
+      {"id": "ingest.stfc-sidecar.v1", "schema": "stfc.sidecar.ingest.v1"}
+    ],
+    "sha256": "aa6b738eab60a3bcb17a0c37cfcd533198096dd05d98abfd4a43308e891a9cc9"
+  },
+  "featureDefinitions": [
+    {
+      "id": "candidate.battle.collection",
+      "requiredCapabilities": ["ingest.stfc-sidecar.v1", "battle.capture.v1"],
+      "activeImplementation": "test-battle-collection",
+      "fallbackImplementation": "test-no-battle-collection"
+    },
+    {
+      "id": "candidate.fleet.collection",
+      "requiredCapabilities": ["ingest.stfc-sidecar.v1", "fleet.runtime-snapshot.v1"],
+      "activeImplementation": "test-fleet-collection",
+      "fallbackImplementation": "test-no-fleet-collection"
+    },
+    {
+      "id": "candidate.fleet.local-alerts",
+      "requiredCapabilities": ["ingest.stfc-sidecar.v1", "fleet.alert-evidence.v0"],
+      "activeImplementation": "test-local-alerts",
+      "fallbackImplementation": "test-no-local-alerts"
+    }
+  ],
+  "cases": [
+    {
+      "id": "current-guffawaffle-no-battle-capabilities",
+      "evidenceClass": "current-reviewed",
+      "manifest": {
+        "manifestSchema": 1,
+        "distributionId": "guffawaffle.stfc-community-mod",
+        "runtimeVersion": "2.1.0.0",
+        "sourceRevision": "current-reviewed-source",
+        "capabilities": ["settings.principal-taxonomy.v1"],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "current-reviewed"}
+      },
+      "expectedDistribution": "guffawaffle.stfc-community-mod",
+      "expectedActive": [],
+      "retainedHistory": {"battleReadable": false, "fleetReadable": false}
+    },
+    {
+      "id": "current-netniv-runtime-unavailable",
+      "evidenceClass": "current-reviewed-unavailable",
+      "manifest": null,
+      "expectedDistribution": "unknown",
+      "expectedActive": [],
+      "retainedHistory": {"battleReadable": true, "fleetReadable": false}
+    },
+    {
+      "id": "hypothetical-future-netniv-battle-subset",
+      "evidenceClass": "hypothetical-compatible",
+      "manifest": {
+        "manifestSchema": 1,
+        "distributionId": "netniv.stfc-community-mod",
+        "runtimeVersion": "9.0.0.0",
+        "sourceRevision": "hypothetical-netniv",
+        "capabilities": ["ingest.stfc-sidecar.v1", "battle.capture.v1"],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "hypothetical"}
+      },
+      "expectedDistribution": "netniv.stfc-community-mod",
+      "expectedActive": ["candidate.battle.collection"],
+      "retainedHistory": {"battleReadable": false, "fleetReadable": false}
+    },
+    {
+      "id": "hypothetical-partial-fleet",
+      "evidenceClass": "hypothetical-compatible",
+      "manifest": {
+        "manifestSchema": 1,
+        "distributionId": "example.partial-mod",
+        "runtimeVersion": "1.0.0.0",
+        "sourceRevision": "hypothetical-partial",
+        "capabilities": ["ingest.stfc-sidecar.v1", "fleet.runtime-snapshot.v1"],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "hypothetical"}
+      },
+      "expectedDistribution": "example.partial-mod",
+      "expectedActive": ["candidate.fleet.collection"],
+      "retainedHistory": {"battleReadable": false, "fleetReadable": true}
+    },
+    {
+      "id": "hypothetical-unsupported-schema",
+      "evidenceClass": "hypothetical-negative",
+      "manifest": {
+        "manifestSchema": 99,
+        "distributionId": "example.unsupported",
+        "runtimeVersion": "1.0.0.0",
+        "sourceRevision": "hypothetical-unsupported",
+        "capabilities": ["ingest.stfc-sidecar.v1", "battle.capture.v1"],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "hypothetical"}
+      },
+      "expectedDistribution": "unknown",
+      "expectedActive": [],
+      "retainedHistory": {"battleReadable": true, "fleetReadable": false}
+    },
+    {
+      "id": "current-unknown-custom-artifact",
+      "evidenceClass": "current-reviewed-unavailable",
+      "manifest": null,
+      "expectedDistribution": "unknown",
+      "expectedActive": [],
+      "retainedHistory": {"battleReadable": true, "fleetReadable": true}
+    },
+    {
+      "id": "hypothetical-capability-loss-before",
+      "evidenceClass": "hypothetical-transition",
+      "manifest": {
+        "manifestSchema": 1,
+        "distributionId": "example.transition",
+        "runtimeVersion": "1.0.0.0",
+        "sourceRevision": "hypothetical-before",
+        "capabilities": ["ingest.stfc-sidecar.v1", "battle.capture.v1", "fleet.runtime-snapshot.v1"],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "hypothetical"}
+      },
+      "expectedDistribution": "example.transition",
+      "expectedActive": ["candidate.battle.collection", "candidate.fleet.collection"],
+      "retainedHistory": {"battleReadable": true, "fleetReadable": true}
+    },
+    {
+      "id": "hypothetical-capability-loss-after",
+      "evidenceClass": "hypothetical-transition",
+      "manifest": {
+        "manifestSchema": 1,
+        "distributionId": "example.transition",
+        "runtimeVersion": "1.1.0.0",
+        "sourceRevision": "hypothetical-after",
+        "capabilities": [],
+        "settingsCatalog": {"schemaVersion": 1, "revision": "hypothetical"}
+      },
+      "expectedDistribution": "example.transition",
+      "expectedActive": [],
+      "retainedHistory": {"battleReadable": true, "fleetReadable": true}
+    }
+  ],
+  "capabilityLossTransition": {
+    "before": "hypothetical-capability-loss-before",
+    "after": "hypothetical-capability-loss-after"
+  }
+}

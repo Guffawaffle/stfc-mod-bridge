@@ -42,5 +42,7 @@
     <None Include="..\..\providers\compatibility\source-switch-unknown-content.v1.toml"
           Link="Fixtures\Providers\source-switch-unknown-content.v1.toml"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\BattleBridge\battle-bridge-activation-cases.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
