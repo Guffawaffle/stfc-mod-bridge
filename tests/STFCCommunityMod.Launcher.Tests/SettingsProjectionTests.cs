@@ -698,8 +698,13 @@ public sealed class SettingsProjectionTests
         var retained = owner.GetOrCreate();
         fixture.Select(LauncherSettingsSection.Graphics);
         fixture.Row("graphics.free_resize").BooleanValue = false;
-        retained.SaveCommand.Execute(null);
+        var activeSave = retained.SaveAsync();
         await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var repeatedSave = retained.SaveAsync();
+
+        Assert.AreSame(activeSave, repeatedSave);
+        Assert.IsFalse(repeatedSave.IsCompleted);
 
         var invalidation = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
 
@@ -710,7 +715,7 @@ public sealed class SettingsProjectionTests
         fixture.Row("graphics.free_resize").BooleanValue = true;
         retained.SaveCommand.Execute(null);
         pause.Release();
-        await invalidation.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(activeSave, repeatedSave, invalidation).WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.AreEqual(1, pause.SaveCount);
         StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "free_resize = false");
@@ -731,8 +736,13 @@ public sealed class SettingsProjectionTests
         var retained = owner.GetOrCreate();
         var jobs = retained.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs");
         jobs.IsEnabled = false;
-        retained.SyncWorkspace.SaveCommand.Execute(null);
+        var activeSave = retained.SyncWorkspace.SaveAsync();
         await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var repeatedSave = retained.SyncWorkspace.SaveAsync();
+
+        Assert.AreSame(activeSave, repeatedSave);
+        Assert.IsFalse(repeatedSave.IsCompleted);
 
         var invalidation = owner.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
 
@@ -743,7 +753,7 @@ public sealed class SettingsProjectionTests
         jobs.IsEnabled = true;
         retained.SyncWorkspace.SaveCommand.Execute(null);
         pause.Release();
-        await invalidation.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(activeSave, repeatedSave, invalidation).WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.AreEqual(1, pause.SaveCount);
         StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "jobs = false");

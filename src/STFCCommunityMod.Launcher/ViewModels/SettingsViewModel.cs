@@ -672,13 +672,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
-    private Task SaveAsync()
+    internal Task SaveAsync()
     {
         TaskCompletionSource completion;
         ConfigurationWorkspace editingSession;
         lock (lifecycleSync)
         {
-            if (isInvalidating || isInvalidated || activeSave is not null || workspace is null)
+            if (activeSave is not null)
+            {
+                return activeSave;
+            }
+            if (isInvalidating || isInvalidated || workspace is null)
             {
                 return Task.CompletedTask;
             }

@@ -494,14 +494,18 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Rebuild();
     }
 
-    private Task SaveAsync()
+    internal Task SaveAsync()
     {
         TaskCompletionSource completion;
         SyncTopologyEditSession editingSession;
         ConfigurationWorkspace? configurationWorkspace;
         lock (lifecycleSync)
         {
-            if (isInvalidating || isInvalidated || activeSave is not null || workspace is null)
+            if (activeSave is not null)
+            {
+                return activeSave;
+            }
+            if (isInvalidating || isInvalidated || workspace is null)
             {
                 return Task.CompletedTask;
             }
