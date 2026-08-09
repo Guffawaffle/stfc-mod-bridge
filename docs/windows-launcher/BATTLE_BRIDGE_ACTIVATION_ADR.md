@@ -138,7 +138,7 @@ inventory or measurement:
 | Exact Battle feature/capability IDs and the minimum Battle Home baseline | [Sidecar #55](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/55), accepted against the cross-provider fixtures in [#75](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/75) |
 | Integrated MSIX versus a separately signed optional package | The [package-topology evidence](BATTLE_BRIDGE_PACKAGE_TOPOLOGY.md) accepts one integrated package as the v1 default. [Sidecar #66](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/66) remains open for the real Battle delta and zero-cost base-mode measurements. |
 | Runtime lifetime after the Bridge window closes | [Sidecar #59](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/59), with lifecycle, locking, crash-recovery, and player-expectation evidence |
-| Storage budget and retention defaults | [Sidecar #61](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/61) and [#78](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/78), after corpus-size, query, cleanup, and soak measurements |
+| Storage budget and retention defaults | The [SQLite v1 storage contract](BATTLE_BRIDGE_STORAGE.md), tracked by [Sidecar #61](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/61) and [#78](https://github.com/Guffawaffle/stfc-mod-sidecar/issues/78), after corpus-size, query, cleanup, and soak measurements |
 | Deferred research, cloud, and static-modifier surfaces | Their deferred issues, reconsidered only with a bounded player outcome, privacy model, and delivery evidence |
 
 Until those gates close, implementations must preserve the extension points
