@@ -22,6 +22,7 @@ internal enum BattleLifecycleCleanupCheckpoint
     CandidatesDeleted,
     RuntimeLockDeleted,
     MarkerDeleting,
+    RuntimeLockRetained,
 }
 
 internal sealed class BattleLifecycleTerminalRecoveryCoordinator
