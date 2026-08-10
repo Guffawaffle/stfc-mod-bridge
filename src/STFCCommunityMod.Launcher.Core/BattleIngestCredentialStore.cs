@@ -2,6 +2,8 @@ using System.Globalization;
 using System.ComponentModel;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
@@ -10,6 +12,71 @@ namespace STFCCommunityMod.Launcher.Core;
 internal enum BattleCredentialRotationReason { Initial, Manual, Recovery }
 
 internal enum BattleCredentialLoadState { Absent, Readable, TooLarge, Invalid, Unavailable }
+
+internal enum BattleCredentialProtectedState { Absent, Match, Foreign, Unavailable }
+
+internal interface IBattleCredentialStorageSecurity
+{
+    void SecureFile(FileStream stream);
+}
+
+[SupportedOSPlatform("windows")]
+internal sealed class WindowsCurrentUserBattleCredentialStorageSecurity
+    : IBattleCredentialStorageSecurity
+{
+    public void SecureFile(FileStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var currentUser = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException("The current Windows user SID is unavailable.");
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new(
+            currentUser,
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new(
+            system,
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        stream.SetAccessControl(security);
+
+        var applied = stream.GetAccessControl();
+        var owner = applied.GetOwner(typeof(SecurityIdentifier));
+        var rules = applied.GetAccessRules(
+                includeExplicit: true,
+                includeInherited: true,
+                typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .ToArray();
+        if (!applied.AreAccessRulesProtected
+            || !currentUser.Equals(owner)
+            || rules.Length != 2
+            || rules.Any(rule =>
+                rule.IsInherited
+                || rule.AccessControlType != AccessControlType.Allow
+                || rule.FileSystemRights != FileSystemRights.FullControl
+                || !string.Equals(
+                    rule.IdentityReference.Value,
+                    currentUser.Value,
+                    StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(
+                        rule.IdentityReference.Value,
+                        system.Value,
+                        StringComparison.OrdinalIgnoreCase))
+            || rules.Select(rule => rule.IdentityReference.Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
+        {
+            throw new UnauthorizedAccessException("The Battle credential ACL did not verify.");
+        }
+    }
+}
+
+internal sealed class NoOpBattleCredentialStorageSecurity : IBattleCredentialStorageSecurity
+{
+    public void SecureFile(FileStream stream) => ArgumentNullException.ThrowIfNull(stream);
+}
 
 internal sealed record BattleCredentialMetadata(
     string CredentialId,
@@ -364,16 +431,131 @@ internal static class BattleIngestCredentialCodec
 internal sealed class BattleIngestCredentialStore
 {
     private readonly IBattleCredentialProtector protector;
+    private readonly IBattleCredentialStorageSecurity storageSecurity;
 
-    public BattleIngestCredentialStore(string stateRoot, IBattleCredentialProtector protector)
+    public BattleIngestCredentialStore(
+        string stateRoot,
+        IBattleCredentialProtector protector,
+        IBattleCredentialStorageSecurity? storageSecurity = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateRoot);
         this.protector = protector ?? throw new ArgumentNullException(nameof(protector));
+        this.storageSecurity = storageSecurity ?? (OperatingSystem.IsWindows()
+            ? new WindowsCurrentUserBattleCredentialStorageSecurity()
+            : new NoOpBattleCredentialStorageSecurity());
         Path = System.IO.Path.Combine(
             System.IO.Path.GetFullPath(stateRoot), "battle", BattleIngestCredentialCodec.FileName);
     }
 
     public string Path { get; }
+
+    internal async Task<BattleCredentialPromotionLease> CreateNewAsync(
+        ReadOnlyMemory<byte> protectedBytes,
+        BattleLifecycleFileIdentity expectedIdentity,
+        CancellationToken cancellationToken = default)
+    {
+        if (protectedBytes.Length is <= 0 or > BattleIngestCredentialCodec.MaximumProtectedBytes
+            || protectedBytes.Length != expectedIdentity.ByteCount
+            || !string.Equals(
+                Convert.ToHexString(SHA256.HashData(protectedBytes.Span)).ToLowerInvariant(),
+                expectedIdentity.Sha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The Battle credential promotion bytes are invalid.");
+        }
+
+        var parent = System.IO.Path.GetDirectoryName(Path)
+            ?? throw new InvalidOperationException("The Battle credential path has no parent directory.");
+        Directory.CreateDirectory(parent);
+        FileStream? stream = null;
+        try
+        {
+            stream = OperatingSystem.IsWindows()
+                ? new(
+                    CandidateFileNative.CreateReadWriteDelete(Path),
+                    FileAccess.ReadWrite,
+                    81920,
+                    isAsync: true)
+                : new(
+                    Path,
+                    FileMode.CreateNew,
+                    FileAccess.ReadWrite,
+                    FileShare.Read,
+                    81920,
+                    FileOptions.Asynchronous | FileOptions.WriteThrough);
+            storageSecurity.SecureFile(stream);
+            await stream.WriteAsync(protectedBytes, cancellationToken).ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            stream.Flush(flushToDisk: true);
+            stream.Position = 0;
+            if (stream.Length != expectedIdentity.ByteCount
+                || !string.Equals(
+                    Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(),
+                    expectedIdentity.Sha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The promoted Battle credential did not verify.");
+            }
+            stream.Position = 0;
+            var lease = new BattleCredentialPromotionLease(Path, stream);
+            stream = null;
+            return lease;
+        }
+        catch (Exception failure)
+        {
+            if (stream is not null)
+            {
+                var deleted = !OperatingSystem.IsWindows()
+                    || CandidateFileNative.TryMarkDeleteOnClose(stream.SafeFileHandle);
+                await stream.DisposeAsync().ConfigureAwait(false);
+                if (!OperatingSystem.IsWindows() && deleted)
+                {
+                    File.Delete(Path);
+                }
+                if (!deleted)
+                {
+                    throw new IOException(
+                        "The incomplete Battle credential could not be removed.",
+                        failure);
+                }
+            }
+            throw;
+        }
+    }
+
+    internal bool MatchesProtectedIdentity(BattleLifecycleFileIdentity expected)
+        => InspectProtectedIdentity(expected) == BattleCredentialProtectedState.Match;
+
+    internal BattleCredentialProtectedState InspectProtectedIdentity(
+        BattleLifecycleFileIdentity expected)
+    {
+        try
+        {
+            using var stream = OpenLockedReadNoFollow(Path);
+            return stream.Length == expected.ByteCount
+                && string.Equals(
+                    Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(),
+                    expected.Sha256,
+                    StringComparison.Ordinal)
+                ? BattleCredentialProtectedState.Match
+                : BattleCredentialProtectedState.Foreign;
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException
+                or DirectoryNotFoundException)
+        {
+            return BattleCredentialProtectedState.Absent;
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode is 2 or 3)
+        {
+            return BattleCredentialProtectedState.Absent;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            return BattleCredentialProtectedState.Unavailable;
+        }
+    }
 
     public BattleCredentialLoadResult Load()
     {
@@ -422,5 +604,60 @@ internal sealed class BattleIngestCredentialStore
         if (!OperatingSystem.IsWindows())
             return new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.None);
         return new(CandidateFileNative.OpenRecoveryReadNoFollow(path), FileAccess.Read, 81920, isAsync: false);
+    }
+}
+
+internal sealed class BattleCredentialPromotionLease : IAsyncDisposable
+{
+    private readonly string path;
+    private FileStream? stream;
+
+    internal BattleCredentialPromotionLease(string path, FileStream stream)
+    {
+        this.path = path;
+        this.stream = stream;
+    }
+
+    internal bool Matches(BattleLifecycleFileIdentity expected)
+    {
+        var owned = stream
+            ?? throw new InvalidOperationException("The Battle credential promotion lease is already complete.");
+        owned.Position = 0;
+        var matches = owned.Length == expected.ByteCount
+            && string.Equals(
+                Convert.ToHexString(SHA256.HashData(owned)).ToLowerInvariant(),
+                expected.Sha256,
+                StringComparison.Ordinal);
+        owned.Position = 0;
+        return matches;
+    }
+
+    public async ValueTask CommitAsync()
+    {
+        var owned = Interlocked.Exchange(ref stream, null)
+            ?? throw new InvalidOperationException("The Battle credential promotion lease is already complete.");
+        await owned.DisposeAsync().ConfigureAwait(false);
+    }
+
+    public async ValueTask RollbackAsync()
+    {
+        var owned = Interlocked.Exchange(ref stream, null)
+            ?? throw new InvalidOperationException("The Battle credential promotion lease is already complete.");
+        if (OperatingSystem.IsWindows()
+            && !CandidateFileNative.TryMarkDeleteOnClose(owned.SafeFileHandle))
+        {
+            stream = owned;
+            throw new IOException("The exact promoted Battle credential could not be removed.");
+        }
+        await owned.DisposeAsync().ConfigureAwait(false);
+        if (!OperatingSystem.IsWindows()) File.Delete(path);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (stream is not null)
+        {
+            await RollbackAsync().ConfigureAwait(false);
+        }
     }
 }

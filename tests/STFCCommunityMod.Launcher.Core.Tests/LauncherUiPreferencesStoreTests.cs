@@ -6,6 +6,54 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherUiPreferencesStoreTests
 {
     [TestMethod]
+    public void BattleCompareAndSwapRejectsInvalidExistingDocumentWithoutWriting()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "ui-preferences.json");
+        var invalid = "{\"schemaVersion\":5,\"schemaVersion\":5}";
+        File.WriteAllText(path, invalid);
+        var store = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path);
+
+        var saved = store.TrySaveBattlePreferences(
+            LauncherBattlePreferences.Default,
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset));
+
+        Assert.IsFalse(saved);
+        Assert.AreEqual(invalid, File.ReadAllText(path));
+    }
+
+    [TestMethod]
+    public void BattleCompareAndSwapRejectsNoncanonicalPreferenceWithoutWriting()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "ui-preferences.json");
+        var invalid = """
+            {
+              "schemaVersion": 5,
+              "settingsSearchVisible": false,
+              "colorMode": "System",
+              "launchTarget": "ScopelyLauncher",
+              "providerSwitchReviewAcknowledged": false,
+              "battleCollectionPreference": "enabled",
+              "fleetCollectionPreference": "Unset"
+            }
+            """;
+        File.WriteAllText(path, invalid);
+        var store = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path);
+
+        var saved = store.TrySaveBattlePreferences(
+            LauncherBattlePreferences.Default,
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset));
+
+        Assert.IsFalse(saved);
+        Assert.AreEqual(invalid, File.ReadAllText(path));
+    }
+
+    [TestMethod]
     public void MissingPreferencesUseDefaults()
     {
         using var temporaryDirectory = new TemporaryDirectory();

@@ -54,6 +54,8 @@ public interface ILauncherUiPreferencesStore
 
 public interface ILauncherBattlePreferencesCommitter
 {
+    bool TryLoadBattlePreferences(out LauncherBattlePreferences preferences);
+
     bool TrySaveBattlePreferences(
         LauncherBattlePreferences expected,
         LauncherBattlePreferences updated);
@@ -66,6 +68,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
     private const int CurrentSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
+        PropertyNameCaseInsensitive = false,
+        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
         WriteIndented = true,
     };
 
@@ -85,41 +89,81 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
 
     private LauncherUiPreferences LoadCore()
     {
+        return TryLoadCore(requireCanonical: false, out var preferences)
+            ? preferences
+            : LauncherUiPreferences.Default;
+    }
+
+    private bool TryLoadCore(bool requireCanonical, out LauncherUiPreferences preferences)
+    {
         if (!File.Exists(preferencesPath))
         {
-            return LauncherUiPreferences.Default;
+            preferences = LauncherUiPreferences.Default;
+            return true;
         }
 
         try
         {
-            var contents = File.ReadAllText(preferencesPath);
+            var contents = File.ReadAllBytes(preferencesPath);
+            RejectDuplicateProperties(contents);
             var document = JsonSerializer.Deserialize<PreferencesDocument>(contents, SerializerOptions);
             if (document is null)
             {
-                return LauncherUiPreferences.Default;
+                preferences = LauncherUiPreferences.Default;
+                return false;
             }
 
             if (document.SchemaVersion == 1)
             {
-                return new(document.SettingsSearchVisible, LauncherColorMode.System);
+                preferences = new(document.SettingsSearchVisible, LauncherColorMode.System);
+                return true;
             }
 
             if (document.SchemaVersion is not (2 or 3 or 4 or CurrentSchemaVersion))
             {
-                return LauncherUiPreferences.Default;
+                preferences = LauncherUiPreferences.Default;
+                return false;
             }
 
-            var colorMode = Enum.TryParse<LauncherColorMode>(
-                    document.ColorMode,
-                    ignoreCase: true,
-                    out var parsedColorMode)
-                && Enum.IsDefined(parsedColorMode)
-                    ? parsedColorMode
-                    : LauncherColorMode.System;
-            var launchTarget = document.SchemaVersion == 2
-                ? LauncherLaunchTarget.ScopelyLauncher
-                : ParseLaunchTarget(document.LaunchTarget);
-            return new(
+            var launchTarget = LauncherLaunchTarget.ScopelyLauncher;
+            var battlePreference = LauncherPlayerFeaturePreference.Unset;
+            var fleetPreference = LauncherPlayerFeaturePreference.Unset;
+            if (!TryParseExact(document.ColorMode, out LauncherColorMode colorMode))
+            {
+                if (requireCanonical)
+                {
+                    preferences = LauncherUiPreferences.Default;
+                    return false;
+                }
+                colorMode = LauncherColorMode.System;
+            }
+            if (document.SchemaVersion is not 2
+                && !TryParseExact(document.LaunchTarget, out launchTarget))
+            {
+                if (requireCanonical)
+                {
+                    preferences = LauncherUiPreferences.Default;
+                    return false;
+                }
+                launchTarget = LauncherLaunchTarget.ScopelyLauncher;
+            }
+            if (document.SchemaVersion == CurrentSchemaVersion)
+            {
+                var battleValid = TryParseExact(
+                    document.BattleCollectionPreference,
+                    out battlePreference);
+                var fleetValid = TryParseExact(
+                    document.FleetCollectionPreference,
+                    out fleetPreference);
+                if (requireCanonical && (!battleValid || !fleetValid))
+                {
+                    preferences = LauncherUiPreferences.Default;
+                    return false;
+                }
+                if (!battleValid) battlePreference = LauncherPlayerFeaturePreference.Unset;
+                if (!fleetValid) fleetPreference = LauncherPlayerFeaturePreference.Unset;
+            }
+            preferences = new(
                 document.SettingsSearchVisible,
                 colorMode,
                 launchTarget,
@@ -127,9 +171,10 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
                 && document.ProviderSwitchReviewAcknowledged,
                 document.SchemaVersion == CurrentSchemaVersion
                     ? new(
-                        ParseFeaturePreference(document.BattleCollectionPreference),
-                        ParseFeaturePreference(document.FleetCollectionPreference))
+                        battlePreference,
+                        fleetPreference)
                     : LauncherBattlePreferences.Default);
+            return true;
         }
         catch (Exception exception) when (
             exception is IOException
@@ -137,7 +182,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
                 or JsonException
                 or NotSupportedException)
         {
-            return LauncherUiPreferences.Default;
+            preferences = LauncherUiPreferences.Default;
+            return false;
         }
     }
 
@@ -164,12 +210,29 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
         RequireFeaturePreference(updated.FleetCollection);
         lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
         {
-            var current = LoadCore();
+            if (!TryLoadCore(requireCanonical: true, out var current))
+            {
+                return false;
+            }
             if (current.EffectiveBattlePreferences != expected)
             {
                 return false;
             }
             SaveCore(current with { BattlePreferences = updated });
+            return true;
+        }
+    }
+
+    public bool TryLoadBattlePreferences(out LauncherBattlePreferences preferences)
+    {
+        lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
+        {
+            if (!TryLoadCore(requireCanonical: true, out var current))
+            {
+                preferences = LauncherBattlePreferences.Default;
+                return false;
+            }
+            preferences = current.EffectiveBattlePreferences;
             return true;
         }
     }
@@ -195,9 +258,18 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
 
         try
         {
-            File.WriteAllText(
-                temporaryPath,
-                JsonSerializer.Serialize(document, SerializerOptions));
+            var contents = JsonSerializer.SerializeToUtf8Bytes(document, SerializerOptions);
+            using (var stream = new FileStream(
+                       temporaryPath,
+                       FileMode.CreateNew,
+                       FileAccess.Write,
+                       FileShare.None,
+                       81920,
+                       FileOptions.WriteThrough))
+            {
+                stream.Write(contents);
+                stream.Flush(flushToDisk: true);
+            }
             if (File.Exists(preferencesPath))
             {
                 File.Replace(temporaryPath, preferencesPath, null, true);
@@ -225,17 +297,30 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
         string? BattleCollectionPreference = null,
         string? FleetCollectionPreference = null);
 
-    private static LauncherLaunchTarget ParseLaunchTarget(string? value) =>
-        Enum.TryParse<LauncherLaunchTarget>(value, ignoreCase: true, out var parsed)
+    private static bool TryParseExact<T>(string? value, out T parsed)
+        where T : struct, Enum =>
+        Enum.TryParse(value, ignoreCase: false, out parsed)
         && Enum.IsDefined(parsed)
-            ? parsed
-            : LauncherLaunchTarget.ScopelyLauncher;
+        && string.Equals(value, parsed.ToString(), StringComparison.Ordinal);
 
-    private static LauncherPlayerFeaturePreference ParseFeaturePreference(string? value) =>
-        Enum.TryParse<LauncherPlayerFeaturePreference>(value, ignoreCase: false, out var parsed)
-        && Enum.IsDefined(parsed)
-            ? parsed
-            : LauncherPlayerFeaturePreference.Unset;
+    private static void RejectDuplicateProperties(ReadOnlySpan<byte> contents)
+    {
+        var reader = new Utf8JsonReader(contents, new JsonReaderOptions
+        {
+            AllowTrailingCommas = false,
+            CommentHandling = JsonCommentHandling.Disallow,
+            MaxDepth = 3,
+        });
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName
+                && !names.Add(reader.GetString() ?? throw new JsonException()))
+            {
+                throw new JsonException("The launcher preferences contain duplicate properties.");
+            }
+        }
+    }
 
     private static void RequireFeaturePreference(LauncherPlayerFeaturePreference value)
     {
