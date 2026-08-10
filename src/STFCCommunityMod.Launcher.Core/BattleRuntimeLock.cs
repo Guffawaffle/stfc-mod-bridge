@@ -370,6 +370,7 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
                         : StringComparison.Ordinal)
                 || record.State != BattleRuntimeLockState.Running
                 || record.OwnerId != expectedOwnerId
+                || stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes
                 || stream.Length != expectedIdentity.ByteCount)
             {
                 throw new InvalidDataException(

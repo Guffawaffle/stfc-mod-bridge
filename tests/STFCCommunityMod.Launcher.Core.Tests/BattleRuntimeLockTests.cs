@@ -287,8 +287,8 @@ public sealed class BattleRuntimeLockTests
             });
         await cleanupHoldingRuntime.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var cleanTask = runtimeLease.MarkCleanAsync(Started.AddMinutes(2));
-        await Task.Delay(50);
-        Assert.IsFalse(cleanTask.IsCompleted);
+        await Assert.ThrowsExceptionAsync<TimeoutException>(() =>
+            cleanTask.WaitAsync(TimeSpan.FromMilliseconds(100)));
 
         releaseCleanup.TrySetResult();
         await cleanupTask;
@@ -297,6 +297,29 @@ public sealed class BattleRuntimeLockTests
         Assert.AreEqual(BattleLifecycleJournalState.Absent, journal.Inspect().State);
         Assert.AreEqual(BattleRuntimeLockState.Clean, runtimeLease.Record.State);
         await runtimeLease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task RetainedRuntimeValidationRejectsOversizedBytesBeforeReadingThem()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var runtimePath = Path.Combine(temporaryDirectory.Path, "runtime.lock");
+        var oversized = new byte[BattleRuntimeLockCodec.MaximumBytes + 1];
+        File.WriteAllBytes(runtimePath, oversized);
+        var stream = new FileStream(
+            runtimePath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+        var lease = new BattleRuntimeLockLease(runtimePath, stream, RunningRecord());
+        var identity = new BattleLifecycleFileIdentity(
+            oversized.Length,
+            Convert.ToHexString(SHA256.HashData(oversized)).ToLowerInvariant());
+
+        Assert.ThrowsException<InvalidDataException>(() =>
+            lease.RetainForTerminalCleanup(runtimePath, identity, RunningRecord().OwnerId));
+
+        await lease.DisposeAsync();
     }
 
     [TestMethod]
