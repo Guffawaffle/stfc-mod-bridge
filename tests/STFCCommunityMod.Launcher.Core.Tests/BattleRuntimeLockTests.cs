@@ -190,6 +190,189 @@ public sealed class BattleRuntimeLockTests
     }
 
     [TestMethod]
+    public async Task TerminalCleanupCanRetainTheExactMarkerBoundRuntimeLease()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var protector = new RecordingMarkerProtector();
+        var journal = new BattleLifecycleJournalStore(stateRoot, protector);
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        var record = RunningRecord();
+        var prepared = PreparedMarker(record);
+        await journal.CreatePreparedAsync(operationLease, prepared);
+        var runtimeLease = await runtime.CreateBoundRunningAsync(operationLease, journal, record);
+        var cleanup = prepared with
+        {
+            Stage = BattleLifecycleStage.CleanupPending,
+            UpdatedAtUtc = Started.AddMinutes(1),
+        };
+        File.WriteAllBytes(journal.MarkerPath, BattleLifecycleMarkerCodec.Protect(cleanup, protector));
+        var checkpoints = new List<BattleLifecycleCleanupCheckpoint>();
+
+        await journal.DeleteCommittedArtifactsRetainingRuntimeAsync(
+            operationLease,
+            cleanup,
+            runtimeLease,
+            checkpoint =>
+            {
+                checkpoints.Add(checkpoint);
+                return ValueTask.CompletedTask;
+            });
+
+        Assert.AreEqual(BattleLifecycleJournalState.Absent, journal.Inspect().State);
+        Assert.IsTrue(File.Exists(Path.Combine(stateRoot, "battle", BattleRuntimeLockCodec.FileName)));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                BattleLifecycleCleanupCheckpoint.CandidatesDeleted,
+                BattleLifecycleCleanupCheckpoint.RuntimeLockRetained,
+                BattleLifecycleCleanupCheckpoint.MarkerDeleting,
+            },
+            checkpoints);
+        Assert.ThrowsException<IOException>(() =>
+            File.OpenRead(Path.Combine(stateRoot, "battle", BattleRuntimeLockCodec.FileName)).Dispose());
+
+        await runtimeLease.MarkCleanAsync(Started.AddMinutes(2));
+        await runtimeLease.DisposeAsync();
+        var reopened = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with
+            {
+                OwnerId = new string('2', 32),
+                ProcessStartNonce = new string('8', 32),
+                StartedAtUtc = Started.AddMinutes(3),
+            });
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Acquired, reopened.State);
+        Assert.AreEqual("battle-runtime-owner-acquired-after-clean", reopened.Code);
+        await reopened.Lease!.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task RetainedRuntimeReceiptCannotChangeDuringMarkerCleanup()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var protector = new RecordingMarkerProtector();
+        var journal = new BattleLifecycleJournalStore(stateRoot, protector);
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        var record = RunningRecord();
+        var prepared = PreparedMarker(record);
+        await journal.CreatePreparedAsync(operationLease, prepared);
+        var runtimeLease = await runtime.CreateBoundRunningAsync(operationLease, journal, record);
+        var cleanup = prepared with
+        {
+            Stage = BattleLifecycleStage.CleanupPending,
+            UpdatedAtUtc = Started.AddMinutes(1),
+        };
+        File.WriteAllBytes(journal.MarkerPath, BattleLifecycleMarkerCodec.Protect(cleanup, protector));
+        var cleanupHoldingRuntime = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var cleanupTask = journal.DeleteCommittedArtifactsRetainingRuntimeAsync(
+            operationLease,
+            cleanup,
+            runtimeLease,
+            async checkpoint =>
+            {
+                if (checkpoint == BattleLifecycleCleanupCheckpoint.RuntimeLockRetained)
+                {
+                    cleanupHoldingRuntime.TrySetResult();
+                    await releaseCleanup.Task;
+                }
+            });
+        await cleanupHoldingRuntime.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cleanTask = runtimeLease.MarkCleanAsync(Started.AddMinutes(2));
+        await Assert.ThrowsExceptionAsync<TimeoutException>(() =>
+            cleanTask.WaitAsync(TimeSpan.FromMilliseconds(100)));
+
+        releaseCleanup.TrySetResult();
+        await cleanupTask;
+        await cleanTask;
+
+        Assert.AreEqual(BattleLifecycleJournalState.Absent, journal.Inspect().State);
+        Assert.AreEqual(BattleRuntimeLockState.Clean, runtimeLease.Record.State);
+        await runtimeLease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task RetainedRuntimeValidationRejectsOversizedBytesBeforeReadingThem()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var runtimePath = Path.Combine(temporaryDirectory.Path, "runtime.lock");
+        var oversized = new byte[BattleRuntimeLockCodec.MaximumBytes + 1];
+        File.WriteAllBytes(runtimePath, oversized);
+        var stream = new FileStream(
+            runtimePath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+        var lease = new BattleRuntimeLockLease(runtimePath, stream, RunningRecord());
+        var identity = new BattleLifecycleFileIdentity(
+            oversized.Length,
+            Convert.ToHexString(SHA256.HashData(oversized)).ToLowerInvariant());
+
+        Assert.ThrowsException<InvalidDataException>(() =>
+            lease.RetainForTerminalCleanup(runtimePath, identity, RunningRecord().OwnerId));
+
+        await lease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task TerminalCleanupRejectsARuntimeLeaseFromAnotherStateRootBeforeMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var firstRoot = Path.Combine(temporaryDirectory.Path, "first-state");
+        var secondRoot = Path.Combine(temporaryDirectory.Path, "second-state");
+        var protector = new RecordingMarkerProtector();
+        var firstJournal = new BattleLifecycleJournalStore(firstRoot, protector);
+        var secondJournal = new BattleLifecycleJournalStore(secondRoot, protector);
+        var firstRuntime = new BattleRuntimeLockStore(firstRoot);
+        var secondRuntime = new BattleRuntimeLockStore(secondRoot);
+        await using var firstOperation = await new LauncherOperationLock(firstRoot).TryAcquireAsync();
+        await using var secondOperation = await new LauncherOperationLock(secondRoot).TryAcquireAsync();
+        Assert.IsNotNull(firstOperation);
+        Assert.IsNotNull(secondOperation);
+        var firstRecord = RunningRecord();
+        var secondRecord = RunningRecord() with { OwnerId = new string('2', 32) };
+        var firstPrepared = PreparedMarker(firstRecord);
+        var secondPrepared = PreparedMarker(secondRecord) with { OperationId = new string('b', 32) };
+        await firstJournal.CreatePreparedAsync(firstOperation, firstPrepared);
+        await secondJournal.CreatePreparedAsync(secondOperation, secondPrepared);
+        var firstLease = await firstRuntime.CreateBoundRunningAsync(
+            firstOperation,
+            firstJournal,
+            firstRecord);
+        var secondLease = await secondRuntime.CreateBoundRunningAsync(
+            secondOperation,
+            secondJournal,
+            secondRecord);
+        var cleanup = firstPrepared with
+        {
+            Stage = BattleLifecycleStage.CleanupPending,
+            UpdatedAtUtc = Started.AddMinutes(1),
+        };
+        File.WriteAllBytes(firstJournal.MarkerPath, BattleLifecycleMarkerCodec.Protect(cleanup, protector));
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            firstJournal.DeleteCommittedArtifactsRetainingRuntimeAsync(
+                firstOperation,
+                cleanup,
+                secondLease));
+
+        Assert.AreEqual(BattleLifecycleJournalState.Readable, firstJournal.Inspect().State);
+        Assert.IsTrue(File.Exists(Path.Combine(firstRoot, "battle", BattleRuntimeLockCodec.FileName)));
+        Assert.ThrowsException<IOException>(() =>
+            File.OpenRead(Path.Combine(firstRoot, "battle", BattleRuntimeLockCodec.FileName)).Dispose());
+        await firstLease.DisposeAsync();
+        await secondLease.DisposeAsync();
+    }
+
+    [TestMethod]
     public async Task MissingRuntimeOwnerInAnExistingDirectoryRemainsAbsent()
     {
         using var temporaryDirectory = new TemporaryDirectory();

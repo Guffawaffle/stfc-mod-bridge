@@ -292,12 +292,17 @@ internal static class BattleRuntimeLockFile
 internal sealed class BattleRuntimeLockLease : IAsyncDisposable
 {
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly string path;
     private readonly FileStream stream;
     private BattleRuntimeLockRecord record;
     private int disposed;
 
-    internal BattleRuntimeLockLease(FileStream stream, BattleRuntimeLockRecord record)
+    internal BattleRuntimeLockLease(
+        string path,
+        FileStream stream,
+        BattleRuntimeLockRecord record)
     {
+        this.path = Path.GetFullPath(path);
         this.stream = stream;
         this.record = record;
     }
@@ -345,6 +350,70 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
         finally
         {
             operationGate.Release();
+        }
+    }
+
+    internal IDisposable RetainForTerminalCleanup(
+        string expectedPath,
+        BattleLifecycleFileIdentity expectedIdentity,
+        string expectedOwnerId)
+    {
+        operationGate.Wait();
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (!string.Equals(
+                    path,
+                    Path.GetFullPath(expectedPath),
+                    OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase
+                        : StringComparison.Ordinal)
+                || record.State != BattleRuntimeLockState.Running
+                || record.OwnerId != expectedOwnerId
+                || stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes
+                || stream.Length != expectedIdentity.ByteCount)
+            {
+                throw new InvalidDataException(
+                    "The retained Battle runtime owner does not match terminal cleanup.");
+            }
+            stream.Position = 0;
+            var bytes = new byte[checked((int)stream.Length)];
+            try
+            {
+                stream.ReadExactly(bytes);
+                if (!string.Equals(
+                            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                            expectedIdentity.Sha256,
+                            StringComparison.Ordinal)
+                    || BattleRuntimeLockCodec.Decode(bytes) != record)
+                {
+                    throw new InvalidDataException(
+                        "The retained Battle runtime owner does not match terminal cleanup.");
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(bytes);
+            }
+            return new TerminalCleanupScope(this);
+        }
+        catch
+        {
+            operationGate.Release();
+            throw;
+        }
+    }
+
+    private sealed class TerminalCleanupScope(BattleRuntimeLockLease owner) : IDisposable
+    {
+        private BattleRuntimeLockLease? owner = owner;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref owner, null) is { } lease)
+            {
+                lease.operationGate.Release();
+            }
         }
     }
 
@@ -501,7 +570,7 @@ internal sealed class BattleRuntimeLockStore
                 previous,
                 previousBytes,
                 writeObserver);
-            var lease = new BattleRuntimeLockLease(stream, record);
+            var lease = new BattleRuntimeLockLease(path, stream, record);
             stream = null;
             return new(
                 BattleRuntimeLockAcquisitionState.Acquired,
@@ -619,7 +688,7 @@ internal sealed class BattleRuntimeLockStore
                 {
                     CryptographicOperations.ZeroMemory(verified);
                 }
-                return new(stream, record);
+                return new(path, stream, record);
             }
             catch
             {

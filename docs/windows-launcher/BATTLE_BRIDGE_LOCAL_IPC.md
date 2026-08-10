@@ -156,6 +156,15 @@ transaction; clean shutdown rewrites that retained file through the same handle
 and leaves it for a later session to reopen. Construction remains passive, and
 the opener is not registered with launcher startup or the runtime coordinator.
 
+Terminal lifecycle cleanup now has that exact live-lease handoff path. It holds
+the runtime lease's operation gate across cleanup, revalidates its exact path,
+marker-bound byte count/SHA-256, owner, `running` record, and closed-schema bytes,
+then removes the bound candidates and operation marker while retaining the
+exclusive runtime file. Clean shutdown can therefore write `clean` only after
+marker cleanup finishes. If the process dies instead, the existing recovery path
+has no retained lease and removes the now-stale marker-bound runtime file before
+finishing cleanup. No path-presence inference selects between those paths.
+
 The pipe host rejects the older #62 capability-plus-demand activation object.
 Its only accepted activation is derived from `LauncherBattleFeatureSnapshot`,
 which already combines normalized runtime capability, checked-in product

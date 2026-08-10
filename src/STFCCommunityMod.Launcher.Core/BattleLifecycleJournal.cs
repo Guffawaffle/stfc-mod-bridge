@@ -1230,11 +1230,40 @@ internal sealed class BattleLifecycleJournalStore
         }
     }
 
-    internal async Task DeleteCommittedArtifactsAsync(
+    internal Task DeleteCommittedArtifactsAsync(
         LauncherOperationLease operationLease,
         BattleLifecycleMarker expectedMarker,
         Func<BattleLifecycleCleanupCheckpoint, ValueTask>? checkpoint = null,
+        CancellationToken cancellationToken = default) =>
+        DeleteCommittedArtifactsCoreAsync(
+            operationLease,
+            expectedMarker,
+            retainedRuntimeLease: null,
+            checkpoint,
+            cancellationToken);
+
+    internal Task DeleteCommittedArtifactsRetainingRuntimeAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleMarker expectedMarker,
+        BattleRuntimeLockLease retainedRuntimeLease,
+        Func<BattleLifecycleCleanupCheckpoint, ValueTask>? checkpoint = null,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(retainedRuntimeLease);
+        return DeleteCommittedArtifactsCoreAsync(
+            operationLease,
+            expectedMarker,
+            retainedRuntimeLease,
+            checkpoint,
+            cancellationToken);
+    }
+
+    private async Task DeleteCommittedArtifactsCoreAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleMarker expectedMarker,
+        BattleRuntimeLockLease? retainedRuntimeLease,
+        Func<BattleLifecycleCleanupCheckpoint, ValueTask>? checkpoint,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operationLease);
         ArgumentNullException.ThrowIfNull(expectedMarker);
@@ -1258,6 +1287,10 @@ internal sealed class BattleLifecycleJournalStore
         var runtimePath = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
         var runtimeIdentity = expectedMarker.Resources.Single(resource => resource.Role == "runtime-lock").After
             ?? throw new InvalidDataException("The Battle runtime lock has no committed identity.");
+        using var retainedRuntimeScope = retainedRuntimeLease?.RetainForTerminalCleanup(
+                runtimePath,
+                runtimeIdentity,
+                expectedMarker.OwnerId);
 
         IDisposable? battleHandle = OpenDirectoryNoFollow(battleRoot);
         IDisposable? recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
@@ -1306,7 +1339,7 @@ internal sealed class BattleLifecycleJournalStore
 
             var runtimeEntry = Directory.EnumerateFileSystemEntries(battleRoot)
                 .SingleOrDefault(path => PathEquals(path, runtimePath));
-            if (runtimeEntry is not null)
+            if (runtimeEntry is not null && retainedRuntimeLease is null)
             {
                 runtimeStream = OpenLockedDeleteNoFollow(runtimeEntry);
                 var runtimeBytes = ReadAll(runtimeStream);
@@ -1322,6 +1355,11 @@ internal sealed class BattleLifecycleJournalStore
                 {
                     CryptographicOperations.ZeroMemory(runtimeBytes);
                 }
+            }
+            else if (runtimeEntry is null && retainedRuntimeLease is not null)
+            {
+                throw new InvalidDataException(
+                    "The retained Battle runtime owner path disappeared during terminal cleanup.");
             }
 
             markerStream = OpenLockedDeleteNoFollow(MarkerPath);
@@ -1351,7 +1389,10 @@ internal sealed class BattleLifecycleJournalStore
             runtimeStream = null;
             if (checkpoint is not null)
             {
-                await checkpoint(BattleLifecycleCleanupCheckpoint.RuntimeLockDeleted).ConfigureAwait(false);
+                await checkpoint(retainedRuntimeLease is null
+                        ? BattleLifecycleCleanupCheckpoint.RuntimeLockDeleted
+                        : BattleLifecycleCleanupCheckpoint.RuntimeLockRetained)
+                    .ConfigureAwait(false);
             }
             candidateHandle?.Dispose();
             candidateHandle = null;
