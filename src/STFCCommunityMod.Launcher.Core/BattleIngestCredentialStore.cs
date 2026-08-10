@@ -481,7 +481,7 @@ internal sealed class BattleIngestCredentialStore
                     Path,
                     FileMode.CreateNew,
                     FileAccess.ReadWrite,
-                    FileShare.Read,
+                    FileShare.None,
                     81920,
                     FileOptions.Asynchronous | FileOptions.WriteThrough);
             storageSecurity.SecureFile(stream);

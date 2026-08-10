@@ -66,7 +66,11 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
     ILauncherBattlePreferencesCommitter
 {
     private const int CurrentSchemaVersion = 5;
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions LenientSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
+    private static readonly JsonSerializerOptions CanonicalSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = false,
         UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
@@ -105,8 +109,13 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
         try
         {
             var contents = File.ReadAllBytes(preferencesPath);
-            RejectDuplicateProperties(contents);
-            var document = JsonSerializer.Deserialize<PreferencesDocument>(contents, SerializerOptions);
+            if (requireCanonical)
+            {
+                RejectDuplicateProperties(contents);
+            }
+            var document = JsonSerializer.Deserialize<PreferencesDocument>(
+                contents,
+                requireCanonical ? CanonicalSerializerOptions : LenientSerializerOptions);
             if (document is null)
             {
                 preferences = LauncherUiPreferences.Default;
@@ -258,7 +267,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
 
         try
         {
-            var contents = JsonSerializer.SerializeToUtf8Bytes(document, SerializerOptions);
+            var contents = JsonSerializer.SerializeToUtf8Bytes(document, CanonicalSerializerOptions);
             using (var stream = new FileStream(
                        temporaryPath,
                        FileMode.CreateNew,

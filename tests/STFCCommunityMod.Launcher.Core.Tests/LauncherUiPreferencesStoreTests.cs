@@ -54,6 +54,41 @@ public sealed class LauncherUiPreferencesStoreTests
     }
 
     [TestMethod]
+    public void OrdinaryLoadRemainsLenientWhileCasRejectsUnknownFields()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "ui-preferences.json");
+        var future = """
+            {
+              "schemaVersion": 5,
+              "settingsSearchVisible": true,
+              "colorMode": "Dark",
+              "launchTarget": "PrimeExecutable",
+              "providerSwitchReviewAcknowledged": true,
+              "battleCollectionPreference": "Unset",
+              "fleetCollectionPreference": "Unset",
+              "futureField": "preserve-by-refusing-cas"
+            }
+            """;
+        File.WriteAllText(path, future);
+        var store = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path);
+
+        var loaded = store.Load();
+        var saved = store.TrySaveBattlePreferences(
+            LauncherBattlePreferences.Default,
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset));
+
+        Assert.IsTrue(loaded.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Dark, loaded.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, loaded.LaunchTarget);
+        Assert.IsTrue(loaded.ProviderSwitchReviewAcknowledged);
+        Assert.IsFalse(saved);
+        Assert.AreEqual(future, File.ReadAllText(path));
+    }
+
+    [TestMethod]
     public void MissingPreferencesUseDefaults()
     {
         using var temporaryDirectory = new TemporaryDirectory();

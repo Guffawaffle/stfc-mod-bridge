@@ -1244,7 +1244,7 @@ internal static class CandidateFileNative
         var handle = CreateFile(
             path,
             GenericRead | GenericWrite | Delete | WriteDac | WriteOwner,
-            FileShare.Read,
+            FileShare.None,
             IntPtr.Zero,
             FileMode.CreateNew,
             FileFlagOverlapped,

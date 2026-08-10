@@ -25,6 +25,10 @@ public sealed class BattleLifecycleCommitTests
 
         await using var promotion = await store.CreateNewAsync(bytes, identity);
         Assert.IsTrue(promotion.Matches(identity));
+        Assert.ThrowsException<IOException>(() =>
+        {
+            using var _ = File.OpenRead(store.Path);
+        });
         await promotion.CommitAsync();
         Assert.IsTrue(store.MatchesProtectedIdentity(identity));
     }
