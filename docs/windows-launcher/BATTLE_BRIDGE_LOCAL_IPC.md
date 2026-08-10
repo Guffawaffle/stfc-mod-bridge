@@ -261,6 +261,14 @@ the journal at `quiesced`; an exact retry can create and bind a new verified
 backup. Pre-commit rollback may retain that protected backup while removing the
 still-disposable Battle candidates and marker.
 
+The existing launcher preference store now exposes an exact Battle-only
+compare-and-swap seam for the later commit stage. It checks both collection
+before-values under the store's normalized-path gate, changes both values as one
+atomic document replacement, and preserves search, color, launch-target, source
+review, and every other preference. A stale caller performs a byte-exact no-op;
+concurrent contenders cannot both commit. This is the existing preference owner,
+not a Battle-specific file or second writer.
+
 This is still not the activation commit. It does not promote the credential,
 commit TOML, save feature preference, create or open the Battle database,
 register runtime composition, or start the pipe. Those steps remain dormant

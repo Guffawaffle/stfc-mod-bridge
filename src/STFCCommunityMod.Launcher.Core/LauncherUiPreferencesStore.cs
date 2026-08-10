@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core;
@@ -51,7 +52,16 @@ public interface ILauncherUiPreferencesStore
     void Save(LauncherUiPreferences preferences);
 }
 
-public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILauncherUiPreferencesStore
+public interface ILauncherBattlePreferencesCommitter
+{
+    bool TrySaveBattlePreferences(
+        LauncherBattlePreferences expected,
+        LauncherBattlePreferences updated);
+}
+
+public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
+    ILauncherUiPreferencesStore,
+    ILauncherBattlePreferencesCommitter
 {
     private const int CurrentSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -62,8 +72,18 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
     private readonly string preferencesPath = Path.Combine(
         Path.GetFullPath(stateDirectory),
         "ui-preferences.json");
+    private static readonly ConcurrentDictionary<string, object> PathGates = new(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
     public LauncherUiPreferences Load()
+    {
+        lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
+        {
+            return LoadCore();
+        }
+    }
+
+    private LauncherUiPreferences LoadCore()
     {
         if (!File.Exists(preferencesPath))
         {
@@ -126,6 +146,36 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) : ILau
         ArgumentNullException.ThrowIfNull(preferences);
         RequireFeaturePreference(preferences.EffectiveBattlePreferences.BattleCollection);
         RequireFeaturePreference(preferences.EffectiveBattlePreferences.FleetCollection);
+        lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
+        {
+            SaveCore(preferences);
+        }
+    }
+
+    public bool TrySaveBattlePreferences(
+        LauncherBattlePreferences expected,
+        LauncherBattlePreferences updated)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(updated);
+        RequireFeaturePreference(expected.BattleCollection);
+        RequireFeaturePreference(expected.FleetCollection);
+        RequireFeaturePreference(updated.BattleCollection);
+        RequireFeaturePreference(updated.FleetCollection);
+        lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
+        {
+            var current = LoadCore();
+            if (current.EffectiveBattlePreferences != expected)
+            {
+                return false;
+            }
+            SaveCore(current with { BattlePreferences = updated });
+            return true;
+        }
+    }
+
+    private void SaveCore(LauncherUiPreferences preferences)
+    {
 
         var parentDirectory = Path.GetDirectoryName(preferencesPath)
             ?? throw new InvalidOperationException("The Mod Bridge preferences file has no parent directory.");
