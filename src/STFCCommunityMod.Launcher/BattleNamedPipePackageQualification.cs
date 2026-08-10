@@ -65,7 +65,7 @@ internal static class BattleNamedPipePackageQualification
             stage = "setup";
             var pipeName = $"stfc-mod-bridge-package-proof-{Guid.NewGuid():N}";
             var credential = Credential();
-            var wrongCredential = Credential();
+            var wrongCredential = DifferentCredential(credential);
             var exactEnvelope = Encoding.UTF8.GetBytes(BattleEnvelope());
             var sink = new ExactQualificationSink(exactEnvelope);
             using var process = Process.GetCurrentProcess();
@@ -276,6 +276,9 @@ internal static class BattleNamedPipePackageQualification
         var bytes = RandomNumberGenerator.GetBytes(32);
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
+
+    private static string DifferentCredential(string credential) =>
+        $"{(credential[0] == 'A' ? 'B' : 'A')}{credential[1..]}";
 
     private static string BattleEnvelope() =>
         JsonSerializer.Serialize(new
