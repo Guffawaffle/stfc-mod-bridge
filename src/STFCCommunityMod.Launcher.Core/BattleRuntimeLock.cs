@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -10,6 +11,22 @@ internal enum BattleRuntimeLockState
     Running,
     Clean,
 }
+
+internal enum BattleRuntimeLockAcquisitionState
+{
+    Acquired,
+    Absent,
+    Busy,
+    RecoveryRequired,
+    Invalid,
+    Unavailable,
+}
+
+internal sealed record BattleRuntimeLockAcquisitionResult(
+    BattleRuntimeLockAcquisitionState State,
+    BattleRuntimeLockLease? Lease,
+    BattleRuntimeLockRecord? PreviousRecord,
+    string Code);
 
 internal sealed record BattleRuntimeLockRecord(
     string OwnerId,
@@ -59,10 +76,10 @@ internal static class BattleRuntimeLockCodec
         {
             throw Invalid();
         }
-        RejectDuplicateProperties(bytes);
         LockDocument document;
         try
         {
+            RejectDuplicateProperties(bytes);
             document = JsonSerializer.Deserialize<LockDocument>(bytes, JsonOptions) ?? throw Invalid();
         }
         catch (JsonException exception)
@@ -280,6 +297,8 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
 
 internal sealed class BattleRuntimeLockStore
 {
+    private const string DeleteMarkerFileName = "battle-delete-v1.dpapi";
+    private const string DeleteSuccessorFileName = "battle-delete-v1.dpapi.next";
     private readonly string stateRoot;
     private readonly string battleRoot;
     private readonly string path;
@@ -290,6 +309,147 @@ internal sealed class BattleRuntimeLockStore
         this.stateRoot = Path.GetFullPath(stateRoot);
         battleRoot = Path.Combine(this.stateRoot, "battle");
         path = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+    }
+
+    /// <summary>
+    /// Takes process ownership of an already-provisioned Battle state. This is
+    /// an explicit mutation beneath the existing root operation lease; it never
+    /// bootstraps the Battle directory and refuses every active recovery owner.
+    /// </summary>
+    public async Task<BattleRuntimeLockAcquisitionResult> TryAcquireExistingAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleJournalStore journal,
+        BattleRuntimeLockRecord record,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentNullException.ThrowIfNull(journal);
+        ArgumentNullException.ThrowIfNull(record);
+        using var operationScope = operationLease.RetainFor(stateRoot);
+        if (!PathEquals(journal.StateRoot, stateRoot))
+        {
+            throw new InvalidOperationException("The Battle journal belongs to a different state root.");
+        }
+        if (record.State != BattleRuntimeLockState.Running || record.ProcessId != Environment.ProcessId)
+        {
+            throw new InvalidOperationException(
+                "A Battle runtime owner must begin in the current process and running state.");
+        }
+
+        var journalInspection = journal.Inspect();
+        if (journalInspection.State == BattleLifecycleJournalState.Unavailable)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Unavailable, "battle-runtime-owner-unavailable");
+        }
+        if (journalInspection.State != BattleLifecycleJournalState.Absent)
+        {
+            return Result(
+                BattleRuntimeLockAcquisitionState.RecoveryRequired,
+                "battle-runtime-owner-recovery-required");
+        }
+
+        try
+        {
+            if (HasDeleteRecoveryState())
+            {
+                return Result(
+                    BattleRuntimeLockAcquisitionState.RecoveryRequired,
+                    "battle-runtime-owner-delete-recovery-required");
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Unavailable, "battle-runtime-owner-unavailable");
+        }
+
+        try
+        {
+            var attributes = File.GetAttributes(battleRoot);
+            if (!attributes.HasFlag(FileAttributes.Directory)
+                || attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
+            }
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Absent, "battle-runtime-owner-absent");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Unavailable, "battle-runtime-owner-unavailable");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var bytes = BattleRuntimeLockCodec.Encode(record);
+        FileStream? stream = null;
+        try
+        {
+            using var battleHandle = OpenDirectoryNoFollow(battleRoot);
+            BattleRuntimeLockRecord previous;
+            try
+            {
+                stream = OpenExistingRuntimeNoFollow(path);
+                if (stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes)
+                {
+                    await stream.DisposeAsync().ConfigureAwait(false);
+                    stream = null;
+                    return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
+                }
+                var previousBytes = new byte[checked((int)stream.Length)];
+                try
+                {
+                    stream.ReadExactly(previousBytes);
+                    previous = BattleRuntimeLockCodec.Decode(previousBytes);
+                }
+                catch (InvalidDataException)
+                {
+                    await stream.DisposeAsync().ConfigureAwait(false);
+                    stream = null;
+                    return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(previousBytes);
+                }
+            }
+            catch (Exception exception) when (IsMissing(exception))
+            {
+                return Result(BattleRuntimeLockAcquisitionState.Absent, "battle-runtime-owner-absent");
+            }
+
+            WriteAndVerify(stream, record, bytes);
+            var lease = new BattleRuntimeLockLease(stream, record);
+            stream = null;
+            return new(
+                BattleRuntimeLockAcquisitionState.Acquired,
+                lease,
+                previous,
+                previous.State == BattleRuntimeLockState.Running
+                    ? "battle-runtime-owner-acquired-after-unclean"
+                    : "battle-runtime-owner-acquired-after-clean");
+        }
+        catch (Exception exception) when (IsSharingViolation(exception))
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Busy, "battle-runtime-owner-busy");
+        }
+        catch (InvalidDataException)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            return Result(BattleRuntimeLockAcquisitionState.Unavailable, "battle-runtime-owner-unavailable");
+        }
+        finally
+        {
+            if (stream is not null)
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+            }
+            CryptographicOperations.ZeroMemory(bytes);
+        }
     }
 
     public async Task<BattleRuntimeLockLease> CreateBoundRunningAsync(
@@ -384,6 +544,84 @@ internal sealed class BattleRuntimeLockStore
     private static IDisposable OpenDirectoryNoFollow(string path) => OperatingSystem.IsWindows()
         ? CandidateFileNative.OpenRecoveryDirectoryReadNoFollow(path)
         : NoopDisposable.Instance;
+
+    private bool HasDeleteRecoveryState() =>
+        EntryExists(Path.Combine(stateRoot, DeleteMarkerFileName))
+        || EntryExists(Path.Combine(stateRoot, DeleteSuccessorFileName))
+        || Directory.EnumerateDirectories(stateRoot, "battle.delete.*", SearchOption.TopDirectoryOnly)
+            .Take(1)
+            .Any();
+
+    private static bool EntryExists(string path)
+    {
+        try
+        {
+            _ = File.GetAttributes(path);
+            return true;
+        }
+        catch (Exception exception) when (IsMissing(exception))
+        {
+            return false;
+        }
+    }
+
+    private static FileStream OpenExistingRuntimeNoFollow(string path) => OperatingSystem.IsWindows()
+        ? new(
+            CandidateFileNative.OpenRuntimeLockReadWriteNoFollow(path),
+            FileAccess.ReadWrite,
+            4096,
+            isAsync: true)
+        : new(
+            path,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            4096,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+
+    private static void WriteAndVerify(
+        FileStream stream,
+        BattleRuntimeLockRecord record,
+        byte[] bytes)
+    {
+        stream.Position = 0;
+        stream.SetLength(0);
+        stream.Write(bytes);
+        stream.Flush(flushToDisk: true);
+        stream.Position = 0;
+        var verified = new byte[bytes.Length];
+        try
+        {
+            stream.ReadExactly(verified);
+            if (!bytes.AsSpan().SequenceEqual(verified)
+                || BattleRuntimeLockCodec.Decode(verified) != record)
+            {
+                throw new InvalidDataException("The running Battle runtime lock did not verify.");
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(verified);
+        }
+    }
+
+    private static bool IsMissing(Exception exception) =>
+        exception is FileNotFoundException or DirectoryNotFoundException
+        || exception is Win32Exception { NativeErrorCode: 2 or 3 };
+
+    private static bool IsSharingViolation(Exception exception) =>
+        exception is IOException ioException
+            && (ioException.HResult & 0xffff) is 32 or 33
+        || exception is Win32Exception { NativeErrorCode: 32 or 33 };
+
+    private static BattleRuntimeLockAcquisitionResult Result(
+        BattleRuntimeLockAcquisitionState state,
+        string code) => new(state, null, null, code);
+
+    private static bool PathEquals(string left, string right) => string.Equals(
+        Path.GetFullPath(left),
+        Path.GetFullPath(right),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private sealed class NoopDisposable : IDisposable
     {

@@ -1261,6 +1261,13 @@ internal static class CandidateFileNative
         flags: FileFlagOpenReparsePoint,
         "Could not lock the reviewed candidate recovery member.");
 
+    public static SafeFileHandle OpenRuntimeLockReadWriteNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead | GenericWrite,
+        FileShare.None,
+        flags: FileFlagOpenReparsePoint | FileFlagOverlapped,
+        "Could not lock the Battle runtime owner file.");
+
     public static SafeFileHandle OpenRecoveryReadDeleteNoFollow(string path) => OpenNoFollow(
         path,
         GenericRead | Delete,
