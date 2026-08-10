@@ -83,10 +83,10 @@ public sealed class LauncherStartupCompositionTests
             LauncherPlayerFeaturePreference.Enabled,
             LauncherPlayerFeaturePreference.Unset);
 
-        Assert.IsTrue(slot.Refresh(null, enabled));
+        Assert.IsTrue(slot.RefreshBattlePreferences(enabled));
         Assert.AreEqual(
             LauncherPlayerFeaturePreference.Enabled,
             slot.Current.BattleFeatures.BattleCollection.Preference);
-        Assert.IsFalse(slot.Refresh(null, enabled));
+        Assert.IsFalse(slot.RefreshBattlePreferences(enabled));
     }
 }

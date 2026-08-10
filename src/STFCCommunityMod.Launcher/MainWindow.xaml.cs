@@ -171,6 +171,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             releaseChannel,
             composition,
             viewModel.ReviewedRuntimeActivation,
+            () => uiPreferencesStore.Load().EffectiveBattlePreferences,
             viewModel,
             runtimeComposition => CreateSettingsViewModel(
                 provider,
@@ -221,9 +222,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (!ProviderSession.RefreshRuntimeComposition(
-                viewModel.ReviewedRuntimeActivation,
-                uiPreferencesStore.Load().EffectiveBattlePreferences))
+        if (!ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation))
         {
             return;
         }

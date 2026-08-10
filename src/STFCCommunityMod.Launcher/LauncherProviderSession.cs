@@ -6,6 +6,7 @@ namespace STFCCommunityMod.Launcher;
 internal sealed class LauncherProviderSession : IDisposable
 {
     private readonly LauncherRuntimeCompositionSlot runtimeComposition;
+    private readonly Func<LauncherBattlePreferences> battlePreferencesProvider;
 
     public LauncherProviderSession(
         LauncherProviderSelectionResolution resolution,
@@ -14,12 +15,15 @@ internal sealed class LauncherProviderSession : IDisposable
         LauncherProviderReleaseChannel releaseChannel,
         LauncherStartupComposition startupComposition,
         ReviewedRuntimeActivation? reviewedRuntimeActivation,
+        Func<LauncherBattlePreferences> battlePreferencesProvider,
         MainWindowViewModel viewModel,
         Func<LauncherStartupComposition, SettingsViewModel> settingsFactory)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         ArgumentNullException.ThrowIfNull(startupComposition);
+        this.battlePreferencesProvider = battlePreferencesProvider
+            ?? throw new ArgumentNullException(nameof(battlePreferencesProvider));
         ArgumentNullException.ThrowIfNull(viewModel);
         ArgumentNullException.ThrowIfNull(settingsFactory);
         Resolution = resolution;
@@ -33,7 +37,7 @@ internal sealed class LauncherProviderSession : IDisposable
             reviewedRuntimeActivation?.EvidenceSourceSha256);
         viewModel.ConfigureFeatureRemediation(
             () => runtimeComposition.Current.ActivationPlan,
-            () => runtimeComposition.Current.BattleFeatures);
+            GetBattleFeatures);
         ApplicationComposition = new(
             new(viewModel, () => settingsFactory(runtimeComposition.Current)),
             () => runtimeComposition.Current.ActivationPlan);
@@ -51,7 +55,7 @@ internal sealed class LauncherProviderSession : IDisposable
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
 
-    public LauncherBattleFeatureSnapshot BattleFeatures => runtimeComposition.Current.BattleFeatures;
+    public LauncherBattleFeatureSnapshot BattleFeatures => GetBattleFeatures();
 
     public MainWindowViewModel ViewModel => ApplicationComposition.SharedServices.Foundation;
 
@@ -62,12 +66,19 @@ internal sealed class LauncherProviderSession : IDisposable
     public LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator =>
         ViewModel.FeatureRemediationCoordinator;
 
-    public bool RefreshRuntimeComposition(
-        ReviewedRuntimeActivation? activation,
-        LauncherBattlePreferences battlePreferences) =>
-        runtimeComposition.Refresh(activation, battlePreferences);
+    public bool RefreshRuntimeComposition(ReviewedRuntimeActivation? activation) =>
+        runtimeComposition.Refresh(activation, battlePreferencesProvider());
+
+    public bool RefreshBattlePreferences() =>
+        runtimeComposition.RefreshBattlePreferences(battlePreferencesProvider());
 
     public void Dispose() => ApplicationComposition.Dispose();
+
+    private LauncherBattleFeatureSnapshot GetBattleFeatures()
+    {
+        RefreshBattlePreferences();
+        return runtimeComposition.Current.BattleFeatures;
+    }
 }
 
 internal sealed class LauncherRuntimeCompositionSlot(
@@ -100,6 +111,23 @@ internal sealed class LauncherRuntimeCompositionSlot(
             activation,
             nextBattlePreferences);
         evidenceSha256 = nextEvidence;
+        battlePreferences = nextBattlePreferences;
+        return true;
+    }
+
+    public bool RefreshBattlePreferences(LauncherBattlePreferences nextBattlePreferences)
+    {
+        ArgumentNullException.ThrowIfNull(nextBattlePreferences);
+        if (battlePreferences == nextBattlePreferences)
+        {
+            return false;
+        }
+        Current = Current with
+        {
+            BattleFeatures = LauncherBattleFeatureComposer.Compose(
+                Current.ActivationPlan,
+                nextBattlePreferences),
+        };
         battlePreferences = nextBattlePreferences;
         return true;
     }

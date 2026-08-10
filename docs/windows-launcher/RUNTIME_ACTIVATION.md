@@ -73,11 +73,14 @@ itself uses the separate verified updater handoff and process relaunch.
 
 The same provider-session slot owns the immutable Battle feature snapshot. It
 recomposes when either the exact reviewed runtime evidence identity or the
-persisted Battle/Fleet preference changes. Capability and policy are resolved
-first; preference only projects an eligible feature to available, enabled, or
-disabled. A retained enabled preference therefore becomes unavailable when
-capability is revoked and cannot keep an old implementation active. This
-session projection is state only: it does not register the dormant runtime
+persisted Battle/Fleet preference changes. The provider session reads the
+single preferences store again before returning the snapshot to Diagnostics or
+another consumer, and also exposes an explicit preference-refresh seam for the
+lifecycle transaction/UI boundary. Capability and policy are resolved first;
+preference only projects an eligible feature to available, enabled, or disabled.
+A retained enabled preference therefore becomes unavailable when capability is
+revoked and cannot keep an old implementation active. This session projection
+is state only: it does not register the dormant runtime
 coordinator, open the database, load SQLite, create a credential or runtime
 lock, start a named pipe, create a timer/thread, or grant network authority.
 
