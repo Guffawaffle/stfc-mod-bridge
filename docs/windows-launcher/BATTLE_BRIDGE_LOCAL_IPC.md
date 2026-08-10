@@ -400,11 +400,36 @@ cannot enter it. Because PR builds are unsigned, only a retained passing tagged-
 release run can satisfy the signed evidence gate.
 
 This is not operational activation. Neither coordinator is registered in
-startup or UI, and neither creates or opens the Battle database, registers
-runtime composition, starts a named pipe, enables the dormant HTTP proof, or
-grants outbound product-feature network authority. Production provisioning must
-still supply the reviewed lifecycle lease, and a retained passing signed release
-must satisfy the package gate before the pipe host can be registered.
+startup or UI, and neither opens the Battle database, registers runtime
+composition, starts a named pipe, enables the dormant HTTP proof, or grants
+outbound product-feature network authority. The marker-last lifecycle now
+retains the reviewed runtime lease and can hand exact resources to the dormant
+single-owner provisioning factory, but a retained passing signed release must
+still satisfy the package gate before the pipe host can be registered.
+
+## Dormant Fleet snapshot ownership
+
+`FleetRuntimeSnapshotSink` now supplies the missing process-local sink boundary
+for an enabled `fleet.collection` handoff. It consumes only an already
+transport-validated `stfc.fleet.runtime_snapshot.v1` payload, projects the
+reviewed slot fields into immutable native state, and retains no raw envelope or
+payload bytes. It creates no file, database, listener, timer, worker, or network
+resource.
+
+The sink binds on first commit to the exact producer source and session. Batch
+receipts are bounded to 2,048 source/session/batch identities: exact replay is a
+no-op, changed bytes under the same identity fail closed, and an older
+`producedAt` is accepted as stale without replacing current state. Equal-time
+different state is rejected because the current producer contract supplies no
+ordering sequence that could truthfully break the tie. Projection mirrors the
+accepted Sidecar rules for slot identity, fleet hashes, tracked/unavailable
+state, hull and exact string ship identity, and bounded active-timer evidence;
+unknown source fields do not become native authority.
+
+This is deliberately only the current-snapshot sink/read-model foundation for
+Sidecar #65. It does not claim persistence, recent-combat correlation, alerts,
+reminders, notification delivery, UI composition, or operational IPC
+activation. Those remain separate per-feature decisions and evidence gates.
 
 ## Current composition
 
@@ -416,8 +441,8 @@ product-policy resolution. Diagnostics can truthfully show `unavailable`,
 
 Even the `enabled` intent state remains operationally dormant today. It is not
 a listener-activation receipt. The accepted Battle Home baseline, production
-provisioning handoff, and retained signed-release qualification evidence remain
-required before collection can start.
+registration of the reviewed provisioning handoff, and retained signed-release
+qualification evidence remain required before collection can start.
 
 ## Future external communication
 
