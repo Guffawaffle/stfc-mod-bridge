@@ -245,6 +245,42 @@ public sealed partial class ReleaseTrustAutomationTests
     }
 
     [TestMethod]
+    public void SignedReleaseQualifiesStandaloneAndMsixBattleNamedPipeBehaviorBeforeAttestation()
+    {
+        var root = RepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "release.yml"));
+        var script = File.ReadAllText(Path.Combine(
+            root,
+            "scripts",
+            "qualify-battle-named-pipe-package.ps1"));
+        var signing = workflow.IndexOf("- name: Sign MSIX package", StringComparison.Ordinal);
+        var inspection = workflow.IndexOf(
+            "- name: Verify every release PE and inspect package boundary",
+            StringComparison.Ordinal);
+        var qualification = workflow.IndexOf(
+            "- name: Qualify signed Battle named-pipe package boundary",
+            StringComparison.Ordinal);
+        var attestation = workflow.IndexOf(
+            "- name: Attest final signed release subjects",
+            StringComparison.Ordinal);
+
+        Assert.IsTrue(signing >= 0);
+        Assert.IsTrue(inspection > signing);
+        Assert.IsTrue(qualification > inspection);
+        Assert.IsTrue(attestation > qualification);
+        StringAssert.Contains(script, "inspect-package.ps1");
+        StringAssert.Contains(script, "-RequireSignatures");
+        StringAssert.Contains(script, "--battle-ipc-package-qualification");
+        StringAssert.Contains(script, "Invoke-QualificationProcess -Path $launcher -Mode \"standalone\"");
+        StringAssert.Contains(script, "Add-AppxPackage -Path $package");
+        StringAssert.Contains(script, "!App");
+        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
+        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.WaitForExit(10000)")).Count);
+        StringAssert.Contains(script, "Remove-AppxPackage -Package $installed.PackageFullName");
+        StringAssert.Contains(script, "refuses to replace an existing STFC Mod Bridge package");
+    }
+
+    [TestMethod]
     public void AuthenticatedStandaloneUpdateCompositionRemainsDisabledPendingQualification()
     {
         var root = RepositoryRoot();

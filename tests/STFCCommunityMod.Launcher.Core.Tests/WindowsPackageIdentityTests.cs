@@ -12,6 +12,7 @@ public sealed class WindowsPackageIdentityTests
         }
 
         Assert.IsFalse(WindowsPackageIdentity.IsCurrentProcessPackaged);
+        Assert.IsNull(WindowsPackageIdentity.CurrentPackageFullName);
         Assert.IsNull(WindowsPackageIdentity.CurrentInstallDirectory);
     }
 }

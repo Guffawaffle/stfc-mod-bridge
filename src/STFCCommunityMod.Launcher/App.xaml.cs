@@ -13,6 +13,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (BattleNamedPipePackageQualification.TryRun(e.Args, out var qualificationExitCode))
+        {
+            Shutdown(qualificationExitCode);
+            return;
+        }
         if (!IsBoundSelfUpdateChild(e.Args))
         {
             var layout = PerUserInstallLayout.FromLocalApplicationData(
