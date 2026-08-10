@@ -15,8 +15,9 @@ internal static class BattleNamedPipePackageQualification
     internal const string StandaloneMode = "standalone";
     internal const string MsixMode = "msix";
     internal const string PackageIdentityName = "Guffawaffle.STFCModBridge";
+    // SHA-256("stfc-mod-bridge:battle-ipc-package-qualification:v1").
     private const string EvidenceSha256 =
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        "8d1acdade8d042812a6a2c6fe46480230a4e376d98392232e861b386870c71ba";
 
     public static bool TryRun(string[] arguments, out int exitCode)
     {
