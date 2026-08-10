@@ -67,28 +67,272 @@ internal sealed class BattleLifecycleCommitCoordinator
         ConfigurationDocumentSnapshot configuration,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(prepared);
+        ArgumentNullException.ThrowIfNull(configuration);
+        return await CommitExactAsync(
+            operationLease,
+            journal,
+            prepared.Marker.OperationId,
+            prepared.RuntimeLease.Record.OwnerId,
+            prepared.ProtectedCredentialCandidate,
+            prepared.ConfigurationCandidate,
+            installation,
+            installedState,
+            configuration.Path,
+            configuration.Contents,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<BattleLifecycleCommitResult> RecoverCommitStartedAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleJournalStore journal,
+        ModInstallationEvidence installation,
+        ModInstalledArtifactState installedState,
+        string configurationPath,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(operationLease);
         ArgumentNullException.ThrowIfNull(journal);
-        ArgumentNullException.ThrowIfNull(prepared);
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(installedState);
-        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
         using var operationScope = operationLease.RetainFor(stateRoot);
 
-        var source = configuration.Contents;
-        var candidate = prepared.ConfigurationCandidate.ToArray();
-        var protectedCredential = prepared.ProtectedCredentialCandidate.ToArray();
+        BattleLifecycleJournalInspection recovered;
+        try
+        {
+            recovered = await journal.RecoverAsync(operationLease, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or InvalidDataException or CryptographicException
+                or ArgumentException or JsonException)
+        {
+            return Blocked();
+        }
+        catch (Exception exception) when (IsUnavailable(exception))
+        {
+            return Unavailable();
+        }
+
+        if (recovered is not
+            {
+                State: BattleLifecycleJournalState.Readable,
+                Marker.Stage: BattleLifecycleStage.CommitStarted,
+            }
+            || recovered.Marker.Configuration is not { BackupId: not null } binding
+            || recovered.Marker.Credential is not { } credential)
+        {
+            return Blocked();
+        }
+
+        var marker = recovered.Marker;
+        var gameDirectory = Path.GetDirectoryName(Path.GetFullPath(configurationPath));
+        if (string.IsNullOrWhiteSpace(gameDirectory)
+            || installation.State != ModInstallationEvidenceState.ManagedVerified
+            || installation.IsGameRunning
+            || !installation.HasCompleteAttribution
+            || !MatchesInstalledState(installation, installedState, gameDirectory)
+            || BattleLifecycleJournalStore.PathIdentity(configurationPath) != binding.SourcePathSha256)
+        {
+            return Blocked();
+        }
+
+        try
+        {
+            if (!journal.VerifyRuntimeLockIdentity(marker, allowAbsent: false)) return Blocked();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or InvalidDataException or CryptographicException
+                or ArgumentException or JsonException)
+        {
+            return Blocked();
+        }
+        catch (Exception exception) when (IsUnavailable(exception))
+        {
+            return Unavailable();
+        }
+
+        byte[]? source = null;
+        byte[]? configurationCandidate = null;
+        byte[]? protectedCredential = null;
+        try
+        {
+            try
+            {
+                source = backupStore.Read(
+                    gameDirectory,
+                    installation.InstalledProviderId!,
+                    binding.BackupId!);
+                configurationCandidate = journal.ReadExactCandidate(
+                    marker,
+                    binding.CandidateRelativePath,
+                    new(binding.CandidateByteCount, binding.CandidateSha256));
+                var credentialResource = marker.Resources.Single(resource => resource.Role == "ingest-credential");
+                protectedCredential = journal.ReadExactCandidate(
+                    marker,
+                    credentialResource.CandidateRelativePath!,
+                    new(credential.ProtectedByteCount, credential.ProtectedSha256));
+            }
+            catch (Exception exception) when (
+                exception is InvalidDataException or CryptographicException or ArgumentException or JsonException)
+            {
+                return Blocked();
+            }
+            catch (Exception exception) when (IsUnavailable(exception))
+            {
+                return Unavailable();
+            }
+            return await CommitExactAsync(
+                operationLease,
+                journal,
+                marker.OperationId,
+                marker.OwnerId,
+                protectedCredential,
+                configurationCandidate,
+                installation,
+                installedState,
+                configurationPath,
+                source,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (source is not null) CryptographicOperations.ZeroMemory(source);
+            if (configurationCandidate is not null) CryptographicOperations.ZeroMemory(configurationCandidate);
+            if (protectedCredential is not null) CryptographicOperations.ZeroMemory(protectedCredential);
+        }
+    }
+
+    internal async Task<BattleLifecycleCommitResult> VerifyCommittedAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleJournalStore journal,
+        ModInstallationEvidence installation,
+        ModInstalledArtifactState installedState,
+        string configurationPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentNullException.ThrowIfNull(journal);
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentNullException.ThrowIfNull(installedState);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
+        using var operationScope = operationLease.RetainFor(stateRoot);
         try
         {
             var inspection = journal.Inspect();
-            var gameDirectory = Path.GetDirectoryName(configuration.Path);
+            if (inspection is not
+                {
+                    State: BattleLifecycleJournalState.Readable,
+                    Marker.Stage: BattleLifecycleStage.CommitVerified or BattleLifecycleStage.CleanupPending,
+                }
+                || inspection.Marker.Configuration is not
+                {
+                    BackupId: not null,
+                    BackupContentSha256: not null,
+                } binding
+                || inspection.Marker.Credential is not { } credential
+                || !CredentialPathMatchesMarker(inspection.Marker))
+            {
+                return Blocked();
+            }
+            var gameDirectory = Path.GetDirectoryName(Path.GetFullPath(configurationPath));
+            if (string.IsNullOrWhiteSpace(gameDirectory)
+                || installation.State != ModInstallationEvidenceState.ManagedVerified
+                || installation.IsGameRunning
+                || !installation.HasCompleteAttribution
+                || !MatchesInstalledState(installation, installedState, gameDirectory)
+                || BattleLifecycleJournalStore.PathIdentity(configurationPath) != binding.SourcePathSha256)
+            {
+                return Blocked();
+            }
+
+            var backup = backupStore.Read(
+                gameDirectory,
+                installation.InstalledProviderId!,
+                binding.BackupId!);
+            try
+            {
+                if (!Matches(backup, binding.SourceByteCount, binding.BackupContentSha256!))
+                {
+                    return Blocked();
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(backup);
+            }
+
+            var credentialState = credentialStore.InspectProtectedIdentity(new(
+                credential.ProtectedByteCount,
+                credential.ProtectedSha256));
+            if (credentialState == BattleCredentialProtectedState.Unavailable)
+            {
+                return Unavailable();
+            }
+            if (credentialState != BattleCredentialProtectedState.Match
+                || !await MatchesFileIdentityAsync(
+                    configurationPath,
+                    binding.CandidateByteCount,
+                    binding.CandidateSha256,
+                    cancellationToken).ConfigureAwait(false)
+                || !preferencesCommitter.TryLoadBattlePreferences(out var current)
+                || current != Preferences(inspection.Marker, before: false))
+            {
+                return Blocked();
+            }
+            return new(BattleLifecycleCommitState.Succeeded, "battle-commit-state-verified", inspection.Marker);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or CryptographicException or ArgumentException or JsonException)
+        {
+            return Blocked();
+        }
+        catch (Exception exception) when (IsUnavailable(exception))
+        {
+            return Unavailable();
+        }
+    }
+
+    private async Task<BattleLifecycleCommitResult> CommitExactAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleJournalStore journal,
+        string expectedOperationId,
+        string expectedOwnerId,
+        ReadOnlyMemory<byte> protectedCredentialCandidate,
+        ReadOnlyMemory<byte> configurationCandidate,
+        ModInstallationEvidence installation,
+        ModInstalledArtifactState installedState,
+        string configurationPath,
+        ReadOnlyMemory<byte> sourceConfiguration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentNullException.ThrowIfNull(journal);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedOperationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedOwnerId);
+        ArgumentNullException.ThrowIfNull(installation);
+        ArgumentNullException.ThrowIfNull(installedState);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
+        using var operationScope = operationLease.RetainFor(stateRoot);
+
+        var source = sourceConfiguration.ToArray();
+        var candidate = configurationCandidate.ToArray();
+        var protectedCredential = protectedCredentialCandidate.ToArray();
+        try
+        {
+            var inspection = journal.Inspect();
+            var gameDirectory = Path.GetDirectoryName(configurationPath);
             if (inspection is not
                 {
                     State: BattleLifecycleJournalState.Readable,
                     Marker.Stage: BattleLifecycleStage.BackupVerified or BattleLifecycleStage.CommitStarted,
                 }
-                || inspection.Marker.OperationId != prepared.Marker.OperationId
-                || inspection.Marker.OwnerId != prepared.RuntimeLease.Record.OwnerId
+                || inspection.Marker.OperationId != expectedOperationId
+                || inspection.Marker.OwnerId != expectedOwnerId
                 || inspection.Marker.Configuration is not { } binding
                 || inspection.Marker.Credential is not { } credential
                 || binding.BackupId is null
@@ -98,7 +342,7 @@ internal sealed class BattleLifecycleCommitCoordinator
                 || !installation.HasCompleteAttribution
                 || string.IsNullOrWhiteSpace(gameDirectory)
                 || !MatchesInstalledState(installation, installedState, gameDirectory)
-                || BattleLifecycleJournalStore.PathIdentity(configuration.Path) != binding.SourcePathSha256
+                || BattleLifecycleJournalStore.PathIdentity(configurationPath) != binding.SourcePathSha256
                 || !Matches(source, binding.SourceByteCount, binding.SourceSha256)
                 || !Matches(candidate, binding.CandidateByteCount, binding.CandidateSha256)
                 || !Matches(
@@ -154,7 +398,7 @@ internal sealed class BattleLifecycleCommitCoordinator
                 credential.ProtectedSha256);
             var credentialState = credentialStore.InspectProtectedIdentity(credentialIdentity);
             var configurationState = await ReadAuthoritativeStateAsync(
-                configuration.Path,
+                configurationPath,
                 source,
                 candidate,
                 cancellationToken).ConfigureAwait(false);
@@ -224,14 +468,14 @@ internal sealed class BattleLifecycleCommitCoordinator
 
                 phase = "configuration";
                 configurationState = await ReadAuthoritativeStateAsync(
-                    configuration.Path,
+                    configurationPath,
                     source,
                     candidate,
                     cancellationToken).ConfigureAwait(false);
                 if (configurationState == AuthoritativeState.Before)
                 {
                     var write = await configurationStore.SaveDocumentAsync(
-                        configuration.Path,
+                        configurationPath,
                         source,
                         candidate,
                         cancellationToken).ConfigureAwait(false);
@@ -273,7 +517,7 @@ internal sealed class BattleLifecycleCommitCoordinator
                 }
                 phase = "configuration-verification";
                 if (await ReadAuthoritativeStateAsync(
-                        configuration.Path,
+                        configurationPath,
                         source,
                         candidate,
                         CancellationToken.None).ConfigureAwait(false) != AuthoritativeState.After)
@@ -302,7 +546,7 @@ internal sealed class BattleLifecycleCommitCoordinator
                     credentialPromotion,
                     configurationChanged,
                     preferencesChanged,
-                    configuration.Path,
+                    configurationPath,
                     source,
                     candidate,
                     credentialIdentity,
@@ -511,6 +755,35 @@ internal sealed class BattleLifecycleCommitCoordinator
         finally
         {
             CryptographicOperations.ZeroMemory(current);
+        }
+    }
+
+    private static async Task<bool> MatchesFileIdentityAsync(
+        string path,
+        long expectedCount,
+        string expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        if (expectedCount is < 0 or > 8 * 1024 * 1024) return false;
+        try
+        {
+            await using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            return stream.Length == expectedCount
+                && string.Equals(
+                    Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false))
+                        .ToLowerInvariant(),
+                    expectedSha256,
+                    StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
         }
     }
 

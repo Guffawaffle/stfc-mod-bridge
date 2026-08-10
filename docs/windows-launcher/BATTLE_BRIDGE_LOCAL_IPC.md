@@ -297,12 +297,31 @@ released, and `commit-started` remains for recovery. Exact mixed states left by
 a prior interruption roll forward without inventing a second writer. Only a
 fully reread credential/TOML/preference set advances to `commit-verified`.
 
-This is not operational activation. The commit coordinator is not registered
-in startup or UI and does not create or open the Battle database, register
-runtime composition, start a named pipe, enable the dormant HTTP proof, or grant
-outbound product-feature network authority. Terminal crash recovery, cleanup,
-session recomposition, and signed MSIX/standalone qualification remain required
-before the lifecycle can supply a provisioning lease to the pipe host.
+The terminal recovery seam is now executable but likewise unregistered. Under
+the same retained root operation lease, it first completes only an exact
+journal successor, then accepts `commit-started` only with the marker-bound
+stale runtime-lock identity. It reconstructs the source solely from the existing
+protected backup and reconstructs the credential/TOML candidates solely from
+their exact no-follow journal paths. All-before, exact mixed, and all-after
+states therefore reuse the same commit writer and converge on `commit-verified`;
+missing, changed, foreign, or unbound bytes are preserved and block.
+
+Before terminal cleanup, installed artifact evidence, protected backup,
+credential, TOML, preferences, and runtime-lock identity are reread. The marker
+then advances to `cleanup-pending`; only still-matching candidate files and the
+stale runtime lock are removed through exact delete-capable handles, owned empty
+directories are removed non-recursively, and the DPAPI marker is removed last.
+Cleanup-pending inspection deliberately accepts only missing marker-owned
+members, so a crash after any individual deletion re-enters idempotently while
+unknown entries or changed bytes remain untouched. Success returns a typed
+session-recomposition requirement rather than composing services itself.
+
+This is not operational activation. Neither coordinator is registered in
+startup or UI, and neither creates or opens the Battle database, registers
+runtime composition, starts a named pipe, enables the dormant HTTP proof, or
+grants outbound product-feature network authority. Session recomposition and
+signed MSIX/standalone named-pipe qualification remain required before the
+lifecycle can supply a provisioning lease to the pipe host.
 
 ## Current composition
 
