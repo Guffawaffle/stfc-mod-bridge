@@ -295,6 +295,7 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
     private readonly string path;
     private readonly FileStream stream;
     private BattleRuntimeLockRecord record;
+    private object? provisioningOwner;
     private int disposed;
 
     internal BattleRuntimeLockLease(
@@ -318,12 +319,19 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
 
     public async Task MarkCleanAsync(
         DateTimeOffset cleanCloseAtUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await MarkCleanCoreAsync(cleanCloseAtUtc, null, cancellationToken).ConfigureAwait(false);
+
+    private async Task MarkCleanCoreAsync(
+        DateTimeOffset cleanCloseAtUtc,
+        object? provisioningToken,
+        CancellationToken cancellationToken)
     {
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            RequireOwner(provisioningToken);
             if (record.State != BattleRuntimeLockState.Running)
             {
                 throw new InvalidOperationException("The Battle runtime lock is already clean.");
@@ -353,6 +361,30 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
         }
     }
 
+    internal BattleRuntimeLockProvisioningClaim ClaimForProvisioning(
+        string expectedPath,
+        BattleLifecycleFileIdentity expectedIdentity,
+        string expectedOwnerId)
+    {
+        operationGate.Wait();
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (provisioningOwner is not null)
+            {
+                throw new InvalidOperationException("The Battle runtime owner is already claimed.");
+            }
+            ValidateRetainedRuntime(expectedPath, expectedIdentity, expectedOwnerId);
+            var token = new object();
+            provisioningOwner = token;
+            return new(this, token);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     internal IDisposable RetainForTerminalCleanup(
         string expectedPath,
         BattleLifecycleFileIdentity expectedIdentity,
@@ -362,39 +394,11 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-            if (!string.Equals(
-                    path,
-                    Path.GetFullPath(expectedPath),
-                    OperatingSystem.IsWindows()
-                        ? StringComparison.OrdinalIgnoreCase
-                        : StringComparison.Ordinal)
-                || record.State != BattleRuntimeLockState.Running
-                || record.OwnerId != expectedOwnerId
-                || stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes
-                || stream.Length != expectedIdentity.ByteCount)
+            if (provisioningOwner is not null)
             {
-                throw new InvalidDataException(
-                    "The retained Battle runtime owner does not match terminal cleanup.");
+                throw new InvalidOperationException("The Battle runtime owner is already claimed.");
             }
-            stream.Position = 0;
-            var bytes = new byte[checked((int)stream.Length)];
-            try
-            {
-                stream.ReadExactly(bytes);
-                if (!string.Equals(
-                            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-                            expectedIdentity.Sha256,
-                            StringComparison.Ordinal)
-                    || BattleRuntimeLockCodec.Decode(bytes) != record)
-                {
-                    throw new InvalidDataException(
-                        "The retained Battle runtime owner does not match terminal cleanup.");
-                }
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(bytes);
-            }
+            ValidateRetainedRuntime(expectedPath, expectedIdentity, expectedOwnerId);
             return new TerminalCleanupScope(this);
         }
         catch
@@ -419,17 +423,102 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await DisposeCoreAsync(null).ConfigureAwait(false);
+    }
+
+    private async ValueTask DisposeCoreAsync(object? provisioningToken)
+    {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (Interlocked.Exchange(ref disposed, 1) == 0)
+            if (Volatile.Read(ref disposed) != 0)
             {
-                await stream.DisposeAsync().ConfigureAwait(false);
+                return;
             }
+            RequireOwner(provisioningToken);
+            await stream.DisposeAsync().ConfigureAwait(false);
+            provisioningOwner = null;
+            Volatile.Write(ref disposed, 1);
         }
         finally
         {
             operationGate.Release();
+        }
+    }
+
+    private void ValidateRetainedRuntime(
+        string expectedPath,
+        BattleLifecycleFileIdentity expectedIdentity,
+        string expectedOwnerId)
+    {
+        if (!string.Equals(
+                path,
+                Path.GetFullPath(expectedPath),
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal)
+            || record.State != BattleRuntimeLockState.Running
+            || record.OwnerId != expectedOwnerId
+            || stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes
+            || stream.Length != expectedIdentity.ByteCount)
+        {
+            throw new InvalidDataException(
+                "The retained Battle runtime owner does not match its exact lifecycle receipt.");
+        }
+        stream.Position = 0;
+        var bytes = new byte[checked((int)stream.Length)];
+        try
+        {
+            stream.ReadExactly(bytes);
+            if (!string.Equals(
+                        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                        expectedIdentity.Sha256,
+                        StringComparison.Ordinal)
+                || BattleRuntimeLockCodec.Decode(bytes) != record)
+            {
+                throw new InvalidDataException(
+                    "The retained Battle runtime owner does not match its exact lifecycle receipt.");
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
+    private void RequireOwner(object? provisioningToken)
+    {
+        if (provisioningOwner is null
+            ? provisioningToken is not null
+            : !ReferenceEquals(provisioningOwner, provisioningToken))
+        {
+            throw new InvalidOperationException("The Battle runtime owner belongs to another lifecycle scope.");
+        }
+    }
+
+    internal sealed class BattleRuntimeLockProvisioningClaim(
+        BattleRuntimeLockLease owner,
+        object token) : IAsyncDisposable
+    {
+        private BattleRuntimeLockLease? owner = owner;
+
+        internal BattleRuntimeLockRecord Record =>
+            owner?.Record
+            ?? throw new ObjectDisposedException(nameof(BattleRuntimeLockProvisioningClaim));
+
+        internal Task MarkCleanAsync(
+            DateTimeOffset cleanCloseAtUtc,
+            CancellationToken cancellationToken = default) =>
+            (owner ?? throw new ObjectDisposedException(nameof(BattleRuntimeLockProvisioningClaim)))
+            .MarkCleanCoreAsync(cleanCloseAtUtc, token, cancellationToken);
+
+        public async ValueTask DisposeAsync()
+        {
+            if (owner is { } claimed)
+            {
+                await claimed.DisposeCoreAsync(token).ConfigureAwait(false);
+                owner = null;
+            }
         }
     }
 }
