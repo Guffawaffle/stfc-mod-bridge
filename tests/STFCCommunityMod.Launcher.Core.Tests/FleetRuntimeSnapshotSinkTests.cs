@@ -197,12 +197,15 @@ public sealed class FleetRuntimeSnapshotSinkTests
     }
 
     [TestMethod]
-    public async Task BatchReceiptMemoryIsBoundedWithoutLosingTheLatestProjection()
+    public async Task BatchReceiptMemoryIsBoundedAndPinsTheCurrentIdentity()
     {
         await using var sink = new FleetRuntimeSnapshotSink();
         var started = DateTimeOffset.Parse(
             "2026-08-10T12:00:00.000Z",
             CultureInfo.InvariantCulture);
+        await sink.CommitAsync(
+            Envelope("current", started.AddSeconds(10).ToString("O", CultureInfo.InvariantCulture), "Docked"),
+            CancellationToken.None);
         for (var index = 0; index < 2050; index++)
         {
             await sink.CommitAsync(
@@ -215,9 +218,39 @@ public sealed class FleetRuntimeSnapshotSinkTests
 
         var status = sink.ReadStatus();
         Assert.AreEqual(2048, status.RetainedBatchReceipts);
-        Assert.AreEqual(2050, status.AcceptedBatches);
-        Assert.AreEqual("batch-2049", status.Current!.BatchId);
-        Assert.AreEqual("state-2049", status.Current.Slots[0].State);
+        Assert.AreEqual(2051, status.AcceptedBatches);
+        Assert.AreEqual("current", status.Current!.BatchId);
+        Assert.AreEqual("docked", status.Current.Slots[0].State);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(async () =>
+            await sink.CommitAsync(
+                Envelope("current", started.AddSeconds(11).ToString("O", CultureInfo.InvariantCulture), "Mining"),
+                CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task EmptySnapshotIsIdempotentNoEvidenceAndStillBindsProducerScope()
+    {
+        await using var sink = new FleetRuntimeSnapshotSink();
+        var empty = Payload("Docked");
+        empty["slots"] = new JsonArray();
+        var envelope = Envelope("empty", "2026-08-10T12:00:01.000Z", empty);
+
+        Assert.AreEqual(
+            0,
+            (await sink.CommitAsync(envelope, CancellationToken.None)).AcceptedRecords);
+        Assert.AreEqual(
+            0,
+            (await sink.CommitAsync(envelope, CancellationToken.None)).AcceptedRecords);
+
+        var status = sink.ReadStatus();
+        Assert.IsNull(status.Current);
+        Assert.AreEqual(1, status.NoEvidenceBatches);
+        Assert.AreEqual(1, status.DuplicateBatches);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(async () =>
+            await sink.CommitAsync(
+                Envelope("other", "2026-08-10T12:00:02.000Z", "Docked", sessionId: "session-2"),
+                CancellationToken.None));
     }
 
     [TestMethod]

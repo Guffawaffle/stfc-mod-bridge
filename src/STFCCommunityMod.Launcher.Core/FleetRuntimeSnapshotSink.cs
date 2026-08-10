@@ -12,6 +12,7 @@ internal enum FleetRuntimeProjectionDisposition
     Advanced,
     Duplicate,
     Stale,
+    NoEvidence,
 }
 
 internal sealed record FleetRuntimeSlotProjection(
@@ -86,6 +87,7 @@ internal sealed record FleetRuntimeProjectionStatus(
     long AdvancedSnapshots,
     long DuplicateBatches,
     long StaleBatches,
+    long NoEvidenceBatches,
     long ConflictingBatches);
 
 /// <summary>
@@ -106,11 +108,15 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
     private readonly Dictionary<BatchIdentity, BatchReceipt> receipts = [];
     private readonly Queue<BatchIdentity> receiptOrder = [];
     private FleetRuntimeProjectionSnapshot? current;
+    private BatchIdentity? currentIdentity;
+    private string? boundSource;
+    private string? boundSessionId;
     private FleetRuntimeProjectionDisposition lastDisposition;
     private long acceptedBatches;
     private long advancedSnapshots;
     private long duplicateBatches;
     private long staleBatches;
+    private long noEvidenceBatches;
     private long conflictingBatches;
     private bool disposed;
 
@@ -140,11 +146,11 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
                 acceptedBatches++;
                 duplicateBatches++;
                 lastDisposition = FleetRuntimeProjectionDisposition.Duplicate;
-                return ValueTask.FromResult(new BattleIngestCommitResult(1));
+                return ValueTask.FromResult(new BattleIngestCommitResult(receipt.AcceptedRecords));
             }
 
-            if (current is not null
-                && (current.Source != envelope.Source || current.SessionId != envelope.SessionId))
+            if (boundSource is not null
+                && (boundSource != envelope.Source || boundSessionId != envelope.SessionId))
             {
                 conflictingBatches++;
                 throw new InvalidDataException(
@@ -159,7 +165,10 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
                     "Fleet runtime observations with the same timestamp have ambiguous different state.");
             }
 
-            AddReceipt(identity, candidate.EnvelopeSha256);
+            var acceptedRecords = disposition == FleetRuntimeProjectionDisposition.NoEvidence ? 0 : 1;
+            boundSource ??= envelope.Source;
+            boundSessionId ??= envelope.SessionId;
+            AddReceipt(identity, candidate.EnvelopeSha256, acceptedRecords);
             acceptedBatches++;
             lastDisposition = disposition;
             if (disposition == FleetRuntimeProjectionDisposition.Stale)
@@ -170,12 +179,17 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
             {
                 duplicateBatches++;
             }
+            else if (disposition == FleetRuntimeProjectionDisposition.NoEvidence)
+            {
+                noEvidenceBatches++;
+            }
             else
             {
                 advancedSnapshots++;
                 current = candidate.ToSnapshot(advancedSnapshots);
+                currentIdentity = identity;
             }
-            return ValueTask.FromResult(new BattleIngestCommitResult(1));
+            return ValueTask.FromResult(new BattleIngestCommitResult(acceptedRecords));
         }
     }
 
@@ -192,6 +206,7 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
                 advancedSnapshots,
                 duplicateBatches,
                 staleBatches,
+                noEvidenceBatches,
                 conflictingBatches);
         }
     }
@@ -206,6 +221,9 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
             }
             disposed = true;
             current = null;
+            currentIdentity = null;
+            boundSource = null;
+            boundSessionId = null;
             receipts.Clear();
             receiptOrder.Clear();
             return ValueTask.CompletedTask;
@@ -214,6 +232,10 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
 
     private FleetRuntimeProjectionDisposition DetermineDisposition(ProjectionCandidate candidate)
     {
+        if (candidate.Slots.Length == 0)
+        {
+            return FleetRuntimeProjectionDisposition.NoEvidence;
+        }
         if (current is null)
         {
             return FleetRuntimeProjectionDisposition.Advanced;
@@ -232,13 +254,19 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
             : FleetRuntimeProjectionDisposition.None;
     }
 
-    private void AddReceipt(BatchIdentity identity, string envelopeSha256)
+    private void AddReceipt(BatchIdentity identity, string envelopeSha256, int acceptedRecords)
     {
         while (receipts.Count >= MaximumReceipts)
         {
-            receipts.Remove(receiptOrder.Dequeue());
+            var oldest = receiptOrder.Dequeue();
+            if (oldest == currentIdentity)
+            {
+                receiptOrder.Enqueue(oldest);
+                continue;
+            }
+            receipts.Remove(oldest);
         }
-        receipts.Add(identity, new(envelopeSha256));
+        receipts.Add(identity, new(envelopeSha256, acceptedRecords));
         receiptOrder.Enqueue(identity);
     }
 
@@ -413,6 +441,10 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
         {
             return null;
         }
+        if (text.Any(character => char.IsControl(character) && !char.IsWhiteSpace(character)))
+        {
+            return null;
+        }
         var normalized = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return normalized.Length == 0 ? null : normalized[..Math.Min(normalized.Length, MaximumTextLength)];
     }
@@ -494,7 +526,7 @@ internal sealed class FleetRuntimeSnapshotSink : IBattleIngestSink, IAsyncDispos
 
     private sealed record BatchIdentity(string Source, string SessionId, string BatchId);
 
-    private sealed record BatchReceipt(string EnvelopeSha256);
+    private sealed record BatchReceipt(string EnvelopeSha256, int AcceptedRecords);
 
     private sealed record TimerProjection(long RemainingMs, string Source);
 
