@@ -51,6 +51,12 @@ public sealed class SyncTopologyPersistenceTests
                 catalog.Settings.Single(item => item.Path == $"sync.{key}").DefaultValue.GetBoolean(),
                 key);
         }
+        Assert.AreEqual(
+            "legacy_http",
+            catalog.Settings.Single(item => item.Path == "sidecar.sync.transport").DefaultValue.GetString());
+        Assert.AreEqual(
+            string.Empty,
+            catalog.Settings.Single(item => item.Path == "sidecar.sync.pipe_name").DefaultValue.GetString());
     }
 
     [TestMethod]
@@ -75,6 +81,106 @@ public sealed class SyncTopologyPersistenceTests
         var resolved = load.Topology.Resolve().Targets.Single();
         Assert.AreEqual(SyncValueProvenance.ExplicitEmpty, resolved.Proxy.Provenance);
         Assert.AreEqual(SyncValueProvenance.ExplicitFalse, resolved.DataKinds[SyncDataKind.Battlelogs].Provenance);
+    }
+
+    [TestMethod]
+    public void AdapterRoundTripsLauncherManagedNamedPipeTransportWithoutAnEndpoint()
+    {
+        const string source = """
+            [sidecar.sync]
+            enabled = true
+            transport = "named_pipe"
+            pipe_name = "stfc-mod-bridge.battle.v1"
+            token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            battlelogs_realtime = true
+            """;
+
+        var load = Load(source);
+        var target = load.Topology!.Targets[SyncDesiredTopology.LocalSidecarIdentity];
+        var resolved = load.Topology.Resolve();
+        var plan = SyncTopologyPersistencePlanner.Build(load, load.Topology);
+
+        Assert.AreEqual(SyncOverride.Explicit(SyncLocalTransport.NamedPipe), target.LocalTransport);
+        Assert.AreEqual(SyncOverride.Explicit("stfc-mod-bridge.battle.v1"), target.LocalPipeName);
+        Assert.IsTrue(resolved.IsCommittable);
+        Assert.IsFalse(resolved.Diagnostics.Any(item => item.Code == "SYNC_ENDPOINT_INVALID"));
+        Assert.AreEqual(SyncLocalTransport.NamedPipe, resolved.Targets.Single().LocalTransport!.Value);
+        Assert.AreEqual("stfc-mod-bridge.battle.v1", resolved.Targets.Single().LocalPipeName!.Value);
+        Assert.IsTrue(plan.IsValid);
+        Assert.AreEqual(0, plan.Mutations.Count);
+    }
+
+    [TestMethod]
+    public void PlannerWritesExactNamedPipeFieldsThroughTheExistingSidecarTarget()
+    {
+        var baseline = Load("# empty sync topology\n");
+        var desired = RequireSuccess(
+            baseline.Topology!.AddTarget("ignored", SyncTargetKind.LocalSidecar));
+        desired = RequireSuccess(
+            desired.UpdateTarget(
+                SyncDesiredTopology.LocalSidecarIdentity,
+                target => target
+                    .WithEnabled(true)
+                    .WithConnection(string.Empty, SyncSecret.FromPlainText(
+                        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"))
+                    .WithLocalTransport(
+                        SyncOverride.Explicit(SyncLocalTransport.NamedPipe),
+                        SyncOverride.Explicit("stfc-mod-bridge.battle.v1"))
+                    .WithDataOverride(SyncDataKind.BattlelogsRealtime, SyncOverride.Explicit(true))));
+
+        var plan = SyncTopologyPersistencePlanner.Build(baseline, desired);
+        var edit = plan.Apply(Encoding.UTF8.GetBytes("# empty sync topology\n"));
+        var updated = Encoding.UTF8.GetString(edit.Contents!);
+
+        Assert.IsTrue(plan.IsValid);
+        Assert.IsTrue(edit.IsValid, edit.Error?.Message);
+        StringAssert.Contains(updated, "[sidecar.sync]");
+        StringAssert.Contains(updated, "transport = \"named_pipe\"");
+        StringAssert.Contains(updated, "pipe_name = \"stfc-mod-bridge.battle.v1\"");
+        StringAssert.Contains(updated, "battlelogs_realtime = true");
+        Assert.IsFalse(updated.Contains("url =", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void AdapterRejectsNoncanonicalOrInvalidNamedPipeConfiguration()
+    {
+        var mode = Load("[sidecar.sync]\ntransport = \"Named_Pipe\"\n");
+        Assert.IsFalse(SyncTopologyPersistencePlanner.Build(mode, mode.Topology!).IsValid);
+        Assert.IsTrue(mode.Diagnostics.Any(item => item.Code == "SYNC_LOCAL_TRANSPORT_INVALID"));
+
+        var pipe = Load(
+            "[sidecar.sync]\nenabled = true\ntransport = \"named_pipe\"\npipe_name = \"..\\\\pipe\"\n"
+            + "token = \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"\n");
+        Assert.IsTrue(pipe.Topology!.Resolve().Diagnostics.Any(item => item.Code == "SYNC_LOCAL_PIPE_INVALID"));
+        Assert.IsFalse(SyncTopologyPersistencePlanner.Build(pipe, pipe.Topology).IsValid);
+    }
+
+    [TestMethod]
+    public void SwitchingTheLocalTargetToNamedPipeClearsTheLegacyEndpointWithoutTouchingUnknownFields()
+    {
+        const string source = """
+            [sidecar.sync]
+            enabled = true
+            url = "http://127.0.0.1:43127/api/sidecar/ingest"
+            token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            future = "preserve"
+            """;
+        var baseline = Load(source);
+        var desired = RequireSuccess(
+            baseline.Topology!.UpdateTarget(
+                SyncDesiredTopology.LocalSidecarIdentity,
+                target => target.WithLocalTransport(
+                    SyncOverride.Explicit(SyncLocalTransport.NamedPipe),
+                    SyncOverride.Explicit("stfc-mod-bridge.battle.v1"))));
+
+        var plan = SyncTopologyPersistencePlanner.Build(baseline, desired);
+        var updated = Encoding.UTF8.GetString(plan.Apply(Encoding.UTF8.GetBytes(source)).Contents!);
+
+        Assert.IsTrue(plan.IsValid);
+        Assert.IsFalse(updated.Contains("url =", StringComparison.Ordinal));
+        StringAssert.Contains(updated, "transport = \"named_pipe\"");
+        StringAssert.Contains(updated, "pipe_name = \"stfc-mod-bridge.battle.v1\"");
+        StringAssert.Contains(updated, "future = \"preserve\"");
     }
 
     [TestMethod]

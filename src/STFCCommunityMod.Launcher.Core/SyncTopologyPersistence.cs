@@ -243,13 +243,18 @@ public static class SyncTopologyPersistencePlanner
         if (target.Kind == SyncTargetKind.LocalSidecar)
         {
             mutations.Add(SyncTomlMutation.Set(root + ".enabled", Render(target.Enabled)));
+            AddOverride(mutations, root + ".transport", target.LocalTransport, RenderLocalTransport);
+            AddOverride(mutations, root + ".pipe_name", target.LocalPipeName, LauncherTomlValue.RenderString);
         }
         else
         {
             mutations.Add(SyncTomlMutation.Set(root + ".mode", LauncherTomlValue.RenderString(Mode(target.Kind))));
         }
 
-        mutations.Add(SyncTomlMutation.Set(root + ".url", LauncherTomlValue.RenderString(target.Url)));
+        if (!target.UsesNamedPipe)
+        {
+            mutations.Add(SyncTomlMutation.Set(root + ".url", LauncherTomlValue.RenderString(target.Url)));
+        }
         mutations.Add(SyncTomlMutation.Set(
             root + ".token",
             LauncherTomlValue.RenderString(target.Token.RevealForPersistence()),
@@ -287,9 +292,31 @@ public static class SyncTopologyPersistencePlanner
         if (desired.Kind == SyncTargetKind.LocalSidecar)
         {
             AddChanged(mutations, root + ".enabled", baseline.Enabled, desired.Enabled);
+            AddOverrideChange(
+                mutations,
+                root + ".transport",
+                baseline.LocalTransport,
+                desired.LocalTransport,
+                RenderLocalTransport);
+            AddOverrideChange(
+                mutations,
+                root + ".pipe_name",
+                baseline.LocalPipeName,
+                desired.LocalPipeName,
+                LauncherTomlValue.RenderString);
         }
 
-        AddChanged(mutations, root + ".url", baseline.Url, desired.Url);
+        if (desired.UsesNamedPipe)
+        {
+            if (!baseline.UsesNamedPipe)
+            {
+                mutations.Add(SyncTomlMutation.Clear(root + ".url"));
+            }
+        }
+        else
+        {
+            AddChanged(mutations, root + ".url", baseline.Url, desired.Url);
+        }
         if (!baseline.Token.Equals(desired.Token))
         {
             mutations.Add(SyncTomlMutation.Set(
@@ -440,6 +467,8 @@ public static class SyncTopologyPersistencePlanner
         || target.AllowUnsafeTlsWithoutCertificateValidation.IsExplicit
         || target.BattlelogEnrichment.IsExplicit
         || target.FleetRuntimeMode.IsExplicit
+        || target.LocalTransport.IsExplicit
+        || target.LocalPipeName.IsExplicit
         || target.DataOverrides.Values.Any(value => value.IsExplicit);
 
     private static bool TargetsEquivalent(SyncTargetDraft left, SyncTargetDraft right) =>
@@ -452,6 +481,8 @@ public static class SyncTopologyPersistencePlanner
         && left.AllowUnsafeTlsWithoutCertificateValidation.Equals(right.AllowUnsafeTlsWithoutCertificateValidation)
         && left.BattlelogEnrichment.Equals(right.BattlelogEnrichment)
         && left.FleetRuntimeMode.Equals(right.FleetRuntimeMode)
+        && left.LocalTransport.Equals(right.LocalTransport)
+        && left.LocalPipeName.Equals(right.LocalPipeName)
         && left.DataOverrides.Count == right.DataOverrides.Count
         && left.DataOverrides.All(item => right.DataOverrides.TryGetValue(item.Key, out var value) && value.Equals(item.Value));
 
@@ -464,6 +495,14 @@ public static class SyncTopologyPersistencePlanner
         kind == SyncTargetKind.MajelIngest ? "majel" : "legacy";
 
     private static string Render(bool value) => value ? "true" : "false";
+
+    private static string RenderLocalTransport(SyncLocalTransport value) =>
+        LauncherTomlValue.RenderString(value switch
+        {
+            SyncLocalTransport.LegacyHttp => "legacy_http",
+            SyncLocalTransport.NamedPipe => "named_pipe",
+            _ => throw new InvalidOperationException("The local transport is unsupported."),
+        });
 
     private static SyncTopologyPersistencePlan Invalid(string code, string message) =>
         new(false, [], [Error(code, null, null, message)]);

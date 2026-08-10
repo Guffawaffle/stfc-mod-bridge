@@ -61,6 +61,22 @@ public sealed class LauncherSettingsProjectionQueryTests
         Assert.IsTrue(rows.Any(row => row.Placement.Section == LauncherSettingsSection.Notifications));
     }
 
+    [TestMethod]
+    public void SearchDoesNotExposeDedicatedDataSyncSettingsAsGenericRows()
+    {
+        var query = new LauncherSettingsProjectionQuery(
+            LoadCatalog(),
+            new PrincipalCatalogSettingsLayoutProvider());
+
+        var rows = query
+            .Project(LauncherSettingsSection.General, "sidecar.sync.transport")
+            .OfType<LauncherSettingRowProjection>()
+            .ToArray();
+
+        Assert.IsFalse(rows.Any(row => row.Placement.Section == LauncherSettingsSection.DataSync));
+        Assert.IsFalse(rows.Any(row => row.Setting.Path == "sidecar.sync.transport"));
+    }
+
     private static int IndexOf<T>(IReadOnlyList<LauncherSettingsProjectionItem> items)
         where T : LauncherSettingsProjectionItem
     {

@@ -272,6 +272,41 @@ public sealed class SyncWorkspaceViewModelTests
     }
 
     [TestMethod]
+    public void LauncherManagedNamedPipeTargetIsReadOnlyInTheGenericDataSyncWorkspace()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sidecar.sync]
+            enabled = true
+            transport = "named_pipe"
+            pipe_name = "stfc-mod-bridge.battle.v1"
+            token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            battlelogs_realtime = true
+            """);
+        var viewModel = fixture.CreateViewModel();
+        var target = viewModel.Targets.Single();
+
+        Assert.IsTrue(target.IsLauncherManagedLocalIpc);
+        Assert.IsFalse(target.ShowEditableTargetControls);
+        Assert.IsFalse(target.CanDisable);
+        Assert.IsFalse(target.RemoveCommand.CanExecute(null));
+        Assert.IsFalse(target.ClearTokenCommand.CanExecute(null));
+        StringAssert.Contains(target.TokenStatus, "launcher-managed");
+
+        target.IsEnabled = false;
+        target.Url = "http://127.0.0.1:1/ignored";
+        target.SetReplacementToken("replacement");
+        target.ReplaceTokenCommand.Execute(null);
+        target.Feeds.Single(feed => feed.Kind == SyncDataKind.BattlelogsRealtime).Choice =
+            SyncBooleanOverrideChoice.Disabled;
+        target.RemoveCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.AreEqual(1, viewModel.Targets.Count);
+        Assert.IsTrue(viewModel.Targets.Single().IsEnabled);
+    }
+
+    [TestMethod]
     public void PresetEndpointCannotProjectLegacyFeedsOntoSidecarKind()
     {
         using var fixture = SyncFixture.Create(

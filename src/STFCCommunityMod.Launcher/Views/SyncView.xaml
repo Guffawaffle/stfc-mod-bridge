@@ -388,6 +388,16 @@
                   </StackPanel>
                 </Grid>
 
+                <Border Margin="0,14,0,0" Padding="13" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="7"
+                        Visibility="{Binding IsLauncherManagedLocalIpc, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="Authenticated local IPC" />
+                    <TextBlock Margin="0,4,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="The Battle Bridge connection, pipe name, and credential are managed by the reviewed feature lifecycle. Change Battle and Fleet collection from their feature controls." />
+                  </StackPanel>
+                </Border>
+
+                <StackPanel Visibility="{Binding ShowEditableTargetControls, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Connection" /><Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <TextBlock Margin="0,10,0,5" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="Endpoint" />
                 <TextBox Style="{StaticResource SyncFieldStyle}" Text="{Binding Url, UpdateSourceTrigger=LostFocus}" automation:AutomationProperties.Name="Destination endpoint" />
@@ -467,6 +477,7 @@
                     </Grid>
                   </DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>
+                </StackPanel>
                 <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Effective configuration" /><Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <TextBlock Margin="0,10,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding WireContract, StringFormat='Wire contract: {0}'}" />
                 <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding AdapterDescription}" />
