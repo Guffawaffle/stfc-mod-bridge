@@ -1221,7 +1221,10 @@ internal sealed class BattleLifecycleJournalStore
                     "battle-precommit-absent"));
             }
             if (inspection.Marker is not { } marker
-                || marker.Stage is not (BattleLifecycleStage.Prepared or BattleLifecycleStage.Quiesced)
+                || marker.Stage is not (
+                    BattleLifecycleStage.Prepared
+                    or BattleLifecycleStage.Quiesced
+                    or BattleLifecycleStage.BackupVerified)
                 || inspection.Successor is not null
                 || inspection.State == BattleLifecycleJournalState.Unavailable
                 || inspection.State == BattleLifecycleJournalState.RecoveryFailed

@@ -251,6 +251,16 @@ entry, and returns bounded blocked/unavailable states instead of guessing. Torn
 candidate bytes can be removed because their final paths were already frozen in
 the first durable marker. Repeating rollback after success is a no-op.
 
+The protected-backup handoff also remains within existing ownership. Only
+`ManagedVerified`, game-closed installation evidence with complete stable
+attribution may advance a first activation from `prepared` through `quiesced` to
+`backup-verified`. It uses the existing provider-scoped configuration backup
+store, rereads and byte-verifies the protected payload, and binds the exact
+backup ID and source-content SHA-256 into the successor marker. A failure leaves
+the journal at `quiesced`; an exact retry can create and bind a new verified
+backup. Pre-commit rollback may retain that protected backup while removing the
+still-disposable Battle candidates and marker.
+
 This is still not the activation commit. It does not promote the credential,
 commit TOML, save feature preference, create or open the Battle database,
 register runtime composition, or start the pipe. Those steps remain dormant
