@@ -54,6 +54,9 @@ function Invoke-QualificationProcess {
   try {
     if (-not $process.WaitForExit(30000)) {
       $process.Kill($true)
+      if (-not $process.WaitForExit(10000)) {
+        throw "The $Mode Battle IPC qualification did not terminate after forced stop."
+      }
       throw "The $Mode Battle IPC qualification exceeded 30 seconds."
     }
     if ($process.ExitCode -ne 0) {
@@ -141,6 +144,9 @@ try {
   try {
     if (-not $process.WaitForExit(30000)) {
       $process.Kill($true)
+      if (-not $process.WaitForExit(10000)) {
+        throw "The MSIX Battle IPC qualification did not terminate after forced stop."
+      }
       throw "The MSIX Battle IPC qualification exceeded 30 seconds."
     }
     if ($process.ExitCode -ne 0) {

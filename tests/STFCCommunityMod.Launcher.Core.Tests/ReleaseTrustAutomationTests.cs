@@ -274,6 +274,8 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "Invoke-QualificationProcess -Path $launcher -Mode \"standalone\"");
         StringAssert.Contains(script, "Add-AppxPackage -Path $package");
         StringAssert.Contains(script, "!App");
+        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
+        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.WaitForExit(10000)")).Count);
         StringAssert.Contains(script, "Remove-AppxPackage -Package $installed.PackageFullName");
         StringAssert.Contains(script, "refuses to replace an existing STFC Mod Bridge package");
     }
