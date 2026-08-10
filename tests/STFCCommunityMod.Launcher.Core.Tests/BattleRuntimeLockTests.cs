@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using STFCCommunityMod.Launcher.Core;
@@ -36,6 +38,19 @@ public sealed class BattleRuntimeLockTests
             BattleRuntimeLockCodec.Decode(Encoding.UTF8.GetBytes(caseDrift)));
         Assert.ThrowsException<InvalidDataException>(() =>
             BattleRuntimeLockCodec.Decode(Encoding.UTF8.GetBytes(" " + json)));
+        Assert.ThrowsException<InvalidDataException>(() =>
+            BattleRuntimeLockCodec.Decode(Encoding.UTF8.GetBytes("not-json")));
+    }
+
+    [TestMethod]
+    public void RuntimeOwnerStoreConstructionIsPassive()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+
+        _ = new BattleRuntimeLockStore(stateRoot);
+
+        Assert.IsFalse(Directory.Exists(stateRoot));
     }
 
     [TestMethod]
@@ -174,6 +189,324 @@ public sealed class BattleRuntimeLockTests
         Assert.AreEqual(cleanAt, persisted.LastCleanCloseAtUtc);
     }
 
+    [TestMethod]
+    public async Task MissingRuntimeOwnerInAnExistingDirectoryRemainsAbsent()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var battleRoot = Path.Combine(stateRoot, "battle");
+        Directory.CreateDirectory(battleRoot);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord());
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Absent, result.State);
+        Assert.AreEqual("battle-runtime-owner-absent", result.Code);
+        Assert.IsNull(result.PreviousRecord);
+        Assert.IsNull(result.Lease);
+        Assert.AreEqual(0, Directory.EnumerateFileSystemEntries(battleRoot).Count());
+    }
+
+    [TestMethod]
+    public async Task ExistingStateAcquisitionPreservesThePriorCleanReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var clean = RunningRecord() with
+        {
+            State = BattleRuntimeLockState.Clean,
+            LastCleanCloseAtUtc = Started.AddMinutes(1),
+        };
+        File.WriteAllBytes(runtimePath, BattleRuntimeLockCodec.Encode(clean));
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        var next = RunningRecord() with
+        {
+            OwnerId = new string('2', 32),
+            ProcessStartNonce = new string('8', 32),
+            StartedAtUtc = Started.AddMinutes(2),
+        };
+
+        var result = await runtime.TryAcquireExistingAsync(operationLease, journal, next);
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Acquired, result.State);
+        Assert.AreEqual("battle-runtime-owner-acquired-after-clean", result.Code);
+        Assert.AreEqual(clean, result.PreviousRecord);
+        Assert.AreEqual(next, result.Lease!.Record);
+        await result.Lease.MarkCleanAsync(Started.AddMinutes(3));
+        await result.Lease.DisposeAsync();
+        Assert.AreEqual(
+            BattleRuntimeLockState.Clean,
+            BattleRuntimeLockCodec.Decode(File.ReadAllBytes(runtimePath)).State);
+    }
+
+    [TestMethod]
+    public async Task ExistingUncleanReceiptIsReturnedForStorageRecoveryBeforeComposition()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var unclean = RunningRecord() with
+        {
+            OwnerId = new string('3', 32),
+            ProcessStartNonce = new string('9', 32),
+        };
+        File.WriteAllBytes(runtimePath, BattleRuntimeLockCodec.Encode(unclean));
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('4', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Acquired, result.State);
+        Assert.AreEqual("battle-runtime-owner-acquired-after-unclean", result.Code);
+        Assert.AreEqual(unclean, result.PreviousRecord);
+        await result.Lease!.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task CancellationBeforeOwnershipMutationPreservesThePriorReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var prior = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(runtimePath, prior);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsExceptionAsync<OperationCanceledException>(() =>
+            runtime.TryAcquireExistingAsync(
+                operationLease,
+                journal,
+                RunningRecord() with { OwnerId = new string('5', 32) },
+                cancellation.Token));
+
+        CollectionAssert.AreEqual(prior, File.ReadAllBytes(runtimePath));
+    }
+
+    [TestMethod]
+    public async Task FailedOwnershipRewriteRestoresAndVerifiesThePriorReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var prior = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(runtimePath, prior);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var injected = false;
+        var runtime = new BattleRuntimeLockStore(stateRoot, stage =>
+        {
+            if (!injected && stage == BattleRuntimeLockWriteStage.NewBytesFlushed)
+            {
+                injected = true;
+                throw new IOException("injected runtime receipt write failure");
+            }
+        });
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('5', 32) });
+
+        Assert.IsTrue(injected);
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Unavailable, result.State);
+        Assert.AreEqual("battle-runtime-owner-unavailable", result.Code);
+        Assert.IsNull(result.Lease);
+        CollectionAssert.AreEqual(prior, File.ReadAllBytes(runtimePath));
+        Assert.AreEqual(RunningRecord(), BattleRuntimeLockCodec.Decode(File.ReadAllBytes(runtimePath)));
+    }
+
+    [TestMethod]
+    public async Task MissingBattleStateRemainsAbsentWithoutBootstrapWrites()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(operationLease, journal, RunningRecord());
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Absent, result.State);
+        Assert.AreEqual("battle-runtime-owner-absent", result.Code);
+        Assert.IsFalse(Directory.Exists(Path.Combine(stateRoot, "battle")));
+    }
+
+    [TestMethod]
+    [DataRow("battle-delete-v1.dpapi")]
+    [DataRow("battle-delete-v1.dpapi.next")]
+    [DataRow("battle.delete.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task RecoveryAndDeleteOwnersBlockRuntimeAcquisitionWithoutMutation(string recoveryEntry)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var prior = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(runtimePath, prior);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        File.WriteAllBytes(Path.Combine(stateRoot, recoveryEntry), [1]);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('5', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.RecoveryRequired, result.State);
+        Assert.AreEqual("battle-runtime-owner-delete-recovery-required", result.Code);
+        CollectionAssert.AreEqual(prior, File.ReadAllBytes(runtimePath));
+    }
+
+    [TestMethod]
+    public async Task ActiveLifecycleMarkerBlocksRuntimeAcquisitionWithoutTouchingTheLock()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var priorRecord = RunningRecord();
+        var prior = BattleRuntimeLockCodec.Encode(priorRecord);
+        File.WriteAllBytes(runtimePath, prior);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        await journal.CreatePreparedAsync(operationLease, PreparedMarker(priorRecord));
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('5', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.RecoveryRequired, result.State);
+        Assert.AreEqual("battle-runtime-owner-recovery-required", result.Code);
+        CollectionAssert.AreEqual(prior, File.ReadAllBytes(runtimePath));
+    }
+
+    [TestMethod]
+    public async Task MalformedOrLiveRuntimeOwnerFailsClosedAndPreservesBytes()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var malformed = Encoding.UTF8.GetBytes("not-a-runtime-record");
+        File.WriteAllBytes(runtimePath, malformed);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var invalid = await runtime.TryAcquireExistingAsync(operationLease, journal, RunningRecord());
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Invalid, invalid.State);
+        CollectionAssert.AreEqual(malformed, File.ReadAllBytes(runtimePath));
+
+        File.WriteAllBytes(runtimePath, BattleRuntimeLockCodec.Encode(RunningRecord()));
+        var heldResult = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('6', 32) });
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Acquired, heldResult.State);
+        await using var held = heldResult.Lease!;
+        var busy = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('7', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Busy, busy.State);
+        Assert.AreEqual("battle-runtime-owner-busy", busy.Code);
+    }
+
+    [TestMethod]
+    public async Task RuntimeOwnerRefusesAFileReparsePointWithoutTouchingItsTarget()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("The authoritative no-follow runtime-lock contract is Windows-only.");
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var foreign = Path.Combine(temporaryDirectory.Path, "foreign-runtime.lock");
+        var foreignBytes = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(foreign, foreignBytes);
+        try
+        {
+            File.CreateSymbolicLink(runtimePath, foreign);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            Assert.Inconclusive($"File symlink creation is unavailable: {exception.Message}");
+        }
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('8', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Invalid, result.State);
+        CollectionAssert.AreEqual(foreignBytes, File.ReadAllBytes(foreign));
+        Assert.IsTrue(File.GetAttributes(runtimePath).HasFlag(FileAttributes.ReparsePoint));
+    }
+
+    [TestMethod]
+    public async Task RuntimeOwnerRefusesAHardLinkWithoutTouchingItsOtherName()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("The authoritative runtime-lock identity contract is Windows-only.");
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var foreign = Path.Combine(temporaryDirectory.Path, "foreign-runtime.lock");
+        var foreignBytes = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(foreign, foreignBytes);
+        if (!CreateHardLink(runtimePath, foreign, IntPtr.Zero))
+        {
+            Assert.Inconclusive($"Hard-link creation is unavailable: {new Win32Exception().Message}");
+        }
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('9', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Invalid, result.State);
+        CollectionAssert.AreEqual(foreignBytes, File.ReadAllBytes(foreign));
+        CollectionAssert.AreEqual(foreignBytes, File.ReadAllBytes(runtimePath));
+    }
+
     private static BattleRuntimeLockRecord RunningRecord() => new(
         new string('1', 32),
         BattleRuntimeLockState.Running,
@@ -181,6 +514,20 @@ public sealed class BattleRuntimeLockTests
         new string('7', 32),
         Started,
         null);
+
+    private static string CreateBattleRoot(string stateRoot)
+    {
+        var battleRoot = Path.Combine(stateRoot, "battle");
+        Directory.CreateDirectory(battleRoot);
+        return Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(
+        string fileName,
+        string existingFileName,
+        IntPtr securityAttributes);
 
     private static BattleLifecycleMarker PreparedMarker(BattleRuntimeLockRecord runtime)
     {

@@ -1261,6 +1261,16 @@ internal static class CandidateFileNative
         flags: FileFlagOpenReparsePoint,
         "Could not lock the reviewed candidate recovery member.");
 
+    public static SafeFileHandle OpenRuntimeLockReadWriteNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead | GenericWrite,
+        FileShare.None,
+        flags: FileFlagOpenReparsePoint | FileFlagOverlapped,
+        "Could not lock the Battle runtime owner file.",
+        validationErrorMessage: "Could not validate the Battle runtime owner handle.",
+        linkErrorMessage: "Battle runtime ownership refuses linked files.",
+        requireSingleLink: true);
+
     public static SafeFileHandle OpenRecoveryReadDeleteNoFollow(string path) => OpenNoFollow(
         path,
         GenericRead | Delete,
@@ -1287,7 +1297,10 @@ internal static class CandidateFileNative
         uint desiredAccess,
         FileShare shareMode,
         uint flags,
-        string errorMessage)
+        string errorMessage,
+        string validationErrorMessage = "Could not validate the reviewed candidate recovery handle.",
+        string linkErrorMessage = "Reviewed candidate recovery refuses filesystem links or reparse points.",
+        bool requireSingleLink = false)
     {
         var handle = CreateFile(
             path,
@@ -1305,12 +1318,13 @@ internal static class CandidateFileNative
         {
             var error = Marshal.GetLastWin32Error();
             handle.Dispose();
-            throw new Win32Exception(error, "Could not validate the reviewed candidate recovery handle.");
+            throw new Win32Exception(error, validationErrorMessage);
         }
-        if ((information.FileAttributes & FileAttributeReparsePoint) != 0)
+        if ((information.FileAttributes & FileAttributeReparsePoint) != 0
+            || requireSingleLink && information.NumberOfLinks != 1)
         {
             handle.Dispose();
-            throw new InvalidDataException("Reviewed candidate recovery refuses filesystem links or reparse points.");
+            throw new InvalidDataException(linkErrorMessage);
         }
         return handle;
     }

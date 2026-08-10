@@ -140,6 +140,22 @@ rejects before process capture. Construction and discovery start no process,
 listener, watcher, timer, or background task and create no filesystem state. The
 seam is not registered with the shell or runtime coordinator yet.
 
+The dormant runtime-owner opener now covers the later-session half of the
+lifecycle handoff. It runs only beneath the existing root `operation.lock`,
+requires the Battle lifecycle journal and root delete recovery state to be
+absent, opens the exact existing `battle\runtime.lock` without following a
+reparse point, and retains that exclusive handle. A canonical prior `clean`
+record is preserved as clean-start evidence; a canonical prior `running` record
+is preserved as unclean-start evidence for the storage recovery owner. A live
+owner is `busy`, malformed bytes are `invalid`, and recovery/delete ownership is
+`recovery-required` without rewriting the lock.
+
+This opener never creates `battle` or an unjournalled `runtime.lock`. Initial
+activation must hand off the exact marker-bound lease created by the lifecycle
+transaction; clean shutdown rewrites that retained file through the same handle
+and leaves it for a later session to reopen. Construction remains passive, and
+the opener is not registered with launcher startup or the runtime coordinator.
+
 The pipe host rejects the older #62 capability-plus-demand activation object.
 Its only accepted activation is derived from `LauncherBattleFeatureSnapshot`,
 which already combines normalized runtime capability, checked-in product
