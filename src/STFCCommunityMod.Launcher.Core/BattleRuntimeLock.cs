@@ -28,6 +28,12 @@ internal sealed record BattleRuntimeLockAcquisitionResult(
     BattleRuntimeLockRecord? PreviousRecord,
     string Code);
 
+internal enum BattleRuntimeLockWriteStage
+{
+    NewBytesFlushed,
+    FinalLengthFlushed,
+}
+
 internal sealed record BattleRuntimeLockRecord(
     string OwnerId,
     BattleRuntimeLockState State,
@@ -204,6 +210,85 @@ internal static class BattleRuntimeLockCodec
         string? LastCleanCloseAtUtc);
 }
 
+internal sealed class BattleRuntimeLockRewriteException(Exception writeFailure, Exception restoreFailure)
+    : Exception(
+        "The Battle runtime owner receipt could not be updated or restored.",
+        new AggregateException(writeFailure, restoreFailure));
+
+internal static class BattleRuntimeLockFile
+{
+    public static void RewriteAndVerify(
+        FileStream stream,
+        BattleRuntimeLockRecord nextRecord,
+        byte[] nextBytes,
+        BattleRuntimeLockRecord previousRecord,
+        byte[] previousBytes,
+        Action<BattleRuntimeLockWriteStage>? observer = null)
+    {
+        try
+        {
+            WriteExact(stream, nextBytes, observer);
+            VerifyExact(stream, nextRecord, nextBytes);
+        }
+        catch (Exception writeFailure) when (IsExpectedFailure(writeFailure))
+        {
+            try
+            {
+                WriteExact(stream, previousBytes, observer: null);
+                VerifyExact(stream, previousRecord, previousBytes);
+            }
+            catch (Exception restoreFailure) when (IsExpectedFailure(restoreFailure))
+            {
+                throw new BattleRuntimeLockRewriteException(writeFailure, restoreFailure);
+            }
+            throw;
+        }
+    }
+
+    private static void WriteExact(
+        FileStream stream,
+        byte[] bytes,
+        Action<BattleRuntimeLockWriteStage>? observer)
+    {
+        stream.Position = 0;
+        stream.Write(bytes);
+        stream.Flush(flushToDisk: true);
+        observer?.Invoke(BattleRuntimeLockWriteStage.NewBytesFlushed);
+        stream.SetLength(bytes.Length);
+        stream.Flush(flushToDisk: true);
+        observer?.Invoke(BattleRuntimeLockWriteStage.FinalLengthFlushed);
+    }
+
+    private static void VerifyExact(
+        FileStream stream,
+        BattleRuntimeLockRecord record,
+        byte[] bytes)
+    {
+        stream.Position = 0;
+        var verified = new byte[bytes.Length];
+        try
+        {
+            stream.ReadExactly(verified);
+            if (stream.Length != bytes.Length
+                || !bytes.AsSpan().SequenceEqual(verified)
+                || BattleRuntimeLockCodec.Decode(verified) != record)
+            {
+                throw new InvalidDataException("The Battle runtime owner receipt did not verify.");
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(verified);
+        }
+    }
+
+    private static bool IsExpectedFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or Win32Exception;
+}
+
 internal sealed class BattleRuntimeLockLease : IAsyncDisposable
 {
     private readonly SemaphoreSlim operationGate = new(1, 1);
@@ -243,32 +328,17 @@ internal sealed class BattleRuntimeLockLease : IAsyncDisposable
                 State = BattleRuntimeLockState.Clean,
                 LastCleanCloseAtUtc = cleanCloseAtUtc,
             };
+            var previousBytes = BattleRuntimeLockCodec.Encode(record);
             var bytes = BattleRuntimeLockCodec.Encode(clean);
             try
             {
-                stream.Position = 0;
-                stream.SetLength(0);
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-                stream.Position = 0;
-                var verified = new byte[bytes.Length];
-                stream.ReadExactly(verified);
-                try
-                {
-                    if (!bytes.AsSpan().SequenceEqual(verified)
-                        || BattleRuntimeLockCodec.Decode(verified) != clean)
-                    {
-                        throw new InvalidDataException("The clean Battle runtime lock did not verify.");
-                    }
-                }
-                finally
-                {
-                    CryptographicOperations.ZeroMemory(verified);
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                BattleRuntimeLockFile.RewriteAndVerify(stream, clean, bytes, record, previousBytes);
                 record = clean;
             }
             finally
             {
+                CryptographicOperations.ZeroMemory(previousBytes);
                 CryptographicOperations.ZeroMemory(bytes);
             }
         }
@@ -302,13 +372,22 @@ internal sealed class BattleRuntimeLockStore
     private readonly string stateRoot;
     private readonly string battleRoot;
     private readonly string path;
+    private readonly Action<BattleRuntimeLockWriteStage>? writeObserver;
 
     public BattleRuntimeLockStore(string stateRoot)
+        : this(stateRoot, null)
+    {
+    }
+
+    internal BattleRuntimeLockStore(
+        string stateRoot,
+        Action<BattleRuntimeLockWriteStage>? writeObserver)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateRoot);
         this.stateRoot = Path.GetFullPath(stateRoot);
         battleRoot = Path.Combine(this.stateRoot, "battle");
         path = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+        this.writeObserver = writeObserver;
     }
 
     /// <summary>
@@ -382,6 +461,7 @@ internal sealed class BattleRuntimeLockStore
 
         cancellationToken.ThrowIfCancellationRequested();
         var bytes = BattleRuntimeLockCodec.Encode(record);
+        byte[]? previousBytes = null;
         FileStream? stream = null;
         try
         {
@@ -396,7 +476,7 @@ internal sealed class BattleRuntimeLockStore
                     stream = null;
                     return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
                 }
-                var previousBytes = new byte[checked((int)stream.Length)];
+                previousBytes = new byte[checked((int)stream.Length)];
                 try
                 {
                     stream.ReadExactly(previousBytes);
@@ -408,17 +488,19 @@ internal sealed class BattleRuntimeLockStore
                     stream = null;
                     return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
                 }
-                finally
-                {
-                    CryptographicOperations.ZeroMemory(previousBytes);
-                }
             }
             catch (Exception exception) when (IsMissing(exception))
             {
                 return Result(BattleRuntimeLockAcquisitionState.Absent, "battle-runtime-owner-absent");
             }
 
-            WriteAndVerify(stream, record, bytes);
+            BattleRuntimeLockFile.RewriteAndVerify(
+                stream,
+                record,
+                bytes,
+                previous,
+                previousBytes,
+                writeObserver);
             var lease = new BattleRuntimeLockLease(stream, record);
             stream = null;
             return new(
@@ -437,6 +519,12 @@ internal sealed class BattleRuntimeLockStore
         {
             return Result(BattleRuntimeLockAcquisitionState.Invalid, "battle-runtime-owner-invalid");
         }
+        catch (BattleRuntimeLockRewriteException)
+        {
+            return Result(
+                BattleRuntimeLockAcquisitionState.RecoveryRequired,
+                "battle-runtime-owner-rewrite-recovery-required");
+        }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or Win32Exception)
         {
@@ -447,6 +535,10 @@ internal sealed class BattleRuntimeLockStore
             if (stream is not null)
             {
                 await stream.DisposeAsync().ConfigureAwait(false);
+            }
+            if (previousBytes is not null)
+            {
+                CryptographicOperations.ZeroMemory(previousBytes);
             }
             CryptographicOperations.ZeroMemory(bytes);
         }
@@ -578,32 +670,6 @@ internal sealed class BattleRuntimeLockStore
             FileShare.None,
             4096,
             FileOptions.Asynchronous | FileOptions.WriteThrough);
-
-    private static void WriteAndVerify(
-        FileStream stream,
-        BattleRuntimeLockRecord record,
-        byte[] bytes)
-    {
-        stream.Position = 0;
-        stream.SetLength(0);
-        stream.Write(bytes);
-        stream.Flush(flushToDisk: true);
-        stream.Position = 0;
-        var verified = new byte[bytes.Length];
-        try
-        {
-            stream.ReadExactly(verified);
-            if (!bytes.AsSpan().SequenceEqual(verified)
-                || BattleRuntimeLockCodec.Decode(verified) != record)
-            {
-                throw new InvalidDataException("The running Battle runtime lock did not verify.");
-            }
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(verified);
-        }
-    }
 
     private static bool IsMissing(Exception exception) =>
         exception is FileNotFoundException or DirectoryNotFoundException

@@ -303,6 +303,40 @@ public sealed class BattleRuntimeLockTests
     }
 
     [TestMethod]
+    public async Task FailedOwnershipRewriteRestoresAndVerifiesThePriorReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var prior = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(runtimePath, prior);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var injected = false;
+        var runtime = new BattleRuntimeLockStore(stateRoot, stage =>
+        {
+            if (!injected && stage == BattleRuntimeLockWriteStage.NewBytesFlushed)
+            {
+                injected = true;
+                throw new IOException("injected runtime receipt write failure");
+            }
+        });
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('5', 32) });
+
+        Assert.IsTrue(injected);
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Unavailable, result.State);
+        Assert.AreEqual("battle-runtime-owner-unavailable", result.Code);
+        Assert.IsNull(result.Lease);
+        CollectionAssert.AreEqual(prior, File.ReadAllBytes(runtimePath));
+        Assert.AreEqual(RunningRecord(), BattleRuntimeLockCodec.Decode(File.ReadAllBytes(runtimePath)));
+    }
+
+    [TestMethod]
     public async Task MissingBattleStateRemainsAbsentWithoutBootstrapWrites()
     {
         using var temporaryDirectory = new TemporaryDirectory();
