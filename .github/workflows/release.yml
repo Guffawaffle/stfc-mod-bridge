@@ -289,6 +289,14 @@ jobs:
             --no-restore `
             --filter FullyQualifiedName=STFCCommunityMod.Launcher.Core.Tests.AuthenticodeTrustPolicyTests.OptedInSignedReleasePayloadSatisfiesRuntimePolicy
 
+      - name: Qualify signed Battle named-pipe package boundary
+        shell: pwsh
+        env:
+          SOURCE_REVISION_ID: ${{ needs.build.outputs.commit }}
+        run: >-
+          ./scripts/qualify-battle-named-pipe-package.ps1
+          -ExpectedSourceRevisionId "$env:SOURCE_REVISION_ID"
+
       - name: Resolve authenticated manifest issue time
         id: manifest-time
         shell: pwsh

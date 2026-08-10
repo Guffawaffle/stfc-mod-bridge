@@ -1,9 +1,9 @@
 # Battle Bridge local IPC boundary
 
-Status: authenticated named-pipe transport, provisioned-runtime composition,
-and first-activation commit proofs implemented but dormant; operational
-activation remains blocked on terminal recovery/cleanup composition and signed
-package qualification
+Status: authenticated named-pipe transport, lifecycle recovery, provider-session
+projection, and signed-package qualification gate implemented but dormant;
+operational activation remains blocked on accepted signed evidence and production
+provisioning composition
 
 Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
 
@@ -120,9 +120,10 @@ or endpoint.
 The proof deliberately does not create/rotate the credential, select the pipe
 name, discover a game process, inspect a runtime artifact, acquire
 `runtime.lock`, open SQLite, edit TOML, or decide eligibility. Those receipts
-must be injected by the accepted lifecycle and activation owners. Real signed
-MSIX and standalone medium-integrity child-process qualification remains a
-release gate before composition.
+must be injected by the accepted lifecycle and activation owners. The signed
+release workflow now carries a standalone and medium-integrity MSIX package
+qualification gate before attestation; its first real signed execution remains
+required evidence before composition.
 
 The pipe host rejects the older #62 capability-plus-demand activation object.
 Its only accepted activation is derived from `LauncherBattleFeatureSnapshot`,
@@ -316,12 +317,36 @@ members, so a crash after any individual deletion re-enters idempotently while
 unknown entries or changed bytes remain untouched. Success returns a typed
 session-recomposition requirement rather than composing services itself.
 
+The provider session now owns one immutable Battle feature snapshot. Consumer
+and diagnostics access refreshes launcher-owned persisted preferences before
+returning that snapshot, while normalized runtime capability and checked-in
+product policy remain authoritative ahead of preference. Capability loss makes
+retained player intent unavailable; it does not invoke the lifecycle coordinator
+or create a listener.
+
+The signed release workflow now runs a closed qualification mode after PE/MSIX
+signing and package inspection and before attestation. The mode accepts no pipe
+name, credential, payload, path, endpoint, or secret from its caller. It uses the
+real named-pipe host, the current process's exact authorization receipt, a random
+ephemeral pipe and credentials, a synthetic in-memory sink, and proves wrong-
+credential rejection, exact-byte acceptance, first-instance collision failure,
+bounded drain, and post-stop unreachability. It does not impersonate or claim to
+qualify the future STFC producer process.
+
+The standalone binary runs this proof directly. The workflow then refuses any
+pre-existing Bridge package, installs the exact signed MSIX as a disposable
+package, activates its exact package identity/AUMID at medium integrity, and
+removes that exact registration. This explicit release-test mode creates no
+product state, database, configuration, or network authority. Ordinary startup
+cannot enter it. Because PR builds are unsigned, only a retained passing tagged-
+release run can satisfy the signed evidence gate.
+
 This is not operational activation. Neither coordinator is registered in
 startup or UI, and neither creates or opens the Battle database, registers
 runtime composition, starts a named pipe, enables the dormant HTTP proof, or
-grants outbound product-feature network authority. Session recomposition and
-signed MSIX/standalone named-pipe qualification remain required before the
-lifecycle can supply a provisioning lease to the pipe host.
+grants outbound product-feature network authority. Production provisioning must
+still supply the reviewed lifecycle lease, and a retained passing signed release
+must satisfy the package gate before the pipe host can be registered.
 
 ## Current composition
 
@@ -332,9 +357,9 @@ product-policy resolution. Diagnostics can truthfully show `unavailable`,
 `available`, `disabled`, or `enabled` intent.
 
 Even the `enabled` intent state remains operationally dormant today. It is not
-a listener-activation receipt. The accepted Battle Home baseline, local IPC
-implementation, runtime lifecycle owner, marker/credential/config transaction,
-and release qualification must land before collection can start.
+a listener-activation receipt. The accepted Battle Home baseline, production
+provisioning handoff, and retained signed-release qualification evidence remain
+required before collection can start.
 
 ## Future external communication
 
