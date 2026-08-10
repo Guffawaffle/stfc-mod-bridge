@@ -548,7 +548,7 @@ internal sealed class BattleRuntimeLockStore
     private bool HasDeleteRecoveryState() =>
         EntryExists(Path.Combine(stateRoot, DeleteMarkerFileName))
         || EntryExists(Path.Combine(stateRoot, DeleteSuccessorFileName))
-        || Directory.EnumerateDirectories(stateRoot, "battle.delete.*", SearchOption.TopDirectoryOnly)
+        || Directory.EnumerateFileSystemEntries(stateRoot, "battle.delete.*", SearchOption.TopDirectoryOnly)
             .Take(1)
             .Any();
 

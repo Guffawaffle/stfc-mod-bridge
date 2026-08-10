@@ -318,7 +318,10 @@ public sealed class BattleRuntimeLockTests
     }
 
     [TestMethod]
-    public async Task RecoveryAndDeleteOwnersBlockRuntimeAcquisitionWithoutMutation()
+    [DataRow("battle-delete-v1.dpapi")]
+    [DataRow("battle-delete-v1.dpapi.next")]
+    [DataRow("battle.delete.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task RecoveryAndDeleteOwnersBlockRuntimeAcquisitionWithoutMutation(string recoveryEntry)
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
@@ -329,7 +332,7 @@ public sealed class BattleRuntimeLockTests
         var runtime = new BattleRuntimeLockStore(stateRoot);
         await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
         Assert.IsNotNull(operationLease);
-        File.WriteAllBytes(Path.Combine(stateRoot, "battle-delete-v1.dpapi"), [1]);
+        File.WriteAllBytes(Path.Combine(stateRoot, recoveryEntry), [1]);
 
         var result = await runtime.TryAcquireExistingAsync(
             operationLease,
