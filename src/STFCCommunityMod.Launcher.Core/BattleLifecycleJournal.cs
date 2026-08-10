@@ -864,7 +864,7 @@ internal sealed class BattleLifecycleJournalStore
             var expectedNext = NextPath(marker.OperationId);
             if (!Directory.Exists(operationDirectory))
             {
-                return expectedCandidates.Count == 0
+                return expectedCandidates.Count == 0 || marker.Stage == BattleLifecycleStage.CleanupPending
                     ? new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable")
                     : new(
                         BattleLifecycleJournalState.RecoverableResidue,
@@ -877,6 +877,10 @@ internal sealed class BattleLifecycleJournalStore
             var operationEntries = Directory.EnumerateFileSystemEntries(operationDirectory).Take(2).ToArray();
             if (operationEntries.Length == 0)
             {
+                if (marker.Stage == BattleLifecycleStage.CleanupPending)
+                {
+                    return new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable");
+                }
                 return new(
                     BattleLifecycleJournalState.RecoverableResidue,
                     marker,
@@ -894,6 +898,10 @@ internal sealed class BattleLifecycleJournalStore
                 .ToArray();
             if (candidateEntries.Length == 0)
             {
+                if (marker.Stage == BattleLifecycleStage.CleanupPending)
+                {
+                    return new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable");
+                }
                 return new(
                     BattleLifecycleJournalState.RecoverableResidue,
                     marker,
@@ -941,7 +949,7 @@ internal sealed class BattleLifecycleJournalStore
                     successor,
                     "battle-operation-successor-recoverable");
             }
-            return missingCandidate
+            return missingCandidate && marker.Stage != BattleLifecycleStage.CleanupPending
                 ? new(
                     BattleLifecycleJournalState.RecoverableResidue,
                     marker,
@@ -1145,6 +1153,244 @@ internal sealed class BattleLifecycleJournalStore
             Directory.Delete(operationDirectory, recursive: false);
         }
         return Task.FromResult(Inspect());
+    }
+
+    internal byte[] ReadExactCandidate(
+        BattleLifecycleMarker marker,
+        string relativePath,
+        BattleLifecycleFileIdentity expectedIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(marker);
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        ArgumentNullException.ThrowIfNull(expectedIdentity);
+        var inspection = Inspect();
+        if (inspection.State != BattleLifecycleJournalState.Readable
+            || inspection.Marker is null
+            || !BattleLifecycleMarkerCodec.AreEquivalent(inspection.Marker, marker))
+        {
+            throw new InvalidOperationException("The Battle lifecycle marker changed before candidate recovery.");
+        }
+        var expected = ExpectedCandidates(marker);
+        var path = ResolveRelativePath(relativePath);
+        if (!expected.TryGetValue(path, out var boundIdentity)
+            || boundIdentity != expectedIdentity
+            || expectedIdentity.ByteCount is <= 0 or > 8 * 1024 * 1024)
+        {
+            throw new InvalidDataException("The Battle lifecycle candidate is not bound by the marker.");
+        }
+        using var stream = OpenLockedReadNoFollow(path);
+        if (stream.Length != expectedIdentity.ByteCount)
+        {
+            throw new InvalidDataException("The Battle lifecycle candidate length changed.");
+        }
+        var bytes = new byte[checked((int)stream.Length)];
+        try
+        {
+            stream.ReadExactly(bytes);
+            if (Identity(bytes) != expectedIdentity)
+            {
+                throw new InvalidDataException("The Battle lifecycle candidate bytes changed.");
+            }
+            return bytes;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+            throw;
+        }
+    }
+
+    internal bool VerifyRuntimeLockIdentity(BattleLifecycleMarker marker, bool allowAbsent)
+    {
+        ArgumentNullException.ThrowIfNull(marker);
+        var inspection = Inspect();
+        if (inspection.State != BattleLifecycleJournalState.Readable
+            || inspection.Marker is null
+            || !BattleLifecycleMarkerCodec.AreEquivalent(inspection.Marker, marker))
+        {
+            throw new InvalidOperationException("The Battle lifecycle marker changed before runtime-lock verification.");
+        }
+        var expected = marker.Resources.Single(resource => resource.Role == "runtime-lock").After
+            ?? throw new InvalidDataException("The Battle runtime lock has no marker-bound identity.");
+        using var battleHandle = OpenDirectoryNoFollow(battleRoot);
+        var runtimePath = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+        var runtimeEntry = Directory.EnumerateFileSystemEntries(battleRoot)
+            .SingleOrDefault(path => PathEquals(path, runtimePath));
+        if (runtimeEntry is null) return allowAbsent;
+        using var stream = OpenLockedReadNoFollow(runtimeEntry);
+        var bytes = ReadAll(stream);
+        try
+        {
+            return MatchesIdentity(stream, expected)
+                && BattleRuntimeLockCodec.Decode(bytes).OwnerId == marker.OwnerId;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
+    internal async Task DeleteCommittedArtifactsAsync(
+        LauncherOperationLease operationLease,
+        BattleLifecycleMarker expectedMarker,
+        Func<BattleLifecycleCleanupCheckpoint, ValueTask>? checkpoint = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentNullException.ThrowIfNull(expectedMarker);
+        using var operationScope = operationLease.RetainFor(stateRoot);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedMarker.Stage != BattleLifecycleStage.CleanupPending)
+        {
+            throw new InvalidOperationException("Battle terminal cleanup requires cleanup-pending.");
+        }
+        var inspection = Inspect();
+        if (inspection.State != BattleLifecycleJournalState.Readable
+            || inspection.Marker is null
+            || !BattleLifecycleMarkerCodec.AreEquivalent(inspection.Marker, expectedMarker))
+        {
+            throw new InvalidOperationException("The Battle lifecycle marker changed before terminal cleanup.");
+        }
+
+        var expectedCandidates = ExpectedCandidates(expectedMarker);
+        var operationDirectory = Path.Combine(recoveryRoot, expectedMarker.OperationId);
+        var candidateDirectory = Path.Combine(operationDirectory, "candidate");
+        var runtimePath = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+        var runtimeIdentity = expectedMarker.Resources.Single(resource => resource.Role == "runtime-lock").After
+            ?? throw new InvalidDataException("The Battle runtime lock has no committed identity.");
+
+        IDisposable? battleHandle = OpenDirectoryNoFollow(battleRoot);
+        IDisposable? recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
+        IDisposable? operationHandle = null;
+        IDisposable? candidateHandle = null;
+        var candidateStreams = new List<FileStream>();
+        FileStream? runtimeStream = null;
+        FileStream? markerStream = null;
+        try
+        {
+            var recoveryEntries = Directory.EnumerateFileSystemEntries(recoveryRoot).Take(3).ToArray();
+            if (recoveryEntries.Any(path =>
+                    !PathEquals(path, MarkerPath) && !PathEquals(path, operationDirectory)))
+            {
+                throw new InvalidDataException("The Battle recovery directory contains an unowned entry.");
+            }
+            if (recoveryEntries.Any(path => PathEquals(path, operationDirectory)))
+            {
+                operationHandle = OpenDirectoryNoFollow(operationDirectory);
+                var operationEntries = Directory.EnumerateFileSystemEntries(operationDirectory).Take(3).ToArray();
+                if (operationEntries.Any(path => !PathEquals(path, candidateDirectory)))
+                {
+                    throw new InvalidDataException("The Battle operation directory contains an unowned entry.");
+                }
+                if (operationEntries.Any(path => PathEquals(path, candidateDirectory)))
+                {
+                    candidateHandle = OpenDirectoryNoFollow(candidateDirectory);
+                    var candidateEntries = Directory.EnumerateFileSystemEntries(candidateDirectory)
+                        .Take(expectedCandidates.Count + 1)
+                        .ToArray();
+                    if (candidateEntries.Any(path => !expectedCandidates.ContainsKey(path)))
+                    {
+                        throw new InvalidDataException("The Battle candidate directory contains an unowned entry.");
+                    }
+                    foreach (var path in candidateEntries.OrderBy(path => path, PathComparer()))
+                    {
+                        var stream = OpenLockedDeleteNoFollow(path);
+                        candidateStreams.Add(stream);
+                        if (!MatchesIdentity(stream, expectedCandidates[path]))
+                        {
+                            throw new InvalidDataException("A Battle candidate changed before terminal cleanup.");
+                        }
+                    }
+                }
+            }
+
+            var runtimeEntry = Directory.EnumerateFileSystemEntries(battleRoot)
+                .SingleOrDefault(path => PathEquals(path, runtimePath));
+            if (runtimeEntry is not null)
+            {
+                runtimeStream = OpenLockedDeleteNoFollow(runtimeEntry);
+                var runtimeBytes = ReadAll(runtimeStream);
+                try
+                {
+                    if (!MatchesIdentity(runtimeStream, runtimeIdentity)
+                        || BattleRuntimeLockCodec.Decode(runtimeBytes).OwnerId != expectedMarker.OwnerId)
+                    {
+                        throw new InvalidDataException("The Battle runtime lock changed before terminal cleanup.");
+                    }
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(runtimeBytes);
+                }
+            }
+
+            markerStream = OpenLockedDeleteNoFollow(MarkerPath);
+            if (!BattleLifecycleMarkerCodec.AreEquivalent(Read(markerStream), expectedMarker))
+            {
+                throw new InvalidDataException("The Battle lifecycle marker changed during terminal cleanup.");
+            }
+
+            foreach (var stream in candidateStreams)
+            {
+                MarkDeleteOnClose(stream.SafeFileHandle);
+            }
+            if (runtimeStream is not null)
+            {
+                MarkDeleteOnClose(runtimeStream.SafeFileHandle);
+            }
+            foreach (var stream in candidateStreams)
+            {
+                stream.Dispose();
+            }
+            candidateStreams.Clear();
+            if (checkpoint is not null)
+            {
+                await checkpoint(BattleLifecycleCleanupCheckpoint.CandidatesDeleted).ConfigureAwait(false);
+            }
+            runtimeStream?.Dispose();
+            runtimeStream = null;
+            if (checkpoint is not null)
+            {
+                await checkpoint(BattleLifecycleCleanupCheckpoint.RuntimeLockDeleted).ConfigureAwait(false);
+            }
+            candidateHandle?.Dispose();
+            candidateHandle = null;
+            operationHandle?.Dispose();
+            operationHandle = null;
+            recoveryHandle.Dispose();
+            recoveryHandle = null;
+            battleHandle.Dispose();
+            battleHandle = null;
+
+            DeleteEmptyOwnedDirectory(candidateDirectory);
+            DeleteEmptyOwnedDirectory(operationDirectory);
+            if (checkpoint is not null)
+            {
+                await checkpoint(BattleLifecycleCleanupCheckpoint.MarkerDeleting).ConfigureAwait(false);
+            }
+            MarkDeleteOnClose(markerStream.SafeFileHandle);
+            markerStream.Dispose();
+            markerStream = null;
+            DeleteEmptyOwnedDirectory(recoveryRoot);
+            if (Inspect().State != BattleLifecycleJournalState.Absent)
+            {
+                throw new InvalidDataException("Battle terminal cleanup did not reach the marker-free state.");
+            }
+            return;
+        }
+        finally
+        {
+            foreach (var stream in candidateStreams)
+            {
+                stream.Dispose();
+            }
+            runtimeStream?.Dispose();
+            markerStream?.Dispose();
+            candidateHandle?.Dispose();
+            operationHandle?.Dispose();
+            recoveryHandle?.Dispose();
+            battleHandle?.Dispose();
+        }
     }
 
     internal async Task WritePreparedCandidatesAsync(
@@ -1400,11 +1646,32 @@ internal sealed class BattleLifecycleJournalStore
     private static bool MatchesIdentity(string path, BattleLifecycleFileIdentity expected)
     {
         using var stream = OpenLockedReadNoFollow(path);
-        return stream.Length == expected.ByteCount
+        return MatchesIdentity(stream, expected);
+    }
+
+    private static bool MatchesIdentity(FileStream stream, BattleLifecycleFileIdentity expected)
+    {
+        stream.Position = 0;
+        var matches = stream.Length == expected.ByteCount
             && string.Equals(
                 Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(),
                 expected.Sha256,
                 StringComparison.Ordinal);
+        stream.Position = 0;
+        return matches;
+    }
+
+    private static byte[] ReadAll(FileStream stream)
+    {
+        if (stream.Length is <= 0 or > BattleRuntimeLockCodec.MaximumBytes)
+        {
+            throw new InvalidDataException("The Battle runtime lock is outside its size bound.");
+        }
+        stream.Position = 0;
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        stream.Position = 0;
+        return bytes;
     }
 
     private static BattleLifecycleFileIdentity Identity(ReadOnlySpan<byte> bytes) =>

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using STFCCommunityMod.Launcher.Core;
@@ -8,6 +9,9 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class BattleLifecycleCommitTests
 {
     private const string PipeName = "stfc-mod-bridge.battle.commit-test.v1";
+    private const string CrashStageEnvironment = "STFC_BATTLE_LIFECYCLE_CRASH_STAGE";
+    private const string CrashRootEnvironment = "STFC_BATTLE_LIFECYCLE_CRASH_ROOT";
+    private const string CrashReadyEnvironment = "STFC_BATTLE_LIFECYCLE_CRASH_READY";
     private static readonly DateTimeOffset Now = new(2026, 8, 10, 5, 0, 0, TimeSpan.Zero);
 
     [TestMethod]
@@ -203,7 +207,9 @@ public sealed class BattleLifecycleCommitTests
         Assert.AreEqual(
             LauncherPlayerFeaturePreference.Enabled,
             fixture.Preferences.Load().EffectiveBattlePreferences.BattleCollection);
-        Assert.AreEqual(BattleCredentialLoadState.Readable, fixture.CredentialStore.Load().State);
+        var credential = fixture.CredentialStore.Load();
+        Assert.AreEqual(BattleCredentialLoadState.Readable, credential.State);
+        credential.Lease!.Dispose();
     }
 
     [TestMethod]
@@ -309,7 +315,9 @@ public sealed class BattleLifecycleCommitTests
         Assert.AreEqual(BattleLifecycleJournalState.RecoverableSuccessor, interrupted.State);
         Assert.AreEqual(BattleLifecycleStage.CommitStarted, interrupted.Marker!.Stage);
         Assert.AreEqual(BattleLifecycleStage.CommitVerified, interrupted.Successor!.Stage);
-        Assert.AreEqual(BattleCredentialLoadState.Readable, fixture.CredentialStore.Load().State);
+        var credential = fixture.CredentialStore.Load();
+        Assert.AreEqual(BattleCredentialLoadState.Readable, credential.State);
+        credential.Lease!.Dispose();
         CollectionAssert.AreEqual(
             fixture.Prepared.ConfigurationCandidate.ToArray(),
             await File.ReadAllBytesAsync(fixture.Configuration.Path));
@@ -341,12 +349,371 @@ public sealed class BattleLifecycleCommitTests
         Assert.IsFalse(File.Exists(store.Path));
     }
 
+    [DataTestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    [DataRow(3)]
+    public async Task CommitStartedCrashRecoversEveryExactBeforeAfterCombination(int appliedCount)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var candidate = fixture.Prepared.ConfigurationCandidate.ToArray();
+        await fixture.AdvanceCommitStartedAsync();
+        if (appliedCount >= 1) await fixture.ApplyCredentialAsync();
+        if (appliedCount >= 2)
+        {
+            var write = await new AtomicTomlStore(retainAdjacentBackup: false).SaveDocumentAsync(
+                fixture.Configuration.Path,
+                fixture.Configuration.Contents,
+                candidate);
+            Assert.AreEqual(AtomicTomlWriteState.Succeeded, write.State);
+        }
+        if (appliedCount >= 3)
+        {
+            Assert.IsTrue(fixture.Preferences.TrySaveBattlePreferences(
+                LauncherBattlePreferences.Default,
+                new(
+                    LauncherPlayerFeaturePreference.Enabled,
+                    LauncherPlayerFeaturePreference.Unset)));
+        }
+        await fixture.Prepared.DisposeAsync();
+
+        var result = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Recovered, result.State, result.Code);
+        Assert.IsTrue(result.RequiresSessionRecomposition);
+        Assert.AreEqual(BattleLifecycleJournalState.Absent, fixture.Journal.Inspect().State);
+        Assert.IsFalse(File.Exists(Path.Combine(fixture.StateRoot, "battle", BattleRuntimeLockCodec.FileName)));
+        CollectionAssert.AreEqual(candidate, await File.ReadAllBytesAsync(fixture.Configuration.Path));
+        var credential = fixture.CredentialStore.Load();
+        Assert.AreEqual(BattleCredentialLoadState.Readable, credential.State);
+        credential.Lease!.Dispose();
+        Assert.AreEqual(
+            LauncherPlayerFeaturePreference.Enabled,
+            fixture.Preferences.Load().EffectiveBattlePreferences.BattleCollection);
+    }
+
+    [TestMethod]
+    public async Task ChangedRecoveryCandidateBlocksWithoutAuthoritativeMutation()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.AdvanceCommitStartedAsync();
+        await fixture.Prepared.DisposeAsync();
+        var marker = fixture.Journal.Inspect().Marker!;
+        var candidatePath = Path.Combine(
+            fixture.StateRoot,
+            marker.Configuration!.CandidateRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var changed = Encoding.UTF8.GetBytes("# changed recovery candidate\n");
+        await File.WriteAllBytesAsync(candidatePath, changed);
+
+        var result = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Blocked, result.State);
+        CollectionAssert.AreEqual(changed, await File.ReadAllBytesAsync(candidatePath));
+        CollectionAssert.AreEqual(
+            fixture.Configuration.Contents,
+            await File.ReadAllBytesAsync(fixture.Configuration.Path));
+        Assert.AreEqual(BattleCredentialLoadState.Absent, fixture.CredentialStore.Load().State);
+        Assert.AreEqual(LauncherBattlePreferences.Default, fixture.Preferences.Load().EffectiveBattlePreferences);
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task MissingOrChangedRuntimeLockBlocksCommitRecoveryWithoutGuessing(bool changed)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.AdvanceCommitStartedAsync();
+        await fixture.Prepared.DisposeAsync();
+        var runtimePath = Path.Combine(fixture.StateRoot, "battle", BattleRuntimeLockCodec.FileName);
+        if (changed)
+        {
+            await File.WriteAllBytesAsync(runtimePath, Encoding.UTF8.GetBytes("foreign runtime lock"));
+        }
+        else
+        {
+            File.Delete(runtimePath);
+        }
+
+        var result = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Blocked, result.State);
+        Assert.AreEqual(BattleLifecycleStage.CommitStarted, fixture.Journal.Inspect().Marker!.Stage);
+        Assert.AreEqual(changed, File.Exists(runtimePath));
+        if (changed)
+        {
+            CollectionAssert.AreEqual(
+                Encoding.UTF8.GetBytes("foreign runtime lock"),
+                await File.ReadAllBytesAsync(runtimePath));
+        }
+        Assert.AreEqual(BattleCredentialLoadState.Absent, fixture.CredentialStore.Load().State);
+    }
+
+    [DataTestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    public async Task CleanupInterruptionRetainsMarkerAndExactRetryFinishes(int failurePointValue)
+    {
+        var failurePoint = (BattleLifecycleCleanupCheckpoint)failurePointValue;
+        await using var fixture = await Fixture.CreateAsync();
+        var committed = await fixture.CreateCoordinator().CommitAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            fixture.Prepared,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration);
+        Assert.AreEqual(BattleLifecycleCommitState.Succeeded, committed.State);
+        await fixture.Prepared.DisposeAsync();
+        var failed = await fixture.CreateRecoveryCoordinator(checkpoint =>
+                checkpoint == failurePoint
+                    ? ValueTask.FromException(new IOException("injected cleanup interruption"))
+                    : ValueTask.CompletedTask)
+            .RecoverAsync(
+                fixture.OperationLease,
+                fixture.Journal,
+                Installation(),
+                InstalledState(fixture.GameDirectory),
+                fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Unavailable, failed.State);
+        Assert.AreEqual(BattleLifecycleStage.CleanupPending, fixture.Journal.Inspect().Marker!.Stage);
+
+        var retried = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Recovered, retried.State, retried.Code);
+        Assert.AreEqual(BattleLifecycleJournalState.Absent, fixture.Journal.Inspect().State);
+    }
+
+    [TestMethod]
+    public async Task ChangedCommittedPreferenceBlocksMarkerLastCleanup()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var committed = await fixture.CreateCoordinator().CommitAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            fixture.Prepared,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration);
+        Assert.AreEqual(BattleLifecycleCommitState.Succeeded, committed.State);
+        await fixture.Prepared.DisposeAsync();
+        Assert.IsTrue(fixture.Preferences.TrySaveBattlePreferences(
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset),
+            LauncherBattlePreferences.Default));
+
+        var result = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Blocked, result.State);
+        Assert.AreEqual(BattleLifecycleStage.CommitVerified, fixture.Journal.Inspect().Marker!.Stage);
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.StateRoot, "battle", BattleRuntimeLockCodec.FileName)));
+    }
+
+    [TestMethod]
+    public async Task UnknownCleanupEntryIsPreservedBeforeAnyOwnedDeletion()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var committed = await fixture.CreateCoordinator().CommitAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            fixture.Prepared,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration);
+        Assert.AreEqual(BattleLifecycleCommitState.Succeeded, committed.State);
+        await fixture.Prepared.DisposeAsync();
+        var marker = fixture.Journal.Inspect().Marker!;
+        var candidateDirectory = Path.Combine(
+            fixture.StateRoot,
+            "battle",
+            "recovery",
+            marker.OperationId,
+            "candidate");
+        var unknownPath = Path.Combine(candidateDirectory, "foreign.bin");
+        var unknown = Encoding.UTF8.GetBytes("foreign cleanup evidence");
+        await File.WriteAllBytesAsync(unknownPath, unknown);
+        var credentialCandidate = marker.Resources.Single(item => item.Role == "ingest-credential");
+        var credentialCandidatePath = Path.Combine(
+            fixture.StateRoot,
+            credentialCandidate.CandidateRelativePath!.Replace('/', Path.DirectorySeparatorChar));
+
+        var result = await fixture.CreateRecoveryCoordinator().RecoverAsync(
+            fixture.OperationLease,
+            fixture.Journal,
+            Installation(),
+            InstalledState(fixture.GameDirectory),
+            fixture.Configuration.Path);
+
+        Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Blocked, result.State);
+        CollectionAssert.AreEqual(unknown, await File.ReadAllBytesAsync(unknownPath));
+        Assert.IsTrue(File.Exists(credentialCandidatePath));
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.StateRoot, "battle", BattleRuntimeLockCodec.FileName)));
+    }
+
+    [DataTestMethod]
+    [DataRow("commit-started-marker")]
+    [DataRow("credential-promoted")]
+    [DataRow("configuration-promoted")]
+    [DataRow("preferences-promoted")]
+    [DataRow("commit-verified-marker")]
+    [DataRow("cleanup-candidates")]
+    [DataRow("cleanup-runtime")]
+    [DataRow("cleanup-marker")]
+    public async Task HardCrashAtEveryTerminalStageRecoversFromFreshOwnership(string crashStage)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var temporaryDirectory = new TemporaryDirectory();
+        var readyPath = Path.Combine(temporaryDirectory.Path, "ready");
+        using var child = StartCrashProbe(crashStage, temporaryDirectory.Path, readyPath);
+        try
+        {
+            await WaitForCrashProbeAsync(child, readyPath);
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+            var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+            var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
+            var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+            await using var operationLease = await AcquireOperationLeaseAfterCrashAsync(stateRoot);
+            var journal = new BattleLifecycleJournalStore(
+                stateRoot,
+                new PassThroughMarkerProtector());
+            var backupStore = new ProviderScopedConfigurationBackupStore(
+                stateRoot,
+                new PassThroughBackupProtector(),
+                new NoOpStorageSecurity(),
+                new FixedTimeProvider(Now));
+            var commit = new BattleLifecycleCommitCoordinator(
+                stateRoot,
+                new(stateRoot, new PassThroughCredentialProtector()),
+                backupStore,
+                new JsonLauncherUiPreferencesStore(stateRoot),
+                new AtomicTomlStore(retainAdjacentBackup: false),
+                new FixedTimeProvider(Now.AddSeconds(4)));
+            var result = await new BattleLifecycleTerminalRecoveryCoordinator(
+                    stateRoot,
+                    commit,
+                    new FixedTimeProvider(Now.AddSeconds(5)))
+                .RecoverAsync(
+                    operationLease,
+                    journal,
+                    Installation(),
+                    InstalledState(gameDirectory),
+                    configurationPath);
+
+            Assert.AreEqual(BattleLifecycleTerminalRecoveryState.Recovered, result.State, result.Code);
+            Assert.AreEqual(BattleLifecycleJournalState.Absent, journal.Inspect().State);
+            Assert.IsFalse(File.Exists(Path.Combine(stateRoot, "battle", BattleRuntimeLockCodec.FileName)));
+        }
+        finally
+        {
+            if (!child.HasExited) child.Kill(entireProcessTree: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task BattleLifecycleHardCrashProbe()
+    {
+        var crashStage = Environment.GetEnvironmentVariable(CrashStageEnvironment);
+        if (string.IsNullOrWhiteSpace(crashStage)) return;
+        var root = Environment.GetEnvironmentVariable(CrashRootEnvironment)
+            ?? throw new InvalidOperationException("The crash-probe root is absent.");
+        var ready = Environment.GetEnvironmentVariable(CrashReadyEnvironment)
+            ?? throw new InvalidOperationException("The crash-probe ready path is absent.");
+
+        async ValueTask BlockAsync(string current)
+        {
+            if (current != crashStage) return;
+            await File.WriteAllTextAsync(ready, current);
+            await Task.Delay(Timeout.InfiniteTimeSpan);
+        }
+
+        await using var fixture = await Fixture.CreateAsync(
+            marker => BlockAsync(marker.Stage switch
+            {
+                BattleLifecycleStage.CommitStarted => "commit-started-marker",
+                BattleLifecycleStage.CommitVerified => "commit-verified-marker",
+                _ => string.Empty,
+            }),
+            root);
+        if (crashStage.StartsWith("cleanup-", StringComparison.Ordinal))
+        {
+            var committed = await fixture.CreateCoordinator().CommitAsync(
+                fixture.OperationLease,
+                fixture.Journal,
+                fixture.Prepared,
+                Installation(),
+                InstalledState(fixture.GameDirectory),
+                fixture.Configuration);
+            Assert.AreEqual(BattleLifecycleCommitState.Succeeded, committed.State);
+            await fixture.Prepared.DisposeAsync();
+            _ = await fixture.CreateRecoveryCoordinator(checkpoint => BlockAsync(checkpoint switch
+            {
+                BattleLifecycleCleanupCheckpoint.CandidatesDeleted => "cleanup-candidates",
+                BattleLifecycleCleanupCheckpoint.RuntimeLockDeleted => "cleanup-runtime",
+                BattleLifecycleCleanupCheckpoint.MarkerDeleting => "cleanup-marker",
+                _ => string.Empty,
+            }))
+                .RecoverAsync(
+                    fixture.OperationLease,
+                    fixture.Journal,
+                    Installation(),
+                    InstalledState(fixture.GameDirectory),
+                    fixture.Configuration.Path);
+        }
+        else
+        {
+            _ = await fixture.CreateCoordinator(checkpoint => BlockAsync(checkpoint switch
+            {
+                BattleLifecycleCommitCheckpoint.CredentialPromoted => "credential-promoted",
+                BattleLifecycleCommitCheckpoint.ConfigurationPromoted => "configuration-promoted",
+                BattleLifecycleCommitCheckpoint.PreferencesPromoted => "preferences-promoted",
+                _ => string.Empty,
+            }))
+                .CommitAsync(
+                    fixture.OperationLease,
+                    fixture.Journal,
+                    fixture.Prepared,
+                    Installation(),
+                    InstalledState(fixture.GameDirectory),
+                    fixture.Configuration);
+        }
+        Assert.Fail("The crash probe passed its requested blocking checkpoint.");
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
-        private readonly TemporaryDirectory temporaryDirectory;
+        private readonly TemporaryDirectory? temporaryDirectory;
 
         private Fixture(
-            TemporaryDirectory temporaryDirectory,
+            TemporaryDirectory? temporaryDirectory,
             string stateRoot,
             string gameDirectory,
             ConfigurationDocumentSnapshot configuration,
@@ -388,13 +755,16 @@ public sealed class BattleLifecycleCommitTests
         public BattleIngestCredentialStore CredentialStore { get; }
 
         public static async Task<Fixture> CreateAsync(
-            Func<BattleLifecycleMarker, ValueTask>? beforeMarkerReplace = null)
+            Func<BattleLifecycleMarker, ValueTask>? beforeMarkerReplace = null,
+            string? existingRoot = null)
         {
-            var temporaryDirectory = new TemporaryDirectory();
+            var temporaryDirectory = existingRoot is null ? new TemporaryDirectory() : null;
             try
             {
-                var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
-                var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
+                var root = existingRoot ?? temporaryDirectory!.Path;
+                Directory.CreateDirectory(root);
+                var stateRoot = Path.Combine(root, "state");
+                var gameDirectory = Path.Combine(root, "game");
                 Directory.CreateDirectory(gameDirectory);
                 await File.WriteAllBytesAsync(Path.Combine(gameDirectory, "prime.exe"), [0x4d, 0x5a]);
                 var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
@@ -460,7 +830,7 @@ public sealed class BattleLifecycleCommitTests
             }
             catch
             {
-                temporaryDirectory.Dispose();
+                temporaryDirectory?.Dispose();
                 throw;
             }
         }
@@ -474,6 +844,14 @@ public sealed class BattleLifecycleCommitTests
                 Preferences,
                 new AtomicTomlStore(retainAdjacentBackup: false),
                 new FixedTimeProvider(Now.AddSeconds(2)),
+                checkpoint);
+
+        public BattleLifecycleTerminalRecoveryCoordinator CreateRecoveryCoordinator(
+            Func<BattleLifecycleCleanupCheckpoint, ValueTask>? checkpoint = null) =>
+            new(
+                StateRoot,
+                CreateCoordinator(),
+                new FixedTimeProvider(Now.AddSeconds(3)),
                 checkpoint);
 
         public async Task AdvanceCommitStartedAsync()
@@ -505,8 +883,53 @@ public sealed class BattleLifecycleCommitTests
         {
             await Prepared.DisposeAsync();
             await OperationLease.DisposeAsync();
-            temporaryDirectory.Dispose();
+            temporaryDirectory?.Dispose();
         }
+    }
+
+    private static Process StartCrashProbe(string crashStage, string root, string readyPath)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(BattleLifecycleCommitTests).Assembly.Location);
+        start.ArgumentList.Add(
+            "--Tests:STFCCommunityMod.Launcher.Core.Tests.BattleLifecycleCommitTests.BattleLifecycleHardCrashProbe");
+        start.Environment[CrashStageEnvironment] = crashStage;
+        start.Environment[CrashRootEnvironment] = root;
+        start.Environment[CrashReadyEnvironment] = readyPath;
+        return Process.Start(start) ?? throw new AssertFailedException("The Battle crash probe did not start.");
+    }
+
+    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (File.Exists(readyPath)) return;
+            if (child.HasExited)
+            {
+                throw new AssertFailedException(
+                    $"The Battle crash probe exited before its checkpoint ({child.ExitCode}).");
+            }
+            await Task.Delay(25);
+        }
+        throw new AssertFailedException("The Battle crash probe did not reach its checkpoint.");
+    }
+
+    private static async Task<LauncherOperationLease> AcquireOperationLeaseAfterCrashAsync(string stateRoot)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            var lease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+            if (lease is not null) return lease;
+            await Task.Delay(50);
+        }
+        throw new AssertFailedException("The crash probe did not release the root operation lease.");
     }
 
     private static LauncherBattleFeatureSnapshot EligibleSnapshot() =>
