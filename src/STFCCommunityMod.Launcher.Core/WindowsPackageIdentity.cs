@@ -12,7 +12,15 @@ public static partial class WindowsPackageIdentity
     {
         get
         {
-            return CurrentPackageFullName is not null;
+            uint length = 0;
+            var result = GetCurrentPackageFullName(ref length, IntPtr.Zero);
+            return result switch
+            {
+                0 or ErrorInsufficientBuffer => true,
+                AppModelErrorNoPackage => false,
+                _ => throw new InvalidOperationException(
+                    $"Windows package identity detection failed with error {result}."),
+            };
         }
     }
 
