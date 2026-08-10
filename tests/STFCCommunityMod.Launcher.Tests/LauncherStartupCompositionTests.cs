@@ -41,9 +41,13 @@ public sealed class LauncherStartupCompositionTests
             [LauncherCapabilityIds.PrincipalSettingsTaxonomyV1, "battle.capture.v1"],
             [new("managed-pair:sha256:test", "reviewed compatibility evidence")]);
         var plan = LauncherFeatureResolver.Resolve(profile, LauncherFeatureCatalog.All);
+        var enabled = new LauncherBattlePreferences(
+            LauncherPlayerFeaturePreference.Enabled,
+            LauncherPlayerFeaturePreference.Unset);
         var reviewed = new LauncherStartupComposition(
             profile,
             plan,
+            LauncherBattleFeatureComposer.Compose(plan, enabled),
             LauncherSettingsLayoutComposer.Select(plan),
             LauncherStartupComposition.Create(provider, channel).SettingsDiagnostics);
         var slot = new LauncherRuntimeCompositionSlot(
@@ -52,9 +56,37 @@ public sealed class LauncherStartupCompositionTests
             reviewed,
             new string('a', 64));
 
-        Assert.IsTrue(slot.Refresh(null));
+        Assert.IsTrue(slot.Refresh(null, enabled));
         Assert.AreNotEqual(profile.SourceRevision, slot.Current.RuntimeProfile.SourceRevision);
         Assert.IsFalse(slot.Current.RuntimeProfile.HasCapability("battle.capture.v1"));
-        Assert.IsFalse(slot.Refresh(null));
+        Assert.AreEqual(
+            LauncherPlayerFeatureState.Unavailable,
+            slot.Current.BattleFeatures.BattleCollection.State);
+        Assert.AreEqual(
+            LauncherPlayerFeaturePreference.Enabled,
+            slot.Current.BattleFeatures.BattleCollection.Preference);
+        Assert.IsFalse(slot.Refresh(null, enabled));
+    }
+
+    [TestMethod]
+    public void RuntimeCompositionSlotRefreshesPreferenceWithoutChangingReviewedEvidence()
+    {
+        var provider = BundledLauncherProviderCatalog.Load().GetProvider("guffawaffle");
+        var channel = provider.DefaultReleaseChannel;
+        var initial = LauncherStartupComposition.Create(provider, channel);
+        var slot = new LauncherRuntimeCompositionSlot(
+            provider,
+            channel,
+            initial,
+            null);
+        var enabled = new LauncherBattlePreferences(
+            LauncherPlayerFeaturePreference.Enabled,
+            LauncherPlayerFeaturePreference.Unset);
+
+        Assert.IsTrue(slot.Refresh(null, enabled));
+        Assert.AreEqual(
+            LauncherPlayerFeaturePreference.Enabled,
+            slot.Current.BattleFeatures.BattleCollection.Preference);
+        Assert.IsFalse(slot.Refresh(null, enabled));
     }
 }

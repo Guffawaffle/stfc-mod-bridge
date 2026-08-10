@@ -5,13 +5,15 @@ namespace STFCCommunityMod.Launcher;
 internal sealed record LauncherStartupComposition(
     LauncherRuntimeProfile RuntimeProfile,
     LauncherActivationPlan ActivationPlan,
+    LauncherBattleFeatureSnapshot BattleFeatures,
     ILauncherSettingsLayoutProvider SettingsLayout,
     LauncherSettingsActivationDiagnostics SettingsDiagnostics)
 {
     public static LauncherStartupComposition Create(
         LauncherDistributionProvider provider,
         LauncherProviderReleaseChannel releaseChannel,
-        ReviewedRuntimeActivation? reviewedRuntimeActivation = null)
+        ReviewedRuntimeActivation? reviewedRuntimeActivation = null,
+        LauncherBattlePreferences? battlePreferences = null)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
@@ -43,6 +45,9 @@ internal sealed record LauncherStartupComposition(
             ?? LauncherFeatureResolver.Resolve(
                 runtimeProfile,
                 LauncherFeatureCatalog.All);
+        var battleFeatures = LauncherBattleFeatureComposer.Compose(
+            activationPlan,
+            battlePreferences);
         var settingsLayout = LauncherSettingsLayoutComposer.Select(
             activationPlan);
         var semanticGrouping = activationPlan.GetDecision(
@@ -68,6 +73,7 @@ internal sealed record LauncherStartupComposition(
         return new(
             runtimeProfile,
             activationPlan,
+            battleFeatures,
             settingsLayout,
             settingsDiagnostics);
     }

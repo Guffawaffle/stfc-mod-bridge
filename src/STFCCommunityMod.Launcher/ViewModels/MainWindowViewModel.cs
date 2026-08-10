@@ -41,6 +41,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private LauncherDiagnosticPreview? diagnosticPreview;
     private string diagnosticActionStatus = string.Empty;
     private Func<LauncherActivationPlan>? currentActivationPlan;
+    private Func<LauncherBattleFeatureSnapshot>? currentBattleFeatures;
     private readonly DispatcherTimer refreshActionStatusTimer;
     private bool isDisposed;
 
@@ -588,14 +589,18 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return viewModel;
     }
 
-    internal void ConfigureFeatureRemediation(Func<LauncherActivationPlan> currentPlan)
+    internal void ConfigureFeatureRemediation(
+        Func<LauncherActivationPlan> currentPlan,
+        Func<LauncherBattleFeatureSnapshot> battleFeatures)
     {
         ArgumentNullException.ThrowIfNull(currentPlan);
+        ArgumentNullException.ThrowIfNull(battleFeatures);
         if (currentActivationPlan is not null)
         {
             throw new InvalidOperationException("Runtime feature composition is already configured for this provider session.");
         }
         currentActivationPlan = currentPlan;
+        currentBattleFeatures = battleFeatures;
         if (ProviderSwitchCoordinator is null || featureRemediationCandidates is null)
         {
             return;
@@ -788,11 +793,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public LauncherDiagnosticPreview BuildDiagnosticPreview()
     {
-        var battleFeatures = currentActivationPlan is null
-            ? null
-            : LauncherBattleFeatureComposer.Compose(
-                currentActivationPlan(),
-                uiPreferencesStore.Load().EffectiveBattlePreferences);
+        var battleFeatures = currentBattleFeatures?.Invoke();
         diagnosticPreview = diagnosticService.BuildPreview(
             snapshot.SelectedGameDirectory,
             localHealth,

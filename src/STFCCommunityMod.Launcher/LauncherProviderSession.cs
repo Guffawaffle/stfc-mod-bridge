@@ -32,7 +32,8 @@ internal sealed class LauncherProviderSession : IDisposable
             startupComposition,
             reviewedRuntimeActivation?.EvidenceSourceSha256);
         viewModel.ConfigureFeatureRemediation(
-            () => runtimeComposition.Current.ActivationPlan);
+            () => runtimeComposition.Current.ActivationPlan,
+            () => runtimeComposition.Current.BattleFeatures);
         ApplicationComposition = new(
             new(viewModel, () => settingsFactory(runtimeComposition.Current)),
             () => runtimeComposition.Current.ActivationPlan);
@@ -50,6 +51,8 @@ internal sealed class LauncherProviderSession : IDisposable
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
 
+    public LauncherBattleFeatureSnapshot BattleFeatures => runtimeComposition.Current.BattleFeatures;
+
     public MainWindowViewModel ViewModel => ApplicationComposition.SharedServices.Foundation;
 
     public LauncherProviderAtomicSwitchCoordinator SwitchCoordinator =>
@@ -59,8 +62,10 @@ internal sealed class LauncherProviderSession : IDisposable
     public LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator =>
         ViewModel.FeatureRemediationCoordinator;
 
-    public bool RefreshRuntimeActivation(ReviewedRuntimeActivation? activation) =>
-        runtimeComposition.Refresh(activation);
+    public bool RefreshRuntimeComposition(
+        ReviewedRuntimeActivation? activation,
+        LauncherBattlePreferences battlePreferences) =>
+        runtimeComposition.Refresh(activation, battlePreferences);
 
     public void Dispose() => ApplicationComposition.Dispose();
 }
@@ -72,18 +77,30 @@ internal sealed class LauncherRuntimeCompositionSlot(
     string? initialEvidenceSha256)
 {
     private string? evidenceSha256 = initialEvidenceSha256;
+    private LauncherBattlePreferences battlePreferences = new(
+        initial.BattleFeatures.BattleCollection.Preference,
+        initial.BattleFeatures.FleetCollection.Preference);
 
     public LauncherStartupComposition Current { get; private set; } = initial;
 
-    public bool Refresh(ReviewedRuntimeActivation? activation)
+    public bool Refresh(
+        ReviewedRuntimeActivation? activation,
+        LauncherBattlePreferences nextBattlePreferences)
     {
+        ArgumentNullException.ThrowIfNull(nextBattlePreferences);
         var nextEvidence = activation?.EvidenceSourceSha256;
-        if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase)
+            && battlePreferences == nextBattlePreferences)
         {
             return false;
         }
-        Current = LauncherStartupComposition.Create(provider, releaseChannel, activation);
+        Current = LauncherStartupComposition.Create(
+            provider,
+            releaseChannel,
+            activation,
+            nextBattlePreferences);
         evidenceSha256 = nextEvidence;
+        battlePreferences = nextBattlePreferences;
         return true;
     }
 }
