@@ -61,11 +61,11 @@ public sealed record BattleNamedPipeAuthorizedProcess
             throw new ArgumentException("Authorized process start time must be UTC.", nameof(processStartUtc));
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
-        var normalizedPath = Path.GetFullPath(executablePath);
-        if (!Path.IsPathFullyQualified(normalizedPath))
+        if (!Path.IsPathFullyQualified(executablePath))
         {
             throw new ArgumentException("Authorized process path must be absolute.", nameof(executablePath));
         }
+        var normalizedPath = Path.GetFullPath(executablePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(runtimeEvidenceSha256);
         if (runtimeEvidenceSha256.Length != 64
             || runtimeEvidenceSha256.Any(character => !Uri.IsHexDigit(character)))
