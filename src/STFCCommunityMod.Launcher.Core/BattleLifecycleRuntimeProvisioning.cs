@@ -46,15 +46,13 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
         this.runtimeEvidenceSha256 = runtimeEvidenceSha256;
     }
 
-    public static BattleLifecycleRuntimeProvisioningFactory Create(
+    public static async ValueTask<BattleLifecycleRuntimeProvisioningFactory> CreateAsync(
         BattleLifecycleRuntimeHandoffReceipt cleanupReceipt,
         ReviewedRuntimeActivation runtimeActivation,
         LauncherBattleFeatureSnapshot committedFeatures,
         BattleIngestCredentialStore credentialStore,
         BattleRuntimeClientReceiptResult runtimeClient,
-        IBattleIngestSink? battleSink,
-        IBattleIngestSink? fleetSink,
-        IAsyncDisposable sinkLifetime,
+        BattleRuntimeSinkOwner sinkOwner,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(cleanupReceipt);
@@ -62,7 +60,7 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
         ArgumentNullException.ThrowIfNull(committedFeatures);
         ArgumentNullException.ThrowIfNull(credentialStore);
         ArgumentNullException.ThrowIfNull(runtimeClient);
-        ArgumentNullException.ThrowIfNull(sinkLifetime);
+        ArgumentNullException.ThrowIfNull(sinkOwner);
 
         var marker = cleanupReceipt.Marker;
         if (marker.Stage != BattleLifecycleStage.CleanupPending
@@ -77,6 +75,8 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
 
         ValidateCommittedFeatures(marker, committedFeatures);
         var activation = BattleIngestActivation.Resolve(committedFeatures);
+        var battleSink = sinkOwner.BattleSink;
+        var fleetSink = sinkOwner.FleetSink;
         if (!activation.ShouldListen
             || activation.Accepts(BattleIngestProtocol.BattleEventsKind) != (battleSink is not null)
             || activation.Accepts(BattleIngestProtocol.FleetRuntimeKind) != (fleetSink is not null))
@@ -121,8 +121,10 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
             credentialLease?.Dispose();
             throw Invalid();
         }
+        BattleRuntimeSinkOwner.BattleRuntimeSinkClaim? sinkClaim = null;
         try
         {
+            sinkClaim = sinkOwner.Claim();
             var runtimeClaim = cleanupReceipt.RuntimeLease.ClaimForProvisioning(
                 cleanupReceipt.RuntimePath,
                 cleanupReceipt.RuntimeIdentity,
@@ -132,7 +134,7 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
                 new(
                     runtimeClaim,
                     credentialLease,
-                    sinkLifetime,
+                    sinkClaim,
                     timeProvider ?? TimeProvider.System),
                 credentialLease,
                 runtimeClient,
@@ -143,7 +145,17 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
         }
         catch
         {
-            credentialLease.Dispose();
+            try
+            {
+                if (sinkClaim is not null)
+                {
+                    await sinkClaim.DisposeAfterFailedTransferAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                credentialLease.Dispose();
+            }
             throw;
         }
     }
@@ -253,17 +265,17 @@ internal sealed class BattleRuntimeProvisioningOwnedLifetime : IAsyncDisposable
     private readonly TimeProvider timeProvider;
     private BattleRuntimeLockLease.BattleRuntimeLockProvisioningClaim? runtimeLease;
     private BattleCredentialLease? credentialLease;
-    private IAsyncDisposable? sinkLifetime;
+    private BattleRuntimeSinkOwner.BattleRuntimeSinkClaim? sinkClaim;
 
     internal BattleRuntimeProvisioningOwnedLifetime(
         BattleRuntimeLockLease.BattleRuntimeLockProvisioningClaim runtimeLease,
         BattleCredentialLease credentialLease,
-        IAsyncDisposable sinkLifetime,
+        BattleRuntimeSinkOwner.BattleRuntimeSinkClaim sinkClaim,
         TimeProvider timeProvider)
     {
         this.runtimeLease = runtimeLease ?? throw new ArgumentNullException(nameof(runtimeLease));
         this.credentialLease = credentialLease ?? throw new ArgumentNullException(nameof(credentialLease));
-        this.sinkLifetime = sinkLifetime ?? throw new ArgumentNullException(nameof(sinkLifetime));
+        this.sinkClaim = sinkClaim ?? throw new ArgumentNullException(nameof(sinkClaim));
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
@@ -272,10 +284,10 @@ internal sealed class BattleRuntimeProvisioningOwnedLifetime : IAsyncDisposable
         await disposeGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (sinkLifetime is not null)
+            if (sinkClaim is not null)
             {
-                await sinkLifetime.DisposeAsync().ConfigureAwait(false);
-                sinkLifetime = null;
+                await sinkClaim.DisposeAsync().ConfigureAwait(false);
+                sinkClaim = null;
             }
             if (runtimeLease is not null)
             {

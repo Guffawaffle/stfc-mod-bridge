@@ -17,7 +17,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
     public async Task MarkerLastReceiptOpensOnceAndOwnsCleanShutdown()
     {
         await using var fixture = await ProvisioningFixture.CreateAsync();
-        var factory = fixture.CreateFactory();
+        var factory = await fixture.CreateFactoryAsync();
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             fixture.RuntimeLease.MarkCleanAsync(Started.AddMinutes(2)));
@@ -45,12 +45,12 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
             await factory.OpenAsync(fixture.CommittedFeatures, CancellationToken.None));
 
         await factory.DisposeAsync();
-        Assert.AreEqual(0, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(0, fixture.BattleSink.DisposeCount);
         Assert.AreEqual(BattleRuntimeLockState.Running, fixture.RuntimeLease.Record.State);
 
         await provisioning.DisposeAsync();
 
-        Assert.AreEqual(1, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
         Assert.IsFalse(fixture.Credential.IsZeroedForTest());
         var persisted = BattleRuntimeLockCodec.Decode(File.ReadAllBytes(fixture.RuntimePath));
         Assert.AreEqual(BattleRuntimeLockState.Clean, persisted.State);
@@ -61,7 +61,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
     public async Task WrongSnapshotDoesNotConsumeTheSingleOwnerHandoff()
     {
         await using var fixture = await ProvisioningFixture.CreateAsync();
-        var factory = fixture.CreateFactory();
+        var factory = await fixture.CreateFactoryAsync();
         var wrong = LauncherBattleFeatureComposer.Compose(
             fixture.RuntimeActivation.ActivationPlan,
             new(
@@ -73,14 +73,14 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
 
         var provisioning = await factory.OpenAsync(fixture.CommittedFeatures, CancellationToken.None);
         await provisioning.DisposeAsync();
-        Assert.AreEqual(1, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
     }
 
     [TestMethod]
     public async Task ConcurrentClaimHasExactlyOneOwner()
     {
         await using var fixture = await ProvisioningFixture.CreateAsync();
-        var factory = fixture.CreateFactory();
+        var factory = await fixture.CreateFactoryAsync();
 
         var attempts = await Task.WhenAll(
             Claim(factory, fixture.CommittedFeatures),
@@ -89,31 +89,51 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
         Assert.AreEqual(1, attempts.Count(result => result.Lease is not null));
         Assert.AreEqual(1, attempts.Count(result => result.Failure is InvalidOperationException));
         await attempts.Single(result => result.Lease is not null).Lease!.DisposeAsync();
-        Assert.AreEqual(1, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
     }
 
     [TestMethod]
     public async Task ExactRuntimeReceiptCannotBackTwoProvisioningFactories()
     {
         await using var fixture = await ProvisioningFixture.CreateAsync();
-        var first = fixture.CreateFactory();
+        var first = await fixture.CreateFactoryAsync();
 
-        Assert.ThrowsException<InvalidOperationException>(() => fixture.CreateFactory());
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
+            await fixture.CreateFactoryAsync());
 
         var provisioning = await first.OpenAsync(fixture.CommittedFeatures, CancellationToken.None);
         await provisioning.DisposeAsync();
-        Assert.AreEqual(1, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
+    }
+
+    [TestMethod]
+    public async Task FailedSecondFactoryRetainsItsExactSinkCleanupForRetry()
+    {
+        await using var fixture = await ProvisioningFixture.CreateAsync();
+        var first = await fixture.CreateFactoryAsync();
+        var losingSink = new RecordingSink(failuresRemaining: 1);
+        await using var losingOwner = new BattleRuntimeSinkOwner(losingSink, null);
+
+        await Assert.ThrowsExceptionAsync<IOException>(async () =>
+            await fixture.CreateFactoryAsync(sinkOwner: losingOwner));
+        Assert.AreEqual(1, losingSink.DisposeCount);
+        await losingOwner.DisposeAsync();
+        Assert.AreEqual(2, losingSink.DisposeCount);
+
+        var provisioning = await first.OpenAsync(fixture.CommittedFeatures, CancellationToken.None);
+        await provisioning.DisposeAsync();
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
     }
 
     [TestMethod]
     public async Task CleanupFailureRetainsUnclaimedOwnershipForExplicitRetry()
     {
         await using var fixture = await ProvisioningFixture.CreateAsync(sinkCleanupFailures: 1);
-        var factory = fixture.CreateFactory();
+        var factory = await fixture.CreateFactoryAsync();
 
         await Assert.ThrowsExceptionAsync<IOException>(async () => await factory.DisposeAsync());
 
-        Assert.AreEqual(1, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(1, fixture.BattleSink.DisposeCount);
         Assert.AreEqual(BattleRuntimeLockState.Running, fixture.RuntimeLease.Record.State);
         Assert.IsFalse(fixture.Credential.IsZeroedForTest());
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
@@ -121,7 +141,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
 
         await factory.DisposeAsync();
 
-        Assert.AreEqual(2, fixture.SinkLifetime.DisposeCount);
+        Assert.AreEqual(2, fixture.BattleSink.DisposeCount);
         Assert.IsFalse(fixture.Credential.IsZeroedForTest());
         Assert.AreEqual(
             BattleRuntimeLockState.Clean,
@@ -132,8 +152,11 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
     public async Task ExtraFamilyAuthorityAndChangedCredentialFailBeforeOwnershipTransfer()
     {
         await using var extra = await ProvisioningFixture.CreateAsync();
-        Assert.ThrowsException<InvalidDataException>(() => extra.CreateFactory(
-            fleetSink: new RecordingSink()));
+        await using var extraOwner = new BattleRuntimeSinkOwner(
+            new RecordingSink(),
+            new RecordingSink());
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(async () =>
+            await extra.CreateFactoryAsync(sinkOwner: extraOwner));
         Assert.AreEqual(BattleRuntimeLockState.Running, extra.RuntimeLease.Record.State);
         Assert.IsFalse(extra.Credential.IsZeroedForTest());
 
@@ -146,8 +169,9 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
             BattleCredentialRotationReason.Initial,
             new PassThroughCredentialProtector());
         File.WriteAllBytes(changed.CredentialPath, replacement.ProtectedBytes.ToArray());
-        Assert.ThrowsException<InvalidDataException>(() => changed.CreateFactory());
-        Assert.AreEqual(0, changed.SinkLifetime.DisposeCount);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(async () =>
+            await changed.CreateFactoryAsync());
+        Assert.AreEqual(0, changed.BattleSink.DisposeCount);
         Assert.IsFalse(changed.Credential.IsZeroedForTest());
 
         await using var evidence = await ProvisioningFixture.CreateAsync();
@@ -160,8 +184,8 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
                 exactProcess.ExecutablePath,
                 new string('b', 64)),
             "battle-runtime-client-ready");
-        Assert.ThrowsException<InvalidDataException>(() => evidence.CreateFactory(
-            runtimeClient: wrongEvidence));
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(async () =>
+            await evidence.CreateFactoryAsync(runtimeClient: wrongEvidence));
         Assert.AreEqual(BattleRuntimeLockState.Running, evidence.RuntimeLease.Record.State);
     }
 
@@ -199,8 +223,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
             ReviewedRuntimeActivation runtimeActivation,
             LauncherBattleFeatureSnapshot committedFeatures,
             BattleRuntimeClientReceiptResult runtimeClient,
-            RecordingSink battleSink,
-            RecordingLifetime sinkLifetime)
+            RecordingSink battleSink)
         {
             this.temporaryDirectory = temporaryDirectory;
             this.operationLease = operationLease;
@@ -211,7 +234,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
             CommittedFeatures = committedFeatures;
             RuntimeClient = runtimeClient;
             BattleSink = battleSink;
-            SinkLifetime = sinkLifetime;
+            SinkOwner = new(battleSink, null);
         }
 
         public BattleLifecycleRuntimeHandoffReceipt CleanupReceipt { get; }
@@ -230,7 +253,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
 
         public RecordingSink BattleSink { get; }
 
-        public RecordingLifetime SinkLifetime { get; }
+        public BattleRuntimeSinkOwner SinkOwner { get; }
 
         public string RuntimePath => CleanupReceipt.RuntimePath;
 
@@ -298,8 +321,7 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
                     activation,
                     committedFeatures,
                     runtimeClient,
-                    new RecordingSink(),
-                    new RecordingLifetime(sinkCleanupFailures));
+                    new RecordingSink(sinkCleanupFailures));
             }
             catch
             {
@@ -308,19 +330,19 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
             }
         }
 
-        public BattleLifecycleRuntimeProvisioningFactory CreateFactory(
-            IBattleIngestSink? fleetSink = null,
-            BattleRuntimeClientReceiptResult? runtimeClient = null) =>
-            BattleLifecycleRuntimeProvisioningFactory.Create(
+        public async ValueTask<BattleLifecycleRuntimeProvisioningFactory> CreateFactoryAsync(
+            BattleRuntimeSinkOwner? sinkOwner = null,
+            BattleRuntimeClientReceiptResult? runtimeClient = null)
+        {
+            return await BattleLifecycleRuntimeProvisioningFactory.CreateAsync(
                 CleanupReceipt,
                 RuntimeActivation,
                 CommittedFeatures,
                 CredentialStore,
                 runtimeClient ?? RuntimeClient,
-                BattleSink,
-                fleetSink,
-                SinkLifetime,
+                sinkOwner ?? SinkOwner,
                 new FixedTimeProvider(Started.AddMinutes(5)));
+        }
 
         public async ValueTask DisposeAsync()
         {
@@ -336,6 +358,13 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
                     {
                     }
                     runtimeDisposed = true;
+                }
+                try
+                {
+                    await SinkOwner.DisposeAsync();
+                }
+                catch (InvalidOperationException)
+                {
                 }
                 credentialCandidate.Dispose();
                 await operationLease.DisposeAsync();
@@ -444,17 +473,14 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
         }
     }
 
-    private sealed class RecordingSink : IBattleIngestSink
+    private sealed class RecordingSink(int failuresRemaining = 0) : IBattleIngestSink, IAsyncDisposable
     {
+        public int DisposeCount { get; private set; }
+
         public ValueTask<BattleIngestCommitResult> CommitAsync(
             BattleIngestEnvelope envelope,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(new BattleIngestCommitResult(envelope.ExactEventBytes.Count));
-    }
-
-    private sealed class RecordingLifetime(int failuresRemaining) : IAsyncDisposable
-    {
-        public int DisposeCount { get; private set; }
 
         public ValueTask DisposeAsync()
         {

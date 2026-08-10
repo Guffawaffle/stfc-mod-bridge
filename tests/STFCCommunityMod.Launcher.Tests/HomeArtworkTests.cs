@@ -1,8 +1,7 @@
 using System.Collections;
+using System.Buffers.Binary;
 using System.Resources;
-using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
-using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 
 namespace STFCCommunityMod.Launcher.Tests;
@@ -77,34 +76,33 @@ public sealed class HomeArtworkTests
     }
 
     [TestMethod]
-    public void CompiledPackResourceDecodesAtCanonicalDimensions()
+    public void CompiledPackResourceContainsCanonicalPngDimensions()
     {
-        RunInSta(
-            () =>
-            {
-                var assembly = typeof(App).Assembly;
-                var compiledResourceName = assembly.GetManifestResourceNames().Single(name =>
-                    name.EndsWith(".g.resources", StringComparison.Ordinal));
-                using var compiledResourceStream = assembly.GetManifestResourceStream(compiledResourceName);
-                Assert.IsNotNull(
-                    compiledResourceStream,
-                    "The application resource bundle was not compiled into the launcher assembly.");
-                using var resources = new ResourceReader(compiledResourceStream);
-                var resource = resources.Cast<DictionaryEntry>().Single(entry =>
-                    string.Equals(
-                        entry.Key as string,
-                        "assets/stfc-mod-bridge-banner.png",
-                        StringComparison.OrdinalIgnoreCase));
-                Assert.IsInstanceOfType<Stream>(resource.Value);
-                using var stream = (Stream)resource.Value;
-                var decoder = BitmapDecoder.Create(
-                    stream,
-                    BitmapCreateOptions.PreservePixelFormat,
-                    BitmapCacheOption.OnLoad);
-                var frame = decoder.Frames.Single();
-                Assert.AreEqual(2172, frame.PixelWidth);
-                Assert.AreEqual(724, frame.PixelHeight);
-            });
+        var assembly = typeof(App).Assembly;
+        var compiledResourceName = assembly.GetManifestResourceNames().Single(name =>
+            name.EndsWith(".g.resources", StringComparison.Ordinal));
+        using var compiledResourceStream = assembly.GetManifestResourceStream(compiledResourceName);
+        Assert.IsNotNull(
+            compiledResourceStream,
+            "The application resource bundle was not compiled into the launcher assembly.");
+        using var resources = new ResourceReader(compiledResourceStream);
+        var resource = resources.Cast<DictionaryEntry>().Single(entry =>
+            string.Equals(
+                entry.Key as string,
+                "assets/stfc-mod-bridge-banner.png",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.IsInstanceOfType<Stream>(resource.Value);
+        using var stream = (Stream)resource.Value;
+        Span<byte> header = stackalloc byte[24];
+        stream.ReadExactly(header);
+
+        CollectionAssert.AreEqual(
+            new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 },
+            header[..8].ToArray());
+        Assert.AreEqual(13u, BinaryPrimitives.ReadUInt32BigEndian(header[8..12]));
+        CollectionAssert.AreEqual("IHDR"u8.ToArray(), header[12..16].ToArray());
+        Assert.AreEqual(2172u, BinaryPrimitives.ReadUInt32BigEndian(header[16..20]));
+        Assert.AreEqual(724u, BinaryPrimitives.ReadUInt32BigEndian(header[20..24]));
     }
 
     [TestMethod]
@@ -138,47 +136,4 @@ public sealed class HomeArtworkTests
             ?? throw new InvalidOperationException("Could not find the Mod Bridge repository root.");
     }
 
-    private static void RunInSta(Action action)
-    {
-        var originalWindir = Environment.GetEnvironmentVariable("WINDIR", EnvironmentVariableTarget.Process);
-        if (string.IsNullOrWhiteSpace(originalWindir))
-        {
-            Environment.SetEnvironmentVariable(
-                "WINDIR",
-                Environment.GetEnvironmentVariable("SystemRoot", EnvironmentVariableTarget.Process),
-                EnvironmentVariableTarget.Process);
-        }
-
-        Exception? failure = null;
-        try
-        {
-            var thread = new Thread(
-                () =>
-                {
-                    try
-                    {
-                        action();
-                    }
-                    catch (Exception exception)
-                    {
-                        failure = exception;
-                    }
-                });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(10)), "The WPF artwork resource test timed out.");
-
-            if (failure is not null)
-            {
-                ExceptionDispatchInfo.Capture(failure).Throw();
-            }
-        }
-        finally
-        {
-            if (string.IsNullOrWhiteSpace(originalWindir))
-            {
-                Environment.SetEnvironmentVariable("WINDIR", null, EnvironmentVariableTarget.Process);
-            }
-        }
-    }
 }

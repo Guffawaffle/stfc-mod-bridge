@@ -407,6 +407,16 @@ retains the reviewed runtime lease and can hand exact resources to the dormant
 single-owner provisioning factory, but a retained passing signed release must
 still satisfy the package gate before the pipe host can be registered.
 
+Sink lifetime is likewise one typed ownership boundary. A
+`BattleRuntimeSinkOwner` registers each disposable Battle/Fleet sink instance
+exactly once, issues one claim to the provisioning handoff, and rejects a
+parallel owner or non-owner cleanup. The runtime claim disposes Fleet then
+Battle before the runtime lock can become clean; a failed member remains owned
+for exact retry. Factory failure returns incomplete cleanup to the original
+owner and still zeroes the independently loaded credential lease. Provisioning
+can therefore no longer pair live sink references with an unrelated arbitrary
+`IAsyncDisposable` that does not actually own them.
+
 ## Dormant Fleet snapshot ownership
 
 `FleetRuntimeSnapshotSink` now supplies the missing process-local sink boundary
