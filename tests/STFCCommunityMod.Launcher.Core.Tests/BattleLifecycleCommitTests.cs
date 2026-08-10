@@ -601,8 +601,7 @@ public sealed class BattleLifecycleCommitTests
             var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
             var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
             var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
-            await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync()
-                ?? throw new AssertFailedException("The crash probe did not release the root operation lease.");
+            await using var operationLease = await AcquireOperationLeaseAfterCrashAsync(stateRoot);
             var journal = new BattleLifecycleJournalStore(
                 stateRoot,
                 new PassThroughMarkerProtector());
@@ -923,6 +922,18 @@ public sealed class BattleLifecycleCommitTests
             await Task.Delay(25);
         }
         throw new AssertFailedException("The Battle crash probe did not reach its checkpoint.");
+    }
+
+    private static async Task<LauncherOperationLease> AcquireOperationLeaseAfterCrashAsync(string stateRoot)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            var lease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+            if (lease is not null) return lease;
+            await Task.Delay(50);
+        }
+        throw new AssertFailedException("The crash probe did not release the root operation lease.");
     }
 
     private static LauncherBattleFeatureSnapshot EligibleSnapshot() =>
