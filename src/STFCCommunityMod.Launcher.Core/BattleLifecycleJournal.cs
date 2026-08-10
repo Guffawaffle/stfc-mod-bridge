@@ -103,6 +103,44 @@ internal sealed record BattleLifecycleJournalInspection(
     BattleLifecycleMarker? Successor,
     string Code);
 
+/// <summary>
+/// Marker-last proof that terminal cleanup completed while the exact runtime
+/// owner remained open. Construction is owned by the journal cleanup path; it
+/// does not itself start a host or grant a new capability.
+/// </summary>
+internal sealed class BattleLifecycleRuntimeHandoffReceipt
+{
+    internal BattleLifecycleRuntimeHandoffReceipt(
+        string runtimePath,
+        BattleLifecycleMarker marker,
+        BattleRuntimeLockLease runtimeLease,
+        BattleLifecycleFileIdentity runtimeIdentity)
+    {
+        RuntimePath = Path.GetFullPath(runtimePath);
+        ArgumentNullException.ThrowIfNull(marker);
+        Marker = Snapshot(marker);
+        RuntimeLease = runtimeLease ?? throw new ArgumentNullException(nameof(runtimeLease));
+        ArgumentNullException.ThrowIfNull(runtimeIdentity);
+        RuntimeIdentity = runtimeIdentity with { };
+    }
+
+    internal string RuntimePath { get; }
+
+    internal BattleLifecycleMarker Marker { get; }
+
+    internal BattleRuntimeLockLease RuntimeLease { get; }
+
+    internal BattleLifecycleFileIdentity RuntimeIdentity { get; }
+
+    internal static BattleLifecycleMarker Snapshot(BattleLifecycleMarker marker) =>
+        marker with
+        {
+            AffectedFeatureIds = marker.AffectedFeatureIds.ToArray(),
+            Resources = marker.Resources.ToArray(),
+            FeatureTransitions = marker.FeatureTransitions.ToArray(),
+        };
+}
+
 internal interface IBattleLifecycleMarkerProtector
 {
     byte[] Protect(byte[] plaintext);
@@ -1242,7 +1280,7 @@ internal sealed class BattleLifecycleJournalStore
             checkpoint,
             cancellationToken);
 
-    internal Task DeleteCommittedArtifactsRetainingRuntimeAsync(
+    internal async Task<BattleLifecycleRuntimeHandoffReceipt> DeleteCommittedArtifactsRetainingRuntimeAsync(
         LauncherOperationLease operationLease,
         BattleLifecycleMarker expectedMarker,
         BattleRuntimeLockLease retainedRuntimeLease,
@@ -1250,12 +1288,21 @@ internal sealed class BattleLifecycleJournalStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(retainedRuntimeLease);
-        return DeleteCommittedArtifactsCoreAsync(
+        ArgumentNullException.ThrowIfNull(expectedMarker);
+        var markerSnapshot = BattleLifecycleRuntimeHandoffReceipt.Snapshot(expectedMarker);
+        await DeleteCommittedArtifactsCoreAsync(
             operationLease,
-            expectedMarker,
+            markerSnapshot,
             retainedRuntimeLease,
             checkpoint,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        var runtimeIdentity = markerSnapshot.Resources.Single(resource => resource.Role == "runtime-lock").After
+            ?? throw new InvalidDataException("The Battle runtime lock has no committed identity.");
+        return new(
+            Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName),
+            markerSnapshot,
+            retainedRuntimeLease,
+            runtimeIdentity);
     }
 
     private async Task DeleteCommittedArtifactsCoreAsync(

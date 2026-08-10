@@ -200,12 +200,30 @@ provisioning cleanup failure retains ownership for an explicit serialized retry
 rather than forgetting an uncertain resource.
 
 The provisioning interface is intentionally internal and has no production
-registration. It accepts only an already-provisioned pipe name, 32-byte
-credential, caller authorizer, runtime-evidence digest, exact family sinks, and
-lifetime owner. It cannot resolve a state root, create or read a credential,
-create a store, discover a process, edit TOML, acquire `runtime.lock`, or decide
-eligibility. Supplying that lease remains the marker-first lifecycle transaction
-defined by Sidecar document 27; launcher startup continues to compose none.
+registration. Marker-last cleanup now issues a typed handoff receipt only after
+it has removed the exact candidates and DPAPI marker while retaining the exact
+marker-bound running `runtime.lock` lease. The dormant production factory binds
+that receipt to the same reviewed activation plan, committed per-feature
+preferences, authoritative protected credential identity, exact running game
+process receipt, and only the enabled family sinks. It opens and decrypts the
+already-committed credential through its closed passive reader; it does not
+accept caller-supplied plaintext credential authority.
+
+The handoff is single-claim. A changed feature snapshot, extra family sink,
+changed credential, mismatched runtime evidence, or replay fails before a host
+can be constructed. Claiming atomically transfers the runtime handle; stale raw
+lease references can neither mark it clean nor close it. Unclaimed or
+failed-start cleanup drains the supplied sink lifetime, marks the retained
+runtime receipt clean through its same locked
+handle, closes it, and zeroes both owned credential buffers. Cleanup failure
+retains the exact ownership for an explicit serialized retry.
+
+This factory cannot resolve a state root, create a credential or store, discover
+a process, edit TOML, acquire `runtime.lock`, decide eligibility, or register a
+listener. Store creation/promotion and the Fleet runtime sink remain separate
+lifecycle-owned prerequisites. Launcher startup therefore still composes none;
+operational registration remains blocked on the retained signed standalone and
+MSIX qualification gate.
 
 ## Credential foundation
 
