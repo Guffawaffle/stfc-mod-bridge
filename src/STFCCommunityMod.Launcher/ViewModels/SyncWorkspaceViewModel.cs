@@ -339,7 +339,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     internal void UpdateTarget(string name, Func<SyncTargetDraft, SyncTargetDraft> update)
     {
-        if (workspace is null)
+        if (workspace is null
+            || workspace.Desired.Targets.GetValueOrDefault(name)?.UsesNamedPipe == true)
         {
             return;
         }
@@ -349,7 +350,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     internal void RemoveTarget(string name)
     {
-        if (workspace is not null)
+        if (workspace is not null
+            && workspace.Desired.Targets.GetValueOrDefault(name)?.UsesNamedPipe != true)
         {
             Apply(workspace.Desired.RemoveTarget(name));
         }
@@ -710,15 +712,19 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     {
         this.owner = owner;
         this.name = name;
-        RemoveCommand = new SettingsActionCommand(() => owner.RemoveTarget(name));
+        RemoveCommand = new SettingsActionCommand(
+            () => owner.RemoveTarget(name),
+            () => !IsLauncherManagedLocalIpc);
         DuplicateCommand = new SettingsActionCommand(
             () => owner.DuplicateTarget(name),
             () => Definition.MaximumInstances > 1);
         RemoveUnsupportedCapabilitiesCommand = new SettingsActionCommand(
             RemoveUnsupportedCapabilities,
             () => HasUnsupportedCapabilities);
-        ClearTokenCommand = new SettingsActionCommand(ClearToken);
-        ReplaceTokenCommand = new SettingsActionCommand(ReplaceToken, () => !string.IsNullOrWhiteSpace(replacementToken));
+        ClearTokenCommand = new SettingsActionCommand(ClearToken, () => !IsLauncherManagedLocalIpc);
+        ReplaceTokenCommand = new SettingsActionCommand(
+            ReplaceToken,
+            () => !IsLauncherManagedLocalIpc && !string.IsNullOrWhiteSpace(replacementToken));
         var definition = SyncTargetTypeCatalog.Get(Draft.Kind);
         var preset = SyncTargetTypeCatalog.FindPresetByUrl(Draft.Url);
         var supportedFeeds = (preset?.TargetKind == Draft.Kind
@@ -740,7 +746,9 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
     public string AdapterDescription => Definition.Description;
     public string InheritanceLabel => Definition.InheritsGlobalSync ? "Global" : "Default";
     public string WireContract => Definition.WireContract;
-    public bool CanDisable => Definition.SupportsDisabledState;
+    public bool IsLauncherManagedLocalIpc => Draft.UsesNamedPipe;
+    public bool ShowEditableTargetControls => !IsLauncherManagedLocalIpc;
+    public bool CanDisable => Definition.SupportsDisabledState && !IsLauncherManagedLocalIpc;
     public bool ShowTypeSpecificControls => Definition.SupportsBattlelogEnrichment || Definition.SupportsFleetRuntimeMode;
     public bool ShowBattlelogEnrichment => Definition.SupportsBattlelogEnrichment;
     public bool ShowFleetRuntimeMode => Definition.SupportsFleetRuntimeMode;
@@ -754,7 +762,9 @@ public sealed class SyncTargetCardViewModel : INotifyPropertyChanged
         get => Draft.Url;
         set { owner.UpdateTarget(name, target => target.WithConnection(value ?? string.Empty, target.Token)); NotifyAll(); }
     }
-    public string TokenStatus => Draft.Token.IsConfigured ? "Saved token configured" : "No token configured";
+    public string TokenStatus => IsLauncherManagedLocalIpc
+        ? "Credential is launcher-managed and cannot be edited here."
+        : Draft.Token.IsConfigured ? "Saved token configured" : "No token configured";
     public string ProxyText
     {
         get => Draft.Proxy.IsExplicit ? Draft.Proxy.Value : string.Empty;

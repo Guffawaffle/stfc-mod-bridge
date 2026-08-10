@@ -2,8 +2,7 @@
 
 Status: authenticated named-pipe transport and provisioned-runtime composition
 proofs implemented but dormant; operational activation remains blocked on the
-marker/credential/config transaction, producer alignment, and signed-package
-qualification
+marker/credential/config transaction and signed-package qualification
 
 Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
 
@@ -131,6 +130,23 @@ policy, and independent per-feature player preference. An unavailable,
 available/unset, or disabled feature therefore cannot create an accepted ingest
 family even if a caller invokes the legacy helper directly.
 
+The producer boundary is now aligned by
+[stfc-mod#245](https://github.com/Guffawaffle/stfc-mod/pull/245), from signed
+source commit `5020d388ce1186ebc563497b12c69c6ce7525742` and merged as
+`722c37e`. Its exact `named_pipe` transport uses this protocol, closed role and
+operation, canonical credential encoding, length and deadline bounds, and
+fails closed without falling through to legacy HTTP. That merge is producer
+evidence only; it does not activate the Bridge host.
+
+The launcher single-writer topology now recognizes the exact `named_pipe`
+transport and `pipe_name` fields. Its typed transition clears the obsolete
+legacy URL, preserves unrelated TOML, and rejects noncanonical transport or
+pipe-name values. A named-pipe target is lifecycle-managed and read-only in
+the generic Data Sync workspace; the global Settings search also excludes
+dedicated Data Sync keys so it cannot become a second TOML writer. The final
+pipe name, credential, and config mutation still belong to the marker-first
+lifecycle transaction and are not written or activated by this prerequisite.
+
 `BattleRuntimeCompositionCoordinator` is the dormant process-owned orchestration
 proof above the pipe host. It asks for provisioned resources only when at least
 one reviewed feature projection is `enabled`; unchanged family sets are a no-op.
@@ -187,8 +203,8 @@ product-policy resolution. Diagnostics can truthfully show `unavailable`,
 
 Even the `enabled` intent state remains operationally dormant today. It is not
 a listener-activation receipt. The accepted Battle Home baseline, local IPC
-implementation, runtime lifecycle owner, producer alignment, and release
-qualification must land before collection can start.
+implementation, runtime lifecycle owner, marker/credential/config transaction,
+and release qualification must land before collection can start.
 
 ## Future external communication
 

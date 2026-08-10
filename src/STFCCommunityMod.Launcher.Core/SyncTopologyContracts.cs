@@ -68,6 +68,12 @@ public enum SyncEndpointPolicy
     NonLoopback,
 }
 
+public enum SyncLocalTransport
+{
+    LegacyHttp,
+    NamedPipe,
+}
+
 public enum SyncTargetExposurePolicy
 {
     Hidden,
@@ -232,8 +238,8 @@ public static class SyncTargetTypeCatalog
                     SyncTargetExposurePolicy.ExistingConfigurationOnly,
                     "sidecar",
                     "Sidecar",
-                    "Sends realtime battle and fleet-runtime data to a local companion process.",
-                    "2 feeds · local endpoint · token authentication",
+                    "Sends realtime battle and fleet-runtime data over launcher-managed local IPC or a legacy loopback endpoint.",
+                    "2 feeds · local IPC · token authentication",
                     "sidecar.sync",
                     "sidecar_local_ingest",
                     1,
@@ -255,7 +261,7 @@ public static class SyncTargetTypeCatalog
                         SyncDataKind.FleetRuntime,
                     }.ToFrozenSet(),
                     "http://127.0.0.1:43127/api/sidecar/ingest",
-                    "Supports battle-log enrichment and fleet-runtime delivery modes."),
+                    "Supports Battle Bridge named-pipe delivery, legacy Sidecar HTTP, battle-log enrichment, and fleet-runtime delivery modes."),
                 [SyncTargetKind.LegacyCommunity] = External(
                     SyncTargetKind.LegacyCommunity,
                     SyncTargetExposurePolicy.Creatable,
@@ -442,7 +448,9 @@ public sealed class SyncTargetDraft
         SyncOverride<bool> allowUnsafeTlsWithoutCertificateValidation,
         IReadOnlyDictionary<SyncDataKind, SyncOverride<bool>>? dataOverrides = null,
         SyncOverride<bool>? battlelogEnrichment = null,
-        SyncOverride<string>? fleetRuntimeMode = null)
+        SyncOverride<string>? fleetRuntimeMode = null,
+        SyncOverride<SyncLocalTransport>? localTransport = null,
+        SyncOverride<string>? localPipeName = null)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Kind = kind;
@@ -455,6 +463,8 @@ public sealed class SyncTargetDraft
         this.dataOverrides = new(dataOverrides?.ToDictionary(item => item.Key, item => item.Value) ?? []);
         BattlelogEnrichment = battlelogEnrichment ?? SyncOverride.Inherited<bool>();
         FleetRuntimeMode = fleetRuntimeMode ?? SyncOverride.Inherited<string>();
+        LocalTransport = localTransport ?? SyncOverride.Inherited<SyncLocalTransport>();
+        LocalPipeName = localPipeName ?? SyncOverride.Inherited<string>();
     }
 
     public string Name { get; }
@@ -478,6 +488,16 @@ public sealed class SyncTargetDraft
     public SyncOverride<bool> BattlelogEnrichment { get; }
 
     public SyncOverride<string> FleetRuntimeMode { get; }
+
+    public SyncOverride<SyncLocalTransport> LocalTransport { get; }
+
+    public SyncOverride<string> LocalPipeName { get; }
+
+    public bool UsesNamedPipe =>
+        Kind == SyncTargetKind.LocalSidecar
+        && LocalTransport.Resolve(
+            SyncLocalTransport.LegacyHttp,
+            SyncValueSource.TargetTypeDefault).Value == SyncLocalTransport.NamedPipe;
 
     public static SyncTargetDraft Create(string name, SyncTargetKind kind)
     {
@@ -514,6 +534,11 @@ public sealed class SyncTargetDraft
     public SyncTargetDraft WithFleetRuntimeMode(SyncOverride<string> value) =>
         Copy(fleetRuntimeMode: value);
 
+    public SyncTargetDraft WithLocalTransport(
+        SyncOverride<SyncLocalTransport> transport,
+        SyncOverride<string> pipeName) =>
+        Copy(localTransport: transport, localPipeName: pipeName);
+
     public SyncTargetDraft WithDataOverride(SyncDataKind kind, SyncOverride<bool> value)
     {
         var changed = dataOverrides.ToDictionary(item => item.Key, item => item.Value);
@@ -538,7 +563,9 @@ public sealed class SyncTargetDraft
             allowUnsafeTlsWithoutCertificateValidation: SyncOverride.Inherited<bool>(),
             dataOverrides: new Dictionary<SyncDataKind, SyncOverride<bool>>(),
             battlelogEnrichment: SyncOverride.Inherited<bool>(),
-            fleetRuntimeMode: SyncOverride.Inherited<string>());
+            fleetRuntimeMode: SyncOverride.Inherited<string>(),
+            localTransport: SyncOverride.Inherited<SyncLocalTransport>(),
+            localPipeName: SyncOverride.Inherited<string>());
 
     private SyncTargetDraft Copy(
         string? name = null,
@@ -551,7 +578,9 @@ public sealed class SyncTargetDraft
         SyncOverride<bool>? allowUnsafeTlsWithoutCertificateValidation = null,
         IReadOnlyDictionary<SyncDataKind, SyncOverride<bool>>? dataOverrides = null,
         SyncOverride<bool>? battlelogEnrichment = null,
-        SyncOverride<string>? fleetRuntimeMode = null) =>
+        SyncOverride<string>? fleetRuntimeMode = null,
+        SyncOverride<SyncLocalTransport>? localTransport = null,
+        SyncOverride<string>? localPipeName = null) =>
         new(
             name ?? Name,
             kind ?? Kind,
@@ -563,7 +592,9 @@ public sealed class SyncTargetDraft
             allowUnsafeTlsWithoutCertificateValidation ?? AllowUnsafeTlsWithoutCertificateValidation,
             dataOverrides ?? this.dataOverrides,
             battlelogEnrichment ?? BattlelogEnrichment,
-            fleetRuntimeMode ?? FleetRuntimeMode);
+            fleetRuntimeMode ?? FleetRuntimeMode,
+            localTransport ?? LocalTransport,
+            localPipeName ?? LocalPipeName);
 }
 
 public sealed record SyncTopologyDiagnostic(
@@ -584,7 +615,9 @@ public sealed class SyncResolvedTarget(
     SyncResolvedValue<bool> allowUnsafeTlsWithoutCertificateValidation,
     IReadOnlyDictionary<SyncDataKind, SyncResolvedValue<bool>> dataKinds,
     SyncResolvedValue<bool>? battlelogEnrichment,
-    SyncResolvedValue<string>? fleetRuntimeMode)
+    SyncResolvedValue<string>? fleetRuntimeMode,
+    SyncResolvedValue<SyncLocalTransport>? localTransport,
+    SyncResolvedValue<string>? localPipeName)
 {
     public string Name { get; } = name;
 
@@ -608,6 +641,10 @@ public sealed class SyncResolvedTarget(
     public SyncResolvedValue<bool>? BattlelogEnrichment { get; } = battlelogEnrichment;
 
     public SyncResolvedValue<string>? FleetRuntimeMode { get; } = fleetRuntimeMode;
+
+    public SyncResolvedValue<SyncLocalTransport>? LocalTransport { get; } = localTransport;
+
+    public SyncResolvedValue<string>? LocalPipeName { get; } = localPipeName;
 
     public override string ToString() =>
         $"{Name} ({Kind}, {(Enabled ? "enabled" : "disabled")}, credentials {(CredentialsConfigured ? "configured" : "missing")})";

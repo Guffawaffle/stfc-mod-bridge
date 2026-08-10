@@ -134,6 +134,9 @@ public static class SyncTopologyTomlAdapter
         target = target
             .WithEnabled(ReadBoolean(overrides, prefix + "enabled", false, diagnostics, target.Name))
             .WithConnection(url, token)
+            .WithLocalTransport(
+                ReadLocalTransportOverride(overrides, prefix + "transport", diagnostics, target.Name),
+                ReadStringOverride(overrides, prefix + "pipe_name", diagnostics, target.Name))
             .WithProxy(ReadStringOverride(overrides, prefix + "proxy", diagnostics, target.Name))
             .WithVerifySsl(ReadBooleanOverride(overrides, prefix + "verify_ssl", diagnostics, target.Name))
             .WithUnsafeTls(ReadBooleanOverride(
@@ -277,6 +280,39 @@ public static class SyncTopologyTomlAdapter
         TryReadString(overrides, path, out var value, diagnostics, targetName)
             ? SyncOverride.Explicit(value)
             : SyncOverride.Inherited<string>();
+
+    private static SyncOverride<SyncLocalTransport> ReadLocalTransportOverride(
+        IReadOnlyDictionary<string, SparseTomlOverride> overrides,
+        string path,
+        List<SyncTopologyDiagnostic> diagnostics,
+        string targetName)
+    {
+        if (!overrides.ContainsKey(path))
+        {
+            return SyncOverride.Inherited<SyncLocalTransport>();
+        }
+        if (!TryReadString(overrides, path, out var value, diagnostics, targetName))
+        {
+            return SyncOverride.Inherited<SyncLocalTransport>();
+        }
+        var transport = value switch
+        {
+            "legacy_http" => SyncLocalTransport.LegacyHttp,
+            "named_pipe" => SyncLocalTransport.NamedPipe,
+            _ => (SyncLocalTransport?)null,
+        };
+        if (transport is null)
+        {
+            diagnostics.Add(new(
+                "SYNC_LOCAL_TRANSPORT_INVALID",
+                SyncTopologyDiagnosticSeverity.Error,
+                "Local transport must be exactly legacy_http or named_pipe.",
+                targetName,
+                "transport"));
+            return SyncOverride.Inherited<SyncLocalTransport>();
+        }
+        return SyncOverride.Explicit(transport.Value);
+    }
 
     private static SyncOverride<bool> ReadBooleanOverride(
         IReadOnlyDictionary<string, SparseTomlOverride> overrides,

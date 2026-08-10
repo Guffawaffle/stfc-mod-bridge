@@ -16632,7 +16632,7 @@
       },
       "presentation": {
         "label": "Allow unverified sidecar TLS",
-        "help": "Allows an encrypted sidecar connection without checking its certificate. Use only for a trusted local setup.",
+        "help": "Legacy HTTP only. Allows an encrypted Sidecar connection without checking its certificate.",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.allow_unsafe_tls_without_certificate_validation",
@@ -16644,7 +16644,7 @@
         "editorWidth": "compact",
         "applyTiming": "Next launch",
         "accessibleName": "Allow unverified sidecar TLS",
-        "accessibleHelp": "Allows an encrypted sidecar connection without checking its certificate. Use only for a trusted local setup. Applies: Next launch."
+        "accessibleHelp": "Legacy HTTP only. Allows an encrypted Sidecar connection without checking its certificate. Applies: Next launch."
       }
     },
     {
@@ -16741,7 +16741,7 @@
     {
       "path": "sidecar.sync.enabled",
       "title": "Enabled",
-      "description": "Dedicated local STFC Mod Sidecar delivery. This is the only supported home for sidecar-local HTTP config. Local Battle Workbench reads the sidecar event store through /api/events. Cloud Sync Monitor and Majel/cloud targets are not required for local sidecar ingest.",
+      "description": "Dedicated local STFC Mod Sidecar or Battle Bridge delivery. Battle Bridge uses authenticated Windows named pipes. legacy_http remains for older Sidecar installations and is not used by Battle Bridge. Local Battle Workbench reads the sidecar event store through /api/events. Cloud Sync Monitor and Majel/cloud targets are not required for local sidecar ingest.",
       "category": "sidecar",
       "control": "scalar",
       "valueType": {
@@ -16765,19 +16765,19 @@
       },
       "presentation": {
         "label": "Local sidecar delivery",
-        "help": "Sends supported mod data to the STFC Mod Sidecar running on this PC.",
+        "help": "Sends supported mod data to Battle Bridge or a legacy Sidecar running on this PC.",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.enabled",
           "Enabled",
-          "Dedicated local STFC Mod Sidecar delivery. This is the only supported home for sidecar-local HTTP config. Local Battle Workbench reads the sidecar event store through /api/events. Cloud Sync Monitor and Majel/cloud targets are not required for local sidecar ingest.",
+          "Dedicated local STFC Mod Sidecar or Battle Bridge delivery. Battle Bridge uses authenticated Windows named pipes. legacy_http remains for older Sidecar installations and is not used by Battle Bridge. Local Battle Workbench reads the sidecar event store through /api/events. Cloud Sync Monitor and Majel/cloud targets are not required for local sidecar ingest.",
           "sidecar",
           "Local sidecar"
         ],
         "editorWidth": "compact",
         "applyTiming": "Next launch",
         "accessibleName": "Local sidecar delivery",
-        "accessibleHelp": "Sends supported mod data to the STFC Mod Sidecar running on this PC. Applies: Next launch."
+        "accessibleHelp": "Sends supported mod data to Battle Bridge or a legacy Sidecar running on this PC. Applies: Next launch."
       }
     },
     {
@@ -16825,7 +16825,7 @@
     {
       "path": "sidecar.sync.fleet_runtime_mode",
       "title": "Fleet Runtime Mode",
-      "description": "Fleet runtime sidecar safety/probe mode: normal, request_only, snapshot_only, or enqueue_no_transport. request_only records requests but skips snapshot reads. snapshot_only reads/builds owned snapshots but skips publish/enqueue. enqueue_no_transport enqueues latest-wins runtime snapshots but suppresses HTTP transport.",
+      "description": "Fleet runtime sidecar safety/probe mode: normal, request_only, snapshot_only, or enqueue_no_transport. request_only records requests but skips snapshot reads. snapshot_only reads/builds owned snapshots but skips publish/enqueue. enqueue_no_transport enqueues latest-wins runtime snapshots but suppresses transport delivery.",
       "category": "sidecar",
       "control": "scalar",
       "valueType": {
@@ -16860,7 +16860,7 @@
         "searchTerms": [
           "sidecar.sync.fleet_runtime_mode",
           "Fleet Runtime Mode",
-          "Fleet runtime sidecar safety/probe mode: normal, request_only, snapshot_only, or enqueue_no_transport. request_only records requests but skips snapshot reads. snapshot_only reads/builds owned snapshots but skips publish/enqueue. enqueue_no_transport enqueues latest-wins runtime snapshots but suppresses HTTP transport.",
+          "Fleet runtime sidecar safety/probe mode: normal, request_only, snapshot_only, or enqueue_no_transport. request_only records requests but skips snapshot reads. snapshot_only reads/builds owned snapshots but skips publish/enqueue. enqueue_no_transport enqueues latest-wins runtime snapshots but suppresses transport delivery.",
           "sidecar",
           "Local sidecar"
         ],
@@ -16883,13 +16883,55 @@
           {
             "value": "enqueue_no_transport",
             "label": "Queue without delivery",
-            "help": "Keep the latest snapshot queued without sending it over HTTP."
+            "help": "Keep the latest snapshot queued without transport delivery."
           }
         ],
         "editorWidth": "standard",
         "applyTiming": "Next launch",
         "accessibleName": "Fleet runtime behavior",
         "accessibleHelp": "Controls how fleet runtime data moves through the local sidecar pipeline. Applies: Next launch."
+      }
+    },
+    {
+      "path": "sidecar.sync.pipe_name",
+      "title": "Pipe Name",
+      "description": "Configure pipe name.",
+      "category": "sidecar",
+      "control": "scalar",
+      "valueType": {
+        "kind": "string"
+      },
+      "default": "",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "apply": "next-session",
+      "sensitivity": "public",
+      "stability": "stable",
+      "sourceSupport": [
+        "guffawaffle"
+      ],
+      "aliases": [],
+      "provenance": {
+        "runtimePath": "sidecar.sync.pipe_name",
+        "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.pipe_name"
+      },
+      "presentation": {
+        "label": "Battle Bridge pipe",
+        "help": "Launcher-managed local pipe name. Do not set this manually.",
+        "group": "Local sidecar",
+        "searchTerms": [
+          "sidecar.sync.pipe_name",
+          "Pipe Name",
+          "Configure pipe name.",
+          "sidecar",
+          "Local sidecar"
+        ],
+        "editorWidth": "wide",
+        "applyTiming": "Next launch",
+        "accessibleName": "Battle Bridge pipe",
+        "accessibleHelp": "Launcher-managed local pipe name. Do not set this manually. Applies: Next launch."
       }
     },
     {
@@ -16918,7 +16960,7 @@
         "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.proxy"
       },
       "presentation": {
-        "label": "Sidecar proxy",
+        "label": "Legacy Sidecar proxy",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.proxy",
@@ -16929,7 +16971,7 @@
         ],
         "editorWidth": "wide",
         "applyTiming": "Next launch",
-        "accessibleName": "Sidecar proxy",
+        "accessibleName": "Legacy Sidecar proxy",
         "accessibleHelp": "Applies: Next launch."
       }
     },
@@ -16959,8 +17001,8 @@
         "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.token"
       },
       "presentation": {
-        "label": "Sidecar access token",
-        "help": "Credential used to authenticate with the local sidecar.",
+        "label": "Local ingest credential",
+        "help": "Launcher-managed credential for Battle Bridge, or a legacy Sidecar token.",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.token",
@@ -16971,8 +17013,64 @@
         ],
         "editorWidth": "wide",
         "applyTiming": "Next launch",
-        "accessibleName": "Sidecar access token",
-        "accessibleHelp": "Credential used to authenticate with the local sidecar. Applies: Next launch."
+        "accessibleName": "Local ingest credential",
+        "accessibleHelp": "Launcher-managed credential for Battle Bridge, or a legacy Sidecar token. Applies: Next launch."
+      }
+    },
+    {
+      "path": "sidecar.sync.transport",
+      "title": "Transport",
+      "description": "Configure transport.",
+      "category": "sidecar",
+      "control": "scalar",
+      "valueType": {
+        "kind": "enum",
+        "values": [
+          "legacy_http",
+          "named_pipe"
+        ]
+      },
+      "default": "legacy_http",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "apply": "next-session",
+      "sensitivity": "public",
+      "stability": "stable",
+      "sourceSupport": [
+        "guffawaffle"
+      ],
+      "aliases": [],
+      "provenance": {
+        "runtimePath": "sidecar.sync.transport",
+        "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.transport"
+      },
+      "presentation": {
+        "label": "Local transport",
+        "help": "Uses authenticated Windows named pipes for Battle Bridge, or legacy HTTP for older Sidecar installations.",
+        "group": "Local sidecar",
+        "searchTerms": [
+          "sidecar.sync.transport",
+          "Transport",
+          "Configure transport.",
+          "sidecar",
+          "Local sidecar"
+        ],
+        "enumOptions": [
+          {
+            "value": "legacy_http",
+            "label": "Legacy HTTP"
+          },
+          {
+            "value": "named_pipe",
+            "label": "Battle Bridge named pipe"
+          }
+        ],
+        "editorWidth": "standard",
+        "applyTiming": "Next launch",
+        "accessibleName": "Local transport",
+        "accessibleHelp": "Uses authenticated Windows named pipes for Battle Bridge, or legacy HTTP for older Sidecar installations. Applies: Next launch."
       }
     },
     {
@@ -17001,8 +17099,8 @@
         "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.url"
       },
       "presentation": {
-        "label": "Sidecar address",
-        "help": "Address of the STFC Mod Sidecar running on this PC.",
+        "label": "Legacy Sidecar address",
+        "help": "Used only with the legacy HTTP transport. Battle Bridge uses the launcher-managed named pipe.",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.url",
@@ -17013,8 +17111,8 @@
         ],
         "editorWidth": "wide",
         "applyTiming": "Next launch",
-        "accessibleName": "Sidecar address",
-        "accessibleHelp": "Address of the STFC Mod Sidecar running on this PC. Applies: Next launch."
+        "accessibleName": "Legacy Sidecar address",
+        "accessibleHelp": "Used only with the legacy HTTP transport. Battle Bridge uses the launcher-managed named pipe. Applies: Next launch."
       }
     },
     {
@@ -17043,8 +17141,8 @@
         "defaultSource": "mods/src/defaultconfig.h:sidecar.sync.verify_ssl"
       },
       "presentation": {
-        "label": "Verify sidecar TLS certificates",
-        "help": "Rejects sidecar connections whose TLS certificate cannot be verified.",
+        "label": "Verify legacy Sidecar TLS",
+        "help": "Used only with the legacy HTTP transport; named pipes do not use TLS.",
         "group": "Local sidecar",
         "searchTerms": [
           "sidecar.sync.verify_ssl",
@@ -17055,8 +17153,8 @@
         ],
         "editorWidth": "compact",
         "applyTiming": "Next launch",
-        "accessibleName": "Verify sidecar TLS certificates",
-        "accessibleHelp": "Rejects sidecar connections whose TLS certificate cannot be verified. Applies: Next launch."
+        "accessibleName": "Verify legacy Sidecar TLS",
+        "accessibleHelp": "Used only with the legacy HTTP transport; named pipes do not use TLS. Applies: Next launch."
       }
     },
     {

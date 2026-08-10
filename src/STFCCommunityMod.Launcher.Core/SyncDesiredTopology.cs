@@ -310,8 +310,12 @@ public static class SyncTopologyResolver
         }
 
         var definition = SyncTargetTypeCatalog.Get(target.Kind);
+        var localTransport = target.Kind == SyncTargetKind.LocalSidecar
+            ? target.LocalTransport.Resolve(SyncLocalTransport.LegacyHttp, SyncValueSource.TargetTypeDefault).Value
+            : SyncLocalTransport.LegacyHttp;
         if (target.Enabled
             && definition.RequiresUrl
+            && localTransport != SyncLocalTransport.NamedPipe
             && !TryValidateEndpoint(target.Url, definition.EndpointPolicy, out var endpointCode, out var endpointMessage))
         {
             diagnostics.Add(SyncDesiredTopology.Warning(endpointCode, target.Name, "url", endpointMessage));
@@ -324,6 +328,19 @@ public static class SyncTopologyResolver
                 target.Name,
                 "token",
                 "This target requires a configured token."));
+        }
+
+        if (target.Enabled
+            && target.Kind == SyncTargetKind.LocalSidecar
+            && localTransport == SyncLocalTransport.NamedPipe
+            && (!target.LocalPipeName.IsExplicit
+                || !BattleLocalIpcProtocol.IsPipeNameValid(target.LocalPipeName.Value)))
+        {
+            diagnostics.Add(SyncDesiredTopology.Error(
+                "SYNC_LOCAL_PIPE_INVALID",
+                target.Name,
+                "pipe_name",
+                "Battle Bridge named-pipe delivery requires a launcher-managed safe pipe name."));
         }
 
         foreach (var (kind, value) in target.DataOverrides)
@@ -367,7 +384,7 @@ public static class SyncTopologyResolver
 
         var verifySsl = ResolveVerifySsl(target, definition, globals).Value;
         var unsafeTls = ResolveUnsafeTls(target, definition, globals).Value;
-        if (!verifySsl && !unsafeTls)
+        if (localTransport != SyncLocalTransport.NamedPipe && !verifySsl && !unsafeTls)
         {
             diagnostics.Add(SyncDesiredTopology.Error(
                 "SYNC_UNSAFE_TLS_PAIR_REQUIRED",
@@ -401,6 +418,12 @@ public static class SyncTopologyResolver
                 : null,
             definition.SupportsFleetRuntimeMode
                 ? target.FleetRuntimeMode.Resolve("normal", SyncValueSource.TargetTypeDefault)
+                : null,
+            target.Kind == SyncTargetKind.LocalSidecar
+                ? target.LocalTransport.Resolve(SyncLocalTransport.LegacyHttp, SyncValueSource.TargetTypeDefault)
+                : null,
+            target.Kind == SyncTargetKind.LocalSidecar
+                ? target.LocalPipeName.Resolve(string.Empty, SyncValueSource.TargetTypeDefault)
                 : null);
     }
 

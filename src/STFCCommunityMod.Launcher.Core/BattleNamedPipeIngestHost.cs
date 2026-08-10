@@ -17,13 +17,16 @@ public static class BattleLocalIpcProtocol
     public const string IngestOperation = "ingest";
     public const int MaximumHeaderBytes = 4096;
 
+    internal static bool IsPipeNameValid(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= 128
+        && value.All(character =>
+            char.IsAsciiLetterOrDigit(character)
+            || character is '.' or '-' or '_');
+
     internal static string RequirePipeName(string value, string parameterName = "value")
     {
-        if (string.IsNullOrWhiteSpace(value)
-            || value.Length > 128
-            || value.Any(character =>
-                !char.IsAsciiLetterOrDigit(character)
-                && character is not ('.' or '-' or '_')))
+        if (!IsPipeNameValid(value))
         {
             throw new ArgumentException("Battle local IPC pipe name is invalid.", parameterName);
         }

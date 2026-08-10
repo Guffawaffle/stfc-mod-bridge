@@ -75,6 +75,8 @@ public sealed class LauncherSettingsProjectionQuery
         var matchingSettings = orderedSettings.Where(
             setting =>
                 (isSearchActive || placementsByPath[setting.Path].Section == section)
+                && (!isSearchActive
+                    || placementsByPath[setting.Path].Section != LauncherSettingsSection.DataSync)
                 && (!isSearchActive || Matches(setting, placementsByPath[setting.Path], normalizedSearch)));
 
         var projection = new List<LauncherSettingsProjectionItem>();
