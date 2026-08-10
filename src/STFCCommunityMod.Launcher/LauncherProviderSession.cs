@@ -6,6 +6,7 @@ namespace STFCCommunityMod.Launcher;
 internal sealed class LauncherProviderSession : IDisposable
 {
     private readonly LauncherRuntimeCompositionSlot runtimeComposition;
+    private readonly Func<LauncherBattlePreferences> battlePreferencesProvider;
 
     public LauncherProviderSession(
         LauncherProviderSelectionResolution resolution,
@@ -14,12 +15,15 @@ internal sealed class LauncherProviderSession : IDisposable
         LauncherProviderReleaseChannel releaseChannel,
         LauncherStartupComposition startupComposition,
         ReviewedRuntimeActivation? reviewedRuntimeActivation,
+        Func<LauncherBattlePreferences> battlePreferencesProvider,
         MainWindowViewModel viewModel,
         Func<LauncherStartupComposition, SettingsViewModel> settingsFactory)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         ArgumentNullException.ThrowIfNull(startupComposition);
+        this.battlePreferencesProvider = battlePreferencesProvider
+            ?? throw new ArgumentNullException(nameof(battlePreferencesProvider));
         ArgumentNullException.ThrowIfNull(viewModel);
         ArgumentNullException.ThrowIfNull(settingsFactory);
         Resolution = resolution;
@@ -32,7 +36,8 @@ internal sealed class LauncherProviderSession : IDisposable
             startupComposition,
             reviewedRuntimeActivation?.EvidenceSourceSha256);
         viewModel.ConfigureFeatureRemediation(
-            () => runtimeComposition.Current.ActivationPlan);
+            () => runtimeComposition.Current.ActivationPlan,
+            GetBattleFeatures);
         ApplicationComposition = new(
             new(viewModel, () => settingsFactory(runtimeComposition.Current)),
             () => runtimeComposition.Current.ActivationPlan);
@@ -50,6 +55,8 @@ internal sealed class LauncherProviderSession : IDisposable
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
 
+    public LauncherBattleFeatureSnapshot BattleFeatures => GetBattleFeatures();
+
     public MainWindowViewModel ViewModel => ApplicationComposition.SharedServices.Foundation;
 
     public LauncherProviderAtomicSwitchCoordinator SwitchCoordinator =>
@@ -59,10 +66,19 @@ internal sealed class LauncherProviderSession : IDisposable
     public LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator =>
         ViewModel.FeatureRemediationCoordinator;
 
-    public bool RefreshRuntimeActivation(ReviewedRuntimeActivation? activation) =>
-        runtimeComposition.Refresh(activation);
+    public bool RefreshRuntimeComposition(ReviewedRuntimeActivation? activation) =>
+        runtimeComposition.Refresh(activation, battlePreferencesProvider());
+
+    public bool RefreshBattlePreferences() =>
+        runtimeComposition.RefreshBattlePreferences(battlePreferencesProvider());
 
     public void Dispose() => ApplicationComposition.Dispose();
+
+    private LauncherBattleFeatureSnapshot GetBattleFeatures()
+    {
+        RefreshBattlePreferences();
+        return runtimeComposition.Current.BattleFeatures;
+    }
 }
 
 internal sealed class LauncherRuntimeCompositionSlot(
@@ -72,18 +88,47 @@ internal sealed class LauncherRuntimeCompositionSlot(
     string? initialEvidenceSha256)
 {
     private string? evidenceSha256 = initialEvidenceSha256;
+    private LauncherBattlePreferences battlePreferences = new(
+        initial.BattleFeatures.BattleCollection.Preference,
+        initial.BattleFeatures.FleetCollection.Preference);
 
     public LauncherStartupComposition Current { get; private set; } = initial;
 
-    public bool Refresh(ReviewedRuntimeActivation? activation)
+    public bool Refresh(
+        ReviewedRuntimeActivation? activation,
+        LauncherBattlePreferences nextBattlePreferences)
     {
+        ArgumentNullException.ThrowIfNull(nextBattlePreferences);
         var nextEvidence = activation?.EvidenceSourceSha256;
-        if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase)
+            && battlePreferences == nextBattlePreferences)
         {
             return false;
         }
-        Current = LauncherStartupComposition.Create(provider, releaseChannel, activation);
+        Current = LauncherStartupComposition.Create(
+            provider,
+            releaseChannel,
+            activation,
+            nextBattlePreferences);
         evidenceSha256 = nextEvidence;
+        battlePreferences = nextBattlePreferences;
+        return true;
+    }
+
+    public bool RefreshBattlePreferences(LauncherBattlePreferences nextBattlePreferences)
+    {
+        ArgumentNullException.ThrowIfNull(nextBattlePreferences);
+        if (battlePreferences == nextBattlePreferences)
+        {
+            return false;
+        }
+        Current = Current with
+        {
+            BattleFeatures = LauncherBattleFeatureComposer.Compose(
+                Current.ActivationPlan,
+                nextBattlePreferences),
+        };
+        battlePreferences = nextBattlePreferences;
         return true;
     }
 }

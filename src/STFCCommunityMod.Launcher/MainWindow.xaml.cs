@@ -158,10 +158,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
             providerSelectionStore);
+        var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
             provider,
             releaseChannel,
-            viewModel.ReviewedRuntimeActivation);
+            viewModel.ReviewedRuntimeActivation,
+            battlePreferences);
         return new(
             resolution,
             shellAccess,
@@ -169,6 +171,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             releaseChannel,
             composition,
             viewModel.ReviewedRuntimeActivation,
+            () => uiPreferencesStore.Load().EffectiveBattlePreferences,
             viewModel,
             runtimeComposition => CreateSettingsViewModel(
                 provider,
@@ -219,7 +222,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (!ProviderSession.RefreshRuntimeActivation(viewModel.ReviewedRuntimeActivation))
+        if (!ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation))
         {
             return;
         }
