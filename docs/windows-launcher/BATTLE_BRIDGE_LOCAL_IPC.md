@@ -125,6 +125,21 @@ release workflow now carries a standalone and medium-integrity MSIX package
 qualification gate before attestation; its first real signed execution remains
 required evidence before composition.
 
+Production caller discovery now has a separate dormant exact-receipt seam. It
+enumerates only currently running `prime` processes, accepts exactly one process
+whose executable path is the selected game installation's exact `prime.exe`, and
+binds its positive PID, UTC start time, normalized path, and the injected
+reviewed-runtime evidence SHA-256 into `BattleNamedPipeAuthorizedProcess`. The
+handshake authorizer reopens that PID and rechecks start time and path, preventing
+PID reuse from inheriting the receipt. No provider name participates.
+
+Zero exact matches is `absent`; multiple exact matches is `ambiguous`; any
+uninspectable process, duplicate PID, invalid timestamp/path, capture failure, or
+more than 64 observations is bounded `unavailable`. An invalid evidence digest
+rejects before process capture. Construction and discovery start no process,
+listener, watcher, timer, or background task and create no filesystem state. The
+seam is not registered with the shell or runtime coordinator yet.
+
 The pipe host rejects the older #62 capability-plus-demand activation object.
 Its only accepted activation is derived from `LauncherBattleFeatureSnapshot`,
 which already combines normalized runtime capability, checked-in product
