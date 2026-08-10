@@ -112,8 +112,11 @@ internal sealed class BattleLifecycleRuntimeProvisioningFactory :
         if (credentialLoad.State != BattleCredentialLoadState.Readable
             || credentialLease is null
             || credentialLease.Metadata.Generation != credentialBinding.Generation
-            || credentialLease.Metadata.ProtectedByteCount != credentialBinding.ProtectedByteCount
-            || credentialLease.Metadata.ProtectedSha256 != credentialBinding.ProtectedSha256)
+            // Decode derives these values from the same protected byte array it
+            // decrypted, so this binds the usable plaintext to the marker's
+            // exact on-disk protected identity without a path-reopen TOCTOU.
+            || credentialLease.Metadata.ProtectedByteCount != credentialIdentity.ByteCount
+            || credentialLease.Metadata.ProtectedSha256 != credentialIdentity.Sha256)
         {
             credentialLease?.Dispose();
             throw Invalid();

@@ -138,7 +138,14 @@ public sealed class BattleLifecycleRuntimeProvisioningTests
         Assert.IsFalse(extra.Credential.IsZeroedForTest());
 
         await using var changed = await ProvisioningFixture.CreateAsync();
-        File.WriteAllBytes(changed.CredentialPath, [1, 2, 3]);
+        using var replacement = BattleIngestCredentialCodec.CreateCandidate(
+            changed.Credential.Metadata.PipeName,
+            0,
+            Started,
+            Started,
+            BattleCredentialRotationReason.Initial,
+            new PassThroughCredentialProtector());
+        File.WriteAllBytes(changed.CredentialPath, replacement.ProtectedBytes.ToArray());
         Assert.ThrowsException<InvalidDataException>(() => changed.CreateFactory());
         Assert.AreEqual(0, changed.SinkLifetime.DisposeCount);
         Assert.IsFalse(changed.Credential.IsZeroedForTest());
