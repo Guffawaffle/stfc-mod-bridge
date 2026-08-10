@@ -417,6 +417,177 @@ public sealed class BattleLifecycleActivationPreparationTests
         Assert.AreEqual("foreign", await File.ReadAllTextAsync(operationPath));
     }
 
+    [TestMethod]
+    public async Task VerifiedManagedBackupAdvancesExactlyAndRemainsAfterPreCommitRollback()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
+        Directory.CreateDirectory(gameDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(gameDirectory, "prime.exe"), [0x4d, 0x5a]);
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var source = Encoding.UTF8.GetBytes("# baseline\n");
+        await File.WriteAllBytesAsync(configurationPath, source);
+        var preparation = CreatePreparation(configurationPath, source);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new PassThroughMarkerProtector());
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        var persisted = await BattleLifecycleActivationPreparer.PersistAsync(
+            operationLease,
+            journal,
+            new(stateRoot),
+            preparation);
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            stateRoot,
+            new PassThroughBackupProtector(),
+            new NoOpStorageSecurity(),
+            new FixedTimeProvider(Now));
+        var coordinator = new BattleLifecycleConfigurationBackupCoordinator(
+            stateRoot,
+            backupStore,
+            new FixedTimeProvider(Now.AddSeconds(1)));
+        var installation = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: false,
+            InstalledVersion: "9.0.0",
+            InstalledProviderId: "provider-under-test",
+            InstalledReleaseChannelId: "stable",
+            InstalledRuntimeDistributionId: "windows-x64",
+            InstalledSha256: new string('a', 64));
+
+        var result = await coordinator.PrepareVerifiedBackupAsync(
+            operationLease,
+            journal,
+            installation,
+            InstalledState(gameDirectory),
+            new(configurationPath, source));
+
+        Assert.AreEqual(BattleLifecycleBackupState.Succeeded, result.State);
+        Assert.AreEqual(BattleLifecycleStage.BackupVerified, journal.Inspect().Marker!.Stage);
+        Assert.AreEqual(result.Receipt!.BackupId, result.Marker!.Configuration!.BackupId);
+        CollectionAssert.AreEqual(
+            source,
+            backupStore.Read(gameDirectory, installation.InstalledProviderId!, result.Receipt.BackupId));
+        CollectionAssert.AreEqual(source, await File.ReadAllBytesAsync(configurationPath));
+        Assert.IsFalse(File.Exists(Path.Combine(stateRoot, "battle", BattleIngestCredentialCodec.FileName)));
+
+        await persisted.DisposeAsync();
+        Assert.AreEqual(
+            BattleLifecyclePreCommitRecoveryState.Recovered,
+            (await journal.RollbackPreparedAsync(operationLease, configurationPath)).State);
+        CollectionAssert.AreEqual(
+            source,
+            backupStore.Read(gameDirectory, installation.InstalledProviderId!, result.Receipt.BackupId));
+    }
+
+    [TestMethod]
+    public async Task BackupAuthorityFailureDoesNotAdvanceOrCreateBackup()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
+        Directory.CreateDirectory(gameDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(gameDirectory, "prime.exe"), [0x4d, 0x5a]);
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var source = Encoding.UTF8.GetBytes("# baseline\n");
+        await File.WriteAllBytesAsync(configurationPath, source);
+        var preparation = CreatePreparation(configurationPath, source);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new PassThroughMarkerProtector());
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        await using var persisted = await BattleLifecycleActivationPreparer.PersistAsync(
+            operationLease,
+            journal,
+            new(stateRoot),
+            preparation);
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            stateRoot,
+            new PassThroughBackupProtector(),
+            new NoOpStorageSecurity(),
+            new FixedTimeProvider(Now));
+        var coordinator = new BattleLifecycleConfigurationBackupCoordinator(stateRoot, backupStore);
+        var running = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: true,
+            InstalledVersion: "9.0.0",
+            InstalledProviderId: "provider-under-test",
+            InstalledReleaseChannelId: "stable",
+            InstalledRuntimeDistributionId: "windows-x64",
+            InstalledSha256: new string('a', 64));
+
+        var result = await coordinator.PrepareVerifiedBackupAsync(
+            operationLease,
+            journal,
+            running,
+            InstalledState(gameDirectory),
+            new(configurationPath, source));
+
+        Assert.AreEqual(BattleLifecycleBackupState.Blocked, result.State);
+        Assert.AreEqual(BattleLifecycleStage.Prepared, journal.Inspect().Marker!.Stage);
+        Assert.AreEqual(0, backupStore.List(gameDirectory, running.InstalledProviderId!).Count);
+    }
+
+    [TestMethod]
+    public async Task BackupFailureLeavesQuiescedStateAndExactRetryCanResume()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var gameDirectory = Path.Combine(temporaryDirectory.Path, "game");
+        Directory.CreateDirectory(gameDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(gameDirectory, "prime.exe"), [0x4d, 0x5a]);
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var source = Encoding.UTF8.GetBytes("# baseline\n");
+        await File.WriteAllBytesAsync(configurationPath, source);
+        var preparation = CreatePreparation(configurationPath, source);
+        var journal = new BattleLifecycleJournalStore(stateRoot, new PassThroughMarkerProtector());
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+        await using var persisted = await BattleLifecycleActivationPreparer.PersistAsync(
+            operationLease,
+            journal,
+            new(stateRoot),
+            preparation);
+        var protector = new ToggleBackupProtector { Fail = true };
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            stateRoot,
+            protector,
+            new NoOpStorageSecurity(),
+            new FixedTimeProvider(Now));
+        var coordinator = new BattleLifecycleConfigurationBackupCoordinator(
+            stateRoot,
+            backupStore,
+            new FixedTimeProvider(Now.AddSeconds(1)));
+        var installation = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: false,
+            InstalledVersion: "9.0.0",
+            InstalledProviderId: "provider-under-test",
+            InstalledReleaseChannelId: "stable",
+            InstalledRuntimeDistributionId: "windows-x64",
+            InstalledSha256: new string('a', 64));
+
+        var failed = await coordinator.PrepareVerifiedBackupAsync(
+            operationLease,
+            journal,
+            installation,
+            InstalledState(gameDirectory),
+            new(configurationPath, source));
+        Assert.AreEqual(BattleLifecycleBackupState.Blocked, failed.State);
+        Assert.AreEqual(BattleLifecycleStage.Quiesced, journal.Inspect().Marker!.Stage);
+        protector.Fail = false;
+
+        var resumed = await coordinator.PrepareVerifiedBackupAsync(
+            operationLease,
+            journal,
+            installation,
+            InstalledState(gameDirectory),
+            new(configurationPath, source));
+
+        Assert.AreEqual(BattleLifecycleBackupState.Succeeded, resumed.State);
+        Assert.AreEqual(BattleLifecycleStage.BackupVerified, journal.Inspect().Marker!.Stage);
+        Assert.AreEqual(1, backupStore.List(gameDirectory, installation.InstalledProviderId!).Count);
+    }
+
     private static LauncherBattleFeatureSnapshot EligibleSnapshot() =>
         LauncherBattleFeatureComposer.Compose(Plan(
             LauncherCapabilityIds.SidecarIngestV1,
@@ -446,6 +617,19 @@ public sealed class BattleLifecycleActivationPreparationTests
             new PassThroughCredentialProtector(),
             new FixedTimeProvider(Now));
 
+    private static ModInstalledArtifactState InstalledState(string gameDirectory) => new(
+        SchemaVersion: 1,
+        GameDirectory: gameDirectory,
+        FileName: "version.dll",
+        Version: "9.0.0",
+        Size: 1,
+        Sha256: new string('a', 64),
+        InstalledAtUtc: Now,
+        PreviousArtifactBackupPath: null,
+        ProviderId: "provider-under-test",
+        ReleaseChannelId: "stable",
+        RuntimeDistributionId: "windows-x64");
+
     private static IEnumerable<string> CandidatePaths(BattleLifecycleMarker marker) =>
         marker.Resources
             .Where(resource => resource.CandidateRelativePath is not null)
@@ -470,6 +654,33 @@ public sealed class BattleLifecycleActivationPreparationTests
         public byte[] Protect(byte[] plaintext) => plaintext.ToArray();
 
         public byte[] Unprotect(byte[] protectedBytes) => protectedBytes.ToArray();
+    }
+
+    private sealed class PassThroughBackupProtector : IConfigurationBackupProtector
+    {
+        public string SchemeId => "test-pass-through";
+
+        public byte[] Protect(byte[] contents) => contents.ToArray();
+
+        public byte[] Unprotect(byte[] protectedContents) => protectedContents.ToArray();
+    }
+
+    private sealed class ToggleBackupProtector : IConfigurationBackupProtector
+    {
+        public bool Fail { get; set; }
+
+        public string SchemeId => "test-toggle";
+
+        public byte[] Protect(byte[] contents) => Fail
+            ? throw new CryptographicException("injected")
+            : contents.ToArray();
+
+        public byte[] Unprotect(byte[] protectedContents) => protectedContents.ToArray();
+    }
+
+    private sealed class NoOpStorageSecurity : IConfigurationBackupStorageSecurity
+    {
+        public void SecureDirectory(string directory) => Directory.CreateDirectory(directory);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset value) : TimeProvider
