@@ -224,11 +224,38 @@ already be present in the prepared marker before the final path is created. The
 transition to a flushed canonical clean record through that same handle before
 release.
 
-This foundation is still not the activation transaction. It does not promote a
-credential, prepare or commit TOML, save feature preference, create or open the
-Battle database, register runtime composition, or start the pipe. Those steps
-remain dormant until the remaining marker-owned transaction stages and signed
-package proof are composed.
+The next dormant seam now prepares the first exact activation candidates. It
+accepts only typed, active `battle.collection` and/or `fleet.collection`
+decisions and derives the two category flags independently. The generated TOML
+uses only `named_pipe`, the reviewed canonical pipe name, and the new local
+credential; it clears any legacy local URL and preserves unrelated TOML. If a
+local target already exists, preparation requires a typed review receipt bound
+to the exact source SHA-256, requested feature set, and pipe name. A bare boolean
+or provider name cannot authorize the change. This first-activation seam rejects
+adding a category to an already enabled shared target until that path can carry
+the existing credential receipt instead of silently rotating shared authority.
+
+The prepared marker freezes the complete credential and configuration
+candidate inventory before any resource is written. The runtime lock and the
+two candidates then appear only under that marker's exact ownership while the
+root launcher operation lease is retained. The marker contains credential and
+configuration hashes, sizes, and a hash-only mutation receipt—not the plaintext
+credential. Preparation neither edits the authoritative TOML nor creates the
+authoritative credential, database, or pipe listener.
+
+Pre-commit rollback is equally narrow. It requires the exact source TOML bytes,
+an inactive released runtime lock, and an inventory containing only the
+marker-owned candidate paths. It opens those exact paths without following
+reparse points, removes the marker last, preserves every foreign or ambiguous
+entry, and returns bounded blocked/unavailable states instead of guessing. Torn
+candidate bytes can be removed because their final paths were already frozen in
+the first durable marker. Repeating rollback after success is a no-op.
+
+This is still not the activation commit. It does not promote the credential,
+commit TOML, save feature preference, create or open the Battle database,
+register runtime composition, or start the pipe. Those steps remain dormant
+until the remaining marker-owned transaction stages and signed package proof
+are composed.
 
 ## Current composition
 

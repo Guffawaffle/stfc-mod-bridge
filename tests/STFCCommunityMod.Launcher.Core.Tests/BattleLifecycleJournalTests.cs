@@ -309,6 +309,55 @@ public sealed class BattleLifecycleJournalTests
     }
 
     [TestMethod]
+    public void PreparedInventoryCannotBeIntroducedByASuccessor()
+    {
+        var prepared = PreparedMarker();
+        var quiesced = prepared with
+        {
+            Stage = BattleLifecycleStage.Quiesced,
+            UpdatedAtUtc = Started.AddSeconds(1),
+        };
+
+        Assert.ThrowsException<InvalidDataException>(() =>
+            BattleLifecycleMarkerCodec.ValidateSuccessor(
+                prepared,
+                quiesced with
+                {
+                    Resources =
+                    [
+                        .. quiesced.Resources,
+                        new(
+                            "ingest-credential",
+                            $"battle/{BattleIngestCredentialCodec.FileName}",
+                            null,
+                            $"battle/recovery/{prepared.OperationId}/candidate/credential.next",
+                            new(16, new string('1', 64))),
+                    ],
+                }));
+        Assert.ThrowsException<InvalidDataException>(() =>
+            BattleLifecycleMarkerCodec.ValidateSuccessor(
+                prepared,
+                quiesced with { Credential = new(1, 16, new string('1', 64)) }));
+        Assert.ThrowsException<InvalidDataException>(() =>
+            BattleLifecycleMarkerCodec.ValidateSuccessor(
+                prepared,
+                quiesced with
+                {
+                    Configuration = new(
+                        new string('2', 64),
+                        new string('5', 64),
+                        16,
+                        new string('2', 64),
+                        $"battle/recovery/{prepared.OperationId}/candidate/config.next",
+                        16,
+                        new string('3', 64),
+                        new string('4', 64),
+                        null,
+                        null),
+                }));
+    }
+
+    [TestMethod]
     public async Task EveryAcceptedStageIsExactAndMonotonic()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -316,25 +365,53 @@ public sealed class BattleLifecycleJournalTests
         var store = new BattleLifecycleJournalStore(stateRoot, new RecordingProtector());
         await using var lease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
         Assert.IsNotNull(lease);
+        var credentialBytes = Enumerable.Repeat((byte)0x31, 512).ToArray();
+        var credentialHash = Convert.ToHexString(SHA256.HashData(credentialBytes)).ToLowerInvariant();
+        var configurationBytes = Enumerable.Repeat((byte)0x41, 1152).ToArray();
+        var configurationHash = Convert.ToHexString(SHA256.HashData(configurationBytes)).ToLowerInvariant();
         var marker = PreparedMarker();
-        await store.CreatePreparedAsync(lease, marker);
-
-        var credentialHash = new string('3', 64);
+        var credentialCandidatePath =
+            $"battle/recovery/{marker.OperationId}/candidate/ingest-credential-v1.dpapi.next";
+        var configurationCandidatePath =
+            $"battle/recovery/{marker.OperationId}/candidate/community_patch_settings.toml.next";
         marker = marker with
         {
-            Stage = BattleLifecycleStage.Quiesced,
-            UpdatedAtUtc = Started.AddSeconds(1),
             Resources =
             [
                 new(
                     "ingest-credential",
                     $"battle/{BattleIngestCredentialCodec.FileName}",
                     null,
-                    $"battle/recovery/{marker.OperationId}/candidate/ingest-credential-v1.dpapi.next",
+                    credentialCandidatePath,
                     new(512, credentialHash)),
                 marker.Resources[0],
             ],
             Credential = new(1, 512, credentialHash),
+            Configuration = new(
+                new string('4', 64),
+                new string('5', 64),
+                1024,
+                new string('4', 64),
+                configurationCandidatePath,
+                1152,
+                configurationHash,
+                new string('6', 64),
+                null,
+                null),
+        };
+        await store.CreatePreparedAsync(lease, marker);
+        await store.WritePreparedCandidatesAsync(
+            lease,
+            new Dictionary<string, ReadOnlyMemory<byte>>(StringComparer.Ordinal)
+            {
+                [credentialCandidatePath] = credentialBytes,
+                [configurationCandidatePath] = configurationBytes,
+            });
+
+        marker = marker with
+        {
+            Stage = BattleLifecycleStage.Quiesced,
+            UpdatedAtUtc = Started.AddSeconds(1),
         };
         await store.AdvanceAsync(lease, marker);
 
@@ -342,13 +419,11 @@ public sealed class BattleLifecycleJournalTests
         {
             Stage = BattleLifecycleStage.BackupVerified,
             UpdatedAtUtc = Started.AddSeconds(2),
-            Configuration = new(
-                new string('4', 64),
-                1024,
-                new string('4', 64),
-                "battle-config-backup-v1",
-                new string('5', 64),
-                new string('6', 64)),
+            Configuration = marker.Configuration! with
+            {
+                BackupId = "battle-config-backup-v1",
+                BackupContentSha256 = new string('7', 64),
+            },
         };
         await store.AdvanceAsync(lease, marker);
 

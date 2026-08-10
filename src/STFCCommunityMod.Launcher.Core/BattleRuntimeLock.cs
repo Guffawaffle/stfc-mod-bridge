@@ -318,7 +318,9 @@ internal sealed class BattleRuntimeLockStore
             throw new InvalidOperationException("A new Battle runtime lock must identify the current process.");
         }
         var inspection = journal.Inspect();
-        if (inspection.State != BattleLifecycleJournalState.Readable
+        if (inspection.State is not (
+                BattleLifecycleJournalState.Readable
+                or BattleLifecycleJournalState.RecoverableResidue)
             || inspection.Marker is not { Stage: BattleLifecycleStage.Prepared } marker
             || marker.OwnerId != record.OwnerId)
         {
