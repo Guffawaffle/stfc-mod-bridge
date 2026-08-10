@@ -1259,8 +1259,8 @@ internal sealed class BattleLifecycleJournalStore
         var runtimeIdentity = expectedMarker.Resources.Single(resource => resource.Role == "runtime-lock").After
             ?? throw new InvalidDataException("The Battle runtime lock has no committed identity.");
 
-        var battleHandle = OpenDirectoryNoFollow(battleRoot);
-        var recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
+        IDisposable? battleHandle = OpenDirectoryNoFollow(battleRoot);
+        IDisposable? recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
         IDisposable? operationHandle = null;
         IDisposable? candidateHandle = null;
         var candidateStreams = new List<FileStream>();
@@ -1358,7 +1358,9 @@ internal sealed class BattleLifecycleJournalStore
             operationHandle?.Dispose();
             operationHandle = null;
             recoveryHandle.Dispose();
+            recoveryHandle = null;
             battleHandle.Dispose();
+            battleHandle = null;
 
             DeleteEmptyOwnedDirectory(candidateDirectory);
             DeleteEmptyOwnedDirectory(operationDirectory);
@@ -1386,8 +1388,8 @@ internal sealed class BattleLifecycleJournalStore
             markerStream?.Dispose();
             candidateHandle?.Dispose();
             operationHandle?.Dispose();
-            recoveryHandle.Dispose();
-            battleHandle.Dispose();
+            recoveryHandle?.Dispose();
+            battleHandle?.Dispose();
         }
     }
 

@@ -892,8 +892,6 @@ public sealed class BattleLifecycleCommitTests
         var start = new ProcessStartInfo("dotnet")
         {
             UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
             CreateNoWindow = true,
         };
         start.ArgumentList.Add("vstest");
@@ -914,10 +912,8 @@ public sealed class BattleLifecycleCommitTests
             if (File.Exists(readyPath)) return;
             if (child.HasExited)
             {
-                var output = await child.StandardOutput.ReadToEndAsync();
-                var error = await child.StandardError.ReadToEndAsync();
                 throw new AssertFailedException(
-                    $"The Battle crash probe exited before its checkpoint ({child.ExitCode}). {output} {error}");
+                    $"The Battle crash probe exited before its checkpoint ({child.ExitCode}).");
             }
             await Task.Delay(25);
         }
