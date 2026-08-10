@@ -20,7 +20,7 @@ public sealed class LauncherOperationLock
         this.stateDirectory = Path.GetFullPath(stateDirectory);
     }
 
-    public async ValueTask<IAsyncDisposable?> TryAcquireAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<LauncherOperationLease?> TryAcquireAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(stateDirectory);
         var gate = ProcessGates.GetOrAdd(stateDirectory, static _ => new SemaphoreSlim(1, 1));
@@ -38,7 +38,7 @@ public sealed class LauncherOperationLock
                 FileShare.None,
                 1,
                 FileOptions.Asynchronous);
-            return new Lease(gate, stream);
+            return new LauncherOperationLease(stateDirectory, gate, stream);
         }
         catch (IOException)
         {
@@ -52,13 +52,128 @@ public sealed class LauncherOperationLock
         }
     }
 
-    private sealed class Lease(SemaphoreSlim gate, FileStream stream) : IAsyncDisposable
+}
+
+public sealed class LauncherOperationLease : IAsyncDisposable
+{
+    private readonly object sync = new();
+    private readonly string stateDirectory;
+    private readonly SemaphoreSlim gate;
+    private readonly FileStream stream;
+    private TaskCompletionSource? disposalCompletion;
+    private int activeOperations;
+    private bool disposalRequested;
+    private bool released;
+
+    internal LauncherOperationLease(
+        string stateDirectory,
+        SemaphoreSlim gate,
+        FileStream stream)
     {
-        public ValueTask DisposeAsync()
+        this.stateDirectory = stateDirectory;
+        this.gate = gate;
+        this.stream = stream;
+    }
+
+    internal IDisposable RetainFor(string expectedStateDirectory)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposalRequested, this);
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!string.Equals(
+                    stateDirectory,
+                    Path.GetFullPath(expectedStateDirectory),
+                    comparison))
+            {
+                throw new InvalidOperationException(
+                    "The launcher operation lease belongs to a different state root.");
+            }
+            activeOperations++;
+            return new OperationScope(this);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Task? pending = null;
+        var release = false;
+        lock (sync)
+        {
+            if (released)
+            {
+                return ValueTask.CompletedTask;
+            }
+            disposalRequested = true;
+            if (activeOperations == 0)
+            {
+                released = true;
+                release = true;
+            }
+            else
+            {
+                disposalCompletion ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                pending = disposalCompletion.Task;
+            }
+        }
+        if (release)
+        {
+            Release();
+        }
+        return pending is null ? ValueTask.CompletedTask : new(pending);
+    }
+
+    private void ReleaseOperation()
+    {
+        TaskCompletionSource? completion = null;
+        var release = false;
+        lock (sync)
+        {
+            activeOperations--;
+            if (activeOperations < 0)
+            {
+                throw new InvalidOperationException("The launcher operation lease scope was released twice.");
+            }
+            if (activeOperations == 0 && disposalRequested && !released)
+            {
+                released = true;
+                release = true;
+                completion = disposalCompletion;
+            }
+        }
+        if (release)
+        {
+            try
+            {
+                Release();
+                completion?.TrySetResult();
+            }
+            catch (Exception exception)
+            {
+                completion?.TrySetException(exception);
+                throw;
+            }
+        }
+    }
+
+    private void Release()
+    {
+        try
         {
             stream.Dispose();
-            gate.Release();
-            return ValueTask.CompletedTask;
         }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private sealed class OperationScope(LauncherOperationLease owner) : IDisposable
+    {
+        private LauncherOperationLease? owner = owner;
+
+        public void Dispose() => Interlocked.Exchange(ref owner, null)?.ReleaseOperation();
     }
 }

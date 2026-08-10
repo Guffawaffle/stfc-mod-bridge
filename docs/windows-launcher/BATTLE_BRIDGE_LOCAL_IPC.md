@@ -193,6 +193,43 @@ ACL, bind its generation and protected-byte hash to the transaction, and hand
 the resulting lease to composition. Until that owner lands, this code remains
 non-operational.
 
+## Marker-first lifecycle foundation
+
+The dormant Core now also has the first bounded lifecycle-journal seam. A typed
+root `LauncherOperationLease` can be retained across asynchronous Battle work,
+so disposal of the outer operation waits for its exact retained scopes rather
+than releasing the process-wide mutation lock early.
+
+The first `active-operation-v1.dpapi` marker is written directly to its final
+path with `CreateNew`, write-through, flush, and readback verification before a
+runtime lock, credential, database, or TOML mutation can exist. It uses a
+closed canonical schema, DPAPI `CurrentUser`, exact lifecycle entropy, and a
+64-KiB protected-byte limit. The marker binds the operation owner, affected
+features, before/candidate/after file identities, credential generation,
+configuration source revision and hashes, and the derived feature transition.
+Unknown, duplicate, noncanonical, unsafe-path, reordered, or incoherent values
+fail closed.
+
+Later stages are exact monotonic successors under the operation recovery
+directory. Only one validated successor may exist, and recovery either promotes
+that exact successor or removes an exact empty transaction-owned residue. Torn,
+tampered, reparse, ambiguous, foreign, or structurally unknown state is
+preserved as recovery-failed; recovery never guesses or recursively deletes a
+directory.
+
+The initial `battle/runtime.lock` bootstrap is likewise marker-bound. Its exact
+canonical running bytes, current process ID, owner ID, length, and SHA-256 must
+already be present in the prepared marker before the final path is created. The
+4-KiB record is then held with `FileShare.None` for the runtime lifetime and can
+transition to a flushed canonical clean record through that same handle before
+release.
+
+This foundation is still not the activation transaction. It does not promote a
+credential, prepare or commit TOML, save feature preference, create or open the
+Battle database, register runtime composition, or start the pipe. Those steps
+remain dormant until the remaining marker-owned transaction stages and signed
+package proof are composed.
+
 ## Current composition
 
 `battle.collection` and `fleet.collection` are now first-class, independent

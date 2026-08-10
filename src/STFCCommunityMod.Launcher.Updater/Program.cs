@@ -6,7 +6,7 @@ return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] args)
 {
-    IAsyncDisposable? operationLease = null;
+    LauncherOperationLease? operationLease = null;
     try
     {
         if (args.Length == 6
@@ -179,7 +179,7 @@ static async Task<int> RunRecoveryAsync(
     string expectedJournalSha256,
     int parentProcessId)
 {
-    IAsyncDisposable? recoveryLease = null;
+    LauncherOperationLease? recoveryLease = null;
     try
     {
         try

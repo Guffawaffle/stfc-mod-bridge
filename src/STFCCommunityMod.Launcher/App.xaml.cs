@@ -8,7 +8,7 @@ namespace STFCCommunityMod.Launcher;
 
 public partial class App : Application
 {
-    private IAsyncDisposable? recoveryHandoffLease;
+    private LauncherOperationLease? recoveryHandoffLease;
 
     protected override void OnStartup(StartupEventArgs e)
     {
