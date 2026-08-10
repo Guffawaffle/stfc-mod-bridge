@@ -1203,6 +1203,7 @@ internal static class CandidateFileNative
     private const uint GenericWrite = 0x40000000;
     private const uint Delete = 0x00010000;
     private const uint WriteDac = 0x00040000;
+    private const uint WriteOwner = 0x00080000;
     private const uint FileFlagOverlapped = 0x40000000;
     private const uint FileFlagBackupSemantics = 0x02000000;
     private const uint FileFlagOpenReparsePoint = 0x00200000;
@@ -1242,7 +1243,7 @@ internal static class CandidateFileNative
     {
         var handle = CreateFile(
             path,
-            GenericRead | GenericWrite | Delete | WriteDac,
+            GenericRead | GenericWrite | Delete | WriteDac | WriteOwner,
             FileShare.Read,
             IntPtr.Zero,
             FileMode.CreateNew,

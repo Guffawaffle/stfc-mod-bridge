@@ -32,6 +32,7 @@ internal sealed class WindowsCurrentUserBattleCredentialStorageSecurity
         var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         var security = new FileSecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.SetOwner(currentUser);
         security.AddAccessRule(new(
             currentUser,
             FileSystemRights.FullControl,
