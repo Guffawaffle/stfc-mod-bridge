@@ -120,6 +120,94 @@ public sealed class LauncherUiPreferencesStoreTests
     }
 
     [TestMethod]
+    public void BattleCompareAndSwapPreservesEveryUnrelatedPreference()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var store = new JsonLauncherUiPreferencesStore(stateDirectory);
+        store.Save(new(
+            SettingsSearchVisible: true,
+            ColorMode: LauncherColorMode.Dark,
+            LaunchTarget: LauncherLaunchTarget.PrimeExecutable,
+            ProviderSwitchReviewAcknowledged: true,
+            BattlePreferences: LauncherBattlePreferences.Default));
+
+        var saved = store.TrySaveBattlePreferences(
+            LauncherBattlePreferences.Default,
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset));
+        var result = store.Load();
+
+        Assert.IsTrue(saved);
+        Assert.IsTrue(result.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        Assert.IsTrue(result.ProviderSwitchReviewAcknowledged);
+        Assert.AreEqual(
+            LauncherPlayerFeaturePreference.Enabled,
+            result.EffectiveBattlePreferences.BattleCollection);
+        Assert.AreEqual(
+            LauncherPlayerFeaturePreference.Unset,
+            result.EffectiveBattlePreferences.FleetCollection);
+    }
+
+    [TestMethod]
+    public void StaleBattleCompareAndSwapIsAByteExactNoOp()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var path = Path.Combine(stateDirectory, "ui-preferences.json");
+        var store = new JsonLauncherUiPreferencesStore(stateDirectory);
+        store.Save(new(
+            SettingsSearchVisible: true,
+            BattlePreferences: new(
+                LauncherPlayerFeaturePreference.Disabled,
+                LauncherPlayerFeaturePreference.Unset)));
+        var before = File.ReadAllBytes(path);
+
+        var saved = store.TrySaveBattlePreferences(
+            LauncherBattlePreferences.Default,
+            new(
+                LauncherPlayerFeaturePreference.Enabled,
+                LauncherPlayerFeaturePreference.Unset));
+
+        Assert.IsFalse(saved);
+        CollectionAssert.AreEqual(before, File.ReadAllBytes(path));
+    }
+
+    [TestMethod]
+    public async Task ConcurrentBattleCompareAndSwapHasExactlyOneWinner()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var first = new JsonLauncherUiPreferencesStore(stateDirectory);
+        var second = new JsonLauncherUiPreferencesStore(stateDirectory);
+        var ready = new CountdownEvent(2);
+        var start = new ManualResetEventSlim();
+        Task<bool> Attempt(JsonLauncherUiPreferencesStore store, LauncherPlayerFeaturePreference value) =>
+            Task.Run(() =>
+            {
+                ready.Signal();
+                start.Wait();
+                return store.TrySaveBattlePreferences(
+                    LauncherBattlePreferences.Default,
+                    new(value, LauncherPlayerFeaturePreference.Unset));
+            });
+        var firstAttempt = Attempt(first, LauncherPlayerFeaturePreference.Enabled);
+        var secondAttempt = Attempt(second, LauncherPlayerFeaturePreference.Disabled);
+        Assert.IsTrue(ready.Wait(TimeSpan.FromSeconds(5)));
+        start.Set();
+
+        var results = await Task.WhenAll(firstAttempt, secondAttempt);
+
+        Assert.AreEqual(1, results.Count(value => value));
+        Assert.AreNotEqual(
+            LauncherPlayerFeaturePreference.Unset,
+            first.Load().EffectiveBattlePreferences.BattleCollection);
+    }
+
+    [TestMethod]
     public void OlderAndInvalidFeaturePreferencesFailClosedToUnset()
     {
         using var temporaryDirectory = new TemporaryDirectory();
