@@ -272,11 +272,26 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "-RequireSignatures");
         StringAssert.Contains(script, "--battle-ipc-package-qualification");
         StringAssert.Contains(script, "Invoke-QualificationProcess -Path $launcher -Mode \"standalone\"");
-        StringAssert.Contains(script, "Add-AppxPackage -Path $package");
+        StringAssert.Contains(script, "Invoke-WindowsPowerShellAppxCommand");
+        StringAssert.Contains(script, "([Environment]::SystemDirectory)");
+        StringAssert.Contains(script, "WindowsPowerShell\\v1.0\\powershell.exe");
+        StringAssert.Contains(script, "WindowsPowerShell\\v1.0\\Modules\\Appx\\Appx.psd1");
+        StringAssert.Contains(script, "-OutputFormat Text");
+        StringAssert.Contains(script, "-EncodedCommand $encodedCommand");
+        StringAssert.Contains(
+            script,
+            "Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop");
+        StringAssert.Contains(script, "$ProgressPreference = \"SilentlyContinue\"");
+        StringAssert.Contains(
+            script,
+            "Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME");
+        StringAssert.Contains(script, "Add-AppxPackage -Path $env:STFC_BATTLE_QUALIFICATION_MSIX");
         StringAssert.Contains(script, "!App");
         Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
         Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.WaitForExit(10000)")).Count);
-        StringAssert.Contains(script, "Remove-AppxPackage -Package $installed.PackageFullName");
+        StringAssert.Contains(
+            script,
+            "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
         StringAssert.Contains(script, "refuses to replace an existing STFC Mod Bridge package");
     }
 
