@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using STFCCommunityMod.Launcher.Core;
@@ -439,6 +441,38 @@ public sealed class BattleRuntimeLockTests
         Assert.IsTrue(File.GetAttributes(runtimePath).HasFlag(FileAttributes.ReparsePoint));
     }
 
+    [TestMethod]
+    public async Task RuntimeOwnerRefusesAHardLinkWithoutTouchingItsOtherName()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("The authoritative runtime-lock identity contract is Windows-only.");
+        }
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateRoot = Path.Combine(temporaryDirectory.Path, "state");
+        var runtimePath = CreateBattleRoot(stateRoot);
+        var foreign = Path.Combine(temporaryDirectory.Path, "foreign-runtime.lock");
+        var foreignBytes = BattleRuntimeLockCodec.Encode(RunningRecord());
+        File.WriteAllBytes(foreign, foreignBytes);
+        if (!CreateHardLink(runtimePath, foreign, IntPtr.Zero))
+        {
+            Assert.Inconclusive($"Hard-link creation is unavailable: {new Win32Exception().Message}");
+        }
+        var journal = new BattleLifecycleJournalStore(stateRoot, new RecordingMarkerProtector());
+        var runtime = new BattleRuntimeLockStore(stateRoot);
+        await using var operationLease = await new LauncherOperationLock(stateRoot).TryAcquireAsync();
+        Assert.IsNotNull(operationLease);
+
+        var result = await runtime.TryAcquireExistingAsync(
+            operationLease,
+            journal,
+            RunningRecord() with { OwnerId = new string('9', 32) });
+
+        Assert.AreEqual(BattleRuntimeLockAcquisitionState.Invalid, result.State);
+        CollectionAssert.AreEqual(foreignBytes, File.ReadAllBytes(foreign));
+        CollectionAssert.AreEqual(foreignBytes, File.ReadAllBytes(runtimePath));
+    }
+
     private static BattleRuntimeLockRecord RunningRecord() => new(
         new string('1', 32),
         BattleRuntimeLockState.Running,
@@ -453,6 +487,13 @@ public sealed class BattleRuntimeLockTests
         Directory.CreateDirectory(battleRoot);
         return Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
     }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(
+        string fileName,
+        string existingFileName,
+        IntPtr securityAttributes);
 
     private static BattleLifecycleMarker PreparedMarker(BattleRuntimeLockRecord runtime)
     {

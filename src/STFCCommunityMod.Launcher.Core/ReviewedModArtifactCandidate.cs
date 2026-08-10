@@ -1266,7 +1266,8 @@ internal static class CandidateFileNative
         GenericRead | GenericWrite,
         FileShare.None,
         flags: FileFlagOpenReparsePoint | FileFlagOverlapped,
-        "Could not lock the Battle runtime owner file.");
+        "Could not lock the Battle runtime owner file.",
+        requireSingleLink: true);
 
     public static SafeFileHandle OpenRecoveryReadDeleteNoFollow(string path) => OpenNoFollow(
         path,
@@ -1294,7 +1295,8 @@ internal static class CandidateFileNative
         uint desiredAccess,
         FileShare shareMode,
         uint flags,
-        string errorMessage)
+        string errorMessage,
+        bool requireSingleLink = false)
     {
         var handle = CreateFile(
             path,
@@ -1314,7 +1316,8 @@ internal static class CandidateFileNative
             handle.Dispose();
             throw new Win32Exception(error, "Could not validate the reviewed candidate recovery handle.");
         }
-        if ((information.FileAttributes & FileAttributeReparsePoint) != 0)
+        if ((information.FileAttributes & FileAttributeReparsePoint) != 0
+            || requireSingleLink && information.NumberOfLinks != 1)
         {
             handle.Dispose();
             throw new InvalidDataException("Reviewed candidate recovery refuses filesystem links or reparse points.");
