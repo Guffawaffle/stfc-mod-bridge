@@ -76,6 +76,12 @@ internal sealed class BattleCredentialLease : IDisposable
     }
 
     internal bool IsZeroedForTest() => credential.All(value => value == 0);
+
+    internal string EncodeForTomlProjection()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        return BattleIngestCredentialCodec.Base64UrlEncode(credential);
+    }
 }
 
 internal sealed class BattleCredentialCandidate : IDisposable
@@ -324,7 +330,7 @@ internal static class BattleIngestCredentialCodec
         _ => throw Invalid(),
     };
 
-    private static string Base64UrlEncode(ReadOnlySpan<byte> bytes) =>
+    internal static string Base64UrlEncode(ReadOnlySpan<byte> bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static byte[] Base64UrlDecode(string value)

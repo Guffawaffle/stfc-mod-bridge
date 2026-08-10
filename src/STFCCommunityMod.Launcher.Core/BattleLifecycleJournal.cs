@@ -34,6 +34,18 @@ internal enum BattleLifecycleJournalState
     Unavailable,
 }
 
+internal enum BattleLifecyclePreCommitRecoveryState
+{
+    NoOperation,
+    Recovered,
+    Blocked,
+    Unavailable,
+}
+
+internal sealed record BattleLifecyclePreCommitRecoveryResult(
+    BattleLifecyclePreCommitRecoveryState State,
+    string Code);
+
 internal sealed record BattleLifecycleFileIdentity(long ByteCount, string Sha256);
 
 internal sealed record BattleLifecycleResourceTransition(
@@ -52,11 +64,15 @@ internal sealed record BattleLifecycleCredentialBinding(
 
 internal sealed record BattleLifecycleConfigurationBinding(
     string SourceRevisionSha256,
+    string SourcePathSha256,
     long SourceByteCount,
     string SourceSha256,
-    string BackupId,
-    string BackupContentSha256,
-    string MutationReceiptSha256);
+    string CandidateRelativePath,
+    long CandidateByteCount,
+    string CandidateSha256,
+    string MutationReceiptSha256,
+    string? BackupId,
+    string? BackupContentSha256);
 
 internal sealed record BattleLifecycleFeatureTransition(
     string FeatureId,
@@ -253,17 +269,12 @@ internal static class BattleLifecycleMarkerCodec
                 throw Invalid();
             }
         }
-        if (successor.Resources.Count > current.Resources.Count
-            && successor.Stage > BattleLifecycleStage.BackupVerified)
+        if (successor.Resources.Count != current.Resources.Count)
         {
             throw Invalid();
         }
-        if (current.Credential is not null && current.Credential != successor.Credential
-            || current.Credential is null && successor.Credential is not null
-                && successor.Stage > BattleLifecycleStage.BackupVerified
-            || current.Configuration is not null && current.Configuration != successor.Configuration
-            || current.Configuration is null && successor.Configuration is not null
-                && successor.Stage != BattleLifecycleStage.BackupVerified)
+        if (current.Credential != successor.Credential
+            || !ConfigurationSuccessorIsValid(current.Configuration, successor.Configuration, successor.Stage))
         {
             throw Invalid();
         }
@@ -302,11 +313,15 @@ internal static class BattleLifecycleMarkerCodec
             marker.Credential.ProtectedSha256),
         marker.Configuration is null ? null : new(
             marker.Configuration.SourceRevisionSha256,
+            marker.Configuration.SourcePathSha256,
             marker.Configuration.SourceByteCount,
             marker.Configuration.SourceSha256,
+            marker.Configuration.CandidateRelativePath,
+            marker.Configuration.CandidateByteCount,
+            marker.Configuration.CandidateSha256,
+            marker.Configuration.MutationReceiptSha256,
             marker.Configuration.BackupId,
-            marker.Configuration.BackupContentSha256,
-            marker.Configuration.MutationReceiptSha256),
+            marker.Configuration.BackupContentSha256),
         marker.FeatureTransitions.Select(feature => new FeatureDocument(
             feature.FeatureId,
             Preference(feature.Before),
@@ -357,11 +372,15 @@ internal static class BattleLifecycleMarkerCodec
                 value.Credential.ProtectedSha256 ?? throw Invalid()),
             value.Configuration is null ? null : new(
                 value.Configuration.SourceRevisionSha256 ?? throw Invalid(),
+                value.Configuration.SourcePathSha256 ?? throw Invalid(),
                 value.Configuration.SourceByteCount,
                 value.Configuration.SourceSha256 ?? throw Invalid(),
-                value.Configuration.BackupId ?? throw Invalid(),
-                value.Configuration.BackupContentSha256 ?? throw Invalid(),
-                value.Configuration.MutationReceiptSha256 ?? throw Invalid()),
+                value.Configuration.CandidateRelativePath ?? throw Invalid(),
+                value.Configuration.CandidateByteCount,
+                value.Configuration.CandidateSha256 ?? throw Invalid(),
+                value.Configuration.MutationReceiptSha256 ?? throw Invalid(),
+                value.Configuration.BackupId,
+                value.Configuration.BackupContentSha256),
             value.FeatureTransitions.Select(feature => feature is null
                 ? throw Invalid()
                 : new BattleLifecycleFeatureTransition(
@@ -424,6 +443,24 @@ internal static class BattleLifecycleMarkerCodec
         {
             ValidateResource(marker.OperationId, resource);
         }
+        var ownedPaths = marker.Resources
+            .SelectMany(resource => new[]
+            {
+                resource.CandidateRelativePath,
+                resource.DisplacedRelativePath,
+                resource.BackupRelativePath,
+            })
+            .Where(path => path is not null)
+            .Cast<string>()
+            .ToList();
+        if (marker.Configuration is not null)
+        {
+            ownedPaths.Add(marker.Configuration.CandidateRelativePath);
+        }
+        if (ownedPaths.Count != ownedPaths.Distinct(StringComparer.Ordinal).Count())
+        {
+            throw Invalid();
+        }
         if (!marker.Resources.Any(resource => resource.Role == "runtime-lock" && resource.After is not null))
         {
             throw Invalid();
@@ -444,11 +481,27 @@ internal static class BattleLifecycleMarkerCodec
         {
             if (marker.Configuration.SourceByteCount < 0
                 || !IsLowerHex(marker.Configuration.SourceRevisionSha256, 64)
+                || !IsLowerHex(marker.Configuration.SourcePathSha256, 64)
                 || !IsLowerHex(marker.Configuration.SourceSha256, 64)
                 || marker.Configuration.SourceRevisionSha256 != marker.Configuration.SourceSha256
-                || !IsSafeToken(marker.Configuration.BackupId, 1, 96)
-                || !IsLowerHex(marker.Configuration.BackupContentSha256, 64)
-                || !IsLowerHex(marker.Configuration.MutationReceiptSha256, 64))
+                || !IsSafeRelativePath(marker.Configuration.CandidateRelativePath)
+                || !marker.Configuration.CandidateRelativePath.StartsWith(
+                    $"battle/recovery/{marker.OperationId}/candidate/",
+                    StringComparison.Ordinal)
+                || marker.Configuration.CandidateByteCount is < 0 or > 8 * 1024 * 1024
+                || !IsLowerHex(marker.Configuration.CandidateSha256, 64)
+                || !IsLowerHex(marker.Configuration.MutationReceiptSha256, 64)
+                || (marker.Configuration.BackupId is null) !=
+                    (marker.Configuration.BackupContentSha256 is null)
+                || marker.Configuration.BackupId is not null
+                    && !IsSafeToken(marker.Configuration.BackupId, 1, 96)
+                || marker.Configuration.BackupContentSha256 is not null
+                    && !IsLowerHex(marker.Configuration.BackupContentSha256, 64)
+                || marker.Stage < BattleLifecycleStage.BackupVerified
+                    && marker.Configuration.BackupId is not null
+                || marker.Stage >= BattleLifecycleStage.BackupVerified
+                    && marker.Stage != BattleLifecycleStage.Failed
+                    && marker.Configuration.BackupId is null)
             {
                 throw Invalid();
             }
@@ -503,6 +556,36 @@ internal static class BattleLifecycleMarkerCodec
         {
             return false;
         }
+    }
+
+    private static bool ConfigurationSuccessorIsValid(
+        BattleLifecycleConfigurationBinding? current,
+        BattleLifecycleConfigurationBinding? successor,
+        BattleLifecycleStage successorStage)
+    {
+        if (current is null || successor is null)
+        {
+            return current is null && successor is null;
+        }
+        if (current.SourceRevisionSha256 != successor.SourceRevisionSha256
+            || current.SourcePathSha256 != successor.SourcePathSha256
+            || current.SourceByteCount != successor.SourceByteCount
+            || current.SourceSha256 != successor.SourceSha256
+            || current.CandidateRelativePath != successor.CandidateRelativePath
+            || current.CandidateByteCount != successor.CandidateByteCount
+            || current.CandidateSha256 != successor.CandidateSha256
+            || current.MutationReceiptSha256 != successor.MutationReceiptSha256)
+        {
+            return false;
+        }
+        if (current.BackupId is not null)
+        {
+            return current.BackupId == successor.BackupId
+                && current.BackupContentSha256 == successor.BackupContentSha256;
+        }
+        return successorStage == BattleLifecycleStage.BackupVerified
+            ? successor.BackupId is not null && successor.BackupContentSha256 is not null
+            : successor.BackupId is null && successor.BackupContentSha256 is null;
     }
 
     private static void ValidateIdentity(BattleLifecycleFileIdentity identity)
@@ -705,11 +788,15 @@ internal static class BattleLifecycleMarkerCodec
 
     private sealed record ConfigurationDocument(
         string? SourceRevisionSha256,
+        string? SourcePathSha256,
         long SourceByteCount,
         string? SourceSha256,
+        string? CandidateRelativePath,
+        long CandidateByteCount,
+        string? CandidateSha256,
+        string? MutationReceiptSha256,
         string? BackupId,
-        string? BackupContentSha256,
-        string? MutationReceiptSha256);
+        string? BackupContentSha256);
 
     private sealed record FeatureDocument(string? FeatureId, string? Before, string? After);
 }
@@ -766,6 +853,7 @@ internal sealed class BattleLifecycleJournalStore
                     : new(BattleLifecycleJournalState.RecoveryFailed, null, null, "battle-operation-marker-missing");
             }
             var marker = Read(MarkerPath);
+            var expectedCandidates = ExpectedCandidates(marker);
             var operationDirectory = Path.Combine(recoveryRoot, marker.OperationId);
             if (rootEntries.Any(path =>
                     Path.GetFileName(path) != BattleLifecycleMarkerCodec.FileName
@@ -776,7 +864,13 @@ internal sealed class BattleLifecycleJournalStore
             var expectedNext = NextPath(marker.OperationId);
             if (!Directory.Exists(operationDirectory))
             {
-                return new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable");
+                return expectedCandidates.Count == 0
+                    ? new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable")
+                    : new(
+                        BattleLifecycleJournalState.RecoverableResidue,
+                        marker,
+                        null,
+                        "battle-operation-candidate-missing");
             }
             using var operationHandle = OpenDirectoryNoFollow(operationDirectory);
             var candidateDirectory = Path.GetDirectoryName(expectedNext)!;
@@ -795,7 +889,9 @@ internal sealed class BattleLifecycleJournalStore
                 return new(BattleLifecycleJournalState.RecoveryFailed, marker, null, "battle-operation-successor-ambiguous");
             }
             using var candidateHandle = OpenDirectoryNoFollow(candidateDirectory);
-            var candidateEntries = Directory.EnumerateFileSystemEntries(candidateDirectory).Take(2).ToArray();
+            var candidateEntries = Directory.EnumerateFileSystemEntries(candidateDirectory)
+                .Take(expectedCandidates.Count + 2)
+                .ToArray();
             if (candidateEntries.Length == 0)
             {
                 return new(
@@ -804,17 +900,54 @@ internal sealed class BattleLifecycleJournalStore
                     null,
                     "battle-operation-empty-residue");
             }
-            if (candidateEntries.Length != 1 || !PathEquals(candidateEntries[0], expectedNext))
+            var allowedPaths = expectedCandidates.Keys.Append(expectedNext).ToArray();
+            if (candidateEntries.Any(entry => !allowedPaths.Any(allowed => PathEquals(entry, allowed))))
             {
                 return new(BattleLifecycleJournalState.RecoveryFailed, marker, null, "battle-operation-successor-ambiguous");
             }
-            var successor = Read(expectedNext);
-            BattleLifecycleMarkerCodec.ValidateSuccessor(marker, successor);
-            return new(
-                BattleLifecycleJournalState.RecoverableSuccessor,
-                marker,
-                successor,
-                "battle-operation-successor-recoverable");
+            var missingCandidate = false;
+            foreach (var (candidatePath, expectedIdentity) in expectedCandidates)
+            {
+                if (!candidateEntries.Any(entry => PathEquals(entry, candidatePath)))
+                {
+                    missingCandidate = true;
+                    continue;
+                }
+                if (!MatchesIdentity(candidatePath, expectedIdentity))
+                {
+                    return new(
+                        BattleLifecycleJournalState.RecoveryFailed,
+                        marker,
+                        null,
+                        "battle-operation-candidate-mismatch");
+                }
+            }
+            var hasSuccessor = candidateEntries.Any(entry => PathEquals(entry, expectedNext));
+            if (hasSuccessor)
+            {
+                if (missingCandidate)
+                {
+                    return new(
+                        BattleLifecycleJournalState.RecoveryFailed,
+                        marker,
+                        null,
+                        "battle-operation-candidate-missing");
+                }
+                var successor = Read(expectedNext);
+                BattleLifecycleMarkerCodec.ValidateSuccessor(marker, successor);
+                return new(
+                    BattleLifecycleJournalState.RecoverableSuccessor,
+                    marker,
+                    successor,
+                    "battle-operation-successor-recoverable");
+            }
+            return missingCandidate
+                ? new(
+                    BattleLifecycleJournalState.RecoverableResidue,
+                    marker,
+                    null,
+                    "battle-operation-candidate-missing")
+                : new(BattleLifecycleJournalState.Readable, marker, null, "battle-operation-readable");
         }
         catch (Exception exception) when (
             exception is InvalidDataException or CryptographicException or JsonException or ArgumentException)
@@ -854,7 +987,9 @@ internal sealed class BattleLifecycleJournalStore
             using var recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
             await WriteCreateNewDurablyAsync(MarkerPath, protectedBytes, cancellationToken).ConfigureAwait(false);
             var inspection = Inspect();
-            if (inspection.State != BattleLifecycleJournalState.Readable
+            if (inspection.State is not (
+                    BattleLifecycleJournalState.Readable
+                    or BattleLifecycleJournalState.RecoverableResidue)
                 || inspection.Marker is null
                 || !BattleLifecycleMarkerCodec.AreEquivalent(inspection.Marker, marker))
             {
@@ -914,10 +1049,13 @@ internal sealed class BattleLifecycleJournalStore
                 throw new InvalidDataException("The advanced Battle lifecycle marker did not verify.");
             }
             verificationHandle.Dispose();
-            Directory.Delete(candidateDirectory, recursive: false);
-            if (!Directory.EnumerateFileSystemEntries(operationDirectory).Any())
+            if (!Directory.EnumerateFileSystemEntries(candidateDirectory).Any())
             {
-                Directory.Delete(operationDirectory, recursive: false);
+                Directory.Delete(candidateDirectory, recursive: false);
+                if (!Directory.EnumerateFileSystemEntries(operationDirectory).Any())
+                {
+                    Directory.Delete(operationDirectory, recursive: false);
+                }
             }
         }
         finally
@@ -1001,9 +1139,179 @@ internal sealed class BattleLifecycleJournalStore
                 throw new InvalidDataException("The recovered Battle lifecycle marker did not verify.");
             }
         }
-        Directory.Delete(candidateDirectory, recursive: false);
-        Directory.Delete(operationDirectory, recursive: false);
+        if (!Directory.EnumerateFileSystemEntries(candidateDirectory).Any())
+        {
+            Directory.Delete(candidateDirectory, recursive: false);
+            Directory.Delete(operationDirectory, recursive: false);
+        }
         return Task.FromResult(Inspect());
+    }
+
+    internal async Task WritePreparedCandidatesAsync(
+        LauncherOperationLease operationLease,
+        IReadOnlyDictionary<string, ReadOnlyMemory<byte>> candidates,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentNullException.ThrowIfNull(candidates);
+        using var operationScope = operationLease.RetainFor(stateRoot);
+        var inspection = Inspect();
+        if (inspection.Marker is not { Stage: BattleLifecycleStage.Prepared } marker
+            || inspection.State is not (
+                BattleLifecycleJournalState.RecoverableResidue
+                or BattleLifecycleJournalState.Readable))
+        {
+            throw new InvalidOperationException("The prepared Battle marker is not ready for candidate writes.");
+        }
+        var expected = ExpectedCandidates(marker);
+        var supplied = candidates.ToDictionary(
+            item => ResolveRelativePath(item.Key),
+            item => item.Value,
+            PathComparer());
+        if (expected.Count == 0
+            || expected.Count != supplied.Count
+            || expected.Any(item => !supplied.TryGetValue(item.Key, out var bytes)
+                || Identity(bytes.Span) != item.Value))
+        {
+            throw new InvalidOperationException("The supplied Battle candidates do not match the prepared marker.");
+        }
+
+        var operationDirectory = Path.Combine(recoveryRoot, marker.OperationId);
+        var candidateDirectory = Path.Combine(operationDirectory, "candidate");
+        using var battleHandle = OpenDirectoryNoFollow(battleRoot);
+        using var recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
+        storageSecurity.SecureDirectory(operationDirectory);
+        using var operationHandle = OpenDirectoryNoFollow(operationDirectory);
+        storageSecurity.SecureDirectory(candidateDirectory);
+        using var candidateHandle = OpenDirectoryNoFollow(candidateDirectory);
+        foreach (var (candidatePath, bytes) in supplied.OrderBy(item => item.Key, PathComparer()))
+        {
+            await WriteCreateNewDurablyAsync(candidatePath, bytes, cancellationToken)
+                .ConfigureAwait(false);
+            if (!MatchesIdentity(candidatePath, expected[candidatePath]))
+            {
+                throw new InvalidDataException("The prepared Battle candidate did not verify.");
+            }
+        }
+        var complete = Inspect();
+        if (complete.State != BattleLifecycleJournalState.Readable
+            || complete.Marker is null
+            || !BattleLifecycleMarkerCodec.AreEquivalent(complete.Marker, marker))
+        {
+            throw new InvalidDataException("The prepared Battle candidates did not verify as a complete set.");
+        }
+    }
+
+    public Task<BattleLifecyclePreCommitRecoveryResult> RollbackPreparedAsync(
+        LauncherOperationLease operationLease,
+        string configurationPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLease);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
+        using var operationScope = operationLease.RetainFor(stateRoot);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var inspection = Inspect();
+            if (inspection.State == BattleLifecycleJournalState.Absent)
+            {
+                return Task.FromResult(new BattleLifecyclePreCommitRecoveryResult(
+                    BattleLifecyclePreCommitRecoveryState.NoOperation,
+                    "battle-precommit-absent"));
+            }
+            if (inspection.Marker is not { } marker
+                || marker.Stage is not (BattleLifecycleStage.Prepared or BattleLifecycleStage.Quiesced)
+                || inspection.Successor is not null
+                || inspection.State == BattleLifecycleJournalState.Unavailable
+                || inspection.State == BattleLifecycleJournalState.RecoveryFailed
+                    && inspection.Code != "battle-operation-candidate-mismatch")
+            {
+                return Task.FromResult(Blocked());
+            }
+            ValidateSourceConfiguration(marker, configurationPath);
+            var expectedCandidates = ExpectedCandidates(marker);
+            var operationDirectory = Path.Combine(recoveryRoot, marker.OperationId);
+            var candidateDirectory = Path.Combine(operationDirectory, "candidate");
+            var inventory = PreflightPreparedInventory(
+                expectedCandidates,
+                operationDirectory,
+                candidateDirectory);
+
+            var candidateStreams = inventory.CandidatePaths
+                .OrderBy(path => path, PathComparer())
+                .Select(OpenLockedDeleteNoFollow)
+                .ToArray();
+            FileStream? runtimeStream = null;
+            FileStream? markerStream = null;
+            try
+            {
+                var runtimePath = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+                if (inventory.RuntimePresent)
+                {
+                    runtimeStream = OpenLockedDeleteNoFollow(runtimePath);
+                }
+                markerStream = OpenLockedDeleteNoFollow(MarkerPath);
+                var current = Read(markerStream);
+                if (!BattleLifecycleMarkerCodec.AreEquivalent(marker, current))
+                {
+                    return Task.FromResult(Blocked());
+                }
+
+                foreach (var stream in candidateStreams)
+                {
+                    MarkDeleteOnClose(stream.SafeFileHandle);
+                }
+                foreach (var stream in candidateStreams)
+                {
+                    stream.Dispose();
+                }
+                if (runtimeStream is not null)
+                {
+                    MarkDeleteOnClose(runtimeStream.SafeFileHandle);
+                    runtimeStream.Dispose();
+                    runtimeStream = null;
+                }
+                DeleteEmptyOwnedDirectory(candidateDirectory);
+                DeleteEmptyOwnedDirectory(operationDirectory);
+                MarkDeleteOnClose(markerStream.SafeFileHandle);
+                markerStream.Dispose();
+                markerStream = null;
+                DeleteEmptyOwnedDirectory(recoveryRoot);
+                DeleteEmptyOwnedDirectory(battleRoot);
+                var final = Inspect();
+                return Task.FromResult(final.State == BattleLifecycleJournalState.Absent
+                    ? new BattleLifecyclePreCommitRecoveryResult(
+                        BattleLifecyclePreCommitRecoveryState.Recovered,
+                        "battle-precommit-recovered")
+                    : Blocked());
+            }
+            finally
+            {
+                foreach (var stream in candidateStreams)
+                {
+                    stream.Dispose();
+                }
+                runtimeStream?.Dispose();
+                markerStream?.Dispose();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or CryptographicException or JsonException or ArgumentException)
+        {
+            return Task.FromResult(Blocked());
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            return Task.FromResult(new BattleLifecyclePreCommitRecoveryResult(
+                BattleLifecyclePreCommitRecoveryState.Unavailable,
+                "battle-precommit-unavailable"));
+        }
     }
 
     private BattleLifecycleMarker Read(string path)
@@ -1025,11 +1333,217 @@ internal sealed class BattleLifecycleJournalStore
         }
     }
 
+    private BattleLifecycleMarker Read(FileStream stream)
+    {
+        if (stream.Length is <= 0 or > BattleLifecycleMarkerCodec.MaximumProtectedBytes)
+        {
+            throw new InvalidDataException("The Battle lifecycle marker is outside its size bound.");
+        }
+        stream.Position = 0;
+        var bytes = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(bytes);
+        try
+        {
+            return BattleLifecycleMarkerCodec.Unprotect(bytes, protector);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
     private string NextPath(string operationId) => Path.Combine(
         recoveryRoot,
         operationId,
         "candidate",
         BattleLifecycleMarkerCodec.NextFileName);
+
+    private Dictionary<string, BattleLifecycleFileIdentity> ExpectedCandidates(
+        BattleLifecycleMarker marker)
+    {
+        var expected = new Dictionary<string, BattleLifecycleFileIdentity>(PathComparer());
+        foreach (var resource in marker.Resources.Where(resource => resource.CandidateRelativePath is not null))
+        {
+            if (resource.After is null
+                || !expected.TryAdd(ResolveRelativePath(resource.CandidateRelativePath!), resource.After))
+            {
+                throw new InvalidDataException("The Battle lifecycle candidate inventory is invalid.");
+            }
+        }
+        if (marker.Configuration is not null
+            && !expected.TryAdd(
+                ResolveRelativePath(marker.Configuration.CandidateRelativePath),
+                new(
+                    marker.Configuration.CandidateByteCount,
+                    marker.Configuration.CandidateSha256)))
+        {
+            throw new InvalidDataException("The Battle lifecycle configuration candidate is duplicated.");
+        }
+        return expected;
+    }
+
+    private string ResolveRelativePath(string relativePath)
+    {
+        var resolved = Path.GetFullPath(Path.Combine(stateRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!resolved.StartsWith(
+                stateRoot + Path.DirectorySeparatorChar,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The Battle lifecycle path escapes the state root.");
+        }
+        return resolved;
+    }
+
+    private static bool MatchesIdentity(string path, BattleLifecycleFileIdentity expected)
+    {
+        using var stream = OpenLockedReadNoFollow(path);
+        return stream.Length == expected.ByteCount
+            && string.Equals(
+                Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(),
+                expected.Sha256,
+                StringComparison.Ordinal);
+    }
+
+    private static BattleLifecycleFileIdentity Identity(ReadOnlySpan<byte> bytes) =>
+        new(bytes.Length, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+
+    internal static string PathIdentity(string path) => Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(path))))
+        .ToLowerInvariant();
+
+    private static StringComparer PathComparer() => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
+    private static void ValidateSourceConfiguration(BattleLifecycleMarker marker, string configurationPath)
+    {
+        if (marker.Configuration is not { } configuration)
+        {
+            throw new InvalidDataException("The prepared Battle operation has no configuration binding.");
+        }
+        var canonicalPath = Path.GetFullPath(configurationPath);
+        if (!string.Equals(
+                PathIdentity(canonicalPath),
+                configuration.SourcePathSha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The Battle source configuration path changed before rollback.");
+        }
+        using var stream = OpenLockedReadNoFollow(canonicalPath);
+        if (stream.Length != configuration.SourceByteCount
+            || stream.Length is < 0 or > 8 * 1024 * 1024
+            || !string.Equals(
+                Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(),
+                configuration.SourceSha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The Battle source configuration changed before rollback.");
+        }
+    }
+
+    private PreparedInventory PreflightPreparedInventory(
+        IReadOnlyDictionary<string, BattleLifecycleFileIdentity> expectedCandidates,
+        string operationDirectory,
+        string candidateDirectory)
+    {
+        using var battleHandle = OpenDirectoryNoFollow(battleRoot);
+        using var recoveryHandle = OpenDirectoryNoFollow(recoveryRoot);
+        var runtimePath = Path.Combine(battleRoot, BattleRuntimeLockCodec.FileName);
+        var battleEntries = Directory.EnumerateFileSystemEntries(battleRoot).Take(4).ToArray();
+        if (battleEntries.Any(path =>
+                !PathEquals(path, recoveryRoot) && !PathEquals(path, runtimePath)))
+        {
+            throw new InvalidDataException("The Battle directory contains an unowned pre-commit entry.");
+        }
+        if (File.Exists(Path.Combine(battleRoot, BattleIngestCredentialCodec.FileName)))
+        {
+            throw new InvalidDataException("The authoritative Battle credential changed before commit.");
+        }
+        var recoveryEntries = Directory.EnumerateFileSystemEntries(recoveryRoot).Take(4).ToArray();
+        if (recoveryEntries.Any(path =>
+                !PathEquals(path, MarkerPath) && !PathEquals(path, operationDirectory)))
+        {
+            throw new InvalidDataException("The Battle recovery directory contains an unowned entry.");
+        }
+        if (!recoveryEntries.Any(path => PathEquals(path, operationDirectory)))
+        {
+            return new([], battleEntries.Any(path => PathEquals(path, runtimePath)));
+        }
+        using var operationHandle = OpenDirectoryNoFollow(operationDirectory);
+        var operationEntries = Directory.EnumerateFileSystemEntries(operationDirectory).Take(3).ToArray();
+        if (operationEntries.Any(path =>
+                !PathEquals(path, candidateDirectory)))
+        {
+            throw new InvalidDataException("The Battle operation directory contains an unowned entry.");
+        }
+        if (!operationEntries.Any(path => PathEquals(path, candidateDirectory)))
+        {
+            return new([], battleEntries.Any(path => PathEquals(path, runtimePath)));
+        }
+        using var candidateHandle = OpenDirectoryNoFollow(candidateDirectory);
+        var candidateEntries = Directory.EnumerateFileSystemEntries(candidateDirectory)
+            .Take(expectedCandidates.Count + 1)
+            .ToArray();
+        if (candidateEntries.Any(path =>
+                !expectedCandidates.Keys.Any(expected => PathEquals(path, expected))))
+        {
+            throw new InvalidDataException("The Battle candidate directory contains an unowned entry.");
+        }
+        return new(
+            candidateEntries,
+            battleEntries.Any(path => PathEquals(path, runtimePath)));
+    }
+
+    private static FileStream OpenLockedDeleteNoFollow(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        }
+        return new(
+            CandidateFileNative.OpenRecoveryReadDeleteNoFollow(path),
+            FileAccess.Read,
+            81920,
+            isAsync: false);
+    }
+
+    private static void MarkDeleteOnClose(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Battle lifecycle exact cleanup requires Windows handles.");
+        }
+        if (!CandidateFileNative.TryMarkDeleteOnClose(handle))
+        {
+            throw new Win32Exception(
+                System.Runtime.InteropServices.Marshal.GetLastWin32Error(),
+                "The exact Battle lifecycle file could not be marked for deletion.");
+        }
+    }
+
+    private static void DeleteEmptyOwnedDirectory(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        if (Directory.EnumerateFileSystemEntries(path).Any())
+        {
+            throw new InvalidDataException("The Battle lifecycle directory is not empty after exact cleanup.");
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.Delete(path, recursive: false);
+            return;
+        }
+        using var handle = CandidateFileNative.OpenRecoveryDirectoryReadDeleteNoFollow(path);
+        MarkDeleteOnClose(handle);
+    }
+
+    private static BattleLifecyclePreCommitRecoveryResult Blocked() => new(
+        BattleLifecyclePreCommitRecoveryState.Blocked,
+        "battle-precommit-blocked");
+
+    private sealed record PreparedInventory(
+        IReadOnlyList<string> CandidatePaths,
+        bool RuntimePresent);
 
     private static bool PathEquals(string left, string right) => string.Equals(
         Path.GetFullPath(left),
@@ -1038,7 +1552,7 @@ internal sealed class BattleLifecycleJournalStore
 
     private static async Task WriteCreateNewDurablyAsync(
         string path,
-        byte[] contents,
+        ReadOnlyMemory<byte> contents,
         CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(

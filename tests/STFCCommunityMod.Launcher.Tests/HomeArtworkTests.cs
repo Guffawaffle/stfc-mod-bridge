@@ -1,6 +1,7 @@
+using System.Collections;
+using System.Resources;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
-using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 
@@ -81,19 +82,21 @@ public sealed class HomeArtworkTests
         RunInSta(
             () =>
             {
-                var application = Application.Current ?? new App();
-                if (application is App app)
-                {
-                    app.InitializeComponent();
-                }
-
-                var uri = new Uri(
-                    "pack://application:,,,/STFCModBridge;component/Assets/stfc-mod-bridge-banner.png",
-                    UriKind.Absolute);
-                var resource = Application.GetResourceStream(uri);
-
-                Assert.IsNotNull(resource, "The linked artwork was not compiled into the application resources.");
-                using var stream = resource.Stream;
+                var assembly = typeof(App).Assembly;
+                var compiledResourceName = assembly.GetManifestResourceNames().Single(name =>
+                    name.EndsWith(".g.resources", StringComparison.Ordinal));
+                using var compiledResourceStream = assembly.GetManifestResourceStream(compiledResourceName);
+                Assert.IsNotNull(
+                    compiledResourceStream,
+                    "The application resource bundle was not compiled into the launcher assembly.");
+                using var resources = new ResourceReader(compiledResourceStream);
+                var resource = resources.Cast<DictionaryEntry>().Single(entry =>
+                    string.Equals(
+                        entry.Key as string,
+                        "assets/stfc-mod-bridge-banner.png",
+                        StringComparison.OrdinalIgnoreCase));
+                Assert.IsInstanceOfType<Stream>(resource.Value);
+                using var stream = (Stream)resource.Value;
                 var decoder = BitmapDecoder.Create(
                     stream,
                     BitmapCreateOptions.PreservePixelFormat,
