@@ -1202,6 +1202,8 @@ internal static class CandidateFileNative
     private const uint GenericRead = 0x80000000;
     private const uint GenericWrite = 0x40000000;
     private const uint Delete = 0x00010000;
+    private const uint WriteDac = 0x00040000;
+    private const uint WriteOwner = 0x00080000;
     private const uint FileFlagOverlapped = 0x40000000;
     private const uint FileFlagBackupSemantics = 0x02000000;
     private const uint FileFlagOpenReparsePoint = 0x00200000;
@@ -1234,6 +1236,21 @@ internal static class CandidateFileNative
             IntPtr.Zero);
         return handle.IsInvalid
             ? throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not create the reviewed candidate file.")
+            : handle;
+    }
+
+    public static SafeFileHandle CreateReadWriteDelete(string path)
+    {
+        var handle = CreateFile(
+            path,
+            GenericRead | GenericWrite | Delete | WriteDac | WriteOwner,
+            FileShare.None,
+            IntPtr.Zero,
+            FileMode.CreateNew,
+            FileFlagOverlapped,
+            IntPtr.Zero);
+        return handle.IsInvalid
+            ? throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not create the Battle credential file.")
             : handle;
     }
 

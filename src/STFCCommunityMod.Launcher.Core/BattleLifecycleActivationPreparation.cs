@@ -117,6 +117,11 @@ internal sealed class BattleLifecyclePreparedActivation : IAsyncDisposable
 
     public BattleCredentialLease CredentialLease => preparation.CredentialCandidate.Lease;
 
+    internal ReadOnlyMemory<byte> ProtectedCredentialCandidate =>
+        preparation.CredentialCandidate.ProtectedBytes;
+
+    internal ReadOnlyMemory<byte> ConfigurationCandidate => preparation.ConfigurationCandidate;
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;

@@ -1,8 +1,9 @@
 # Battle Bridge local IPC boundary
 
-Status: authenticated named-pipe transport and provisioned-runtime composition
-proofs implemented but dormant; operational activation remains blocked on the
-marker/credential/config transaction and signed-package qualification
+Status: authenticated named-pipe transport, provisioned-runtime composition,
+and first-activation commit proofs implemented but dormant; operational
+activation remains blocked on terminal recovery/cleanup composition and signed
+package qualification
 
 Tracking issue: [#132](https://github.com/Guffawaffle/stfc-mod-bridge/issues/132)
 
@@ -266,14 +267,42 @@ compare-and-swap seam for the later commit stage. It checks both collection
 before-values under the store's normalized-path gate, changes both values as one
 atomic document replacement, and preserves search, color, launch-target, source
 review, and every other preference. A stale caller performs a byte-exact no-op;
-concurrent contenders cannot both commit. This is the existing preference owner,
-not a Battle-specific file or second writer.
+concurrent contenders cannot both commit. Malformed, duplicate-key,
+unknown-field, or noncanonical existing preference documents fail closed rather
+than being interpreted as defaults and overwritten. This is the existing
+preference owner, not a Battle-specific file or second writer.
 
-This is still not the activation commit. It does not promote the credential,
-commit TOML, save feature preference, create or open the Battle database,
-register runtime composition, or start the pipe. Those steps remain dormant
-until the remaining marker-owned transaction stages and signed package proof
-are composed.
+The first-activation commit seam is now executable but still unregistered. It
+requires the same retained root operation and runtime leases, exact
+`backup-verified` marker, source-path binding, protected credential candidate,
+TOML candidate, and Battle preference before-values. It persists
+`commit-started` before the first authoritative mutation, then promotes the
+credential, applies the candidate through `AtomicTomlStore`, and changes both
+Battle preferences through the existing compare-and-swap owner. The credential
+is created with an exact read/write/delete-capable handle, flushed and rehashed
+through that handle, assigned a protected non-inherited ACL containing only the
+current user and Local System with full control, reread and verified through the
+same handle, and retained against replacement until commit verification.
+Immediately before `commit-started`, the coordinator also rechecks exact
+`ManagedVerified`, game-closed installed-artifact evidence and rereads the
+existing provider-scoped protected backup against the marker-bound source bytes.
+
+Every authority must be in its exact marker-bound before or after state.
+Foreign, malformed, or stale state is preserved and blocks before mutation.
+An owned in-process failure compensates only writes made by that attempt in
+reverse order and verifies the complete all-before result. If compensation
+cannot prove the original state—for example, a concurrent external TOML
+change—the exact external bytes are preserved, the credential handle is safely
+released, and `commit-started` remains for recovery. Exact mixed states left by
+a prior interruption roll forward without inventing a second writer. Only a
+fully reread credential/TOML/preference set advances to `commit-verified`.
+
+This is not operational activation. The commit coordinator is not registered
+in startup or UI and does not create or open the Battle database, register
+runtime composition, start a named pipe, enable the dormant HTTP proof, or grant
+outbound product-feature network authority. Terminal crash recovery, cleanup,
+session recomposition, and signed MSIX/standalone qualification remain required
+before the lifecycle can supply a provisioning lease to the pipe host.
 
 ## Current composition
 
