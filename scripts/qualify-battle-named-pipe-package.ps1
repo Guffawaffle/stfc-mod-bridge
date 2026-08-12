@@ -17,6 +17,10 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
 }
 $launcher = Join-Path $outputRoot "app\STFCModBridge.exe"
 $package = Join-Path $outputRoot "package\STFCModBridge.msix"
+$windowsPowerShell = Join-Path ([Environment]::SystemDirectory) "WindowsPowerShell\v1.0\powershell.exe"
+$appxModule = Join-Path `
+  ([Environment]::SystemDirectory) `
+  "WindowsPowerShell\v1.0\Modules\Appx\Appx.psd1"
 
 if (-not $IsWindows) {
   throw "Battle named-pipe package qualification requires Windows."
@@ -27,6 +31,12 @@ if (-not $AllowDisposableMsixInstall -and $env:CI -ne "true") {
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) `
     -or -not (Test-Path -LiteralPath $package -PathType Leaf)) {
   throw "The signed standalone launcher or MSIX package is missing."
+}
+if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
+  throw "Windows PowerShell is required for disposable Appx registration."
+}
+if (-not (Test-Path -LiteralPath $appxModule -PathType Leaf)) {
+  throw "The System32 Appx module is required for disposable package registration."
 }
 
 & (Join-Path $PSScriptRoot "inspect-package.ps1") `
@@ -67,9 +77,105 @@ function Invoke-QualificationProcess {
   }
 }
 
+function Invoke-WindowsPowerShellAppxCommand {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Command
+  )
+
+  $previousAppxModule = $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE = $appxModule
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
+    $output = @(& $windowsPowerShell `
+        -NoLogo `
+        -NoProfile `
+        -NonInteractive `
+        -OutputFormat Text `
+        -EncodedCommand $encodedCommand 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+      throw "The Windows PowerShell Appx command failed with exit code $LASTEXITCODE."
+    }
+    return $output
+  } finally {
+    $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE = $previousAppxModule
+  }
+}
+
+function Get-DisposablePackages {
+  $previousPackageName = $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME = $expectedPackageIdentity
+    $json = @(Invoke-WindowsPowerShellAppxCommand -Command @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$WarningPreference = "Stop"
+$InformationPreference = "SilentlyContinue"
+$VerbosePreference = "SilentlyContinue"
+Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+@(
+  Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME -ErrorAction Stop |
+    ForEach-Object {
+      [pscustomobject]@{
+        PackageFullName = $_.PackageFullName
+        PackageFamilyName = $_.PackageFamilyName
+      }
+    }
+) | ConvertTo-Json -Compress
+'@) -join [Environment]::NewLine
+    if ([string]::IsNullOrWhiteSpace($json)) {
+      return @()
+    }
+    return @($json | ConvertFrom-Json -ErrorAction Stop)
+  } finally {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME = $previousPackageName
+  }
+}
+
+function Install-DisposablePackage {
+  $previousPackagePath = $env:STFC_BATTLE_QUALIFICATION_MSIX
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_MSIX = $package
+    Invoke-WindowsPowerShellAppxCommand -Command @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$WarningPreference = "Stop"
+$InformationPreference = "SilentlyContinue"
+$VerbosePreference = "SilentlyContinue"
+Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+Add-AppxPackage -Path $env:STFC_BATTLE_QUALIFICATION_MSIX -ErrorAction Stop
+'@ | Out-Null
+  } finally {
+    $env:STFC_BATTLE_QUALIFICATION_MSIX = $previousPackagePath
+  }
+}
+
+function Remove-DisposablePackage {
+  param(
+    [Parameter(Mandatory)]
+    [string]$PackageFullName
+  )
+
+  $previousPackageFullName = $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME = $PackageFullName
+    Invoke-WindowsPowerShellAppxCommand -Command @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$WarningPreference = "Stop"
+$InformationPreference = "SilentlyContinue"
+$VerbosePreference = "SilentlyContinue"
+Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME -ErrorAction Stop
+'@ | Out-Null
+  } finally {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME = $previousPackageFullName
+  }
+}
+
 Invoke-QualificationProcess -Path $launcher -Mode "standalone"
 
-$existing = @(Get-AppxPackage -Name $expectedPackageIdentity -ErrorAction Stop)
+$existing = @(Get-DisposablePackages)
 if ($existing.Count -ne 0) {
   throw "Battle IPC qualification refuses to replace an existing STFC Mod Bridge package."
 }
@@ -130,8 +236,8 @@ $installed = $null
 $registrationAttempted = $false
 try {
   $registrationAttempted = $true
-  Add-AppxPackage -Path $package -ErrorAction Stop
-  $packages = @(Get-AppxPackage -Name $expectedPackageIdentity -ErrorAction Stop)
+  Install-DisposablePackage
+  $packages = @(Get-DisposablePackages)
   if ($packages.Count -ne 1) {
     throw "The disposable MSIX did not register exactly one reviewed package identity."
   }
@@ -157,7 +263,7 @@ try {
   }
 } finally {
   if ($null -eq $installed -and $registrationAttempted) {
-    $registeredAfterFailure = @(Get-AppxPackage -Name $expectedPackageIdentity -ErrorAction Stop)
+    $registeredAfterFailure = @(Get-DisposablePackages)
     if ($registeredAfterFailure.Count -eq 1) {
       $installed = $registeredAfterFailure[0]
     } elseif ($registeredAfterFailure.Count -gt 1) {
@@ -165,11 +271,11 @@ try {
     }
   }
   if ($null -ne $installed) {
-    Remove-AppxPackage -Package $installed.PackageFullName -ErrorAction Stop
+    Remove-DisposablePackage -PackageFullName $installed.PackageFullName
   }
 }
 
-if (@(Get-AppxPackage -Name $expectedPackageIdentity -ErrorAction Stop).Count -ne 0) {
+if (@(Get-DisposablePackages).Count -ne 0) {
   throw "The disposable STFC Mod Bridge package remained installed after qualification."
 }
 
