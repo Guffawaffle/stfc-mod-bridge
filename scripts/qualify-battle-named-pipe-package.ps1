@@ -80,6 +80,9 @@ function Invoke-QualificationProcess {
 function Invoke-WindowsPowerShellAppxCommand {
   param(
     [Parameter(Mandatory)]
+    [ValidateSet("query", "install", "remove")]
+    [string]$Operation,
+    [Parameter(Mandatory)]
     [string]$Command
   )
 
@@ -93,8 +96,21 @@ function Invoke-WindowsPowerShellAppxCommand {
         -NonInteractive `
         -OutputFormat Text `
         -EncodedCommand $encodedCommand 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-      throw "The Windows PowerShell Appx command failed with exit code $LASTEXITCODE."
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+      $diagnostic = @(
+        $output |
+          ForEach-Object { ([string]$_).Trim() } |
+          Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+          Select-Object -Last 12
+      ) -join " | "
+      if ($diagnostic.Length -gt 2048) {
+        $diagnostic = $diagnostic.Substring($diagnostic.Length - 2048)
+      }
+      if ([string]::IsNullOrWhiteSpace($diagnostic)) {
+        $diagnostic = "No child diagnostic was returned."
+      }
+      throw "The Windows PowerShell Appx $Operation command failed with exit code $exitCode. $diagnostic"
     }
     return $output
   } finally {
@@ -106,10 +122,10 @@ function Get-DisposablePackages {
   $previousPackageName = $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME
   try {
     $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME = $expectedPackageIdentity
-    $json = @(Invoke-WindowsPowerShellAppxCommand -Command @'
+    $json = @(Invoke-WindowsPowerShellAppxCommand -Operation "query" -Command @'
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$WarningPreference = "Stop"
+$WarningPreference = "SilentlyContinue"
 $InformationPreference = "SilentlyContinue"
 $VerbosePreference = "SilentlyContinue"
 Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
@@ -136,10 +152,10 @@ function Install-DisposablePackage {
   $previousPackagePath = $env:STFC_BATTLE_QUALIFICATION_MSIX
   try {
     $env:STFC_BATTLE_QUALIFICATION_MSIX = $package
-    Invoke-WindowsPowerShellAppxCommand -Command @'
+    Invoke-WindowsPowerShellAppxCommand -Operation "install" -Command @'
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$WarningPreference = "Stop"
+$WarningPreference = "SilentlyContinue"
 $InformationPreference = "SilentlyContinue"
 $VerbosePreference = "SilentlyContinue"
 Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
@@ -159,10 +175,10 @@ function Remove-DisposablePackage {
   $previousPackageFullName = $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME
   try {
     $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME = $PackageFullName
-    Invoke-WindowsPowerShellAppxCommand -Command @'
+    Invoke-WindowsPowerShellAppxCommand -Operation "remove" -Command @'
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$WarningPreference = "Stop"
+$WarningPreference = "SilentlyContinue"
 $InformationPreference = "SilentlyContinue"
 $VerbosePreference = "SilentlyContinue"
 Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop

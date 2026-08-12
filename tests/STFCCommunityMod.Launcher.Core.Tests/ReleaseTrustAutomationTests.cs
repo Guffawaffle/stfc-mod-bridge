@@ -282,6 +282,16 @@ public sealed partial class ReleaseTrustAutomationTests
             script,
             "Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop");
         StringAssert.Contains(script, "$ProgressPreference = \"SilentlyContinue\"");
+        StringAssert.Contains(script, "$WarningPreference = \"SilentlyContinue\"");
+        Assert.IsFalse(
+            script.Contains("$WarningPreference = \"Stop\"", StringComparison.Ordinal),
+            "Appx import warnings must not terminate the delegated Windows PowerShell command.");
+        StringAssert.Contains(script, "-Operation \"query\"");
+        StringAssert.Contains(script, "-Operation \"install\"");
+        StringAssert.Contains(script, "-Operation \"remove\"");
+        StringAssert.Contains(script, "Select-Object -Last 12");
+        StringAssert.Contains(script, "No child diagnostic was returned.");
+        StringAssert.Contains(script, "Appx $Operation command failed with exit code $exitCode");
         StringAssert.Contains(
             script,
             "Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME");
@@ -293,6 +303,72 @@ public sealed partial class ReleaseTrustAutomationTests
             script,
             "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
         StringAssert.Contains(script, "refuses to replace an existing STFC Mod Bridge package");
+    }
+
+    [TestMethod]
+    public async Task WindowsPowerShellAppxQueryIsAvailableToTheReleaseRunner()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("The Windows Appx qualification host is Windows-only.");
+        }
+
+        var windowsPowerShell = Path.Combine(
+            Environment.SystemDirectory,
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+        var appxModule = Path.Combine(
+            Environment.SystemDirectory,
+            "WindowsPowerShell",
+            "v1.0",
+            "Modules",
+            "Appx",
+            "Appx.psd1");
+        Assert.IsTrue(File.Exists(windowsPowerShell), windowsPowerShell);
+        Assert.IsTrue(File.Exists(appxModule), appxModule);
+
+        const string command = """
+            $ErrorActionPreference = "Stop"
+            $ProgressPreference = "SilentlyContinue"
+            $WarningPreference = "SilentlyContinue"
+            $InformationPreference = "SilentlyContinue"
+            $VerbosePreference = "SilentlyContinue"
+            Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+            @(Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME -ErrorAction Stop) |
+              Select-Object PackageFullName, PackageFamilyName |
+              ConvertTo-Json -Compress
+            """;
+        var encodedCommand = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command));
+        var startInfo = new ProcessStartInfo(windowsPowerShell)
+        {
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-OutputFormat");
+        startInfo.ArgumentList.Add("Text");
+        startInfo.ArgumentList.Add("-EncodedCommand");
+        startInfo.ArgumentList.Add(encodedCommand);
+        startInfo.Environment["STFC_BATTLE_QUALIFICATION_APPX_MODULE"] = appxModule;
+        startInfo.Environment["STFC_BATTLE_QUALIFICATION_PACKAGE_NAME"] = "Guffawaffle.STFCModBridge";
+
+        using var process = Process.Start(startInfo);
+        Assert.IsNotNull(process);
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await standardOutput;
+        var error = await standardError;
+
+        Assert.AreEqual(
+            0,
+            process.ExitCode,
+            $"Windows PowerShell Appx query failed. stdout: {output} stderr: {error}");
     }
 
     [TestMethod]
