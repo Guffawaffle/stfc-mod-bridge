@@ -262,6 +262,115 @@ public sealed class AtomicTomlStore
         }
     }
 
+    public async Task<AtomicTomlWriteResult> CreateDocumentAsync(
+        string? configurationPath,
+        byte[] contents,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        contents = [.. contents];
+        var validation = ValidateDocument(contents);
+        if (validation is not null)
+        {
+            return new(AtomicTomlWriteState.Invalid, ValidationError: validation);
+        }
+        if (string.IsNullOrWhiteSpace(configurationPath))
+        {
+            return new(AtomicTomlWriteState.NoConfigurationSelected);
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(configurationPath);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return new(AtomicTomlWriteState.IoFailure, Error: exception.Message);
+        }
+
+        var parentDirectory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(parentDirectory))
+        {
+            return new(
+                AtomicTomlWriteState.IoFailure,
+                Error: "The configuration path does not have a parent directory.");
+        }
+
+        var temporaryPath = Path.Combine(
+            parentDirectory,
+            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
+        var gateHeld = false;
+        try
+        {
+            await pathGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateHeld = true;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (File.Exists(fullPath))
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: "The configuration was created outside Mod Bridge after the editing session began.");
+            }
+
+            await WriteDurablyAsync(temporaryPath, contents, cancellationToken).ConfigureAwait(false);
+            if (beforeReplace is not null)
+            {
+                await beforeReplace(temporaryPath, fullPath, cancellationToken).ConfigureAwait(false);
+            }
+            if (File.Exists(fullPath))
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: "The configuration was created outside Mod Bridge before the first save completed.");
+            }
+
+            try
+            {
+                File.Move(temporaryPath, fullPath);
+            }
+            catch (IOException) when (File.Exists(fullPath))
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: "The configuration was created outside Mod Bridge before the first save committed.");
+            }
+            return new(AtomicTomlWriteState.Succeeded);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException)
+        {
+            return new(AtomicTomlWriteState.IoFailure, Error: exception.Message);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
+            {
+                // Best effort only: never let temporary-file cleanup obscure the write result.
+            }
+
+            if (gateHeld)
+            {
+                pathGate.Release();
+            }
+        }
+    }
+
     private async Task<AtomicTomlWriteResult> TransformAsync(
         string? configurationPath,
         Func<SparseTomlDocument, SparseTomlEditResult> transform,

@@ -53,6 +53,35 @@ function Get-ActiveConfigurationPath {
   return $null
 }
 
+function Get-ActiveGameDirectory {
+  $localApplicationData = [Environment]::GetFolderPath(
+    [Environment+SpecialFolder]::LocalApplicationData)
+  if ([string]::IsNullOrWhiteSpace($localApplicationData)) {
+    return $null
+  }
+
+  $selectionPath = Join-Path `
+    $localApplicationData `
+    "STFC Mod Bridge\install-selection.json"
+  if (-not (Test-Path -LiteralPath $selectionPath -PathType Leaf)) {
+    return $null
+  }
+
+  try {
+    $selection = Get-Content -LiteralPath $selectionPath -Raw |
+      ConvertFrom-Json -ErrorAction Stop
+    if ($selection.schemaVersion -eq 1 -and
+        -not [string]::IsNullOrWhiteSpace([string]$selection.gameDirectory)) {
+      return [System.IO.Path]::GetFullPath([string]$selection.gameDirectory)
+    }
+  }
+  catch {
+    Write-Verbose "The saved game selection could not be read: $($_.Exception.Message)"
+  }
+
+  return $null
+}
+
 function Wait-ForResponsiveMainWindow {
   param(
     [Parameter(Mandatory)]
@@ -467,6 +496,9 @@ try {
     [System.IO.File]::WriteAllBytes(
       (Join-Path $disposableGameDirectory "prime.exe"),
       [byte[]]::new(0))
+    [System.IO.File]::WriteAllBytes(
+      (Join-Path $disposableGameDirectory "version.dll"),
+      [byte[]](0))
     [System.IO.File]::WriteAllText(
       (Join-Path $disposableGameDirectory "community_patch_settings.toml"),
       @"
@@ -532,6 +564,9 @@ token = "disposable-foxtrot-secret"
   }
 
   $configurationPath = Get-ActiveConfigurationPath
+  $activeGameDirectory = Get-ActiveGameDirectory
+  $communityModPresent = $null -ne $activeGameDirectory -and
+    (Test-Path -LiteralPath (Join-Path $activeGameDirectory "version.dll") -PathType Leaf)
   $configurationHashBefore = $null
   if ($null -ne $configurationPath) {
     $configurationHashBefore = (
@@ -636,12 +671,19 @@ try {
     [System.Windows.Automation.TreeScope]::Descendants,
     $buttonCondition)
   $modAction = $homeButtons | Where-Object {
-    $_.Current.Name -match '(?i)community mod'
+    $_.Current.Name -match '(?i)^(install the community mod|the installed artifact|the managed runtime compatibility file|check the selected release source|check for community mod|community mod transaction recovery)'
   } | Select-Object -First 1
   if ($null -eq $modAction) {
     throw "Mod Bridge Home did not expose an accessible community-mod action."
   }
   Write-Host "PASS: Mod Bridge Home exposes community-mod state and action '$($modAction.Current.Name)'."
+  if (-not $communityModPresent) {
+    if ($modAction.Current.Name -notmatch '(?i)^install.*community mod' -or
+        -not $modAction.Current.IsEnabled) {
+      throw "No version.dll did not project an enabled community-mod Install action."
+    }
+    Write-Host "PASS: no installed DLL projects Install instead of Repair."
+  }
 
   $releaseSource = $homeButtons | Where-Object {
     $_.Current.Name -match '^Community mod release source:'
@@ -732,6 +774,12 @@ try {
   if ($null -eq $primeChoice -or $null -eq $scopelyChoice) {
     throw "The launch-target menu did not expose both explicit choices through UI Automation."
   }
+  if (-not $communityModPresent -and -not $primeChoice.Current.IsEnabled) {
+    throw "Launch prime.exe remained blocked even though version.dll is absent."
+  }
+  if (-not $communityModPresent) {
+    Write-Host "PASS: Launch prime.exe remains available for an unmodded game start."
+  }
   $windowBounds = $root.Current.BoundingRectangle
   $menuBounds = $launchTargetMenu.Current.BoundingRectangle
   $choiceBounds = $primeChoice.Current.BoundingRectangle
@@ -754,6 +802,15 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline
   Invoke-AutomationElement -Element $diagnosticsEntry
+  $diagnosticsWorkspace = Find-AutomationElement `
+    -Root $root `
+    -Name "Mod Bridge Diagnostics workspace" `
+    -Deadline $deadline
+  $closeDiagnostics = Find-AutomationElement `
+    -Root $root `
+    -Name "Return to Mod Bridge home from Diagnostics" `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -Deadline $deadline
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Re-run Diagnostics checks" `
@@ -814,25 +871,31 @@ try {
     -Deadline $deadline
   Invoke-AutomationElement -Element $closeGuidance
   Write-Host "PASS: bundled verification and recovery guidance opens offline as a selectable read-only surface."
-  Invoke-AutomationElement -Element $configurationCleanup
-  [void](Find-AutomationElement `
-    -Root $root `
-    -Name "Apply selected reviewed configuration cleanup" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline $deadline)
-  $cancelConfigurationCleanup = Find-AutomationElement `
-    -Root $root `
-    -Name "Cancel configuration cleanup without changing the file" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline $deadline
-  Invoke-AutomationElement -Element $cancelConfigurationCleanup
-  Start-Sleep -Milliseconds 250
-  $focusedAfterCleanup = [System.Windows.Automation.AutomationElement]::FocusedElement
-  if ($null -eq $focusedAfterCleanup -or
-      $focusedAfterCleanup.Current.Name -ne "Review eligible configuration cleanup") {
-    throw "Canceling configuration cleanup did not return keyboard focus to its Diagnostics entry point."
+  if ($null -eq $configurationPath) {
+    Write-Host "PASS: configuration cleanup review is not invoked without an active TOML."
   }
-  Write-Host "PASS: catalog-authorized cleanup opens a focused redacted review and cancellation preserves focus without mutation."
+  else {
+    Invoke-AutomationElement -Element $configurationCleanup
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name "Apply selected reviewed configuration cleanup" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline $deadline)
+    $cancelConfigurationCleanup = Find-AutomationElement `
+      -Root $root `
+      -Name "Cancel configuration cleanup without changing the file" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline $deadline
+    Invoke-AutomationElement -Element $cancelConfigurationCleanup
+    Start-Sleep -Milliseconds 250
+    $focusedAfterCleanup = [System.Windows.Automation.AutomationElement]::FocusedElement
+    if ($null -eq $focusedAfterCleanup -or
+        $focusedAfterCleanup.Current.Name -ne "Review eligible configuration cleanup") {
+      throw "Canceling configuration cleanup did not return keyboard focus to its Diagnostics entry point."
+    }
+    Write-Host "PASS: catalog-authorized cleanup opens a focused redacted review and cancellation preserves focus without mutation."
+  }
+  Scroll-AutomationElementToVerticalEnd -Element $diagnosticsWorkspace
   $technicalReport = $root.FindFirst(
     [System.Windows.Automation.TreeScope]::Descendants,
     [System.Windows.Automation.PropertyCondition]::new(
@@ -877,11 +940,6 @@ try {
       throw "The diagnostic preview exposed the raw game-directory path."
     }
   }
-  $closeDiagnostics = Find-AutomationElement `
-    -Root $root `
-    -Name "Return to Mod Bridge home from Diagnostics" `
-    -ControlType ([System.Windows.Automation.ControlType]::Button) `
-    -Deadline $deadline
   Invoke-AutomationElement -Element $closeDiagnostics
   Write-Host "PASS: structured Diagnostics and its exact redacted technical preview are accessible through UI Automation."
 
@@ -892,7 +950,22 @@ try {
     -Deadline $deadline
   Invoke-AutomationElement -Element $settingsEntry
 
-  $settingsDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  if (-not $communityModPresent) {
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name "Community Mod is not installed in the selected game folder. Install it before editing mod settings." `
+      -ControlType ([System.Windows.Automation.ControlType]::Text) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+    $closeUnavailableSettings = Find-AutomationElement `
+      -Root $root `
+      -Name "Close dialog" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    Invoke-AutomationElement -Element $closeUnavailableSettings
+    Write-Host "PASS: no installed DLL keeps mod Settings unavailable without mutating or obscuring Home."
+  }
+  else {
+    $settingsDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
   [void](Find-AutomationElement `
     -Root $root `
     -Name "Return to Mod Bridge home" `
@@ -1305,6 +1378,7 @@ try {
   }
 
   Write-Host "PASS: Mod Bridge chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  }
 }
 catch {
   $smokeFailure = $_

@@ -120,6 +120,29 @@ public sealed class LaunchTargetSplitButtonTests
     }
 
     [TestMethod]
+    public void UnverifiedProxyWarningRequiresAnExplicitLaunchAnywayAction()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var dialog = document.Descendants()
+            .Single(element => GetName(element) == "LaunchOverrideDialog");
+        var buttons = dialog.Descendants(Presentation + "Button").ToArray();
+
+        Assert.AreEqual("Launch with unverified mod?", (string?)dialog.Attribute("DialogTitle"));
+        Assert.AreEqual("LaunchOverrideDialog_Closed", (string?)dialog.Attribute("Closed"));
+        Assert.IsTrue(buttons.Any(button =>
+            (string?)button.Attribute("Click") == "CancelLaunchOverrideButton_Click"));
+        Assert.IsTrue(buttons.Any(button =>
+            (string?)button.Attribute("Click") == "ConfirmLaunchOverrideButton_Click"
+            && (string?)button.Attribute("Content") == "_Launch anyway"));
+        StringAssert.Contains(
+            File.ReadAllText(
+                Path.Combine(
+                    RepositoryRoot(),
+                    "src/STFCCommunityMod.Launcher/ViewModels/MainWindowViewModel.cs")),
+            "allowUnverifiedProxy");
+    }
+
+    [TestMethod]
     public void HomeUsesResponsiveSemanticSectionsWithNaturalActionMeasurement()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");

@@ -25,6 +25,15 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(ModBinaryProvenanceState.MetadataUnavailable, manual.BinaryProvenance?.State);
 
         stateReader.InstalledState = InstalledState(gameDirectory);
+        fileSystem.ArtifactExists = false;
+        stateReader.ThrowOnInstalledStateRead = true;
+        Assert.AreEqual(
+            ModInstallationEvidenceState.NotInstalled,
+            inspector.Capture(gameDirectory, isGameRunning: false).State,
+            "An absent DLL must not depend on stale or unreadable installed-artifact state.");
+
+        stateReader.ThrowOnInstalledStateRead = false;
+        fileSystem.ArtifactExists = true;
         fileSystem.Sha256 = InstalledSha256;
         var managed = inspector.Capture(gameDirectory, isGameRunning: true);
         Assert.AreEqual(ModInstallationEvidenceState.ManagedVerified, managed.State);
@@ -431,6 +440,8 @@ public sealed class LauncherLocalHealthTests
 
         public bool ThrowOnRead { get; set; }
 
+        public bool ThrowOnInstalledStateRead { get; set; }
+
         public ModDeploymentJournal? ReadJournal()
         {
             if (ThrowOnRead)
@@ -442,7 +453,7 @@ public sealed class LauncherLocalHealthTests
 
         public ModInstalledArtifactState? ReadInstalledState()
         {
-            if (ThrowOnRead)
+            if (ThrowOnRead || ThrowOnInstalledStateRead)
             {
                 throw new IOException("Injected state read failure.");
             }

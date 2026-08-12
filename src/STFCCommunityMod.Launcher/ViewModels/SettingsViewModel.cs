@@ -100,6 +100,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         SyncWorkspace.Committed += SyncWorkspace_Committed;
 
         TryLoadConfiguration();
+        SyncWorkspace.Reload();
         projectionQuery = new(catalog, layoutProvider);
         RefreshKeybindingConflicts();
 
@@ -274,7 +275,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public string ConfigurationStatus =>
         IsConfigurationReady
-            ? "Changes are staged until you save."
+            ? workspace!.DocumentExists
+                ? "Changes are staged until you save."
+                : "No TOML exists yet. Your first saved change will create it."
             : "Select a game folder with a supported configuration to enable editing.";
 
     public int PendingChangeCount => workspace?.PendingChangeCount ?? 0;

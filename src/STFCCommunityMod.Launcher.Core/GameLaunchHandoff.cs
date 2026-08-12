@@ -30,7 +30,8 @@ public sealed record GameLaunchPresentation(
     string AutomationName,
     LauncherLaunchTarget Target,
     string Reason,
-    LauncherLaunchRecoveryAction NextAction)
+    LauncherLaunchRecoveryAction NextAction,
+    bool RequiresUserOverride = false)
 {
     public string NextActionLabel => NextAction switch
     {
@@ -347,12 +348,21 @@ public sealed class GameLaunchHandoffCoordinator(
     public async Task<GameLaunchHandoffResult> LaunchAsync(
         string? gameDirectory,
         LauncherLaunchTarget target,
+        bool allowUnverifiedProxy = false,
         CancellationToken cancellationToken = default)
     {
         var initial = CapturePresentation(gameDirectory, target);
         if (!initial.CanExecute)
         {
             return new(GameLaunchHandoffState.Blocked, initial.AutomationName, initial, Changed: false);
+        }
+        if (initial.RequiresUserOverride && !allowUnverifiedProxy)
+        {
+            return new(
+                GameLaunchHandoffState.Blocked,
+                "Review the version.dll warning and choose Launch anyway to continue.",
+                initial,
+                Changed: false);
         }
 
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
@@ -377,6 +387,14 @@ public sealed class GameLaunchHandoffCoordinator(
         if (!revalidated.CanExecute)
         {
             return new(GameLaunchHandoffState.Blocked, revalidated.AutomationName, revalidated, Changed: false);
+        }
+        if (revalidated.RequiresUserOverride && !allowUnverifiedProxy)
+        {
+            return new(
+                GameLaunchHandoffState.Blocked,
+                "The version.dll state changed and now requires explicit Launch anyway approval.",
+                revalidated,
+                Changed: false);
         }
 
         return target == LauncherLaunchTarget.ScopelyLauncher
@@ -528,21 +546,13 @@ public sealed class GameLaunchHandoffCoordinator(
                     "Recover the incomplete mod transaction before launching.",
                     target,
                     LauncherLaunchRecoveryAction.RecoverModTransaction),
-                ModInstallationEvidenceState.NotInstalled => Blocked(
-                    "Mod required",
-                    "Launch prime.exe",
-                    "Install the community mod before a direct modded launch.",
-                    target,
-                    LauncherLaunchRecoveryAction.InstallMod),
+                ModInstallationEvidenceState.NotInstalled => ReadyWithoutMod(target),
                 ModInstallationEvidenceState.ManagedChanged
-                    or ModInstallationEvidenceState.Unavailable => Blocked(
-                        "Repair required",
-                        "Launch prime.exe",
-                        "Repair the Mod Bridge-managed mod before launching.",
-                        target,
-                        LauncherLaunchRecoveryAction.RepairMod),
-                ModInstallationEvidenceState.ManualInstallation
-                    or ModInstallationEvidenceState.ManagedVerified => null,
+                    or ModInstallationEvidenceState.Unavailable =>
+                    CapturePrimeDeploymentHealth(validation.GameDirectory, target),
+                ModInstallationEvidenceState.ManualInstallation =>
+                    CapturePrimeDeploymentHealth(validation.GameDirectory, target),
+                ModInstallationEvidenceState.ManagedVerified => null,
                 _ => CapturePrimeDeploymentHealth(validation.GameDirectory, target),
             };
         }
@@ -570,45 +580,81 @@ public sealed class GameLaunchHandoffCoordinator(
                     LauncherLaunchRecoveryAction.RecoverModTransaction);
             }
 
-            var state = deploymentService.ReadInstalledState();
             var targetPath = Path.Combine(gameDirectory, "version.dll");
+            var targetExists = File.Exists(targetPath);
+            if (!targetExists)
+            {
+                return ReadyWithoutMod(target);
+            }
+
+            var state = deploymentService.ReadInstalledState();
             if (state is null)
             {
-                if (!File.Exists(targetPath))
-                {
-                    return Blocked(
-                        "Mod required",
-                        "Launch prime.exe",
-                        "Install the community mod before a direct modded launch.",
-                        target,
-                        LauncherLaunchRecoveryAction.InstallMod);
-                }
-            }
-            else if (!PathEquals(state.GameDirectory, gameDirectory)
-                || !File.Exists(targetPath)
-                || !string.Equals(ComputeSha256(targetPath), state.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                return Blocked(
-                    "Repair required",
-                    "Launch prime.exe",
-                    "Repair the Mod Bridge-managed mod before launching.",
+                return RequiresOverride(
                     target,
-                    LauncherLaunchRecoveryAction.RepairMod);
+                    "This game folder contains version.dll, but Mod Bridge did not install or record it. Windows may "
+                    + "load it automatically, and Mod Bridge cannot vouch for its source or behavior.");
+            }
+            else if (!PathEquals(state.GameDirectory, gameDirectory))
+            {
+                return RequiresOverride(
+                    target,
+                    "This game folder contains version.dll, but it is not the verified Mod Bridge-managed file "
+                    + "recorded for this installation. Windows may load it automatically.");
+            }
+            else if (!string.Equals(
+                         ComputeSha256(targetPath),
+                         state.Sha256,
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                return RequiresOverride(
+                    target,
+                    "The Mod Bridge-managed version.dll has changed since it was installed. Windows may still "
+                    + "load it automatically, and Mod Bridge cannot vouch for what it will do.");
             }
         }
         catch (Exception exception) when (
-            exception is InvalidDataException or IOException or UnauthorizedAccessException)
+            exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+                or System.Text.Json.JsonException
+                or CryptographicException)
         {
-            return Blocked(
-                "Repair required",
-                "Launch prime.exe",
-                "The community mod deployment state could not be validated safely.",
+            return RequiresOverride(
                 target,
+                "Mod Bridge could not verify the local version.dll deployment state. Windows may load a present "
+                + "proxy automatically, and Mod Bridge cannot vouch for what it will do.",
                 LauncherLaunchRecoveryAction.OpenDiagnostics);
         }
 
         return null;
     }
+
+    private static GameLaunchPresentation ReadyWithoutMod(LauncherLaunchTarget target) => new(
+        "Ready without mod",
+        LauncherHomeTone.Warning,
+        "Launch prime.exe",
+        true,
+        "Launch prime.exe without the community mod",
+        target,
+        "No version.dll is present in the selected game folder. The game will start without the community mod.",
+        LauncherLaunchRecoveryAction.InstallMod);
+
+    private static GameLaunchPresentation RequiresOverride(
+        LauncherLaunchTarget target,
+        string explanation,
+        LauncherLaunchRecoveryAction nextAction = LauncherLaunchRecoveryAction.RepairMod) => new(
+            "Mod needs attention",
+            LauncherHomeTone.Warning,
+            "Launch prime.exe",
+            true,
+            $"Launch prime.exe requires confirmation: {explanation}",
+            target,
+            explanation,
+            nextAction,
+            RequiresUserOverride: true);
 
     private static GameLaunchPresentation Blocked(
         string status,

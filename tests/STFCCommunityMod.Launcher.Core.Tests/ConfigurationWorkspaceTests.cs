@@ -281,6 +281,81 @@ public sealed class ConfigurationWorkspaceTests
     }
 
     [TestMethod]
+    public async Task MissingConfigurationIsEditableAndFirstSaveCreatesOnlyTheStagedOverride()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var catalog = LoadCatalog();
+        var load = ConfigurationWorkspace.Load(
+            path,
+            catalog,
+            new TomlConfigurationRepository(),
+            out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+        Assert.IsNotNull(workspace);
+        Assert.IsFalse(workspace.DocumentExists);
+        Assert.IsFalse(File.Exists(path));
+        var setting = catalog.Settings.Single(
+            item => item.Path == "graphics.free_resize");
+
+        var stage = workspace.StageSet(setting, "false");
+        var result = await workspace.CommitAsync();
+
+        Assert.IsTrue(stage.IsValid, stage.Error?.Message);
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.IsTrue(workspace.DocumentExists);
+        Assert.IsTrue(File.Exists(path));
+        StringAssert.Contains(await File.ReadAllTextAsync(path), "free_resize = false");
+        Assert.IsFalse(File.Exists(path + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task MissingConfigurationNoOpCommitDoesNotCreateAnEmptyFile()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var load = ConfigurationWorkspace.Load(
+            path,
+            LoadCatalog(),
+            new TomlConfigurationRepository(),
+            out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+
+        var result = await workspace!.CommitAsync();
+
+        Assert.AreEqual(AtomicTomlWriteState.NoChange, result.State, result.Error);
+        Assert.IsFalse(workspace.DocumentExists);
+        Assert.IsFalse(File.Exists(path));
+    }
+
+    [TestMethod]
+    public async Task FirstSaveConflictsWithAnExternallyCreatedConfiguration()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var catalog = LoadCatalog();
+        var load = ConfigurationWorkspace.Load(
+            path,
+            catalog,
+            new TomlConfigurationRepository(),
+            out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+        var setting = catalog.Settings.Single(
+            item => item.Path == "graphics.free_resize");
+        workspace!.StageSet(setting, "false");
+        const string external = "# created outside Mod Bridge\n[custom]\nkeep = true\n";
+        await File.WriteAllTextAsync(path, external);
+
+        var result = await workspace.CommitAsync();
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        Assert.IsTrue(workspace.HasPendingChanges);
+        Assert.IsTrue(workspace.IsStale);
+        Assert.AreEqual(external, await File.ReadAllTextAsync(path));
+        Assert.IsFalse(File.Exists(path + ".bak"));
+    }
+
+    [TestMethod]
     public async Task RepositoryFailureLeavesDraftAndBaselineUnchanged()
     {
         var catalog = LoadCatalog();

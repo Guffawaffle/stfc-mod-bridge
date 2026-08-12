@@ -510,6 +510,35 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public async Task MissingTomlRemainsEditableAndIsCreatedOnlyAfterExplicitSave()
+    {
+        using var fixture = SettingsFixture.Create();
+        File.Delete(fixture.ConfigurationPath);
+        var viewModel = fixture.CreateAdditionalViewModel();
+        SettingsFixture.Select(viewModel, LauncherSettingsSection.Graphics);
+        var setting = fixture.Catalog.VisibleSettings.Single(
+            item => item.Path == "graphics.free_resize");
+        var row = viewModel.FilteredSettings
+            .OfType<SettingsRowViewModel>()
+            .Single(item => item.Path == setting.Path);
+
+        Assert.IsTrue(viewModel.IsConfigurationReady);
+        StringAssert.Contains(viewModel.ConfigurationStatus, "first saved change");
+        Assert.IsFalse(File.Exists(fixture.ConfigurationPath));
+
+        row.BooleanValue = !row.BooleanValue;
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+        Assert.IsFalse(File.Exists(fixture.ConfigurationPath));
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.HasPendingChanges);
+
+        Assert.IsTrue(File.Exists(fixture.ConfigurationPath));
+        StringAssert.Contains(
+            await File.ReadAllTextAsync(fixture.ConfigurationPath),
+            "free_resize =");
+    }
+
+    [TestMethod]
     public async Task SaveWhileUnlockedPreservesUnrelatedSparseToml()
     {
         const string original = "# keep this comment\n[custom]\nkeep = \"verbatim\"\n";

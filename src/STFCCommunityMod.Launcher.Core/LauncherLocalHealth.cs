@@ -191,15 +191,15 @@ public sealed class ModInstallationInspector(
                 return new(ModInstallationEvidenceState.RecoveryRequired, isGameRunning);
             }
 
-            var installedState = stateReader.ReadInstalledState();
             var artifactPath = Path.Combine(normalizedGameDirectory, "version.dll");
             var artifactExists = fileSystem.FileExists(artifactPath);
+            if (!artifactExists)
+            {
+                return new(ModInstallationEvidenceState.NotInstalled, isGameRunning);
+            }
+            var installedState = stateReader.ReadInstalledState();
             if (installedState is null)
             {
-                if (!artifactExists)
-                {
-                    return new(ModInstallationEvidenceState.NotInstalled, isGameRunning);
-                }
                 var manualArtifactLength = ReadValidArtifactLength(artifactPath);
                 var sha256 = fileSystem.ComputeSha256(artifactPath);
                 var manualProvenance = provenanceResolver.Resolve(
@@ -214,20 +214,17 @@ public sealed class ModInstallationInspector(
                     BinaryProvenance: manualProvenance);
             }
 
-            var artifactLength = artifactExists ? ReadValidArtifactLength(artifactPath) : 0;
-            var actualSha256 = artifactExists ? fileSystem.ComputeSha256(artifactPath) : null;
+            var artifactLength = ReadValidArtifactLength(artifactPath);
+            var actualSha256 = fileSystem.ComputeSha256(artifactPath);
             var verified = PathsEqual(installedState.GameDirectory, normalizedGameDirectory)
-                && artifactExists
                 && string.Equals(
                     actualSha256,
                     installedState.Sha256,
                     StringComparison.OrdinalIgnoreCase);
-            var actualProvenance = artifactExists
-                ? provenanceResolver.Resolve(
-                    artifactPath,
-                    actualSha256!,
-                    artifactLength)
-                : null;
+            var actualProvenance = provenanceResolver.Resolve(
+                artifactPath,
+                actualSha256,
+                artifactLength);
             var runtimeManifestState = ManagedRuntimeManifestEvidenceState.NotManaged;
             ReviewedRuntimeActivation? runtimeActivation = null;
             if (verified && installedState.RuntimeManifest is not null)

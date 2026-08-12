@@ -91,6 +91,8 @@ public sealed class ConfigurationWorkspace
 
     public string DocumentPath => baseline.Path;
 
+    public bool DocumentExists => baseline.Existed;
+
     public long Revision { get; private set; }
 
     public ConfigurationDocumentRevision BaselineRevision => baseline.Revision;
@@ -116,13 +118,31 @@ public sealed class ConfigurationWorkspace
         ArgumentNullException.ThrowIfNull(repository);
         workspace = null;
         var read = repository.Read(configurationPath);
-        if (!read.IsSuccess || read.Snapshot is null)
+        ConfigurationDocumentSnapshot snapshot;
+        if (read.IsSuccess && read.Snapshot is not null)
+        {
+            snapshot = read.Snapshot;
+        }
+        else if (read.State == ConfigurationRepositoryReadState.NoConfigurationSelected
+            && !string.IsNullOrWhiteSpace(configurationPath))
+        {
+            try
+            {
+                snapshot = new(configurationPath, [], existed: false);
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or NotSupportedException)
+            {
+                return new(ConfigurationRepositoryReadState.IoFailure, Error: exception.Message);
+            }
+        }
+        else
         {
             return new(read.State, read.ValidationError, read.Error);
         }
 
         var sessionLoad = LauncherConfigurationEditSession.Load(
-            read.Snapshot.Contents,
+            snapshot.Contents,
             catalog,
             out var settingsSession);
         if (!sessionLoad.IsValid || settingsSession is null)
@@ -132,7 +152,7 @@ public sealed class ConfigurationWorkspace
                 sessionLoad.Error);
         }
 
-        workspace = new(repository, read.Snapshot, settingsSession);
+        workspace = new(repository, snapshot, settingsSession);
         return new(ConfigurationRepositoryReadState.Succeeded);
     }
 
@@ -235,7 +255,12 @@ public sealed class ConfigurationWorkspace
         }
 
         var result = await repository.CommitDocumentAsync(
-            new(baseline.Path, baseline.Revision, baseline.Contents, edit.Contents),
+            new(
+                baseline.Path,
+                baseline.Revision,
+                baseline.Contents,
+                edit.Contents,
+                baseline.Existed),
             cancellationToken).ConfigureAwait(false);
         if (!result.IsSuccess || result.CommittedSnapshot is null)
         {
@@ -289,7 +314,8 @@ public sealed class ConfigurationWorkspace
             baseline.Path,
             baseline.Revision,
             baseline.Contents,
-            changeSet);
+            changeSet,
+            baseline.Existed);
         var result = await repository
             .CommitAsync(request, cancellationToken)
             .ConfigureAwait(false);

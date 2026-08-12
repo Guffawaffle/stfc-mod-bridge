@@ -15,7 +15,9 @@ preference documents default to `Open Scopely launcher`, preserving the pre-spli
 does not rewrite the preference; its structured reason and next action remain visible.
 
 The Scopely path owns authentication, base-game update, repair, and first-time sign-in. Direct launch does not add any of
-those responsibilities to the community launcher. It is intended for an already healthy installation and mod deployment.
+those responsibilities to the community launcher. Direct launch is a base-game action: it may start a healthy managed mod,
+start without the mod when no `version.dll` exists, or require an explicit per-attempt warning override when a proxy exists
+but Mod Bridge cannot verify it.
 
 ## Eligibility
 
@@ -28,8 +30,21 @@ and when a game directory has not been selected.
 
 - a confirmed valid directory containing `prime.exe`;
 - no running STFC game process;
-- no incomplete mod transaction;
-- a locally present manual mod, or a launcher-managed `version.dll` whose recorded bytes still match.
+- no active, incomplete, or malformed mod transaction;
+- the shared launcher operation lease.
+
+Proxy state changes the launch presentation without turning mod health into a blanket launch gate:
+
+- no `version.dll`: launch is immediately available and explicitly identified as running without the community mod;
+- exact verified managed `version.dll`: launch is immediately available with the managed mod;
+- unrecorded, changed, or unreadable `version.dll` evidence: launch remains available only through an explicit
+  **Launch anyway** warning;
+- active/incomplete deployment, invalid game target, a running or unattributable game process, or a busy operation lease:
+  launch remains blocked.
+
+**Launch anyway** is authorization for one launch attempt. It does not persist trust, adopt the proxy, alter provenance,
+move or quarantine files, repair the mod, or weaken a later warning. The dialog states that Windows may load the present
+proxy automatically and that Mod Bridge cannot vouch for its source or behavior.
 
 Each Core presentation carries a stable target, reason, and `LauncherLaunchRecoveryAction`. WPF projects those fields; it
 does not infer recovery guidance from display text. Home and UI Automation reasons are stable and path-free; raw filesystem
@@ -65,8 +80,9 @@ selected target.
 ## Automated evidence and manual residuals
 
 Core tests cover both targets, Scopely changed/no-change identity, post-lock revalidation, cross-operation exclusion,
-running-game independence, direct-launch health, failures, and preference migration. WPF tests cover split geometry,
-keyboard/focus behavior, non-color selection state, structured availability projection, and feedback arbitration.
+running-game independence, direct managed and unmodded launch, per-attempt unverified-proxy approval, failures, and
+preference migration. WPF tests cover split geometry, the warning and **Launch anyway** action, keyboard/focus behavior,
+non-color selection state, structured availability projection, and feedback arbitration.
 
 Packaged UI Automation opens the target menu, accepts either persisted primary target, and finds both exact choices without
 invoking either executable. The disposable smoke also proves the active TOML hash is unchanged.
