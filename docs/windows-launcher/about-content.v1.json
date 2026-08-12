@@ -215,7 +215,7 @@
       "version": "10.0.19041.56",
       "noticeId": "windows-sdk-net-ref",
       "attributionStatus": "required",
-      "evidenceKind": "runtime-pack"
+      "evidenceKind": "targeting-pack"
     },
     {
       "id": "go",

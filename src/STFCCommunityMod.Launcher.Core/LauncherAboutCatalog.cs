@@ -93,7 +93,14 @@ public static class LauncherAboutCatalogLoader
         RequireEvidenceKind(
             dependencies,
             new HashSet<string>(
-                ["resolved-package", "runtime-pack", "go-build-toolchain", "go-build-module", "go-build-graph"],
+                [
+                    "resolved-package",
+                    "runtime-pack",
+                    "targeting-pack",
+                    "go-build-toolchain",
+                    "go-build-module",
+                    "go-build-graph",
+                ],
                 StringComparer.Ordinal));
         RequireEvidenceKind(
             assets,

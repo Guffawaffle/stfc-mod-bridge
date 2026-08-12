@@ -77,6 +77,8 @@ public sealed class WindowsPackagedLauncherUpdateServiceTests
     [DataRow("http://updates.example.test/STFCModBridge.appinstaller")]
     [DataRow("https://user@updates.example.test/STFCModBridge.appinstaller")]
     [DataRow("https://updates.example.test/STFCModBridge.appinstaller#fragment")]
+    [DataRow("https://updates.example.test/STFCModBridge.msix")]
+    [DataRow("https://updates.example.test/check-for-update")]
     public void AppInstallerActivationRejectsUnreviewedSourceShapes(string source)
     {
         Assert.ThrowsException<ArgumentException>(() =>

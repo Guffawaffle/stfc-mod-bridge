@@ -357,8 +357,19 @@ function Start-DisposableAppInstallerHost {
 
     [xml]$descriptor = Get-Content -Raw -LiteralPath $canonicalAppInstaller
     $baseUri = "http://127.0.0.1:$port"
-    $descriptor.AppInstaller.Uri = "$baseUri/STFCModBridge.appinstaller"
-    $descriptor.AppInstaller.MainPackage.Uri = "$baseUri/STFCModBridge.msix"
+    $namespaceUri = $descriptor.DocumentElement.NamespaceURI
+    if ([string]::IsNullOrWhiteSpace($namespaceUri)) {
+      throw "The canonical App Installer descriptor has no namespace."
+    }
+    $namespaceManager = [System.Xml.XmlNamespaceManager]::new($descriptor.NameTable)
+    $namespaceManager.AddNamespace("ai", $namespaceUri)
+    $appInstallerElement = $descriptor.SelectSingleNode("/ai:AppInstaller", $namespaceManager)
+    $mainPackageElement = $descriptor.SelectSingleNode("/ai:AppInstaller/ai:MainPackage", $namespaceManager)
+    if ($null -eq $appInstallerElement -or $null -eq $mainPackageElement) {
+      throw "The canonical App Installer descriptor is missing AppInstaller or MainPackage."
+    }
+    $appInstallerElement.SetAttribute("Uri", "$baseUri/STFCModBridge.appinstaller")
+    $mainPackageElement.SetAttribute("Uri", "$baseUri/STFCModBridge.msix")
     $descriptor.Save($hostDescriptor)
 
     $pythonArguments = if ([System.IO.Path]::GetFileName($python.Source) -ieq "py.exe") {

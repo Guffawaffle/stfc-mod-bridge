@@ -38,6 +38,7 @@ foreach ($item in $catalog.dependencyInventory) {
   if ($item.evidenceKind -notin @(
       "resolved-package",
       "runtime-pack",
+      "targeting-pack",
       "go-build-toolchain",
       "go-build-module",
       "go-build-graph")) {
@@ -110,14 +111,19 @@ foreach ($projectFile in $productionProjects) {
       if ($version -match '^\[([^,]+),\s*\1\]$') {
         $version = $Matches[1]
       }
-      $resolvedDependencies["runtime-pack|$($download.name)|$version"] = $true
+      $evidenceKind = if ([string]$download.name -like "*.Ref") {
+        "targeting-pack"
+      } else {
+        "runtime-pack"
+      }
+      $resolvedDependencies["$evidenceKind|$($download.name)|$version"] = $true
     }
   }
 }
 
 $checkedDependencyInventory = @{}
 foreach ($item in $catalog.dependencyInventory) {
-  if ($item.evidenceKind -in @("resolved-package", "runtime-pack")) {
+  if ($item.evidenceKind -in @("resolved-package", "runtime-pack", "targeting-pack")) {
     $key = "$($item.evidenceKind)|$($item.id)|$($item.version)"
     $checkedDependencyInventory[$key] = $true
   }

@@ -66,7 +66,8 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
     {
         if (!IsSupportedAppInstallerUri(appInstallerUri))
         {
-            throw new InvalidOperationException("The packaged update source is not an absolute HTTPS App Installer URI.");
+            throw new InvalidOperationException(
+                "The packaged update source is not an absolute HTTPS .appinstaller URI.");
         }
 
         var activationUri = BuildAppInstallerActivationUri(appInstallerUri);
@@ -112,7 +113,7 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
         if (!IsSupportedAppInstallerUri(appInstallerUri))
         {
             throw new ArgumentException(
-                "The App Installer source must be an absolute HTTPS URI.",
+                "The App Installer source must be an absolute HTTPS .appinstaller URI.",
                 nameof(appInstallerUri));
         }
 
@@ -124,6 +125,7 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
     private static bool IsSupportedAppInstallerUri(Uri? uri) =>
         uri is { IsAbsoluteUri: true }
         && uri.Scheme == Uri.UriSchemeHttps
+        && uri.AbsolutePath.EndsWith(".appinstaller", StringComparison.OrdinalIgnoreCase)
         && string.IsNullOrEmpty(uri.UserInfo)
         && string.IsNullOrEmpty(uri.Fragment);
 }

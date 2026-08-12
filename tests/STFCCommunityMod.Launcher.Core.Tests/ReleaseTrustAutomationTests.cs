@@ -306,6 +306,9 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "UpdateBlocksActivation");
         StringAssert.Contains(script, "False / 24 / False");
         StringAssert.Contains(script, "Start-DisposableAppInstallerHost");
+        StringAssert.Contains(script, "XmlNamespaceManager");
+        StringAssert.Contains(script, "SelectSingleNode(\"/ai:AppInstaller\"");
+        StringAssert.Contains(script, "SelectSingleNode(\"/ai:AppInstaller/ai:MainPackage\"");
         StringAssert.Contains(script, "serve-appinstaller.py");
         StringAssert.Contains(script, "!App");
         Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
