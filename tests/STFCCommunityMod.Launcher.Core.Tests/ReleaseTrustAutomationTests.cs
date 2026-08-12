@@ -295,10 +295,20 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(
             script,
             "Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME");
-        StringAssert.Contains(script, "Add-AppxPackage -Path $env:STFC_BATTLE_QUALIFICATION_MSIX");
+        StringAssert.Contains(script, "-Path $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER");
+        StringAssert.Contains(script, "-AppInstallerFile");
+        StringAssert.Contains(script, "Get-AppxPackageAutoUpdateSettings");
+        StringAssert.Contains(script, "CheckForUpdatesOnLaunch");
+        StringAssert.Contains(script, "HoursBetweenUpdateChecks");
+        StringAssert.Contains(script, "AutomaticBackgroundTaskUpdatesEnabled");
+        StringAssert.Contains(script, "ShowPromptOnLaunchWhenUpdateIsAvailable");
+        StringAssert.Contains(script, "UpdateBlocksActivation");
+        StringAssert.Contains(script, "False / 24 / False");
+        StringAssert.Contains(script, "Start-DisposableAppInstallerHost");
+        StringAssert.Contains(script, "serve-appinstaller.py");
         StringAssert.Contains(script, "!App");
         Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
-        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.WaitForExit(10000)")).Count);
+        Assert.AreEqual(4, Regex.Matches(script, Regex.Escape("WaitForExit(10000)")).Count);
         StringAssert.Contains(
             script,
             "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
@@ -680,9 +690,9 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(manifest, "<uap10:Content Enforcement=\"on\" />");
         StringAssert.Contains(manifest, "<rescap:Capability Name=\"runFullTrust\" />");
         StringAssert.Contains(manifest, "<rescap:Capability Name=\"unvirtualizedResources\" />");
-        StringAssert.Contains(descriptor, "HoursBetweenUpdateChecks=\"0\"");
-        StringAssert.Contains(descriptor, "ShowPrompt=\"true\"");
-        StringAssert.Contains(descriptor, "UpdateBlocksActivation=\"true\"");
+        Assert.IsFalse(descriptor.Contains("<UpdateSettings>", StringComparison.Ordinal));
+        Assert.IsFalse(descriptor.Contains("<OnLaunch", StringComparison.Ordinal));
+        Assert.IsFalse(descriptor.Contains("<AutomaticBackgroundTask", StringComparison.Ordinal));
         Assert.IsFalse(application.Contains("--uninstall", StringComparison.Ordinal));
         StringAssert.Contains(settings, "About.ManageApplicationCommand");
         StringAssert.Contains(settings, "Open Windows Installed Apps");

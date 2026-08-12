@@ -63,7 +63,8 @@ The completed MSIX compatibility proofs already establish that:
 - launcher-owned LocalAppData remains at its nominal external path;
 - a locally development-signed App Installer `1.0.0.0` to `1.0.0.1` update
   succeeds over loopback HTTP;
-- `UpdateBlocksActivation` prevents an old package launch during update;
+- the historical `UpdateBlocksActivation` spike prevented an old package
+  launch during update; production no longer enables that on-launch policy;
 - external state survives update and package uninstall;
 - hosted App Installer/MSIX byte-range and MIME behavior works;
 - package removal completes;

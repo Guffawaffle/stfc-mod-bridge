@@ -273,8 +273,8 @@ try {
   $mainPackage = $appInstallerDocument.SelectSingleNode(
     "/a:AppInstaller/a:MainPackage",
     $appInstallerNamespace)
-  $onLaunch = $appInstallerDocument.SelectSingleNode(
-    "/a:AppInstaller/a:UpdateSettings/a:OnLaunch",
+  $updateSettings = $appInstallerDocument.SelectSingleNode(
+    "/a:AppInstaller/a:UpdateSettings",
     $appInstallerNamespace)
   $appInstallerUri = [Uri]$appInstallerRoot.Uri
   $packageUri = [Uri]$mainPackage.Uri
@@ -287,9 +287,7 @@ try {
       -or $mainPackage.ProcessorArchitecture -cne "x64" `
       -or $mainPackage.Version -cne $identity.Version `
       -or $appInstallerRoot.Version -cne $identity.Version `
-      -or $onLaunch.HoursBetweenUpdateChecks -cne "0" `
-      -or $onLaunch.ShowPrompt -cne "true" `
-      -or $onLaunch.UpdateBlocksActivation -cne "true") {
+      -or $null -ne $updateSettings) {
     throw "The App Installer descriptor does not match the reviewed identity, hosting, or update contract."
   }
 } finally {

@@ -21,6 +21,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly LauncherDiagnosticService diagnosticService;
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
+    private readonly IPackagedLauncherUpdateService packagedLauncherUpdateService;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
     private readonly LauncherFeatureRemediationCandidates? featureRemediationCandidates;
@@ -58,6 +59,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         LauncherDiagnosticService diagnosticService,
         LauncherSelfUpdateService launcherSelfUpdateService,
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
+        IPackagedLauncherUpdateService packagedLauncherUpdateService,
         ILauncherUiPreferencesStore uiPreferencesStore,
         LauncherDistributionProviderCatalog distributionProviderCatalog,
         LauncherFeatureRemediationCandidates? featureRemediationCandidates,
@@ -70,6 +72,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         this.diagnosticService = diagnosticService;
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
+        this.packagedLauncherUpdateService = packagedLauncherUpdateService;
         this.uiPreferencesStore = uiPreferencesStore;
         this.distributionProviderCatalog = distributionProviderCatalog;
         this.featureRemediationCandidates = featureRemediationCandidates;
@@ -338,6 +341,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool CanCheckLauncherUpdate => actionFeedback.LauncherUpdate.IsCommandAvailable;
 
+    public static bool IsPackagedInstallation => WindowsPackageIdentity.IsCurrentProcessPackaged;
+
     public IReadOnlyList<LauncherDiagnosticFact> DiagnosticChecks =>
         diagnosticPreview?.Document.Health ?? [];
 
@@ -577,6 +582,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     LauncherSelfUpdateAuthority.WindowsArtifactSigningIdentityEku),
                 new WindowsLauncherArtifactIdentityReader()),
             launcherReleaseClient,
+            new WindowsPackagedLauncherUpdateService(),
             uiPreferencesStore,
             distributionProviderCatalog,
             featureRemediationCandidates,
@@ -862,10 +868,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         if (WindowsPackageIdentity.IsCurrentProcessPackaged)
         {
-            actionFeedback.LauncherUpdate.Complete(
-                false,
-                "Windows App Installer manages Mod Bridge updates and checks the signed package channel when the app starts.");
-            return null;
+            actionFeedback.LauncherUpdate.Fail(
+                "Packaged Mod Bridge updates must use the Windows App Installer availability check.");
+            throw new InvalidOperationException(
+                "Standalone update preparation is unavailable for an installed MSIX application.");
         }
         try
         {
@@ -902,6 +908,68 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public static void StartLauncherUpdate(LauncherUpdatePreparation preparation) =>
         LauncherSelfUpdateService.StartUpdater(preparation);
+
+    public async Task<PackagedLauncherUpdateCheck?> CheckPackagedLauncherUpdateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsPackagedInstallation)
+        {
+            throw new InvalidOperationException("A packaged update check requires an installed MSIX application.");
+        }
+        if (!actionFeedback.LauncherUpdate.TryBegin(
+                "Mod Bridge update check accepted. Asking Windows App Installer for current availability…"))
+        {
+            return null;
+        }
+
+        try
+        {
+            var result = await packagedLauncherUpdateService.CheckAsync(cancellationToken);
+            actionFeedback.LauncherUpdate.Complete(result.CanOpenAppInstaller, result.Message);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            actionFeedback.LauncherUpdate.Cancel("The Mod Bridge update check was canceled or timed out.");
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or UnauthorizedAccessException
+                or System.Runtime.InteropServices.COMException)
+        {
+            actionFeedback.LauncherUpdate.Fail(
+                $"Windows App Installer could not check for a Mod Bridge update: {exception.Message}");
+            return null;
+        }
+    }
+
+    public bool TryOpenPackagedLauncherUpdate(PackagedLauncherUpdateCheck check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        if (!check.CanOpenAppInstaller || check.AppInstallerUri is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            packagedLauncherUpdateService.OpenAppInstaller(check.AppInstallerUri);
+            actionFeedback.LauncherUpdate.Complete(
+                true,
+                "Windows App Installer is opening the source associated with this Mod Bridge installation.");
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or ArgumentException
+                or System.ComponentModel.Win32Exception)
+        {
+            actionFeedback.LauncherUpdate.Fail(
+                $"Windows App Installer could not open the Mod Bridge update source: {exception.Message}");
+            return false;
+        }
+    }
 
     private static string CurrentSourceCommit()
     {

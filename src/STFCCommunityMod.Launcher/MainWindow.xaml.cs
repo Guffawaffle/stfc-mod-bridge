@@ -993,6 +993,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        if (MainWindowViewModel.IsPackagedInstallation)
+        {
+            var packagedCheck = await viewModel.CheckPackagedLauncherUpdateAsync(lifetimeCancellation.Token);
+            if (packagedCheck is not null && viewModel.TryOpenPackagedLauncherUpdate(packagedCheck))
+            {
+                Application.Current.Shutdown();
+            }
+            return;
+        }
         pendingLauncherUpdate?.Dispose();
         pendingLauncherUpdate = await viewModel.PrepareLauncherUpdateAsync(lifetimeCancellation.Token);
         if (pendingLauncherUpdate is null

@@ -7,9 +7,4 @@
                Version="__PACKAGE_VERSION__"
                ProcessorArchitecture="x64"
                Uri="__PACKAGE_URI__" />
-  <UpdateSettings>
-    <OnLaunch HoursBetweenUpdateChecks="0"
-              ShowPrompt="true"
-              UpdateBlocksActivation="true" />
-  </UpdateSettings>
 </AppInstaller>
