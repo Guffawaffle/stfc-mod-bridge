@@ -298,6 +298,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "-Path $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER");
         StringAssert.Contains(script, "-AppInstallerFile");
         StringAssert.Contains(script, "Get-AppxPackageAutoUpdateSettings");
+        StringAssert.Contains(script, "This Windows host predates the supported App Installer settings readback");
         StringAssert.Contains(script, "CheckForUpdatesOnLaunch");
         StringAssert.Contains(script, "HoursBetweenUpdateChecks");
         StringAssert.Contains(script, "AutomaticBackgroundTaskUpdatesEnabled");

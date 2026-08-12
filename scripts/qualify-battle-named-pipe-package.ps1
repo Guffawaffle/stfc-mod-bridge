@@ -425,10 +425,17 @@ $WarningPreference = "SilentlyContinue"
 $InformationPreference = "SilentlyContinue"
 $VerbosePreference = "SilentlyContinue"
 Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+if (-not (Get-Command Get-AppxPackageAutoUpdateSettings -ErrorAction SilentlyContinue)) {
+  [pscustomobject]@{
+    Available = $false
+  } | ConvertTo-Json -Compress
+  return
+}
 $settings = Get-AppxPackageAutoUpdateSettings `
   -PackageFamilyName $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FAMILY_NAME `
   -ErrorAction Stop
 [pscustomobject]@{
+  Available = $true
   CheckForUpdatesOnLaunch = $settings.CheckForUpdatesOnLaunch
   HoursBetweenUpdateChecks = $settings.HoursBetweenUpdateChecks
   AutomaticBackgroundTaskUpdatesEnabled = $settings.AutomaticBackgroundTaskUpdatesEnabled
@@ -546,6 +553,7 @@ namespace BattlePackageActivation
 $canonicalPackageSha256 = (Get-FileHash -LiteralPath $canonicalPackage -Algorithm SHA256).Hash
 $developmentPackage = $null
 $appInstallerHost = $null
+$effectiveUpdateSettingsVerified = $false
 $stateEvidenceNonce = [Guid]::NewGuid().ToString("N")
 $stateEvidencePath = Join-Path `
   ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
@@ -576,12 +584,17 @@ try {
     $installed = $packages[0]
     $updateSettings = Get-DisposablePackageUpdateSettings `
       -PackageFamilyName $installed.PackageFamilyName
-    if ($updateSettings.CheckForUpdatesOnLaunch -ne $false `
-        -or [int]$updateSettings.HoursBetweenUpdateChecks -ne 24 `
-        -or $updateSettings.AutomaticBackgroundTaskUpdatesEnabled -ne $false `
-        -or $updateSettings.ShowPromptOnLaunchWhenUpdateIsAvailable -ne $false `
-        -or $updateSettings.UpdateBlocksActivation -ne $false) {
-      throw "The disposable App Installer association did not record the reviewed False / 24 / False update defaults."
+    if ($updateSettings.Available) {
+      if ($updateSettings.CheckForUpdatesOnLaunch -ne $false `
+          -or [int]$updateSettings.HoursBetweenUpdateChecks -ne 24 `
+          -or $updateSettings.AutomaticBackgroundTaskUpdatesEnabled -ne $false `
+          -or $updateSettings.ShowPromptOnLaunchWhenUpdateIsAvailable -ne $false `
+          -or $updateSettings.UpdateBlocksActivation -ne $false) {
+        throw "The disposable App Installer association did not record the reviewed False / 24 / False update defaults."
+      }
+      $effectiveUpdateSettingsVerified = $true
+    } else {
+      Write-Host "This Windows host predates the supported App Installer settings readback; descriptor inspection and normal package activation remain mandatory."
     }
     $appUserModelId = "$($installed.PackageFamilyName)!App"
     $processId = [BattlePackageActivation.ApplicationActivation]::Activate(
@@ -638,7 +651,12 @@ try {
   } else {
     "Production-signed"
   }
-  Write-Host "$qualificationKind standalone, App Installer False / 24 / False policy, normal package activation, medium-integrity MSIX Battle named-pipe, and external-state qualification passed."
+  $updateSettingsEvidence = if ($effectiveUpdateSettingsVerified) {
+    "App Installer False / 24 / False policy"
+  } else {
+    "App Installer association and uninterrupted normal package activation"
+  }
+  Write-Host "$qualificationKind standalone, $updateSettingsEvidence, medium-integrity MSIX Battle named-pipe, and external-state qualification passed."
 } finally {
   if (Test-Path -LiteralPath $stateEvidencePath -PathType Leaf) {
     Remove-Item -LiteralPath $stateEvidencePath -Force
