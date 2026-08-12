@@ -53,7 +53,7 @@ $packageObject = "gs://$Bucket/packages/v$Version/STFCModBridge.msix"
 $appInstallerObject = "gs://$Bucket/$channel/STFCModBridge.appinstaller"
 [xml]$descriptor = Get-Content -Raw -LiteralPath $appInstaller
 $namespace = [System.Xml.XmlNamespaceManager]::new($descriptor.NameTable)
-$namespace.AddNamespace("a", "http://schemas.microsoft.com/appx/appinstaller/2021")
+$namespace.AddNamespace("a", $descriptor.DocumentElement.NamespaceURI)
 $root = $descriptor.SelectSingleNode("/a:AppInstaller", $namespace)
 $mainPackage = $descriptor.SelectSingleNode("/a:AppInstaller/a:MainPackage", $namespace)
 if ($root.Uri -cne $appInstallerUri -or $mainPackage.Uri -cne $packageUri) {
@@ -124,7 +124,7 @@ try {
   if ($existingDescriptorResponse) {
     [xml]$existingDescriptorXml = Get-Content -Raw -LiteralPath $existingDescriptor
     $existingNamespace = [System.Xml.XmlNamespaceManager]::new($existingDescriptorXml.NameTable)
-    $existingNamespace.AddNamespace("a", "http://schemas.microsoft.com/appx/appinstaller/2021")
+    $existingNamespace.AddNamespace("a", $existingDescriptorXml.DocumentElement.NamespaceURI)
     $existingRoot = $existingDescriptorXml.SelectSingleNode("/a:AppInstaller", $existingNamespace)
     if ([version]$existingRoot.Version -gt [version]$root.Version) {
       throw "The published $channel App Installer version is newer; refusing a channel downgrade."

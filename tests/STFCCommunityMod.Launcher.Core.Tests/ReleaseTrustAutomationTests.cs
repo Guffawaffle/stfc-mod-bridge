@@ -690,6 +690,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(manifest, "<uap10:Content Enforcement=\"on\" />");
         StringAssert.Contains(manifest, "<rescap:Capability Name=\"runFullTrust\" />");
         StringAssert.Contains(manifest, "<rescap:Capability Name=\"unvirtualizedResources\" />");
+        StringAssert.Contains(descriptor, "http://schemas.microsoft.com/appx/appinstaller/2017/2");
         Assert.IsFalse(descriptor.Contains("<UpdateSettings>", StringComparison.Ordinal));
         Assert.IsFalse(descriptor.Contains("<OnLaunch", StringComparison.Ordinal));
         Assert.IsFalse(descriptor.Contains("<AutomaticBackgroundTask", StringComparison.Ordinal));

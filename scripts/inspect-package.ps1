@@ -267,8 +267,12 @@ try {
   }
 
   [xml]$appInstallerDocument = Get-Content -Raw -LiteralPath $appInstaller
+  $expectedAppInstallerNamespace = "http://schemas.microsoft.com/appx/appinstaller/2017/2"
+  if ($appInstallerDocument.DocumentElement.NamespaceURI -cne $expectedAppInstallerNamespace) {
+    throw "The App Installer descriptor does not use the reviewed Windows 10 version 1803 schema."
+  }
   $appInstallerNamespace = [System.Xml.XmlNamespaceManager]::new($appInstallerDocument.NameTable)
-  $appInstallerNamespace.AddNamespace("a", "http://schemas.microsoft.com/appx/appinstaller/2021")
+  $appInstallerNamespace.AddNamespace("a", $expectedAppInstallerNamespace)
   $appInstallerRoot = $appInstallerDocument.SelectSingleNode("/a:AppInstaller", $appInstallerNamespace)
   $mainPackage = $appInstallerDocument.SelectSingleNode(
     "/a:AppInstaller/a:MainPackage",
