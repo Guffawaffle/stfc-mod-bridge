@@ -251,10 +251,19 @@ try {
   if ($null -eq $integrity -or $integrity.Enforcement -cne "on") {
     throw "The MSIX must enforce package-content integrity at runtime."
   }
-  if ($null -eq $manifest.SelectSingleNode(
-      "/f:Package/f:Capabilities/rescap:Capability[@Name='runFullTrust']",
-      $namespaces)) {
-    throw "The MSIX must declare only the reviewed full-trust desktop capability."
+  $capabilities = @($manifest.SelectNodes("/f:Package/f:Capabilities/*", $namespaces))
+  $expectedCapabilities = @("runFullTrust", "unvirtualizedResources")
+  $capabilityNames = @($capabilities | ForEach-Object { $_.Name })
+  if ($capabilities.Count -ne $expectedCapabilities.Count `
+      -or @($capabilities | Where-Object {
+          $_.LocalName -cne "Capability" `
+            -or $_.NamespaceURI -cne $namespaces.LookupNamespace("rescap") `
+            -or $expectedCapabilities -cnotcontains $_.Name
+        }).Count -ne 0 `
+      -or @($expectedCapabilities | Where-Object {
+          $capabilityNames -cnotcontains $_
+        }).Count -ne 0) {
+    throw "The MSIX must declare exactly the reviewed runFullTrust and unvirtualizedResources capabilities."
   }
 
   [xml]$appInstallerDocument = Get-Content -Raw -LiteralPath $appInstaller
@@ -289,4 +298,5 @@ try {
   }
 }
 
-Write-Host "Package inspection passed. App Installer is the user entry point; the signed MSIX contains the reviewed launcher and paired release verifier and enforces package integrity."
+$signatureState = if ($RequireSignatures) { "signed" } else { "generated" }
+Write-Host "Package inspection passed. App Installer is the user entry point; the $signatureState MSIX contains the reviewed launcher and paired release verifier and enforces package integrity."

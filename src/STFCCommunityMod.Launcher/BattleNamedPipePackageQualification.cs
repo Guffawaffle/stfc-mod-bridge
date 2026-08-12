@@ -15,6 +15,7 @@ internal static class BattleNamedPipePackageQualification
     internal const string StandaloneMode = "standalone";
     internal const string MsixMode = "msix";
     internal const string PackageIdentityName = "Guffawaffle.STFCModBridge";
+    internal const string StateEvidenceSchema = "stfc.mod-bridge.package-state-qualification.v1";
     // SHA-256("stfc-mod-bridge:battle-ipc-package-qualification:v1").
     private const string EvidenceSha256 =
         "8d1acdade8d042812a6a2c6fe46480230a4e376d98392232e861b386870c71ba";
@@ -30,12 +31,17 @@ internal static class BattleNamedPipePackageQualification
 
         try
         {
-            if (arguments.Length != 2
-                || arguments[1] is not (StandaloneMode or MsixMode))
+            if (arguments.Length < 2
+                || arguments[1] is not (StandaloneMode or MsixMode)
+                || (arguments[1] == StandaloneMode && arguments.Length != 2)
+                || (arguments[1] == MsixMode
+                    && (arguments.Length != 3 || !Guid.TryParseExact(arguments[2], "N", out _))))
             {
                 throw new ArgumentException("The Battle IPC package qualification arguments are invalid.");
             }
-            RunAsync(arguments[1] == MsixMode).GetAwaiter().GetResult();
+            RunAsync(arguments[1] == MsixMode, arguments.Length == 3 ? arguments[2] : null)
+                .GetAwaiter()
+                .GetResult();
             exitCode = 0;
         }
         catch (BattlePackageQualificationException exception)
@@ -51,7 +57,7 @@ internal static class BattleNamedPipePackageQualification
         return true;
     }
 
-    internal static async Task RunAsync(bool expectPackaged)
+    internal static async Task RunAsync(bool expectPackaged, string? stateEvidenceNonce = null)
     {
         var stage = "platform";
         try
@@ -155,6 +161,11 @@ internal static class BattleNamedPipePackageQualification
             }
             stage = "post-stop";
             await AssertCannotConnectAsync(pipeName).ConfigureAwait(false);
+            if (expectPackaged)
+            {
+                stage = "external-state";
+                WriteExternalStateEvidence(stateEvidenceNonce);
+            }
         }
         catch (Exception exception) when (exception is not BattlePackageQualificationException)
         {
@@ -179,6 +190,30 @@ internal static class BattleNamedPipePackageQualification
         {
             throw new InvalidOperationException("The MSIX qualification lacks the reviewed package identity.");
         }
+    }
+
+    private static void WriteExternalStateEvidence(string? nonce)
+    {
+        if (nonce is null || !Guid.TryParseExact(nonce, "N", out _))
+        {
+            throw new InvalidOperationException("The packaged qualification state nonce is invalid.");
+        }
+        var layout = PerUserInstallLayout.FromLocalApplicationData(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+        Directory.CreateDirectory(layout.StateDirectory);
+        var evidencePath = Path.Combine(
+            layout.StateDirectory,
+            $"package-qualification-{nonce}.json");
+        using var evidence = new FileStream(
+            evidencePath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None);
+        JsonSerializer.Serialize(evidence, new
+        {
+            schema = StateEvidenceSchema,
+            nonce,
+        });
     }
 
     private static BattleIngestActivation EligibleActivation() =>
