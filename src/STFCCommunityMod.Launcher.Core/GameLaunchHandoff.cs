@@ -580,23 +580,20 @@ public sealed class GameLaunchHandoffCoordinator(
                     LauncherLaunchRecoveryAction.RecoverModTransaction);
             }
 
-            var state = deploymentService.ReadInstalledState();
             var targetPath = Path.Combine(gameDirectory, "version.dll");
             var targetExists = File.Exists(targetPath);
+            if (!targetExists)
+            {
+                return ReadyWithoutMod(target);
+            }
+
+            var state = deploymentService.ReadInstalledState();
             if (state is null)
             {
-                if (!targetExists)
-                {
-                    return ReadyWithoutMod(target);
-                }
                 return RequiresOverride(
                     target,
                     "This game folder contains version.dll, but Mod Bridge did not install or record it. Windows may "
                     + "load it automatically, and Mod Bridge cannot vouch for its source or behavior.");
-            }
-            else if (!targetExists)
-            {
-                return ReadyWithoutMod(target);
             }
             else if (!PathEquals(state.GameDirectory, gameDirectory))
             {

@@ -52,6 +52,30 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task MissingProxyIgnoresMalformedStaleInstalledState()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        await File.WriteAllTextAsync(
+            fixture.DeploymentService.InstalledStatePath,
+            "{\"gameDirectory\":");
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("Ready without mod", presentation.Status);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.IsFalse(presentation.RequiresUserOverride);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
     public async Task ManagedRecordForAnotherGameRootDoesNotBlockUnmoddedLaunch()
     {
         using var temporaryDirectory = new TemporaryDirectory();
