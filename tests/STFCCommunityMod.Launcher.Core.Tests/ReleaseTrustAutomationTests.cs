@@ -269,10 +269,10 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsTrue(qualification > inspection);
         Assert.IsTrue(attestation > qualification);
         StringAssert.Contains(script, "inspect-package.ps1");
-        StringAssert.Contains(script, "-RequireSignatures");
+        StringAssert.Contains(script, "$inspectionArguments.RequireSignatures = $true");
         StringAssert.Contains(script, "--battle-ipc-package-qualification");
         StringAssert.Contains(script, "Invoke-QualificationProcess -Path $launcher -Mode \"standalone\"");
-        StringAssert.Contains(script, "Invoke-WindowsPowerShellAppxCommand");
+        StringAssert.Contains(script, "Invoke-WindowsPowerShellCommand");
         StringAssert.Contains(script, "([Environment]::SystemDirectory)");
         StringAssert.Contains(script, "WindowsPowerShell\\v1.0\\powershell.exe");
         StringAssert.Contains(script, "WindowsPowerShell\\v1.0\\Modules\\Appx\\Appx.psd1");
@@ -291,7 +291,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "-Operation \"remove\"");
         StringAssert.Contains(script, "Select-Object -Last 12");
         StringAssert.Contains(script, "No child diagnostic was returned.");
-        StringAssert.Contains(script, "Appx $Operation command failed with exit code $exitCode");
+        StringAssert.Contains(script, "$Operation command failed with exit code $exitCode");
         StringAssert.Contains(
             script,
             "Get-AppxPackage -Name $env:STFC_BATTLE_QUALIFICATION_PACKAGE_NAME");
@@ -303,6 +303,41 @@ public sealed partial class ReleaseTrustAutomationTests
             script,
             "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
         StringAssert.Contains(script, "refuses to replace an existing STFC Mod Bridge package");
+        StringAssert.Contains(script, "UseDisposableDevelopmentCertificate");
+        StringAssert.Contains(script, "New-SelfSignedCertificate");
+        StringAssert.Contains(script, "Cert:\\LocalMachine\\TrustedPeople");
+        StringAssert.Contains(script, "-DeleteKey");
+        StringAssert.Contains(script, "sign /fd SHA256 /sha1 $thumbprint /s My $qualifiedPackage");
+        StringAssert.Contains(script, "Disposable qualification changed the canonical unsigned MSIX");
+        StringAssert.Contains(script, "package-qualification-$stateEvidenceNonce.json");
+        StringAssert.Contains(script, "could not observe the packaged Bridge state evidence");
+        StringAssert.Contains(script, "$stateEvidence.status -cne \"passed\"");
+        StringAssert.Contains(script, "qualification reported failure at $failedStage");
+        Assert.IsFalse(
+            script.Contains("The MSIX Battle IPC qualification failed with exit code", StringComparison.Ordinal),
+            "AppUserModel activation does not guarantee a queryable child-process exit code.");
+    }
+
+    [TestMethod]
+    public void PullRequestCiInstallsOnlyADisposableCopyBeforeUploadingTheCanonicalUnsignedMsix()
+    {
+        var root = RepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
+        var inspection = workflow.IndexOf("- name: Inspect unsigned package evidence", StringComparison.Ordinal);
+        var qualification = workflow.IndexOf(
+            "- name: Qualify disposable development-signed MSIX deployment",
+            StringComparison.Ordinal);
+        var upload = workflow.IndexOf("- name: Upload MSIX packaging evidence", StringComparison.Ordinal);
+
+        Assert.IsTrue(inspection >= 0);
+        Assert.IsTrue(qualification > inspection);
+        Assert.IsTrue(upload > qualification);
+        StringAssert.Contains(workflow, "-SourceRevisionId \"$env:SOURCE_REVISION_ID\"");
+        StringAssert.Contains(workflow, "-UseDisposableDevelopmentCertificate");
+        StringAssert.Contains(workflow, "artifacts/win-x64/package/STFCModBridge.msix");
+        Assert.IsFalse(
+            workflow.Contains("STFCModBridge.qualification.msix", StringComparison.Ordinal),
+            "The disposable signed package must never enter the upload contract.");
     }
 
     [TestMethod]
@@ -644,6 +679,7 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(manifest, "uap10:TrustLevel=\"mediumIL\"");
         StringAssert.Contains(manifest, "<uap10:Content Enforcement=\"on\" />");
         StringAssert.Contains(manifest, "<rescap:Capability Name=\"runFullTrust\" />");
+        StringAssert.Contains(manifest, "<rescap:Capability Name=\"unvirtualizedResources\" />");
         StringAssert.Contains(descriptor, "HoursBetweenUpdateChecks=\"0\"");
         StringAssert.Contains(descriptor, "ShowPrompt=\"true\"");
         StringAssert.Contains(descriptor, "UpdateBlocksActivation=\"true\"");

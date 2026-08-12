@@ -18,6 +18,16 @@ measurement gate below and a separate related-set spike proves a material
 footprint improvement without adding player friction or weakening servicing,
 signing, inventory, or rollback guarantees.
 
+The integrated package intentionally remains a medium-integrity `win32App`
+with the `runFullTrust` and `unvirtualizedResources` capabilities. Bridge state
+under the nominal `%LOCALAPPDATA%\STFC Mod Bridge` path must remain visible to
+the packaged Bridge, its standalone recovery path, and separately running mod
+components. The writable external state is never package or publisher
+authority. Pull-request CI test-signs only a disposable copy of the generated
+MSIX, installs and activates it, proves an unpackaged reader observes a
+nonce-bound marker at that nominal path, and removes both package and test
+certificate before the canonical unsigned artifact is uploaded.
+
 This decision does not close issue #66. The Windows packaging mechanics are
 proven, but the native Battle implementation and selected SQLite provider do
 not exist yet, so their exact compressed and runtime deltas cannot be measured.

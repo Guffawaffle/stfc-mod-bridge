@@ -46,13 +46,26 @@ jobs:
 
       - name: Publish Mod Bridge
         shell: pwsh
+        env:
+          SOURCE_REVISION_ID: ${{ github.sha }}
         run: >-
           ./scripts/publish.ps1
+          -SourceRevisionId "$env:SOURCE_REVISION_ID"
           -ReleaseVerifierPath ./artifacts/release-verifier/STFCModBridge.ReleaseVerifier.exe
 
       - name: Inspect unsigned package evidence
         shell: pwsh
         run: ./scripts/inspect-package.ps1
+
+      - name: Qualify disposable development-signed MSIX deployment
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          SOURCE_REVISION_ID: ${{ github.sha }}
+        run: >-
+          ./scripts/qualify-battle-named-pipe-package.ps1
+          -ExpectedSourceRevisionId "$env:SOURCE_REVISION_ID"
+          -UseDisposableDevelopmentCertificate
 
       - name: Disposable packaged UI Automation smoke
         shell: pwsh

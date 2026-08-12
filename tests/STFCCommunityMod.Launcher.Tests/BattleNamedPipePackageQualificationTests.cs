@@ -20,6 +20,24 @@ public sealed class BattleNamedPipePackageQualificationTests
     }
 
     [TestMethod]
+    public void PackagedQualificationRequiresAnExactNonceWithoutWideningStandaloneArguments()
+    {
+        Assert.IsTrue(BattleNamedPipePackageQualification.TryRun(
+            [BattleNamedPipePackageQualification.Argument, BattleNamedPipePackageQualification.MsixMode],
+            out var missingNonceExitCode));
+        Assert.AreEqual(1, missingNonceExitCode);
+
+        Assert.IsTrue(BattleNamedPipePackageQualification.TryRun(
+            [
+                BattleNamedPipePackageQualification.Argument,
+                BattleNamedPipePackageQualification.StandaloneMode,
+                Guid.NewGuid().ToString("N"),
+            ],
+            out var widenedStandaloneExitCode));
+        Assert.AreEqual(1, widenedStandaloneExitCode);
+    }
+
+    [TestMethod]
     public void StandaloneQualificationExercisesTheRealPipeHostAndExactProcessAuthorizer()
     {
         if (!OperatingSystem.IsWindows())
@@ -48,6 +66,7 @@ public sealed class BattleNamedPipePackageQualificationTests
             [
                 BattleNamedPipePackageQualification.Argument,
                 BattleNamedPipePackageQualification.MsixMode,
+                Guid.NewGuid().ToString("N"),
             ],
             out var exitCode));
         Assert.AreEqual(1, exitCode);
