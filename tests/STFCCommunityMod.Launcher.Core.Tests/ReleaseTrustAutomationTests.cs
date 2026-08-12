@@ -311,6 +311,11 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "Disposable qualification changed the canonical unsigned MSIX");
         StringAssert.Contains(script, "package-qualification-$stateEvidenceNonce.json");
         StringAssert.Contains(script, "could not observe the packaged Bridge state evidence");
+        StringAssert.Contains(script, "$stateEvidence.status -cne \"passed\"");
+        StringAssert.Contains(script, "qualification reported failure at $failedStage");
+        Assert.IsFalse(
+            script.Contains("The MSIX Battle IPC qualification failed with exit code", StringComparison.Ordinal),
+            "AppUserModel activation does not guarantee a queryable child-process exit code.");
     }
 
     [TestMethod]

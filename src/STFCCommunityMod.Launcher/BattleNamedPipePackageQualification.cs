@@ -29,6 +29,8 @@ internal static class BattleNamedPipePackageQualification
             return false;
         }
 
+        var expectPackaged = false;
+        string? stateEvidenceNonce = null;
         try
         {
             if (arguments.Length < 2
@@ -39,13 +41,30 @@ internal static class BattleNamedPipePackageQualification
             {
                 throw new ArgumentException("The Battle IPC package qualification arguments are invalid.");
             }
-            RunAsync(arguments[1] == MsixMode, arguments.Length == 3 ? arguments[2] : null)
+            expectPackaged = arguments[1] == MsixMode;
+            stateEvidenceNonce = arguments.Length == 3 ? arguments[2] : null;
+            RunAsync(expectPackaged)
                 .GetAwaiter()
                 .GetResult();
+            if (expectPackaged)
+            {
+                try
+                {
+                    WriteExternalStateEvidence(stateEvidenceNonce, "passed", null);
+                }
+                catch (Exception exception)
+                {
+                    throw new BattlePackageQualificationException("external-state", exception);
+                }
+            }
             exitCode = 0;
         }
         catch (BattlePackageQualificationException exception)
         {
+            if (expectPackaged)
+            {
+                TryWriteFailureEvidence(stateEvidenceNonce, exception.Stage);
+            }
             Console.Error.WriteLine($"Battle IPC package qualification failed at {exception.Stage}.");
             exitCode = 1;
         }
@@ -57,7 +76,7 @@ internal static class BattleNamedPipePackageQualification
         return true;
     }
 
-    internal static async Task RunAsync(bool expectPackaged, string? stateEvidenceNonce = null)
+    internal static async Task RunAsync(bool expectPackaged)
     {
         var stage = "platform";
         try
@@ -161,11 +180,6 @@ internal static class BattleNamedPipePackageQualification
             }
             stage = "post-stop";
             await AssertCannotConnectAsync(pipeName).ConfigureAwait(false);
-            if (expectPackaged)
-            {
-                stage = "external-state";
-                WriteExternalStateEvidence(stateEvidenceNonce);
-            }
         }
         catch (Exception exception) when (exception is not BattlePackageQualificationException)
         {
@@ -192,7 +206,19 @@ internal static class BattleNamedPipePackageQualification
         }
     }
 
-    private static void WriteExternalStateEvidence(string? nonce)
+    private static void TryWriteFailureEvidence(string? nonce, string stage)
+    {
+        try
+        {
+            WriteExternalStateEvidence(nonce, "failed", stage);
+        }
+        catch
+        {
+            // The unpackaged qualification host treats missing or malformed evidence as failure.
+        }
+    }
+
+    private static void WriteExternalStateEvidence(string? nonce, string status, string? stage)
     {
         if (nonce is null || !Guid.TryParseExact(nonce, "N", out _))
         {
@@ -213,6 +239,8 @@ internal static class BattleNamedPipePackageQualification
         {
             schema = StateEvidenceSchema,
             nonce,
+            status,
+            stage,
         });
     }
 

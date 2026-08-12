@@ -467,9 +467,6 @@ try {
         }
         throw "The MSIX Battle IPC qualification exceeded 30 seconds."
       }
-      if ($process.ExitCode -ne 0) {
-        throw "The MSIX Battle IPC qualification failed with exit code $($process.ExitCode)."
-      }
     } finally {
       $process.Dispose()
     }
@@ -481,6 +478,14 @@ try {
     if ($stateEvidence.schema -cne $stateEvidenceSchema `
         -or $stateEvidence.nonce -cne $stateEvidenceNonce) {
       throw "The packaged Bridge external-state evidence is invalid."
+    }
+    if ($stateEvidence.status -cne "passed" -or $null -ne $stateEvidence.stage) {
+      $failedStage = if ([string]::IsNullOrWhiteSpace([string]$stateEvidence.stage)) {
+        "unknown"
+      } else {
+        [string]$stateEvidence.stage
+      }
+      throw "The packaged Bridge qualification reported failure at $failedStage."
     }
   } finally {
     if ($null -eq $installed -and $registrationAttempted) {
