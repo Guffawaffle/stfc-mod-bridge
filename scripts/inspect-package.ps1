@@ -267,14 +267,18 @@ try {
   }
 
   [xml]$appInstallerDocument = Get-Content -Raw -LiteralPath $appInstaller
+  $expectedAppInstallerNamespace = "http://schemas.microsoft.com/appx/appinstaller/2017/2"
+  if ($appInstallerDocument.DocumentElement.NamespaceURI -cne $expectedAppInstallerNamespace) {
+    throw "The App Installer descriptor does not use the reviewed Windows 10 version 1803 schema."
+  }
   $appInstallerNamespace = [System.Xml.XmlNamespaceManager]::new($appInstallerDocument.NameTable)
-  $appInstallerNamespace.AddNamespace("a", "http://schemas.microsoft.com/appx/appinstaller/2021")
+  $appInstallerNamespace.AddNamespace("a", $expectedAppInstallerNamespace)
   $appInstallerRoot = $appInstallerDocument.SelectSingleNode("/a:AppInstaller", $appInstallerNamespace)
   $mainPackage = $appInstallerDocument.SelectSingleNode(
     "/a:AppInstaller/a:MainPackage",
     $appInstallerNamespace)
-  $onLaunch = $appInstallerDocument.SelectSingleNode(
-    "/a:AppInstaller/a:UpdateSettings/a:OnLaunch",
+  $updateSettings = $appInstallerDocument.SelectSingleNode(
+    "/a:AppInstaller/a:UpdateSettings",
     $appInstallerNamespace)
   $appInstallerUri = [Uri]$appInstallerRoot.Uri
   $packageUri = [Uri]$mainPackage.Uri
@@ -287,9 +291,7 @@ try {
       -or $mainPackage.ProcessorArchitecture -cne "x64" `
       -or $mainPackage.Version -cne $identity.Version `
       -or $appInstallerRoot.Version -cne $identity.Version `
-      -or $onLaunch.HoursBetweenUpdateChecks -cne "0" `
-      -or $onLaunch.ShowPrompt -cne "true" `
-      -or $onLaunch.UpdateBlocksActivation -cne "true") {
+      -or $null -ne $updateSettings) {
     throw "The App Installer descriptor does not match the reviewed identity, hosting, or update contract."
   }
 } finally {

@@ -20,7 +20,10 @@ $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
 }
 $launcher = Join-Path $outputRoot "app\STFCModBridge.exe"
 $canonicalPackage = Join-Path $outputRoot "package\STFCModBridge.msix"
+$canonicalAppInstaller = Join-Path $outputRoot "package\STFCModBridge.appinstaller"
 $package = $canonicalPackage
+$appInstallerHostScript = Join-Path $PSScriptRoot "serve-appinstaller.py"
+$python = Get-Command py.exe, python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
 $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) "WindowsPowerShell\v1.0\powershell.exe"
 $appxModule = Join-Path `
   ([Environment]::SystemDirectory) `
@@ -44,14 +47,18 @@ if (-not $AllowDisposableMsixInstall -and $env:CI -ne "true") {
   throw "This gate installs and removes a disposable MSIX. Pass -AllowDisposableMsixInstall outside CI."
 }
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) `
-    -or -not (Test-Path -LiteralPath $canonicalPackage -PathType Leaf)) {
-  throw "The signed standalone launcher or MSIX package is missing."
+    -or -not (Test-Path -LiteralPath $canonicalPackage -PathType Leaf) `
+    -or -not (Test-Path -LiteralPath $canonicalAppInstaller -PathType Leaf)) {
+  throw "The signed standalone launcher, MSIX package, or App Installer descriptor is missing."
 }
 if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
   throw "Windows PowerShell is required for disposable Appx registration."
 }
 if (-not (Test-Path -LiteralPath $appxModule -PathType Leaf)) {
   throw "The System32 Appx module is required for disposable package registration."
+}
+if (-not $python -or -not (Test-Path -LiteralPath $appInstallerHostScript -PathType Leaf)) {
+  throw "Python and scripts/serve-appinstaller.py are required for disposable App Installer qualification."
 }
 if ($UseDisposableDevelopmentCertificate -and -not $signTool) {
   throw "Windows SDK SignTool is required for disposable development package signing."
@@ -109,7 +116,7 @@ function Invoke-QualificationProcess {
 function Invoke-WindowsPowerShellCommand {
   param(
     [Parameter(Mandatory)]
-    [ValidateSet("query", "install", "remove", "certificate-create", "certificate-remove")]
+    [ValidateSet("query", "settings", "install", "remove", "certificate-create", "certificate-remove")]
     [string]$Operation,
     [Parameter(Mandatory)]
     [string]$Command
@@ -332,10 +339,136 @@ Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
   }
 }
 
-function Install-DisposablePackage {
-  $previousPackagePath = $env:STFC_BATTLE_QUALIFICATION_MSIX
+function Start-DisposableAppInstallerHost {
+  $hostRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "stfc-mod-bridge-appinstaller-qualification-" + [Guid]::NewGuid().ToString("N"))
+  $hostPackage = Join-Path $hostRoot "STFCModBridge.msix"
+  $hostDescriptor = Join-Path $hostRoot "STFCModBridge.appinstaller"
+  $listener = [System.Net.Sockets.TcpListener]::new(
+    [System.Net.IPAddress]::Loopback,
+    0)
+  $server = $null
+  New-Item -ItemType Directory -Path $hostRoot | Out-Null
   try {
-    $env:STFC_BATTLE_QUALIFICATION_MSIX = $package
+    Copy-Item -LiteralPath $package -Destination $hostPackage
+    $listener.Start()
+    $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    $listener.Stop()
+
+    [xml]$descriptor = Get-Content -Raw -LiteralPath $canonicalAppInstaller
+    $baseUri = "http://127.0.0.1:$port"
+    $namespaceUri = $descriptor.DocumentElement.NamespaceURI
+    if ([string]::IsNullOrWhiteSpace($namespaceUri)) {
+      throw "The canonical App Installer descriptor has no namespace."
+    }
+    $namespaceManager = [System.Xml.XmlNamespaceManager]::new($descriptor.NameTable)
+    $namespaceManager.AddNamespace("ai", $namespaceUri)
+    $appInstallerElement = $descriptor.SelectSingleNode("/ai:AppInstaller", $namespaceManager)
+    $mainPackageElement = $descriptor.SelectSingleNode("/ai:AppInstaller/ai:MainPackage", $namespaceManager)
+    if ($null -eq $appInstallerElement -or $null -eq $mainPackageElement) {
+      throw "The canonical App Installer descriptor is missing AppInstaller or MainPackage."
+    }
+    $appInstallerElement.SetAttribute("Uri", "$baseUri/STFCModBridge.appinstaller")
+    $mainPackageElement.SetAttribute("Uri", "$baseUri/STFCModBridge.msix")
+    $descriptor.Save($hostDescriptor)
+
+    $pythonArguments = if ([System.IO.Path]::GetFileName($python.Source) -ieq "py.exe") {
+      @("-3", "`"$appInstallerHostScript`"", "$port", "`"$hostRoot`"")
+    } else {
+      @("`"$appInstallerHostScript`"", "$port", "`"$hostRoot`"")
+    }
+    $server = Start-Process `
+      -FilePath $python.Source `
+      -ArgumentList $pythonArguments `
+      -WindowStyle Hidden `
+      -PassThru
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+    do {
+      try {
+        $response = Invoke-WebRequest `
+          -Uri "$baseUri/STFCModBridge.appinstaller" `
+          -Method Head `
+          -UseBasicParsing
+      } catch {
+        if ($server.HasExited -or [DateTimeOffset]::UtcNow -ge $deadline) {
+          throw
+        }
+        Start-Sleep -Milliseconds 200
+      }
+    } until ($response.StatusCode -eq 200)
+
+    return [pscustomobject]@{
+      DescriptorPath = $hostDescriptor
+      Process = $server
+      Root = $hostRoot
+    }
+  } catch {
+    if ($null -ne $server -and -not $server.HasExited) {
+      $server.Kill($true)
+      [void]$server.WaitForExit(10000)
+    }
+    if ($null -ne $server) {
+      $server.Dispose()
+    }
+    if (Test-Path -LiteralPath $hostRoot) {
+      Remove-Item -LiteralPath $hostRoot -Recurse -Force
+    }
+    throw
+  } finally {
+    $listener.Dispose()
+  }
+}
+
+function Get-DisposablePackageUpdateSettings {
+  param(
+    [Parameter(Mandatory)]
+    [string]$PackageFamilyName
+  )
+
+  $previousPackageFamilyName = $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FAMILY_NAME
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FAMILY_NAME = $PackageFamilyName
+    $json = @(Invoke-WindowsPowerShellCommand -Operation "settings" -Command @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$WarningPreference = "SilentlyContinue"
+$InformationPreference = "SilentlyContinue"
+$VerbosePreference = "SilentlyContinue"
+Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
+if (-not (Get-Command Get-AppxPackageAutoUpdateSettings -ErrorAction SilentlyContinue)) {
+  [pscustomobject]@{
+    Available = $false
+  } | ConvertTo-Json -Compress
+  return
+}
+$settings = Get-AppxPackageAutoUpdateSettings `
+  -PackageFamilyName $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FAMILY_NAME `
+  -ErrorAction Stop
+[pscustomobject]@{
+  Available = $true
+  CheckForUpdatesOnLaunch = $settings.CheckForUpdatesOnLaunch
+  HoursBetweenUpdateChecks = $settings.HoursBetweenUpdateChecks
+  AutomaticBackgroundTaskUpdatesEnabled = $settings.AutomaticBackgroundTaskUpdatesEnabled
+  ShowPromptOnLaunchWhenUpdateIsAvailable = $settings.ShowPromptOnLaunchWhenUpdateIsAvailable
+  UpdateBlocksActivation = $settings.UpdateBlocksActivation
+} | ConvertTo-Json -Compress
+'@) -join [Environment]::NewLine
+    return $json | ConvertFrom-Json -ErrorAction Stop
+  } finally {
+    $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FAMILY_NAME = $previousPackageFamilyName
+  }
+}
+
+function Install-DisposablePackage {
+  param(
+    [Parameter(Mandatory)]
+    [string]$AppInstallerPath
+  )
+
+  $previousAppInstallerPath = $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER
+  try {
+    $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER = $AppInstallerPath
     Invoke-WindowsPowerShellCommand -Operation "install" -Command @'
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -343,10 +476,13 @@ $WarningPreference = "SilentlyContinue"
 $InformationPreference = "SilentlyContinue"
 $VerbosePreference = "SilentlyContinue"
 Import-Module $env:STFC_BATTLE_QUALIFICATION_APPX_MODULE -ErrorAction Stop
-Add-AppxPackage -Path $env:STFC_BATTLE_QUALIFICATION_MSIX -ErrorAction Stop
+Add-AppxPackage `
+  -Path $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER `
+  -AppInstallerFile `
+  -ErrorAction Stop
 '@ | Out-Null
   } finally {
-    $env:STFC_BATTLE_QUALIFICATION_MSIX = $previousPackagePath
+    $env:STFC_BATTLE_QUALIFICATION_APPINSTALLER = $previousAppInstallerPath
   }
 }
 
@@ -427,6 +563,8 @@ namespace BattlePackageActivation
 
 $canonicalPackageSha256 = (Get-FileHash -LiteralPath $canonicalPackage -Algorithm SHA256).Hash
 $developmentPackage = $null
+$appInstallerHost = $null
+$effectiveUpdateSettingsVerified = $false
 $stateEvidenceNonce = [Guid]::NewGuid().ToString("N")
 $stateEvidencePath = Join-Path `
   ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
@@ -443,17 +581,32 @@ try {
     $developmentPackage = New-DisposableDevelopmentPackage
     $package = $developmentPackage.PackagePath
   }
+  $appInstallerHost = Start-DisposableAppInstallerHost
 
   $installed = $null
   $registrationAttempted = $false
   try {
     $registrationAttempted = $true
-    Install-DisposablePackage
+    Install-DisposablePackage -AppInstallerPath $appInstallerHost.DescriptorPath
     $packages = @(Get-DisposablePackages)
     if ($packages.Count -ne 1) {
       throw "The disposable MSIX did not register exactly one reviewed package identity."
     }
     $installed = $packages[0]
+    $updateSettings = Get-DisposablePackageUpdateSettings `
+      -PackageFamilyName $installed.PackageFamilyName
+    if ($updateSettings.Available) {
+      if ($updateSettings.CheckForUpdatesOnLaunch -ne $false `
+          -or [int]$updateSettings.HoursBetweenUpdateChecks -ne 24 `
+          -or $updateSettings.AutomaticBackgroundTaskUpdatesEnabled -ne $false `
+          -or $updateSettings.ShowPromptOnLaunchWhenUpdateIsAvailable -ne $false `
+          -or $updateSettings.UpdateBlocksActivation -ne $false) {
+        throw "The disposable App Installer association did not record the reviewed False / 24 / False update defaults."
+      }
+      $effectiveUpdateSettingsVerified = $true
+    } else {
+      Write-Host "This Windows host predates the supported App Installer settings readback; descriptor inspection and normal package activation remain mandatory."
+    }
     $appUserModelId = "$($installed.PackageFamilyName)!App"
     $processId = [BattlePackageActivation.ApplicationActivation]::Activate(
       $appUserModelId,
@@ -509,7 +662,12 @@ try {
   } else {
     "Production-signed"
   }
-  Write-Host "$qualificationKind standalone, medium-integrity MSIX Battle named-pipe, and external-state qualification passed."
+  $updateSettingsEvidence = if ($effectiveUpdateSettingsVerified) {
+    "App Installer False / 24 / False policy"
+  } else {
+    "App Installer association and uninterrupted normal package activation"
+  }
+  Write-Host "$qualificationKind standalone, $updateSettingsEvidence, medium-integrity MSIX Battle named-pipe, and external-state qualification passed."
 } finally {
   if (Test-Path -LiteralPath $stateEvidencePath -PathType Leaf) {
     Remove-Item -LiteralPath $stateEvidencePath -Force
@@ -521,6 +679,21 @@ try {
         -FriendlyName $developmentPackage.CertificateFriendlyName
     }
   } finally {
+    if ($null -ne $appInstallerHost) {
+      try {
+        if (-not $appInstallerHost.Process.HasExited) {
+          $appInstallerHost.Process.Kill($true)
+          if (-not $appInstallerHost.Process.WaitForExit(10000)) {
+            throw "The disposable App Installer host did not terminate after forced stop."
+          }
+        }
+      } finally {
+        $appInstallerHost.Process.Dispose()
+        if (Test-Path -LiteralPath $appInstallerHost.Root) {
+          Remove-Item -LiteralPath $appInstallerHost.Root -Recurse -Force
+        }
+      }
+    }
     if ($null -ne $developmentPackage `
         -and (Test-Path -LiteralPath $developmentPackage.QualificationRoot)) {
       Remove-Item -LiteralPath $developmentPackage.QualificationRoot -Recurse -Force

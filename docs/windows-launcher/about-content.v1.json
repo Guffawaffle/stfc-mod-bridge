@@ -57,6 +57,15 @@
       "noticeText": "STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms."
     },
     {
+      "id": "windows-sdk-net-ref",
+      "name": "Windows SDK for .NET targeting pack",
+      "version": "10.0.19041.56",
+      "license": "Microsoft Windows SDK license",
+      "sourceUrl": "https://www.nuget.org/packages/Microsoft.Windows.SDK.NET.Ref/10.0.19041.56",
+      "licenseUrl": "https://aka.ms/WinSDKLicenseURL",
+      "noticeText": "Microsoft.Windows.SDK.NET.Ref supplies the Windows Runtime projections used for packaged update discovery. Its NuGet metadata requires acceptance of the Microsoft Windows SDK license; the linked Microsoft license is authoritative."
+    },
+    {
       "id": "microsoft-data-sqlite",
       "name": "Microsoft.Data.Sqlite.Core",
       "version": "8.0.29",
@@ -200,6 +209,13 @@
       "noticeId": "dotnet-windows-runtime",
       "attributionStatus": "review-pending",
       "evidenceKind": "runtime-pack"
+    },
+    {
+      "id": "Microsoft.Windows.SDK.NET.Ref",
+      "version": "10.0.19041.56",
+      "noticeId": "windows-sdk-net-ref",
+      "attributionStatus": "required",
+      "evidenceKind": "targeting-pack"
     },
     {
       "id": "go",

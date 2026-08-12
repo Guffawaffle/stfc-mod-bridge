@@ -22,7 +22,7 @@ public sealed class LauncherAboutCatalogTests
             .SelectMany(ReadResolvedPublishDependencies)
             .ToHashSet(StringComparer.Ordinal);
         var inventoriedDependencies = catalog.DependencyInventory
-            .Where(item => item.EvidenceKind is "resolved-package" or "runtime-pack")
+            .Where(item => item.EvidenceKind is "resolved-package" or "runtime-pack" or "targeting-pack")
             .Select(DependencyKey)
             .ToHashSet(StringComparer.Ordinal);
         CollectionAssert.AreEquivalent(
@@ -137,9 +137,13 @@ public sealed class LauncherAboutCatalogTests
             {
                 var range = download!["version"]!.GetValue<string>();
                 var bounds = range.Trim('[', ']').Split(',', StringSplitOptions.TrimEntries);
-                Assert.AreEqual(2, bounds.Length, $"Unexpected runtime-pack version range {range}.");
-                Assert.AreEqual(bounds[0], bounds[1], $"Runtime-pack version must be exact: {range}.");
-                yield return $"runtime-pack|{download["name"]!.GetValue<string>()}|{bounds[0]}";
+                Assert.AreEqual(2, bounds.Length, $"Unexpected download dependency version range {range}.");
+                Assert.AreEqual(bounds[0], bounds[1], $"Download dependency version must be exact: {range}.");
+                var id = download["name"]!.GetValue<string>();
+                var evidenceKind = id.EndsWith(".Ref", StringComparison.Ordinal)
+                    ? "targeting-pack"
+                    : "runtime-pack";
+                yield return $"{evidenceKind}|{id}|{bounds[0]}";
             }
         }
     }

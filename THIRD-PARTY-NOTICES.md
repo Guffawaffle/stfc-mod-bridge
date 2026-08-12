@@ -57,6 +57,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 STFC Mod Bridge is published as a self-contained Windows application and therefore redistributes .NET runtime and Windows Desktop Runtime components. Microsoft documents Windows .NET product distributions under the .NET Library License and directs distributors to the applicable runtime third-party notices. The linked Microsoft license-information page and the notices shipped with the resolved .NET runtime are authoritative; this summary is not a replacement for those terms.
 ```
 
+## Windows SDK for .NET targeting pack
+
+- Version: 10.0.19041.56
+- License: Microsoft Windows SDK license
+- Source: https://www.nuget.org/packages/Microsoft.Windows.SDK.NET.Ref/10.0.19041.56
+- Authoritative license information: https://aka.ms/WinSDKLicenseURL
+
+```text
+Microsoft.Windows.SDK.NET.Ref supplies the Windows Runtime projections used for packaged update discovery. Its NuGet metadata requires acceptance of the Microsoft Windows SDK license; the linked Microsoft license is authoritative.
+```
+
 ## Microsoft.Data.Sqlite.Core
 
 - Version: 8.0.29

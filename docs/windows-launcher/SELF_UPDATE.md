@@ -4,11 +4,15 @@ Status: the replace-on-exit implementation remains the signed standalone ZIP
 fallback. MSIX installs use Windows App Installer and never run this replacement
 path.
 
-Packaged processes detect their Windows package identity and direct users to
-Windows Installed Apps. The signed App Installer descriptor checks its channel
-on launch, and Windows owns download, version ordering, replacement, rollback,
-and package uninstall. The remainder of this document applies only to a copy
-launched from the standalone ZIP.
+Packaged processes detect their Windows package identity and use Windows App
+Installer only after the user selects **Check Mod Bridge update**. Ordinary
+launch performs no update request, the descriptor does not register an
+on-launch check or background task, and the effective repository settings are
+`CheckForUpdatesOnLaunch=False`, `HoursBetweenUpdateChecks=24`, and
+`AutomaticBackgroundTaskUpdatesEnabled=False`. When the explicit check finds
+an available update, Windows owns its review, download, version ordering,
+replacement, rollback, and package uninstall. The remainder of this document
+applies only to a copy launched from the standalone ZIP.
 
 Launcher updates use the standalone repository's canonical stable release
 manifest and immutable GitHub asset URL. Provider packs cannot alter this

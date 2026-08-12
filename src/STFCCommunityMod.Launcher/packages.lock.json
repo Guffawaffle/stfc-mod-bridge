@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net8.0-windows7.0": {
+    "net8.0-windows10.0.19041": {
       "FluentIcons.Wpf": {
         "type": "Direct",
         "requested": "[2.1.333, )",
@@ -94,7 +94,7 @@
         }
       }
     },
-    "net8.0-windows7.0/win-x64": {
+    "net8.0-windows10.0.19041/win-x64": {
       "System.IO.FileSystem.AccessControl": {
         "type": "Transitive",
         "resolved": "5.0.0",
