@@ -129,8 +129,8 @@ The axes do not collapse into one `current source` value. In particular:
 - selecting a source changes preference only; it does not adopt, rename, rewrite, or attest the installed DLL;
 - a managed record remains attributed to the provider/channel/runtime that supplied its verified bytes even when the
   preferred source changes;
-- an unmarked, unknown-hash, or developer DLL is an external/custom artifact and remains runnable when the ordinary
-  bounded file-safety checks pass; it is not unhealthy merely because Mod Bridge cannot authenticate it;
+- an unmarked, unknown-hash, or developer DLL is an external/custom artifact and remains runnable after an explicit
+  per-attempt launch warning; approval does not authenticate, adopt, or mutate it;
 - if a formerly managed DLL changes, Mod Bridge suspends its managed-integrity claim and must not overwrite or delete
   the new bytes automatically. A future surface may let the player explicitly keep it as custom or replace it through
   a confirmed repair/switch transaction;
@@ -146,11 +146,12 @@ silently query `latest` again.
 | Installed state | Preferred relationship | Primary presentation | Default next action |
 |---|---|---|---|
 | No DLL | Any resolved preference | Community mod not installed | Check for updates, then Install a prepared release |
-| External/custom DLL | Unknown or matches preference only by inspected evidence | Manual or custom installation detected; runnable, not managed | Check for updates; replacement is a confirmed switch, never an automatic update |
+| External/custom DLL | Unknown or matches preference only by inspected evidence | Manual or custom installation detected; runnable after per-attempt warning, not managed | Launch anyway, Check for updates, or confirmed replacement; never automatic update |
 | Verified managed DLL | Same provider/channel as preference | Installed provider, channel, and version | Check for updates |
 | Verified managed DLL | Different from preference | Installed from A; future checks prefer B | Review switch to B; do not relabel the installed DLL |
-| Managed record but live bytes changed | Any | Installed file changed; Mod Bridge management is suspended | Keep custom or explicitly Repair/Replace; never silently overwrite |
-| Incomplete journal or unsafe/unreadable state | Any | Recovery required or state unavailable | Recover/Diagnostics; block mutation and direct launch when safety cannot be established |
+| Managed record but live bytes changed | Any | Installed file changed; Mod Bridge management is suspended | Launch anyway for this attempt, keep custom, or explicitly Repair/Replace; never silently overwrite |
+| State or proxy evidence unreadable, with no incomplete transaction | Any | Mod state cannot be verified | Diagnostics or per-attempt Launch anyway; never persist trust or mutate as a side effect |
+| Active, incomplete, or malformed transaction journal | Any | Recovery required | Recover/Diagnostics; block mutation and launch handoff until transaction safety is restored |
 
 ### State/action matrix
 
@@ -177,7 +178,9 @@ separate Check button or a labeled Install wizard step is a presentation decisio
 The v1 configuration set is exactly the selected game root's `community_patch_settings.toml`. It contains scalar,
 hotkey, notification, and Data Sync overrides. No glob, sibling TOML, log, cache, credential file, or provider-defined
 path is implied. A future provider may add a file only through reviewed catalog metadata, containment validation, and a
-new contract/schema version. A missing file is recorded as absent and does not create an empty substitute.
+new contract/schema version. Passive deployment backup/capture records a missing file as absent and does not create an
+empty substitute. After a mod is installed, the configuration editor may use a virtual empty baseline and create sparse
+TOML only when the player explicitly saves a change.
 
 ### Capture and metadata
 

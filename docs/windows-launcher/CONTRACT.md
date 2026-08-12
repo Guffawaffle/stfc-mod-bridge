@@ -287,6 +287,17 @@ The schema must describe:
 
 GUI saves are sparse: write user intent, not every resolved default.
 
+Mod Settings require a present `version.dll` and an exact reviewed provider
+schema. A proxy that is present but needs repair does not block TOML editing. An
+absent proxy keeps mod Settings unavailable and presents Install, without
+blocking an unmodded game launch.
+
+When an installed mod has no `community_patch_settings.toml`, Settings uses a
+virtual empty baseline: opening Settings and staging changes create nothing. The
+first explicit Save uses create-new semantics and fails with a conflict if
+another writer created the file first. No backup is produced when no prior file
+bytes exist. Existing invalid or unsupported TOML still fails closed.
+
 Save behavior:
 
 1. Parse the current file.
@@ -338,12 +349,19 @@ and `Launch prime.exe`; it is never a mod-TOML setting. New, migrated, or
 unknown preference state defaults to Scopely, preserving the earlier behavior.
 
 Both actions acquire the same operation lease as mod mutation and revalidate
-after acquisition. Scopely requires only the exact supported official launcher
-and remains independently available when the game is running or the game root
-is missing. Its lease lasts until the exact newly started or safely discovered
-existing launcher process exits. Direct launch requires a valid selected game
-root, a healthy local mod deployment, and no running STFC process; its lease is
-released after successful process creation.
+after acquisition. Scopely requires the exact supported official launcher and
+remains independently available when the game is running or the game root is
+missing, except while an active or incomplete mod transaction makes a launch
+handoff unsafe. Its lease lasts until the exact newly started or safely
+discovered existing launcher process exits.
+
+Direct launch requires a valid selected game root, no running or unattributable
+STFC process, no active/incomplete deployment transaction, and the operation
+lease. A missing `version.dll` is a normal unmodded launch, not a failure. A
+present proxy whose installed state, bytes, or provenance Mod Bridge cannot
+verify requires explicit **Launch anyway** approval for that attempt. Approval
+does not mutate the proxy or persist trust. The lease is released after
+successful process creation.
 
 Each target publishes structured availability, reason, and next-action data.
 The UI must not derive recovery behavior from target or display-name strings.
@@ -357,9 +375,11 @@ The launcher reports distinct states:
 ```text
 not-installed
 game-ready-mod-missing
+game-ready-without-mod
 mod-ready
 update-available
 repair-required
+launch-override-required
 game-running
 operation-in-progress
 offline-ready

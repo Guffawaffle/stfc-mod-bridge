@@ -49,6 +49,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     internal LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator { get; private set; }
 
+    internal Func<GameLaunchPresentation, Task<bool>>? ConfirmLaunchOverrideAsync { get; set; }
+
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
         IModManagementCoordinator modManagementCoordinator,
@@ -161,6 +163,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public LauncherProviderCompatibilityState ModProviderCompatibility =>
         localHealth.ProviderCompatibility;
+
+    public bool HasUnsafeModDeploymentTransaction =>
+        !primeLaunchChoice.CanExecute
+        && primeLaunchChoice.NextAction == LauncherLaunchRecoveryAction.RecoverModTransaction;
 
     public ReviewedRuntimeActivation? ReviewedRuntimeActivation =>
         localHealth.Installation.RuntimeActivation;
@@ -664,6 +670,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(GameClientStatusAutomationName));
         OnPropertyChanged(nameof(IsGameRunning));
         OnPropertyChanged(nameof(ModProviderCompatibility));
+        OnPropertyChanged(nameof(HasUnsafeModDeploymentTransaction));
         OnPropertyChanged(nameof(ReviewedRuntimeActivation));
         OnPropertyChanged(nameof(ModProviderCompatibilityStatus));
         OnPropertyChanged(nameof(ModUpdateAvailability));
@@ -772,9 +779,22 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
     {
+        var allowUnverifiedProxy = false;
+        if (launchPresentation.RequiresUserOverride)
+        {
+            if (ConfirmLaunchOverrideAsync is null
+                || !await ConfirmLaunchOverrideAsync(launchPresentation))
+            {
+                return ObservableActionResult.Unchanged(
+                    "Launch canceled. The unverified version.dll remains unchanged.");
+            }
+            allowUnverifiedProxy = true;
+        }
+
         var result = await gameLaunchCoordinator.LaunchAsync(
             snapshot.SelectedGameDirectory,
-            selectedLaunchTarget);
+            selectedLaunchTarget,
+            allowUnverifiedProxy);
         RefreshCore();
         return ProjectLaunchResult(result);
     }
@@ -1090,7 +1110,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         var choice = GetLaunchChoice(target);
         var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
-        var availability = choice.CanExecute
+        var availability = choice.RequiresUserOverride
+            ? $", available after confirmation, {choice.Reason}"
+            : choice.CanExecute
             ? $", available, {choice.Reason}"
             : $", unavailable, {choice.Reason}, {choice.NextActionLabel}";
         return $"{label}{selected}{availability}";
@@ -1099,7 +1121,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string BuildChoiceStatus(LauncherLaunchTarget target)
     {
         var choice = GetLaunchChoice(target);
-        return choice.CanExecute
+        return choice.RequiresUserOverride
+            ? $"Warning · {choice.Reason} · Launch anyway requires confirmation"
+            : choice.CanExecute
             ? choice.Reason
             : $"Unavailable · {choice.Reason} · {choice.NextActionLabel}";
     }

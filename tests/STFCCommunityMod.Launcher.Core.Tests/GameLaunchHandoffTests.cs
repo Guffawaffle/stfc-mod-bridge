@@ -30,6 +30,110 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task MissingProxyLaunchesPrimeWithoutTheCommunityMod()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("Ready without mod", presentation.Status);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.IsFalse(presentation.RequiresUserOverride);
+        StringAssert.Contains(presentation.Reason, "without the community mod");
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task ManagedRecordForAnotherGameRootDoesNotBlockUnmoddedLaunch()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var managedGameDirectory = CreateGameDirectory(temporaryDirectory, "managed-game");
+        var selectedGameDirectory = CreateGameDirectory(temporaryDirectory, "selected-game");
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, managedGameDirectory);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            selectedGameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(
+            selectedGameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("Ready without mod", presentation.Status);
+        Assert.IsFalse(presentation.RequiresUserOverride);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task ChangedManagedProxyRequiresFreshExplicitApproval()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = CreateFixture(temporaryDirectory);
+        await InstallManagedArtifactAsync(fixture.DeploymentService, gameDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(gameDirectory, "version.dll"), [9, 9, 9]);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var refused = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual("Mod needs attention", presentation.Status);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.IsTrue(presentation.RequiresUserOverride);
+        StringAssert.Contains(presentation.Reason, "cannot vouch");
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, refused.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+
+        var approved = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable,
+            allowUnverifiedProxy: true);
+
+        Assert.AreEqual(GameLaunchHandoffState.Completed, approved.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+        CollectionAssert.AreEqual(
+            new byte[] { 9, 9, 9 },
+            await File.ReadAllBytesAsync(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task UnmanagedProxyRequiresApprovalWithoutBecomingManagedOrTrusted()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var proxyPath = Path.Combine(gameDirectory, "version.dll");
+        await File.WriteAllBytesAsync(proxyPath, [4, 2]);
+        var fixture = CreateFixture(temporaryDirectory);
+
+        var presentation = fixture.Coordinator.CapturePresentation(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable);
+        var result = await fixture.Coordinator.LaunchAsync(
+            gameDirectory,
+            LauncherLaunchTarget.PrimeExecutable,
+            allowUnverifiedProxy: true);
+
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.IsTrue(presentation.RequiresUserOverride);
+        StringAssert.Contains(presentation.Reason, "did not install or record");
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        CollectionAssert.AreEqual(new byte[] { 4, 2 }, await File.ReadAllBytesAsync(proxyPath));
+        Assert.IsNull(fixture.DeploymentService.ReadInstalledState());
+    }
+
+    [TestMethod]
     public async Task ScopelyLauncherIsIndependentOfGameFolderAndGameProcess()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -193,7 +297,8 @@ public sealed class GameLaunchHandoffTests
         var result = await fixture.Coordinator.LaunchAsync(gameDirectory, LauncherLaunchTarget.PrimeExecutable);
 
         Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
-        Assert.AreEqual("Repair required", result.Presentation.Status);
+        Assert.AreEqual("Mod needs attention", result.Presentation.Status);
+        Assert.IsTrue(result.Presentation.RequiresUserOverride);
     }
 
     [TestMethod]
@@ -296,8 +401,10 @@ public sealed class GameLaunchHandoffTests
             gameDirectory,
             LauncherLaunchTarget.PrimeExecutable);
 
-        Assert.AreEqual("The community mod deployment state could not be validated safely.", presentation.Reason);
+        StringAssert.Contains(presentation.Reason, "could not verify");
         Assert.AreEqual(LauncherLaunchRecoveryAction.OpenDiagnostics, presentation.NextAction);
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.IsTrue(presentation.RequiresUserOverride);
         Assert.IsFalse(presentation.Reason.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(presentation.AutomationName.Contains(gameDirectory, StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(presentation.AutomationName.Contains("sensitive-player-folder", StringComparison.OrdinalIgnoreCase));

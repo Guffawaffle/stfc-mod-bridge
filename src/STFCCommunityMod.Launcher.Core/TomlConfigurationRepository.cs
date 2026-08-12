@@ -94,12 +94,27 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                 AtomicTomlWriteState.Invalid,
                 ValidationError: transformed.Error);
         }
+        if (!request.BaselineExisted
+            && baselineContents.AsSpan().SequenceEqual(transformed.Contents))
+        {
+            return new(
+                AtomicTomlWriteState.NoChange,
+                new ConfigurationDocumentSnapshot(
+                    request.Path,
+                    baselineContents,
+                    existed: false));
+        }
 
-        var write = await store.SaveDocumentAsync(
-            request.Path,
-            baselineContents,
-            transformed.Contents,
-            cancellationToken).ConfigureAwait(false);
+        var write = request.BaselineExisted
+            ? await store.SaveDocumentAsync(
+                request.Path,
+                baselineContents,
+                transformed.Contents,
+                cancellationToken).ConfigureAwait(false)
+            : await store.CreateDocumentAsync(
+                request.Path,
+                transformed.Contents,
+                cancellationToken).ConfigureAwait(false);
         if (!write.IsSuccess)
         {
             return new(
@@ -136,12 +151,27 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
         {
             return new(AtomicTomlWriteState.Invalid, ValidationError: validation.Error);
         }
+        if (!request.BaselineExisted
+            && baselineContents.AsSpan().SequenceEqual(request.DesiredContents))
+        {
+            return new(
+                AtomicTomlWriteState.NoChange,
+                new ConfigurationDocumentSnapshot(
+                    request.Path,
+                    baselineContents,
+                    existed: false));
+        }
 
-        var write = await store.SaveDocumentAsync(
-            request.Path,
-            baselineContents,
-            request.DesiredContents,
-            cancellationToken).ConfigureAwait(false);
+        var write = request.BaselineExisted
+            ? await store.SaveDocumentAsync(
+                request.Path,
+                baselineContents,
+                request.DesiredContents,
+                cancellationToken).ConfigureAwait(false)
+            : await store.CreateDocumentAsync(
+                request.Path,
+                request.DesiredContents,
+                cancellationToken).ConfigureAwait(false);
         return write.IsSuccess
             ? new(
                 write.State,

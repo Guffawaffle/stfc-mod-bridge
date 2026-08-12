@@ -13,18 +13,24 @@ public sealed class ConfigurationDocumentSnapshot
 {
     private readonly byte[] contents;
 
-    public ConfigurationDocumentSnapshot(string path, byte[] contents)
+    public ConfigurationDocumentSnapshot(
+        string path,
+        byte[] contents,
+        bool existed = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contents);
         Path = System.IO.Path.GetFullPath(path);
         this.contents = [.. contents];
         Revision = ConfigurationDocumentRevision.FromContents(contents);
+        Existed = existed;
     }
 
     public string Path { get; }
 
     public ConfigurationDocumentRevision Revision { get; }
+
+    public bool Existed { get; }
 
     public byte[] Contents => [.. contents];
 }
@@ -113,7 +119,8 @@ public sealed class ConfigurationCommitRequest
         string path,
         ConfigurationDocumentRevision expectedRevision,
         byte[] baselineContents,
-        ConfigurationChangeSet changes)
+        ConfigurationChangeSet changes,
+        bool baselineExisted = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Path = System.IO.Path.GetFullPath(path);
@@ -122,6 +129,7 @@ public sealed class ConfigurationCommitRequest
         ArgumentNullException.ThrowIfNull(baselineContents);
         this.baselineContents = [.. baselineContents];
         Changes = changes ?? throw new ArgumentNullException(nameof(changes));
+        BaselineExisted = baselineExisted;
     }
 
     public string Path { get; }
@@ -131,6 +139,9 @@ public sealed class ConfigurationCommitRequest
     public byte[] BaselineContents => [.. baselineContents];
 
     public ConfigurationChangeSet Changes { get; }
+
+    public bool BaselineExisted { get; }
+
 }
 
 public sealed record ConfigurationRepositoryCommitResult(
@@ -155,19 +166,22 @@ public sealed class ConfigurationDocumentCommitRequest
         string path,
         ConfigurationDocumentRevision expectedRevision,
         byte[] baselineContents,
-        byte[] desiredContents)
+        byte[] desiredContents,
+        bool baselineExisted = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Path = System.IO.Path.GetFullPath(path);
         ExpectedRevision = expectedRevision ?? throw new ArgumentNullException(nameof(expectedRevision));
         this.baselineContents = [.. baselineContents];
         this.desiredContents = [.. desiredContents];
+        BaselineExisted = baselineExisted;
     }
 
     public string Path { get; }
     public ConfigurationDocumentRevision ExpectedRevision { get; }
     public byte[] BaselineContents => [.. baselineContents];
     public byte[] DesiredContents => [.. desiredContents];
+    public bool BaselineExisted { get; }
 }
 
 public interface IConfigurationRepository

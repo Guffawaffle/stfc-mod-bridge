@@ -238,6 +238,14 @@ The primary action changes with the resolved product state:
 | Operation active | Working | Progress/cancel when safe |
 | Offline but locally healthy | Ready offline | Launch game |
 
+Mod health chooses the mod-management primary action but does not automatically
+remove the separate game launch action. With no `version.dll`, direct launch is
+available and says that the game will run without the community mod. With an
+unrecorded, changed, or unreadable proxy, direct launch opens a clear warning
+and requires **Launch anyway** for that attempt. Active/incomplete deployment,
+an invalid game target, a running or unattributable game process, and a busy
+operation lease remain hard launch blocks.
+
 ### Future-state Game client row
 
 The accepted post-v1 direction is for the launcher to replace the official

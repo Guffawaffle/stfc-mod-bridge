@@ -1313,6 +1313,36 @@
       </StackPanel>
     </controls:InAppDialog>
 
+    <controls:InAppDialog x:Name="LaunchOverrideDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Launch with unverified mod?"
+                          Closed="LaunchOverrideDialog_Closed"
+                          automation:AutomationProperties.Name="Unverified community mod launch warning">
+      <StackPanel>
+        <TextBlock Foreground="{DynamicResource WarningBrush}"
+                   FontWeight="SemiBold"
+                   Text="Mod Bridge cannot verify the version.dll in this game folder."
+                   TextWrapping="Wrap" />
+        <TextBlock x:Name="LaunchOverrideWarning"
+                   Margin="0,8,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <WrapPanel Margin="0,20,0,0" HorizontalAlignment="Right">
+          <Button Margin="0,0,8,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="CancelLaunchOverrideButton_Click"
+                  Content="_Cancel"
+                  automation:AutomationProperties.Name="Cancel launch and leave version.dll unchanged" />
+          <Button x:Name="ConfirmLaunchOverrideButton"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="ConfirmLaunchOverrideButton_Click"
+                  Content="_Launch anyway"
+                  automation:AutomationProperties.Name="Launch anyway with the unverified version.dll" />
+        </WrapPanel>
+      </StackPanel>
+    </controls:InAppDialog>
+
     <controls:InAppDialog x:Name="LauncherUpdateDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"

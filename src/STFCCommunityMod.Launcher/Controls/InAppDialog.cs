@@ -23,6 +23,8 @@ public sealed class InAppDialog : ContentControl
     private ButtonBase? closeButton;
     private IInputElement? previousFocus;
 
+    public event EventHandler? Closed;
+
     public bool IsOpen
     {
         get => (bool)GetValue(IsOpenProperty);
@@ -84,6 +86,7 @@ public sealed class InAppDialog : ContentControl
         }
 
         dialog.previousFocus = null;
+        dialog.Closed?.Invoke(dialog, EventArgs.Empty);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

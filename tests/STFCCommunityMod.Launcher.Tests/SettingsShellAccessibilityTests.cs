@@ -261,6 +261,29 @@ public sealed class SettingsShellAccessibilityTests
             "Semantic status triggers may change color, not badge geometry.");
     }
 
+    [TestMethod]
+    public void SettingsRequiresPresentModButNotHealthyModProvenance()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var method = Slice(
+            source,
+            "private bool EnsureSettingsWorkspaceInitialized()",
+            "private SettingsViewModel CreateSettingsViewModel");
+
+        StringAssert.Contains(method, "HasUnsafeModDeploymentTransaction");
+        StringAssert.Contains(method, "Path.Combine(viewModel.SelectedGameDirectory, \"version.dll\")");
+        StringAssert.Contains(method, "Community Mod is not installed");
+        Assert.IsTrue(
+            method.IndexOf("version.dll", StringComparison.Ordinal)
+            < method.IndexOf("if (isSettingsWorkspaceInitialized)", StringComparison.Ordinal),
+            "An initialized Settings workspace must not bypass a later mod removal.");
+        Assert.IsFalse(
+            method.Contains("ManagedVerified", StringComparison.Ordinal),
+            "A present proxy must not require managed provenance before Settings can open.");
+    }
+
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)
     {
         var element = document.Descendants()
@@ -279,6 +302,14 @@ public sealed class SettingsShellAccessibilityTests
                     (string?)setter.Attribute("Property") == "Visibility"
                     && (string?)setter.Attribute("Value") == "Collapsed"),
             $"{elementName} must collapse while settings search is open.");
+    }
+
+    private static string Slice(string source, string startMarker, string endMarker)
+    {
+        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        var end = source.IndexOf(endMarker, start, StringComparison.Ordinal);
+        Assert.IsTrue(start >= 0 && end > start);
+        return source[start..end];
     }
 
     private static void AssertStyleSetter(XElement style, string property, string value)

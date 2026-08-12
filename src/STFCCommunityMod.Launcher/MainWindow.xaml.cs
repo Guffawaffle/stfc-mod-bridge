@@ -63,6 +63,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private LauncherUpdatePreparation? pendingLauncherUpdate;
     private LauncherProviderAtomicSwitchPreview? pendingProviderSwitch;
     private bool isProviderSwitchOperationPending;
+    private TaskCompletionSource<bool>? pendingLaunchOverrideConfirmation;
 
     private LauncherProviderSession ProviderSession => providerSessions.Current;
 
@@ -158,6 +159,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
             providerSelectionStore);
+        viewModel.ConfirmLaunchOverrideAsync = ConfirmLaunchOverrideAsync;
         var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
             provider,
@@ -179,9 +181,62 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 runtimeComposition));
     }
 
+    private Task<bool> ConfirmLaunchOverrideAsync(GameLaunchPresentation presentation)
+    {
+        ArgumentNullException.ThrowIfNull(presentation);
+        if (!presentation.RequiresUserOverride)
+        {
+            return Task.FromResult(true);
+        }
+        if (pendingLaunchOverrideConfirmation is not null)
+        {
+            return pendingLaunchOverrideConfirmation.Task;
+        }
+
+        pendingLaunchOverrideConfirmation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        LaunchOverrideWarning.Text =
+            $"{presentation.Reason}\n\nMod Bridge will not move, replace, repair, or trust version.dll. "
+            + "Windows decides whether that proxy loads with the game. Continue only if you trust its source.";
+        LaunchOverrideDialog.IsOpen = true;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            () => ConfirmLaunchOverrideButton.Focus());
+        return pendingLaunchOverrideConfirmation.Task;
+    }
+
+    private void ConfirmLaunchOverrideButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        CompleteLaunchOverrideConfirmation(confirmed: true);
+    }
+
+    private void CancelLaunchOverrideButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        CompleteLaunchOverrideConfirmation(confirmed: false);
+    }
+
+    private void LaunchOverrideDialog_Closed(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        CompleteLaunchOverrideConfirmation(confirmed: false);
+    }
+
+    private void CompleteLaunchOverrideConfirmation(bool confirmed)
+    {
+        var completion = pendingLaunchOverrideConfirmation;
+        pendingLaunchOverrideConfirmation = null;
+        LaunchOverrideDialog.IsOpen = false;
+        completion?.TrySetResult(confirmed);
+    }
+
     private void ApplyProviderSession(LauncherProviderSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
+        CompleteLaunchOverrideConfirmation(confirmed: false);
         if (DataContext is MainWindowViewModel previousViewModel)
         {
             previousViewModel.PropertyChanged -= MainViewModel_PropertyChanged;
@@ -351,6 +406,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         isDisposed = true;
+        CompleteLaunchOverrideConfirmation(confirmed: false);
         lifetimeCancellation.Cancel();
         pendingLauncherUpdate?.Dispose();
         pendingLauncherUpdate = null;
@@ -1524,11 +1580,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private bool EnsureSettingsWorkspaceInitialized()
     {
-        if (isSettingsWorkspaceInitialized)
-        {
-            return true;
-        }
-
         try
         {
             if (!providerSelectionResolution.IsResolved)
@@ -1536,6 +1587,26 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 throw new LauncherConfigurationSchemaException(
                     $"Settings are disabled until the release source is repaired. "
                     + providerSelectionResolution.Message);
+            }
+            if (DataContext is not MainWindowViewModel viewModel)
+            {
+                throw new LauncherConfigurationSchemaException(
+                    "Settings are unavailable until Mod Bridge finishes loading installation state.");
+            }
+            if (viewModel.HasUnsafeModDeploymentTransaction)
+            {
+                throw new LauncherConfigurationSchemaException(
+                    "Settings are disabled until the unsafe mod deployment transaction is recovered.");
+            }
+            if (string.IsNullOrWhiteSpace(viewModel.SelectedGameDirectory)
+                || !File.Exists(Path.Combine(viewModel.SelectedGameDirectory, "version.dll")))
+            {
+                throw new LauncherConfigurationSchemaException(
+                    "Community Mod is not installed in the selected game folder. Install it before editing mod settings.");
+            }
+            if (isSettingsWorkspaceInitialized)
+            {
+                return true;
             }
             SettingsWorkspace.DataContext = SharedSettings.GetOrCreate();
             isSettingsWorkspaceInitialized = true;

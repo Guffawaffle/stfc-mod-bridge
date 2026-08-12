@@ -31,6 +31,21 @@ source-transition journal. Broad or inferred TOML migration remains out of
 scope. Diagnostics may separately offer explicit catalog-authorized cleanup for
 one valid alias move or one redundant alias removal after a redacted preview.
 
+Mod Settings require a present `version.dll` and an exact reviewed
+configuration catalog. The editor remains available when the proxy is present
+but needs repair; proxy health does not make TOML edits unsafe. With no proxy,
+the launcher offers mod installation and keeps mod Settings unavailable while
+still allowing an unmodded game launch.
+
+If an installed mod has no `community_patch_settings.toml`, the workspace starts
+from a virtual empty sparse document. Opening Settings, browsing, staging, and
+discarding do not create a file. The first explicit Save creates only the staged
+overrides with create-new semantics; if another process creates the destination
+after the workspace opens, Save reports a conflict and preserves both the
+external file and the staged draft. There are no prior bytes to back up on first
+creation. An invalid existing TOML and an unknown provider schema continue to
+fail closed.
+
 ## Accepted modular architecture boundary
 
 Startup resolves behavior before the configuration workspace or WPF
