@@ -115,7 +115,7 @@ public sealed partial class ReleaseTrustAutomationTests
     {
         var root = RepositoryRoot();
         var globalJson = File.ReadAllText(Path.Combine(root, "global.json"));
-        StringAssert.Contains(globalJson, "\"version\": \"8.0.423\"");
+        StringAssert.Contains(globalJson, "\"version\": \"8.0.424\"");
         StringAssert.Contains(globalJson, "\"rollForward\": \"disable\"");
 
         var buildProperties = File.ReadAllText(Path.Combine(root, "Directory.Build.props"));
