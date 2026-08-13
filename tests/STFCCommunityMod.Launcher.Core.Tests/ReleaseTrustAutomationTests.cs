@@ -592,6 +592,8 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(operations, "**Public canary —");
         StringAssert.Contains(operations, "enumerate every open check");
         StringAssert.Contains(operations, "--draft=false");
+        StringAssert.Contains(operations, "\"allowed_actions\": \"all\"");
+        StringAssert.Contains(operations, "\"sha_pinning_required\": true");
 
         StringAssert.Matches(
             workflow,
@@ -602,9 +604,14 @@ public sealed partial class ReleaseTrustAutomationTests
             2,
             Regex.Matches(
                 workflow,
-                @"uses:\s+actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d\s+#\s+v4",
+                @"uses:\s+actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6\s+#\s+v4",
                 RegexOptions.CultureInvariant).Count,
             "Both release attestations must use the same reviewed immutable action revision.");
+        StringAssert.Matches(
+            workflow,
+            new Regex(
+                @"uses:\s+azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca\s+#\s+v3",
+                RegexOptions.CultureInvariant));
         foreach (var subject in new[]
                  {
                      "artifacts/win-x64/app/STFCModBridge.exe",

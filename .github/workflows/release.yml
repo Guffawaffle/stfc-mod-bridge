@@ -150,7 +150,7 @@ jobs:
           }
 
       - name: Azure login with GitHub OIDC
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
@@ -321,7 +321,7 @@ jobs:
 
       - name: Attest final signed release subjects
         id: attest-release
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
             artifacts/win-x64/app/STFCModBridge.exe
@@ -336,7 +336,7 @@ jobs:
 
       - name: Attest release-selection manifest only
         id: attest-release-selection
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: artifacts/win-x64/stfc-mod-bridge-release-manifest.json
 

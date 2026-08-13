@@ -20,6 +20,24 @@ in the Actions log; the weekly image revision is still a mutable external
 input. All Actions are pinned to full commit IDs and checkout neither persists
 credentials nor initializes submodules.
 
+GitHub also enforces full-SHA Action references at the repository boundary.
+The Actions permissions API was read back on 2026-08-13 after enabling the
+control and reported:
+
+```json
+{
+  "enabled": true,
+  "allowed_actions": "all",
+  "sha_pinning_required": true
+}
+```
+
+The `allowed_actions` value is intentionally unchanged. Action allowlisting is
+a separate control and must not be enabled until every required Azure, Google,
+and GitHub Action remains permitted. Recheck this mutable control-plane state
+before a production tag; the historical readback above is not proof of its
+future value.
+
 The .NET SDK is pinned without roll-forward. Every project has a NuGet lock
 file with package content hashes, and CI and release restore in locked mode.
 The Microsoft SBOM tool is repository-pinned. Before any signing authority is
