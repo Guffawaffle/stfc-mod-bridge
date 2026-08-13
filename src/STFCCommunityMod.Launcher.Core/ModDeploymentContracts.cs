@@ -81,6 +81,23 @@ public sealed record ModInstalledArtifactState(
     ModArtifactIdentityReceipt? PreviousArtifactBackupIdentity = null,
     ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null);
 
+public sealed record ModInstalledArtifactRegistry(
+    int SchemaVersion,
+    IReadOnlyList<ModInstalledArtifactState> Installations,
+    IReadOnlyList<ModDetachedAdoptionBackupState>? DetachedAdoptionBackups = null);
+
+public sealed record ModDetachedAdoptionBackupState(
+    string DetachmentId,
+    string GameDirectory,
+    DateTimeOffset DetachedAtUtc,
+    string ProviderId,
+    string ReleaseChannelId,
+    string RuntimeDistributionId,
+    string? PreviousArtifactBackupPath,
+    ModArtifactIdentityReceipt? PreviousArtifactBackupIdentity,
+    string? PreviousRuntimeManifestBackupPath,
+    ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity);
+
 public sealed record ModArtifactIdentityReceipt(long Size, string Sha256);
 
 public sealed record ModInstalledRuntimeManifestState(

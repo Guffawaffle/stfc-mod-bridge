@@ -185,7 +185,7 @@ public sealed class LiveProviderInstallIntegrationTests
             Assert.AreEqual("guffawaffle", guffawaffleResult.InstalledArtifact!.ProviderId);
             CollectionAssert.AreEqual(guffawaffleConfiguration, File.ReadAllBytes(configurationPath));
 
-            var removal = await endpoints["guffawaffle"].Coordinator.UninstallAsync().ConfigureAwait(false);
+            var removal = await endpoints["guffawaffle"].Coordinator.UninstallAsync(gameDirectory).ConfigureAwait(false);
             Assert.IsTrue(removal.IsSuccess, removal.Message);
         }
         finally
@@ -212,7 +212,7 @@ public sealed class LiveProviderInstallIntegrationTests
         Assert.AreEqual(endpoint.ProviderId, installation.InstalledState?.ProviderId);
         Assert.IsTrue(File.Exists(Path.Combine(gameDirectory, "version.dll")));
 
-        var removal = await endpoint.Coordinator.UninstallAsync().ConfigureAwait(false);
+        var removal = await endpoint.Coordinator.UninstallAsync(gameDirectory).ConfigureAwait(false);
         Assert.IsTrue(removal.IsSuccess, removal.Message);
         Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
         Assert.IsNull(endpoint.Deployment.ReadInstalledState());
@@ -244,7 +244,7 @@ public sealed class LiveProviderInstallIntegrationTests
                     return new InvalidOperationException(
                         "Production cleanup found an installed provider outside the campaign.");
                 }
-                var removal = await endpoint.Coordinator.UninstallAsync().ConfigureAwait(false);
+                var removal = await endpoint.Coordinator.UninstallAsync(installed.GameDirectory).ConfigureAwait(false);
                 if (!removal.IsSuccess)
                 {
                     return new InvalidOperationException(removal.Message);

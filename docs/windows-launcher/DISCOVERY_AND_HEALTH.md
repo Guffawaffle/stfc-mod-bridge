@@ -1,12 +1,10 @@
 # Windows Installation Discovery and Health
 
-Status: WL-002 implementation
+Status: current discovery and selection contract
 
-Issue: `Guffawaffle/stfc-mod#173`
-
-Branch: `feature/wl-002-stfc-discovery-health`
-
-Base: PR #198 at `7a8ca4215326659c0f261466a36690c086ab3a57`
+The original WL-002 issue, branch, and base revision are historical delivery
+evidence classified by [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md). They are
+not current routing instructions.
 
 ## Discovery boundary
 
@@ -54,6 +52,12 @@ The document is versioned and written through a same-directory temporary file.
 Every read revalidates the directory and `prime.exe`; a malformed document,
 unsupported schema, missing directory, or removed executable fails closed and
 asks for a new selection.
+
+Selection is navigation, not ownership. Changing `install-selection.json`
+changes only the installation Bridge is displaying and targeting. It never
+moves, relabels, repairs, removes, or reassigns another installation's managed
+receipt. Managed ownership is keyed independently by canonical game directory
+as defined in [MOD_DEPLOYMENT.md](MOD_DEPLOYMENT.md).
 
 The normal launcher UI reports whether the game folder is set and valid without
 rendering its filesystem path. Candidate and per-user launcher paths are hidden
@@ -112,3 +116,5 @@ future structured logs and the explicit redacted diagnostic surface in
 - No launcher-root-to-game-root coercion.
 - Cancellation is observed between providers and bounded candidates.
 - Invalid persisted state never falls back to an unverified enabled target.
+- Canonical installation paths are compared case-insensitively on Windows;
+  one canonical installation cannot appear twice in managed state.

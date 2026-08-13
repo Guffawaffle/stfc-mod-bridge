@@ -546,7 +546,8 @@ public sealed class GameLaunchHandoffCoordinator(
                     "Recover the incomplete mod transaction before launching.",
                     target,
                     LauncherLaunchRecoveryAction.RecoverModTransaction),
-                ModInstallationEvidenceState.NotInstalled => ReadyWithoutMod(target),
+                ModInstallationEvidenceState.NotInstalled
+                    or ModInstallationEvidenceState.ManagedMissing => ReadyWithoutMod(target),
                 ModInstallationEvidenceState.ManagedChanged
                     or ModInstallationEvidenceState.Unavailable =>
                     CapturePrimeDeploymentHealth(validation.GameDirectory, target),
@@ -587,7 +588,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 return ReadyWithoutMod(target);
             }
 
-            var state = deploymentService.ReadInstalledState();
+            var state = deploymentService.ReadInstalledState(gameDirectory);
             if (state is null)
             {
                 return RequiresOverride(

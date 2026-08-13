@@ -62,7 +62,13 @@ public interface IModManagementCoordinator
 
     Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default);
 
-    Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default);
+    Task<ModDeploymentResult> UninstallAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default);
+
+    Task<ModDeploymentResult> StopManagingAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ModManagementCoordinator(
@@ -140,6 +146,30 @@ public sealed class ModManagementCoordinator(
             launcherVersion,
             cancellationToken);
         healthService.RecordUpdateObservation(health.Installation, discovery);
+        if (presentation.ActionKind == ModManagementActionKind.Repair)
+        {
+            var receipt = deploymentService.ReadInstalledState(gameDirectory);
+            if (receipt is null
+                || !string.Equals(receipt.ProviderId, healthService.ProviderId, StringComparison.Ordinal)
+                || !string.Equals(receipt.ReleaseChannelId, healthService.ReleaseChannelId, StringComparison.Ordinal)
+                || !string.Equals(
+                    receipt.RuntimeDistributionId,
+                    healthService.RuntimeDistributionId,
+                    StringComparison.Ordinal)
+                || !MatchesRecordedArtifact(receipt, discovery.ModArtifact))
+            {
+                return new(
+                    ModOperationPreparationState.MutationBlocked,
+                    "The exact release recorded by this installation is not available from the selected release source. "
+                    + "No repair was attempted; use Stop managing only if you want Mod Bridge to forget this receipt.",
+                    Path.GetFullPath(gameDirectory),
+                    discovery.Manifest.ReleaseVersion,
+                    discovery.ModArtifact,
+                    ExistingArtifactPolicy.Reject,
+                    presentation.ActionKind,
+                    healthService.ProviderId);
+            }
+        }
         if (presentation.ActionKind != ModManagementActionKind.Repair
             && string.Equals(
                 health.Installation.InstalledSha256,
@@ -324,8 +354,39 @@ public sealed class ModManagementCoordinator(
     public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
         deploymentService.RecoverAsync(cancellationToken);
 
-    public Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default) =>
-        deploymentService.UninstallAsync(cancellationToken);
+    public Task<ModDeploymentResult> UninstallAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default) =>
+        deploymentService.UninstallAsync(gameDirectory, cancellationToken);
+
+    public Task<ModDeploymentResult> StopManagingAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default) =>
+        deploymentService.StopManagingAsync(gameDirectory, cancellationToken);
+
+    private static bool MatchesRecordedArtifact(
+        ModInstalledArtifactState receipt,
+        ModReleaseArtifact artifact) =>
+        receipt.Size == artifact.Size
+        && string.Equals(receipt.Sha256, artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(receipt.Version, artifact.ExpectedVersion, StringComparison.Ordinal)
+        && MatchesRecordedRuntimeManifest(receipt.RuntimeManifest, artifact.RuntimeManifest);
+
+    private static bool MatchesRecordedRuntimeManifest(
+        ModInstalledRuntimeManifestState? receipt,
+        ModRuntimeManifestArtifact? artifact) =>
+        receipt is null
+            ? artifact is null
+            : artifact is not null
+                && receipt.Size == artifact.Size
+                && string.Equals(receipt.Sha256, artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(receipt.FileName, artifact.FileName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    receipt.SourceRevision,
+                    artifact.ExpectedSourceRevision,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(receipt.Repository, artifact.ExpectedRepository, StringComparison.Ordinal)
+                && string.Equals(receipt.Tag, artifact.ExpectedTag, StringComparison.Ordinal);
 
 }
 
@@ -424,8 +485,15 @@ public sealed class ProviderAwareModManagementCoordinator : IModManagementCoordi
     public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
         endpoints[selectedProviderId].Coordinator.RecoverAsync(cancellationToken);
 
-    public Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default) =>
-        endpoints[selectedProviderId].Coordinator.UninstallAsync(cancellationToken);
+    public Task<ModDeploymentResult> UninstallAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default) =>
+        endpoints[selectedProviderId].Coordinator.UninstallAsync(gameDirectory, cancellationToken);
+
+    public Task<ModDeploymentResult> StopManagingAsync(
+        string gameDirectory,
+        CancellationToken cancellationToken = default) =>
+        endpoints[selectedProviderId].Coordinator.StopManagingAsync(gameDirectory, cancellationToken);
 
     private string ResolveProviderId(ModInstallationEvidence installation)
     {

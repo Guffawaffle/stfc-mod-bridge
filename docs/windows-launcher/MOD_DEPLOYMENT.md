@@ -1,9 +1,9 @@
 # Windows Launcher Mod Deployment
 
-Status: WL-004 transaction core and Home install/update/repair confirmation are implemented; recovery/uninstall are
-available through Diagnostics with exact-target confirmation. The issue #45 source-lifecycle and protected TOML-backup
-contract below is proposed for review; its orchestration, storage, restore surface, and selector polish are not yet
-production-ready. Installed-client mutation smoke remains in progress.
+Status: current deployment and per-installation ownership contract. Issue #181
+owns the schema-v2 registry, exact recorded-release repair, and safe detachment
+implementation. The issue #45 source-lifecycle and protected TOML-backup
+contract below remains proposed where explicitly marked.
 
 ## Ownership boundary
 
@@ -14,6 +14,41 @@ It never treats the selected game directory as Mod Bridge-owned. Existing
 manual `version.dll` files are compared only after the user chooses **Check for
 updates**. A separately confirmed replacement preserves the prior bytes under
 Mod Bridge-owned rollback state.
+
+## Selection and per-installation ownership
+
+`install-selection.json` records one selected folder. It does not identify the
+only installation Bridge may know about and is never evidence of ownership.
+`installed-mod.json` schema v2 is a registry with one active ownership receipt
+for every installation Bridge has managed or explicitly adopted. Each receipt
+is keyed by its canonical absolute game directory; every read, lookup,
+migration, and write uses one Windows case-insensitive comparison routine and
+rejects duplicate canonical paths.
+
+The registry persists durable facts only: exact managed artifact identity,
+provider/channel/runtime attribution, installation time, optional reviewed
+runtime-manifest identity, and any adopted-backup receipts. It does not persist
+a health status. Bridge derives status from the selected folder's live files:
+
+- no receipt and no DLL: not installed;
+- no receipt with a DLL: manual installation;
+- receipt and exact live managed pair: managed verified;
+- receipt with changed live bytes: managed changed;
+- receipt with an expected managed DLL absent: managed missing;
+- unreadable state or target: unavailable;
+- an incomplete transaction: recovery required.
+
+A clean installation needs no persisted `not-installed` entry. Selecting a new
+folder changes none of the existing receipts. Install, update, repair, remove,
+provider switch, rollback, and recovery accept an explicit target directory
+and may change only that target's receipt. The global deployment journal remains
+path-bearing and serializes mutations, but recovery restores or removes only
+the receipt named by its canonical target.
+
+A schema-v1 single receipt is projected in memory as the first registry entry
+using the path recorded in that receipt, never the currently selected folder.
+Passive reads do not rewrite it. The first locked mutation writes schema v2
+only after the operation has resolved the explicit target safely.
 
 ## Artifact-bound runtime compatibility evidence
 
@@ -150,6 +185,7 @@ silently query `latest` again.
 | Verified managed DLL | Same provider/channel as preference | Installed provider, channel, and version | Check for updates |
 | Verified managed DLL | Different from preference | Installed from A; future checks prefer B | Review switch to B; do not relabel the installed DLL |
 | Managed record but live bytes changed | Any | Installed file changed; Mod Bridge management is suspended | Launch anyway for this attempt, keep custom, or explicitly Repair/Replace; never silently overwrite |
+| Managed record but expected DLL missing | Any | Managed installation missing | Run unmodded, explicitly Repair the exact recorded release, or Stop managing; never silently install latest |
 | State or proxy evidence unreadable, with no incomplete transaction | Any | Mod state cannot be verified | Diagnostics or per-attempt Launch anyway; never persist trust or mutate as a side effect |
 | Active, incomplete, or malformed transaction journal | Any | Recovery required | Recover/Diagnostics; block mutation and launch handoff until transaction safety is restored |
 
@@ -167,6 +203,7 @@ age limit.
 | **Switch installed mod** | Existing managed or external DLL and a fresh target-provider observation. Provider/runtime differs, or the player explicitly replaces custom bytes with the preferred provider. Compatibility preview and exact target artifact must be available. | Typed target-ID confirmation. Protected TOML backup is mandatory when the active TOML exists; an explicit no-file record satisfies the gate when it does not. Existing DLL bytes are also preserved by deployment. TOML is not migrated or normalized automatically. | Block while STFC runs. Target catalogs/actions are recomposed in the same Bridge process after commit; the next game launch loads the target DLL. | One durable source-transition journal coordinates config backup, artifact deployment, installed attribution, and preference commit. Commit preference last. Any failure compensates to the prior artifact, installed record, and preference; the protected config backup remains. |
 | **Repair** | A managed record exists but the target is missing/changed, and the exact same provider/channel/runtime/version artifact remains independently verifiable. Repair cannot mean `install latest`. | Confirm that current bytes will be replaced and preserve changed bytes for rollback. TOML backup is not required because exact managed lineage is restored and TOML is untouched. If exact bytes are unavailable, fail closed and offer Check for updates as a separate update/switch decision. | Block while STFC runs; next game launch loads repaired bytes. | Existing repair journal. Restore the previous live bytes and installed state on failure. Result retains the original managed attribution. |
 | **Remove** | Verified managed DLL matching installed state. A changed/custom DLL is not deleted. | Confirm exact target and whether an originally adopted DLL will be restored. TOML is always preserved. A protected TOML backup is mandatory if removal restores an adopted artifact with different or unknown lineage; otherwise it is optional. | Block while STFC runs; next game launch reflects removal/restoration. No source-preference change or launcher restart is implied. | Existing uninstall journal removes a fresh managed DLL or restores the original adopted bytes. Failure restores the managed DLL/state. Result is no artifact or external/custom; preferred source remains. |
+| **Stop managing** | The selected canonical installation has an active ownership receipt and no incomplete deployment/provider-switch transaction exists. Changed or missing live bytes are allowed. | Confirm the exact canonical target. Staged Settings/Data Sync edits must be saved or discarded first. | Allowed while STFC runs because no game file or provider state changes. | Atomically remove only the selected active receipt. Never touch DLL, runtime manifest, TOML, logs, preference, or unrelated receipts. Preserve adopted backups under a non-owning recovery receipt. |
 | **Check for updates** | Resolved preferred provider/channel and safe local evidence capture. | Explicit user action; no mutation and no TOML backup. Show which source will be queried. | May run while STFC runs, but any resulting mutation remains disabled until it closes. No restart. | Store only bounded, expiring observation metadata keyed to preference and current artifact evidence. Failure leaves local runnable/managed state truthful and offline-capable. |
 
 An Install surface may combine the explicit check and review into a guided flow, but it must label the network step and
@@ -350,7 +387,7 @@ The HTTP downloader refuses to buffer more than 128 MiB. Unknown journal
 schemas, corrupt state, invalid metadata, non-HTTPS artifact URLs, wrong
 targets, and externally changed managed DLLs fail closed.
 
-## Recovery and uninstall
+## Recovery, uninstall, and detachment
 
 Every phase is persisted through an atomic state-file replacement. An
 incomplete transaction blocks new mutations. `RecoverAsync` is deterministic
@@ -368,15 +405,26 @@ it.
 Managed updates retain the original adopted artifact identity rather than
 turning the immediately previous managed release into the uninstall target.
 Explicit repair may replace a missing or changed Mod Bridge-managed DLL only
-after the same release verification and transaction checks; the changed bytes
-remain available for rollback until repair commits.
+after discovery reproduces the receipt's exact provider, channel, runtime,
+version, size, SHA-256, and optional runtime-manifest identity. Repair never
+silently substitutes `latest`; if the recorded release is unavailable, it
+fails closed. The changed bytes remain available for rollback until repair
+commits.
+
+**Stop managing** is distinct from uninstall. It atomically removes only the
+selected installation's active ownership receipt and never changes a game
+file, configuration, logs, provider preference, or another installation's
+receipt. When the active receipt refers to an adopted DLL or runtime-manifest
+backup, Bridge retains that exact backup and its identity in a non-owning
+detachment receipt instead of orphaning or deleting recovery evidence.
 
 ## Launcher-local health contract
 
 Home and Diagnostics consume the same composable `LauncherHealthSnapshot`.
-The installation inspector distinguishes no target, invalid target, missing,
-manual/unmanaged, verified managed, externally changed, recovery-required,
-and unreadable state. DLL presence alone is never reported as healthy managed.
+The installation inspector distinguishes no target, invalid target, not
+installed, manual/unmanaged, verified managed, externally changed,
+managed-missing, recovery-required, and unreadable state. DLL presence alone
+is never reported as healthy managed.
 
 New deployments require and persist stable provider, release-channel, and
 runtime-distribution IDs beside the verified version and SHA-256. Unattributed
@@ -422,8 +470,12 @@ The core test suite covers:
 - provider/channel/runtime identity and update-observation freshness;
 - provider-unavailable offline health that preserves local readiness;
 - startup recovery from an interrupted commit;
+- independent multi-install receipts, schema-v1 projection without passive
+  rewrite, canonical-path uniqueness, and target-scoped recovery;
 - allowlist-only uninstall, adopted-artifact restoration, external-change
-  refusal, and uninstall rollback.
+  refusal, and uninstall rollback;
+- exact-recorded-release repair and game-file-free Stop Managing, including
+  retained adopted-backup receipts.
 
 The packaged Home smoke confirms that mod state and its action are accessible,
 while deliberately stopping before confirmation. Installed-client mutation

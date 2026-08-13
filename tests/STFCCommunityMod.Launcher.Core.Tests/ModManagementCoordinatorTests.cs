@@ -240,6 +240,63 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task RepairIsBlockedWhenLatestReleaseDoesNotMatchRecordedReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        File.WriteAllBytes(targetPath, [0, 0, 0]);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(UpdatedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        StringAssert.Contains(preparation.Message, "exact release recorded");
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => coordinator.ExecuteAsync(preparation));
+        CollectionAssert.AreEqual(new byte[] { 0, 0, 0 }, File.ReadAllBytes(targetPath));
+    }
+
+    [TestMethod]
+    public async Task RepairUsesExactReleaseRecordedBySelectedInstallation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var (coordinator, deploymentService) = CreateCoordinator(temporaryDirectory);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        File.WriteAllBytes(targetPath, [0, 0, 0]);
+
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+        var result = await coordinator.ExecuteAsync(preparation);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State);
+        Assert.AreEqual(ModManagementActionKind.Repair, preparation.ActionKind);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+    }
+
+    [TestMethod]
     public async Task ReadyPreparationExecutesOnlyThroughTransactionService()
     {
         using var temporaryDirectory = new TemporaryDirectory();

@@ -980,8 +980,33 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanUninstallMod)
         {
+            if (SharedSettings.HasPendingChanges)
+            {
+                SettingsUnavailableMessage.Text =
+                    "Save or discard your pending Settings and Data Sync changes before removing the community mod.";
+                SettingsUnavailableDialog.IsOpen = true;
+                return;
+            }
             SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Uninstall, viewModel);
+        }
+    }
+
+    private void DiagnosticsStopManagingButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (DataContext is MainWindowViewModel viewModel && viewModel.CanStopManagingMod)
+        {
+            if (SharedSettings.HasPendingChanges)
+            {
+                SettingsUnavailableMessage.Text =
+                    "Save or discard your pending Settings and Data Sync changes before stopping management.";
+                SettingsUnavailableDialog.IsOpen = true;
+                return;
+            }
+            SetDiagnosticsWorkspaceOpen(false);
+            ShowMaintenanceConfirmation(MaintenanceAction.StopManaging, viewModel);
         }
     }
 
@@ -1046,22 +1071,40 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void ShowMaintenanceConfirmation(MaintenanceAction action, MainWindowViewModel viewModel)
     {
-        var canStart = action == MaintenanceAction.Recover
-            ? viewModel.CanRecoverMod
-            : viewModel.CanUninstallMod;
+        var canStart = action switch
+        {
+            MaintenanceAction.Recover => viewModel.CanRecoverMod,
+            MaintenanceAction.Uninstall => viewModel.CanUninstallMod,
+            MaintenanceAction.StopManaging => viewModel.CanStopManagingMod,
+            _ => false,
+        };
         if (!canStart || viewModel.SelectedGameDirectory is null)
         {
             return;
         }
         pendingMaintenanceAction = action;
-        MaintenanceDialog.DialogTitle = action == MaintenanceAction.Recover
-            ? "Recover mod transaction?"
-            : "Remove Mod Bridge-managed mod?";
-        MaintenanceSummary.Text = action == MaintenanceAction.Recover
-            ? "Roll back the incomplete transaction using its persisted journal. A provider switch restores version.dll, provider selection, and exact TOML bytes together."
-            : "Remove Mod Bridge-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.";
+        MaintenanceDialog.DialogTitle = action switch
+        {
+            MaintenanceAction.Recover => "Recover mod transaction?",
+            MaintenanceAction.Uninstall => "Remove Mod Bridge-managed mod?",
+            MaintenanceAction.StopManaging => "Stop managing this installation?",
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        };
+        MaintenanceSummary.Text = action switch
+        {
+            MaintenanceAction.Recover => "Roll back the incomplete transaction using its persisted journal. A provider switch restores version.dll, provider selection, and exact TOML bytes together.",
+            MaintenanceAction.Uninstall => "Remove Mod Bridge-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.",
+            MaintenanceAction.StopManaging => "Remove only Mod Bridge's ownership receipt for this exact installation. No game file, TOML, provider selection, log, or preserved adopted backup will be changed or deleted.",
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        };
         MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
-        ConfirmMaintenanceButton.Content = action == MaintenanceAction.Recover ? "_Recover" : "_Remove mod";
+        ConfirmMaintenanceButton.Content = action switch
+        {
+            MaintenanceAction.Recover => "_Recover",
+            MaintenanceAction.Uninstall => "_Remove mod",
+            MaintenanceAction.StopManaging => "_Stop managing",
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        };
         MaintenanceDialog.IsOpen = true;
     }
 
@@ -1077,13 +1120,19 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var action = pendingMaintenanceAction;
         pendingMaintenanceAction = MaintenanceAction.None;
         MaintenanceDialog.IsOpen = false;
-        if (action == MaintenanceAction.Recover)
+        switch (action)
         {
-            await viewModel.RecoverModAsync(lifetimeCancellation.Token);
-        }
-        else
-        {
-            await viewModel.UninstallModAsync(lifetimeCancellation.Token);
+            case MaintenanceAction.Recover:
+                await viewModel.RecoverModAsync(lifetimeCancellation.Token);
+                break;
+            case MaintenanceAction.Uninstall:
+                await viewModel.UninstallModAsync(lifetimeCancellation.Token);
+                break;
+            case MaintenanceAction.StopManaging:
+                await viewModel.StopManagingModAsync(lifetimeCancellation.Token);
+                break;
+            default:
+                return;
         }
     }
 
@@ -1827,6 +1876,7 @@ internal enum MaintenanceAction
     None,
     Recover,
     Uninstall,
+    StopManaging,
 }
 
 internal enum LauncherWorkspace
