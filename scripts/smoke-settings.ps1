@@ -8,10 +8,17 @@ param(
 
   [switch]$UseDisposableSyncFixture,
 
+  [switch]$UseDisposableNetnivFixture,
+
   [switch]$AllowInteractiveFocus
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($UseDisposableSyncFixture -and $UseDisposableNetnivFixture) {
+  throw "Choose only one disposable provider fixture."
+}
+$useDisposableFixture = $UseDisposableSyncFixture -or $UseDisposableNetnivFixture
 
 if (-not $AllowInteractiveFocus -and $env:CI -ne "true") {
   throw "This UI Automation smoke launches and focuses Mod Bridge. Run it in CI or pass -AllowInteractiveFocus when the interactive desktop is available."
@@ -450,7 +457,18 @@ $runtimeManifestPath = (
 ).Path
 $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw |
   ConvertFrom-Json -ErrorAction Stop
-$expectedRuntimeIdentity = "Guffawaffle $($runtimeManifest.runtimeVersion)"
+$expectedRuntimeIdentity = if ($UseDisposableNetnivFixture) {
+  "Unknown"
+}
+else {
+  "Guffawaffle $($runtimeManifest.runtimeVersion)"
+}
+$expectedProviderDisplay = if ($UseDisposableNetnivFixture) {
+  "NetniV"
+}
+else {
+  "Guffawaffle"
+}
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -488,7 +506,7 @@ $providerSelectionBytes = if ($providerSelectionExisted) {
 }
 $disposableGameDirectory = $null
 try {
-  if ($UseDisposableSyncFixture) {
+  if ($useDisposableFixture) {
     $disposableGameDirectory = Join-Path `
       ([System.IO.Path]::GetTempPath()) `
       "stfc-launcher-sync-smoke-$([Guid]::NewGuid().ToString('N'))"
@@ -552,15 +570,22 @@ token = "disposable-foxtrot-secret"
       [System.Text.UTF8Encoding]::new($false))
     $providerSelectionDocument = [ordered]@{
       schemaVersion = 1
-      providerId = "guffawaffle"
+      providerId = if ($UseDisposableNetnivFixture) { "netniv" } else { "guffawaffle" }
       releaseChannelId = "stable"
     }
     [System.IO.File]::WriteAllText(
       $providerSelectionPath,
       ($providerSelectionDocument | ConvertTo-Json),
       [System.Text.UTF8Encoding]::new($false))
+    $persistedProviderSelection = Get-Content `
+      -LiteralPath $providerSelectionPath `
+      -Raw | ConvertFrom-Json -ErrorAction Stop
+    if ($persistedProviderSelection.providerId -cne $providerSelectionDocument.providerId -or
+        $persistedProviderSelection.releaseChannelId -cne "stable") {
+      throw "The disposable provider selection was not persisted exactly before launch."
+    }
     Write-Host "Using disposable Sync fixture: $disposableGameDirectory"
-    Write-Host "Using explicit Guffawaffle source for the provider-owned Settings smoke."
+    Write-Host "Using explicit $($providerSelectionDocument.providerId) source for the provider-owned Settings smoke."
   }
 
   $configurationPath = Get-ActiveConfigurationPath
@@ -579,7 +604,7 @@ token = "disposable-foxtrot-secret"
   }
 }
 catch {
-  if ($UseDisposableSyncFixture) {
+  if ($useDisposableFixture) {
     Restore-DisposableFixture `
       -SelectionExisted $selectionExisted `
       -SelectionBytes $selectionBytes `
@@ -691,6 +716,12 @@ try {
   if ($null -eq $releaseSource) {
     throw "Mod Bridge Home did not expose the community-mod release source."
   }
+  if ($releaseSource.Current.Name.IndexOf(
+      $expectedProviderDisplay,
+      [StringComparison]::Ordinal) -lt 0) {
+    throw "Mod Bridge Home reported '$($releaseSource.Current.Name)' instead of the expected $expectedProviderDisplay source."
+  }
+  Write-Host "PASS: Home reports the fixture-selected $expectedProviderDisplay source before Settings opens."
   Invoke-AutomationElement -Element $releaseSource
   $providerSelector = Find-AutomationElement `
     -Root $root `
@@ -1072,6 +1103,67 @@ try {
     throw "The typed Sync workspace is visible while General settings is selected."
   }
   Write-Host "PASS: typed Data Sync stays hidden outside the Data Sync section."
+  if ($UseDisposableNetnivFixture) {
+    $hotkeysNavigation = Find-AutomationElement `
+      -Root $root `
+      -Name "Hotkey settings" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline $settingsDeadline
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name "Data Sync settings" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline $settingsDeadline)
+    foreach ($emptySection in @("Notification settings", "Advanced settings")) {
+      $unexpectedSection = $root.FindFirst(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.PropertyCondition]::new(
+          [System.Windows.Automation.AutomationElement]::NameProperty,
+          $emptySection))
+      if ($null -ne $unexpectedSection) {
+        throw "NetniV navigation exposed empty section '$emptySection'."
+      }
+    }
+
+    Invoke-AutomationElement -Element $hotkeysNavigation
+    $openNetnivSearch = Find-AutomationElement `
+      -Root $root `
+      -Name "Open settings search" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    Invoke-AutomationElement -Element $openNetnivSearch
+    $netnivSearch = Find-AutomationElement `
+      -Root $root `
+      -Name "Search settings" `
+      -ControlType ([System.Windows.Automation.ControlType]::Edit) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    $netnivSearchValue = $netnivSearch.GetCurrentPattern(
+      [System.Windows.Automation.ValuePattern]::Pattern)
+    $netnivSearchValue.SetValue("exocomp")
+    $exocompRow = Find-AutomationElement `
+      -Root $root `
+      -Name "Show Exocomp" `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    if ([string]::IsNullOrWhiteSpace($exocompRow.Current.HelpText) -or
+        $exocompRow.Current.HelpText -match "runtime contract for") {
+      throw "NetniV Show Exocomp did not expose reviewed player help."
+    }
+
+    $netnivSearchValue.SetValue("select ship 1")
+    [void](Find-AutomationElement `
+      -Root $root `
+      -Name "Select ships" `
+      -ControlType ([System.Windows.Automation.ControlType]::Text) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
+    $closeNetnivSearch = Find-AutomationElement `
+      -Root $root `
+      -Name "Close settings search" `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) `
+      -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
+    Invoke-AutomationElement -Element $closeNetnivSearch
+    Write-Host "PASS: NetniV exposes semantic navigation, reviewed player help, and compact hotkey families without empty sections."
+  }
+  else {
   $notificationsNavigation = Find-AutomationElement `
     -Root $root `
     -Name "Notification settings" `
@@ -1335,6 +1427,7 @@ try {
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   Write-Host "PASS: Advanced patch editing starts locked, exposes its warning and read-only summary, and supports unlock/relock through UI Automation."
+  }
 
   $aboutNavigation = Find-AutomationElement `
     -Root $root `
@@ -1364,12 +1457,22 @@ try {
     -Name "Configuration ownership technical details" `
     -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds))
   Expand-AutomationElement -Element $technicalDetails
-  foreach ($diagnosticValue in @(
+  $expectedDiagnostics = if ($UseDisposableNetnivFixture) {
+    @(
+      $expectedRuntimeIdentity,
+      "Semantic grouping: Inactive",
+      "Settings layout: Semantic"
+    )
+  }
+  else {
+    @(
       $expectedRuntimeIdentity,
       "Semantic grouping: Active",
       "Settings layout: Semantic",
       "Runtime provides settings.principal-taxonomy.v1."
-    )) {
+    )
+  }
+  foreach ($diagnosticValue in $expectedDiagnostics) {
     [void](Find-AutomationElement `
       -Root $root `
       -Name $diagnosticValue `
@@ -1377,7 +1480,12 @@ try {
       -Deadline ([DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)))
   }
 
-  Write-Host "PASS: Mod Bridge chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  if ($UseDisposableNetnivFixture) {
+    Write-Host "PASS: packaged NetniV semantic Settings and independent runtime/catalog diagnostics are UI Automation accessible."
+  }
+  else {
+    Write-Host "PASS: Mod Bridge chrome, typed Data Sync, grouped Hotkeys actions, overflow binding actions, appearance selection, and startup activation diagnostics are UI Automation accessible."
+  }
   }
 }
 catch {
@@ -1407,7 +1515,7 @@ finally {
     [Environment]::SetEnvironmentVariable("WINDIR", $null, "Process")
   }
 
-  if ($UseDisposableSyncFixture) {
+  if ($useDisposableFixture) {
     Restore-DisposableFixture `
       -SelectionExisted $selectionExisted `
       -SelectionBytes $selectionBytes `

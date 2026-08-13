@@ -157,14 +157,21 @@ is unnecessary unless a future capability must resist local tampering.
 
 ## Settings layouts
 
-When semantic grouping is active, the principal catalog provider consumes the
-packaged presentation taxonomy and retains the accepted category navigation.
-Settings with no resolved group are placed in `Uncategorized`; the renderer
-does not guess.
+Settings layout composition consumes two independent evidence sources. An
+exact reviewed configuration catalog may explicitly select the principal
+semantic layout from its packaged presentation profile. If it does not, the
+runtime activation decision selects the semantic or alphabetical
+implementation as before. Runtime feature state is never promoted merely
+because a catalog has mature presentation metadata.
 
-When the feature is inactive, the alphabetical provider exposes one Settings
-section and sorts all available settings by player-facing label. It deliberately
-does not consume principal grouping metadata.
+The principal catalog provider consumes the packaged presentation taxonomy
+and retains the accepted category navigation. Settings with no resolved group
+are placed in `Uncategorized`; the renderer does not guess.
+
+When neither catalog nor runtime evidence selects semantic presentation, the
+alphabetical provider exposes one Settings section and sorts all available
+settings by player-facing label. It deliberately does not consume principal
+grouping metadata.
 
 The activation decision records:
 

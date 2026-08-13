@@ -45,7 +45,7 @@ public sealed class LauncherSettingsLayoutTests
     }
 
     [TestMethod]
-    public void ComposerSelectsOnlyTheImplementationLatchedInTheActivationPlan()
+    public void ComposerUsesRuntimeSelectionWhenCatalogHasNoReviewedLayout()
     {
         var activeProfile = new LauncherRuntimeProfile(
             LauncherRuntimeManifestDetector.GuffawaffleDistributionId,
@@ -65,6 +65,32 @@ public sealed class LauncherSettingsLayoutTests
             LauncherSettingsLayoutComposer.Select(activePlan));
         Assert.IsInstanceOfType<AlphabeticalSettingsLayoutProvider>(
             LauncherSettingsLayoutComposer.Select(fallbackPlan));
+    }
+
+    [TestMethod]
+    public void ComposerUsesReviewedCatalogPresentationIndependentlyFromRuntimeActivation()
+    {
+        var fallbackPlan = LauncherFeatureResolver.Resolve(
+            LauncherRuntimeProfile.Unknown("test", "missing"),
+            LauncherFeatureCatalog.All);
+        var fixture = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "Configuration",
+            "configuration-schema-set.netniv.v1.json");
+        using var stream = File.OpenRead(fixture);
+        var catalog = LauncherConfigurationSchemaSetLoader.Load(
+            stream,
+            new(
+                "netniv",
+                "stable",
+                "1.1.4",
+                "d912611fa1eca49fc54f363bdf8377dfebf8def0"));
+
+        Assert.IsFalse(fallbackPlan.GetDecision(
+            LauncherFeatureIds.SemanticSettingsGrouping).IsActive);
+        Assert.IsInstanceOfType<PrincipalCatalogSettingsLayoutProvider>(
+            LauncherSettingsLayoutComposer.Select(fallbackPlan, catalog));
     }
 
     private static LauncherConfigurationSetting LoadSetting(

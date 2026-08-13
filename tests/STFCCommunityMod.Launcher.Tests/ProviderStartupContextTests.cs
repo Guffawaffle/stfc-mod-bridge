@@ -101,6 +101,10 @@ public sealed class ProviderStartupContextTests
         Assert.AreEqual("netniv.configuration.stable-1.1.4", catalog.Identity.CatalogId);
         Assert.AreEqual("1.1.4", catalog.Identity.ReleaseVersion);
         Assert.AreEqual("d912611fa1eca49fc54f363bdf8377dfebf8def0", catalog.Identity.SourceCommit);
+        Assert.AreEqual(
+            LauncherFeatureImplementations.PrincipalCatalogSettingsLayout,
+            catalog.ReviewedSettingsLayoutId);
+        Assert.AreEqual(155, catalog.VisibleSettings.Count);
     }
 
     [TestMethod]

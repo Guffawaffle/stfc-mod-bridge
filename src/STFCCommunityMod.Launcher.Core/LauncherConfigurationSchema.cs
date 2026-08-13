@@ -276,7 +276,8 @@ public sealed class LauncherConfigurationCatalog
         Version schemaVersion,
         LauncherConfigurationSource source,
         IReadOnlyList<LauncherConfigurationSetting> settings,
-        LauncherConfigurationCatalogIdentity? identity = null)
+        LauncherConfigurationCatalogIdentity? identity = null,
+        string? reviewedSettingsLayoutId = null)
     {
         SchemaVersion = schemaVersion;
         Source = source;
@@ -287,6 +288,7 @@ public sealed class LauncherConfigurationCatalog
             "unversioned",
             "unknown",
             "unknown");
+        ReviewedSettingsLayoutId = reviewedSettingsLayoutId;
         NotificationCatalog = LauncherNotificationCatalog.Create(settings);
         _visibleSettings = Array.AsReadOnly(settings.Where(setting => setting.IsDirectlyEditable).ToArray());
         Categories = Array.AsReadOnly(
@@ -302,6 +304,13 @@ public sealed class LauncherConfigurationCatalog
     public LauncherConfigurationSource Source { get; }
 
     public LauncherConfigurationCatalogIdentity Identity { get; }
+
+    /// <summary>
+    /// Optional layout implementation selected by the exact reviewed
+    /// configuration catalog. This is configuration-presentation evidence and
+    /// is deliberately independent from runtime capability activation.
+    /// </summary>
+    public string? ReviewedSettingsLayoutId { get; }
 
     public IReadOnlyList<LauncherConfigurationSetting> Settings { get; }
 

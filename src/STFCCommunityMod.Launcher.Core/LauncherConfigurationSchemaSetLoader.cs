@@ -18,6 +18,10 @@ public static class LauncherConfigurationSchemaSetLoader
     private const int MaximumRevisions = 16;
     private const string SupportedSchemaId = "stfc-mod-bridge.versioned-config-schema-set";
 
+    private sealed record ReviewedPresentationProfile(
+        string SettingsLayoutId,
+        IReadOnlyDictionary<string, JsonObject> Settings);
+
     public static bool IsSchemaSet(ReadOnlyMemory<byte> contents)
     {
         try
@@ -79,6 +83,7 @@ public static class LauncherConfigurationSchemaSetLoader
             "provider",
             "featureGateSets",
             "settings",
+            "presentation",
             "revisions");
         if (ReadInt32(root, "schemaVersion", "schema set") != SupportedSchemaVersion)
         {
@@ -117,6 +122,9 @@ public static class LauncherConfigurationSchemaSetLoader
                 throw Invalid($"Shared setting '{path}' is duplicated.");
             }
         }
+        var presentation = root.TryGetProperty("presentation", out var presentationElement)
+            ? ReadPresentationProfile(presentationElement, settings)
+            : null;
 
         var revisions = ReadArray(root, "revisions", "schema set");
         if (revisions.GetArrayLength() is 0 or > MaximumRevisions)
@@ -147,6 +155,7 @@ public static class LauncherConfigurationSchemaSetLoader
 
         ApplyRemovals(settings, selected);
         ApplyOverrides(settings, selected);
+        ValidateMaterializedPresentation(settings, presentation);
 
         var legacyRoot = new JsonObject
         {
@@ -168,13 +177,123 @@ public static class LauncherConfigurationSchemaSetLoader
             ["settings"] = new JsonArray(
                 settings.Values
                     .OrderBy(setting => setting["path"]!.GetValue<string>(), StringComparer.Ordinal)
-                    .Select(setting => ExpandSetting(setting, providerId))
+                    .Select(setting => ExpandSetting(
+                        setting,
+                        providerId,
+                        presentation?.Settings.GetValueOrDefault(
+                            setting["path"]!.GetValue<string>())))
                     .ToArray()),
         };
 
         using var legacyStream = new MemoryStream(
             Encoding.UTF8.GetBytes(legacyRoot.ToJsonString()));
-        return LauncherConfigurationSchemaLoader.Load(legacyStream);
+        var catalog = LauncherConfigurationSchemaLoader.Load(legacyStream);
+        return new LauncherConfigurationCatalog(
+            catalog.SchemaVersion,
+            catalog.Source,
+            catalog.Settings,
+            catalog.Identity,
+            presentation?.SettingsLayoutId);
+    }
+
+    private static ReviewedPresentationProfile ReadPresentationProfile(
+        JsonElement element,
+        Dictionary<string, JsonObject> sharedSettings)
+    {
+        RequireObject(element, "schema-set presentation");
+        RejectUnknown(
+            element,
+            "schema-set presentation",
+            "settingsLayout",
+            "settings");
+        var settingsLayoutId = ReadString(
+            element,
+            "settingsLayout",
+            "schema-set presentation");
+        if (settingsLayoutId is not (
+            LauncherFeatureImplementations.PrincipalCatalogSettingsLayout
+            or LauncherFeatureImplementations.AlphabeticalSettingsLayout))
+        {
+            throw Invalid(
+                $"Schema-set presentation selects unsupported Settings layout "
+                + $"'{settingsLayoutId}'.");
+        }
+
+        var entries = ReadArray(element, "settings", "schema-set presentation");
+        if (entries.GetArrayLength() is 0 or > MaximumSettings)
+        {
+            throw Invalid(
+                $"Schema-set presentation must contain between 1 and {MaximumSettings} settings.");
+        }
+
+        var result = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        foreach (var entry in entries.EnumerateArray())
+        {
+            RequireObject(entry, "presentation setting");
+            RejectUnknown(
+                entry,
+                "presentation setting",
+                "path",
+                "label",
+                "help",
+                "group",
+                "searchTerms",
+                "unit",
+                "family");
+            var path = ReadString(entry, "path", "presentation setting");
+            if (!sharedSettings.TryGetValue(path, out var setting))
+            {
+                throw Invalid($"Presentation setting '{path}' is not in the shared catalog.");
+            }
+            if (!IsDirectlyEditable(setting))
+            {
+                throw Invalid($"Presentation setting '{path}' is not directly player-editable.");
+            }
+            _ = ReadString(entry, "label", $"presentation setting '{path}'");
+            _ = ReadString(entry, "help", $"presentation setting '{path}'");
+            _ = ReadString(entry, "group", $"presentation setting '{path}'");
+            if (!result.TryAdd(path, JsonNode.Parse(entry.GetRawText())!.AsObject()))
+            {
+                throw Invalid($"Presentation setting '{path}' is duplicated.");
+            }
+        }
+
+        return new(settingsLayoutId, result);
+    }
+
+    private static void ValidateMaterializedPresentation(
+        Dictionary<string, JsonObject> settings,
+        ReviewedPresentationProfile? presentation)
+    {
+        if (presentation is null)
+        {
+            return;
+        }
+
+        var missing = settings.Values
+            .Where(IsDirectlyEditable)
+            .Select(setting => setting["path"]!.GetValue<string>())
+            .Where(path => !presentation.Settings.ContainsKey(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            throw Invalid(
+                "Reviewed presentation is missing directly player-editable settings: "
+                + string.Join(", ", missing));
+        }
+    }
+
+    private static bool IsDirectlyEditable(JsonObject setting)
+    {
+        var path = setting["path"]?.GetValue<string>() ?? string.Empty;
+        var sensitivity = setting["sensitivity"]?.GetValue<string>();
+        var stability = setting["stability"]?.GetValue<string>();
+        var runtimeStatus = setting["runtimeStatus"]?.GetValue<string>();
+        return !path.Split('.').Contains("*", StringComparer.Ordinal)
+            && string.Equals(sensitivity, "public", StringComparison.Ordinal)
+            && !string.Equals(stability, "internal", StringComparison.Ordinal)
+            && runtimeStatus is "live" or "conditional";
     }
 
     private static Dictionary<string, JsonArray> ReadFeatureGateSets(JsonElement element)
@@ -297,25 +416,44 @@ public static class LauncherConfigurationSchemaSetLoader
                 {
                     continue;
                 }
-                if (property.Name is not ("description" or "runtimeStatus" or "featureGates" or "default"))
+                if (property.Name is not (
+                    "description"
+                    or "presentationHelp"
+                    or "runtimeStatus"
+                    or "featureGates"
+                    or "default"))
                 {
                     throw Invalid($"Setting override '{path}' contains unsupported property '{property.Name}'.");
+                }
+                if (property.NameEquals("presentationHelp")
+                    && (property.Value.ValueKind != JsonValueKind.String
+                        || string.IsNullOrWhiteSpace(property.Value.GetString())))
+                {
+                    throw Invalid(
+                        $"Setting override '{path}' presentationHelp must be a non-empty string.");
                 }
                 setting[property.Name] = JsonNode.Parse(property.Value.GetRawText());
             }
         }
     }
 
-    private static JsonObject ExpandSetting(JsonObject compact, string providerId)
+    private static JsonObject ExpandSetting(
+        JsonObject compact,
+        string providerId,
+        JsonObject? reviewedPresentation)
     {
         var path = compact["path"]?.GetValue<string>()
             ?? throw Invalid("A compact setting is missing its path.");
         var kind = compact["kind"]?.GetValue<string>()
             ?? throw Invalid($"Setting '{path}' is missing its value kind.");
-        var description = compact["description"]?.GetValue<string>()
+        var runtimeDescription = compact["description"]?.GetValue<string>()
             ?? throw Invalid($"Setting '{path}' is missing its description.");
-        var label = Label(path);
+        var label = reviewedPresentation?["label"]?.GetValue<string>() ?? Label(path);
+        var description = compact["presentationHelp"]?.GetValue<string>()
+            ?? reviewedPresentation?["help"]?.GetValue<string>()
+            ?? runtimeDescription;
         var category = path.Split('.')[0];
+        var group = reviewedPresentation?["group"]?.GetValue<string>() ?? Label(category);
         var apply = compact["apply"]?.GetValue<string>() ?? "next-session";
         var runtimeStatus = compact["runtimeStatus"]?.GetValue<string>() ?? "live";
         var featureGates = compact["featureGates"]?.DeepClone() ?? new JsonArray();
@@ -336,6 +474,40 @@ public static class LauncherConfigurationSchemaSetLoader
             valueType["inputLayer"] = "netniv-hotkeys";
             valueType["conflictGroup"] = "netniv-shortcuts";
             valueType["actionCategory"] = category;
+        }
+
+        var applyTiming = apply switch
+        {
+            "live" => "Immediate",
+            "restart-required" => "Restart required",
+            _ => "Next launch",
+        };
+        var searchTerms = BuildSearchTerms(
+            path,
+            label,
+            category,
+            group,
+            reviewedPresentation?["searchTerms"] as JsonArray);
+        var presentation = new JsonObject
+        {
+            ["label"] = label,
+            ["help"] = description,
+            ["group"] = group,
+            ["searchTerms"] = searchTerms,
+            ["editorWidth"] = kind is "string" or "keybinding" ? "wide"
+                : kind is "integer" or "number" ? "compact"
+                : "standard",
+            ["applyTiming"] = applyTiming,
+            ["accessibleName"] = label,
+            ["accessibleHelp"] = $"{description.TrimEnd().TrimEnd('.')} Applies: {applyTiming}.",
+        };
+        if (reviewedPresentation?["unit"] is { } unit)
+        {
+            presentation["unit"] = unit.DeepClone();
+        }
+        if (reviewedPresentation?["family"] is { } family)
+        {
+            presentation["family"] = family.DeepClone();
         }
 
         return new JsonObject
@@ -361,23 +533,43 @@ public static class LauncherConfigurationSchemaSetLoader
             },
             ["runtimeStatus"] = runtimeStatus,
             ["featureGates"] = featureGates,
-            ["presentation"] = new JsonObject
-            {
-                ["label"] = label,
-                ["help"] = description,
-                ["group"] = Label(category),
-                ["searchTerms"] = new JsonArray(path, label, category),
-                ["editorWidth"] = kind == "string" ? "wide" : "standard",
-                ["applyTiming"] = apply switch
-                {
-                    "live" => "Immediate",
-                    "restart-required" => "Restart required",
-                    _ => "Next launch",
-                },
-                ["accessibleName"] = label,
-                ["accessibleHelp"] = description,
-            },
+            ["presentation"] = presentation,
         };
+    }
+
+    private static JsonArray BuildSearchTerms(
+        string path,
+        string label,
+        string category,
+        string group,
+        JsonArray? reviewedTerms)
+    {
+        var result = new JsonArray();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var term in new[] { path, label, category, group })
+        {
+            if (seen.Add(term))
+            {
+                result.Add(term);
+            }
+        }
+        foreach (var node in reviewedTerms ?? [])
+        {
+            if (node is not JsonValue value
+                || !value.TryGetValue<string>(out var term))
+            {
+                throw Invalid($"Presentation search terms for '{path}' must be strings.");
+            }
+            if (string.IsNullOrWhiteSpace(term))
+            {
+                throw Invalid($"Presentation search terms for '{path}' must not be empty.");
+            }
+            if (seen.Add(term))
+            {
+                result.Add(term);
+            }
+        }
+        return result;
     }
 
     private static JsonArray ExpandAliases(JsonArray? compactAliases)

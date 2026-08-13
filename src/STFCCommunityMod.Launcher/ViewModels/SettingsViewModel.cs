@@ -109,7 +109,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         searchClearCommand = new SettingsActionCommand(
             ClearSearch,
             () => IsSearchActive);
-        SelectSection(layoutProvider.Sections[0].Id);
+        SelectSection(Sections[0].Id);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -412,7 +412,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 $"The settings layout defines section '{duplicateSection.Key}' more than once.");
         }
 
+        var populatedSections = catalog.VisibleSettings
+            .Select(setting => layoutProvider.Place(setting).Section)
+            .ToHashSet();
         var sections = layoutProvider.Sections
+            .Where(section => populatedSections.Contains(section.Id))
             .Select(
                 section => new SettingsSectionViewModel(
                     section.Id,
@@ -421,6 +425,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     section.AutomationName,
                     SelectSection))
             .ToList();
+        if (sections.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Settings layout '{layoutProvider.Id}' has no populated content section.");
+        }
         sections.Add(
             new(
                 LauncherSettingsSection.About,

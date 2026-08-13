@@ -217,20 +217,23 @@ public sealed class AlphabeticalSettingsLayoutProvider :
 public static class LauncherSettingsLayoutComposer
 {
     public static ILauncherSettingsLayoutProvider Select(
-        LauncherActivationPlan activationPlan)
+        LauncherActivationPlan activationPlan,
+        LauncherConfigurationCatalog? configurationCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(activationPlan);
         var decision = activationPlan.GetDecision(
             LauncherFeatureIds.SemanticSettingsGrouping);
-        return decision.SelectedImplementation switch
+        var implementation = configurationCatalog?.ReviewedSettingsLayoutId
+            ?? decision.SelectedImplementation;
+        return implementation switch
         {
             LauncherFeatureImplementations.PrincipalCatalogSettingsLayout =>
                 new PrincipalCatalogSettingsLayoutProvider(),
             LauncherFeatureImplementations.AlphabeticalSettingsLayout =>
                 new AlphabeticalSettingsLayoutProvider(),
             _ => throw new InvalidOperationException(
-                $"Feature '{decision.Id}' selected unknown implementation "
-                + $"'{decision.SelectedImplementation}'."),
+                $"Settings presentation selected unknown implementation "
+                + $"'{implementation}'."),
         };
     }
 }

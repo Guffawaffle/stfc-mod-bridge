@@ -13,7 +13,8 @@ internal sealed record LauncherStartupComposition(
         LauncherDistributionProvider provider,
         LauncherProviderReleaseChannel releaseChannel,
         ReviewedRuntimeActivation? reviewedRuntimeActivation = null,
-        LauncherBattlePreferences? battlePreferences = null)
+        LauncherBattlePreferences? battlePreferences = null,
+        LauncherConfigurationCatalog? configurationCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
@@ -23,6 +24,17 @@ internal sealed record LauncherStartupComposition(
             throw new ArgumentException(
                 $"Release channel '{releaseChannel.Id}' does not belong to provider '{provider.Id}'.",
                 nameof(releaseChannel));
+        }
+        if (configurationCatalog is not null
+            && !string.Equals(
+                configurationCatalog.Source.StableId,
+                provider.Id,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Configuration catalog '{configurationCatalog.Source.StableId}' does not belong "
+                + $"to provider '{provider.Id}'.",
+                nameof(configurationCatalog));
         }
         var manifestResourceName = provider.GetCapabilityStatus(
                 LauncherProviderCapabilityIds.RuntimeManifest)
@@ -49,7 +61,8 @@ internal sealed record LauncherStartupComposition(
             activationPlan,
             battlePreferences);
         var settingsLayout = LauncherSettingsLayoutComposer.Select(
-            activationPlan);
+            activationPlan,
+            configurationCatalog);
         var semanticGrouping = activationPlan.GetDecision(
             LauncherFeatureIds.SemanticSettingsGrouping);
         var detectedDistributionName = string.Equals(

@@ -406,7 +406,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         LauncherProviderReleaseChannel releaseChannel,
         string? providerResolutionFailure = null,
         ILauncherUiPreferencesStore? uiPreferencesStore = null,
-        ILauncherProviderSelectionStore? providerSelectionStore = null)
+        ILauncherProviderSelectionStore? providerSelectionStore = null,
+        LauncherConfigurationCatalog? configurationCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(distributionProviderCatalog);
@@ -570,7 +571,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 ? LauncherConfigurationDiagnosisEvidence.Supported(
                     distributionProvider.Id,
                     releaseChannel.Id,
-                    BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider))
+                    configurationCatalog
+                        ?? BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider))
                 : LauncherConfigurationDiagnosisEvidence.Unavailable(
                     distributionProvider.Id,
                     releaseChannel.Id,

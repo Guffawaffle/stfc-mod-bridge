@@ -10,6 +10,15 @@ public sealed class SettingsProjectionTests
 {
     private const string SchemaResource =
         "STFCCommunityMod.Launcher.Schemas.Guffawaffle.v1.json";
+    private static readonly LauncherSettingsSection[] NetnivNavigationSections =
+    [
+        LauncherSettingsSection.General,
+        LauncherSettingsSection.Interface,
+        LauncherSettingsSection.Graphics,
+        LauncherSettingsSection.Hotkeys,
+        LauncherSettingsSection.DataSync,
+        LauncherSettingsSection.About,
+    ];
 
     [TestMethod]
     public void InitialSectionConstructsNoUnrelatedRows()
@@ -327,6 +336,17 @@ public sealed class SettingsProjectionTests
             source.Replace("free_resize = true", "free_resize = false", StringComparison.Ordinal),
             await File.ReadAllTextAsync(fixture.ConfigurationPath));
         Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+    }
+
+    [TestMethod]
+    public void NetnivSemanticNavigationOmitsEmptySections()
+    {
+        using var fixture = SettingsFixture.Create(catalog: LoadNetniVStableCatalog());
+
+        CollectionAssert.AreEqual(
+            NetnivNavigationSections,
+            fixture.ViewModel.Sections.Select(section => section.Id).ToArray());
+        Assert.AreEqual("General", fixture.ViewModel.WorkspaceTitle);
     }
 
     [TestMethod]
