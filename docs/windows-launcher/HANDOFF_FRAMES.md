@@ -1,8 +1,16 @@
-# Windows Launcher Handoff Frames
+# Historical Windows Launcher Handoff Frames
 
-This is the branch-visible index for durable Lex frames created while planning
-and orchestrating `Guffawaffle/stfc-mod#182`. Lex remains the frame store; this
-file records stable IDs so a fresh session can recover the intended sequence.
+> [!IMPORTANT]
+> This is a migrated index of planning-era Lex frames. Every status and next
+> action below is captured historical state, not a current instruction. Current
+> product and release authority is listed in
+> [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md); live work is issue-backed in
+> `Guffawaffle/stfc-mod-bridge`.
+
+This was the branch-visible index for durable Lex frames created while planning
+and orchestrating `Guffawaffle/stfc-mod#182`. The file preserves stable IDs and
+the intended historical sequence; it must not be used to recover a current
+branch, merge target, work-item state, or release decision.
 
 | Sequence | Role | Frame | Outcome | Next action |
 |---:|---|---|---|---|
@@ -115,7 +123,7 @@ inputs are:
 
 No personal/admin action is needed overnight. Rest is the dependency.
 
-## Current handoff contract
+## Historical handoff contract at capture
 
 Each worker handoff must report:
 
@@ -128,6 +136,8 @@ Each worker handoff must report:
 - recommended next action;
 - stable frame ID and idempotency key.
 
-`workspace/unscoped` is a temporary module sentinel because this repository has
-no loaded Lex policy. The policy and automatic unscoped behavior are tracked in
-`Guffawaffle/lex#800`.
+At capture time, `workspace/unscoped` was a temporary module sentinel because
+the former workspace had no loaded Lex policy. That statement is historical:
+operator-local Bridge continuity may now load a repo-scoped policy, but local
+memory configuration is not Git product or release authority. The original
+policy and automatic unscoped behavior were tracked in `Guffawaffle/lex#800`.

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
@@ -149,6 +150,65 @@ public sealed partial class ReleaseTrustAutomationTests
             var script = File.ReadAllText(Path.Combine(root, "scripts", scriptName));
             StringAssert.Contains(script, "-p:RestoreLockedMode=true");
         }
+    }
+
+    [TestMethod]
+    public void CurrentDocumentationAuthoritySeparatesHistoricalPlansFromProductContracts()
+    {
+        var root = RepositoryRoot();
+        var documentationRoot = Path.Combine(root, "docs", "windows-launcher");
+        var authority = File.ReadAllText(Path.Combine(documentationRoot, "CURRENT_AUTHORITY.md"));
+        var contract = File.ReadAllText(Path.Combine(documentationRoot, "CONTRACT.md"));
+        var architectureSpike = File.ReadAllText(Path.Combine(documentationRoot, "ARCHITECTURE_SPIKE.md"));
+        var handoffFrames = File.ReadAllText(Path.Combine(documentationRoot, "HANDOFF_FRAMES.md"));
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        StringAssert.Contains(authority, "Status: current anti-drift index");
+        StringAssert.Contains(authority, "executionDisposition");
+        StringAssert.Contains(authority, "do-not-execute");
+        StringAssert.Contains(authority, "Do not globally replace `Guffawaffle/stfc-mod`");
+        StringAssert.Contains(contract, "Status: current v1 product contract");
+        StringAssert.Contains(contract, "Repository: `Guffawaffle/stfc-mod-bridge`");
+        StringAssert.Contains(contract, "issue #30");
+        StringAssert.Contains(contract, "issue #132");
+        Assert.IsFalse(contract.Contains("Status: WL-001 architecture spike active", StringComparison.Ordinal));
+        Assert.IsFalse(contract.Contains("This decision is provisional", StringComparison.Ordinal));
+        StringAssert.Contains(architectureSpike, "historical accepted spike evidence");
+        StringAssert.Contains(handoffFrames, "captured historical state, not a current instruction");
+        StringAssert.Contains(readme, "release candidates are qualification artifacts unless");
+        StringAssert.Contains(readme, "issues/30");
+
+        foreach (var fileName in new[]
+                 {
+                     "WORK_ITEMS.json",
+                     "LEXRUNNER_NODES.json",
+                     "LEXRUNNER_PYRAMID.json",
+                     "LEXRUNNER_EXECUTION_PLAN.json",
+                     "LEXRUNNER_SYNC_SETUP_PLAN.json",
+                     "LEXRUNNER_WL006_RENDERER_UPLIFT_PLAN.json",
+                 })
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(documentationRoot, fileName)));
+            var classification = document.RootElement.GetProperty("artifactClassification");
+            Assert.AreEqual("historical", classification.GetProperty("status").GetString(), fileName);
+            Assert.AreEqual(
+                "Guffawaffle/stfc-mod-bridge",
+                classification.GetProperty("currentRepository").GetString(),
+                fileName);
+            Assert.AreEqual(
+                "docs/windows-launcher/CURRENT_AUTHORITY.md",
+                classification.GetProperty("currentAuthority").GetString(),
+                fileName);
+            Assert.AreEqual(
+                "do-not-execute",
+                classification.GetProperty("executionDisposition").GetString(),
+                fileName);
+        }
+
+        using var workItems = JsonDocument.Parse(File.ReadAllText(Path.Combine(documentationRoot, "WORK_ITEMS.json")));
+        Assert.AreEqual("historical-superseded", workItems.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual("wl-004-active", workItems.RootElement.GetProperty("capturedStatus").GetString());
+        Assert.AreEqual("Guffawaffle/stfc-mod", workItems.RootElement.GetProperty("repository").GetString());
     }
 
     [TestMethod]

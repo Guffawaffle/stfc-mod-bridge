@@ -1,5 +1,12 @@
 {
   "schemaVersion": "1.0.0",
+  "artifactClassification": {
+    "status": "historical",
+    "capturedRepository": "Guffawaffle/stfc-mod",
+    "currentRepository": "Guffawaffle/stfc-mod-bridge",
+    "currentAuthority": "docs/windows-launcher/CURRENT_AUTHORITY.md",
+    "executionDisposition": "do-not-execute"
+  },
   "target": "feature/wl-006-config-editor",
   "policy": {
     "requiredGates": [

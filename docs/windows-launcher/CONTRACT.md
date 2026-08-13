@@ -1,12 +1,18 @@
-# Windows Launcher Parity+ Contract
+# STFC Mod Bridge Windows Product Contract
 
-Status: WL-001 architecture spike active
-Repository: `Guffawaffle/stfc-mod`
-Baseline commit: `be8d75a7613dae2b79cafe504aef500086b3e4e2`
+Status: current v1 product contract; final signed-candidate qualification active
+Repository: `Guffawaffle/stfc-mod-bridge`
+Current release gate: [issue #30](https://github.com/Guffawaffle/stfc-mod-bridge/issues/30)
+
+This contract is the current authority for the standalone Windows product. The
+original Parity+ work-item plans, former `Guffawaffle/stfc-mod` paths, and
+WL-001 through WL-010 delivery sequence are preserved as historical evidence
+and classified in [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md). They are not
+current repository, branch, or execution instructions.
 
 ## Product statement
 
-Build a Windows desktop launcher that makes the supported STFC Community Mod
+STFC Mod Bridge is a Windows desktop application that makes the supported STFC Community Mod
 path discoverable, installable, updateable, configurable, launchable, and
 repairable without requiring users to manually copy `version.dll`.
 
@@ -26,26 +32,30 @@ adapting them to the Windows proxy-DLL deployment model:
 
 ## Architecture decision
 
-The proposed UI stack is self-contained .NET 8 WPF targeting Windows x64.
+The accepted UI stack is self-contained .NET 8 WPF targeting Windows x64. The
+primary installed-product topology is the signed MSIX reached through its
+`.appinstaller` descriptor. Windows owns packaged installation, update, repair,
+reset, Start-menu registration, and uninstall. The signed standalone ZIP is an
+explicit fallback with a separately qualified authenticated update path.
 
 Reasons:
 
 - Mature Windows 10/11 desktop behavior and accessibility.
-- Straightforward custom LCARS rendering without requiring MSIX.
+- Native Windows rendering, accessibility, theming, and DPI behavior.
 - Reliable filesystem, process, HTTP, JSON, and registry APIs.
 - Unit-testable application services independent of the UI.
 - The launcher can consume the existing XMake `version.dll` artifact without
   changing the injected mod runtime.
 
-The launcher should live under `windows-launcher/` and remain a separate build
-target from the C++ proxy. Release CI assembles the launcher and mod artifacts.
+The application, UI-independent core, updater, release verifier, packaging, and
+release automation live in this standalone repository. The C++ proxy remains a
+provider-owned artifact consumed through versioned provider contracts.
 
-This decision is provisional until the architecture spike proves:
-
-1. a self-contained build on the Windows CI image;
-2. launch and process detection against an installed STFC client;
-3. custom LCARS shell rendering at 100%, 150%, and 200% display scale;
-4. an unpackaged update strategy that does not require administrator rights.
+The original [WL-001 architecture spike](ARCHITECTURE_SPIKE.md) accepted the
+self-contained WPF/core direction. Its former nested checkout, LCARS preview,
+and bootstrapper-first distribution details are historical evidence, not
+current requirements. Final clean-machine, packaged, DPI, accessibility,
+signing, and update evidence remains owned by issue #30.
 
 ## Ownership boundaries
 
@@ -188,8 +198,17 @@ action.
 
 ## Release and update contract
 
-Release discovery uses GitHub releases from `Guffawaffle/stfc-mod`. The
-launcher consumes a machine-readable manifest published with each release.
+Release discovery has two independent trust domains:
+
+- managed mod discovery uses the repository and artifact policy declared by the
+  selected provider pack; the bundled Guffawaffle provider currently uses
+  `Guffawaffle/stfc-mod`;
+- Mod Bridge self-update uses the canonical `Guffawaffle/stfc-mod-bridge`
+  release authority, while packaged installation and update application remain
+  Windows App Installer-owned.
+
+Neither domain can authorize or redirect the other. Both consume bounded,
+machine-readable release evidence appropriate to their contracts.
 
 The canonical schema, artifact kinds, channel mapping, authenticity boundary,
 withdrawal behavior, and producer/consumer validation rules are defined in
@@ -510,15 +529,22 @@ and non-ASCII paths.
 
 ## Delivery gates
 
-The project advances through these gates:
+The original implementation gates—architecture, core contracts, discovery and
+health, transactional mod deployment, configuration, launch handoff,
+diagnostics/accessibility, and release operations—are delivered foundations.
+They do not establish that a particular candidate is release-qualified.
 
-1. Architecture spike accepted.
-2. Core contracts and test fixtures accepted.
-3. Read-only discovery/health MVP accepted.
-4. Transactional mod install/update/rollback accepted.
-5. Config editor accepted.
-6. Launch and official-updater handoff accepted.
-7. Diagnostics and accessibility accepted.
-8. Packaging, self-update, and release operations accepted.
+The current v1 gate is issue #30: one exact immutable candidate must pass
+protected build/signing, attestation, clean install, version-to-version update,
+state preservation, provider/configuration dogfood, DPI/accessibility,
+independent verification, compromise-response, and final evidence review.
+Failures return to an issue-backed implementation branch and require a new
+candidate; earlier source, direct-EXE, MSIX, or machine-specific success is not
+transferable evidence.
 
-No phase may weaken the proxy DLL’s existing build or manual installation path.
+Battle Bridge remains a separately gated, dormant capability-driven extension
+under issue #132. Base Mod Bridge qualification does not activate Battle IPC,
+storage, collection, or UI.
+
+No delivery phase may weaken the proxy DLL's existing build or manual
+installation path.

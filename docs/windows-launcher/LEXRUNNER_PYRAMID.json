@@ -1,4 +1,11 @@
 {
+  "artifactClassification": {
+    "status": "historical",
+    "capturedRepository": "Guffawaffle/stfc-mod",
+    "currentRepository": "Guffawaffle/stfc-mod-bridge",
+    "currentAuthority": "docs/windows-launcher/CURRENT_AUTHORITY.md",
+    "executionDisposition": "do-not-execute"
+  },
   "algorithm": "kahn_topological_sort",
   "batches": [
     {
