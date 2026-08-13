@@ -10,6 +10,7 @@ public enum ModInstallationEvidenceState
     ManualInstallation,
     ManagedVerified,
     ManagedChanged,
+    ManagedMissing,
     RecoveryRequired,
     Unavailable,
 }
@@ -108,7 +109,7 @@ public interface IModDeploymentStateReader
 {
     ModDeploymentJournal? ReadJournal();
 
-    ModInstalledArtifactState? ReadInstalledState();
+    ModInstalledArtifactState? ReadInstalledState(string gameDirectory);
 }
 
 public interface IModInstallationFileSystem
@@ -191,13 +192,21 @@ public sealed class ModInstallationInspector(
                 return new(ModInstallationEvidenceState.RecoveryRequired, isGameRunning);
             }
 
+            var installedState = stateReader.ReadInstalledState(normalizedGameDirectory);
             var artifactPath = Path.Combine(normalizedGameDirectory, "version.dll");
             var artifactExists = fileSystem.FileExists(artifactPath);
             if (!artifactExists)
             {
-                return new(ModInstallationEvidenceState.NotInstalled, isGameRunning);
+                return installedState is null
+                    ? new(ModInstallationEvidenceState.NotInstalled, isGameRunning)
+                    : new(
+                        ModInstallationEvidenceState.ManagedMissing,
+                        isGameRunning,
+                        installedState.Version,
+                        installedState.ProviderId,
+                        installedState.ReleaseChannelId,
+                        installedState.RuntimeDistributionId);
             }
-            var installedState = stateReader.ReadInstalledState();
             if (installedState is null)
             {
                 var manualArtifactLength = ReadValidArtifactLength(artifactPath);
@@ -476,7 +485,10 @@ public static class LauncherHealthResolver
                 _ => LauncherProviderCompatibilityState.Unattributed,
             };
         }
-        if (installation.State != ModInstallationEvidenceState.ManagedVerified)
+        if (installation.State is not (
+                ModInstallationEvidenceState.ManagedVerified
+                or ModInstallationEvidenceState.ManagedChanged
+                or ModInstallationEvidenceState.ManagedMissing))
         {
             return LauncherProviderCompatibilityState.Unknown;
         }
@@ -545,6 +557,11 @@ public static class LauncherHealthResolver
                 LauncherHealthSeverity.ActionRequired,
                 "Managed installation changed",
                 "Repair is required before direct managed operation."),
+            ModInstallationEvidenceState.ManagedMissing => new(
+                LauncherHealthDimensionCategory.ModInstallation,
+                LauncherHealthSeverity.ActionRequired,
+                "Managed installation missing",
+                "The receipt remains, but the managed version.dll is absent."),
             ModInstallationEvidenceState.RecoveryRequired => new(
                 LauncherHealthDimensionCategory.ModInstallation,
                 LauncherHealthSeverity.ActionRequired,
@@ -738,8 +755,18 @@ public static class LauncherHealthResolver
                 ModManagementActionKind.None,
                 false,
                 "The community mod deployment state could not be validated safely. Open Diagnostics."),
+            ModInstallationEvidenceState.ManagedChanged
+                when providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider =>
+                RepairUnavailableForDifferentProvider(installation),
             ModInstallationEvidenceState.ManagedChanged => RepairRequired(
                 "The installed artifact no longer matches Mod Bridge-managed state.",
+                canMutate,
+                providerReason),
+            ModInstallationEvidenceState.ManagedMissing
+                when providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider =>
+                RepairUnavailableForDifferentProvider(installation),
+            ModInstallationEvidenceState.ManagedMissing => RepairRequired(
+                "The Mod Bridge-managed version.dll is missing.",
                 canMutate,
                 providerReason),
             ModInstallationEvidenceState.ManualInstallation => new(
@@ -842,6 +869,16 @@ public static class LauncherHealthResolver
             canExecute,
             string.IsNullOrWhiteSpace(providerReason) ? detail : providerReason);
 
+    private static ModManagementPresentation RepairUnavailableForDifferentProvider(
+        ModInstallationEvidence installation) => new(
+            "Repair required",
+            LauncherHomeTone.Error,
+            "Unavailable",
+            ModManagementActionKind.None,
+            false,
+            $"This installation is owned by provider '{installation.InstalledProviderId}'. "
+            + "Select that release source to repair it, or use Stop managing in Diagnostics.");
+
     private static LauncherHealthDimension UnknownDimension(
         LauncherHealthDimensionCategory category,
         string title,
@@ -894,6 +931,10 @@ public sealed class LauncherHealthService
     }
 
     public string ProviderId => provider.ProviderId;
+
+    public string ReleaseChannelId => provider.ReleaseChannelId;
+
+    public string RuntimeDistributionId => provider.RuntimeDistributionId;
 
     public void RecordUpdateObservation(
         ModInstallationEvidence installation,

@@ -64,11 +64,11 @@ branches, issues, and gates remain intact as captured evidence.
 
 ## Current release boundary
 
-STFC Mod Bridge remains pre-release. `v0.1.0-rc.4` is the approved public canary
-entry point. Later candidates are qualification artifacts unless their release
-notes explicitly approve public installation. The draft rc.15 App Installer
-asset is not the final candidate; issue #30 owns the next immutable signed build
-and its clean-install, update, dogfood, accessibility, and evidence decision.
+STFC Mod Bridge remains pre-release. `v0.1.0-rc.17` is the approved public
+canary entry point while qualification continues. Later candidates are
+qualification artifacts unless their release notes explicitly approve public
+installation. Issue #30 owns the next immutable signed build and its
+clean-install, update, dogfood, accessibility, and evidence decision.
 
 Battle Bridge is not operationally activated by the base product. Its native
 capability, IPC, lifecycle, and sink foundations remain dormant until their own

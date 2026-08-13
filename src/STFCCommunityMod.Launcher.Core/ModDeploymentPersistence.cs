@@ -27,7 +27,7 @@ public sealed partial class ModDeploymentService
             || journal.StagePath is null
             || journal.SameVolumeBackupPath is null
             || journal.DurableBackupPath is null
-            || journal.SchemaVersion != SchemaVersion
+            || journal.SchemaVersion != DeploymentJournalSchemaVersion
             || !Guid.TryParseExact(journal.TransactionId, "N", out _)
             || !Enum.IsDefined(journal.Operation)
             || !Enum.IsDefined(journal.Phase)
@@ -98,7 +98,7 @@ public sealed partial class ModDeploymentService
             || state.FileName is null
             || state.Version is null
             || state.Sha256 is null
-            || state.SchemaVersion != SchemaVersion
+            || state.SchemaVersion != InstalledReceiptSchemaVersion
             || !Path.IsPathFullyQualified(state.GameDirectory)
             || !string.Equals(state.FileName, ManagedFileName, StringComparison.OrdinalIgnoreCase)
             || state.Size <= 0
@@ -161,6 +161,188 @@ public sealed partial class ModDeploymentService
         }
     }
 
+    private ModInstalledArtifactRegistry ReadInstalledRegistry()
+    {
+        if (!File.Exists(InstalledStatePath))
+        {
+            return EmptyInstalledRegistry();
+        }
+
+        var contents = File.ReadAllBytes(InstalledStatePath);
+        using var document = JsonDocument.Parse(contents);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("The installed-mod state root is invalid.");
+        }
+
+        ModInstalledArtifactRegistry registry;
+        if (document.RootElement.TryGetProperty("installations", out _))
+        {
+            registry = JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(contents, JsonOptions)
+                ?? throw new InvalidDataException("The installed-mod registry is empty.");
+        }
+        else
+        {
+            var legacy = JsonSerializer.Deserialize<ModInstalledArtifactState>(contents, JsonOptions)
+                ?? throw new InvalidDataException("The installed-mod state is empty.");
+            ValidatePersistedInstalledState(legacy);
+            registry = new(
+                InstalledRegistrySchemaVersion,
+                [legacy],
+                DetachedAdoptionBackups: []);
+        }
+
+        return NormalizeAndValidateInstalledRegistry(registry);
+    }
+
+    private ModInstalledArtifactRegistry NormalizeAndValidateInstalledRegistry(
+        ModInstalledArtifactRegistry registry)
+    {
+        if (registry.SchemaVersion != InstalledRegistrySchemaVersion
+            || registry.Installations is null)
+        {
+            throw new InvalidDataException("The installed-mod registry is invalid or unsupported.");
+        }
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var canonicalPaths = new HashSet<string>(comparison);
+        var installations = new List<ModInstalledArtifactState>(registry.Installations.Count);
+        foreach (var state in registry.Installations)
+        {
+            ValidatePersistedInstalledState(state);
+            var gameDirectory = NormalizeGameDirectory(state.GameDirectory);
+            if (!canonicalPaths.Add(gameDirectory))
+            {
+                throw new InvalidDataException(
+                    "The installed-mod registry contains duplicate canonical game installations.");
+            }
+            installations.Add(state with { GameDirectory = gameDirectory });
+        }
+
+        var detached = new List<ModDetachedAdoptionBackupState>();
+        var detachmentIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var backup in registry.DetachedAdoptionBackups ?? [])
+        {
+            ValidateDetachedAdoptionBackup(backup);
+            if (!detachmentIds.Add(backup.DetachmentId))
+            {
+                throw new InvalidDataException(
+                    "The installed-mod registry contains a duplicate detachment receipt.");
+            }
+            detached.Add(backup with { GameDirectory = NormalizeGameDirectory(backup.GameDirectory) });
+        }
+
+        return new(
+            InstalledRegistrySchemaVersion,
+            installations
+                .OrderBy(state => state.GameDirectory, comparison)
+                .ToArray(),
+            detached
+                .OrderBy(backup => backup.DetachedAtUtc)
+                .ThenBy(backup => backup.DetachmentId, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    private void ValidateDetachedAdoptionBackup(ModDetachedAdoptionBackupState backup)
+    {
+        if (backup is null
+            || !Guid.TryParseExact(backup.DetachmentId, "N", out _)
+            || !Path.IsPathFullyQualified(backup.GameDirectory)
+            || !IsStableIdentity(backup.ProviderId)
+            || !IsStableIdentity(backup.ReleaseChannelId)
+            || !IsStableIdentity(backup.RuntimeDistributionId)
+            || string.IsNullOrWhiteSpace(backup.PreviousArtifactBackupPath)
+                && string.IsNullOrWhiteSpace(backup.PreviousRuntimeManifestBackupPath))
+        {
+            throw new InvalidDataException("The detached adoption-backup receipt is invalid.");
+        }
+
+        ValidateDetachedBackupMember(
+            backup.PreviousArtifactBackupPath,
+            backup.PreviousArtifactBackupIdentity,
+            "detached adopted DLL");
+        ValidateDetachedBackupMember(
+            backup.PreviousRuntimeManifestBackupPath,
+            backup.PreviousRuntimeManifestBackupIdentity,
+            "detached adopted runtime manifest");
+    }
+
+    private void ValidateDetachedBackupMember(
+        string? path,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            if (identity is not null)
+            {
+                throw new InvalidDataException($"The {subject} identity has no backup path.");
+            }
+            return;
+        }
+        if (!Path.IsPathFullyQualified(path)
+            || !IsContainedBy(Path.Combine(stateDirectory, "rollback"), path))
+        {
+            throw new InvalidDataException($"The {subject} path escapes Mod Bridge-owned state.");
+        }
+        ValidateIdentityReceipt(identity, subject);
+    }
+
+    private void WriteInstalledRegistry(ModInstalledArtifactRegistry registry)
+    {
+        var normalized = NormalizeAndValidateInstalledRegistry(registry);
+        if (normalized.Installations.Count == 0
+            && (normalized.DetachedAdoptionBackups?.Count ?? 0) == 0)
+        {
+            DeleteIfExists(InstalledStatePath);
+            return;
+        }
+        WriteJsonAtomically(InstalledStatePath, normalized);
+    }
+
+    private void UpsertInstalledState(ModInstalledArtifactState state)
+    {
+        ValidatePersistedInstalledState(state);
+        var registry = ReadInstalledRegistry();
+        var installations = registry.Installations
+            .Where(existing => !PathEquals(existing.GameDirectory, state.GameDirectory))
+            .Append(state with { GameDirectory = NormalizeGameDirectory(state.GameDirectory) })
+            .ToArray();
+        WriteInstalledRegistry(registry with { Installations = installations });
+    }
+
+    private void RemoveInstalledState(string gameDirectory)
+    {
+        var registry = ReadInstalledRegistry();
+        var installations = registry.Installations
+            .Where(state => !PathEquals(state.GameDirectory, gameDirectory))
+            .ToArray();
+        WriteInstalledRegistry(registry with { Installations = installations });
+    }
+
+    private void DetachInstalledState(
+        string gameDirectory,
+        ModDetachedAdoptionBackupState? retainedBackup)
+    {
+        var registry = ReadInstalledRegistry();
+        var installations = registry.Installations
+            .Where(state => !PathEquals(state.GameDirectory, gameDirectory))
+            .ToArray();
+        var detached = (registry.DetachedAdoptionBackups ?? [])
+            .Concat(retainedBackup is null ? [] : [retainedBackup])
+            .ToArray();
+        WriteInstalledRegistry(registry with
+        {
+            Installations = installations,
+            DetachedAdoptionBackups = detached,
+        });
+    }
+
+    private static ModInstalledArtifactRegistry EmptyInstalledRegistry() =>
+        new(InstalledRegistrySchemaVersion, [], DetachedAdoptionBackups: []);
+
     private static void ValidateRuntimeManifestDiscovery(ModRuntimeManifestArtifact artifact)
     {
         if (artifact.FileName != ArtifactBoundRuntimeManifestParser.ManagedFileName
@@ -190,9 +372,18 @@ public sealed partial class ModDeploymentService
 
     private static bool PathEquals(string left, string right) =>
         string.Equals(
-            Path.GetFullPath(left),
-            Path.GetFullPath(right),
+            NormalizeGameDirectory(left),
+            NormalizeGameDirectory(right),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static string NormalizeGameDirectory(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
+        return root is not null && fullPath.Length > root.Length
+            ? Path.TrimEndingDirectorySeparator(fullPath)
+            : fullPath;
+    }
 
     private static bool IsContainedBy(string root, string candidate)
     {

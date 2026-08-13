@@ -28,11 +28,15 @@ public sealed class LauncherLocalHealthTests
         fileSystem.ArtifactExists = false;
         stateReader.ThrowOnInstalledStateRead = true;
         Assert.AreEqual(
-            ModInstallationEvidenceState.NotInstalled,
+            ModInstallationEvidenceState.Unavailable,
             inspector.Capture(gameDirectory, isGameRunning: false).State,
-            "An absent DLL must not depend on stale or unreadable installed-artifact state.");
+            "An unreadable ownership receipt must fail closed even when the expected DLL is absent.");
 
         stateReader.ThrowOnInstalledStateRead = false;
+        var managedMissing = inspector.Capture(gameDirectory, isGameRunning: false);
+        Assert.AreEqual(ModInstallationEvidenceState.ManagedMissing, managedMissing.State);
+        Assert.AreEqual("guffawaffle", managedMissing.InstalledProviderId);
+
         fileSystem.ArtifactExists = true;
         fileSystem.Sha256 = InstalledSha256;
         var managed = inspector.Capture(gameDirectory, isGameRunning: true);
@@ -188,7 +192,9 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual(ModUpdateEvidenceState.NotApplicable, notInstalled.UpdateAvailability);
         Assert.AreEqual(LauncherProviderCompatibilityState.Unattributed, manual.ProviderCompatibility);
         Assert.AreEqual(ModUpdateEvidenceState.Unknown, manual.UpdateAvailability);
-        Assert.AreEqual(LauncherProviderCompatibilityState.Unknown, changed.ProviderCompatibility);
+        Assert.AreEqual(
+            LauncherProviderCompatibilityState.MatchesSelectedProvider,
+            changed.ProviderCompatibility);
         Assert.AreEqual(LauncherProviderCompatibilityState.Unknown, unattributed.ProviderCompatibility);
         Assert.AreEqual(ModUpdateEvidenceState.Unknown, unattributed.UpdateAvailability);
         Assert.AreEqual(ModUpdateEvidenceState.UpToDate, current.UpdateAvailability);
@@ -217,6 +223,26 @@ public sealed class LauncherLocalHealthTests
         Assert.AreEqual("Repair required", damaged.ModManagement.Status);
         Assert.AreEqual(ModManagementActionKind.CheckForUpdate, healthy.ModManagement.ActionKind);
         Assert.AreEqual(LauncherHomeTone.Success, healthy.ModManagement.Tone);
+    }
+
+    [DataTestMethod]
+    [DataRow(ModInstallationEvidenceState.ManagedChanged)]
+    [DataRow(ModInstallationEvidenceState.ManagedMissing)]
+    public void RepairCannotCrossProviderOwnership(ModInstallationEvidenceState state)
+    {
+        var installation = ManagedInstallation() with
+        {
+            State = state,
+            InstalledProviderId = "netniv",
+            InstalledRuntimeDistributionId = "netniv.stfc-community-mod",
+        };
+
+        var resolved = LauncherHealthResolver.Resolve(installation, Provider());
+
+        Assert.AreEqual(LauncherProviderCompatibilityState.DifferentProvider, resolved.ProviderCompatibility);
+        Assert.AreEqual(ModManagementActionKind.None, resolved.ModManagement.ActionKind);
+        Assert.IsFalse(resolved.ModManagement.CanExecute);
+        StringAssert.Contains(resolved.ModManagement.AutomationName, "Stop managing");
     }
 
     [TestMethod]
@@ -451,8 +477,9 @@ public sealed class LauncherLocalHealthTests
             return Journal;
         }
 
-        public ModInstalledArtifactState? ReadInstalledState()
+        public ModInstalledArtifactState? ReadInstalledState(string gameDirectory)
         {
+            _ = gameDirectory;
             if (ThrowOnRead || ThrowOnInstalledStateRead)
             {
                 throw new IOException("Injected state read failure.");

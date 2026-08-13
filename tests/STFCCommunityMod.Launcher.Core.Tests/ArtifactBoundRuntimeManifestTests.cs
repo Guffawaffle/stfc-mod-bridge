@@ -183,7 +183,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
             File.ReadAllBytes(Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
         Assert.IsNotNull(service.ReadInstalledState()!.RuntimeManifest);
 
-        var removed = await service.UninstallAsync();
+        var removed = await service.UninstallAsync(gameDirectory);
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, removed.State);
         Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
@@ -240,7 +240,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
             "{}",
             Encoding.UTF8);
 
-        var result = await service.UninstallAsync();
+        var result = await service.UninstallAsync(gameDirectory);
 
         Assert.AreEqual(ModDeploymentResultState.ManagedArtifactChanged, result.State);
         Assert.IsTrue(File.Exists(Path.Combine(gameDirectory, "version.dll")));
@@ -336,7 +336,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
                 ExistingArtifactPolicy.AdoptAndPreserve)).State);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
-            (await service.UninstallAsync()).State);
+            (await service.UninstallAsync(gameDirectory)).State);
 
         CollectionAssert.AreEqual(originalDll, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
         CollectionAssert.AreEqual(
@@ -369,7 +369,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
             fixture.Dll,
             ExistingArtifactPolicy.AdoptAndPreserve);
         Assert.AreEqual(ModDeploymentResultState.Succeeded, installed.State, installed.Message);
-        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await service.UninstallAsync()).State);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await service.UninstallAsync(gameDirectory)).State);
         Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
         CollectionAssert.AreEqual(looseManifest, File.ReadAllBytes(runtimePath));
     }
@@ -401,7 +401,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
             ModDeploymentResultState.Succeeded,
             (await service.DeployAsync(gameDirectory, legacy, ExistingArtifactPolicy.Reject)).State);
         CollectionAssert.AreEqual(looseManifest, File.ReadAllBytes(runtimePath));
-        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await service.UninstallAsync()).State);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await service.UninstallAsync(gameDirectory)).State);
         CollectionAssert.AreEqual(looseManifest, File.ReadAllBytes(runtimePath));
     }
 
@@ -640,7 +640,8 @@ public sealed class ArtifactBoundRuntimeManifestTests
                 ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
                 : ValueTask.CompletedTask);
 
-        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() => crashing.UninstallAsync());
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(
+            () => crashing.UninstallAsync(gameDirectory));
         var recovery = CreateService(temporaryDirectory, fixture);
         Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recovery.RecoverAsync()).State);
         CollectionAssert.AreEqual(DllBytes, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
@@ -909,7 +910,8 @@ public sealed class ArtifactBoundRuntimeManifestTests
             (observed, _) => observed == ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved
                 ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
                 : ValueTask.CompletedTask);
-        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() => crashing.UninstallAsync());
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(
+            () => crashing.UninstallAsync(gameDirectory));
         var journal = crashing.ReadJournal()!;
         File.WriteAllBytes(journal.StagePath, [0xba, 0xd0]);
 
@@ -1054,7 +1056,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
                 return ValueTask.CompletedTask;
             });
 
-        var result = await service.UninstallAsync();
+        var result = await service.UninstallAsync(gameDirectory);
 
         Assert.AreEqual(ModDeploymentResultState.ManagedArtifactChanged, result.State);
         CollectionAssert.AreEqual(changedBytes, File.ReadAllBytes(changedPath));

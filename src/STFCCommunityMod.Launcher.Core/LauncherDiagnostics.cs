@@ -307,7 +307,9 @@ public sealed class LauncherDiagnosticService(
                     journal is null ? "No deployment transaction is recorded." : $"The last transaction is {journal.Phase}."));
             }
 
-            var state = deploymentService.ReadInstalledState();
+            var state = gameDirectory is null
+                ? null
+                : deploymentService.ReadInstalledState(gameDirectory);
             if (state is null)
             {
                 health.Add(installation?.State switch

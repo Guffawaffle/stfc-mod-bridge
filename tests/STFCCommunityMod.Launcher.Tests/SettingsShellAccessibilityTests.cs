@@ -164,10 +164,40 @@ public sealed class SettingsShellAccessibilityTests
         CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
         CollectionAssert.Contains(names, "Retry exact reviewed candidate recovery");
         CollectionAssert.Contains(names, "Review removal of the Mod Bridge-managed community mod");
+        CollectionAssert.Contains(
+            names,
+            "Review stopping Mod Bridge management for the selected installation");
 
         Assert.IsFalse(
             document.Descendants()
                 .Any(element => (string?)element.Attribute(Xaml + "Name") == "DiagnosticsDialog"));
+    }
+
+    [TestMethod]
+    public void StopManagingConfirmationNamesTargetAndPreservesStagedSettingsGuard()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var handler = Slice(
+            source,
+            "private void DiagnosticsStopManagingButton_Click",
+            "private async void CheckLauncherUpdateButton_Click");
+        var confirmation = Slice(
+            source,
+            "private void ShowMaintenanceConfirmation",
+            "private async void ConfirmMaintenanceButton_Click");
+        var dialog = document.Descendants()
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "MaintenanceDialog");
+
+        StringAssert.Contains(handler, "SharedSettings.HasPendingChanges");
+        StringAssert.Contains(handler, "Save or discard");
+        StringAssert.Contains(confirmation, "MaintenanceAction.StopManaging");
+        StringAssert.Contains(confirmation, "ownership receipt for this exact installation");
+        StringAssert.Contains(confirmation, "MaintenanceTarget.Text = viewModel.SelectedGameDirectory");
+        Assert.IsTrue(dialog.Descendants(Presentation + "TextBlock").Any(element =>
+            (string?)element.Attribute(Xaml + "Name") == "MaintenanceTarget"));
     }
 
     [TestMethod]

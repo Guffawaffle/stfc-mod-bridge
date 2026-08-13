@@ -161,7 +161,11 @@ public sealed class ReadOnlyGameInstallIntegrationTests
     {
         public ModDeploymentJournal? ReadJournal() => null;
 
-        public ModInstalledArtifactState? ReadInstalledState() => null;
+        public ModInstalledArtifactState? ReadInstalledState(string gameDirectory)
+        {
+            _ = gameDirectory;
+            return null;
+        }
     }
 
     private static class ReadOnlyDirectoryFingerprint

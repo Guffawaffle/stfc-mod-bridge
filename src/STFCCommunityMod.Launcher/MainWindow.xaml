@@ -1238,7 +1238,7 @@
         <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" />
         <TextBlock Margin="0,12,0,0"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="Maintenance uses the existing journaled, allowlisted deployment transaction. The game must be closed. Removing the mod preserves configuration, logs, and Mod Bridge state."
+                   Text="Recovery and removal use the existing journaled, allowlisted deployment transaction and require the game to be closed. Stop managing changes only Mod Bridge's ownership record."
                    TextWrapping="Wrap" />
         <WrapPanel Margin="0,14,0,0">
           <Button Margin="0,0,10,10"
@@ -1255,13 +1255,20 @@
                   IsEnabled="{Binding CanRetryCandidateRecovery}"
                   ToolTip="Explicitly reconciles only exact launcher-owned reviewed-download residue; it does not scan during passive Diagnostics or change the game installation."
                   automation:AutomationProperties.Name="Retry exact reviewed candidate recovery" />
-          <Button Margin="0,0,0,10"
+          <Button Margin="0,0,10,10"
                   Style="{StaticResource UtilityActionButtonStyle}"
                   Click="DiagnosticsUninstallButton_Click"
                   Content="Remove _mod…"
                   IsEnabled="{Binding CanUninstallMod}"
                   ToolTip="Removes only the managed or adopted version.dll after confirmation; configuration, logs, and Mod Bridge state are preserved."
                   automation:AutomationProperties.Name="Review removal of the Mod Bridge-managed community mod" />
+          <Button Margin="0,0,0,10"
+                  Style="{StaticResource UtilityActionButtonStyle}"
+                  Click="DiagnosticsStopManagingButton_Click"
+                  Content="_Stop managing…"
+                  IsEnabled="{Binding CanStopManagingMod}"
+                  ToolTip="Removes only the selected installation's Mod Bridge ownership receipt; game files are never changed."
+                  automation:AutomationProperties.Name="Review stopping Mod Bridge management for the selected installation" />
         </WrapPanel>
         <TextBlock FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
@@ -1277,6 +1284,11 @@
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="{Binding DiagnosticRemovalAvailability}"
                    automation:AutomationProperties.Name="{Binding DiagnosticRemovalAvailability}" />
+        <TextBlock Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding DiagnosticStopManagingAvailability}"
+                   automation:AutomationProperties.Name="{Binding DiagnosticStopManagingAvailability}" />
       </StackPanel>
     </ScrollViewer>
 

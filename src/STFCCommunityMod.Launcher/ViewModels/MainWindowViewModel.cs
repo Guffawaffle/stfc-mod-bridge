@@ -239,6 +239,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         && modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
         && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
+    public bool CanStopManagingMod =>
+        !HasIncompleteProviderSwitch
+        && SelectedGameDirectory is not null
+        && localHealth.Installation.State is (
+            ModInstallationEvidenceState.ManagedVerified
+            or ModInstallationEvidenceState.ManagedChanged
+            or ModInstallationEvidenceState.ManagedMissing)
+        && actionFeedback.CanStartModMaintenance(
+            externallyAvailable: true,
+            actionFeedback.Launch.IsWorking);
+
     public string DiagnosticRecoveryAvailability => CanRecoverMod
         ? HasIncompleteProviderSwitch
             ? "Recovery is available for the incomplete provider switch. DLL, provider selection, and TOML state will be restored together."
@@ -252,6 +263,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         : IsGameRunning
             ? "Close Star Trek Fleet Command before removing the managed community mod."
             : "Removal is available only for a verified Mod Bridge-managed installation owned by the selected provider.";
+
+    public string DiagnosticStopManagingAvailability => CanStopManagingMod
+        ? "Stop managing is available after confirmation. It removes only this installation's ownership receipt and does not change game files."
+        : HasIncompleteProviderSwitch
+            ? "Recover the incomplete provider switch before changing ownership records."
+            : "Stop managing is available only when the selected installation has a Mod Bridge ownership receipt.";
 
     public bool CanRetryCandidateRecovery =>
         featureRemediationCandidates is not null
@@ -1079,7 +1096,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Removing the Mod Bridge-managed community mod…",
-            modManagementCoordinator.UninstallAsync,
+            token => modManagementCoordinator.UninstallAsync(SelectedGameDirectory!, token),
+            cancellationToken);
+    }
+
+    public async Task<ModDeploymentResult?> StopManagingModAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanStopManagingMod)
+        {
+            return null;
+        }
+        return await ExecuteMaintenanceAsync(
+            "Detaching Mod Bridge ownership from the selected installation…",
+            token => modManagementCoordinator.StopManagingAsync(SelectedGameDirectory!, token),
             cancellationToken);
     }
 
@@ -1128,8 +1158,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(ModActionKind));
         OnPropertyChanged(nameof(CanRecoverMod));
         OnPropertyChanged(nameof(CanUninstallMod));
+        OnPropertyChanged(nameof(CanStopManagingMod));
         OnPropertyChanged(nameof(DiagnosticRecoveryAvailability));
         OnPropertyChanged(nameof(DiagnosticRemovalAvailability));
+        OnPropertyChanged(nameof(DiagnosticStopManagingAvailability));
         OnPropertyChanged(nameof(CanRetryCandidateRecovery));
         OnPropertyChanged(nameof(DiagnosticCandidateRecoveryAvailability));
         UpdateModActionAvailability();
@@ -1278,6 +1310,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(ModActionLabel));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanStopManagingMod));
                 OnPropertyChanged(nameof(CanLaunchGame));
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
@@ -1294,6 +1327,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanManageMod));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanStopManagingMod));
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
         }
@@ -1330,6 +1364,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanManageMod));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
+                OnPropertyChanged(nameof(CanStopManagingMod));
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):

@@ -188,7 +188,20 @@ public sealed class ProviderAwareModManagementCoordinatorTests
         public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new ModDeploymentResult(ModDeploymentResultState.Succeeded, "Recovered"));
 
-        public Task<ModDeploymentResult> UninstallAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ModDeploymentResult(ModDeploymentResultState.Succeeded, "Removed"));
+        public Task<ModDeploymentResult> UninstallAsync(
+            string gameDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            _ = gameDirectory;
+            return Task.FromResult(new ModDeploymentResult(ModDeploymentResultState.Succeeded, "Removed"));
+        }
+
+        public Task<ModDeploymentResult> StopManagingAsync(
+            string gameDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            _ = gameDirectory;
+            return Task.FromResult(new ModDeploymentResult(ModDeploymentResultState.Succeeded, "Detached"));
+        }
     }
 }

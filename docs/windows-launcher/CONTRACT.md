@@ -192,9 +192,24 @@ Installation success means:
 - no staging files remain;
 - rollback metadata describes the prior state, if any.
 
+Folder selection and managed ownership are independent. Bridge persists one
+selected folder separately from a schema-v2 registry containing an independent
+receipt for each canonical installation it has managed or adopted. Status is
+never persisted; it is derived from each receipt and that installation's live
+files. A legacy single receipt migrates from its own recorded path, never from
+the current folder selection. All deployment, rollback, recovery, and removal
+operations are explicitly target-scoped and preserve unrelated receipts.
+
 Uninstall removes only launcher-managed files and preserves configuration,
 logs, game files, and unknown files. Config removal is a separate explicit
 action.
+
+If live bytes differ from a receipt, removal must not delete them. Repair may
+replace changed or missing managed bytes only with the exact independently
+verified release recorded by that receipt, never an implicit latest release.
+Diagnostics also provides **Stop managing**, which removes only the selected
+installation's ownership receipt without touching game files. Any adopted
+backup remains retained under a non-owning recovery receipt.
 
 ## Release and update contract
 

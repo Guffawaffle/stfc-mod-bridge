@@ -2,9 +2,10 @@
 
 Status: accepted product direction
 
-Date: 2026-07-27
+Originally accepted: 2026-07-27
 
-Applies to: `WL-002`, `WL-006`, `WL-008`, and `WL-010`
+Applies to the current Windows product. WL-002, WL-006, WL-008, and WL-010 are
+historical delivery labels, not current execution routing.
 
 ## Decision
 
@@ -234,6 +235,7 @@ The primary action changes with the resolved product state:
 | Mod update available | Update available | Update mod |
 | Game and mod healthy | Ready to play | Launch game |
 | Repair required | Needs attention | Repair |
+| Managed receipt but DLL missing | Needs attention | Repair exact recorded release; Stop managing remains in Diagnostics |
 | Game running | Game is running | Bring game forward or disabled launch |
 | Operation active | Working | Progress/cancel when safe |
 | Offline but locally healthy | Ready offline | Launch game |
@@ -245,6 +247,14 @@ unrecorded, changed, or unreadable proxy, direct launch opens a clear warning
 and requires **Launch anyway** for that attempt. Active/incomplete deployment,
 an invalid game target, a running or unattributable game process, and a busy
 operation lease remain hard launch blocks.
+
+Changing the selected game folder immediately reprojects Home and Diagnostics
+from that folder's live files and independent ownership receipt. It does not
+transfer the previous folder's status or force repair before a clean selected
+installation can be used. Diagnostics exposes **Stop managing** for an exact
+selected target whenever an ownership receipt exists. Its confirmation names
+the canonical path and states that no game files will change; it remains
+separate from destructive **Remove mod**.
 
 ### Future-state Game client row
 
