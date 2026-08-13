@@ -222,7 +222,7 @@ public sealed partial class ModDeploymentService
         }
 
         var detached = new List<ModDetachedAdoptionBackupState>();
-        var detachmentIds = new HashSet<string>(StringComparer.Ordinal);
+        var detachmentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var backup in registry.DetachedAdoptionBackups ?? [])
         {
             ValidateDetachedAdoptionBackup(backup);

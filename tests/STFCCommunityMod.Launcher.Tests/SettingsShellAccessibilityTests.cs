@@ -196,6 +196,14 @@ public sealed class SettingsShellAccessibilityTests
         StringAssert.Contains(confirmation, "MaintenanceAction.StopManaging");
         StringAssert.Contains(confirmation, "ownership receipt for this exact installation");
         StringAssert.Contains(confirmation, "MaintenanceTarget.Text = viewModel.SelectedGameDirectory");
+        var dispatch = Slice(
+            source,
+            "private async void ConfirmMaintenanceButton_Click",
+            "private async void ConfirmModOperationButton_Click");
+        StringAssert.Contains(dispatch, "switch (action)");
+        StringAssert.Contains(dispatch, "case MaintenanceAction.StopManaging:");
+        StringAssert.Contains(dispatch, "default:");
+        StringAssert.Contains(dispatch, "return;");
         Assert.IsTrue(dialog.Descendants(Presentation + "TextBlock").Any(element =>
             (string?)element.Attribute(Xaml + "Name") == "MaintenanceTarget"));
     }

@@ -876,14 +876,24 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
-        if (!Path.IsPathFullyQualified(gameDirectory))
+        string normalizedGameDirectory;
+        try
+        {
+            if (!Path.IsPathFullyQualified(gameDirectory))
+            {
+                return new(
+                    ModDeploymentResultState.InvalidGameTarget,
+                    "Stop managing requires an absolute game installation path.");
+            }
+            normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
             return new(
                 ModDeploymentResultState.InvalidGameTarget,
-                "Stop managing requires an absolute game installation path.");
+                $"Stop managing requires a valid absolute game installation path: {exception.Message}");
         }
-
-        var normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null)
         {

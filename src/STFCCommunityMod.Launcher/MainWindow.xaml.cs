@@ -1120,17 +1120,19 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var action = pendingMaintenanceAction;
         pendingMaintenanceAction = MaintenanceAction.None;
         MaintenanceDialog.IsOpen = false;
-        if (action == MaintenanceAction.Recover)
+        switch (action)
         {
-            await viewModel.RecoverModAsync(lifetimeCancellation.Token);
-        }
-        else if (action == MaintenanceAction.Uninstall)
-        {
-            await viewModel.UninstallModAsync(lifetimeCancellation.Token);
-        }
-        else
-        {
-            await viewModel.StopManagingModAsync(lifetimeCancellation.Token);
+            case MaintenanceAction.Recover:
+                await viewModel.RecoverModAsync(lifetimeCancellation.Token);
+                break;
+            case MaintenanceAction.Uninstall:
+                await viewModel.UninstallModAsync(lifetimeCancellation.Token);
+                break;
+            case MaintenanceAction.StopManaging:
+                await viewModel.StopManagingModAsync(lifetimeCancellation.Token);
+                break;
+            default:
+                return;
         }
     }
 

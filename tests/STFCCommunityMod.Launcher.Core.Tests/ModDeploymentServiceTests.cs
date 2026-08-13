@@ -112,6 +112,42 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public void RegistryRejectsDetachmentIdsThatDifferOnlyByCase()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        var backupPath = Path.Combine(
+            temporaryDirectory.Path,
+            "state",
+            "rollback",
+            "detached",
+            "version.dll");
+        var detachmentId = Guid.NewGuid().ToString("N");
+        var detached = new ModDetachedAdoptionBackupState(
+            detachmentId,
+            gameDirectory,
+            DateTimeOffset.UtcNow,
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows",
+            backupPath,
+            new(1, ReleaseArtifact().Sha256),
+            PreviousRuntimeManifestBackupPath: null,
+            PreviousRuntimeManifestBackupIdentity: null);
+        File.WriteAllText(
+            service.InstalledStatePath,
+            JsonSerializer.Serialize(
+                new ModInstalledArtifactRegistry(
+                    2,
+                    [],
+                    [detached, detached with { DetachmentId = detachmentId.ToUpperInvariant() }]),
+                JournalJsonOptions));
+
+        Assert.ThrowsException<InvalidDataException>(() => service.ReadInstalledStates());
+    }
+
+    [TestMethod]
     public async Task InstallAndRemoveSecondInstallationPreserveChangedFirstInstallation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -693,6 +729,19 @@ public sealed class ModDeploymentServiceTests
         Assert.IsNull(service.ReadInstalledState(gameDirectory));
         CollectionAssert.AreEqual(externallyChanged, File.ReadAllBytes(targetPath));
         Assert.AreEqual("user-owned", File.ReadAllText(unrelatedPath));
+    }
+
+    [TestMethod]
+    public async Task StopManagingMalformedAbsolutePathReturnsInvalidTarget()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var service = CreateService(temporaryDirectory, SuccessfulDownload());
+        var malformedPath = $"{Path.GetPathRoot(temporaryDirectory.Path)}invalid\0path";
+
+        var result = await service.StopManagingAsync(malformedPath);
+
+        Assert.AreEqual(ModDeploymentResultState.InvalidGameTarget, result.State);
+        Assert.IsFalse(result.Changed);
     }
 
     [TestMethod]
