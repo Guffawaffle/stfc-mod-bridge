@@ -6,17 +6,22 @@
       "channelId": "stable",
       "runtimeDistributionId": "guffawaffle.stfc-community-mod",
       "repository": "Guffawaffle/stfc-mod",
-      "tag": "v2.1.0-guffa.8",
-      "releaseVersion": "2.1.0-guffa.8",
-      "sourceCommit": "f93e0fcf87622448fdfd609d6835ffd820026278",
+      "tag": "v2.1.0-guffa.9",
+      "releaseVersion": "2.1.0-guffa.9",
+      "sourceCommit": "5b5919cfb59dbe736be775adf7076b8f525bc067",
       "assetName": "stfc-community-mod.zip",
-      "assetSize": 11823408,
-      "assetSha256": "D164B78D3EF9AD43A8ACC6485507C40B2F7359EAF3A61814AD46A2C69779A9F4",
+      "assetSize": 11862115,
+      "assetSha256": "4D978DDE0F855C6DCD894BECB34D4BE690F4CF00918398BB237B4AFD2C78E9D4",
       "payloadFileName": "version.dll",
-      "payloadSize": 20925848,
-      "payloadSha256": "6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9",
+      "payloadSize": 21024152,
+      "payloadSha256": "FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A",
       "payloadVersion": "2.1.0.0",
-      "observedAtUtc": "2026-08-01T06:47:19.0000000+00:00"
+      "observedAtUtc": "2026-08-13T05:31:43.0810292+00:00",
+      "runtimeManifest": {
+        "fileName": "stfc-runtime-manifest.json",
+        "size": 1668,
+        "sha256": "E396D6536BF946FE7BA222757A25A66E064D3DE05FEDA4E3B3E276FAD54FC361"
+      }
     },
     {
       "providerId": "netniv",

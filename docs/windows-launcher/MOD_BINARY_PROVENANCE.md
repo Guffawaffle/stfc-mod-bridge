@@ -48,12 +48,12 @@ repair or source-switch transaction. See the
 
 ## Reviewed artifact snapshot
 
-`providers/known-windows-artifacts.v1.json` is code-reviewed release data embedded into Mod Bridge. As of 2026-08-02
+`providers/known-windows-artifacts.v1.json` is code-reviewed release data embedded into Mod Bridge. As of 2026-08-13
 it contains:
 
 | Provider | Track | Version/source | Windows DLL SHA-256 | Signature evidence |
 |---|---|---|---|---|
-| Guffawaffle | Stable | `v2.1.0-guffa.8` | `6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9` | Valid expected Authenticode publisher |
+| Guffawaffle | Stable | `v2.1.0-guffa.9` | `FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A` | Valid expected Authenticode publisher and timestamp |
 | NetniV | Stable | `v1.1.4` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 | NetniV | Dev | commit `7f0536bebc20d0d30bca44e89bfef56b0fb85ebc` | `CBEEDA425DB044D8E2D7CAE1B45408434DE437F3526FB08E1906994463E4D8A5` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 
@@ -76,8 +76,9 @@ fresh prepared observation, but it must not query `latest` again or silently
 cross provider/channel/runtime identity. Passive refresh, source selection,
 Diagnostics, and launch perform no release discovery.
 
-Guffawaffle release manifests plus the expected Authenticode publisher are the canonical installation path. Until the
-current stable release carries that manifest asset, the exact reviewed release ZIP/DLL entry provides a narrow fallback
-and the Authenticode publisher check still applies. NetniV stable installation is likewise available only for the exact
-reviewed ZIP and inner-DLL bytes. Either provider fails closed when GitHub's latest release differs from the bundled
-certification; these shims are replaced by provider-published provenance contracts when available.
+Guffawaffle release manifests plus the expected Authenticode publisher are the canonical installation path. The current
+stable manifest is still constrained to the exact reviewed repository, tag, source commit, DLL, and runtime-manifest
+bytes because schema v1 declares no manifest authenticity. Its narrow fallback ZIP must contain exactly that certified
+DLL/runtime-manifest pair. NetniV stable installation is likewise available only for the exact reviewed ZIP and
+inner-DLL bytes. Either provider fails closed when GitHub's latest release differs from the bundled certification; these
+shims are replaced only by an accepted provider-published provenance contract.

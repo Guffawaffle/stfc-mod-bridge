@@ -457,26 +457,73 @@ public sealed class ReviewedZipModArtifactDownloader(
         {
             throw new InvalidDataException("Downloaded archive does not match the reviewed release certification.");
         }
-        using var archive = new ZipArchive(new MemoryStream(archiveDownload.Contents, writable: false), ZipArchiveMode.Read);
-        var files = archive.Entries.Where(entry => !string.IsNullOrEmpty(entry.Name)).ToArray();
-        if (files.Length != 1
-            || !string.Equals(files[0].FullName, certification.PayloadFileName, StringComparison.Ordinal)
-            || files[0].Length != certification.PayloadSize)
+        using var archive = new ZipArchive(
+            new MemoryStream(archiveDownload.Contents, writable: false),
+            ZipArchiveMode.Read);
+        var expectedFileNames = certification.RuntimeManifest is null
+            ? new HashSet<string>([certification.PayloadFileName], StringComparer.Ordinal)
+            : new HashSet<string>(
+                [certification.PayloadFileName, certification.RuntimeManifest.FileName],
+                StringComparer.Ordinal);
+        var files = archive.Entries.ToArray();
+        if (files.Length != expectedFileNames.Count
+            || files.Any(entry =>
+                string.IsNullOrEmpty(entry.Name)
+                || !string.Equals(entry.FullName, entry.Name, StringComparison.Ordinal))
+            || !expectedFileNames.SetEquals(files.Select(entry => entry.FullName)))
         {
-            throw new InvalidDataException("Reviewed release archive does not contain the expected single DLL payload.");
+            throw new InvalidDataException(
+                "Reviewed release archive does not contain exactly the certified root payloads.");
         }
-        await using var source = files[0].Open();
-        using var destination = new MemoryStream((int)certification.PayloadSize);
-        await source.CopyToAsync(destination, cancellationToken);
-        var payload = destination.ToArray();
-        if (payload.LongLength != certification.PayloadSize
-            || !CryptographicOperations.FixedTimeEquals(
-                SHA256.HashData(payload),
-                Convert.FromHexString(certification.PayloadSha256)))
+        var payloadEntry = files.Single(entry =>
+            string.Equals(entry.FullName, certification.PayloadFileName, StringComparison.Ordinal));
+        var payload = await ReadCertifiedEntryAsync(
+            payloadEntry,
+            certification.PayloadSize,
+            certification.PayloadSha256,
+            "DLL",
+            cancellationToken).ConfigureAwait(false);
+        if (certification.RuntimeManifest is not null)
         {
-            throw new InvalidDataException("Extracted DLL does not match the reviewed release certification.");
+            var runtimeManifestEntry = files.Single(entry => string.Equals(
+                entry.FullName,
+                certification.RuntimeManifest.FileName,
+                StringComparison.Ordinal));
+            _ = await ReadCertifiedEntryAsync(
+                runtimeManifestEntry,
+                certification.RuntimeManifest.Size,
+                certification.RuntimeManifest.Sha256,
+                "runtime manifest",
+                cancellationToken).ConfigureAwait(false);
         }
         return new(HttpStatusCode.OK, payload, payload.LongLength);
+    }
+
+    private static async Task<byte[]> ReadCertifiedEntryAsync(
+        ZipArchiveEntry entry,
+        long expectedSize,
+        string expectedSha256,
+        string description,
+        CancellationToken cancellationToken)
+    {
+        if (entry.Length != expectedSize || expectedSize > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"Reviewed release archive {description} does not match its certified size.");
+        }
+        await using var source = entry.Open();
+        using var destination = new MemoryStream((int)expectedSize);
+        await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+        var contents = destination.ToArray();
+        if (contents.LongLength != expectedSize
+            || !CryptographicOperations.FixedTimeEquals(
+                SHA256.HashData(contents),
+                Convert.FromHexString(expectedSha256)))
+        {
+            throw new InvalidDataException(
+                $"Reviewed release archive {description} does not match its certified bytes.");
+        }
+        return contents;
     }
 }
 
@@ -506,7 +553,11 @@ public sealed class ManifestWithReviewedFallbackReleaseClient(
                 reviewedCertification);
             return discovery with
             {
-                ModArtifact = discovery.ModArtifact with { RuntimeManifest = runtimeManifest },
+                ModArtifact = discovery.ModArtifact with
+                {
+                    ExpectedVersion = reviewedCertification.PayloadVersion,
+                    RuntimeManifest = runtimeManifest,
+                },
             };
         }
         catch (InvalidDataException exception) when (

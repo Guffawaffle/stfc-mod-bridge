@@ -168,7 +168,10 @@ public sealed class ReviewedReleaseCertificationTests
     {
         var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
         var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
-        var archive = CreateArchive("version.dll", payload);
+        var archive = CreateArchive(
+            "version.dll",
+            payload,
+            (ArtifactBoundRuntimeManifestParser.ManagedFileName, runtimeManifest));
         var certification = Certification(archive, payload) with
         {
             RuntimeManifest = new(
@@ -194,6 +197,83 @@ public sealed class ReviewedReleaseCertificationTests
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() => downloader.DownloadAsync(
             new Uri("https://example.invalid/runtime.json"),
             CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task ReviewedZipDownloaderRejectsMissingCertifiedRuntimeManifestSidecar()
+    {
+        var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
+        var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var archive = CreateArchive("version.dll", payload);
+        var certification = Certification(archive, payload) with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                runtimeManifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(runtimeManifest))),
+        };
+        var downloader = new ReviewedZipModArtifactDownloader(
+            new(new ByteHandler(archive)),
+            certification);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(certification.DownloadUri, CancellationToken.None));
+
+        StringAssert.Contains(exception.Message, "exactly the certified root payloads");
+    }
+
+    [TestMethod]
+    public async Task ReviewedZipDownloaderRejectsChangedCertifiedRuntimeManifestSidecar()
+    {
+        var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
+        var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var changedRuntimeManifest = (byte[])runtimeManifest.Clone();
+        changedRuntimeManifest[0] ^= 0x01;
+        var archive = CreateArchive(
+            "version.dll",
+            payload,
+            (ArtifactBoundRuntimeManifestParser.ManagedFileName, changedRuntimeManifest));
+        var certification = Certification(archive, payload) with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                runtimeManifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(runtimeManifest))),
+        };
+        var downloader = new ReviewedZipModArtifactDownloader(
+            new(new ByteHandler(archive)),
+            certification);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(certification.DownloadUri, CancellationToken.None));
+
+        StringAssert.Contains(exception.Message, "runtime manifest does not match its certified bytes");
+    }
+
+    [TestMethod]
+    public async Task ReviewedZipDownloaderRejectsNestedCertifiedRuntimeManifestSidecar()
+    {
+        var payload = Encoding.UTF8.GetBytes("reviewed dll bytes");
+        var runtimeManifest = Encoding.UTF8.GetBytes("reviewed runtime manifest");
+        var archive = CreateArchive(
+            "version.dll",
+            payload,
+            ($"nested/{ArtifactBoundRuntimeManifestParser.ManagedFileName}", runtimeManifest));
+        var certification = Certification(archive, payload) with
+        {
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                runtimeManifest.LongLength,
+                Convert.ToHexString(SHA256.HashData(runtimeManifest))),
+        };
+        var downloader = new ReviewedZipModArtifactDownloader(
+            new(new ByteHandler(archive)),
+            certification);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(certification.DownloadUri, CancellationToken.None));
+
+        StringAssert.Contains(exception.Message, "exactly the certified root payloads");
     }
 
     [TestMethod]
@@ -247,6 +327,65 @@ public sealed class ReviewedReleaseCertificationTests
             new RecordingDiscoveryClient(
                 new InvalidDataException("Manifest signature is invalid.")),
             fallback);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
+
+        Assert.AreEqual(0, fallback.CallCount);
+    }
+
+    [TestMethod]
+    public async Task ExactReviewedManifestUsesCertifiedPayloadVersion()
+    {
+        var runtimeManifest = new ReviewedRuntimeManifestCertification(
+            ArtifactBoundRuntimeManifestParser.ManagedFileName,
+            123,
+            new string('A', 64));
+        var certification = Certification() with
+        {
+            Tag = "v1.1.4-guffa.9",
+            ReleaseVersion = "1.1.4-guffa.9",
+            PayloadVersion = "1.1.4.0",
+            RuntimeManifest = runtimeManifest,
+        };
+        var discovery = ReviewedManifestDiscovery(certification, "1.1.4.9");
+        var client = new ManifestWithReviewedFallbackReleaseClient(
+            new RecordingDiscoveryClient(discovery),
+            new RecordingDiscoveryClient(Discovery(certification)),
+            certification);
+
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+
+        Assert.AreEqual(certification.PayloadVersion, result.ModArtifact.ExpectedVersion);
+        Assert.IsNotNull(result.ModArtifact.RuntimeManifest);
+        Assert.AreEqual(runtimeManifest.Sha256, result.ModArtifact.RuntimeManifest.Sha256);
+    }
+
+    [TestMethod]
+    public async Task ReviewedManifestPayloadVersionOverrideRequiresExactCertifiedIdentity()
+    {
+        var certification = Certification() with
+        {
+            Tag = "v1.1.4-guffa.9",
+            ReleaseVersion = "1.1.4-guffa.9",
+            PayloadVersion = "1.1.4.0",
+            RuntimeManifest = new(
+                ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                123,
+                new string('A', 64)),
+        };
+        var discovery = ReviewedManifestDiscovery(certification, "1.1.4.9") with
+        {
+            Manifest = ReviewedManifestDiscovery(certification, "1.1.4.9").Manifest with
+            {
+                Source = new(certification.Repository, new string('f', 40)),
+            },
+        };
+        var fallback = new RecordingDiscoveryClient(Discovery(certification));
+        var client = new ManifestWithReviewedFallbackReleaseClient(
+            new RecordingDiscoveryClient(discovery),
+            fallback,
+            certification);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(
             () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
@@ -350,6 +489,45 @@ public sealed class ReviewedReleaseCertificationTests
                 certification.PayloadSize,
                 certification.PayloadSha256,
                 certification.PayloadVersion));
+
+    private static WindowsReleaseDiscovery ReviewedManifestDiscovery(
+        ReviewedReleaseCertification certification,
+        string derivedPayloadVersion)
+    {
+        var runtimeManifest = certification.RuntimeManifest
+            ?? throw new AssertFailedException("Test certification requires a runtime manifest.");
+        var dllUri = new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{certification.Tag}/{certification.PayloadFileName}");
+        return new(
+            new(
+                1,
+                certification.ReleaseVersion,
+                certification.Tag,
+                certification.ChannelId,
+                "active",
+                new Version(0, 1, 0),
+                new(certification.Repository, certification.SourceCommit),
+                "none",
+                [
+                    new(
+                        "windows-mod-runtime-manifest-x64",
+                        "windows-mod-runtime-manifest",
+                        "windows",
+                        "x64",
+                        runtimeManifest.FileName,
+                        "application/json",
+                        runtimeManifest.Size,
+                        runtimeManifest.Sha256,
+                        new("none", "none", [])),
+                ]),
+            new(
+                dllUri,
+                certification.PayloadFileName,
+                certification.PayloadSize,
+                certification.PayloadSha256,
+                derivedPayloadVersion));
+    }
 
     private static byte[] CreateArchive(string name, byte[] contents, params (string Name, byte[] Contents)[] extras)
     {

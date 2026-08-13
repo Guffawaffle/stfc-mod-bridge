@@ -286,7 +286,8 @@ public sealed class LiveProviderInstallIntegrationTests
                             binding.ManifestAssetName!),
                         new ReviewedGitHubReleaseAssetClient(
                             httpClient,
-                            binding.ReviewedCertification)),
+                            binding.ReviewedCertification),
+                        binding.ReviewedCertification),
             LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
                 new ReviewedGitHubReleaseAssetClient(
                     httpClient,
@@ -324,7 +325,8 @@ public sealed class LiveProviderInstallIntegrationTests
             verifier,
             gameDirectory =>
                 processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
-            attribution);
+            attribution,
+            reviewedCertification: binding.ReviewedCertification);
         var health = new LauncherHealthService(
             new ModInstallationInspector(
                 deployment,
