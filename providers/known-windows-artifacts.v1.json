@@ -5,11 +5,11 @@
       "providerId": "guffawaffle",
       "runtimeDistributionId": "guffawaffle.stfc-community-mod",
       "trackId": "stable",
-      "version": "2.1.0-guffa.8",
-      "size": 20925848,
-      "sha256": "6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9",
-      "sourceReference": "github-release:v2.1.0-guffa.8",
-      "observedAtUtc": "2026-08-01T06:47:19.0000000+00:00"
+      "version": "2.1.0-guffa.9",
+      "size": 21024152,
+      "sha256": "FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A",
+      "sourceReference": "github-release:v2.1.0-guffa.9",
+      "observedAtUtc": "2026-08-13T05:31:43.0810292+00:00"
     },
     {
       "providerId": "netniv",

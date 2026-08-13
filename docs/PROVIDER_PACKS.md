@@ -45,7 +45,7 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
-| Release discovery | Signed launcher release manifest; exact reviewed current-release fallback while the asset is absent | Exact launcher-reviewed GitHub release asset |
+| Release discovery | Repository release manifest constrained by the exact launcher-reviewed current release; exact reviewed fallback if the manifest asset is absent | Exact launcher-reviewed GitHub release asset |
 | Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |
 | Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
@@ -61,22 +61,28 @@ one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
 are checked before the atomic deployment transaction commits. A newer or
 changed release fails closed until a maintainer reviews and updates the entry.
 
-The current Guffawaffle stable release predates the required release-manifest
-asset. Mod Bridge first attempts the canonical manifest flow and falls back
-only when that asset is absent, using the exact reviewed `v2.1.0-guffa.8` ZIP
-and DLL entry plus the normal Authenticode publisher check. An invalid or
-tampered manifest never falls back. A future manifest-bearing release removes
-the need for this temporary reviewed-release entry.
+The current Guffawaffle stable release, `v2.1.0-guffa.9`, publishes the release
+manifest, signed DLL, runtime manifest, and compatibility ZIP. The release
+manifest remains integrity/discovery metadata with
+`manifestAuthenticity.scheme: none`; it does not authorize newer bytes by
+itself. Mod Bridge therefore binds its repository, tag, source commit, ZIP,
+DLL, and runtime-manifest bytes to the exact reviewed certification and still
+requires the normal Authenticode publisher policy. It falls back to the
+reviewed ZIP only if the release-manifest asset is absent. An invalid or
+tampered manifest never falls back.
 
 An optional `runtimeManifest` member in a launcher-bundled reviewed release
 certification authorizes one exact `stfc-runtime-manifest.json` companion by
-file name, size, and SHA-256. It composes with that certification's existing
-DLL, version, repository, tag, source-commit, provider, channel, and runtime
-distribution binding. The mod's schema-v1 release manifest remains
-discovery/integrity metadata (`manifestAuthenticity.scheme: none`) and cannot
-activate runtime capabilities on its own. A new producer release therefore
-remains base-only until its exact DLL/JSON pair is deliberately reviewed and
-the bundled certification is updated.
+file name, size, and SHA-256. When present in the compatibility ZIP, the archive
+must contain exactly the certified root DLL and that certified root runtime
+manifest; a missing, changed, duplicate, nested, or additional entry fails
+closed. The separately downloaded runtime-manifest asset must match the same
+certification. These checks compose with the DLL, version, repository, tag,
+source-commit, provider, channel, and runtime-distribution binding. The mod's
+schema-v1 release manifest cannot activate runtime capabilities on its own. A
+new producer release therefore remains unavailable until its exact DLL/JSON
+pair and container are deliberately reviewed and the bundled certification is
+updated.
 
 `providers/known-windows-artifacts.v1.json` separately recognizes reviewed
 stable and dev DLL hashes for local provenance display. The dev entry is
@@ -86,11 +92,11 @@ The upstream provenance contract will supersede this shim; no publisher,
 configuration schema, runtime manifest, withdrawal policy, or migration
 compatibility is inferred from the allowlist.
 
-Manual observation recorded 2026-08-02:
+Manual observation refreshed 2026-08-13:
 
 | Track | Immutable source | Download/container SHA-256 | `version.dll` SHA-256 |
 |---|---|---|---|
-| Guffawaffle stable 2.1.0-guffa.8 | tag commit `f93e0fcf87622448fdfd609d6835ffd820026278` | release ZIP `D164B78D3EF9AD43A8ACC6485507C40B2F7359EAF3A61814AD46A2C69779A9F4` | `6D0E32E0D431144B75BB8632B7A3972BEDBEAF2D30019E66397D82A55B535BA9` |
+| Guffawaffle stable 2.1.0-guffa.9 | signed merge commit `5b5919cfb59dbe736be775adf7076b8f525bc067` | two-file release ZIP `4D978DDE0F855C6DCD894BECB34D4BE690F4CF00918398BB237B4AFD2C78E9D4` | `FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A` |
 | NetniV stable 1.1.4 | tag commit `d912611fa1eca49fc54f363bdf8377dfebf8def0` | release ZIP `EDC67ED72E4C942B08AB81D92D23B416F80E250CE5DB151FC4B7781C174D468C` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` |
 | NetniV dev 1.1.5.1 | successful Actions run `30677057536` at `238004460c4bb93aa717e47c41089fe8b71c4cf9` | expiring Actions artifact `7DD716E85643F489A74E463A4A3B8604087338D3ED46E79F24F2FD439FA74732` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` |
 

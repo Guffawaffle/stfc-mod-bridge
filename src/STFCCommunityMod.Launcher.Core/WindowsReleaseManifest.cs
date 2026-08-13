@@ -435,13 +435,18 @@ public static partial class WindowsReleaseSelectionPolicy
         ArgumentNullException.ThrowIfNull(certification);
         var reviewed = certification.RuntimeManifest
             ?? throw new InvalidDataException("The launcher-reviewed release does not authorize a runtime manifest.");
-        if (manifest.Tag != certification.Tag
+        var expectedDllUri = new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{Uri.EscapeDataString(certification.Tag)}/{Uri.EscapeDataString(certification.PayloadFileName)}");
+        if (manifest.ReleaseVersion != certification.ReleaseVersion
+            || manifest.Tag != certification.Tag
+            || manifest.Channel != certification.ChannelId
             || manifest.Source.Repository != certification.Repository
             || manifest.Source.TargetCommit != certification.SourceCommit
+            || dll.DownloadUri != expectedDllUri
             || dll.FileName != certification.PayloadFileName
             || dll.Size != certification.PayloadSize
-            || !string.Equals(dll.Sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase)
-            || dll.ExpectedVersion != certification.PayloadVersion)
+            || !string.Equals(dll.Sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("The discovered DLL does not match the launcher-reviewed pair certification.");
         }
