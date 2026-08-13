@@ -14,6 +14,7 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 {
     internal static readonly TimeSpan RefreshActionStatusLifetime = TimeSpan.FromSeconds(3);
+    internal static readonly TimeSpan ModActionStatusLifetime = TimeSpan.FromSeconds(3);
 
     private readonly LauncherEnvironmentProbe environmentProbe;
     private readonly IModManagementCoordinator modManagementCoordinator;
@@ -44,6 +45,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private Func<LauncherActivationPlan>? currentActivationPlan;
     private Func<LauncherBattleFeatureSnapshot>? currentBattleFeatures;
     private readonly DispatcherTimer refreshActionStatusTimer;
+    private readonly DispatcherTimer modActionStatusTimer;
     private bool isDisposed;
 
     internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator { get; private set; }
@@ -86,6 +88,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             Interval = RefreshActionStatusLifetime,
         };
         refreshActionStatusTimer.Tick += RefreshActionStatusTimer_Tick;
+        modActionStatusTimer = new(DispatcherPriority.Background)
+        {
+            Interval = ModActionStatusLifetime,
+        };
+        modActionStatusTimer.Tick += ModActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
@@ -128,6 +135,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         isDisposed = true;
         refreshActionStatusTimer.Stop();
         refreshActionStatusTimer.Tick -= RefreshActionStatusTimer_Tick;
+        modActionStatusTimer.Stop();
+        modActionStatusTimer.Tick -= ModActionStatusTimer_Tick;
         actionFeedback.Refresh.PropertyChanged -= RefreshActionState_PropertyChanged;
         actionFeedback.Mod.PropertyChanged -= ModActionState_PropertyChanged;
         actionFeedback.Launch.PropertyChanged -= LaunchActionState_PropertyChanged;
@@ -1305,6 +1314,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         _ = sender;
         switch (e.PropertyName)
         {
+            case nameof(ObservableActionState.Status):
+            case nameof(ObservableActionState.IsTransientFeedback):
+                UpdateModActionStatusLifetime();
+                break;
             case nameof(ObservableActionState.IsWorking):
                 OnPropertyChanged(nameof(IsModOperationInProgress));
                 OnPropertyChanged(nameof(ModActionLabel));
@@ -1331,6 +1344,32 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
                 break;
         }
+    }
+
+    private void UpdateModActionStatusLifetime()
+    {
+        modActionStatusTimer.Stop();
+        if (ShouldAutoClearModStatus(actionFeedback.Mod))
+        {
+            modActionStatusTimer.Start();
+        }
+    }
+
+    private void ModActionStatusTimer_Tick(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        modActionStatusTimer.Stop();
+        actionFeedback.Mod.ClearStatus();
+    }
+
+    internal static bool ShouldAutoClearModStatus(ObservableActionState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.IsTransientFeedback
+            && state.Status is (
+                ObservableActionStatus.CompletedChanged
+                or ObservableActionStatus.CompletedUnchanged);
     }
 
     private void LauncherUpdateActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)

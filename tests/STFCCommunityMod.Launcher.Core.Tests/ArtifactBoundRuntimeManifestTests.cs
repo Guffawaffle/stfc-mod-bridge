@@ -176,6 +176,9 @@ public sealed class ArtifactBoundRuntimeManifestTests
             ExistingArtifactPolicy.Reject);
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, installed.State, installed.Message);
+        Assert.AreEqual("Community Mod installed successfully.", installed.Message);
+        Assert.IsFalse(installed.Message.Contains("SHA-256", StringComparison.Ordinal));
+        Assert.IsFalse(installed.Message.Contains("software safety", StringComparison.OrdinalIgnoreCase));
         Assert.IsNotNull(installed.RuntimeActivation);
         CollectionAssert.AreEqual(DllBytes, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
         CollectionAssert.AreEqual(
