@@ -81,19 +81,36 @@ public sealed class ObservableActionStateTests
     [TestMethod]
     public void SuccessfulModResultFeedbackUsesBriefLifetimeWhileFailuresRemainPersistent()
     {
+        var channels = new LauncherActionFeedbackChannels();
         Assert.AreEqual(
             TimeSpan.FromSeconds(3),
             MainWindowViewModel.ModActionStatusLifetime);
-        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(
-            ObservableActionStatus.CompletedChanged));
-        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(
-            ObservableActionStatus.CompletedUnchanged));
-        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
-            ObservableActionStatus.Failed));
-        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
-            ObservableActionStatus.Unavailable));
-        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
-            ObservableActionStatus.Working));
+
+        channels.Mod.Complete(true, "Community mod 2.1.0 is ready for confirmation.");
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(channels.Mod));
+
+        channels.Mod.Complete(false, "Close Star Trek Fleet Command before updating.");
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(channels.Mod));
+
+        channels.CompleteModDeployment(
+            new(
+                ModDeploymentResultState.Succeeded,
+                "Community Mod installed successfully.",
+                Changed: true));
+        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(channels.Mod));
+
+        channels.CompleteModDeployment(
+            new(
+                ModDeploymentResultState.Succeeded,
+                "No incomplete mod transaction was found.",
+                Changed: false));
+        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(channels.Mod));
+
+        channels.CompleteModDeployment(
+            new(
+                ModDeploymentResultState.RecoveryRequired,
+                "Recovery is required."));
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(channels.Mod));
     }
 
     [TestMethod]

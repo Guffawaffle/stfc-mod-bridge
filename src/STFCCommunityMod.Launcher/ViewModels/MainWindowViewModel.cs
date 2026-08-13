@@ -1315,6 +1315,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         switch (e.PropertyName)
         {
             case nameof(ObservableActionState.Status):
+            case nameof(ObservableActionState.IsTransientFeedback):
                 UpdateModActionStatusLifetime();
                 break;
             case nameof(ObservableActionState.IsWorking):
@@ -1348,7 +1349,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void UpdateModActionStatusLifetime()
     {
         modActionStatusTimer.Stop();
-        if (ShouldAutoClearModStatus(actionFeedback.Mod.Status))
+        if (ShouldAutoClearModStatus(actionFeedback.Mod))
         {
             modActionStatusTimer.Start();
         }
@@ -1362,9 +1363,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         actionFeedback.Mod.ClearStatus();
     }
 
-    internal static bool ShouldAutoClearModStatus(ObservableActionStatus status) =>
-        status is ObservableActionStatus.CompletedChanged
-            or ObservableActionStatus.CompletedUnchanged;
+    internal static bool ShouldAutoClearModStatus(ObservableActionState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.IsTransientFeedback
+            && state.Status is (
+                ObservableActionStatus.CompletedChanged
+                or ObservableActionStatus.CompletedUnchanged);
+    }
 
     private void LauncherUpdateActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

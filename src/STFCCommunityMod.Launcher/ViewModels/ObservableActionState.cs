@@ -62,7 +62,7 @@ public sealed class LauncherActionFeedbackChannels
         ArgumentNullException.ThrowIfNull(result);
         if (result.IsSuccess)
         {
-            Mod.Complete(result.Changed, result.Message);
+            Mod.CompleteTransient(result.Changed, result.Message);
         }
         else
         {
@@ -137,6 +137,7 @@ public sealed class ObservableActionState : INotifyPropertyChanged
     private ObservableActionStatus status = ObservableActionStatus.Idle;
     private string statusText = string.Empty;
     private bool isCommandAvailable = true;
+    private bool isTransientFeedback;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -151,6 +152,8 @@ public sealed class ObservableActionState : INotifyPropertyChanged
     public bool IsWorking => status == ObservableActionStatus.Working;
 
     public bool IsCommandAvailable => isCommandAvailable;
+
+    public bool IsTransientFeedback => isTransientFeedback;
 
     public bool TryBegin(string acceptedMessage)
     {
@@ -167,6 +170,12 @@ public sealed class ObservableActionState : INotifyPropertyChanged
         SetStatus(
             changed ? ObservableActionStatus.CompletedChanged : ObservableActionStatus.CompletedUnchanged,
             message);
+
+    public void CompleteTransient(bool changed, string message) =>
+        SetStatus(
+            changed ? ObservableActionStatus.CompletedChanged : ObservableActionStatus.CompletedUnchanged,
+            message,
+            transientFeedback: true);
 
     public void Fail(string message) =>
         SetStatus(ObservableActionStatus.Failed, message);
@@ -200,20 +209,28 @@ public sealed class ObservableActionState : INotifyPropertyChanged
         }
     }
 
-    private void SetStatus(ObservableActionStatus nextStatus, string message)
+    private void SetStatus(
+        ObservableActionStatus nextStatus,
+        string message,
+        bool transientFeedback = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message, nameof(message));
-        SetStatusCore(nextStatus, message);
+        SetStatusCore(nextStatus, message, transientFeedback);
     }
 
-    private void SetStatusCore(ObservableActionStatus nextStatus, string message)
+    private void SetStatusCore(
+        ObservableActionStatus nextStatus,
+        string message,
+        bool transientFeedback = false)
     {
         var wasWorking = IsWorking;
         var hadStatus = HasStatus;
         var statusChanged = status != nextStatus;
         var textChanged = !string.Equals(statusText, message, StringComparison.Ordinal);
+        var transientFeedbackChanged = isTransientFeedback != transientFeedback;
         status = nextStatus;
         statusText = message;
+        isTransientFeedback = transientFeedback;
         if (statusChanged)
         {
             OnPropertyChanged(nameof(Status));
@@ -230,6 +247,10 @@ public sealed class ObservableActionState : INotifyPropertyChanged
         if (hadStatus != HasStatus)
         {
             OnPropertyChanged(nameof(HasStatus));
+        }
+        if (transientFeedbackChanged)
+        {
+            OnPropertyChanged(nameof(IsTransientFeedback));
         }
     }
 
