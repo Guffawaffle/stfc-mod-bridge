@@ -24,11 +24,11 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         var dev = Load("dev", "1.1.5.1", DevCommit);
 
         Assert.AreEqual("netniv.configuration.stable-1.1.4", stable.Identity.CatalogId);
-        Assert.AreEqual(new Version(1, 1, 4, 2), stable.Identity.CatalogVersion);
+        Assert.AreEqual(new Version(1, 1, 4, 3), stable.Identity.CatalogVersion);
         Assert.AreEqual(StableCommit, stable.Identity.SourceCommit);
         Assert.AreEqual(203, stable.Settings.Count);
         Assert.AreEqual("netniv.configuration.dev-1.1.5.1", dev.Identity.CatalogId);
-        Assert.AreEqual(new Version(1, 1, 5, 2), dev.Identity.CatalogVersion);
+        Assert.AreEqual(new Version(1, 1, 5, 3), dev.Identity.CatalogVersion);
         Assert.AreEqual(DevCommit, dev.Identity.SourceCommit);
         Assert.AreEqual(206, dev.Settings.Count);
 
@@ -110,6 +110,22 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         AssertPresentationRejected(
             settings => settings[0]!["path"] = "ui.not_a_reviewed_setting",
             "is not in the shared catalog");
+    }
+
+    [TestMethod]
+    public void ReviewedPresentationRejectsStaleRevisionEntries()
+    {
+        AssertSchemaSetRejected(
+            root => StableRevision(root)["presentationSettingRemovals"] = new JsonArray(),
+            "not materialized as directly player-editable");
+        AssertSchemaSetRejected(
+            root => StableRevision(root)["settingOverrides"]!.AsArray().Add(
+                new JsonObject
+                {
+                    ["path"] = "buffs.use_out_of_dock_power",
+                    ["runtimeStatus"] = "ignored",
+                }),
+            "not materialized as directly player-editable");
     }
 
     [TestMethod]
@@ -221,6 +237,22 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
         var settings = root["presentation"]!["settings"]!.AsArray();
         mutate(settings);
+        AssertSchemaSetRejected(root, expectedMessage);
+    }
+
+    private static void AssertSchemaSetRejected(
+        Action<JsonObject> mutate,
+        string expectedMessage)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        mutate(root);
+        AssertSchemaSetRejected(root, expectedMessage);
+    }
+
+    private static void AssertSchemaSetRejected(
+        JsonObject root,
+        string expectedMessage)
+    {
         using var stream = new MemoryStream(
             System.Text.Encoding.UTF8.GetBytes(root.ToJsonString()));
 
@@ -231,6 +263,11 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
 
         StringAssert.Contains(exception.Message, expectedMessage);
     }
+
+    private static JsonObject StableRevision(JsonObject root) =>
+        root["revisions"]!.AsArray()
+            .Select(revision => revision!.AsObject())
+            .Single(revision => revision["trackId"]!.GetValue<string>() == "stable");
 
     private static void AssertSetting(
         LauncherConfigurationCatalog catalog,

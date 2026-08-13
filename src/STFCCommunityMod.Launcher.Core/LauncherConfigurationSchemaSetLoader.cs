@@ -151,10 +151,12 @@ public static class LauncherConfigurationSchemaSetLoader
             "releaseVersion",
             "sourceCommit",
             "removeSettings",
+            "presentationSettingRemovals",
             "settingOverrides");
 
         ApplyRemovals(settings, selected);
         ApplyOverrides(settings, selected);
+        presentation = ApplyPresentationRemovals(presentation, selected);
         ValidateMaterializedPresentation(settings, presentation);
 
         var legacyRoot = new JsonObject
@@ -270,9 +272,22 @@ public static class LauncherConfigurationSchemaSetLoader
             return;
         }
 
-        var missing = settings.Values
+        var directlyEditable = settings.Values
             .Where(IsDirectlyEditable)
             .Select(setting => setting["path"]!.GetValue<string>())
+            .ToHashSet(StringComparer.Ordinal);
+        var stale = presentation.Settings.Keys
+            .Where(path => !directlyEditable.Contains(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (stale.Length > 0)
+        {
+            throw Invalid(
+                "Reviewed presentation contains settings that are not materialized as directly player-editable: "
+                + string.Join(", ", stale));
+        }
+
+        var missing = directlyEditable
             .Where(path => !presentation.Settings.ContainsKey(path))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
@@ -282,6 +297,48 @@ public static class LauncherConfigurationSchemaSetLoader
                 "Reviewed presentation is missing directly player-editable settings: "
                 + string.Join(", ", missing));
         }
+    }
+
+    private static ReviewedPresentationProfile? ApplyPresentationRemovals(
+        ReviewedPresentationProfile? presentation,
+        JsonElement revision)
+    {
+        var removals = ReadArray(
+            revision,
+            "presentationSettingRemovals",
+            "catalog revision");
+        if (presentation is null)
+        {
+            if (removals.GetArrayLength() > 0)
+            {
+                throw Invalid(
+                    "Catalog revision presentation removals require a schema-set presentation profile.");
+            }
+            return null;
+        }
+
+        var settings = presentation.Settings.ToDictionary(
+            item => item.Key,
+            item => item.Value,
+            StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var removal in removals.EnumerateArray())
+        {
+            if (removal.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(removal.GetString()))
+            {
+                throw Invalid(
+                    "Catalog revision presentation removals must be non-empty setting paths.");
+            }
+            var path = removal.GetString()!;
+            if (!seen.Add(path) || !settings.Remove(path))
+            {
+                throw Invalid(
+                    $"Catalog revision presentation removal '{path}' is duplicated or unknown.");
+            }
+        }
+
+        return new(presentation.SettingsLayoutId, settings);
     }
 
     private static bool IsDirectlyEditable(JsonObject setting)

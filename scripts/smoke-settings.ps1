@@ -584,7 +584,13 @@ token = "disposable-foxtrot-secret"
         $persistedProviderSelection.releaseChannelId -cne "stable") {
       throw "The disposable provider selection was not persisted exactly before launch."
     }
-    Write-Host "Using disposable Sync fixture: $disposableGameDirectory"
+    $fixtureName = if ($UseDisposableNetnivFixture) {
+      "NetniV Settings"
+    }
+    else {
+      "Guffawaffle Data Sync"
+    }
+    Write-Host "Using disposable $fixtureName fixture: $disposableGameDirectory"
     Write-Host "Using explicit $($providerSelectionDocument.providerId) source for the provider-owned Settings smoke."
   }
 

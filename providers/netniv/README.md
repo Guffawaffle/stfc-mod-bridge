@@ -25,10 +25,12 @@ When reviewing a new NetniV release:
 2. Reconcile runtime settings and deltas against that commit's source files.
 3. Reconcile player-facing presentation against that commit's example/config
    documentation.
-4. Bump the catalog revision and keep every directly editable shared setting
-   covered exactly once. Unknown, duplicate, hidden, and missing presentation
-   paths are rejected by the loader.
-5. Preserve the exact-applicability, semantic-layout, placeholder-copy,
+4. Record `presentationSettingRemovals` for reviewed entries absent or no longer
+   directly editable in that exact revision. The loader rejects every other
+   stale, unknown, duplicate, hidden, or missing presentation path.
+5. Bump the catalog revision and keep every materialized directly editable
+   setting covered exactly once.
+6. Preserve the exact-applicability, semantic-layout, placeholder-copy,
    accessibility, family, projection, and packaged UI Automation tests.
 
 Stable `1.1.4` at `d912611fa1eca49fc54f363bdf8377dfebf8def0`

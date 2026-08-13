@@ -3448,13 +3448,16 @@
   "revisions": [
     {
       "catalogId": "netniv.configuration.stable-1.1.4",
-      "catalogVersion": "1.1.4.2",
+      "catalogVersion": "1.1.4.3",
       "trackId": "stable",
       "releaseVersion": "1.1.4",
       "sourceCommit": "d912611fa1eca49fc54f363bdf8377dfebf8def0",
       "removeSettings": [
         "patches.cargoformathooks",
         "patches.officersorthooks",
+        "ui.cargo_significant_decimals"
+      ],
+      "presentationSettingRemovals": [
         "ui.cargo_significant_decimals"
       ],
       "settingOverrides": [
@@ -3467,11 +3470,12 @@
     },
     {
       "catalogId": "netniv.configuration.dev-1.1.5.1",
-      "catalogVersion": "1.1.5.2",
+      "catalogVersion": "1.1.5.3",
       "trackId": "dev",
       "releaseVersion": "1.1.5.1",
       "sourceCommit": "238004460c4bb93aa717e47c41089fe8b71c4cf9",
       "removeSettings": [],
+      "presentationSettingRemovals": [],
       "settingOverrides": [
         {
           "path": "ui.extend_donation_max",
