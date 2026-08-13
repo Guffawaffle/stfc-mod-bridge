@@ -63,6 +63,33 @@ jobs:
           "version=$releaseVersion" >> $env:GITHUB_OUTPUT
           "commit=$targetCommit" >> $env:GITHUB_OUTPUT
 
+      - name: Validate immutable release classification
+        shell: pwsh
+        run: |
+          $releaseJsonPath = Join-Path $env:RUNNER_TEMP "published-release.json"
+          & gh api `
+            "repos/$env:RELEASE_REPOSITORY/releases/tags/$env:RELEASE_TAG" `
+            > $releaseJsonPath
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not retrieve the published GitHub release as data."
+          }
+          $release = Get-Content -Raw -LiteralPath $releaseJsonPath |
+            ConvertFrom-Json -ErrorAction Stop
+          if ($release.tag_name -cne $env:RELEASE_TAG `
+              -or $release.draft -ne $false `
+              -or $release.immutable -ne $true `
+              -or $null -eq $release.body `
+              -or -not ($release.body -is [string])) {
+            throw "The published GitHub release identity, immutability, or body is invalid."
+          }
+          $releaseBodyPath = Join-Path $env:RUNNER_TEMP "published-release-body.md"
+          [System.IO.File]::WriteAllText(
+            $releaseBodyPath,
+            [string]$release.body,
+            [System.Text.UTF8Encoding]::new($false))
+          & ./scripts/verify-release-classification.ps1 `
+            -ReleaseBodyPath $releaseBodyPath
+
       - name: Download and verify published release subjects
         shell: pwsh
         env:

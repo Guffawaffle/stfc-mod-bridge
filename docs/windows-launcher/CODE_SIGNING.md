@@ -76,7 +76,10 @@ locked restore/test -> unsigned build -> approve protected environment -> OIDC
       -> regenerate verifier SBOM -> vulnerability/malware gates -> sign launcher/updater
       -> generate final payload SBOM
       -> package MSIX -> sign MSIX -> verify package, pairing, and inner signatures
-      -> hash -> attest final subjects -> transfer -> reverify attestations -> publish
+      -> hash -> attest final subjects -> transfer -> reverify attestations -> stage draft
+      -> maintainer classifies and publishes immutable release
+      -> validate classification -> reverify published subjects -> GCP publish
+      -> verify final public descriptor
 ```
 
 The verifier is signed first because Authenticode changes its bytes; the final
@@ -164,8 +167,11 @@ official attestation Action pinned to a reviewed commit. The draft-staging job
 has no OIDC/signing authority and refuses to stage transferred bytes that do
 not verify against the release bundle, repository, workflow, tag, and commit.
 After a maintainer publishes the immutable GitHub release, a separately
-protected keyless GCP job repeats attestation verification before advancing the
-App Installer channel.
+protected keyless GCP job first validates the immutable release classification,
+then repeats attestation verification before obtaining GCP credentials and
+advancing the App Installer channel. The job verifies the public descriptor
+after replacing the channel pointer; a failed final check requires recovery and
+does not imply the prior pointer is still active.
 
 ## Release manifest boundary
 

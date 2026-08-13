@@ -23,7 +23,7 @@ body:
     id: version
     attributes:
       label: Exact Mod Bridge version
-      placeholder: v0.1.0-rc.4
+      placeholder: vX.Y.Z-rc.N
     validations:
       required: true
   - type: textarea

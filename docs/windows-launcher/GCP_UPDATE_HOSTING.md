@@ -81,12 +81,15 @@ inspects both layers, attests the exact release subjects, and stages a draft
 GitHub release. A maintainer qualifies and publishes that immutable release.
 Only then does `.github/workflows/publish-update-channel.yml`:
 
-1. download the published MSIX and descriptor;
-2. verify their tag-workflow attestations against the exact tag commit;
-3. obtain a short-lived GCP credential through WIF;
-4. create or verify the immutable package object;
-5. verify the bytes through the public endpoint; and
-6. advance and re-read the channel descriptor.
+1. retrieve the immutable release body as data and validate its qualification
+   classification;
+2. download the published MSIX and descriptor;
+3. verify their tag-workflow attestations against the exact tag commit;
+4. obtain a short-lived GCP credential through WIF;
+5. create or verify the immutable package object;
+6. verify the package bytes through the public endpoint;
+7. advance the channel descriptor; and
+8. verify the final public descriptor bytes, MIME type, and hash.
 
 Release, attestation, immutable-package, and downgrade checks all pass before
 the channel object is replaced. The final public byte check necessarily occurs

@@ -710,6 +710,11 @@ public sealed partial class ReleaseTrustAutomationTests
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
         var testing = File.ReadAllText(Path.Combine(root, "TESTING.md"));
         var security = File.ReadAllText(Path.Combine(root, "SECURITY.md"));
+        var currentAuthority = File.ReadAllText(Path.Combine(
+            root,
+            "docs",
+            "windows-launcher",
+            "CURRENT_AUTHORITY.md"));
         var issueTemplateRoot = Path.Combine(root, ".github", "ISSUE_TEMPLATE");
         var bugReport = File.ReadAllText(Path.Combine(issueTemplateRoot, "bug-report.yml"));
         var usabilityReport = File.ReadAllText(Path.Combine(issueTemplateRoot, "usability-feedback.yml"));
@@ -722,14 +727,20 @@ public sealed partial class ReleaseTrustAutomationTests
             StringAssert.Contains(document, "Public canary");
         }
 
-        StringAssert.Contains(readme, "releases/tag/v0.1.0-rc.4");
+        StringAssert.Contains(readme, "stfc-mod-bridge/releases");
+        StringAssert.Contains(readme, "issues/30");
+        Assert.IsFalse(readme.Contains("stfc-mod-bridge/releases/tag/", StringComparison.Ordinal));
+        StringAssert.Contains(currentAuthority, "issue #30");
+        StringAssert.Contains(currentAuthority, "Version order");
         StringAssert.Contains(testing, "Closed-alpha approved");
         StringAssert.Contains(testing, "machine-consumed release inputs");
         StringAssert.Contains(testing, "never uploaded");
         StringAssert.Contains(security, "Public canary");
         StringAssert.Contains(security, "/security/advisories/new");
         StringAssert.Contains(bugReport, "Do not include tokens");
+        StringAssert.Contains(bugReport, "placeholder: vX.Y.Z-rc.N");
         StringAssert.Contains(usabilityReport, "Do not include credentials");
+        StringAssert.Contains(usabilityReport, "placeholder: vX.Y.Z-rc.N");
     }
 
     [TestMethod]
@@ -797,6 +808,67 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(publisher, "$expectedDescriptorHash");
         StringAssert.Contains(publisher, "published.appinstaller");
         Assert.IsFalse(publisher.Contains("$publishedDescriptor.Content", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task PublishedReleaseClassificationFailsClosedBeforeGcpAuthentication()
+    {
+        var workflow = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            ".github",
+            "workflows",
+            "publish-update-channel.yml"));
+        var classification = workflow.IndexOf(
+            "- name: Validate immutable release classification",
+            StringComparison.Ordinal);
+        var download = workflow.IndexOf(
+            "- name: Download and verify published release subjects",
+            StringComparison.Ordinal);
+        var oidc = workflow.IndexOf(
+            "- name: Authenticate to Google Cloud with GitHub OIDC",
+            StringComparison.Ordinal);
+
+        Assert.IsTrue(classification >= 0);
+        Assert.IsTrue(download > classification);
+        Assert.IsTrue(oidc > download);
+        StringAssert.Contains(workflow, "ConvertFrom-Json -ErrorAction Stop");
+        StringAssert.Contains(workflow, "$release.immutable -ne $true");
+        StringAssert.Contains(workflow, "./scripts/verify-release-classification.ps1");
+        Assert.IsFalse(workflow.Contains("github.event.release.body", StringComparison.Ordinal));
+
+        var hostileMarkdown = """
+            > **Closed-alpha approved.**
+
+            ```powershell
+            $(throw 'release text executed')
+            `whoami`
+            ```
+            """;
+        Assert.AreEqual(0, (await RunReleaseClassificationValidatorAsync(hostileMarkdown)).ExitCode);
+        Assert.AreEqual(
+            0,
+            (await RunReleaseClassificationValidatorAsync("""
+                > **Public canary — qualification is still in progress.**
+
+                ## Qualification still open
+
+                - Complete the clean-machine lifecycle.
+                """)).ExitCode);
+
+        foreach (var rejected in new[]
+                 {
+                     "No classification is present.",
+                     "Closed-alpha approved\n\nClosed-alpha approved",
+                     "Closed-alpha approved\n\nPublic canary — qualification is still in progress",
+                     "Qualification draft\n\nClosed-alpha approved",
+                     "Public canary — qualification is still in progress\n\n## Qualification still open",
+                     "```text\nClosed-alpha approved\n```",
+                     "    Closed-alpha approved",
+                 })
+        {
+            var result = await RunReleaseClassificationValidatorAsync(rejected);
+            Assert.AreNotEqual(0, result.ExitCode, $"Unexpectedly accepted release body:\n{rejected}");
+        }
     }
 
     [TestMethod]
@@ -1229,6 +1301,48 @@ public sealed partial class ReleaseTrustAutomationTests
             Assert.AreNotEqual(0, process.ExitCode, result);
         }
         return result;
+    }
+
+    private static async Task<(int ExitCode, string Output)> RunReleaseClassificationValidatorAsync(
+        string releaseBody)
+    {
+        var temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "stfc-release-classification-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporaryRoot);
+        try
+        {
+            var bodyPath = Path.Combine(temporaryRoot, "release-notes.md");
+            await File.WriteAllTextAsync(bodyPath, releaseBody);
+            var startInfo = new ProcessStartInfo("pwsh")
+            {
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoLogo",
+                         "-NoProfile",
+                         "-File",
+                         Path.Combine(RepositoryRoot(), "scripts", "verify-release-classification.ps1"),
+                         "-ReleaseBodyPath",
+                         bodyPath,
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+            using var process = Process.Start(startInfo)!;
+            var standardOutput = await process.StandardOutput.ReadToEndAsync();
+            var standardError = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            return (process.ExitCode, standardOutput + standardError);
+        }
+        finally
+        {
+            Directory.Delete(temporaryRoot, recursive: true);
+        }
     }
 
     private static string RepositoryRoot()

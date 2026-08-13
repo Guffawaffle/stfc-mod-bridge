@@ -90,7 +90,8 @@ approval, runner image, Defender versions, manifest, SBOMs, hashes, and
 For example, after preparing and reviewing a final notes file:
 
 ```powershell
-gh release edit v0.1.0-rc.4 `
+$releaseTag = "<qualified draft tag>"
+gh release edit $releaseTag `
   --repo Guffawaffle/stfc-mod-bridge `
   --notes-file ./release-notes.md `
   --draft=false `
@@ -105,6 +106,17 @@ describe the MSIX, ZIP, manifest, SBOMs, and attestation bundle as
 machine-consumed inputs or a standalone fallback, link the
 qualification evidence, state the chosen classification and open checks, and
 retain the provenance-versus-safety limitation.
+
+Publication triggers the separate update-channel workflow. Before that job
+requests a GCP OIDC credential, it retrieves the immutable release body as JSON
+data and requires exactly one allowed classification, no `Qualification draft`
+placeholder, and—when classified as a public canary—an enumerated
+`Qualification still open` section. It then downloads and verifies the
+published MSIX and App Installer attestations. Only after those gates does it
+authenticate to GCP, create or confirm the immutable versioned package, and
+replace the channel descriptor. The final public descriptor hash/MIME check
+runs after pointer replacement; a failure is an incident requiring recovery,
+not proof that the prior descriptor remained active.
 
 ## Reviewed network and tool inputs
 
