@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
+  "artifactClassification": {
+    "status": "historical",
+    "capturedRepository": "Guffawaffle/stfc-mod",
+    "currentRepository": "Guffawaffle/stfc-mod-bridge",
+    "currentAuthority": "docs/windows-launcher/CURRENT_AUTHORITY.md",
+    "executionDisposition": "do-not-execute"
+  },
   "repository": "Guffawaffle/stfc-mod",
   "epicIssue": 182,
   "milestone": "Windows Launcher Parity+ v1",

@@ -1,6 +1,15 @@
 # WL-001 Windows Launcher Architecture Decision
 
-Status: architecture accepted; release validation carried forward
+Status: historical accepted spike evidence; current distribution details are
+superseded by the standalone product contract
+
+> [!IMPORTANT]
+> This document records the original WL-001 decision in the former
+> `Guffawaffle/stfc-mod/windows-launcher` workspace. Preserve its measurements,
+> branch, issue, and rejected alternatives as historical evidence. Do not use
+> its old paths, LCARS preview, bootstrapper-first topology, or remaining-work
+> list as current instructions. See [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md)
+> and [CONTRACT.md](CONTRACT.md).
 
 Issue: `Guffawaffle/stfc-mod#172`
 
@@ -10,10 +19,12 @@ Base: `be8d75a7613dae2b79cafe504aef500086b3e4e2`
 
 ## Decision
 
-Proceed with a self-contained .NET 8 WPF launcher targeting Windows x64.
+The spike accepted a self-contained .NET 8 WPF launcher targeting Windows x64.
 Keep launcher policy and platform services in a UI-independent core assembly.
-Distribute the first production launcher through a per-user bootstrapper, with
-an unpackaged ZIP retained as a transparent recovery and CI artifact.
+It originally selected a per-user bootstrapper with an unpackaged ZIP. That
+distribution detail is superseded: the current installed product uses signed
+MSIX/App Installer, and the signed ZIP is an explicitly labeled standalone
+fallback.
 
 The architecture direction was accepted on 2026-07-27 after the self-contained
 preview was launched and reviewed. Remaining clean-machine, DPI, keyboard,
@@ -143,7 +154,11 @@ replacement can strand the launcher.
 Rejected because transaction, discovery, redaction, and process policies must
 be deterministic and testable without WPF.
 
-## Release evidence carried forward
+## Historical release evidence carried forward
+
+The following was the spike's carry-forward list. Issue #30 is the current
+candidate-specific qualification authority; completion must not be inferred
+from this historical list.
 
 - Confirm the self-contained artifact starts on a machine without a separately
   installed .NET runtime, or in an equivalent clean Windows sandbox.

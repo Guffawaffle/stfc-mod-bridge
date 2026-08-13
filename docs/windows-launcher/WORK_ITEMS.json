@@ -1,7 +1,15 @@
 {
   "schemaVersion": 1,
+  "artifactClassification": {
+    "status": "historical",
+    "capturedRepository": "Guffawaffle/stfc-mod",
+    "currentRepository": "Guffawaffle/stfc-mod-bridge",
+    "currentAuthority": "docs/windows-launcher/CURRENT_AUTHORITY.md",
+    "executionDisposition": "do-not-execute"
+  },
   "project": "windows-launcher-parity-plus",
-  "status": "wl-004-active",
+  "status": "historical-superseded",
+  "capturedStatus": "wl-004-active",
   "repository": "Guffawaffle/stfc-mod",
   "baselineCommit": "f8b8998e3c0aef752077b915d955813631aaadd4",
   "defaults": {
