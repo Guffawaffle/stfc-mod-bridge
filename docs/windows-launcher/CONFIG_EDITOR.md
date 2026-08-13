@@ -48,23 +48,29 @@ fail closed.
 
 ## Accepted modular architecture boundary
 
-Startup resolves behavior before the configuration workspace or WPF
-presentation is composed:
+Startup resolves the selected provider's exact catalog and runtime behavior
+before the configuration workspace or WPF presentation is composed:
 
 ```text
+Selected provider and reviewed release
+  -> exact ResolvedConfigurationCatalog
 RuntimeDetector
   -> immutable ActivationPlan
-  -> selected provider modules
-  -> ResolvedConfigurationCatalog
+ResolvedConfigurationCatalog + ActivationPlan
+  -> selected shared presentation modules
   -> document-scoped ConfigurationWorkspace
   -> application controllers and queries
   -> flattened visible WPF projections
 ```
 
-The activation plan selects the Guffawaffle or NetniV providers, grouped or
-alphabetical layout, and legacy or composable Data Sync implementation. It is
+Provider selection is not a runtime feature decision. Runtime activation and
+configuration-presentation maturity are separate reviewed inputs. An exact
+catalog may select the shared semantic layout even when the runtime has no
+manifest capability for Settings taxonomy; otherwise the runtime decision may
+select it, with alphabetical layout as the safe fallback. Both inputs are
 read-only diagnostic evidence after composition. Downstream models,
-controllers, and views do not repeat owner checks or branch on feature flags.
+controllers, and views do not repeat owner checks or branch on provider names
+or feature flags.
 
 `ResolvedConfigurationCatalog` is an aggregate of domain catalogs:
 
@@ -158,6 +164,12 @@ counts and opening time before physical assembly separation.
   catalogs from shared metadata plus reviewed deltas. Runtime status, feature
   gates, release identity, and full source SHA remain catalog data rather than
   WPF inference.
+- The same exact NetniV catalog owns its semantic Settings layout, labels,
+  consequence-oriented help, upstream subgroup classifications, units,
+  hotkey families, search terms, and accessibility projection. Stable `1.1.4`
+  exposes 155 directly editable settings. Missing, duplicate, unknown, or
+  incomplete presentation paths fail loading; no WPF provider branch fills
+  the gap.
 - Startup and game-process events refresh Home only. A narrow lifecycle
   controller and deterministic counter tests prevent those events from
   reloading the active Settings document; confirmed game-installation changes
@@ -285,10 +297,11 @@ shared bindings in `ConflictGroup::None` remain valid. Invalid configured
 bindings show the runtime default rather than presenting an unusable shortcut
 as active.
 
-NetniV provider selection is packaged, while NetniV schema capability remains
-unknown until a NetniV-published schema or reviewed compatibility adapter is
-available. Source-preserving tests prove provider switching and unrelated
-edits retain legacy/unknown TOML without applying the Guffawaffle catalog.
+NetniV provider selection and its exact stable `1.1.4` reviewed configuration
+catalog are packaged. That catalog includes a reviewed semantic presentation;
+NetniV's separate runtime-manifest capability remains unknown. Source-preserving
+tests prove provider switching and unrelated edits retain legacy/unknown TOML
+without applying the Guffawaffle catalog.
 
 ## Accepted destination
 

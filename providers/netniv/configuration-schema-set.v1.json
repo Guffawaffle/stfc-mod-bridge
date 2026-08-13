@@ -2302,10 +2302,1153 @@
       []
     ]
   ],
+  "presentation": {
+    "settingsLayout": "principal-catalog-settings-layout",
+    "settings": [
+      {
+        "path": "buffs.use_out_of_dock_power",
+        "label": "Show out-of-dock power while docked",
+        "help": "Always show each ship's out-of-dock power while it is docked.",
+        "group": "Power"
+      },
+      {
+        "path": "control.enable_experimental",
+        "label": "Experimental features",
+        "help": "Enable experimental features.",
+        "group": "Options"
+      },
+      {
+        "path": "control.hotkeys_enabled",
+        "label": "Hotkeys",
+        "help": "Turn all mod and Scopely hotkeys on or off.",
+        "group": "Hotkeys"
+      },
+      {
+        "path": "control.hotkeys_extended",
+        "label": "Extended hotkeys",
+        "help": "Enable the additional bookmark, cargo, navigation, and interface shortcuts.",
+        "group": "Hotkeys"
+      },
+      {
+        "path": "control.queue_enabled",
+        "label": "Action queue by default",
+        "help": "Start with the action queue enabled when the Kir'Shara artifact is available.",
+        "group": "Hotkeys"
+      },
+      {
+        "path": "control.select_timer",
+        "label": "Ship selection double-press window",
+        "help": "Double-tap window in ms for 1-8 ship select/locate. Lower = faster, higher = slower. Default 500.",
+        "group": "Options",
+        "unit": "ms"
+      },
+      {
+        "path": "control.use_scopely_hotkeys",
+        "label": "Use Scopely hotkeys",
+        "help": "Use the game's built-in shortcuts alongside the mod's hotkey controls.",
+        "group": "Hotkeys"
+      },
+      {
+        "path": "graphics.allow_cursor",
+        "label": "Allow Cursor",
+        "help": "Allow the system cursor to be replaced? (On by default)",
+        "group": "Options"
+      },
+      {
+        "path": "graphics.borderless_fullscreen",
+        "label": "Borderless Fullscreen",
+        "help": "Allow borderless full screen mode, set to false to disable.",
+        "group": "Options"
+      },
+      {
+        "path": "graphics.default_system_zoom",
+        "label": "Default System Zoom",
+        "help": "Set to 0.0 to disable custom zoom; enter system at specified zoom otherwise.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.fr_scale",
+        "label": "Far-range system scale",
+        "help": "Scale the system to prevent void beyond edges at extreme zoom. 1.0 = off. 2.0 = 2x.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.free_resize",
+        "label": "Free Resize",
+        "help": "Allow free resizing, set to false to disable.",
+        "group": "Options"
+      },
+      {
+        "path": "graphics.keyboard_zoom_speed",
+        "label": "Keyboard Zoom Speed",
+        "help": "This controls the zoom speed when using Q/E in System View, defaults to 350.",
+        "group": "Keyboard"
+      },
+      {
+        "path": "graphics.loader_enabled",
+        "label": "Loader Enabled",
+        "help": "Set to true to use the custom background + logos on the loading (login) screen.",
+        "group": "Loader"
+      },
+      {
+        "path": "graphics.loader_logo_scale",
+        "label": "Loader Logo Scale",
+        "help": "Scale multiplier for the embedded mod logo and CC logo on loading/transition screens.",
+        "group": "Loader"
+      },
+      {
+        "path": "graphics.loader_tip_enabled",
+        "label": "Loader Tip Enabled",
+        "help": "Set to true to show custom tips on the loading/transition screen.",
+        "group": "Loader"
+      },
+      {
+        "path": "graphics.loader_transition",
+        "label": "Loader Transition",
+        "help": "Set to true to use the custom background + logos on the transition screen When false, the game's default black background is used and only logos are added.",
+        "group": "Loader"
+      },
+      {
+        "path": "graphics.loader_transition_black",
+        "label": "Loader Transition Black",
+        "help": "If true, transition screen uses the game's default black background instead of the custom image. Logos are still shown. Automatically set to true when loader_transition is false.",
+        "group": "Loader"
+      },
+      {
+        "path": "graphics.show_all_resolutions",
+        "label": "Show All Resolutions",
+        "help": "To enable additional resolution options set this to true.",
+        "group": "Options"
+      },
+      {
+        "path": "graphics.system_pan_momentum_falloff",
+        "label": "System Pan Momentum Falloff",
+        "help": "Controls how quickly the momentum falls off when letting go of the mouse. Lower = quicker stop. Defaults to 0.8.",
+        "group": "Keyboard"
+      },
+      {
+        "path": "graphics.system_zoom_preset_1",
+        "label": "System Zoom Preset 1",
+        "help": "Zoom preset F1 for system view.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.system_zoom_preset_2",
+        "label": "System Zoom Preset 2",
+        "help": "Zoom preset F2 for system view.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.system_zoom_preset_3",
+        "label": "System Zoom Preset 3",
+        "help": "Zoom preset F3 for system view.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.system_zoom_preset_4",
+        "label": "System Zoom Preset 4",
+        "help": "Zoom preset F4 for system view.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.system_zoom_preset_5",
+        "label": "System Zoom Preset 5",
+        "help": "Zoom preset F5 for system view.",
+        "group": "Zoom"
+      },
+      {
+        "path": "graphics.ui_scale",
+        "label": "UI Scale",
+        "help": "This specifies the amount to scale the UI by, 1.0 being default.",
+        "group": "Display"
+      },
+      {
+        "path": "graphics.ui_scale_adjust",
+        "label": "UI scale step",
+        "help": "This specifies the amount to adjust the scale by, 0.05 being default.",
+        "group": "Display"
+      },
+      {
+        "path": "graphics.ui_scale_viewer",
+        "label": "Object viewer UI scale",
+        "help": "This specifies the amount to scale the UI Object Viewers by, 1.0 being default.",
+        "group": "Display"
+      },
+      {
+        "path": "graphics.use_presets_as_default",
+        "label": "Use Presets As Default",
+        "help": "After using a zoom preset it will be set as default zoom.",
+        "group": "Options"
+      },
+      {
+        "path": "graphics.zoom",
+        "label": "Zoom",
+        "help": "This controls the maximum zoom distance in System View. Default is 2500. Higher values increase label distance.",
+        "group": "Zoom"
+      },
+      {
+        "path": "shortcuts.action_primary",
+        "label": "Primary action",
+        "help": "Keyboard or mouse shortcut: Primary action.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.action_queue",
+        "label": "Queue action",
+        "help": "Queue the primary action when the Kir'Shara queue feature is available.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.action_queue_clear",
+        "label": "Clear queued actions",
+        "help": "Keyboard or mouse shortcut: Clear queued actions.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.action_recall",
+        "label": "Recall",
+        "help": "Keyboard or mouse shortcut: Recall.",
+        "group": "Recall & Repair"
+      },
+      {
+        "path": "shortcuts.action_recall_cancel",
+        "label": "Cancel recall",
+        "help": "Keyboard or mouse shortcut: Cancel recall.",
+        "group": "Recall & Repair"
+      },
+      {
+        "path": "shortcuts.action_repair",
+        "label": "Repair",
+        "help": "Keyboard or mouse shortcut: Repair.",
+        "group": "Recall & Repair"
+      },
+      {
+        "path": "shortcuts.action_secondary",
+        "label": "Secondary action",
+        "help": "Keyboard or mouse shortcut: Secondary action.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.action_view",
+        "label": "View action",
+        "help": "Keyboard or mouse shortcut: View action.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.focus_search",
+        "label": "Focus search",
+        "help": "Move keyboard focus to the search field in the current view.",
+        "group": "Chat Tabs & Selection"
+      },
+      {
+        "path": "shortcuts.log_debug",
+        "label": "Log Debug",
+        "help": "Keyboard or mouse shortcut: Log Debug.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.log_error",
+        "label": "Log Error",
+        "help": "Keyboard or mouse shortcut: Log Error.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.log_info",
+        "label": "Log Info",
+        "help": "Keyboard or mouse shortcut: Log Info.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.log_off",
+        "label": "Log Off",
+        "help": "Keyboard or mouse shortcut: Log Off.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.log_trace",
+        "label": "Log Trace",
+        "help": "Keyboard or mouse shortcut: Log Trace.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.log_warn",
+        "label": "Log Warn",
+        "help": "Keyboard or mouse shortcut: Log Warn.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.move_left",
+        "label": "Move Left",
+        "help": "Keyboard or mouse shortcut: Move Left.",
+        "group": "Experimental"
+      },
+      {
+        "path": "shortcuts.move_right",
+        "label": "Move Right",
+        "help": "Keyboard or mouse shortcut: Move Right.",
+        "group": "Experimental"
+      },
+      {
+        "path": "shortcuts.quit",
+        "label": "Quit",
+        "help": "Keyboard or mouse shortcut: Quit.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.select_chatalliance",
+        "label": "Select Alliance Chat",
+        "help": "Keyboard or mouse shortcut: Select Alliance Chat.",
+        "group": "Chat Tabs & Selection"
+      },
+      {
+        "path": "shortcuts.select_chatglobal",
+        "label": "Select Global Chat",
+        "help": "Keyboard or mouse shortcut: Select Global Chat.",
+        "group": "Chat Tabs & Selection"
+      },
+      {
+        "path": "shortcuts.select_chatprivate",
+        "label": "Select Private Chat",
+        "help": "Keyboard or mouse shortcut: Select Private Chat.",
+        "group": "Chat Tabs & Selection"
+      },
+      {
+        "path": "shortcuts.select_current",
+        "label": "Select Current",
+        "help": "Keyboard or mouse shortcut: Select Current.",
+        "group": "Chat Tabs & Selection"
+      },
+      {
+        "path": "shortcuts.select_ship1",
+        "label": "Select Ship 1",
+        "help": "Keyboard or mouse shortcut: Select Ship 1.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 1",
+          "memberOrder": 1
+        }
+      },
+      {
+        "path": "shortcuts.select_ship2",
+        "label": "Select Ship 2",
+        "help": "Keyboard or mouse shortcut: Select Ship 2.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 2",
+          "memberOrder": 2
+        }
+      },
+      {
+        "path": "shortcuts.select_ship3",
+        "label": "Select Ship 3",
+        "help": "Keyboard or mouse shortcut: Select Ship 3.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 3",
+          "memberOrder": 3
+        }
+      },
+      {
+        "path": "shortcuts.select_ship4",
+        "label": "Select Ship 4",
+        "help": "Keyboard or mouse shortcut: Select Ship 4.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 4",
+          "memberOrder": 4
+        }
+      },
+      {
+        "path": "shortcuts.select_ship5",
+        "label": "Select Ship 5",
+        "help": "Keyboard or mouse shortcut: Select Ship 5.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 5",
+          "memberOrder": 5
+        }
+      },
+      {
+        "path": "shortcuts.select_ship6",
+        "label": "Select Ship 6",
+        "help": "Keyboard or mouse shortcut: Select Ship 6.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 6",
+          "memberOrder": 6
+        }
+      },
+      {
+        "path": "shortcuts.select_ship7",
+        "label": "Select Ship 7",
+        "help": "Keyboard or mouse shortcut: Select Ship 7.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 7",
+          "memberOrder": 7
+        }
+      },
+      {
+        "path": "shortcuts.select_ship8",
+        "label": "Select Ship 8",
+        "help": "Keyboard or mouse shortcut: Select Ship 8.",
+        "group": "Chat Tabs & Selection",
+        "family": {
+          "id": "netniv.hotkeys.ship-selection",
+          "parentGroup": "Chat Tabs & Selection",
+          "label": "Select ships",
+          "help": "Choose the active ship, or locate it with a double press.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Ship 8",
+          "memberOrder": 8
+        }
+      },
+      {
+        "path": "shortcuts.set_hotkeys_disabled",
+        "label": "Disable hotkeys",
+        "help": "Turn off mod and Scopely hotkeys from the keyboard.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.set_hotkeys_enabled",
+        "label": "Enable hotkeys",
+        "help": "Turn on the configured hotkeys from the keyboard.",
+        "group": "Hotkeys Master Switch & Logs"
+      },
+      {
+        "path": "shortcuts.set_zoom_default",
+        "label": "Save current zoom as default",
+        "help": "Store the current system-view zoom as the default.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Default",
+          "memberOrder": 0
+        }
+      },
+      {
+        "path": "shortcuts.set_zoom_preset1",
+        "label": "Set Zoom Preset 1",
+        "help": "Keyboard or mouse shortcut: Set Zoom Preset 1.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 1",
+          "memberOrder": 1
+        }
+      },
+      {
+        "path": "shortcuts.set_zoom_preset2",
+        "label": "Set Zoom Preset 2",
+        "help": "Keyboard or mouse shortcut: Set Zoom Preset 2.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 2",
+          "memberOrder": 2
+        }
+      },
+      {
+        "path": "shortcuts.set_zoom_preset3",
+        "label": "Set Zoom Preset 3",
+        "help": "Keyboard or mouse shortcut: Set Zoom Preset 3.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 3",
+          "memberOrder": 3
+        }
+      },
+      {
+        "path": "shortcuts.set_zoom_preset4",
+        "label": "Set Zoom Preset 4",
+        "help": "Keyboard or mouse shortcut: Set Zoom Preset 4.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 4",
+          "memberOrder": 4
+        }
+      },
+      {
+        "path": "shortcuts.set_zoom_preset5",
+        "label": "Set Zoom Preset 5",
+        "help": "Keyboard or mouse shortcut: Set Zoom Preset 5.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.save-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Save zoom positions",
+          "help": "Store the current system zoom as the default or in a numbered preset.",
+          "displayOrder": 10,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 5",
+          "memberOrder": 5
+        }
+      },
+      {
+        "path": "shortcuts.show_alliance",
+        "label": "Show Alliance",
+        "help": "Keyboard or mouse shortcut: Show Alliance.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_alliance_armada",
+        "label": "Show Alliance Armada",
+        "help": "Keyboard or mouse shortcut: Show Alliance Armada.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_alliance_help",
+        "label": "Show Alliance Help",
+        "help": "Keyboard or mouse shortcut: Show Alliance Help.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_artifacts",
+        "label": "Show Artifacts",
+        "help": "Keyboard or mouse shortcut: Show Artifacts.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_awayteam",
+        "label": "Show Away Team",
+        "help": "Keyboard or mouse shortcut: Show Away Team.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_bookmarks",
+        "label": "Show Bookmarks",
+        "help": "Keyboard or mouse shortcut: Show Bookmarks.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_chat",
+        "label": "Show Chat",
+        "help": "Keyboard or mouse shortcut: Show Chat.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_chatside1",
+        "label": "Show left chat panel",
+        "help": "Open the left-side chat panel.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_chatside2",
+        "label": "Show right chat panel",
+        "help": "Open the right-side chat panel.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_commander",
+        "label": "Show Commander",
+        "help": "Keyboard or mouse shortcut: Show Commander.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_daily",
+        "label": "Show Daily",
+        "help": "Keyboard or mouse shortcut: Show Daily.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_events",
+        "label": "Show Events",
+        "help": "Keyboard or mouse shortcut: Show Events.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_exocomp",
+        "label": "Show Exocomp",
+        "help": "Keyboard or mouse shortcut: Show Exocomp.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_factions",
+        "label": "Show Factions",
+        "help": "Keyboard or mouse shortcut: Show Factions.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_galaxy",
+        "label": "Show Galaxy",
+        "help": "Keyboard or mouse shortcut: Show Galaxy.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_gifts",
+        "label": "Show Gifts",
+        "help": "Keyboard or mouse shortcut: Show Gifts.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_inventory",
+        "label": "Show Inventory",
+        "help": "Keyboard or mouse shortcut: Show Inventory.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_lookup",
+        "label": "Show Lookup",
+        "help": "⚠️ EXPERIMENTAL: Shows the bookmark->lookup screen.",
+        "group": "Experimental"
+      },
+      {
+        "path": "shortcuts.show_missions",
+        "label": "Show Missions",
+        "help": "Keyboard or mouse shortcut: Show Missions.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_officers",
+        "label": "Show Officers",
+        "help": "Keyboard or mouse shortcut: Show Officers.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_qtrials",
+        "label": "Show Q Trials",
+        "help": "Keyboard or mouse shortcut: Show Q Trials.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_refinery",
+        "label": "Show Refinery",
+        "help": "Keyboard or mouse shortcut: Show Refinery.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_research",
+        "label": "Show Research",
+        "help": "Keyboard or mouse shortcut: Show Research.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_scrapyard",
+        "label": "Show Scrapyard",
+        "help": "Keyboard or mouse shortcut: Show Scrapyard.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_settings",
+        "label": "Show Settings",
+        "help": "Keyboard or mouse shortcut: Show Settings.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_ships",
+        "label": "Show Ships",
+        "help": "Keyboard or mouse shortcut: Show Ships.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_stationexterior",
+        "label": "Show Station Exterior",
+        "help": "Keyboard or mouse shortcut: Show Station Exterior.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_stationinterior",
+        "label": "Show Station Interior",
+        "help": "Keyboard or mouse shortcut: Show Station Interior.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.show_system",
+        "label": "Show System",
+        "help": "Keyboard or mouse shortcut: Show System.",
+        "group": "Screens"
+      },
+      {
+        "path": "shortcuts.toggle_cargo_armada",
+        "label": "Toggle Cargo Armada",
+        "help": "Keyboard or mouse shortcut: Toggle Cargo Armada.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_cargo_default",
+        "label": "Toggle Cargo Default",
+        "help": "Keyboard or mouse shortcut: Toggle Cargo Default.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_cargo_hostile",
+        "label": "Toggle Cargo Hostile",
+        "help": "Keyboard or mouse shortcut: Toggle Cargo Hostile.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_cargo_player",
+        "label": "Toggle Cargo Player",
+        "help": "Keyboard or mouse shortcut: Toggle Cargo Player.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_cargo_station",
+        "label": "Toggle Cargo Station",
+        "help": "Keyboard or mouse shortcut: Toggle Cargo Station.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_preview_locate",
+        "label": "Toggle Preview Locate",
+        "help": "Keyboard or mouse shortcut: Toggle Preview Locate.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_preview_recall",
+        "label": "Toggle Preview Recall",
+        "help": "Keyboard or mouse shortcut: Toggle Preview Recall.",
+        "group": "Cargo & Locate"
+      },
+      {
+        "path": "shortcuts.toggle_queue",
+        "label": "Toggle Queue",
+        "help": "Turn the Kir'Shara action queue on or off.",
+        "group": "Queue & Primary"
+      },
+      {
+        "path": "shortcuts.ui_scaledown",
+        "label": "Decrease UI scale",
+        "help": "Reduce the main game-interface scale by one configured step.",
+        "group": "UI Scale"
+      },
+      {
+        "path": "shortcuts.ui_scaleup",
+        "label": "Increase UI scale",
+        "help": "Increase the main game-interface scale by one configured step.",
+        "group": "UI Scale"
+      },
+      {
+        "path": "shortcuts.ui_scaleviewerdown",
+        "label": "Decrease object viewer UI scale",
+        "help": "Reduce the object viewer interface scale by one configured step.",
+        "group": "UI Scale"
+      },
+      {
+        "path": "shortcuts.ui_scaleviewerup",
+        "label": "Increase object viewer UI scale",
+        "help": "Increase the object viewer interface scale by one configured step.",
+        "group": "UI Scale"
+      },
+      {
+        "path": "shortcuts.zoom_in",
+        "label": "Zoom In",
+        "help": "Keyboard or mouse shortcut: Zoom In.",
+        "group": "Zoom & Presets"
+      },
+      {
+        "path": "shortcuts.zoom_max",
+        "label": "Zoom Max",
+        "help": "Keyboard or mouse shortcut: Zoom Max.",
+        "group": "Zoom & Presets"
+      },
+      {
+        "path": "shortcuts.zoom_min",
+        "label": "Zoom Min",
+        "help": "Keyboard or mouse shortcut: Zoom Min.",
+        "group": "Zoom & Presets"
+      },
+      {
+        "path": "shortcuts.zoom_out",
+        "label": "Zoom Out",
+        "help": "Keyboard or mouse shortcut: Zoom Out.",
+        "group": "Zoom & Presets"
+      },
+      {
+        "path": "shortcuts.zoom_preset1",
+        "label": "Zoom Preset 1",
+        "help": "Keyboard or mouse shortcut: Zoom Preset 1.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 1",
+          "memberOrder": 1
+        }
+      },
+      {
+        "path": "shortcuts.zoom_preset2",
+        "label": "Zoom Preset 2",
+        "help": "Keyboard or mouse shortcut: Zoom Preset 2.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 2",
+          "memberOrder": 2
+        }
+      },
+      {
+        "path": "shortcuts.zoom_preset3",
+        "label": "Zoom Preset 3",
+        "help": "Keyboard or mouse shortcut: Zoom Preset 3.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 3",
+          "memberOrder": 3
+        }
+      },
+      {
+        "path": "shortcuts.zoom_preset4",
+        "label": "Zoom Preset 4",
+        "help": "Keyboard or mouse shortcut: Zoom Preset 4.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 4",
+          "memberOrder": 4
+        }
+      },
+      {
+        "path": "shortcuts.zoom_preset5",
+        "label": "Zoom Preset 5",
+        "help": "Keyboard or mouse shortcut: Zoom Preset 5.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Preset 5",
+          "memberOrder": 5
+        }
+      },
+      {
+        "path": "shortcuts.zoom_reset",
+        "label": "Zoom Reset",
+        "help": "Reset system-view zoom to its configured default.",
+        "group": "Zoom & Presets",
+        "family": {
+          "id": "netniv.hotkeys.use-zoom-positions",
+          "parentGroup": "Zoom & Presets",
+          "label": "Use zoom positions",
+          "help": "Return to the default system zoom or a numbered preset.",
+          "displayOrder": 20,
+          "presentationHint": "compact-binding-list",
+          "memberLabel": "Default",
+          "memberOrder": 0
+        }
+      },
+      {
+        "path": "sync.battlelogs",
+        "label": "Battle Logs",
+        "help": "Include battle logs in synchronized data.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.buffs",
+        "label": "Buffs",
+        "help": "Include buff data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.buildings",
+        "label": "Buildings",
+        "help": "Include building data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.debug",
+        "label": "Debug",
+        "help": "Enable detailed sync diagnostics for troubleshooting.",
+        "group": "Diagnostics"
+      },
+      {
+        "path": "sync.inventory",
+        "label": "Inventory",
+        "help": "Include inventory data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.jobs",
+        "label": "Jobs",
+        "help": "Include active job data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.logging",
+        "label": "Logging",
+        "help": "Write sync activity to the mod log.",
+        "group": "Diagnostics"
+      },
+      {
+        "path": "sync.missions",
+        "label": "Missions",
+        "help": "Include mission data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.officer",
+        "label": "Officer",
+        "help": "Include officer data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.research",
+        "label": "Research",
+        "help": "Include research data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.resolver_cache_ttl",
+        "label": "DNS cache duration",
+        "help": "Keep resolved sync service addresses cached for this many seconds.",
+        "group": "Network",
+        "unit": "s"
+      },
+      {
+        "path": "sync.resources",
+        "label": "Resources",
+        "help": "Include resource data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.ships",
+        "label": "Ships",
+        "help": "Include ship data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.slots",
+        "label": "Slots",
+        "help": "Include dock and build slot data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.tech",
+        "label": "Tech",
+        "help": "Include Forbidden Tech data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.traits",
+        "label": "Traits",
+        "help": "Include officer trait data in synchronization.",
+        "group": "Data"
+      },
+      {
+        "path": "sync.verify_ssl",
+        "label": "Verify TLS certificates",
+        "help": "Verify TLS certificates when connecting to sync services.",
+        "group": "Network"
+      },
+      {
+        "path": "ui.always_skip_reveal_sequence",
+        "label": "Always Skip Reveal Sequence",
+        "help": "Skip the reveal box animation, and just open the boxes.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.auto_open_bulk_claim_flyout",
+        "label": "Auto Open Bulk Claim Flyout",
+        "help": "Open the existing bulk-claim selection flyout automatically when Gifts supports it.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.cargo_significant_decimals",
+        "label": "Cargo decimal places",
+        "help": "Choose how many decimal places abbreviated cargo values display.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.disable_escape_exit",
+        "label": "Disable Escape Exit",
+        "help": "Prevent \"escape\" from prompting to exit the game.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.disable_first_popup",
+        "label": "Disable First Popup",
+        "help": "⚠️ EXPERIMENTAL: Prevent the first popup advert from appearing.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.disable_galaxy_chat",
+        "label": "Disable Galaxy Chat",
+        "help": "Change to true to remove Galaxy Chat from the game.",
+        "group": "Chat"
+      },
+      {
+        "path": "ui.disable_move_keys",
+        "label": "Disable Move Keys",
+        "help": "⚠️ EXPERIMENTAL: Prevent the standard move keys from working.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.disable_preview_locate",
+        "label": "Disable Preview Locate",
+        "help": "Stop locate working when ship or node previews are displayed.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.disable_preview_recall",
+        "label": "Disable Preview Recall",
+        "help": "Stop recall working when ship or node previews are displayed.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.disable_toast_banners",
+        "label": "Disable Toast Banners",
+        "help": "⚠️ EXPERIMENTAL: Prevent the standard toast banners from working.",
+        "group": "Interface behavior"
+      },
+      {
+        "path": "ui.disable_veil_chat",
+        "label": "Disable Veil Chat",
+        "help": "Change to true to remove Veil Chat from the game.",
+        "group": "Chat"
+      },
+      {
+        "path": "ui.disabled_banner_types",
+        "label": "Disabled Banner Types",
+        "help": "Specifies types of banners you don't want to see (comma separated)",
+        "group": "Banners"
+      },
+      {
+        "path": "ui.extend_donation_max",
+        "label": "Donation cap override",
+        "help": "Extend donation slider to max value for next Alliance level; set to 0 for unlimited.",
+        "group": "Donations"
+      },
+      {
+        "path": "ui.extend_donation_slider",
+        "label": "Extended donation slider",
+        "help": "Allow the Alliance donation slider to reach the configured cap.",
+        "group": "Donations"
+      },
+      {
+        "path": "ui.notify_banner_types",
+        "label": "Windows notification banner types",
+        "help": "System notifications for in-game events. Comma-separated list of toast types to deliver as OS-level notifications (Windows toast). Uses the same type names as disabled_banner_types. Empty string = no notifications. Example: \"Victory, Defeat, IncomingAttack, StationBattle\".",
+        "group": "Banners"
+      },
+      {
+        "path": "ui.show_armada_cargo",
+        "label": "Show Armada Cargo",
+        "help": "Set to true to always show the rewards for selected ships/stations.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.show_cargo_default",
+        "label": "Show Cargo Default",
+        "help": "Set to true to always show the rewards for selected ships/stations.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.show_hostile_cargo",
+        "label": "Show Hostile Cargo",
+        "help": "Set to true to always show the rewards for selected ships/stations.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.show_player_cargo",
+        "label": "Show Player Cargo",
+        "help": "Set to true to always show the rewards for selected ships/stations.",
+        "group": "Previews"
+      },
+      {
+        "path": "ui.show_station_cargo",
+        "label": "Show Station Cargo",
+        "help": "Set to true to always show the rewards for selected ships/stations.",
+        "group": "Previews"
+      }
+    ]
+  },
   "revisions": [
     {
       "catalogId": "netniv.configuration.stable-1.1.4",
-      "catalogVersion": "1.1.4.1",
+      "catalogVersion": "1.1.4.3",
       "trackId": "stable",
       "releaseVersion": "1.1.4",
       "sourceCommit": "d912611fa1eca49fc54f363bdf8377dfebf8def0",
@@ -2314,20 +3457,25 @@
         "patches.officersorthooks",
         "ui.cargo_significant_decimals"
       ],
+      "presentationSettingRemovals": [
+        "ui.cargo_significant_decimals"
+      ],
       "settingOverrides": [
         {
           "path": "ui.extend_donation_max",
-          "description": "Windows-only; values above zero override the cap, while values at or below zero retain the game's ordinary donation cap."
+          "description": "Windows-only; values above zero override the cap, while values at or below zero retain the game's ordinary donation cap.",
+          "presentationHelp": "Set a donation cap override; zero or less keeps the game's ordinary donation cap."
         }
       ]
     },
     {
       "catalogId": "netniv.configuration.dev-1.1.5.1",
-      "catalogVersion": "1.1.5.1",
+      "catalogVersion": "1.1.5.3",
       "trackId": "dev",
       "releaseVersion": "1.1.5.1",
       "sourceCommit": "238004460c4bb93aa717e47c41089fe8b71c4cf9",
       "removeSettings": [],
+      "presentationSettingRemovals": [],
       "settingOverrides": [
         {
           "path": "ui.extend_donation_max",

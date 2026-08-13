@@ -76,6 +76,15 @@ jobs:
           -UseDisposableSyncFixture
           -TimeoutSeconds 60
 
+      - name: Disposable packaged NetniV Settings smoke
+        shell: pwsh
+        timeout-minutes: 5
+        run: >-
+          ./scripts/smoke-settings.ps1
+          -LauncherPath ./artifacts/win-x64/app/STFCModBridge.exe
+          -UseDisposableNetnivFixture
+          -TimeoutSeconds 60
+
       - name: Upload MSIX packaging evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

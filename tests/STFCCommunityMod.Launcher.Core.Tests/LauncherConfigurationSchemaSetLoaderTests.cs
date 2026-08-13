@@ -1,4 +1,5 @@
 using STFCCommunityMod.Launcher.Core;
+using System.Text.Json.Nodes;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
@@ -9,6 +10,12 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
     private const string DevCommit = "238004460c4bb93aa717e47c41089fe8b71c4cf9";
     private static readonly string[] DisabledHotkeyAliases =
         ["shortcuts.set_hotkeys_disble", "shortcuts.set_hotkeys_disable"];
+    private static readonly string[] ReviewedFamilyIds =
+    [
+        "netniv.hotkeys.save-zoom-positions",
+        "netniv.hotkeys.ship-selection",
+        "netniv.hotkeys.use-zoom-positions",
+    ];
 
     [TestMethod]
     public void ExactStableAndDevApplicabilityPreservesReviewedDelta()
@@ -17,11 +24,11 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         var dev = Load("dev", "1.1.5.1", DevCommit);
 
         Assert.AreEqual("netniv.configuration.stable-1.1.4", stable.Identity.CatalogId);
-        Assert.AreEqual(new Version(1, 1, 4, 1), stable.Identity.CatalogVersion);
+        Assert.AreEqual(new Version(1, 1, 4, 3), stable.Identity.CatalogVersion);
         Assert.AreEqual(StableCommit, stable.Identity.SourceCommit);
         Assert.AreEqual(203, stable.Settings.Count);
         Assert.AreEqual("netniv.configuration.dev-1.1.5.1", dev.Identity.CatalogId);
-        Assert.AreEqual(new Version(1, 1, 5, 1), dev.Identity.CatalogVersion);
+        Assert.AreEqual(new Version(1, 1, 5, 3), dev.Identity.CatalogVersion);
         Assert.AreEqual(DevCommit, dev.Identity.SourceCommit);
         Assert.AreEqual(206, dev.Settings.Count);
 
@@ -38,7 +45,87 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
             "ordinary donation cap");
         StringAssert.Contains(
             dev.Settings.Single(setting => setting.Path == "ui.extend_donation_max").Description,
-            "unlimited donation");
+            "set to 0 for unlimited");
+    }
+
+    [TestMethod]
+    public void ReviewedPresentationCoversEveryVisibleStableSetting()
+    {
+        var stable = Load("stable", "1.1.4", StableCommit);
+        var layout = new PrincipalCatalogSettingsLayoutProvider();
+
+        Assert.AreEqual(155, stable.VisibleSettings.Count);
+        Assert.AreEqual(
+            LauncherFeatureImplementations.PrincipalCatalogSettingsLayout,
+            stable.ReviewedSettingsLayoutId);
+        Assert.IsTrue(stable.VisibleSettings.All(setting =>
+            !string.IsNullOrWhiteSpace(setting.Presentation.Label)
+            && !string.IsNullOrWhiteSpace(setting.Presentation.Help)
+            && !string.IsNullOrWhiteSpace(setting.Presentation.Group)
+            && setting.Presentation.SearchTerms.Count >= 3
+            && setting.Presentation.SearchTerms.Contains(
+                setting.Path,
+                StringComparer.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(setting.Presentation.AccessibleName)
+            && !string.IsNullOrWhiteSpace(setting.Presentation.AccessibleHelp)));
+        Assert.IsFalse(stable.VisibleSettings.Any(setting =>
+            setting.Description.Contains(
+                "runtime contract for",
+                StringComparison.OrdinalIgnoreCase)));
+
+        var sectionCounts = stable.VisibleSettings
+            .GroupBy(setting => layout.Place(setting).Section)
+            .ToDictionary(group => group.Key, group => group.Count());
+        Assert.AreEqual(6, sectionCounts[LauncherSettingsSection.General]);
+        Assert.AreEqual(20, sectionCounts[LauncherSettingsSection.Interface]);
+        Assert.AreEqual(23, sectionCounts[LauncherSettingsSection.Graphics]);
+        Assert.AreEqual(89, sectionCounts[LauncherSettingsSection.Hotkeys]);
+        Assert.AreEqual(17, sectionCounts[LauncherSettingsSection.DataSync]);
+
+        var familyMembers = stable.VisibleSettings
+            .Where(setting => setting.Presentation.Family is not null)
+            .ToArray();
+        Assert.AreEqual(20, familyMembers.Length);
+        CollectionAssert.AreEquivalent(
+            ReviewedFamilyIds,
+            familyMembers
+                .Select(setting => setting.Presentation.Family!.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
+        StringAssert.Contains(
+            stable.Settings.Single(setting => setting.Path == "ui.extend_donation_max")
+                .Presentation.Help!,
+            "ordinary donation cap");
+    }
+
+    [TestMethod]
+    public void ReviewedPresentationRejectsMissingDuplicateAndUnknownPaths()
+    {
+        AssertPresentationRejected(
+            settings => settings.RemoveAt(0),
+            "missing directly player-editable settings");
+        AssertPresentationRejected(
+            settings => settings.Add(settings[0]!.DeepClone()),
+            "is duplicated");
+        AssertPresentationRejected(
+            settings => settings[0]!["path"] = "ui.not_a_reviewed_setting",
+            "is not in the shared catalog");
+    }
+
+    [TestMethod]
+    public void ReviewedPresentationRejectsStaleRevisionEntries()
+    {
+        AssertSchemaSetRejected(
+            root => StableRevision(root)["presentationSettingRemovals"] = new JsonArray(),
+            "not materialized as directly player-editable");
+        AssertSchemaSetRejected(
+            root => StableRevision(root)["settingOverrides"]!.AsArray().Add(
+                new JsonObject
+                {
+                    ["path"] = "buffs.use_out_of_dock_power",
+                    ["runtimeStatus"] = "ignored",
+                }),
+            "not materialized as directly player-editable");
     }
 
     [TestMethod]
@@ -142,6 +229,45 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
             stream,
             new("netniv", trackId, releaseVersion, sourceCommit));
     }
+
+    private static void AssertPresentationRejected(
+        Action<JsonArray> mutate,
+        string expectedMessage)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        var settings = root["presentation"]!["settings"]!.AsArray();
+        mutate(settings);
+        AssertSchemaSetRejected(root, expectedMessage);
+    }
+
+    private static void AssertSchemaSetRejected(
+        Action<JsonObject> mutate,
+        string expectedMessage)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(FixturePath()))!.AsObject();
+        mutate(root);
+        AssertSchemaSetRejected(root, expectedMessage);
+    }
+
+    private static void AssertSchemaSetRejected(
+        JsonObject root,
+        string expectedMessage)
+    {
+        using var stream = new MemoryStream(
+            System.Text.Encoding.UTF8.GetBytes(root.ToJsonString()));
+
+        var exception = Assert.ThrowsException<LauncherConfigurationSchemaException>(
+            () => LauncherConfigurationSchemaSetLoader.Load(
+                stream,
+                new("netniv", "stable", "1.1.4", StableCommit)));
+
+        StringAssert.Contains(exception.Message, expectedMessage);
+    }
+
+    private static JsonObject StableRevision(JsonObject root) =>
+        root["revisions"]!.AsArray()
+            .Select(revision => revision!.AsObject())
+            .Single(revision => revision["trackId"]!.GetValue<string>() == "stable");
 
     private static void AssertSetting(
         LauncherConfigurationCatalog catalog,

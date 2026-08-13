@@ -29,6 +29,39 @@ public sealed class LauncherStartupCompositionTests
     }
 
     [TestMethod]
+    public void NetnivReviewedCatalogSelectsSemanticLayoutWithoutRuntimeManifestCapability()
+    {
+        var provider = BundledLauncherProviderCatalog.Load().GetProvider("netniv");
+        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
+
+        var composition = LauncherStartupComposition.Create(
+            provider,
+            provider.DefaultReleaseChannel,
+            configurationCatalog: catalog);
+
+        Assert.IsFalse(composition.ActivationPlan.GetDecision(
+            LauncherFeatureIds.SemanticSettingsGrouping).IsActive);
+        Assert.IsInstanceOfType<PrincipalCatalogSettingsLayoutProvider>(
+            composition.SettingsLayout);
+        Assert.AreEqual("Semantic", composition.SettingsDiagnostics.SettingsLayoutName);
+    }
+
+    [TestMethod]
+    public void ForeignConfigurationPresentationIsRejected()
+    {
+        var providers = BundledLauncherProviderCatalog.Load();
+        var provider = providers.GetProvider("netniv");
+        var foreignCatalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(
+            providers.GetProvider("guffawaffle"));
+
+        _ = Assert.ThrowsException<ArgumentException>(
+            () => LauncherStartupComposition.Create(
+                provider,
+                provider.DefaultReleaseChannel,
+                configurationCatalog: foreignCatalog));
+    }
+
+    [TestMethod]
     public void RuntimeCompositionSlotRevokesChangedReviewedEvidenceInProcess()
     {
         var provider = BundledLauncherProviderCatalog.Load().GetProvider("guffawaffle");

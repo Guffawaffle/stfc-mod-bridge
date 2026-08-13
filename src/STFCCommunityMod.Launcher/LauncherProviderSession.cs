@@ -15,6 +15,7 @@ internal sealed class LauncherProviderSession : IDisposable
         LauncherProviderReleaseChannel releaseChannel,
         LauncherStartupComposition startupComposition,
         ReviewedRuntimeActivation? reviewedRuntimeActivation,
+        LauncherConfigurationCatalog configurationCatalog,
         Func<LauncherBattlePreferences> battlePreferencesProvider,
         MainWindowViewModel viewModel,
         Func<LauncherStartupComposition, SettingsViewModel> settingsFactory)
@@ -34,7 +35,8 @@ internal sealed class LauncherProviderSession : IDisposable
             provider,
             releaseChannel,
             startupComposition,
-            reviewedRuntimeActivation?.EvidenceSourceSha256);
+            reviewedRuntimeActivation?.EvidenceSourceSha256,
+            configurationCatalog);
         viewModel.ConfigureFeatureRemediation(
             () => runtimeComposition.Current.ActivationPlan,
             GetBattleFeatures);
@@ -85,7 +87,8 @@ internal sealed class LauncherRuntimeCompositionSlot(
     LauncherDistributionProvider provider,
     LauncherProviderReleaseChannel releaseChannel,
     LauncherStartupComposition initial,
-    string? initialEvidenceSha256)
+    string? initialEvidenceSha256,
+    LauncherConfigurationCatalog? configurationCatalog = null)
 {
     private string? evidenceSha256 = initialEvidenceSha256;
     private LauncherBattlePreferences battlePreferences = new(
@@ -109,7 +112,8 @@ internal sealed class LauncherRuntimeCompositionSlot(
             provider,
             releaseChannel,
             activation,
-            nextBattlePreferences);
+            nextBattlePreferences,
+            configurationCatalog);
         evidenceSha256 = nextEvidence;
         battlePreferences = nextBattlePreferences;
         return true;

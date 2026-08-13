@@ -4,7 +4,9 @@
 for the Guffawaffle release stream. It is derived from the mod's runtime-owned
 C++ defaults and catalogs; do not edit it by hand.
 
-Generate or validate it from the repository root:
+Its authoritative generator lives in the `Guffawaffle/stfc-mod` repository,
+not this launcher repository. Generate or validate it from the root of that
+mod checkout:
 
 ```powershell
 node scripts/generate_config_schema.mjs
@@ -12,8 +14,17 @@ node scripts/generate_config_schema.mjs --check
 node --test scripts/test_config_schema.mjs
 ```
 
-CI runs both the fixture tests and the stale-artifact check before the C++ test
-suite.
+That repository's CI runs both the fixture tests and the stale-artifact check
+before its C++ test suite.
+
+The launcher separately owns the reviewed, version-bound NetniV adapter at
+`providers/netniv/configuration-schema-set.v1.json`. Its presentation profile
+is derived from the exact upstream example/configuration evidence named by the
+catalog revisions. It may classify and explain reviewed settings, but cannot
+change runtime types, defaults, aliases, status, sensitivity, feature gates,
+or persistence semantics. A presentation profile is accepted only when its
+paths are unique, catalog-owned, directly player-editable, and complete for
+the selected exact revision.
 
 ## One settings model, three adapters
 

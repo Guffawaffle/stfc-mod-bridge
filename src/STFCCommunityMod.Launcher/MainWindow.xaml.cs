@@ -149,6 +149,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var shellAccess = LauncherProviderShellAccess.From(resolution);
         var provider = resolution.Provider ?? distributionProviderCatalog.DefaultProvider;
         var releaseChannel = resolution.ReleaseChannel ?? provider.DefaultReleaseChannel;
+        var configurationCatalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
         var viewModel = MainWindowViewModel.CreateDefault(
             httpClient,
             distributionProviderCatalog,
@@ -158,14 +159,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 ? null
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
-            providerSelectionStore);
+            providerSelectionStore,
+            configurationCatalog);
         viewModel.ConfirmLaunchOverrideAsync = ConfirmLaunchOverrideAsync;
         var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
             provider,
             releaseChannel,
             viewModel.ReviewedRuntimeActivation,
-            battlePreferences);
+            battlePreferences,
+            configurationCatalog);
         return new(
             resolution,
             shellAccess,
@@ -173,12 +176,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             releaseChannel,
             composition,
             viewModel.ReviewedRuntimeActivation,
+            configurationCatalog,
             () => uiPreferencesStore.Load().EffectiveBattlePreferences,
             viewModel,
             runtimeComposition => CreateSettingsViewModel(
                 provider,
                 releaseChannel,
-                runtimeComposition));
+                runtimeComposition,
+                configurationCatalog));
     }
 
     private Task<bool> ConfirmLaunchOverrideAsync(GameLaunchPresentation presentation)
@@ -1681,9 +1686,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private SettingsViewModel CreateSettingsViewModel(
         LauncherDistributionProvider provider,
         LauncherProviderReleaseChannel releaseChannel,
-        LauncherStartupComposition runtimeComposition)
+        LauncherStartupComposition runtimeComposition,
+        LauncherConfigurationCatalog catalog)
     {
-        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
         var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
         var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
         var mutationBackup = new ProviderScopedConfigurationMutationBackup(
