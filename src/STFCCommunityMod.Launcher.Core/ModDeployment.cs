@@ -807,11 +807,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             return new(
                 ModDeploymentResultState.Succeeded,
-                reviewedRuntimeActivation is null
-                    ? "The community mod was installed successfully with the base Bridge contract."
-                    : "The community mod and reviewed runtime compatibility evidence were installed successfully. "
-                        + $"Evidence SHA-256: {reviewedRuntimeActivation.EvidenceSourceSha256}. "
-                        + "This describes compatibility; it does not prove authenticity or software safety.",
+                "Community Mod installed successfully.",
                 installedState,
                 Changed: true,
                 RuntimeActivation: reviewedRuntimeActivation);

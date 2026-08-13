@@ -30,6 +30,7 @@ public sealed class ModDeploymentServiceTests
             ExistingArtifactPolicy.Reject);
 
         Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State);
+        Assert.AreEqual("Community Mod installed successfully.", result.Message);
         CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
         Assert.AreEqual(ModDeploymentPhase.Committed, service.ReadJournal()!.Phase);
         var installedState = service.ReadInstalledState()!;

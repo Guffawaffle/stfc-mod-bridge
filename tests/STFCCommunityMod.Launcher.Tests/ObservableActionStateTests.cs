@@ -79,6 +79,24 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void SuccessfulModResultFeedbackUsesBriefLifetimeWhileFailuresRemainPersistent()
+    {
+        Assert.AreEqual(
+            TimeSpan.FromSeconds(3),
+            MainWindowViewModel.ModActionStatusLifetime);
+        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(
+            ObservableActionStatus.CompletedChanged));
+        Assert.IsTrue(MainWindowViewModel.ShouldAutoClearModStatus(
+            ObservableActionStatus.CompletedUnchanged));
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
+            ObservableActionStatus.Failed));
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
+            ObservableActionStatus.Unavailable));
+        Assert.IsFalse(MainWindowViewModel.ShouldAutoClearModStatus(
+            ObservableActionStatus.Working));
+    }
+
+    [TestMethod]
     public async Task ObservableCommandKeepsCanExecuteTrueWhileSuppressingDuplicateExecution()
     {
         var state = new ObservableActionState();
