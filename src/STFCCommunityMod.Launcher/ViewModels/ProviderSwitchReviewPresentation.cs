@@ -32,8 +32,8 @@ internal sealed record ProviderSwitchReviewPresentation(
             ? "No TOML file is selected."
             : configuration.ConfigurationExisted == false
                 ? configuration.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
-                    ? "No TOML exists now. The latest verified TOML for the selected source will be restored at the exact expected path."
-                    : "No TOML exists now. Mod Bridge will recheck that exact expected path before switching."
+                    ? $"No TOML exists now at {configuration.ConfigurationPath}. The latest verified TOML for the selected source will be restored at that exact path."
+                    : $"No TOML exists now at {configuration.ConfigurationPath}. Mod Bridge will recheck that exact path before switching."
             : configuration.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
                 ? "The current TOML is preserved, then the latest verified TOML for the selected source is restored."
                 : "The current TOML is preserved exactly for future restoration.";
