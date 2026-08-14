@@ -119,6 +119,89 @@ internal static class BundledLauncherProviderCatalog
             LauncherConfigurationSchemaLoader.Load(schemaStream));
     }
 
+    public static LauncherConfigurationDiagnosisEvidence LoadConfigurationDiagnosisEvidence(
+        LauncherDistributionProviderCatalog providerCatalog,
+        ReviewedReleaseCertificationCatalog reviewedReleases,
+        LauncherProviderSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(providerCatalog);
+        ArgumentNullException.ThrowIfNull(reviewedReleases);
+        ArgumentNullException.ThrowIfNull(selection);
+        if (!providerCatalog.TryGetProvider(selection.ProviderId, out var provider)
+            || provider is null
+            || !provider.ReleaseChannels.ContainsKey(selection.ReleaseChannelId))
+        {
+            return LauncherConfigurationDiagnosisEvidence.Unavailable(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                LauncherProviderCapabilityStatus.Unknown);
+        }
+
+        var capabilityStatus = provider.GetCapabilityStatus(
+            LauncherProviderCapabilityIds.ConfigurationCatalog);
+        if (capabilityStatus != LauncherProviderCapabilityStatus.Supported)
+        {
+            return LauncherConfigurationDiagnosisEvidence.Unavailable(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                capabilityStatus);
+        }
+
+        try
+        {
+            var schemaContents = ReadConfigurationSchema(provider);
+            LauncherConfigurationCatalog configurationCatalog;
+            if (LauncherConfigurationSchemaSetLoader.IsSchemaSet(schemaContents))
+            {
+                var certification = reviewedReleases.Find(
+                    selection.ProviderId,
+                    selection.ReleaseChannelId);
+                if (certification is null)
+                {
+                    return LauncherConfigurationDiagnosisEvidence.Unavailable(
+                        selection.ProviderId,
+                        selection.ReleaseChannelId,
+                        LauncherProviderCapabilityStatus.Unknown);
+                }
+                configurationCatalog = LoadConfigurationCatalog(
+                    provider,
+                    new(
+                        selection.ProviderId,
+                        selection.ReleaseChannelId,
+                        certification.ReleaseVersion,
+                        certification.SourceCommit));
+            }
+            else
+            {
+                if (!string.Equals(
+                        selection.ReleaseChannelId,
+                        provider.DefaultReleaseChannelId,
+                        StringComparison.Ordinal))
+                {
+                    return LauncherConfigurationDiagnosisEvidence.Unavailable(
+                        selection.ProviderId,
+                        selection.ReleaseChannelId,
+                        LauncherProviderCapabilityStatus.Unknown);
+                }
+                using var schemaStream = new MemoryStream(schemaContents, writable: false);
+                configurationCatalog = ValidateCatalogOwner(
+                    provider,
+                    LauncherConfigurationSchemaLoader.Load(schemaStream));
+            }
+            return LauncherConfigurationDiagnosisEvidence.Supported(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                configurationCatalog);
+        }
+        catch (LauncherConfigurationSchemaException)
+        {
+            return LauncherConfigurationDiagnosisEvidence.Unavailable(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                LauncherProviderCapabilityStatus.Unknown);
+        }
+    }
+
     internal static LauncherConfigurationCatalog LoadConfigurationCatalog(
         LauncherDistributionProvider provider,
         LauncherConfigurationCatalogApplicability applicability)

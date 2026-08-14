@@ -565,19 +565,41 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         LauncherConfigurationDiagnosisEvidence configurationEvidence;
         try
         {
-            configurationEvidence = distributionProvider.GetCapabilityStatus(
-                    LauncherProviderCapabilityIds.ConfigurationCatalog)
-                    == LauncherProviderCapabilityStatus.Supported
-                ? LauncherConfigurationDiagnosisEvidence.Supported(
+            var configurationCapabilityStatus = distributionProvider.GetCapabilityStatus(
+                LauncherProviderCapabilityIds.ConfigurationCatalog);
+            if (configurationCapabilityStatus != LauncherProviderCapabilityStatus.Supported)
+            {
+                configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
                     distributionProvider.Id,
                     releaseChannel.Id,
-                    configurationCatalog
-                        ?? BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider))
-                : LauncherConfigurationDiagnosisEvidence.Unavailable(
-                    distributionProvider.Id,
-                    releaseChannel.Id,
-                    distributionProvider.GetCapabilityStatus(
-                        LauncherProviderCapabilityIds.ConfigurationCatalog));
+                    configurationCapabilityStatus);
+            }
+            else
+            {
+                var resolvedConfigurationCatalog = configurationCatalog
+                    ?? BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+                var catalogMatchesChannel = string.Equals(
+                        resolvedConfigurationCatalog.Identity.TrackId,
+                        releaseChannel.Id,
+                        StringComparison.Ordinal)
+                    || (string.Equals(
+                            resolvedConfigurationCatalog.Identity.TrackId,
+                            "unversioned",
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            releaseChannel.Id,
+                            distributionProvider.DefaultReleaseChannelId,
+                            StringComparison.Ordinal));
+                configurationEvidence = catalogMatchesChannel
+                    ? LauncherConfigurationDiagnosisEvidence.Supported(
+                        distributionProvider.Id,
+                        releaseChannel.Id,
+                        resolvedConfigurationCatalog)
+                    : LauncherConfigurationDiagnosisEvidence.Unavailable(
+                        distributionProvider.Id,
+                        releaseChannel.Id,
+                        LauncherProviderCapabilityStatus.Unknown);
+            }
         }
         catch (LauncherConfigurationSchemaException)
         {
@@ -619,11 +641,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 : "Source needs attention",
             new WindowsDiagnosticFolderService());
         providerSelectionStore ??= new JsonLauncherProviderSelectionStore(installLayout.StateDirectory);
+        var activeConfigurationSelection = new LauncherProviderSelection(
+            distributionProvider.Id,
+            releaseChannel.Id);
         viewModel.ProviderSwitchCoordinator = new(
             new LauncherProviderSourceSwitchService(
                 distributionProviderCatalog,
                 providerSelectionStore,
-                installLayout.StateDirectory),
+                installLayout.StateDirectory,
+                selection => selection == activeConfigurationSelection
+                    ? configurationEvidence
+                    : BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
+                        distributionProviderCatalog,
+                        reviewedReleases,
+                        selection)),
             providerComponents.Select(component => component.SwitchEndpoint),
             installLayout.StateDirectory);
         return viewModel;

@@ -53,6 +53,22 @@ public sealed class ProviderSwitchReviewPresentationTests
     }
 
     [TestMethod]
+    public void PreservedUnknownTomlIsShownAsWarningWithoutClaimingLoss()
+    {
+        var presentation = ProviderSwitchReviewPresentation.From(
+            Preview(
+                LauncherProviderCompatibilityKind.Warning,
+                "Two unrecognized TOML items will be preserved exactly."),
+            "Stable",
+            introductoryReviewAcknowledged: true);
+
+        Assert.IsTrue(presentation.RequiresReview);
+        Assert.IsFalse(presentation.IsIntroductoryReview);
+        Assert.IsTrue(presentation.HasFocusedWarning);
+        StringAssert.Contains(presentation.Summary, "preserved exactly");
+    }
+
+    [TestMethod]
     public void ManagedDllReviewStatesReleaseAndGameClosedBoundary()
     {
         var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with

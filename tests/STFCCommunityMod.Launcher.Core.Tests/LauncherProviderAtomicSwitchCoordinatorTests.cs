@@ -203,6 +203,36 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task InvalidTargetTomlStopsBeforeTargetReleaseDiscovery()
+    {
+        using var directory = new TemporaryDirectory();
+        var discovery = new CountingReleaseDiscoveryClient(
+            Artifact(NetnivArtifact, "1.1.5.1"));
+        var fixture = await CreateFixtureAsync(
+            directory,
+            targetConfiguration: Encoding.UTF8.GetBytes(
+                "[graphics]\nfree_resize = true\nfree_resize = false\n"),
+            targetReleaseDiscovery: discovery);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => fixture.Coordinator.PreviewAsync(
+                "netniv",
+                "stable",
+                fixture.GameDirectory,
+                isGameRunning: false,
+                fixture.ConfigurationPath));
+
+        StringAssert.Contains(exception.Message, "conservative TOML parser");
+        Assert.AreEqual(0, discovery.CallCount);
+        Assert.AreEqual(0, fixture.BackupStore.List(
+            fixture.GameDirectory,
+            "guffawaffle").Count);
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+    }
+
+    [TestMethod]
     public async Task ConcurrentSwitchIsRejectedBeforeItCanOverwriteTransactionState()
     {
         using var directory = new TemporaryDirectory();
@@ -450,7 +480,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         ILauncherProviderSelectionStore? selectionStore = null,
         bool installSource = true,
         IModArtifactDownloader? targetDownloader = null,
-        bool reviewedTarget = false)
+        bool reviewedTarget = false,
+        byte[]? targetConfiguration = null,
+        IWindowsReleaseDiscoveryClient? targetReleaseDiscovery = null)
     {
         var gameDirectory = directory.CreateDirectory("game");
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
@@ -458,8 +490,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
         var guffawaffleConfiguration = Encoding.UTF8.GetBytes(
             "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n");
-        var netnivConfiguration = Encoding.UTF8.GetBytes(
-            "# netniv\n[graphics]\nfree_resize = false\n");
+        var netnivConfiguration = targetConfiguration
+            ?? Encoding.UTF8.GetBytes(
+                "# netniv\n[graphics]\nfree_resize = false\n");
         File.WriteAllBytes(configurationPath, guffawaffleConfiguration);
         selectionStore ??= new JsonLauncherProviderSelectionStore(stateDirectory);
         selectionStore.Save(new("guffawaffle", "stable"));
@@ -515,7 +548,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             targetDeployment,
             targetArtifact,
             "netniv",
-            "netniv.stfc-community-mod");
+            "netniv.stfc-community-mod",
+            targetReleaseDiscovery);
         var configurationSwitch = new LauncherProviderSourceSwitchService(
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             selectionStore,
@@ -548,10 +582,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         ModDeploymentService deployment,
         ModReleaseArtifact artifact,
         string providerId,
-        string runtimeDistributionId) =>
+        string runtimeDistributionId,
+        IWindowsReleaseDiscoveryClient? releaseDiscovery = null) =>
         new(
             deployment,
-            new FakeReleaseDiscoveryClient(artifact),
+            releaseDiscovery ?? new FakeReleaseDiscoveryClient(artifact),
             new Version(0, 1, 0),
             healthService: new LauncherHealthService(
                 new ModInstallationInspector(
@@ -650,6 +685,33 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                     "none",
                     []),
                 artifact));
+    }
+
+    private sealed class CountingReleaseDiscoveryClient(ModReleaseArtifact artifact)
+        : IWindowsReleaseDiscoveryClient
+    {
+        public int CallCount { get; private set; }
+
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+            string channel,
+            Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new WindowsReleaseDiscovery(
+                new(
+                    1,
+                    artifact.ExpectedVersion,
+                    $"v{artifact.ExpectedVersion}",
+                    channel,
+                    "active",
+                    currentLauncherVersion,
+                    new("example/repository", new string('0', 40)),
+                    "none",
+                    []),
+                artifact));
+        }
     }
 
     private sealed class FakeDownloader(byte[] contents) : IModArtifactDownloader

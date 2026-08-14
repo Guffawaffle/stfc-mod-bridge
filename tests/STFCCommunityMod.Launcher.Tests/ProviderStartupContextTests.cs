@@ -108,6 +108,43 @@ public sealed class ProviderStartupContextTests
     }
 
     [TestMethod]
+    public void ProviderSwitchEvidenceResolvesExactReviewedCatalogForRequestedChannel()
+    {
+        var providers = BundledLauncherProviderCatalog.Load();
+        var reviewed = BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providers);
+        var evidence = BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
+            providers,
+            reviewed,
+            new("netniv", "stable"));
+        var report = new ConfigurationHealthAnalyzer().Analyze(
+            new ConfigurationDocumentSnapshot("settings.toml", []),
+            evidence);
+
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported, evidence.CapabilityStatus);
+        Assert.AreEqual("netniv", report.Binding.ProviderId);
+        Assert.AreEqual("stable", report.Binding.ChannelId);
+        Assert.AreEqual("netniv.configuration.stable-1.1.4", report.Binding.CatalogId);
+        Assert.AreEqual("1.1.4.3", report.Binding.CatalogVersion);
+    }
+
+    [TestMethod]
+    public void ProviderSwitchEvidenceDoesNotProjectDefaultCatalogOntoUnreviewedChannel()
+    {
+        var providers = BundledLauncherProviderCatalog.Load();
+        var reviewed = BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providers);
+        var evidence = BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
+            providers,
+            reviewed,
+            new("guffawaffle", "preview"));
+
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, evidence.CapabilityStatus);
+        var report = new ConfigurationHealthAnalyzer().Analyze(
+            new ConfigurationDocumentSnapshot("settings.toml", []),
+            evidence);
+        Assert.IsNull(report.Binding.CatalogId);
+    }
+
+    [TestMethod]
     public void CorruptSelectionProducesRestrictedRecoveryContextInsteadOfThrowing()
     {
         using var directory = new TemporaryStateDirectory();
