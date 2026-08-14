@@ -185,6 +185,23 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         string transactionId,
         IModDeploymentCommitParticipant commitParticipant,
         CancellationToken cancellationToken = default) =>
+        await DeployCoordinatedCoreAsync(
+            gameDirectory,
+            artifact,
+            existingArtifactPolicy,
+            transactionId,
+            commitParticipant,
+            operationLease: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<ModDeploymentResult> DeployCoordinatedCoreAsync(
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        LauncherOperationLease? operationLease,
+        CancellationToken cancellationToken) =>
         await DeployCoreAsync(
             gameDirectory,
             artifact,
@@ -194,7 +211,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ValidateTransactionId(transactionId),
             candidateLease: null,
             candidateClaim: null,
-            cancellationToken);
+            cancellationToken,
+            operationLease).ConfigureAwait(false);
 
     public async Task<ModDeploymentResult> DeployCandidateCoordinatedAsync(
         string gameDirectory,
@@ -202,7 +220,24 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ExistingArtifactPolicy existingArtifactPolicy,
         string transactionId,
         IModDeploymentCommitParticipant commitParticipant,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await DeployCandidateCoordinatedCoreAsync(
+            gameDirectory,
+            candidateLease,
+            existingArtifactPolicy,
+            transactionId,
+            commitParticipant,
+            operationLease: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<ModDeploymentResult> DeployCandidateCoordinatedCoreAsync(
+        string gameDirectory,
+        ReviewedModArtifactCandidateLease candidateLease,
+        ExistingArtifactPolicy existingArtifactPolicy,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        LauncherOperationLease? operationLease,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidateLease);
         return await ExecuteCandidateLeaseAsync(
@@ -216,7 +251,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ValidateTransactionId(transactionId),
                 candidateLease,
                 claim,
-                cancellationToken)).ConfigureAwait(false);
+                cancellationToken,
+                operationLease)).ConfigureAwait(false);
     }
 
     public async Task<ModDeploymentResult> RepairAsync(
@@ -306,7 +342,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         string? coordinatedTransactionId,
         ReviewedModArtifactCandidateLease? candidateLease,
         object? candidateClaim,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LauncherOperationLease? operationLease = null)
     {
         ArgumentNullException.ThrowIfNull(artifact);
         var validationFailure = ValidateRequest(gameDirectory, artifact, out var normalizedGameDirectory);
@@ -320,11 +357,14 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before changing the mod.");
         }
 
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var acquiredLease = operationLease is null
+            ? await operationLock.TryAcquireAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        if (operationLease is null && acquiredLease is null)
         {
             return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
+        using var retainedOperationScope = operationLease?.RetainFor(stateDirectory);
         if (isGameRunning(normalizedGameDirectory))
         {
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before changing the mod.");
@@ -1209,15 +1249,26 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     public async Task<ModDeploymentResult> RollBackCoordinatedAsync(
         string transactionId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await RollBackCoordinatedCoreAsync(
+            transactionId,
+            operationLease: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<ModDeploymentResult> RollBackCoordinatedCoreAsync(
+        string transactionId,
+        LauncherOperationLease? operationLease,
+        CancellationToken cancellationToken)
     {
         transactionId = ValidateTransactionId(transactionId);
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var acquiredLease = operationLease is null
+            ? await operationLock.TryAcquireAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        if (operationLease is null && acquiredLease is null)
         {
             return new(ModDeploymentResultState.Busy, "Another Mod Bridge mutation is already active.");
         }
-
+        using var retainedOperationScope = operationLease?.RetainFor(stateDirectory);
         ModDeploymentJournal? journal;
         try
         {

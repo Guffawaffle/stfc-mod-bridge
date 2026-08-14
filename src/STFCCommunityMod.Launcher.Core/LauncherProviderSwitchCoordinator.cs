@@ -218,14 +218,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             throw new InvalidOperationException("Another provider switch or recovery is already active.");
         }
         RejectIncompleteTransaction();
+        await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
+        if (rootLease is null)
+        {
+            throw new InvalidOperationException(
+                "Another Mod Bridge mutation is already active. Try the provider switch again after it finishes.");
+        }
         if (preview.Artifact is null)
         {
-            await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
-            if (rootLease is null)
-            {
-                throw new InvalidOperationException(
-                    "Another Mod Bridge mutation is already active. Try the provider switch again after it finishes.");
-            }
             var selectionOnly = await configurationSwitch.ExecuteAsync(
                 preview.Configuration,
                 confirmationText,
@@ -264,16 +264,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         try
         {
             deployment = candidateLease is null
-                ? await targetEndpoint.ExecuteCoordinatedAsync(
+                ? await targetEndpoint.ExecuteCoordinatedCoreAsync(
                     preview.Artifact,
                     preview.Configuration.TransactionId,
                     participant,
+                    rootLease,
                     cancellationToken).ConfigureAwait(false)
-                : await targetEndpoint.ExecuteCandidateCoordinatedAsync(
+                : await targetEndpoint.ExecuteCandidateCoordinatedCoreAsync(
                     preview.Artifact,
                     candidateLease,
                     preview.Configuration.TransactionId,
                     participant,
+                    rootLease,
                     cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -321,6 +323,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return new(false, false, "Another provider switch or recovery is already active.");
         }
+        await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
+        if (rootLease is null)
+        {
+            return new(false, false, "Another Mod Bridge mutation is already active.");
+        }
         var journal = ReadJournal();
         if (journal is null
             || journal.Phase is LauncherProviderAtomicSwitchPhase.Completed
@@ -348,8 +355,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         Persist(journal);
         if (interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
         {
-            var artifactRollback = await targetEndpoint.RollBackCoordinatedAsync(
+            var artifactRollback = await targetEndpoint.RollBackCoordinatedCoreAsync(
                 journal.TransactionId,
+                rootLease,
                 cancellationToken).ConfigureAwait(false);
             if (!artifactRollback.IsSuccess)
             {
