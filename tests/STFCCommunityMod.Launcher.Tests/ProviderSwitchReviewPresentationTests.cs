@@ -119,7 +119,8 @@ public sealed class ProviderSwitchReviewPresentationTests
             introductoryReviewAcknowledged: false);
 
         StringAssert.Contains(presentation.Summary, "No TOML exists now");
-        StringAssert.Contains(presentation.Summary, "recheck that exact expected path");
+        StringAssert.Contains(presentation.Summary, "community_patch_settings.toml");
+        StringAssert.Contains(presentation.Summary, "recheck that exact path");
     }
 
     private static LauncherProviderAtomicSwitchPreview Preview(
