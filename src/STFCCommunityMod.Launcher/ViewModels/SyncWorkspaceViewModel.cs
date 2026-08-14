@@ -537,6 +537,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
             AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
             AtomicTomlWriteState.Conflict => "The TOML changed outside Mod Bridge. External edits were preserved; reload before saving.",
+            AtomicTomlWriteState.Busy => "Another Mod Bridge change is still in progress. Nothing was written; try saving Data Sync again when it finishes.",
             AtomicTomlWriteState.Invalid => $"Nothing was written: {result.ValidationError?.Message ?? FirstPlanDiagnostic(result)}",
             _ => $"Data Sync could not be saved: {result.Error}",
         };

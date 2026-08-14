@@ -260,6 +260,34 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task SelectionOnlySwitchIsRejectedWhileRootMutationLeaseIsHeld()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        Assert.IsNull(preview.Artifact);
+
+        await using var lease = await new LauncherOperationLock(fixture.StateDirectory).TryAcquireAsync();
+        Assert.IsNotNull(lease);
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+        StringAssert.Contains(exception.Message, "Another Mod Bridge mutation is already active");
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+        CollectionAssert.AreEqual(
+            fixture.GuffawaffleConfiguration,
+            await File.ReadAllBytesAsync(fixture.ConfigurationPath));
+        Assert.IsNull(fixture.Coordinator.ReadJournal());
+    }
+
+    [TestMethod]
     public async Task RecoveryRollsBackCrashAfterDllAndConfigurationCommit()
     {
         using var directory = new TemporaryDirectory();

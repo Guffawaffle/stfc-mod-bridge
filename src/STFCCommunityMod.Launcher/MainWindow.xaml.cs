@@ -804,14 +804,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 distributionProvider.Id,
                 distributionReleaseChannel.Id,
                 catalog);
-            var backupStore = new ProviderScopedConfigurationBackupStore(
-                PerUserInstallLayout.FromCurrentUser().StateDirectory);
+            var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
+            var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
             var mutationBackup = new ProviderScopedConfigurationMutationBackup(
                 backupStore,
                 distributionProvider.Id,
                 $"{distributionProvider.Id}/{distributionReleaseChannel.Id}",
                 "configuration-migration");
-            var repository = new TomlConfigurationRepository(mutationBackup: mutationBackup);
+            var repository = new TomlConfigurationRepository(
+                mutationBackup: mutationBackup,
+                mutationAdmission: new LauncherOperationLock(stateDirectory));
             var read = repository.Read(path);
             if (!read.IsSuccess || read.Snapshot is null)
             {
@@ -915,11 +917,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             {
                 viewModel.ReportDiagnosticAction(
                     false,
-                    result.State == AtomicTomlWriteState.Conflict
-                        ? "The TOML changed after review. External edits were preserved; refresh and review again."
-                        : result.ValidationError?.Message
+                    result.State switch
+                    {
+                        AtomicTomlWriteState.Conflict =>
+                            "The TOML changed after review. External edits were preserved; refresh and review again.",
+                        AtomicTomlWriteState.Busy =>
+                            "Another Mod Bridge change is still in progress. Nothing was written; try cleanup again when it finishes.",
+                        _ => result.ValidationError?.Message
                             ?? result.Error
-                            ?? "The reviewed cleanup failed without changing the configuration.");
+                            ?? "The reviewed cleanup failed without changing the configuration.",
+                    });
             }
         }
         catch (OperationCanceledException)
@@ -1703,7 +1710,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             GetConfigurationFilePath,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
-            repository: new TomlConfigurationRepository(mutationBackup: mutationBackup),
+            repository: new TomlConfigurationRepository(
+                mutationBackup: mutationBackup,
+                mutationAdmission: new LauncherOperationLock(stateDirectory)),
             uiPreferencesStore: uiPreferencesStore,
             openExternalUri: OpenExternalUri,
             openDataFolder: OpenApplicationDataFolder,

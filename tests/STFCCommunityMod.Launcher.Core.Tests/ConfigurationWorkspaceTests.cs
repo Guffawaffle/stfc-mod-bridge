@@ -472,6 +472,96 @@ public sealed class ConfigurationWorkspaceTests
         Assert.IsFalse(File.Exists(path + ".bak"));
     }
 
+    [TestMethod]
+    public async Task SettingsCommitReturnsBusyWhileRootMutationLeaseIsHeld()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[graphics]\nfree_resize = true\n");
+        await File.WriteAllBytesAsync(path, original);
+        var repository = new TomlConfigurationRepository(
+            mutationAdmission: new LauncherOperationLock(stateDirectory));
+        var load = ConfigurationWorkspace.Load(path, LoadCatalog(), repository, out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+        var setting = LoadCatalog().Settings.Single(item => item.Path == "graphics.free_resize");
+        workspace!.StageSet(setting, "false");
+
+        await using (var lease = await new LauncherOperationLock(stateDirectory).TryAcquireAsync())
+        {
+            Assert.IsNotNull(lease);
+            var busy = await workspace.CommitAsync();
+
+            Assert.AreEqual(AtomicTomlWriteState.Busy, busy.State, busy.Error);
+            Assert.IsTrue(workspace.HasPendingChanges);
+            CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(path));
+            Assert.IsFalse(File.Exists(path + ".bak"));
+        }
+
+        var committed = await workspace.CommitAsync();
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, committed.State, committed.Error);
+        Assert.IsFalse(workspace.HasPendingChanges);
+    }
+
+    [TestMethod]
+    public async Task DocumentCommitReturnsBusyBeforeBackupOrReplacement()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("# original\n[graphics]\nfree_resize = true\n");
+        var desired = Encoding.UTF8.GetBytes("# original\n[graphics]\nfree_resize = false\n");
+        await File.WriteAllBytesAsync(path, original);
+        var repository = new TomlConfigurationRepository(
+            mutationAdmission: new LauncherOperationLock(stateDirectory));
+        var request = new ConfigurationDocumentCommitRequest(
+            path,
+            ConfigurationDocumentRevision.FromContents(original),
+            original,
+            desired);
+
+        await using var lease = await new LauncherOperationLock(stateDirectory).TryAcquireAsync();
+        Assert.IsNotNull(lease);
+        var result = await repository.CommitDocumentAsync(request);
+
+        Assert.AreEqual(AtomicTomlWriteState.Busy, result.State, result.Error);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(path));
+        Assert.IsFalse(File.Exists(path + ".bak"));
+    }
+
+    [TestMethod]
+    public async Task RepositoryHoldsRootMutationLeaseThroughAtomicReplacement()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var path = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        await File.WriteAllTextAsync(path, "[graphics]\nfree_resize = true\n");
+        var pause = new PausedAtomicWrite();
+        var repository = new TomlConfigurationRepository(
+            store: new AtomicTomlStore(pause.BeforeReplaceAsync),
+            mutationAdmission: new LauncherOperationLock(stateDirectory));
+        var load = ConfigurationWorkspace.Load(path, LoadCatalog(), repository, out var workspace);
+        Assert.IsTrue(load.IsSuccess, load.Error);
+        var setting = LoadCatalog().Settings.Single(item => item.Path == "graphics.free_resize");
+        workspace!.StageSet(setting, "false");
+
+        var commit = workspace.CommitAsync();
+        await pause.Started;
+        try
+        {
+            await using var competingLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync();
+            Assert.IsNull(competingLease);
+        }
+        finally
+        {
+            pause.Release();
+        }
+
+        var result = await commit;
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+    }
+
     private static LauncherConfigurationCatalog LoadCatalog()
     {
         var schemaPath = FindRepositoryFile(
@@ -529,6 +619,27 @@ public sealed class ConfigurationWorkspaceTests
                     ?? new ConfigurationRepositoryCommitResult(
                         AtomicTomlWriteState.Invalid,
                         Error: "Document commit is not part of this fixture."));
+        }
+    }
+
+    private sealed class PausedAtomicWrite
+    {
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => started.Task;
+
+        public void Release() => released.TrySetResult();
+
+        public async ValueTask BeforeReplaceAsync(
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken)
+        {
+            _ = temporaryPath;
+            _ = destinationPath;
+            started.TrySetResult();
+            await released.Task.WaitAsync(cancellationToken);
         }
     }
 }

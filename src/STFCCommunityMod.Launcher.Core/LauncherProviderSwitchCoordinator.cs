@@ -61,7 +61,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     private readonly LauncherProviderSourceSwitchService configurationSwitch;
     private readonly Dictionary<string, ModManagementCoordinator> endpoints;
     private readonly string journalPath;
-    private readonly LauncherOperationLock operationLock;
+    private readonly LauncherOperationLock providerSwitchLock;
+    private readonly LauncherOperationLock rootOperationLock;
     private readonly TimeProvider timeProvider;
 
     public LauncherProviderAtomicSwitchCoordinator(
@@ -88,7 +89,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         var normalizedStateDirectory = Path.GetFullPath(stateDirectory);
         journalPath = Path.Combine(normalizedStateDirectory, "provider-switch-journal.json");
-        operationLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
+        providerSwitchLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
+        rootOperationLock = new(normalizedStateDirectory);
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -210,14 +212,20 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preview);
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
+        if (providerSwitchLease is null)
         {
             throw new InvalidOperationException("Another provider switch or recovery is already active.");
         }
         RejectIncompleteTransaction();
         if (preview.Artifact is null)
         {
+            await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
+            if (rootLease is null)
+            {
+                throw new InvalidOperationException(
+                    "Another Mod Bridge mutation is already active. Try the provider switch again after it finishes.");
+            }
             var selectionOnly = await configurationSwitch.ExecuteAsync(
                 preview.Configuration,
                 confirmationText,
@@ -308,8 +316,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     public async Task<LauncherProviderAtomicSwitchRecoveryResult> RecoverAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
+        if (providerSwitchLease is null)
         {
             return new(false, false, "Another provider switch or recovery is already active.");
         }

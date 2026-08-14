@@ -11,6 +11,7 @@ public enum AtomicTomlWriteState
     Invalid,
     Conflict,
     IoFailure,
+    Busy,
 }
 
 public sealed record AtomicTomlWriteResult(
