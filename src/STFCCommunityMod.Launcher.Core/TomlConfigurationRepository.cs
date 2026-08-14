@@ -3,10 +3,12 @@ namespace STFCCommunityMod.Launcher.Core;
 public sealed class TomlConfigurationRepository : IConfigurationRepository
 {
     private readonly AtomicTomlStore store;
+    private readonly LauncherOperationLock? mutationAdmission;
 
     public TomlConfigurationRepository(
         AtomicTomlStore? store = null,
-        IConfigurationMutationBackup? mutationBackup = null)
+        IConfigurationMutationBackup? mutationBackup = null,
+        LauncherOperationLock? mutationAdmission = null)
     {
         if (store is not null && mutationBackup is not null)
         {
@@ -17,6 +19,7 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
             ?? (mutationBackup is null
                 ? new AtomicTomlStore()
                 : new AtomicTomlStore(mutationBackup));
+        this.mutationAdmission = mutationAdmission;
     }
 
     public bool ProducesVerifiedBackupReceipt => store.ProducesVerifiedBackupReceipt;
@@ -105,16 +108,18 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                     existed: false));
         }
 
-        var write = request.BaselineExisted
-            ? await store.SaveDocumentAsync(
-                request.Path,
-                baselineContents,
-                transformed.Contents,
-                cancellationToken).ConfigureAwait(false)
-            : await store.CreateDocumentAsync(
-                request.Path,
-                transformed.Contents,
-                cancellationToken).ConfigureAwait(false);
+        var write = await WriteWithAdmissionAsync(
+            request.BaselineExisted
+                ? token => store.SaveDocumentAsync(
+                    request.Path,
+                    baselineContents,
+                    transformed.Contents,
+                    token)
+                : token => store.CreateDocumentAsync(
+                    request.Path,
+                    transformed.Contents,
+                    token),
+            cancellationToken).ConfigureAwait(false);
         if (!write.IsSuccess)
         {
             return new(
@@ -162,16 +167,18 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                     existed: false));
         }
 
-        var write = request.BaselineExisted
-            ? await store.SaveDocumentAsync(
-                request.Path,
-                baselineContents,
-                request.DesiredContents,
-                cancellationToken).ConfigureAwait(false)
-            : await store.CreateDocumentAsync(
-                request.Path,
-                request.DesiredContents,
-                cancellationToken).ConfigureAwait(false);
+        var write = await WriteWithAdmissionAsync(
+            request.BaselineExisted
+                ? token => store.SaveDocumentAsync(
+                    request.Path,
+                    baselineContents,
+                    request.DesiredContents,
+                    token)
+                : token => store.CreateDocumentAsync(
+                    request.Path,
+                    request.DesiredContents,
+                    token),
+            cancellationToken).ConfigureAwait(false);
         return write.IsSuccess
             ? new(
                 write.State,
@@ -184,6 +191,27 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                 ValidationError: write.ValidationError,
                 Error: write.Error,
                 BackupReceipt: write.BackupReceipt);
+    }
+
+    private async Task<AtomicTomlWriteResult> WriteWithAdmissionAsync(
+        Func<CancellationToken, Task<AtomicTomlWriteResult>> write,
+        CancellationToken cancellationToken)
+    {
+        if (mutationAdmission is null)
+        {
+            return await write(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var lease = await mutationAdmission.TryAcquireAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (lease is null)
+        {
+            return new(
+                AtomicTomlWriteState.Busy,
+                Error: "Another Mod Bridge mutation is already active. Try again after it finishes.");
+        }
+
+        return await write(cancellationToken).ConfigureAwait(false);
     }
 
     private static SparseTomlEditResult ApplyChanges(

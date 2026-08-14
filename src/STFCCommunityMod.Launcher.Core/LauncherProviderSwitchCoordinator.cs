@@ -61,7 +61,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     private readonly LauncherProviderSourceSwitchService configurationSwitch;
     private readonly Dictionary<string, ModManagementCoordinator> endpoints;
     private readonly string journalPath;
-    private readonly LauncherOperationLock operationLock;
+    private readonly LauncherOperationLock providerSwitchLock;
+    private readonly LauncherOperationLock rootOperationLock;
     private readonly TimeProvider timeProvider;
 
     public LauncherProviderAtomicSwitchCoordinator(
@@ -88,7 +89,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         var normalizedStateDirectory = Path.GetFullPath(stateDirectory);
         journalPath = Path.Combine(normalizedStateDirectory, "provider-switch-journal.json");
-        operationLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
+        providerSwitchLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
+        rootOperationLock = new(normalizedStateDirectory);
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -210,12 +212,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preview);
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
+        if (providerSwitchLease is null)
         {
             throw new InvalidOperationException("Another provider switch or recovery is already active.");
         }
         RejectIncompleteTransaction();
+        await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
+        if (rootLease is null)
+        {
+            throw new InvalidOperationException(
+                "Another Mod Bridge mutation is already active. Try the provider switch again after it finishes.");
+        }
         if (preview.Artifact is null)
         {
             var selectionOnly = await configurationSwitch.ExecuteAsync(
@@ -256,16 +264,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         try
         {
             deployment = candidateLease is null
-                ? await targetEndpoint.ExecuteCoordinatedAsync(
+                ? await targetEndpoint.ExecuteCoordinatedCoreAsync(
                     preview.Artifact,
                     preview.Configuration.TransactionId,
                     participant,
+                    rootLease,
                     cancellationToken).ConfigureAwait(false)
-                : await targetEndpoint.ExecuteCandidateCoordinatedAsync(
+                : await targetEndpoint.ExecuteCandidateCoordinatedCoreAsync(
                     preview.Artifact,
                     candidateLease,
                     preview.Configuration.TransactionId,
                     participant,
+                    rootLease,
                     cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -308,10 +318,15 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     public async Task<LauncherProviderAtomicSwitchRecoveryResult> RecoverAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
-        if (lease is null)
+        await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
+        if (providerSwitchLease is null)
         {
             return new(false, false, "Another provider switch or recovery is already active.");
+        }
+        await using var rootLease = await rootOperationLock.TryAcquireAsync(cancellationToken);
+        if (rootLease is null)
+        {
+            return new(false, false, "Another Mod Bridge mutation is already active.");
         }
         var journal = ReadJournal();
         if (journal is null
@@ -340,8 +355,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         Persist(journal);
         if (interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
         {
-            var artifactRollback = await targetEndpoint.RollBackCoordinatedAsync(
+            var artifactRollback = await targetEndpoint.RollBackCoordinatedCoreAsync(
                 journal.TransactionId,
+                rootLease,
                 cancellationToken).ConfigureAwait(false);
             if (!artifactRollback.IsSuccess)
             {

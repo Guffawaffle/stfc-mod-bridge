@@ -291,7 +291,20 @@ public sealed class ModManagementCoordinator(
         ModOperationPreparation preparation,
         string transactionId,
         IModDeploymentCommitParticipant commitParticipant,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ExecuteCoordinatedCoreAsync(
+            preparation,
+            transactionId,
+            commitParticipant,
+            operationLease: null,
+            cancellationToken);
+
+    internal Task<ModDeploymentResult> ExecuteCoordinatedCoreAsync(
+        ModOperationPreparation preparation,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        LauncherOperationLease? operationLease,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preparation);
         ArgumentNullException.ThrowIfNull(commitParticipant);
@@ -304,12 +317,13 @@ public sealed class ModManagementCoordinator(
             throw new InvalidOperationException(
                 $"Prepared provider '{preparation.ProviderId}' does not match '{ProviderId}'.");
         }
-        return deploymentService.DeployCoordinatedAsync(
+        return deploymentService.DeployCoordinatedCoreAsync(
             preparation.GameDirectory,
             preparation.Artifact,
             preparation.ExistingArtifactPolicy,
             transactionId,
             commitParticipant,
+            operationLease,
             cancellationToken);
     }
 
@@ -318,7 +332,22 @@ public sealed class ModManagementCoordinator(
         ReviewedModArtifactCandidateLease candidateLease,
         string transactionId,
         IModDeploymentCommitParticipant commitParticipant,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ExecuteCandidateCoordinatedCoreAsync(
+            preparation,
+            candidateLease,
+            transactionId,
+            commitParticipant,
+            operationLease: null,
+            cancellationToken);
+
+    internal Task<ModDeploymentResult> ExecuteCandidateCoordinatedCoreAsync(
+        ModOperationPreparation preparation,
+        ReviewedModArtifactCandidateLease candidateLease,
+        string transactionId,
+        IModDeploymentCommitParticipant commitParticipant,
+        LauncherOperationLease? operationLease,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preparation);
         ArgumentNullException.ThrowIfNull(candidateLease);
@@ -337,12 +366,13 @@ public sealed class ModManagementCoordinator(
             throw new InvalidOperationException(
                 "The exact candidate does not match the prepared provider-switch target.");
         }
-        return deploymentService.DeployCandidateCoordinatedAsync(
+        return deploymentService.DeployCandidateCoordinatedCoreAsync(
             preparation.GameDirectory,
             candidateLease,
             preparation.ExistingArtifactPolicy,
             transactionId,
             commitParticipant,
+            operationLease,
             cancellationToken);
     }
 
@@ -350,6 +380,15 @@ public sealed class ModManagementCoordinator(
         string transactionId,
         CancellationToken cancellationToken = default) =>
         deploymentService.RollBackCoordinatedAsync(transactionId, cancellationToken);
+
+    internal Task<ModDeploymentResult> RollBackCoordinatedCoreAsync(
+        string transactionId,
+        LauncherOperationLease operationLease,
+        CancellationToken cancellationToken) =>
+        deploymentService.RollBackCoordinatedCoreAsync(
+            transactionId,
+            operationLease,
+            cancellationToken);
 
     public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
         deploymentService.RecoverAsync(cancellationToken);

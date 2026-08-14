@@ -729,6 +729,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
                 "The TOML changed outside Mod Bridge. Those external edits were preserved; reload before saving.",
+            AtomicTomlWriteState.Busy =>
+                "Another Mod Bridge change is still in progress. Nothing was written; try saving again when it finishes.",
             AtomicTomlWriteState.Invalid =>
                 $"Nothing was written because the TOML is not safe to update: {result.ValidationError?.Message}",
             AtomicTomlWriteState.NoConfigurationSelected =>
