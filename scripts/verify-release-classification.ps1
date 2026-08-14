@@ -44,15 +44,34 @@ if ($occurrenceCount -ne 1) {
 $lines = [System.Text.RegularExpressions.Regex]::Split($body, "\r?\n")
 $classificationLines = [System.Collections.Generic.List[string]]::new()
 $nonCodeLines = [System.Collections.Generic.List[string]]::new()
-$inCodeFence = $false
+$fenceCharacter = $null
+$fenceLength = 0
 foreach ($line in $lines) {
-  if ($line -match '^[ ]{0,3}(?:>\s*)?(?:`{3,}|~{3,})') {
-    $inCodeFence = -not $inCodeFence
+  if ($null -ne $fenceCharacter) {
+    $closingFencePattern = '^[ ]{0,3}(?:>\s*)?' `
+      + [System.Text.RegularExpressions.Regex]::Escape($fenceCharacter) `
+      + '{' + $fenceLength + ',}[ \t]*$'
+    if ([System.Text.RegularExpressions.Regex]::IsMatch(
+        $line,
+        $closingFencePattern,
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+      $fenceCharacter = $null
+      $fenceLength = 0
+    }
     continue
   }
-  if ($inCodeFence) {
+
+  $openingFence = [System.Text.RegularExpressions.Regex]::Match(
+    $line,
+    '^[ ]{0,3}(?:>\s*)?(?<fence>`{3,}|~{3,})',
+    [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+  if ($openingFence.Success) {
+    $fence = $openingFence.Groups['fence'].Value
+    $fenceCharacter = $fence.Substring(0, 1)
+    $fenceLength = $fence.Length
     continue
   }
+
   $nonCodeLines.Add($line)
   foreach ($classification in $allowed) {
     $classificationLinePattern = '^[ ]{0,3}(?:>\s*)?\*{0,2}' `
@@ -66,7 +85,7 @@ foreach ($line in $lines) {
     }
   }
 }
-if ($inCodeFence) {
+if ($null -ne $fenceCharacter) {
   throw "The published release body contains an unterminated Markdown code fence."
 }
 if ($classificationLines.Count -ne 1) {

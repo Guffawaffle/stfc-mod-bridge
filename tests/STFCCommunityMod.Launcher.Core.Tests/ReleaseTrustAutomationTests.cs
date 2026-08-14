@@ -863,6 +863,7 @@ public sealed partial class ReleaseTrustAutomationTests
                      "Qualification draft\n\nClosed-alpha approved",
                      "Public canary — qualification is still in progress\n\n## Qualification still open",
                      "```text\nClosed-alpha approved\n```",
+                     "````markdown\n```\nClosed-alpha approved\n```\n````",
                      "    Closed-alpha approved",
                  })
         {
