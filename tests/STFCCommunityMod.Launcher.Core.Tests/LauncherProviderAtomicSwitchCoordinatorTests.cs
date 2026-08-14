@@ -203,6 +203,29 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task NonDefaultTargetChannelWithoutExactEndpointIsRejected()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory);
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.PreviewAsync(
+                "guffawaffle",
+                "preview",
+                fixture.GameDirectory,
+                isGameRunning: false,
+                fixture.ConfigurationPath));
+
+        StringAssert.Contains(exception.Message, "guffawaffle/preview");
+        CollectionAssert.AreEqual(
+            GuffawaffleArtifact,
+            File.ReadAllBytes(Path.Combine(fixture.GameDirectory, "version.dll")));
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+    }
+
+    [TestMethod]
     public async Task InvalidTargetTomlStopsBeforeTargetReleaseDiscovery()
     {
         using var directory = new TemporaryDirectory();
@@ -286,7 +309,195 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         Assert.IsFalse(File.Exists(Path.Combine(fixture.GameDirectory, "version.dll")));
         Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), fixture.SelectionStore.Load());
         CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
-        Assert.IsNull(fixture.Coordinator.ReadJournal());
+        var journal = fixture.Coordinator.ReadJournal();
+        Assert.IsNotNull(journal);
+        Assert.AreEqual(2, journal.SchemaVersion);
+        Assert.AreEqual(LauncherProviderAtomicSwitchPhase.Completed, journal.Phase);
+        Assert.IsNull(journal.TargetArtifact);
+        Assert.AreEqual(true, journal.Preview.ConfigurationExisted);
+        Assert.IsNotNull(journal.Preview.TargetConfigurationAnalysis);
+        Assert.IsTrue(journal.Preview.TargetConfigurationAnalysis.FindingCounts.Count > 0);
+    }
+
+    [TestMethod]
+    public async Task ExactCatalogAnalysisRoundTripsThroughConfigurationOnlyJournal()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(
+            directory,
+            installSource: false,
+            configurationEvidenceResolver: ExactConfigurationEvidence());
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var expected = preview.Configuration.TargetConfigurationAnalysis!;
+
+        await fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+
+        var journal = fixture.Coordinator.ReadJournal()!;
+        var actual = journal.Preview.TargetConfigurationAnalysis!;
+        Assert.AreEqual(expected.Binding.Revision.Sha256, actual.Binding.Revision.Sha256);
+        Assert.AreEqual(expected.Binding.ProviderId, actual.Binding.ProviderId);
+        Assert.AreEqual(expected.Binding.ChannelId, actual.Binding.ChannelId);
+        Assert.AreEqual(expected.Binding.CatalogId, actual.Binding.CatalogId);
+        Assert.AreEqual(expected.Binding.CatalogVersion, actual.Binding.CatalogVersion);
+        Assert.AreEqual(expected.Binding.EvidenceSource, actual.Binding.EvidenceSource);
+        Assert.AreEqual(expected.CatalogIdentity!.CatalogId, actual.CatalogIdentity!.CatalogId);
+        Assert.AreEqual(expected.CatalogIdentity.CatalogVersion, actual.CatalogIdentity.CatalogVersion);
+        Assert.AreEqual(expected.CatalogIdentity.TrackId, actual.CatalogIdentity.TrackId);
+        Assert.AreEqual(expected.CatalogIdentity.ReleaseVersion, actual.CatalogIdentity.ReleaseVersion);
+        Assert.AreEqual(expected.CatalogIdentity.SourceCommit, actual.CatalogIdentity.SourceCommit);
+        Assert.AreEqual(expected.CatalogStatus, actual.CatalogStatus);
+        Assert.AreEqual(expected.AttentionFindingCount, actual.AttentionFindingCount);
+        CollectionAssert.AreEqual(
+            expected.BlockingFindingCodes.ToArray(),
+            actual.BlockingFindingCodes.ToArray());
+        CollectionAssert.AreEquivalent(
+            expected.FindingCounts.Select(pair => $"{pair.Key}:{pair.Value}").ToArray(),
+            actual.FindingCounts.Select(pair => $"{pair.Key}:{pair.Value}").ToArray());
+    }
+
+    [TestMethod]
+    public async Task CatalogEvidenceChangeDuringParticipantCommitRollsBackAllState()
+    {
+        using var directory = new TemporaryDirectory();
+        var exactEvidence = ExactConfigurationEvidence();
+        var evidenceAvailable = true;
+        LauncherConfigurationDiagnosisEvidence Resolve(LauncherProviderSelection selection) =>
+            evidenceAvailable
+                ? exactEvidence(selection)
+                : LauncherConfigurationDiagnosisEvidence.Unavailable(
+                    selection.ProviderId,
+                    selection.ReleaseChannelId,
+                    LauncherProviderCapabilityStatus.Unknown);
+        var downloader = new CallbackDownloader(
+            NetnivArtifact,
+            () => evidenceAvailable = false);
+        var fixture = await CreateFixtureAsync(
+            directory,
+            targetDownloader: downloader,
+            configurationEvidenceResolver: Resolve);
+        var sourceState = fixture.SourceDeployment.ReadInstalledState();
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+        CollectionAssert.AreEqual(
+            GuffawaffleArtifact,
+            File.ReadAllBytes(Path.Combine(fixture.GameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            fixture.GuffawaffleConfiguration,
+            File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+        Assert.AreEqual(sourceState, fixture.TargetDeployment.ReadInstalledState());
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.RolledBack,
+            fixture.Coordinator.ReadJournal()!.Phase);
+        Assert.IsFalse(Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ConfigurationOnlyRecoveryRestoresCrashAroundSelectionCommit(
+        bool selectionWasCommitted)
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var sourceBackup = await fixture.BackupStore.CreateAsync(new(
+            fixture.GameDirectory,
+            "guffawaffle",
+            fixture.ConfigurationPath,
+            fixture.GuffawaffleConfiguration,
+            "provider-switch",
+            "netniv",
+            "guffawaffle/stable"));
+        File.WriteAllBytes(fixture.ConfigurationPath, fixture.NetnivConfiguration);
+        if (selectionWasCommitted)
+        {
+            fixture.SelectionStore.Save(new("netniv", "stable"));
+        }
+        WriteJson(
+            Path.Combine(fixture.StateDirectory, "provider-switch-journal.json"),
+            new LauncherProviderAtomicSwitchJournal(
+                2,
+                preview.Configuration.TransactionId,
+                LauncherProviderAtomicSwitchPhase.ConfigurationCommitting,
+                preview.Configuration,
+                sourceBackup,
+                TargetArtifact: null,
+                DateTimeOffset.UtcNow));
+
+        var recovery = await fixture.Coordinator.RecoverAsync();
+
+        Assert.IsTrue(recovery.IsSuccess);
+        Assert.IsTrue(recovery.Changed);
+        CollectionAssert.AreEqual(
+            fixture.GuffawaffleConfiguration,
+            File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.RolledBack,
+            fixture.Coordinator.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
+    public async Task ConfigurationOnlyRecoveryRestoresExpectedFileAbsence()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(
+            directory,
+            installSource: false,
+            sourceConfigurationExists: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        Assert.AreEqual(false, preview.Configuration.ConfigurationExisted);
+        File.WriteAllBytes(fixture.ConfigurationPath, fixture.NetnivConfiguration);
+        fixture.SelectionStore.Save(new("netniv", "stable"));
+        WriteJson(
+            Path.Combine(fixture.StateDirectory, "provider-switch-journal.json"),
+            new LauncherProviderAtomicSwitchJournal(
+                2,
+                preview.Configuration.TransactionId,
+                LauncherProviderAtomicSwitchPhase.ConfigurationCommitting,
+                preview.Configuration,
+                ConfigurationBackup: null,
+                TargetArtifact: null,
+                DateTimeOffset.UtcNow));
+
+        var recovery = await fixture.Coordinator.RecoverAsync();
+
+        Assert.IsTrue(recovery.IsSuccess);
+        Assert.IsFalse(File.Exists(fixture.ConfigurationPath));
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.RolledBack,
+            fixture.Coordinator.ReadJournal()!.Phase);
     }
 
     [TestMethod]
@@ -482,7 +693,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         IModArtifactDownloader? targetDownloader = null,
         bool reviewedTarget = false,
         byte[]? targetConfiguration = null,
-        IWindowsReleaseDiscoveryClient? targetReleaseDiscovery = null)
+        IWindowsReleaseDiscoveryClient? targetReleaseDiscovery = null,
+        bool sourceConfigurationExists = true,
+        Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
+            configurationEvidenceResolver = null)
     {
         var gameDirectory = directory.CreateDirectory("game");
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
@@ -493,7 +707,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         var netnivConfiguration = targetConfiguration
             ?? Encoding.UTF8.GetBytes(
                 "# netniv\n[graphics]\nfree_resize = false\n");
-        File.WriteAllBytes(configurationPath, guffawaffleConfiguration);
+        if (sourceConfigurationExists)
+        {
+            File.WriteAllBytes(configurationPath, guffawaffleConfiguration);
+        }
         selectionStore ??= new JsonLauncherProviderSelectionStore(stateDirectory);
         selectionStore.Save(new("guffawaffle", "stable"));
         var backupStore = new ProviderScopedConfigurationBackupStore(
@@ -554,7 +771,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             LauncherDistributionProviderTests.LoadFixtureCatalog(),
             selectionStore,
             backupStore,
-            null);
+            null,
+            configurationEvidenceResolver);
         var coordinator = new LauncherProviderAtomicSwitchCoordinator(
             configurationSwitch,
             [
@@ -576,6 +794,45 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             targetArtifact,
             new("netniv", "stable", "netniv.stfc-community-mod"),
             targetCertification);
+    }
+
+    private static Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>
+        ExactConfigurationEvidence()
+    {
+        var guffawaffleCatalog = LauncherConfigurationSchemaLoader.LoadFile(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Fixtures",
+                "Configuration",
+                "config-schema.guffawaffle.v1.json"));
+        using var netnivSchema = File.OpenRead(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Fixtures",
+                "Configuration",
+                "configuration-schema-set.netniv.v1.json"));
+        var netnivCatalog = LauncherConfigurationSchemaSetLoader.Load(
+            netnivSchema,
+            new(
+                "netniv",
+                "stable",
+                "1.1.4",
+                "d912611fa1eca49fc54f363bdf8377dfebf8def0"));
+        return selection => selection.ProviderId switch
+        {
+            "guffawaffle" => LauncherConfigurationDiagnosisEvidence.Supported(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                guffawaffleCatalog),
+            "netniv" => LauncherConfigurationDiagnosisEvidence.Supported(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                netnivCatalog),
+            _ => LauncherConfigurationDiagnosisEvidence.Unavailable(
+                selection.ProviderId,
+                selection.ReleaseChannelId,
+                LauncherProviderCapabilityStatus.Unknown),
+        };
     }
 
     private static ModManagementCoordinator Management(
@@ -729,6 +986,17 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             CallCount++;
             return Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
+        }
+    }
+
+    private sealed class CallbackDownloader(byte[] contents, Action callback) : IModArtifactDownloader
+    {
+        public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            callback();
+            return Task.FromResult(
+                new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
         }
     }
 

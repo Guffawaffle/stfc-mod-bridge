@@ -349,7 +349,7 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void ExplicitMissingConfigurationPathIsRejected()
+    public void MissingConfigurationPathIsBoundAsExpectedAbsence()
     {
         using var directory = new TemporaryDirectory();
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
@@ -359,11 +359,139 @@ public sealed class LauncherProviderSelectionTests
             store,
             directory.Path);
 
-        Assert.ThrowsException<FileNotFoundException>(
-            () => service.Preview(
-                "netniv",
-                null,
-                Path.Combine(directory.Path, "missing.toml")));
+        var path = Path.Combine(directory.Path, "missing.toml");
+        var preview = service.Preview("netniv", null, path);
+
+        Assert.AreEqual(Path.GetFullPath(path), preview.ConfigurationPath);
+        Assert.AreEqual(false, preview.ConfigurationExisted);
+        Assert.IsNull(preview.ConfigurationSha256);
+        Assert.AreEqual(LauncherProviderSwitchConfigurationKind.None, preview.ConfigurationKind);
+    }
+
+    [TestMethod]
+    public async Task ConfigurationCreatedAfterAbsencePreviewRequiresNewReview()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = Path.Combine(directory.Path, "community_patch_settings.toml");
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            backupStore,
+            null,
+            ExactConfigurationEvidence());
+        var preview = service.Preview("netniv", "stable", configurationPath);
+        File.WriteAllText(
+            configurationPath,
+            "[graphics]\nfree_resize = true\nfree_resize = false\n");
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => service.ExecuteAsync(preview, preview.ConfirmationText));
+
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
+        Assert.AreEqual(0, backupStore.List(directory.Path, "guffawaffle").Count);
+    }
+
+    [TestMethod]
+    public async Task AbsentConfigurationRestoresTargetHistoryAndSelectionFailureRemovesExactCreatedFile()
+    {
+        using var directory = new TemporaryDirectory();
+        TemporaryDirectory.CreateFile(directory.Path, "prime.exe");
+        var configurationPath = Path.Combine(directory.Path, "community_patch_settings.toml");
+        var targetContents = Encoding.UTF8.GetBytes("[graphics]\nfree_resize = false\n");
+        var store = new WriteThenFailSelectionStore();
+        store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        await backupStore.CreateAsync(new(
+            directory.Path,
+            "netniv",
+            configurationPath,
+            targetContents,
+            "test-seed"));
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            backupStore,
+            null,
+            ExactConfigurationEvidence());
+        var preview = service.Preview("netniv", "stable", configurationPath);
+        Assert.AreEqual(false, preview.ConfigurationExisted);
+        Assert.AreEqual(
+            LauncherProviderSwitchConfigurationKind.RestoreProviderHistory,
+            preview.ConfigurationKind);
+        store.FailNextSave = true;
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(preview, preview.ConfirmationText));
+
+        Assert.IsFalse(File.Exists(configurationPath));
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
+        Assert.AreEqual(0, backupStore.List(directory.Path, "guffawaffle").Count);
+    }
+
+    [TestMethod]
+    public async Task ForgedPreviewFieldsAreRejectedWithAndWithoutConfiguration()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            backupStore,
+            null,
+            ExactConfigurationEvidence());
+        var preview = service.Preview("netniv", "stable", configurationPath);
+        var forged = new[]
+        {
+            preview with { ConfirmationText = string.Empty },
+            preview with { Concerns = [] },
+            preview with { SourceDisplayName = "forged source" },
+            preview with { TargetDisplayName = "forged target" },
+            preview with { ConfigurationKind = LauncherProviderSwitchConfigurationKind.None },
+            preview with { ConfigurationPath = null, ConfigurationSha256 = null },
+            preview with { ConfigurationExisted = false },
+        };
+        foreach (var receipt in forged)
+        {
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => service.ExecuteAsync(receipt, receipt.ConfirmationText));
+        }
+
+        var noConfiguration = service.Preview("netniv", "stable", null);
+        var forgedSelectionOnly = noConfiguration with
+        {
+            ConfirmationText = string.Empty,
+            Concerns = [],
+        };
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(forgedSelectionOnly, string.Empty));
+
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
+        Assert.AreEqual(0, backupStore.List(directory.Path, "guffawaffle").Count);
+    }
+
+    [TestMethod]
+    public void UnversionedCatalogCannotBeProjectedOntoNonDefaultChannel()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            directory.Path,
+            ExactConfigurationEvidence());
+
+        var exception = Assert.ThrowsException<InvalidDataException>(
+            () => service.Preview("guffawaffle", "preview", configurationPath));
+
+        StringAssert.Contains(exception.Message, "different release track");
     }
 
     [TestMethod]

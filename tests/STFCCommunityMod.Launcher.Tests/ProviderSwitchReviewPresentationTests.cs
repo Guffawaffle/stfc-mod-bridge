@@ -98,6 +98,30 @@ public sealed class ProviderSwitchReviewPresentationTests
         StringAssert.Contains(presentation.Summary, "STFC must remain closed");
     }
 
+    [TestMethod]
+    public void ExpectedMissingTomlExplainsAbsenceRecheck()
+    {
+        var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with
+        {
+            Configuration = Preview(
+                LauncherProviderCompatibilityKind.Compatible,
+                "compatible").Configuration with
+            {
+                ConfigurationKind = LauncherProviderSwitchConfigurationKind.None,
+                ConfigurationSha256 = null,
+                ConfigurationExisted = false,
+            },
+        };
+
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview,
+            "Stable",
+            introductoryReviewAcknowledged: false);
+
+        StringAssert.Contains(presentation.Summary, "No TOML exists now");
+        StringAssert.Contains(presentation.Summary, "recheck that exact expected path");
+    }
+
     private static LauncherProviderAtomicSwitchPreview Preview(
         LauncherProviderCompatibilityKind concernKind,
         string concernMessage) =>

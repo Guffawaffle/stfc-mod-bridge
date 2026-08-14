@@ -90,6 +90,8 @@ public sealed class ModManagementCoordinator(
 
     public string ProviderId => healthService.ProviderId;
 
+    public string ReleaseChannelId => healthService.ReleaseChannelId;
+
     public LauncherHealthSnapshot CaptureHealth(
         string? gameDirectory,
         bool isGameRunning) =>

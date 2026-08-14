@@ -1251,10 +1251,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             {
                 ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
                 var configurationPath = GetConfigurationFilePath();
-                if (configurationPath is not null && !File.Exists(configurationPath))
-                {
-                    configurationPath = null;
-                }
                 pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
                     targetProvider.Id,
                     targetProvider.DefaultReleaseChannelId,
