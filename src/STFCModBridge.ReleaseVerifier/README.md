@@ -29,7 +29,7 @@ this component cannot enroll a downloaded root.
 
 ## Locked inputs
 
-- Go `1.26.5`
+- Go `1.26.6`
 - `github.com/sigstore/sigstore-go` `v1.3.0`
 - embedded public-good root trust epoch `1`
 - normalized root-document SHA-256
@@ -48,10 +48,12 @@ requires the exact Go version, proves `go.mod`/`go.sum` are tidy, compares the
 compiled dependency closure to the reviewed inventory, runs tests, and emits a
 trimmed Windows x64 executable plus a matching 71-module SPDX inventory under
 `artifacts/release-verifier`.
-CI also runs `govulncheck` v1.6.0. The 2026-08-06 audit found no reachable
-symbol or package vulnerability. It reported the module-only advisory
-GO-2026-5932 for the transitive, uncalled `golang.org/x/crypto/openpgp`
-package; this residual is recorded rather than mislabeled as reachable code.
+CI also runs `govulncheck` v1.6.0. The 2026-08-13 Go 1.26.6 audit found no
+reachable symbol or imported-package vulnerability. It reported module-only
+advisories GO-2026-6179 and GO-2026-6180 for transitive, uncalled
+`golang.org/x/mod` sumdb packages, plus GO-2026-5932 for the transitive,
+uncalled `golang.org/x/crypto/openpgp` package. These residuals are recorded
+rather than mislabeled as reachable code.
 
 The captured rc.4 fixture is intentionally a negative production fixture: it
 is valid public GitHub/Sigstore evidence under the closed identity policy, but

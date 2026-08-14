@@ -2,7 +2,7 @@ module github.com/Guffawaffle/stfc-mod-bridge/src/STFCModBridge.ReleaseVerifier
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/sigstore/sigstore-go v1.3.0

@@ -46,14 +46,24 @@ broad release-evidence bundle rather than replacing it. The staging job verifies
 its repository, workflow, tag, commit, hosted-runner origin, result cardinality,
 subject cardinality, subject name, and digest before creating the draft release.
 
-The publication job downloads the final subjects and refuses to create the
-GitHub release unless every subject verifies against:
+The draft-staging job downloads the transferred final subjects and refuses to
+create the draft GitHub release unless every subject verifies against:
 
 - repository `Guffawaffle/stfc-mod-bridge`;
 - signer workflow `.github/workflows/release.yml`;
 - the exact release tag ref;
 - the exact tagged source commit;
 - a GitHub-hosted runner identity.
+
+After a maintainer records exactly one accepted qualification classification
+and publishes the immutable GitHub release, the post-publication workflow
+validates that release body before obtaining GCP credentials. It downloads the
+published MSIX, App Installer descriptor, and broad attestation bundle; repeats
+the repository/workflow/tag/commit/hosted-runner verification for both hosted
+subjects; creates or confirms the immutable package object; advances the
+channel descriptor; and only then verifies the final public descriptor bytes,
+MIME type, and hash. A final descriptor failure therefore enters the documented
+recovery path rather than proving that channel mutation never occurred.
 
 ## Independent online verification
 

@@ -5,16 +5,16 @@
 **Install · Configure · Diagnose · Run**
 
 > [!WARNING]
-> STFC Mod Bridge is pre-release software. The current approved public test
-> entry point remains
-> [`v0.1.0-rc.4`](https://github.com/Guffawaffle/stfc-mod-bridge/releases/tag/v0.1.0-rc.4),
-> published as a **Public canary — qualification is still in progress**. Later
-> release candidates are qualification artifacts unless their release notes
-> explicitly approve public installation. `v0.1.0-rc.3` is rejected because of
-> a provider-state projection regression, and the draft `v0.1.0-rc.15`
-> App Installer asset is not the final user-facing candidate. Follow
+> STFC Mod Bridge is pre-release software. Install from the
+> [GitHub releases page](https://github.com/Guffawaffle/stfc-mod-bridge/releases)
+> only when the exact immutable release notes classify that build as
+> **Closed-alpha approved** or **Public canary — qualification is still in
+> progress**. Do not infer approval from version order or the GitHub “Latest”
+> label; all other release candidates are qualification artifacts unless their
+> own immutable notes grant one of those classifications. `v0.1.0-rc.3` is
+> rejected because of a provider-state projection regression. Follow
 > [issue #30](https://github.com/Guffawaffle/stfc-mod-bridge/issues/30) for the
-> exact next-candidate and qualification state.
+> exact current candidate and qualification state.
 
 STFC Mod Bridge is a source-neutral Windows application for installing,
 updating, repairing, configuring, diagnosing, and running supported Star Trek
