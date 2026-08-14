@@ -86,7 +86,7 @@
     {
       "id": "go-runtime",
       "name": "The Go Programming Language runtime",
-      "version": "1.26.5",
+      "version": "1.26.6",
       "license": "BSD 3-Clause License",
       "sourceUrl": "https://go.dev/",
       "licenseUrl": "https://go.dev/LICENSE",
@@ -219,7 +219,7 @@
     },
     {
       "id": "go",
-      "version": "1.26.5",
+      "version": "1.26.6",
       "noticeId": "go-runtime",
       "attributionStatus": "required",
       "evidenceKind": "go-build-toolchain"

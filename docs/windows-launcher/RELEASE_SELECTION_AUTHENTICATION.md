@@ -4,7 +4,7 @@ Status: implementation complete through issue #97. Production authorization
 remains deliberately fail-closed until issue #30 qualifies the protected-tag
 evidence, package, offline/root-recovery, and failure-survival gates.
 
-Issue #94 implements the non-authorizing verifier groundwork: a Go 1.26.5
+Issue #94 implements the non-authorizing verifier groundwork: a Go 1.26.6
 helper locked to `sigstore-go` v1.3.0 and a 71-module
 compiled checksum inventory, the embedded public-good root at Bridge trust
 epoch 1, bounded local request and receipt contracts, a strict .NET process and

@@ -92,7 +92,7 @@ SQLitePCLRaw.core and SQLitePCLRaw.provider.dynamic_cdecl are licensed under the
 
 ## The Go Programming Language runtime
 
-- Version: 1.26.5
+- Version: 1.26.6
 - License: BSD 3-Clause License
 - Source: https://go.dev/
 - Authoritative license information: https://go.dev/LICENSE
