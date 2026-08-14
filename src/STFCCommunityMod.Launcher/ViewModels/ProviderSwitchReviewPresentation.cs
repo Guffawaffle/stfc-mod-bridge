@@ -19,7 +19,9 @@ internal sealed record ProviderSwitchReviewPresentation(
 
         var configuration = preview.Configuration;
         var warnings = configuration.Concerns
-            .Where(concern => concern.Kind == LauncherProviderCompatibilityKind.Loss)
+            .Where(concern => concern.Kind is
+                LauncherProviderCompatibilityKind.Warning
+                or LauncherProviderCompatibilityKind.Loss)
             .Select(concern => concern.Message)
             .Distinct(StringComparer.Ordinal)
             .ToArray();

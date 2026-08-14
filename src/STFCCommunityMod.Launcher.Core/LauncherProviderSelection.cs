@@ -233,6 +233,7 @@ public enum LauncherProviderCompatibilityKind
     Compatible,
     Loss,
     Unknown,
+    Warning,
 }
 
 public sealed record LauncherProviderCompatibilityConcern(
@@ -247,6 +248,15 @@ public enum LauncherProviderSwitchConfigurationKind
     RestoreProviderHistory,
 }
 
+public sealed record LauncherProviderSwitchConfigurationAnalysis(
+    LauncherProviderSelection Selection,
+    ConfigurationDiagnosisBinding Binding,
+    LauncherProviderCapabilityStatus CatalogStatus,
+    LauncherConfigurationCatalogIdentity? CatalogIdentity,
+    IReadOnlyDictionary<string, int> FindingCounts,
+    int AttentionFindingCount,
+    IReadOnlyList<string> BlockingFindingCodes);
+
 public sealed record LauncherProviderSwitchPreview(
     string TransactionId,
     LauncherProviderSelectionResolutionState SourceResolutionState,
@@ -260,7 +270,9 @@ public sealed record LauncherProviderSwitchPreview(
     LauncherProviderSwitchConfigurationKind ConfigurationKind,
     string? TargetConfigurationBackupId,
     string? TargetConfigurationSha256,
-    string ConfirmationText)
+    string ConfirmationText,
+    LauncherProviderSwitchConfigurationAnalysis? SourceConfigurationAnalysis = null,
+    LauncherProviderSwitchConfigurationAnalysis? TargetConfigurationAnalysis = null)
 {
     public bool HasCompatibilityLoss =>
         Concerns.Any(concern => concern.Kind == LauncherProviderCompatibilityKind.Loss);
@@ -286,16 +298,21 @@ public sealed class LauncherProviderSourceSwitchService
     private readonly ILauncherProviderSelectionStore selectionStore;
     private readonly ProviderScopedConfigurationBackupStore backupStore;
     private readonly Action<ConfigurationBackupReceipt?>? backupCompleted;
+    private readonly Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
+        configurationEvidenceResolver;
 
     public LauncherProviderSourceSwitchService(
         LauncherDistributionProviderCatalog catalog,
         ILauncherProviderSelectionStore selectionStore,
-        string stateDirectory)
+        string stateDirectory,
+        Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
+            configurationEvidenceResolver = null)
         : this(
             catalog,
             selectionStore,
             new ProviderScopedConfigurationBackupStore(stateDirectory),
-            null)
+            null,
+            configurationEvidenceResolver)
     {
     }
 
@@ -303,12 +320,15 @@ public sealed class LauncherProviderSourceSwitchService
         LauncherDistributionProviderCatalog catalog,
         ILauncherProviderSelectionStore selectionStore,
         ProviderScopedConfigurationBackupStore backupStore,
-        Action<ConfigurationBackupReceipt?>? backupCompleted)
+        Action<ConfigurationBackupReceipt?>? backupCompleted,
+        Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
+            configurationEvidenceResolver = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.selectionStore = selectionStore ?? throw new ArgumentNullException(nameof(selectionStore));
         this.backupStore = backupStore ?? throw new ArgumentNullException(nameof(backupStore));
         this.backupCompleted = backupCompleted;
+        this.configurationEvidenceResolver = configurationEvidenceResolver;
     }
 
     public LauncherProviderSwitchPreview Preview(
@@ -333,23 +353,62 @@ public sealed class LauncherProviderSourceSwitchService
         }
 
         var normalizedConfigurationPath = NormalizeOptionalConfigurationPath(configurationPath);
-        var configurationSha256 = normalizedConfigurationPath is null
+        var sourceConfiguration = normalizedConfigurationPath is null
             ? null
-            : HashConfiguration(normalizedConfigurationPath);
+            : ReadConfiguration(normalizedConfigurationPath);
+        var configurationSha256 = sourceConfiguration is null
+            ? null
+            : ConfigurationDocumentRevision.FromContents(sourceConfiguration).Sha256;
         ConfigurationBackupReceipt? targetBackup = null;
+        byte[]? targetConfiguration = null;
         if (normalizedConfigurationPath is not null)
         {
             var targetBackups = backupStore.List(
                 Path.GetDirectoryName(normalizedConfigurationPath)!,
                 target.ProviderId);
             targetBackup = targetBackups.Count == 0 ? null : targetBackups[0];
+            if (targetBackup is not null)
+            {
+                targetConfiguration = backupStore.Read(
+                    Path.GetDirectoryName(normalizedConfigurationPath)!,
+                    target.ProviderId,
+                    targetBackup.BackupId);
+                if (!string.Equals(
+                        ConfigurationDocumentRevision.FromContents(targetConfiguration).Sha256,
+                        targetBackup.ContentSha256,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "The target provider configuration backup no longer matches its protected receipt.");
+                }
+            }
         }
         var configurationKind = normalizedConfigurationPath is null
             ? LauncherProviderSwitchConfigurationKind.None
             : targetBackup is null
                 ? LauncherProviderSwitchConfigurationKind.PreserveCurrent
                 : LauncherProviderSwitchConfigurationKind.RestoreProviderHistory;
-        var concerns = BuildConcerns(current.Provider, targetProvider, current.Message);
+        LauncherProviderSwitchConfigurationAnalysis? sourceAnalysis = null;
+        LauncherProviderSwitchConfigurationAnalysis? targetAnalysis = null;
+        if (normalizedConfigurationPath is not null && sourceConfiguration is not null)
+        {
+            sourceAnalysis = AnalyzeConfiguration(
+                current.Selection,
+                normalizedConfigurationPath,
+                sourceConfiguration);
+            targetConfiguration ??= sourceConfiguration;
+            EnsureTargetParserSafe(targetConfiguration, isInitialPreview: true);
+            targetAnalysis = AnalyzeConfiguration(
+                target,
+                normalizedConfigurationPath,
+                targetConfiguration);
+            EnsureTargetCatalogSafe(targetAnalysis, isInitialPreview: true);
+        }
+        var concerns = BuildConcerns(
+            current.Provider,
+            targetProvider,
+            current.Message,
+            targetAnalysis);
         return new(
             Guid.NewGuid().ToString("N"),
             current.State,
@@ -363,7 +422,9 @@ public sealed class LauncherProviderSourceSwitchService
             configurationKind,
             targetBackup?.BackupId,
             targetBackup?.ContentSha256,
-            targetProvider.Id);
+            targetProvider.Id,
+            sourceAnalysis,
+            targetAnalysis);
     }
 
     public async Task<LauncherProviderSwitchResult> ExecuteAsync(
@@ -396,15 +457,20 @@ public sealed class LauncherProviderSourceSwitchService
             throw new InvalidOperationException(
                 "Provider selection changed after the compatibility preview. Review the switch again.");
         }
-        _ = catalog.GetProvider(preview.Target.ProviderId).ReleaseChannels[preview.Target.ReleaseChannelId];
-        if (preview.ConfigurationPath is not null
-            && !string.Equals(
-                HashConfiguration(preview.ConfigurationPath),
-                preview.ConfigurationSha256,
-                StringComparison.Ordinal))
+        var targetProvider = catalog.GetProvider(preview.Target.ProviderId);
+        _ = targetProvider.ReleaseChannels[preview.Target.ReleaseChannelId];
+        byte[]? sourceConfiguration = null;
+        if (preview.ConfigurationPath is not null)
         {
-            throw new InvalidOperationException(
-                "Configuration changed after the compatibility preview. Review the switch again.");
+            sourceConfiguration = ReadConfiguration(preview.ConfigurationPath);
+            if (!string.Equals(
+                    ConfigurationDocumentRevision.FromContents(sourceConfiguration).Sha256,
+                    preview.ConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Configuration changed after the compatibility preview. Review the switch again.");
+            }
         }
 
         byte[]? targetConfiguration = null;
@@ -431,7 +497,36 @@ public sealed class LauncherProviderSourceSwitchService
             }
         }
 
-        var backup = await BackupConfigurationAsync(preview, cancellationToken).ConfigureAwait(false);
+        if (preview.ConfigurationPath is not null && sourceConfiguration is not null)
+        {
+            var currentSourceAnalysis = AnalyzeConfiguration(
+                preview.Source,
+                preview.ConfigurationPath,
+                sourceConfiguration);
+            var proposedTargetConfiguration = targetConfiguration ?? sourceConfiguration;
+            EnsureTargetParserSafe(proposedTargetConfiguration, isInitialPreview: false);
+            var currentTargetAnalysis = AnalyzeConfiguration(
+                preview.Target,
+                preview.ConfigurationPath,
+                proposedTargetConfiguration);
+            EnsureTargetCatalogSafe(currentTargetAnalysis, isInitialPreview: false);
+            VerifyAnalysisBinding(
+                preview.SourceConfigurationAnalysis,
+                currentSourceAnalysis,
+                "source");
+            VerifyAnalysisBinding(
+                preview.TargetConfigurationAnalysis,
+                currentTargetAnalysis,
+                "target");
+            VerifyConcerns(
+                preview.Concerns,
+                BuildConcerns(current.Provider, targetProvider, current.Message, currentTargetAnalysis));
+        }
+
+        var backup = await BackupConfigurationAsync(
+            preview,
+            sourceConfiguration,
+            cancellationToken).ConfigureAwait(false);
         backupCompleted?.Invoke(backup);
         if (preview.ConfigurationPath is not null
             && !string.Equals(
@@ -459,25 +554,50 @@ public sealed class LauncherProviderSourceSwitchService
             throw new InvalidOperationException(
                 "Provider selection changed after the switch was prepared. The switch was not committed.");
         }
-        if (preview.ConfigurationPath is not null
-            && !string.Equals(
-                HashConfiguration(preview.ConfigurationPath),
-                preview.ConfigurationSha256,
-                StringComparison.Ordinal))
+        var targetProvider = catalog.GetProvider(preview.Target.ProviderId);
+        _ = targetProvider.ReleaseChannels[preview.Target.ReleaseChannelId];
+        byte[]? sourceConfiguration = null;
+        if (preview.ConfigurationPath is not null)
         {
-            throw new InvalidOperationException(
-                "Configuration changed after the switch was prepared. The switch was not committed.");
+            sourceConfiguration = ReadConfiguration(preview.ConfigurationPath);
+            if (!string.Equals(
+                    ConfigurationDocumentRevision.FromContents(sourceConfiguration).Sha256,
+                    preview.ConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Configuration changed after the switch was prepared. The switch was not committed.");
+            }
+            var currentSourceAnalysis = AnalyzeConfiguration(
+                preview.Source,
+                preview.ConfigurationPath,
+                sourceConfiguration);
+            var proposedTargetConfiguration = prepared.TargetConfiguration ?? sourceConfiguration;
+            EnsureTargetParserSafe(proposedTargetConfiguration, isInitialPreview: false);
+            var currentTargetAnalysis = AnalyzeConfiguration(
+                preview.Target,
+                preview.ConfigurationPath,
+                proposedTargetConfiguration);
+            EnsureTargetCatalogSafe(currentTargetAnalysis, isInitialPreview: false);
+            VerifyAnalysisBinding(
+                preview.SourceConfigurationAnalysis,
+                currentSourceAnalysis,
+                "source");
+            VerifyAnalysisBinding(
+                preview.TargetConfigurationAnalysis,
+                currentTargetAnalysis,
+                "target");
+            VerifyConcerns(
+                preview.Concerns,
+                BuildConcerns(current.Provider, targetProvider, current.Message, currentTargetAnalysis));
         }
 
         if (preview.ConfigurationPath is not null && prepared.TargetConfiguration is not null)
         {
-            var sourceConfiguration = await File.ReadAllBytesAsync(
-                preview.ConfigurationPath,
-                cancellationToken).ConfigureAwait(false);
             var configurationWrite = await new AtomicTomlStore(retainAdjacentBackup: false)
                 .SaveDocumentAsync(
                     preview.ConfigurationPath,
-                    sourceConfiguration,
+                    sourceConfiguration!,
                     prepared.TargetConfiguration!,
                     cancellationToken).ConfigureAwait(false);
             if (!configurationWrite.IsSuccess)
@@ -577,7 +697,8 @@ public sealed class LauncherProviderSourceSwitchService
     private static System.Collections.ObjectModel.ReadOnlyCollection<LauncherProviderCompatibilityConcern> BuildConcerns(
         LauncherDistributionProvider? source,
         LauncherDistributionProvider target,
-        string sourceResolutionMessage)
+        string sourceResolutionMessage,
+        LauncherProviderSwitchConfigurationAnalysis? targetAnalysis)
     {
         var concerns = new List<LauncherProviderCompatibilityConcern>();
         if (source is null)
@@ -590,6 +711,11 @@ public sealed class LauncherProviderSourceSwitchService
         }
         foreach (var capabilityId in LauncherProviderCapabilityIds.ContractCapabilities)
         {
+            if (capabilityId is LauncherProviderCapabilityIds.ConfigurationCatalog
+                or LauncherProviderCapabilityIds.ConfigurationMigration)
+            {
+                continue;
+            }
             var sourceStatus = source?.GetCapabilityStatus(capabilityId)
                 ?? LauncherProviderCapabilityStatus.Unknown;
             var targetStatus = target.GetCapabilityStatus(capabilityId);
@@ -611,16 +737,10 @@ public sealed class LauncherProviderSourceSwitchService
                         $"{target.DisplayName} does not support {capabilityId}."));
             }
         }
-        if (source is null
-            || target.Migration.Status == LauncherProviderCapabilityStatus.Unknown
-            || !target.Migration.CompatibleProviderIds.Contains(source.Id))
+
+        if (targetAnalysis is not null)
         {
-            var sourceName = source?.DisplayName ?? "the unresolved source";
-            concerns.Add(
-                new(
-                    LauncherProviderCapabilityIds.ConfigurationMigration,
-                    LauncherProviderCompatibilityKind.Unknown,
-                    $"Configuration compatibility from {sourceName} to {target.DisplayName} is unknown; TOML will be preserved without normalization."));
+            AddConfigurationConcerns(concerns, target, targetAnalysis);
         }
         if (concerns.Count == 0)
         {
@@ -628,13 +748,260 @@ public sealed class LauncherProviderSourceSwitchService
                 new(
                     LauncherProviderCapabilityIds.ConfigurationMigration,
                     LauncherProviderCompatibilityKind.Compatible,
-                    "The target provider declares this source compatible and preserves unknown TOML."));
+                    "No selected TOML requires provider-specific compatibility analysis."));
         }
         return concerns.AsReadOnly();
     }
 
+    private static void AddConfigurationConcerns(
+        List<LauncherProviderCompatibilityConcern> concerns,
+        LauncherDistributionProvider target,
+        LauncherProviderSwitchConfigurationAnalysis analysis)
+    {
+        if (analysis.CatalogStatus != LauncherProviderCapabilityStatus.Supported
+            || analysis.CatalogIdentity is null)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationCatalog,
+                    LauncherProviderCompatibilityKind.Warning,
+                    $"No exact {target.DisplayName} configuration catalog is available for "
+                    + $"'{analysis.Selection.ReleaseChannelId}'. The proposed TOML bytes will be preserved "
+                    + "without guessing provider-specific meaning."));
+            return;
+        }
+
+        var identity = analysis.CatalogIdentity;
+        concerns.Add(
+            new(
+                LauncherProviderCapabilityIds.ConfigurationCatalog,
+                LauncherProviderCompatibilityKind.Compatible,
+                $"The proposed TOML revision was analyzed with {identity.CatalogId} "
+                + $"v{identity.CatalogVersion} for {analysis.Selection.ProviderId}/"
+                + $"{analysis.Selection.ReleaseChannelId}."));
+
+        var unknownContentCount = CountFindings(
+            analysis,
+            "CONFIG_UNKNOWN_KEY",
+            "CONFIG_UNKNOWN_TABLE");
+        if (unknownContentCount > 0)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationMigration,
+                    LauncherProviderCompatibilityKind.Warning,
+                    $"The target catalog does not recognize {unknownContentCount} TOML "
+                    + "item(s). Their exact bytes will be preserved; Mod Bridge will not normalize or remove them."));
+        }
+
+        var runtimeLimitedCount = CountFindings(
+            analysis,
+            "CONFIG_SETTING_PARSED_UNUSED",
+            "CONFIG_SETTING_IGNORED",
+            "CONFIG_SETTING_LEGACY",
+            "CONFIG_SETTING_REMOVED");
+        if (runtimeLimitedCount > 0)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationMigration,
+                    LauncherProviderCompatibilityKind.Loss,
+                    $"The target catalog identifies {runtimeLimitedCount} configured setting(s) "
+                    + "that are ignored, removed, legacy, or parsed without runtime effect. Their bytes will remain intact."));
+        }
+
+        var otherAttentionCount = Math.Max(
+            0,
+            analysis.AttentionFindingCount - runtimeLimitedCount);
+        if (otherAttentionCount > 0)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationMigration,
+                    LauncherProviderCompatibilityKind.Warning,
+                    $"The target catalog reports {otherAttentionCount} compatibility condition(s). "
+                    + "The proposed TOML remains byte-preserving until you explicitly edit it."));
+        }
+    }
+
+    private static int CountFindings(
+        LauncherProviderSwitchConfigurationAnalysis analysis,
+        params string[] codes) =>
+        codes.Sum(code => analysis.FindingCounts.GetValueOrDefault(code));
+
+    private LauncherProviderSwitchConfigurationAnalysis AnalyzeConfiguration(
+        LauncherProviderSelection selection,
+        string configurationPath,
+        byte[] contents)
+    {
+        var evidence = ResolveConfigurationEvidence(selection);
+        if (!string.Equals(evidence.ProviderId, selection.ProviderId, StringComparison.Ordinal)
+            || !string.Equals(evidence.ChannelId, selection.ReleaseChannelId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Configuration diagnosis evidence is bound to a different provider or release channel.");
+        }
+        if (evidence.Catalog is not null
+            && !string.Equals(
+                evidence.Catalog.Identity.TrackId,
+                "unversioned",
+                StringComparison.Ordinal)
+            && !string.Equals(
+                evidence.Catalog.Identity.TrackId,
+                selection.ReleaseChannelId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Configuration diagnosis evidence is bound to a different release track.");
+        }
+
+        var report = new ConfigurationHealthAnalyzer().Analyze(
+            new ConfigurationDocumentSnapshot(configurationPath, contents),
+            evidence);
+        var findingCounts = report.Findings
+            .GroupBy(finding => finding.Code, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var blockingFindingCodes = report.Findings
+            .Where(finding =>
+                finding.Confidence == ConfigurationDiagnosisConfidence.Established
+                && finding.Severity is ConfigurationDiagnosisSeverity.Error
+                    or ConfigurationDiagnosisSeverity.Unknown)
+            .Select(finding => finding.Code)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(code => code, StringComparer.Ordinal)
+            .ToArray();
+        return new(
+            selection,
+            report.Binding,
+            evidence.CapabilityStatus,
+            evidence.Catalog?.Identity,
+            findingCounts,
+            report.Findings.Count(finding =>
+                finding.Severity == ConfigurationDiagnosisSeverity.Attention),
+            blockingFindingCodes);
+    }
+
+    private LauncherConfigurationDiagnosisEvidence ResolveConfigurationEvidence(
+        LauncherProviderSelection selection)
+    {
+        if (configurationEvidenceResolver is not null)
+        {
+            return configurationEvidenceResolver(selection)
+                ?? throw new InvalidDataException(
+                    "The configuration evidence resolver returned no provider evidence.");
+        }
+
+        var capabilityStatus = catalog.TryGetProvider(selection.ProviderId, out var provider)
+            && provider is not null
+                ? provider.GetCapabilityStatus(LauncherProviderCapabilityIds.ConfigurationCatalog)
+                : LauncherProviderCapabilityStatus.Unknown;
+        return LauncherConfigurationDiagnosisEvidence.Unavailable(
+            selection.ProviderId,
+            selection.ReleaseChannelId,
+            capabilityStatus == LauncherProviderCapabilityStatus.Unsupported
+                ? LauncherProviderCapabilityStatus.Unsupported
+                : LauncherProviderCapabilityStatus.Unknown);
+    }
+
+    private static void EnsureTargetParserSafe(byte[] contents, bool isInitialPreview)
+    {
+        var load = SparseTomlDocument.Load(contents, out var document);
+        var read = load.IsValid && document is not null
+            ? document.ReadOverrides()
+            : null;
+        if (!load.IsValid || document is null || read is null || !read.IsValid)
+        {
+            throw new InvalidDataException(
+                "The proposed target configuration cannot be read safely by the conservative TOML parser."
+                + (isInitialPreview
+                    ? " No provider-switch backup, download, or mutation was started."
+                    : " The target configuration and provider selection were not committed; review the switch again."));
+        }
+    }
+
+    private static void EnsureTargetCatalogSafe(
+        LauncherProviderSwitchConfigurationAnalysis analysis,
+        bool isInitialPreview)
+    {
+        if (analysis.CatalogStatus != LauncherProviderCapabilityStatus.Supported)
+        {
+            return;
+        }
+        var blockingCodes = analysis.BlockingFindingCodes;
+        if (blockingCodes.Count == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"The proposed target configuration is unsafe for {analysis.Selection.ProviderId}/"
+            + $"{analysis.Selection.ReleaseChannelId} under its exact catalog "
+            + $"({string.Join(", ", blockingCodes)})."
+            + (isInitialPreview
+                ? " No provider-switch backup, download, or mutation was started."
+                : " The target configuration and provider selection were not committed; review the switch again."));
+    }
+
+    private static void VerifyAnalysisBinding(
+        LauncherProviderSwitchConfigurationAnalysis? expected,
+        LauncherProviderSwitchConfigurationAnalysis actual,
+        string role)
+    {
+        if (expected is null
+            || expected.Selection != actual.Selection
+            || expected.Binding.Revision != actual.Binding.Revision
+            || !string.Equals(
+                expected.Binding.ProviderId,
+                actual.Binding.ProviderId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                expected.Binding.ChannelId,
+                actual.Binding.ChannelId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                expected.Binding.CatalogId,
+                actual.Binding.CatalogId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                expected.Binding.CatalogVersion,
+                actual.Binding.CatalogVersion,
+                StringComparison.Ordinal)
+            || expected.CatalogStatus != actual.CatalogStatus
+            || expected.CatalogIdentity != actual.CatalogIdentity
+            || expected.AttentionFindingCount != actual.AttentionFindingCount
+            || !DictionaryEqual(expected.FindingCounts, actual.FindingCounts)
+            || !expected.BlockingFindingCodes.SequenceEqual(
+                actual.BlockingFindingCodes,
+                StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The {role} configuration catalog or TOML revision changed after review. "
+                + "Review the provider switch again.");
+        }
+    }
+
+    private static bool DictionaryEqual(
+        IReadOnlyDictionary<string, int> left,
+        IReadOnlyDictionary<string, int> right) =>
+        left.Count == right.Count
+        && left.All(pair =>
+            right.TryGetValue(pair.Key, out var value) && value == pair.Value);
+
+    private static void VerifyConcerns(
+        IReadOnlyList<LauncherProviderCompatibilityConcern> expected,
+        IReadOnlyList<LauncherProviderCompatibilityConcern> actual)
+    {
+        if (!expected.SequenceEqual(actual))
+        {
+            throw new InvalidOperationException(
+                "The provider-switch compatibility findings changed after review. "
+                + "Review the provider switch again.");
+        }
+    }
+
     private async Task<ConfigurationBackupReceipt?> BackupConfigurationAsync(
         LauncherProviderSwitchPreview preview,
+        byte[]? sourceConfiguration,
         CancellationToken cancellationToken)
     {
         if (preview.ConfigurationPath is null)
@@ -643,15 +1010,17 @@ public sealed class LauncherProviderSourceSwitchService
         }
         var gameDirectory = Path.GetDirectoryName(preview.ConfigurationPath)
             ?? throw new InvalidDataException("The configuration path has no game directory.");
-        var contents = await File.ReadAllBytesAsync(
-            preview.ConfigurationPath,
-            cancellationToken).ConfigureAwait(false);
+        if (sourceConfiguration is null)
+        {
+            throw new InvalidDataException(
+                "The provider-switch source configuration was not retained for its exact backup.");
+        }
         return await backupStore.CreateAsync(
             new(
                 gameDirectory,
                 preview.Source.ProviderId,
                 preview.ConfigurationPath,
-                contents,
+                sourceConfiguration,
                 "provider-switch",
                 preview.Target.ProviderId,
                 $"{preview.Source.ProviderId}/{preview.Source.ReleaseChannelId}"),
@@ -706,12 +1075,24 @@ public sealed class LauncherProviderSourceSwitchService
 
     private static string HashConfiguration(string path)
     {
+        return ConfigurationDocumentRevision.FromContents(ReadConfiguration(path)).Sha256;
+    }
+
+    private static byte[] ReadConfiguration(string path)
+    {
         using var stream = File.OpenRead(path);
         if (stream.Length > MaximumConfigurationBytes)
         {
             throw new InvalidDataException(
                 $"Configuration exceeds the {MaximumConfigurationBytes}-byte provider-switch limit.");
         }
-        return Convert.ToHexString(SHA256.HashData(stream));
+        using var buffer = new MemoryStream((int)stream.Length);
+        stream.CopyTo(buffer);
+        if (buffer.Length > MaximumConfigurationBytes)
+        {
+            throw new InvalidDataException(
+                $"Configuration exceeds the {MaximumConfigurationBytes}-byte provider-switch limit.");
+        }
+        return buffer.ToArray();
     }
 }
