@@ -440,7 +440,12 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
             child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
 
-            var context = CreateContext(directory.Path);
+            var selectionPath = Path.Combine(stateDirectory, "provider-selection.json");
+            var selectionBeforeRecovery = await File.ReadAllBytesAsync(selectionPath);
+            var context = CreateContext(
+                directory.Path,
+                checkpoint: null,
+                initializeFixture: false);
             var result = await context.Coordinator.RecoverAsync();
             var committed = crashStage != "Prepared";
             Assert.AreEqual(
@@ -463,10 +468,17 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
                 desiredRevision.Sha256,
                 StringComparison.Ordinal));
             Assert.AreEqual(committed, selected.WasRestored);
+            var recoveredJournal = context.Coordinator.ReadJournal()!;
             if (committed)
             {
+                Assert.AreEqual(
+                    recoveredJournal.Preview.TransactionId,
+                    selected.RestoreTransactionId);
                 var preRestore = history
                     .Single(receipt => string.Equals(receipt.Reason, "manual-restore", StringComparison.Ordinal));
+                Assert.AreEqual(
+                    $"configuration-history-restore/{recoveredJournal.Preview.TransactionId}",
+                    preRestore.ReleaseIdentity);
                 CollectionAssert.AreEqual(
                     Encoding.UTF8.GetBytes("# live baseline\n"),
                     context.Store.Read(
@@ -474,11 +486,18 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
                         "guffawaffle",
                         preRestore.BackupId));
             }
+            else
+            {
+                Assert.IsNull(selected.RestoreTransactionId);
+            }
             Assert.AreEqual(
                 committed
                     ? ProviderConfigurationRestorePhase.Completed
                     : ProviderConfigurationRestorePhase.Failed,
-                context.Coordinator.ReadJournal()!.Phase);
+                recoveredJournal.Phase);
+            CollectionAssert.AreEqual(
+                selectionBeforeRecovery,
+                await File.ReadAllBytesAsync(selectionPath));
         }
         finally
         {
@@ -535,16 +554,32 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
 
     private static RestoreContext CreateContext(
         string root,
-        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null)
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null,
+        bool initializeFixture = true)
     {
-        var stateDirectory = Directory.CreateDirectory(Path.Combine(root, "state")).FullName;
-        var gameDirectory = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
-        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var stateDirectory = Path.Combine(root, "state");
+        var gameDirectory = Path.Combine(root, "game");
+        if (initializeFixture)
+        {
+            Directory.CreateDirectory(stateDirectory);
+            Directory.CreateDirectory(gameDirectory);
+            TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        }
+        else if (!Directory.Exists(stateDirectory)
+            || !Directory.Exists(gameDirectory)
+            || !File.Exists(Path.Combine(gameDirectory, "prime.exe")))
+        {
+            throw new InvalidDataException(
+                "The terminated restore fixture lost its state or validated game installation.");
+        }
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
         var catalog = LauncherDistributionProviderTests.LoadFixtureCatalog();
         var selection = new LauncherProviderSelection("guffawaffle", "stable");
         var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
-        selectionStore.Save(selection);
+        if (initializeFixture)
+        {
+            selectionStore.Save(selection);
+        }
         var schema = LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
             AppContext.BaseDirectory,
             "Fixtures",
