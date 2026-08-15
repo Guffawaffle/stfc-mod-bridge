@@ -694,14 +694,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     [DataTestMethod]
     [DataRow("artifact", "Prepared")]
     [DataRow("artifact", "ArtifactCommitting")]
+    [DataRow("artifact-partial", "ArtifactCommitting")]
     [DataRow("artifact", "ConfigurationCommitted")]
     [DataRow("artifact", "Completed")]
     [DataRow("configuration", "Prepared")]
     [DataRow("configuration", "ConfigurationCommitting")]
+    [DataRow("configuration-partial", "ConfigurationCommitting")]
     [DataRow("configuration", "ConfigurationCommitted")]
     [DataRow("configuration", "Completed")]
     [DataRow("rollback", "RollingBack")]
+    [DataRow("rollback-partial", "RollingBack")]
     [DataRow("rollback", "RolledBack")]
+    [DataRow("recovery-required", "RecoveryRequired")]
     public async Task HardCrashAtEverySwitchBoundaryRecoversExactState(
         string crashMode,
         string crashStage)
@@ -728,6 +732,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             Assert.IsNull(
                 competingRootLease,
                 $"Switch stage '{crashMode}/{crashStage}' released its root mutation lease early.");
+            var liveConfigurationPath = Path.Combine(
+                directory.Path,
+                "game",
+                "community_patch_settings.toml");
+            var liveDllPath = Path.Combine(directory.Path, "game", "version.dll");
+            var liveSelectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
             if (crashMode == "rollback")
             {
                 var rollbackStillPending = crashStage == "RollingBack";
@@ -736,26 +746,56 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                         ? Encoding.UTF8.GetBytes("# netniv\n[graphics]\nfree_resize = false\n")
                         : Encoding.UTF8.GetBytes(
                             "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n"),
-                    await File.ReadAllBytesAsync(Path.Combine(
-                        directory.Path,
-                        "game",
-                        "community_patch_settings.toml")));
+                    await File.ReadAllBytesAsync(liveConfigurationPath));
                 Assert.AreEqual(
                     rollbackStillPending
                         ? new LauncherProviderSelection("netniv", "stable")
                         : new LauncherProviderSelection("guffawaffle", "stable"),
-                    new JsonLauncherProviderSelectionStore(stateDirectory).Load());
+                    liveSelectionStore.Load());
                 CollectionAssert.AreEqual(
                     GuffawaffleArtifact,
-                    await File.ReadAllBytesAsync(Path.Combine(directory.Path, "game", "version.dll")));
+                    await File.ReadAllBytesAsync(liveDllPath));
             }
-            child.Kill(entireProcessTree: true);
-            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            else if (crashMode == "artifact-partial")
+            {
+                CollectionAssert.AreEqual(NetnivArtifact, await File.ReadAllBytesAsync(liveDllPath));
+                CollectionAssert.AreEqual(
+                    Encoding.UTF8.GetBytes(
+                        "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n"),
+                    await File.ReadAllBytesAsync(liveConfigurationPath));
+                Assert.AreEqual(
+                    new LauncherProviderSelection("guffawaffle", "stable"),
+                    liveSelectionStore.Load());
+            }
+            else if (crashMode == "configuration-partial")
+            {
+                Assert.IsFalse(File.Exists(liveDllPath));
+                CollectionAssert.AreEqual(
+                    Encoding.UTF8.GetBytes("# netniv\n[graphics]\nfree_resize = false\n"),
+                    await File.ReadAllBytesAsync(liveConfigurationPath));
+                Assert.AreEqual(
+                    new LauncherProviderSelection("guffawaffle", "stable"),
+                    liveSelectionStore.Load());
+            }
+            else if (crashMode is "rollback-partial" or "recovery-required")
+            {
+                CollectionAssert.AreEqual(
+                    Encoding.UTF8.GetBytes(
+                        "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n"),
+                    await File.ReadAllBytesAsync(liveConfigurationPath));
+                Assert.AreEqual(
+                    new LauncherProviderSelection("netniv", "stable"),
+                    liveSelectionStore.Load());
+                CollectionAssert.AreEqual(
+                    GuffawaffleArtifact,
+                    await File.ReadAllBytesAsync(liveDllPath));
+            }
+            await TerminateCrashProbeAsync(child, stateDirectory);
 
             var crashLeftFiles = CaptureFiles(directory.Path);
             var fixture = await CreateFixtureAsync(
                 directory.Path,
-                installSource: crashMode != "configuration",
+                installSource: !crashMode.StartsWith("configuration", StringComparison.Ordinal),
                 initializeFixture: false);
             AssertFilesEqual(crashLeftFiles, CaptureFiles(directory.Path));
             Assert.AreEqual(
@@ -783,7 +823,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                     : new LauncherProviderSelection("guffawaffle", "stable"),
                 fixture.SelectionStore.Load());
             var dllPath = Path.Combine(fixture.GameDirectory, "version.dll");
-            if (crashMode == "configuration")
+            if (crashMode.StartsWith("configuration", StringComparison.Ordinal))
             {
                 Assert.IsFalse(File.Exists(dllPath));
                 Assert.IsNull(fixture.TargetDeployment.ReadInstalledState());
@@ -825,10 +865,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         }
         finally
         {
-            if (!child.HasExited)
-            {
-                child.Kill(entireProcessTree: true);
-            }
+            await TerminateCrashProbeAsync(
+                child,
+                Path.Combine(directory.Path, "state"));
         }
     }
 
@@ -851,7 +890,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             LauncherProviderAtomicSwitchPhase current,
             CancellationToken cancellationToken)
         {
-            if (current != crashStage)
+            if (configuredMode.EndsWith("-partial", StringComparison.Ordinal)
+                || current != crashStage)
             {
                 return;
             }
@@ -873,12 +913,50 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             }
             return ValueTask.CompletedTask;
         }
+        async ValueTask HoldAfterTargetDllInstall(
+            ModDeploymentFileCheckpoint current,
+            CancellationToken cancellationToken)
+        {
+            if (configuredMode != "artifact-partial"
+                || current != ModDeploymentFileCheckpoint.TargetDllInstalled)
+            {
+                return;
+            }
+            await File.WriteAllTextAsync(
+                readyPath,
+                $"{configuredMode}/{crashStage}",
+                cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        void HoldDuringSelectionCommit()
+        {
+            File.WriteAllText(readyPath, $"{configuredMode}/{crashStage}");
+            Thread.Sleep(Timeout.Infinite);
+        }
+        var selectionInterruption = configuredMode switch
+        {
+            "configuration-partial" => SelectionInterruption.BeforeTargetSave,
+            "rollback-partial" => SelectionInterruption.BeforeSourceRollbackSave,
+            "recovery-required" => SelectionInterruption.FailBeforeSourceRollbackSave,
+            _ => SelectionInterruption.None,
+        };
+        ILauncherProviderSelectionStore? selectionStore = selectionInterruption == SelectionInterruption.None
+            ? null
+            : new InterruptingSelectionStore(
+                Path.Combine(root, "state"),
+                selectionInterruption,
+                HoldDuringSelectionCommit);
         var fixture = await CreateFixtureAsync(
             root,
-            installSource: configuredMode != "configuration",
+            selectionStore,
+            installSource: !configuredMode.StartsWith("configuration", StringComparison.Ordinal),
             checkpoint: Checkpoint,
-            targetPhaseCheckpoint: configuredMode == "rollback"
+            targetPhaseCheckpoint: configuredMode.StartsWith("rollback", StringComparison.Ordinal)
+                || configuredMode == "recovery-required"
                 ? FailAfterConfigurationCommit
+                : null,
+            targetFileCheckpoint: configuredMode == "artifact-partial"
+                ? HoldAfterTargetDllInstall
                 : null);
         var preview = await fixture.Coordinator.PreviewAsync(
             "netniv",
@@ -925,7 +1003,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             configurationEvidenceResolver = null,
         bool initializeFixture = true,
         Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? targetPhaseCheckpoint = null)
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? targetPhaseCheckpoint = null,
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? targetFileCheckpoint = null)
     {
         var gameDirectory = Path.Combine(root, "game");
         var stateDirectory = Path.Combine(root, "state");
@@ -993,7 +1072,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             new("netniv", "stable", "netniv.stfc-community-mod"),
             targetDownloader ?? (reviewedTarget ? new ThrowingDownloader() : null),
             targetCertification,
-            targetPhaseCheckpoint);
+            targetPhaseCheckpoint,
+            targetFileCheckpoint);
         if (initializeFixture && installSource)
         {
             Assert.AreEqual(
@@ -1091,6 +1171,72 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         }
     }
 
+    private static async Task TerminateCrashProbeAsync(Process child, string stateDirectory)
+    {
+        if (!child.HasExited)
+        {
+            using var killer = Process.Start(new ProcessStartInfo("taskkill")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                ArgumentList =
+                {
+                    "/PID",
+                    child.Id.ToString(CultureInfo.InvariantCulture),
+                    "/T",
+                    "/F",
+                },
+            }) ?? throw new InvalidOperationException("Could not start taskkill for the crash probe.");
+            await killer.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            if (killer.ExitCode != 0 && !child.HasExited)
+            {
+                var output = await killer.StandardOutput.ReadToEndAsync();
+                var error = await killer.StandardError.ReadToEndAsync();
+                Assert.Fail(
+                    $"Could not terminate provider-switch crash probe {child.Id}. "
+                    + $"Output: {output} Error: {error}");
+            }
+        }
+        await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        await WaitForCrashLocksReleasedAsync(stateDirectory);
+    }
+
+    private static async Task WaitForCrashLocksReleasedAsync(string stateDirectory)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (true)
+        {
+            LauncherOperationLease? providerLease = null;
+            LauncherOperationLease? rootLease = null;
+            try
+            {
+                providerLease = await new LauncherOperationLock(
+                        Path.Combine(stateDirectory, "provider-switch"))
+                    .TryAcquireAsync(timeout.Token);
+                rootLease = await new LauncherOperationLock(stateDirectory)
+                    .TryAcquireAsync(timeout.Token);
+                if (providerLease is not null && rootLease is not null)
+                {
+                    return;
+                }
+            }
+            finally
+            {
+                if (rootLease is not null)
+                {
+                    await rootLease.DisposeAsync();
+                }
+                if (providerLease is not null)
+                {
+                    await providerLease.DisposeAsync();
+                }
+            }
+            await Task.Delay(50, timeout.Token);
+        }
+    }
+
     private static Dictionary<string, byte[]> CaptureFiles(string root) =>
         Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .ToDictionary(
@@ -1176,7 +1322,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         ModInstallationAttribution attribution,
         IModArtifactDownloader? downloader = null,
         ReviewedReleaseCertification? reviewedCertification = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null) =>
         new(
             stateDirectory,
             downloader ?? new FakeDownloader(contents),
@@ -1187,7 +1334,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             timeProvider: null,
             afterPhasePersisted: afterPhasePersisted,
             reviewedCertification: reviewedCertification,
-            afterFileCheckpoint: null);
+            afterFileCheckpoint: afterFileCheckpoint);
 
     private static ModReleaseArtifact Artifact(byte[] contents, string version, Uri? uri = null) => new(
         uri ?? new Uri("https://example.invalid/version.dll"),
@@ -1386,6 +1533,52 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         }
 
         public void Clear() => selection = null;
+    }
+
+    private enum SelectionInterruption
+    {
+        None,
+        BeforeTargetSave,
+        BeforeSourceRollbackSave,
+        FailBeforeSourceRollbackSave,
+    }
+
+    private sealed class InterruptingSelectionStore(
+        string stateDirectory,
+        SelectionInterruption interruption,
+        Action hold) : ILauncherProviderSelectionStore
+    {
+        private readonly JsonLauncherProviderSelectionStore inner = new(stateDirectory);
+        private bool targetWasSaved;
+
+        public LauncherProviderSelection? Load() => inner.Load();
+
+        public void Save(LauncherProviderSelection value)
+        {
+            if (string.Equals(value.ProviderId, "netniv", StringComparison.Ordinal))
+            {
+                if (interruption == SelectionInterruption.BeforeTargetSave)
+                {
+                    hold();
+                }
+                inner.Save(value);
+                targetWasSaved = true;
+                return;
+            }
+            if (targetWasSaved
+                && interruption is SelectionInterruption.BeforeSourceRollbackSave
+                    or SelectionInterruption.FailBeforeSourceRollbackSave)
+            {
+                if (interruption == SelectionInterruption.FailBeforeSourceRollbackSave)
+                {
+                    throw new IOException("Injected source-selection rollback failure.");
+                }
+                hold();
+            }
+            inner.Save(value);
+        }
+
+        public void Clear() => inner.Clear();
     }
 
 }
