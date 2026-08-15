@@ -1290,6 +1290,212 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       PanningMode="VerticalOnly"
+                      Visibility="{Binding IsConfigurationHistorySelected, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      automation:AutomationProperties.Name="Configuration history">
+          <ScrollViewer.Resources>
+            <Style BasedOn="{StaticResource SettingsScrollBarStyle}"
+                   TargetType="{x:Type ScrollBar}" />
+          </ScrollViewer.Resources>
+          <StackPanel MaxWidth="820"
+                      Margin="4,18,14,28"
+                      HorizontalAlignment="Stretch">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock FontSize="26"
+                           FontWeight="SemiBold"
+                           Text="Configuration history" />
+                <TextBlock MaxWidth="680"
+                           Margin="0,7,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="{Binding ConfigurationHistory.Description}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <Button Grid.Column="1"
+                      Margin="18,0,0,0"
+                      VerticalAlignment="Top"
+                      Style="{StaticResource UtilityActionButtonStyle}"
+                      Command="{Binding ConfigurationHistory.RefreshCommand}"
+                      Content="_Refresh"
+                      automation:AutomationProperties.Name="Refresh configuration history" />
+            </Grid>
+
+            <Border Margin="0,22,0,8"
+                    Padding="16"
+                    Background="{DynamicResource WarningSoftBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{Binding ConfigurationHistory.IsReviewVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
+                    automation:AutomationProperties.Name="Configuration restore review">
+              <StackPanel>
+                <TextBlock FontSize="18"
+                           FontWeight="SemiBold"
+                           Text="Review restore" />
+                <TextBlock Margin="0,5,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="This replaces only the active TOML after rechecking the game, release source, history receipt, and live file revision. The current bytes are protected first."
+                           TextWrapping="Wrap" />
+                <Grid Margin="0,16,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="132" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Text="Provider" />
+                  <TextBlock Grid.Column="1"
+                             FontWeight="SemiBold"
+                             Text="{Binding ConfigurationHistory.SelectedReview.ProviderDisplayName}" />
+                  <TextBlock Grid.Row="1" Margin="0,7,0,0"
+                             Foreground="{DynamicResource TextSecondaryBrush}" Text="Saved" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,7,0,0"
+                             Text="{Binding ConfigurationHistory.SelectedReview.CreatedAtText}" />
+                  <TextBlock Grid.Row="2" Margin="0,7,0,0"
+                             Foreground="{DynamicResource TextSecondaryBrush}" Text="SHA-256" />
+                  <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,7,0,0"
+                             FontFamily="Consolas" FontSize="12"
+                             Text="{Binding ConfigurationHistory.SelectedReview.HashShort}" />
+                  <TextBlock Grid.Row="3" Margin="0,7,0,0"
+                             Foreground="{DynamicResource TextSecondaryBrush}" Text="Origin" />
+                  <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,7,0,0"
+                             Text="{Binding ConfigurationHistory.SelectedReview.ReasonText}" />
+                  <TextBlock Grid.Row="4" Margin="0,7,0,0"
+                             Foreground="{DynamicResource TextSecondaryBrush}" Text="Compatibility" />
+                  <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,7,0,0">
+                    <TextBlock FontWeight="SemiBold"
+                               Text="{Binding ConfigurationHistory.SelectedReview.CompatibilityText}" />
+                    <TextBlock Margin="0,3,0,0"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding ConfigurationHistory.SelectedReview.CompatibilitySummary}"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                </Grid>
+                <TextBlock Margin="0,16,0,4"
+                           FontWeight="SemiBold"
+                           Text="Exact destination" />
+                <TextBlock Padding="10,8"
+                           Background="{DynamicResource SurfaceMutedBrush}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           Text="{Binding ConfigurationHistory.SelectedReview.DestinationPath}"
+                           TextWrapping="Wrap"
+                           automation:AutomationProperties.Name="{Binding ConfigurationHistory.SelectedReview.DestinationPath, StringFormat='Exact configuration restore destination: {0}'}" />
+                <TextBlock Margin="0,16,0,6"
+                           Text="{Binding ConfigurationHistory.SelectedReview.ConfirmationInstruction}"
+                           TextWrapping="Wrap" />
+                <TextBox MinHeight="42"
+                         Padding="12,8"
+                         Style="{StaticResource SettingsSearchStyle}"
+                         MaxLength="64"
+                         Text="{Binding ConfigurationHistory.ConfirmationText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         automation:AutomationProperties.Name="Type provider ID to confirm configuration restore" />
+                <WrapPanel Margin="0,16,0,0" HorizontalAlignment="Right">
+                  <Button Margin="0,0,8,0"
+                          Style="{StaticResource QuietButtonStyle}"
+                          Command="{Binding ConfigurationHistory.CancelReviewCommand}"
+                          Content="_Cancel"
+                          automation:AutomationProperties.Name="Cancel configuration restore without changing the file" />
+                  <Button Style="{StaticResource UtilityActionButtonStyle}"
+                          Command="{Binding ConfigurationHistory.RestoreCommand}"
+                          Content="_Restore configuration"
+                          automation:AutomationProperties.Name="Restore the reviewed configuration history entry" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Margin="0,12,0,8"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Text="Protected history" />
+            <Border Height="1" Background="{DynamicResource BorderBrush}" />
+            <ItemsControl ItemsSource="{Binding ConfigurationHistory.Entries}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type viewModels:ProviderConfigurationHistoryEntryViewModel}">
+                  <Border Padding="4,15"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="0,0,0,1"
+                          automation:AutomationProperties.Name="{Binding AutomationName}">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock FontSize="15" FontWeight="SemiBold">
+                          <Run Text="{Binding ProviderDisplayName}" />
+                          <Run Text=" · " />
+                          <Run Text="{Binding CreatedAtText}" />
+                        </TextBlock>
+                        <WrapPanel Margin="0,5,0,0">
+                          <TextBlock Margin="0,0,14,0"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="{Binding HashShort, StringFormat='SHA-256 {0}'}" />
+                          <TextBlock Margin="0,0,14,0"
+                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                     Text="{Binding ReasonText}" />
+                          <TextBlock FontWeight="SemiBold"
+                                     Text="{Binding CompatibilityText}" />
+                        </WrapPanel>
+                        <TextBlock Margin="0,5,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="{Binding CompatibilitySummary}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="{Binding RestoredText}" />
+                      </StackPanel>
+                      <Button Grid.Column="1"
+                              Margin="18,0,0,0"
+                              VerticalAlignment="Center"
+                              Style="{StaticResource UtilityActionButtonStyle}"
+                              Command="{Binding ReviewCommand}"
+                              Content="_Review restore…"
+                              automation:AutomationProperties.Name="{Binding AutomationName, StringFormat='Review restore: {0}'}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Margin="0,22,0,0"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="Refreshing protected history…"
+                       Visibility="{Binding ConfigurationHistory.IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       automation:AutomationProperties.LiveSetting="Polite" />
+            <TextBlock MaxWidth="560"
+                       Margin="0,22,0,0"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding ConfigurationHistory.EmptyText}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Visibility="{Binding ConfigurationHistory.IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <TextBlock MaxWidth="760"
+                       Margin="0,18,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="{Binding ConfigurationHistory.OperationStatus}"
+                       TextWrapping="Wrap"
+                       automation:AutomationProperties.LiveSetting="Assertive"
+                       automation:AutomationProperties.Name="{Binding ConfigurationHistory.OperationStatus}" />
+          </StackPanel>
+        </ScrollViewer>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly"
                       Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}"
                       automation:AutomationProperties.Name="About STFC Mod Bridge">
           <ScrollViewer.Resources>
