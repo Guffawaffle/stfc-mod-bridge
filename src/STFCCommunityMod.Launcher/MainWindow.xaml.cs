@@ -183,7 +183,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 provider,
                 releaseChannel,
                 runtimeComposition,
-                configurationCatalog));
+                configurationCatalog,
+                () => viewModel.ConfigurationFilePath));
     }
 
     private Task<bool> ConfirmLaunchOverrideAsync(GameLaunchPresentation presentation)
@@ -1690,7 +1691,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         LauncherDistributionProvider provider,
         LauncherProviderReleaseChannel releaseChannel,
         LauncherStartupComposition runtimeComposition,
-        LauncherConfigurationCatalog catalog)
+        LauncherConfigurationCatalog catalog,
+        Func<string?> configurationPathProvider)
     {
         var stateDirectory = PerUserInstallLayout.FromCurrentUser().StateDirectory;
         var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
@@ -1698,12 +1700,25 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             backupStore,
             provider.Id,
             $"{provider.Id}/{releaseChannel.Id}");
+        var activeSelection = new LauncherProviderSelection(provider.Id, releaseChannel.Id);
+        var configurationEvidence = BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
+            distributionProviderCatalog,
+            BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
+            activeSelection);
+        var configurationHistoryCoordinator = new ProviderConfigurationRestoreCoordinator(
+            backupStore,
+            distributionProviderCatalog,
+            providerSelectionStore,
+            activeSelection,
+            configurationEvidence,
+            stateDirectory,
+            configurationPathProvider);
         openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
         return new(
             catalog,
             new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
             openRawTomlCommand,
-            GetConfigurationFilePath,
+            configurationPathProvider,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
             repository: new TomlConfigurationRepository(
@@ -1713,7 +1728,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             openExternalUri: OpenExternalUri,
             openDataFolder: OpenApplicationDataFolder,
             manageApplication: OpenWindowsInstalledApps,
-            openReleaseSecurityGuidance: OpenReleaseSecurityGuidance);
+            openReleaseSecurityGuidance: OpenReleaseSecurityGuidance,
+            configurationHistoryCoordinator: configurationHistoryCoordinator);
     }
 
     private bool CanOpenRawConfiguration()

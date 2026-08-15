@@ -58,7 +58,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         Action<Uri>? openExternalUri = null,
         Action? openDataFolder = null,
         Action? manageApplication = null,
-        Action? openReleaseSecurityGuidance = null)
+        Action? openReleaseSecurityGuidance = null,
+        ProviderConfigurationRestoreCoordinator? configurationHistoryCoordinator = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -83,7 +84,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             manageApplication,
             openReleaseSecurityGuidance);
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
-        Sections = CreateSections();
         discardCommand = new SettingsActionCommand(
             Discard,
             () => !isInvalidating && !isInvalidated && HasPendingChanges);
@@ -98,6 +98,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges, () => workspace);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
         SyncWorkspace.Committed += SyncWorkspace_Committed;
+        ConfigurationHistory = configurationHistoryCoordinator is null
+            ? null
+            : new(
+                configurationHistoryCoordinator,
+                catalog.Source.StableId,
+                catalog.Source.DisplayName,
+                () => HasPendingChanges || SyncWorkspace.HasPendingChanges,
+                ReloadAfterHistoryRestore);
+        Sections = CreateSections();
 
         TryLoadConfiguration();
         SyncWorkspace.Reload();
@@ -146,6 +155,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public SyncWorkspaceViewModel SyncWorkspace { get; }
 
+    public ProviderConfigurationHistoryViewModel? ConfigurationHistory { get; }
+
     public string SearchText
     {
         get => searchText;
@@ -162,6 +173,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSearchActive));
             OnPropertyChanged(nameof(WorkspaceTitle));
             OnPropertyChanged(nameof(WorkspaceDescription));
+            OnPropertyChanged(nameof(IsAboutSelected));
+            OnPropertyChanged(nameof(IsGeneralSelected));
+            OnPropertyChanged(nameof(IsAdvancedSelected));
+            OnPropertyChanged(nameof(IsDataSyncSelected));
+            OnPropertyChanged(nameof(IsConfigurationHistorySelected));
+            OnPropertyChanged(nameof(IsSettingsListVisible));
+            OnPropertyChanged(nameof(IsSettingsFooterVisible));
             searchClearCommand.RaiseCanExecuteChanged();
             RebuildProjection();
         }
@@ -225,9 +243,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsDataSyncSelected =>
         !IsSearchActive && selectedSection == LauncherSettingsSection.DataSync;
 
-    public bool IsSettingsListVisible => !IsAboutSelected && !IsDataSyncSelected;
+    public bool IsConfigurationHistorySelected =>
+        !IsSearchActive && selectedSection == LauncherSettingsSection.ConfigurationHistory;
 
-    public bool IsSettingsFooterVisible => HasPendingChanges && !IsDataSyncSelected;
+    public bool IsSettingsListVisible =>
+        !IsAboutSelected && !IsDataSyncSelected && !IsConfigurationHistorySelected;
+
+    public bool IsSettingsFooterVisible =>
+        HasPendingChanges && !IsDataSyncSelected && !IsConfigurationHistorySelected;
 
     public int VisibleSettingCount =>
         projectedItems.OfType<SettingsRowViewModel>().Count()
@@ -360,11 +383,21 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
+    private void ReloadAfterHistoryRestore()
+    {
+        ClearEditorDrafts();
+        TryLoadConfiguration();
+        SyncWorkspace.Reload();
+        RefreshAllStates();
+        NotifySessionChanged();
+    }
+
     internal Task InvalidateAsync()
     {
         TaskCompletionSource completion;
         Task? settingsSave;
         Task syncInvalidation;
+        Task historyInvalidation;
         lock (lifecycleSync)
         {
             if (invalidationTask is not null)
@@ -380,10 +413,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             invalidationTask = completion.Task;
             settingsSave = activeSave;
             syncInvalidation = SyncWorkspace.InvalidateAsync();
+            historyInvalidation = ConfigurationHistory?.InvalidateAsync() ?? Task.CompletedTask;
         }
         RefreshAllStates();
         NotifySessionChanged();
-        _ = CompleteInvalidationAsync(settingsSave, syncInvalidation, completion);
+        _ = CompleteInvalidationAsync(
+            settingsSave,
+            syncInvalidation,
+            historyInvalidation,
+            completion);
         return completion.Task;
     }
 
@@ -397,10 +435,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         if (layoutProvider.Sections.Count == 0
             || layoutProvider.Sections.Any(
-                section => section.Id == LauncherSettingsSection.About))
+                section => section.Id is LauncherSettingsSection.About
+                    or LauncherSettingsSection.ConfigurationHistory))
         {
             throw new InvalidOperationException(
-                "The settings layout must provide at least one content section and must not own About.");
+                "The settings layout must provide content and must not own Configuration history or About.");
         }
 
         var duplicateSection = layoutProvider.Sections
@@ -430,6 +469,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             throw new InvalidOperationException(
                 $"Settings layout '{layoutProvider.Id}' has no populated content section.");
         }
+        if (ConfigurationHistory is not null)
+        {
+            sections.Add(
+                new(
+                    LauncherSettingsSection.ConfigurationHistory,
+                    "History",
+                    "Review and restore protected configuration history for this release source.",
+                    "Configuration history",
+                    SelectSection));
+        }
         sections.Add(
             new(
                 LauncherSettingsSection.About,
@@ -443,7 +492,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void SelectSection(LauncherSettingsSection section)
     {
         selectedSection = section;
-        if (section is LauncherSettingsSection.About or LauncherSettingsSection.DataSync
+        if ((section is LauncherSettingsSection.About
+                or LauncherSettingsSection.DataSync
+                or LauncherSettingsSection.ConfigurationHistory)
             && !IsSearchActive)
         {
             IsSearchVisible = false;
@@ -462,11 +513,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsGeneralSelected));
         OnPropertyChanged(nameof(IsAdvancedSelected));
         OnPropertyChanged(nameof(IsDataSyncSelected));
+        OnPropertyChanged(nameof(IsConfigurationHistorySelected));
         OnPropertyChanged(nameof(IsSettingsListVisible));
         OnPropertyChanged(nameof(IsSettingsFooterVisible));
         if (section == LauncherSettingsSection.DataSync)
         {
             SyncWorkspace.Reload();
+        }
+        else if (section == LauncherSettingsSection.ConfigurationHistory
+            && ConfigurationHistory is not null)
+        {
+            _ = ConfigurationHistory.RefreshAsync();
         }
         RebuildProjection();
     }
@@ -778,12 +835,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private async Task CompleteInvalidationAsync(
         Task? settingsSave,
         Task syncInvalidation,
+        Task historyInvalidation,
         TaskCompletionSource completion)
     {
         Exception? failure = null;
         try
         {
-            await Task.WhenAll(settingsSave ?? Task.CompletedTask, syncInvalidation);
+            await Task.WhenAll(
+                settingsSave ?? Task.CompletedTask,
+                syncInvalidation,
+                historyInvalidation);
         }
         catch (Exception exception)
         {
@@ -827,6 +888,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             RebuildProjection();
         }
+        ConfigurationHistory?.NotifySiblingDraftStateChanged();
     }
 
     private void RefreshState(LauncherConfigurationSetting setting)
@@ -951,6 +1013,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SaveAvailability));
         discardCommand.RaiseCanExecuteChanged();
         saveCommand.RaiseCanExecuteChanged();
+        ConfigurationHistory?.NotifySiblingDraftStateChanged();
     }
 
     private bool ConfigurationPathMatchesLoadedSession()
@@ -1008,7 +1071,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void RebuildProjection()
     {
-        var projection = IsAboutSelected
+        var projection = IsAboutSelected || IsConfigurationHistorySelected
             ? []
             : projectionQuery.Project(selectedSection, SearchText);
         var items = new List<SettingsListItemViewModel>(projection.Count);

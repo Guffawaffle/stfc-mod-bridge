@@ -11,6 +11,7 @@ public enum LauncherSettingsSection
     Hotkeys,
     DataSync,
     Advanced,
+    ConfigurationHistory,
     About,
 }
 

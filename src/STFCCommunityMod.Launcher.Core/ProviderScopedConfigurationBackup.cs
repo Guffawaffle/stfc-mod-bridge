@@ -15,7 +15,8 @@ public sealed record ConfigurationBackupRequest(
     byte[] Contents,
     string Reason,
     string? TargetProviderId = null,
-    string? ReleaseIdentity = null);
+    string? ReleaseIdentity = null,
+    string? PinnedBackupId = null);
 
 public sealed record ConfigurationBackupReceipt(
     string BackupId,
@@ -26,7 +27,9 @@ public sealed record ConfigurationBackupReceipt(
     string ContentSha256,
     string Reason,
     string? ReleaseIdentity,
-    bool WasRestored = false);
+    bool WasRestored = false,
+    DateTimeOffset? RestoredAtUtc = null,
+    string? RestoreTransactionId = null);
 
 internal sealed record ConfigurationBackupManifest(
     int SchemaVersion,
@@ -42,7 +45,9 @@ internal sealed record ConfigurationBackupManifest(
     string ProtectionScheme,
     string Reason,
     string? ReleaseIdentity,
-    bool WasRestored);
+    bool WasRestored,
+    DateTimeOffset? RestoredAtUtc = null,
+    string? RestoreTransactionId = null);
 
 public interface IConfigurationBackupProtector
 {
@@ -70,7 +75,8 @@ public sealed class ProviderScopedConfigurationMutationBackup(
     ProviderScopedConfigurationBackupStore store,
     string providerId,
     string? releaseIdentity = null,
-    string reason = "configuration-save") : IConfigurationMutationBackup
+    string reason = "configuration-save",
+    string? pinnedBackupId = null) : IConfigurationMutationBackup
 {
     private readonly ProviderScopedConfigurationBackupStore store =
         store ?? throw new ArgumentNullException(nameof(store));
@@ -98,7 +104,8 @@ public sealed class ProviderScopedConfigurationMutationBackup(
                 fullConfigurationPath,
                 expectedContents,
                 reason,
-                ReleaseIdentity: releaseIdentity),
+                ReleaseIdentity: releaseIdentity,
+                PinnedBackupId: pinnedBackupId),
             cancellationToken).ConfigureAwait(false);
     }
 }
@@ -163,7 +170,8 @@ public sealed class WindowsCurrentUserConfigurationBackupStorageSecurity
 public sealed class ProviderScopedConfigurationBackupStore
 {
     public const int DefaultRetentionCount = 5;
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
+    private const int LegacySchemaVersion = 1;
     private const long MaximumConfigurationBytes = 8 * 1024 * 1024;
     private const string ManifestFileName = "manifest.json";
     private const string PayloadFileName = "configuration.protected";
@@ -210,6 +218,10 @@ public sealed class ProviderScopedConfigurationBackupStore
         if (request.TargetProviderId is not null)
         {
             ValidateStableId(request.TargetProviderId, nameof(request.TargetProviderId));
+        }
+        if (request.PinnedBackupId is not null)
+        {
+            ValidateBackupId(request.PinnedBackupId);
         }
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
         ArgumentNullException.ThrowIfNull(request.Contents);
@@ -283,7 +295,9 @@ public sealed class ProviderScopedConfigurationBackupStore
                     protector.SchemeId,
                     request.Reason,
                     request.ReleaseIdentity,
-                    WasRestored: false);
+                    WasRestored: false,
+                    RestoredAtUtc: null,
+                    RestoreTransactionId: null);
                 await WriteDurablyAsync(
                     Path.Combine(temporaryDirectory, ManifestFileName),
                     JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions),
@@ -291,7 +305,11 @@ public sealed class ProviderScopedConfigurationBackupStore
                 ValidateCompletedBackup(temporaryDirectory, manifest);
                 Directory.Move(temporaryDirectory, completedDirectory);
 
-                Prune(partition, installationId, request.ProviderId);
+                Prune(
+                    partition,
+                    installationId,
+                    request.ProviderId,
+                    request.PinnedBackupId);
                 return ToReceipt(manifest);
             }
             catch
@@ -340,7 +358,7 @@ public sealed class ProviderScopedConfigurationBackupStore
         var installationId = ComputeInstallationId(validation.GameDirectory);
         var directory = Path.Combine(backupRoot, installationId, providerId, backupId);
         var manifest = ReadManifest(directory);
-        if (manifest.SchemaVersion != SchemaVersion
+        if (!IsSupportedSchema(manifest.SchemaVersion)
             || !string.Equals(manifest.BackupId, backupId, StringComparison.Ordinal)
             || !string.Equals(manifest.InstallationId, installationId, StringComparison.Ordinal)
             || !string.Equals(manifest.ProviderId, providerId, StringComparison.Ordinal)
@@ -357,6 +375,63 @@ public sealed class ProviderScopedConfigurationBackupStore
             throw new InvalidDataException("Configuration backup payload verification failed.");
         }
         return contents;
+    }
+
+    public async Task<ConfigurationBackupReceipt> MarkRestoredAsync(
+        string gameDirectory,
+        string providerId,
+        string backupId,
+        string restoreTransactionId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStableId(providerId, nameof(providerId));
+        ValidateBackupId(backupId);
+        if (!Guid.TryParseExact(restoreTransactionId, "N", out _))
+        {
+            throw new ArgumentException(
+                "Restore transaction IDs must be 32 hexadecimal characters.",
+                nameof(restoreTransactionId));
+        }
+        var validation = GameInstallValidator.Validate(gameDirectory);
+        if (!validation.IsValid)
+        {
+            throw new InvalidDataException(validation.Message);
+        }
+        var installationId = ComputeInstallationId(validation.GameDirectory);
+        var partition = Path.Combine(backupRoot, installationId, providerId);
+        var gate = PartitionGates.GetOrAdd(partition, static _ => new(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var directory = Path.Combine(partition, backupId);
+            var manifest = ReadManifest(directory);
+            ValidateManifestIdentity(manifest, backupId, installationId, providerId);
+            ValidateCompletedBackup(directory, manifest);
+            if (manifest.WasRestored
+                && string.Equals(
+                    manifest.RestoreTransactionId,
+                    restoreTransactionId,
+                    StringComparison.Ordinal))
+            {
+                return ToReceipt(manifest);
+            }
+
+            var updated = manifest with
+            {
+                SchemaVersion = SchemaVersion,
+                WasRestored = true,
+                RestoredAtUtc = timeProvider.GetUtcNow(),
+                RestoreTransactionId = restoreTransactionId,
+            };
+            await WriteManifestAtomicallyAsync(directory, updated, cancellationToken)
+                .ConfigureAwait(false);
+            ValidateCompletedBackup(directory, updated);
+            return ToReceipt(updated);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     internal static string ComputeInstallationId(string gameDirectory) =>
@@ -387,14 +462,39 @@ public sealed class ProviderScopedConfigurationBackupStore
     private void Prune(
         string partition,
         string installationId,
-        string providerId)
+        string providerId,
+        string? pinnedBackupId = null)
     {
         var completed = ReadManifests(partition, installationId, providerId)
             .OrderByDescending(manifest => manifest.CreatedAtUtc)
             .ThenByDescending(manifest => manifest.BackupId, StringComparer.Ordinal)
             .ToArray();
-        foreach (var manifest in completed.Skip(retentionCount))
+        var retained = completed
+            .Take(retentionCount)
+            .Select(manifest => manifest.BackupId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (pinnedBackupId is not null
+            && completed.Any(manifest => string.Equals(
+                manifest.BackupId,
+                pinnedBackupId,
+                StringComparison.Ordinal))
+            && !retained.Contains(pinnedBackupId))
         {
+            var displaced = completed
+                .Where(manifest => retained.Contains(manifest.BackupId))
+                .Last(manifest => !string.Equals(
+                    manifest.BackupId,
+                    pinnedBackupId,
+                    StringComparison.Ordinal));
+            retained.Remove(displaced.BackupId);
+            retained.Add(pinnedBackupId);
+        }
+        foreach (var manifest in completed)
+        {
+            if (retained.Contains(manifest.BackupId))
+            {
+                continue;
+            }
             TryDeleteDirectory(Path.Combine(partition, manifest.BackupId));
         }
     }
@@ -420,7 +520,7 @@ public sealed class ProviderScopedConfigurationBackupStore
             try
             {
                 var manifest = ReadManifest(directory);
-                if (manifest.SchemaVersion == SchemaVersion
+                if (IsSupportedSchema(manifest.SchemaVersion)
                     && string.Equals(manifest.InstallationId, installationId, StringComparison.Ordinal)
                     && string.Equals(manifest.ProviderId, providerId, StringComparison.Ordinal)
                     && string.Equals(
@@ -459,7 +559,60 @@ public sealed class ProviderScopedConfigurationBackupStore
             manifest.ContentSha256,
             manifest.Reason,
             manifest.ReleaseIdentity,
-            manifest.WasRestored);
+            manifest.WasRestored,
+            manifest.RestoredAtUtc,
+            manifest.RestoreTransactionId);
+
+    private static bool IsSupportedSchema(int schemaVersion) =>
+        schemaVersion is LegacySchemaVersion or SchemaVersion;
+
+    private void ValidateManifestIdentity(
+        ConfigurationBackupManifest manifest,
+        string backupId,
+        string installationId,
+        string providerId)
+    {
+        if (!IsSupportedSchema(manifest.SchemaVersion)
+            || !string.Equals(manifest.BackupId, backupId, StringComparison.Ordinal)
+            || !string.Equals(manifest.InstallationId, installationId, StringComparison.Ordinal)
+            || !string.Equals(manifest.ProviderId, providerId, StringComparison.Ordinal)
+            || !string.Equals(manifest.ProtectionScheme, protector.SchemeId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Configuration backup identity does not match its partition.");
+        }
+    }
+
+    private static async Task WriteManifestAtomicallyAsync(
+        string directory,
+        ConfigurationBackupManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        var manifestPath = Path.Combine(directory, ManifestFileName);
+        var temporaryPath = Path.Combine(directory, $".manifest.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await WriteDurablyAsync(
+                temporaryPath,
+                JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions),
+                cancellationToken).ConfigureAwait(false);
+            var written = JsonSerializer.Deserialize<ConfigurationBackupManifest>(
+                await File.ReadAllBytesAsync(temporaryPath, cancellationToken).ConfigureAwait(false),
+                JsonOptions);
+            if (written != manifest)
+            {
+                throw new InvalidDataException(
+                    "Configuration backup restore receipt verification failed.");
+            }
+            File.Replace(temporaryPath, manifestPath, null, ignoreMetadataErrors: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
 
     private static async Task WriteDurablyAsync(
         string path,

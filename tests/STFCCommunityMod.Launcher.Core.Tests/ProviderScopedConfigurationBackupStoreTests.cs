@@ -1,5 +1,6 @@
 using System.Text;
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
@@ -75,6 +76,131 @@ public sealed class ProviderScopedConfigurationBackupStoreTests
         Assert.IsFalse(netniv.Any(receipt => receipt.BackupId == netnivReceipts[0].BackupId));
         Assert.IsTrue(guffawaffle.All(receipt => receipt.ProviderId == "guffawaffle"));
         Assert.IsTrue(netniv.All(receipt => receipt.ProviderId == "netniv"));
+    }
+
+    [TestMethod]
+    public async Task PinnedHistoryEntrySurvivesPreRestoreBackupPruning()
+    {
+        using var directory = new TemporaryDirectory();
+        var stateDirectory = directory.CreateDirectory("state");
+        var gameDirectory = CreateGameDirectory(directory, "game");
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var store = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity(),
+            new IncrementingTimeProvider());
+        var receipts = new List<ConfigurationBackupReceipt>();
+        for (var index = 0; index < 5; index++)
+        {
+            receipts.Add(await CreateAsync(
+                store,
+                gameDirectory,
+                configurationPath,
+                "guffawaffle",
+                index));
+        }
+
+        var preRestore = await store.CreateAsync(new(
+            gameDirectory,
+            "guffawaffle",
+            configurationPath,
+            Encoding.UTF8.GetBytes("value = 'live-before-restore'\n"),
+            "manual-restore",
+            ReleaseIdentity: $"configuration-history-restore/{Guid.NewGuid():N}",
+            PinnedBackupId: receipts[0].BackupId));
+
+        var retained = store.List(gameDirectory, "guffawaffle");
+
+        Assert.AreEqual(ProviderScopedConfigurationBackupStore.DefaultRetentionCount, retained.Count);
+        Assert.IsTrue(retained.Any(receipt => receipt.BackupId == receipts[0].BackupId));
+        Assert.IsTrue(retained.Any(receipt => receipt.BackupId == preRestore.BackupId));
+        Assert.IsFalse(retained.Any(receipt => receipt.BackupId == receipts[1].BackupId));
+    }
+
+    [TestMethod]
+    public async Task RestoredReceiptIsDurableIdempotentAndRetainsExactPayload()
+    {
+        using var directory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(directory, "game");
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var contents = Encoding.UTF8.GetBytes("# protected history\r\n");
+        var store = new ProviderScopedConfigurationBackupStore(
+            directory.CreateDirectory("state"),
+            new ReversingProtector(),
+            new NoOpStorageSecurity(),
+            new IncrementingTimeProvider());
+        var receipt = await store.CreateAsync(new(
+            gameDirectory,
+            "guffawaffle",
+            configurationPath,
+            contents,
+            "settings-save"));
+        var transactionId = Guid.NewGuid().ToString("N");
+
+        var restored = await store.MarkRestoredAsync(
+            gameDirectory,
+            "guffawaffle",
+            receipt.BackupId,
+            transactionId);
+        var repeated = await store.MarkRestoredAsync(
+            gameDirectory,
+            "guffawaffle",
+            receipt.BackupId,
+            transactionId);
+
+        Assert.IsTrue(restored.WasRestored);
+        Assert.IsNotNull(restored.RestoredAtUtc);
+        Assert.AreEqual(transactionId, restored.RestoreTransactionId);
+        Assert.AreEqual(restored, repeated);
+        Assert.AreEqual(restored, store.List(gameDirectory, "guffawaffle").Single());
+        CollectionAssert.AreEqual(
+            contents,
+            store.Read(gameDirectory, "guffawaffle", receipt.BackupId));
+    }
+
+    [TestMethod]
+    public async Task LegacyManifestCanBeReadAndIsUpgradedWhenMarkedRestored()
+    {
+        using var directory = new TemporaryDirectory();
+        var stateDirectory = directory.CreateDirectory("state");
+        var gameDirectory = CreateGameDirectory(directory, "game");
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var store = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity());
+        var receipt = await store.CreateAsync(new(
+            gameDirectory,
+            "guffawaffle",
+            configurationPath,
+            Encoding.UTF8.GetBytes("legacy = true\n"),
+            "settings-save"));
+        var manifestPath = Path.Combine(
+            stateDirectory,
+            "configuration-backups",
+            receipt.InstallationId,
+            receipt.ProviderId,
+            receipt.BackupId,
+            "manifest.json");
+        var manifest = JsonNode.Parse(await File.ReadAllTextAsync(manifestPath))!.AsObject();
+        manifest["schemaVersion"] = 1;
+        manifest.Remove("restoredAtUtc");
+        manifest.Remove("restoreTransactionId");
+        await File.WriteAllTextAsync(manifestPath, manifest.ToJsonString());
+
+        Assert.IsFalse(store.List(gameDirectory, "guffawaffle").Single().WasRestored);
+        var restored = await store.MarkRestoredAsync(
+            gameDirectory,
+            "guffawaffle",
+            receipt.BackupId,
+            Guid.NewGuid().ToString("N"));
+
+        Assert.IsTrue(restored.WasRestored);
+        var upgraded = JsonNode.Parse(await File.ReadAllTextAsync(manifestPath))!.AsObject();
+        Assert.AreEqual(2, upgraded["schemaVersion"]!.GetValue<int>());
+        Assert.IsNotNull(upgraded["restoredAtUtc"]);
+        Assert.IsNotNull(upgraded["restoreTransactionId"]);
     }
 
     [TestMethod]
