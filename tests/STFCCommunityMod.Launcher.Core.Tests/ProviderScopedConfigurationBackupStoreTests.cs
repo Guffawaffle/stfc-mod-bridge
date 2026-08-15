@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
@@ -8,6 +9,10 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class ProviderScopedConfigurationBackupStoreTests
 {
+    private const string CrashStageEnvironment = "STFC_BRIDGE_CONFIGURATION_BACKUP_CRASH_STAGE";
+    private const string CrashRootEnvironment = "STFC_BRIDGE_CONFIGURATION_BACKUP_CRASH_ROOT";
+    private const string CrashReadyEnvironment = "STFC_BRIDGE_CONFIGURATION_BACKUP_CRASH_READY";
+
     [TestMethod]
     public async Task ProviderHistoriesAreIndependentAndRestoreExactBytes()
     {
@@ -155,6 +160,119 @@ public sealed class ProviderScopedConfigurationBackupStoreTests
         CollectionAssert.AreEqual(
             rollbackContents,
             store.Read(gameDirectory, "guffawaffle", rollback.BackupId));
+    }
+
+    [DataTestMethod]
+    [DataRow("PayloadDurable")]
+    [DataRow("ManifestDurable")]
+    [DataRow("Published")]
+    [DataRow("BeforePruneDelete")]
+    [DataRow("AfterPruneDelete")]
+    public async Task HardCrashDuringSixthBackupPreservesNewestRecoverableHistory(string crashStage)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var directory = new TemporaryDirectory();
+        var readyPath = Path.Combine(directory.Path, "ready");
+        using var child = StartCrashProbe(crashStage, directory.Path, readyPath);
+        try
+        {
+            await WaitForCrashProbeAsync(child, readyPath);
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+            var stateDirectory = Path.Combine(directory.Path, "state");
+            var gameDirectory = Path.Combine(directory.Path, "game");
+            var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+            var store = new ProviderScopedConfigurationBackupStore(
+                stateDirectory,
+                new ReversingProtector(),
+                new NoOpStorageSecurity());
+            var guffawaffle = store.List(gameDirectory, "guffawaffle");
+            var expected = crashStage switch
+            {
+                "PayloadDurable" or "ManifestDurable" => Enumerable.Range(0, 5),
+                "Published" or "BeforePruneDelete" => Enumerable.Range(0, 6),
+                "AfterPruneDelete" => Enumerable.Range(1, 5),
+                _ => throw new InvalidOperationException($"Unknown crash stage '{crashStage}'."),
+            };
+            var recoveredValues = guffawaffle
+                .Select(receipt => Encoding.UTF8.GetString(store.Read(
+                    gameDirectory,
+                    "guffawaffle",
+                    receipt.BackupId)))
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+
+            CollectionAssert.AreEqual(
+                expected.Select(index => $"value = {index}\n").ToArray(),
+                recoveredValues);
+            var other = store.List(gameDirectory, "netniv").Single();
+            CollectionAssert.AreEqual(
+                Encoding.UTF8.GetBytes("other = true\n"),
+                store.Read(gameDirectory, "netniv", other.BackupId));
+            Assert.IsTrue(guffawaffle.Count >= ProviderScopedConfigurationBackupStore.DefaultRetentionCount);
+        }
+        finally
+        {
+            if (!child.HasExited)
+            {
+                child.Kill(entireProcessTree: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task ProviderConfigurationBackupHardCrashProbe()
+    {
+        var configuredStage = Environment.GetEnvironmentVariable(CrashStageEnvironment);
+        if (string.IsNullOrWhiteSpace(configuredStage))
+        {
+            return;
+        }
+        var crashStage = Enum.Parse<ProviderConfigurationBackupCheckpoint>(configuredStage);
+        var root = Environment.GetEnvironmentVariable(CrashRootEnvironment)
+            ?? throw new InvalidOperationException("The configuration-backup crash root is absent.");
+        var readyPath = Environment.GetEnvironmentVariable(CrashReadyEnvironment)
+            ?? throw new InvalidOperationException("The configuration-backup crash ready path is absent.");
+        var stateDirectory = Directory.CreateDirectory(Path.Combine(root, "state")).FullName;
+        var gameDirectory = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
+        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var armed = false;
+        async ValueTask Checkpoint(
+            ProviderConfigurationBackupCheckpoint current,
+            CancellationToken cancellationToken)
+        {
+            if (!armed || current != crashStage)
+            {
+                return;
+            }
+            await File.WriteAllTextAsync(readyPath, current.ToString(), cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        var store = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity(),
+            new IncrementingTimeProvider(),
+            ProviderScopedConfigurationBackupStore.DefaultRetentionCount,
+            Checkpoint);
+        _ = await store.CreateAsync(new(
+            gameDirectory,
+            "netniv",
+            configurationPath,
+            Encoding.UTF8.GetBytes("other = true\n"),
+            "settings-save"));
+        for (var index = 0; index < 5; index++)
+        {
+            _ = await CreateAsync(store, gameDirectory, configurationPath, "guffawaffle", index);
+        }
+        armed = true;
+        _ = await CreateAsync(store, gameDirectory, configurationPath, "guffawaffle", 5);
+        Assert.Fail($"Configuration-backup crash probe passed stage '{configuredStage}'.");
     }
 
     [TestMethod]
@@ -381,6 +499,45 @@ public sealed class ProviderScopedConfigurationBackupStoreTests
             configurationPath,
             Encoding.UTF8.GetBytes($"value = {index}\n"),
             "settings-save"));
+
+    private static Process StartCrashProbe(string crashStage, string root, string readyPath)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = AppContext.BaseDirectory,
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(ProviderScopedConfigurationBackupStoreTests).Assembly.Location);
+        start.ArgumentList.Add(
+            "--Tests:STFCCommunityMod.Launcher.Core.Tests."
+            + "ProviderScopedConfigurationBackupStoreTests.ProviderConfigurationBackupHardCrashProbe");
+        start.Environment[CrashStageEnvironment] = crashStage;
+        start.Environment[CrashRootEnvironment] = root;
+        start.Environment[CrashReadyEnvironment] = readyPath;
+        return Process.Start(start)
+            ?? throw new InvalidOperationException("Could not start the configuration-backup crash probe.");
+    }
+
+    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (!File.Exists(readyPath))
+        {
+            if (child.HasExited)
+            {
+                var output = await child.StandardOutput.ReadToEndAsync();
+                var error = await child.StandardError.ReadToEndAsync();
+                Assert.Fail(
+                    $"Configuration-backup crash probe exited before its hold point. "
+                    + $"Output: {output} Error: {error}");
+            }
+            await Task.Delay(50, timeout.Token);
+        }
+    }
 
     private static string CreateGameDirectory(TemporaryDirectory directory, string name)
     {
