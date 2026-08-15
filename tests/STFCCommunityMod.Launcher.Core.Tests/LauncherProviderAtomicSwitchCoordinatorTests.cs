@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -9,6 +10,10 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class LauncherProviderAtomicSwitchCoordinatorTests
 {
+    private const string CrashModeEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_MODE";
+    private const string CrashStageEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_STAGE";
+    private const string CrashRootEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_ROOT";
+    private const string CrashReadyEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_READY";
     private static readonly byte[] GuffawaffleArtifact = Encoding.ASCII.GetBytes("guffawaffle-artifact");
     private static readonly byte[] NetnivArtifact = Encoding.ASCII.GetBytes("netniv-artifact");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -686,6 +691,205 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             fixture.Coordinator.ReadJournal()!.Phase);
     }
 
+    [DataTestMethod]
+    [DataRow("artifact", "Prepared")]
+    [DataRow("artifact", "ArtifactCommitting")]
+    [DataRow("artifact", "ConfigurationCommitted")]
+    [DataRow("artifact", "Completed")]
+    [DataRow("configuration", "Prepared")]
+    [DataRow("configuration", "ConfigurationCommitting")]
+    [DataRow("configuration", "ConfigurationCommitted")]
+    [DataRow("configuration", "Completed")]
+    [DataRow("rollback", "RollingBack")]
+    [DataRow("rollback", "RolledBack")]
+    public async Task HardCrashAtEverySwitchBoundaryRecoversExactState(
+        string crashMode,
+        string crashStage)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var directory = new TemporaryDirectory();
+        var readyPath = Path.Combine(directory.Path, "ready");
+        using var child = StartCrashProbe(crashMode, crashStage, directory.Path, readyPath);
+        try
+        {
+            await WaitForCrashProbeAsync(child, readyPath);
+            var stateDirectory = Path.Combine(directory.Path, "state");
+            await using var competingProviderLease = await new LauncherOperationLock(
+                    Path.Combine(stateDirectory, "provider-switch"))
+                .TryAcquireAsync();
+            await using var competingRootLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync();
+            Assert.IsNull(
+                competingProviderLease,
+                $"Switch stage '{crashMode}/{crashStage}' released its provider-switch lease early.");
+            Assert.IsNull(
+                competingRootLease,
+                $"Switch stage '{crashMode}/{crashStage}' released its root mutation lease early.");
+            if (crashMode == "rollback")
+            {
+                var rollbackStillPending = crashStage == "RollingBack";
+                CollectionAssert.AreEqual(
+                    rollbackStillPending
+                        ? Encoding.UTF8.GetBytes("# netniv\n[graphics]\nfree_resize = false\n")
+                        : Encoding.UTF8.GetBytes(
+                            "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n"),
+                    await File.ReadAllBytesAsync(Path.Combine(
+                        directory.Path,
+                        "game",
+                        "community_patch_settings.toml")));
+                Assert.AreEqual(
+                    rollbackStillPending
+                        ? new LauncherProviderSelection("netniv", "stable")
+                        : new LauncherProviderSelection("guffawaffle", "stable"),
+                    new JsonLauncherProviderSelectionStore(stateDirectory).Load());
+                CollectionAssert.AreEqual(
+                    GuffawaffleArtifact,
+                    await File.ReadAllBytesAsync(Path.Combine(directory.Path, "game", "version.dll")));
+            }
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+            var crashLeftFiles = CaptureFiles(directory.Path);
+            var fixture = await CreateFixtureAsync(
+                directory.Path,
+                installSource: crashMode != "configuration",
+                initializeFixture: false);
+            AssertFilesEqual(crashLeftFiles, CaptureFiles(directory.Path));
+            Assert.AreEqual(
+                Enum.Parse<LauncherProviderAtomicSwitchPhase>(crashStage),
+                fixture.Coordinator.ReadJournal()!.Phase);
+
+            var recovery = await fixture.Coordinator.RecoverAsync();
+            var completed = crashStage == "Completed";
+            var terminalRollback = crashStage == "RolledBack";
+            Assert.IsTrue(recovery.IsSuccess, recovery.Message);
+            Assert.AreEqual(!completed && !terminalRollback, recovery.Changed, recovery.Message);
+            Assert.AreEqual(
+                completed
+                    ? LauncherProviderAtomicSwitchPhase.Completed
+                    : LauncherProviderAtomicSwitchPhase.RolledBack,
+                fixture.Coordinator.ReadJournal()!.Phase);
+
+            var targetCommitted = completed && crashMode != "rollback";
+            CollectionAssert.AreEqual(
+                targetCommitted ? fixture.NetnivConfiguration : fixture.GuffawaffleConfiguration,
+                await File.ReadAllBytesAsync(fixture.ConfigurationPath));
+            Assert.AreEqual(
+                targetCommitted
+                    ? new LauncherProviderSelection("netniv", "stable")
+                    : new LauncherProviderSelection("guffawaffle", "stable"),
+                fixture.SelectionStore.Load());
+            var dllPath = Path.Combine(fixture.GameDirectory, "version.dll");
+            if (crashMode == "configuration")
+            {
+                Assert.IsFalse(File.Exists(dllPath));
+                Assert.IsNull(fixture.TargetDeployment.ReadInstalledState());
+            }
+            else
+            {
+                CollectionAssert.AreEqual(
+                    targetCommitted ? NetnivArtifact : GuffawaffleArtifact,
+                    await File.ReadAllBytesAsync(dllPath));
+                var installedState = fixture.TargetDeployment.ReadInstalledState();
+                Assert.IsNotNull(installedState);
+                Assert.AreEqual(targetCommitted ? "netniv" : "guffawaffle", installedState.ProviderId);
+                Assert.AreEqual(
+                    targetCommitted ? fixture.TargetArtifact.Sha256 : fixture.SourceArtifact.Sha256,
+                    installedState.Sha256);
+                if (targetCommitted)
+                {
+                    Assert.AreEqual(
+                        ModDeploymentPhase.CleanupPending,
+                        fixture.TargetDeployment.ReadJournal()!.Phase);
+                    var deploymentRecovery = await fixture.TargetDeployment.RecoverAsync();
+                    Assert.IsTrue(deploymentRecovery.IsSuccess, deploymentRecovery.Message);
+                    Assert.AreEqual(
+                        ModDeploymentPhase.Committed,
+                        fixture.TargetDeployment.ReadJournal()!.Phase);
+                    CollectionAssert.AreEqual(
+                        NetnivArtifact,
+                        await File.ReadAllBytesAsync(dllPath));
+                    Assert.AreEqual(
+                        new LauncherProviderSelection("netniv", "stable"),
+                        fixture.SelectionStore.Load());
+                }
+                else
+                {
+                    Assert.IsFalse(
+                        Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+                }
+            }
+        }
+        finally
+        {
+            if (!child.HasExited)
+            {
+                child.Kill(entireProcessTree: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task LauncherProviderSwitchHardCrashProbe()
+    {
+        var configuredMode = Environment.GetEnvironmentVariable(CrashModeEnvironment);
+        var configuredStage = Environment.GetEnvironmentVariable(CrashStageEnvironment);
+        if (string.IsNullOrWhiteSpace(configuredMode)
+            || string.IsNullOrWhiteSpace(configuredStage))
+        {
+            return;
+        }
+        var crashStage = Enum.Parse<LauncherProviderAtomicSwitchPhase>(configuredStage);
+        var root = Environment.GetEnvironmentVariable(CrashRootEnvironment)
+            ?? throw new InvalidOperationException("The provider-switch crash root is absent.");
+        var readyPath = Environment.GetEnvironmentVariable(CrashReadyEnvironment)
+            ?? throw new InvalidOperationException("The provider-switch crash ready path is absent.");
+        async ValueTask Checkpoint(
+            LauncherProviderAtomicSwitchPhase current,
+            CancellationToken cancellationToken)
+        {
+            if (current != crashStage)
+            {
+                return;
+            }
+            await File.WriteAllTextAsync(
+                readyPath,
+                $"{configuredMode}/{current}",
+                cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        ValueTask FailAfterConfigurationCommit(
+            ModDeploymentPhase current,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (current == ModDeploymentPhase.CleanupPending)
+            {
+                throw new IOException("Injected artifact finalization failure after configuration commit.");
+            }
+            return ValueTask.CompletedTask;
+        }
+        var fixture = await CreateFixtureAsync(
+            root,
+            installSource: configuredMode != "configuration",
+            checkpoint: Checkpoint,
+            targetPhaseCheckpoint: configuredMode == "rollback"
+                ? FailAfterConfigurationCommit
+                : null);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        _ = await fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+        Assert.Fail($"Provider-switch crash probe passed stage '{configuredMode}/{configuredStage}'.");
+    }
+
     private static async Task<Fixture> CreateFixtureAsync(
         TemporaryDirectory directory,
         ILauncherProviderSelectionStore? selectionStore = null,
@@ -697,32 +901,75 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         bool sourceConfigurationExists = true,
         Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
             configurationEvidenceResolver = null)
+        => await CreateFixtureAsync(
+            directory.Path,
+            selectionStore,
+            installSource,
+            targetDownloader,
+            reviewedTarget,
+            targetConfiguration,
+            targetReleaseDiscovery,
+            sourceConfigurationExists,
+            configurationEvidenceResolver).ConfigureAwait(false);
+
+    private static async Task<Fixture> CreateFixtureAsync(
+        string root,
+        ILauncherProviderSelectionStore? selectionStore = null,
+        bool installSource = true,
+        IModArtifactDownloader? targetDownloader = null,
+        bool reviewedTarget = false,
+        byte[]? targetConfiguration = null,
+        IWindowsReleaseDiscoveryClient? targetReleaseDiscovery = null,
+        bool sourceConfigurationExists = true,
+        Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
+            configurationEvidenceResolver = null,
+        bool initializeFixture = true,
+        Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint = null,
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? targetPhaseCheckpoint = null)
     {
-        var gameDirectory = directory.CreateDirectory("game");
-        TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
-        var stateDirectory = directory.CreateDirectory("state");
+        var gameDirectory = Path.Combine(root, "game");
+        var stateDirectory = Path.Combine(root, "state");
+        if (initializeFixture)
+        {
+            Directory.CreateDirectory(gameDirectory);
+            Directory.CreateDirectory(stateDirectory);
+            TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+        }
+        else if (!Directory.Exists(gameDirectory)
+            || !Directory.Exists(stateDirectory)
+            || !File.Exists(Path.Combine(gameDirectory, "prime.exe")))
+        {
+            throw new InvalidDataException(
+                "The terminated provider-switch fixture lost its state or validated game installation.");
+        }
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
         var guffawaffleConfiguration = Encoding.UTF8.GetBytes(
             "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n");
         var netnivConfiguration = targetConfiguration
             ?? Encoding.UTF8.GetBytes(
                 "# netniv\n[graphics]\nfree_resize = false\n");
-        if (sourceConfigurationExists)
+        if (initializeFixture && sourceConfigurationExists)
         {
             File.WriteAllBytes(configurationPath, guffawaffleConfiguration);
         }
         selectionStore ??= new JsonLauncherProviderSelectionStore(stateDirectory);
-        selectionStore.Save(new("guffawaffle", "stable"));
+        if (initializeFixture)
+        {
+            selectionStore.Save(new("guffawaffle", "stable"));
+        }
         var backupStore = new ProviderScopedConfigurationBackupStore(
             stateDirectory,
             new ReversingProtector(),
             new NoOpStorageSecurity());
-        await backupStore.CreateAsync(new(
-            gameDirectory,
-            "netniv",
-            configurationPath,
-            netnivConfiguration,
-            "test-seed"));
+        if (initializeFixture)
+        {
+            await backupStore.CreateAsync(new(
+                gameDirectory,
+                "netniv",
+                configurationPath,
+                netnivConfiguration,
+                "test-seed"));
+        }
 
         var sourceArtifact = Artifact(GuffawaffleArtifact, "2.1.0.8");
         var targetCertification = reviewedTarget
@@ -745,8 +992,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             targetArtifact.ExpectedVersion,
             new("netniv", "stable", "netniv.stfc-community-mod"),
             targetDownloader ?? (reviewedTarget ? new ThrowingDownloader() : null),
-            targetCertification);
-        if (installSource)
+            targetCertification,
+            targetPhaseCheckpoint);
+        if (initializeFixture && installSource)
         {
             Assert.AreEqual(
                 ModDeploymentResultState.Succeeded,
@@ -779,7 +1027,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 new("guffawaffle", sourceCoordinator),
                 new("netniv", targetCoordinator),
             ],
-            stateDirectory);
+            stateDirectory,
+            timeProvider: null,
+            checkpoint);
         return new(
             gameDirectory,
             stateDirectory,
@@ -791,9 +1041,72 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             sourceDeployment,
             targetDeployment,
             coordinator,
+            sourceArtifact,
             targetArtifact,
             new("netniv", "stable", "netniv.stfc-community-mod"),
             targetCertification);
+    }
+
+    private static Process StartCrashProbe(
+        string crashMode,
+        string crashStage,
+        string root,
+        string readyPath)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = AppContext.BaseDirectory,
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(LauncherProviderAtomicSwitchCoordinatorTests).Assembly.Location);
+        start.ArgumentList.Add(
+            "--Tests:STFCCommunityMod.Launcher.Core.Tests."
+            + "LauncherProviderAtomicSwitchCoordinatorTests.LauncherProviderSwitchHardCrashProbe");
+        start.Environment[CrashModeEnvironment] = crashMode;
+        start.Environment[CrashStageEnvironment] = crashStage;
+        start.Environment[CrashRootEnvironment] = root;
+        start.Environment[CrashReadyEnvironment] = readyPath;
+        return Process.Start(start)
+            ?? throw new InvalidOperationException("Could not start the provider-switch crash probe.");
+    }
+
+    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (!File.Exists(readyPath))
+        {
+            if (child.HasExited)
+            {
+                var output = await child.StandardOutput.ReadToEndAsync();
+                var error = await child.StandardError.ReadToEndAsync();
+                Assert.Fail(
+                    "Provider-switch crash probe exited before its hold point. "
+                    + $"Output: {output} Error: {error}");
+            }
+            await Task.Delay(50, timeout.Token);
+        }
+    }
+
+    private static Dictionary<string, byte[]> CaptureFiles(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(root, path),
+                File.ReadAllBytes,
+                StringComparer.OrdinalIgnoreCase);
+
+    private static void AssertFilesEqual(
+        IReadOnlyDictionary<string, byte[]> expected,
+        IReadOnlyDictionary<string, byte[]> actual)
+    {
+        CollectionAssert.AreEquivalent(expected.Keys.ToArray(), actual.Keys.ToArray());
+        foreach (var pair in expected)
+        {
+            CollectionAssert.AreEqual(pair.Value, actual[pair.Key], pair.Key);
+        }
     }
 
     private static Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>
@@ -862,7 +1175,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         string version,
         ModInstallationAttribution attribution,
         IModArtifactDownloader? downloader = null,
-        ReviewedReleaseCertification? reviewedCertification = null) =>
+        ReviewedReleaseCertification? reviewedCertification = null,
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
         new(
             stateDirectory,
             downloader ?? new FakeDownloader(contents),
@@ -870,7 +1184,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             new FakeAuthenticityVerifier(),
             _ => false,
             attribution,
-            reviewedCertification: reviewedCertification);
+            timeProvider: null,
+            afterPhasePersisted: afterPhasePersisted,
+            reviewedCertification: reviewedCertification,
+            afterFileCheckpoint: null);
 
     private static ModReleaseArtifact Artifact(byte[] contents, string version, Uri? uri = null) => new(
         uri ?? new Uri("https://example.invalid/version.dll"),
@@ -911,6 +1228,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         ModDeploymentService SourceDeployment,
         ModDeploymentService TargetDeployment,
         LauncherProviderAtomicSwitchCoordinator Coordinator,
+        ModReleaseArtifact SourceArtifact,
         ModReleaseArtifact TargetArtifact,
         ModInstallationAttribution TargetAttribution,
         ReviewedReleaseCertification? TargetCertification);
@@ -1069,4 +1387,5 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
 
         public void Clear() => selection = null;
     }
+
 }
