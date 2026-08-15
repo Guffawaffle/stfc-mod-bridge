@@ -103,6 +103,8 @@ public sealed class ProviderConfigurationRestoreCoordinator
     private readonly LauncherOperationLock mutationAdmission;
     private readonly TimeProvider timeProvider;
     private readonly string journalPath;
+    private readonly Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>?
+        checkpoint;
 
     public ProviderConfigurationRestoreCoordinator(
         ProviderScopedConfigurationBackupStore backupStore,
@@ -114,6 +116,31 @@ public sealed class ProviderConfigurationRestoreCoordinator
         Func<string?> configurationPathProvider,
         IGameProcessInspector? gameProcessInspector = null,
         TimeProvider? timeProvider = null)
+        : this(
+            backupStore,
+            providerCatalog,
+            selectionStore,
+            activeSelection,
+            diagnosisEvidence,
+            stateDirectory,
+            configurationPathProvider,
+            gameProcessInspector,
+            timeProvider,
+            checkpoint: null)
+    {
+    }
+
+    internal ProviderConfigurationRestoreCoordinator(
+        ProviderScopedConfigurationBackupStore backupStore,
+        LauncherDistributionProviderCatalog providerCatalog,
+        ILauncherProviderSelectionStore selectionStore,
+        LauncherProviderSelection activeSelection,
+        LauncherConfigurationDiagnosisEvidence diagnosisEvidence,
+        string stateDirectory,
+        Func<string?> configurationPathProvider,
+        IGameProcessInspector? gameProcessInspector,
+        TimeProvider? timeProvider,
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint)
     {
         this.backupStore = backupStore ?? throw new ArgumentNullException(nameof(backupStore));
         this.providerCatalog = providerCatalog ?? throw new ArgumentNullException(nameof(providerCatalog));
@@ -128,6 +155,7 @@ public sealed class ProviderConfigurationRestoreCoordinator
         this.gameProcessInspector = gameProcessInspector ?? new SystemGameProcessInspector();
         mutationAdmission = new LauncherOperationLock(stateDirectory);
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.checkpoint = checkpoint;
         journalPath = Path.Combine(
             Path.GetFullPath(stateDirectory),
             "configuration-restore-journal.json");
@@ -240,6 +268,9 @@ public sealed class ProviderConfigurationRestoreCoordinator
             PreRestoreBackup: null,
             timeProvider.GetUtcNow());
         Persist(journal);
+        await ObserveCheckpointAsync(
+            ProviderConfigurationRestorePhase.Prepared,
+            cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -298,6 +329,9 @@ public sealed class ProviderConfigurationRestoreCoordinator
                 UpdatedAtUtc = timeProvider.GetUtcNow(),
             };
             Persist(journal);
+            await ObserveCheckpointAsync(
+                ProviderConfigurationRestorePhase.ConfigurationCommitted,
+                cancellationToken).ConfigureAwait(false);
             EnsureActiveSelection();
             var selectedAfterCommit = ResolveSelectedTarget();
             if (!PathEquals(selectedAfterCommit.ConfigurationPath, target.ConfigurationPath))
@@ -317,12 +351,19 @@ public sealed class ProviderConfigurationRestoreCoordinator
                 UpdatedAtUtc = timeProvider.GetUtcNow(),
             };
             Persist(journal);
-            Persist(journal with
+            await ObserveCheckpointAsync(
+                ProviderConfigurationRestorePhase.BackupMarkedRestored,
+                cancellationToken).ConfigureAwait(false);
+            journal = journal with
             {
                 Phase = ProviderConfigurationRestorePhase.Completed,
                 UpdatedAtUtc = timeProvider.GetUtcNow(),
                 Error = null,
-            });
+            };
+            Persist(journal);
+            await ObserveCheckpointAsync(
+                ProviderConfigurationRestorePhase.Completed,
+                cancellationToken).ConfigureAwait(false);
             return new(
                 ProviderConfigurationRestoreResultState.Succeeded,
                 $"Restored the selected {activeSelection.ProviderId} configuration history entry.",
@@ -901,6 +942,11 @@ public sealed class ProviderConfigurationRestoreCoordinator
             }
         }
     }
+
+    private ValueTask ObserveCheckpointAsync(
+        ProviderConfigurationRestorePhase current,
+        CancellationToken cancellationToken) =>
+        checkpoint?.Invoke(current, cancellationToken) ?? ValueTask.CompletedTask;
 
     private static string RestoreIdentity(string transactionId) =>
         $"configuration-history-restore/{transactionId}";

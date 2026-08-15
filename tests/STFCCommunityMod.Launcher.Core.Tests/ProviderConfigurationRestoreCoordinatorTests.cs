@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using STFCCommunityMod.Launcher.Core;
@@ -7,6 +8,9 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class ProviderConfigurationRestoreCoordinatorTests
 {
+    private const string CrashStageEnvironment = "STFC_BRIDGE_CONFIGURATION_RESTORE_CRASH_STAGE";
+    private const string CrashRootEnvironment = "STFC_BRIDGE_CONFIGURATION_RESTORE_CRASH_ROOT";
+    private const string CrashReadyEnvironment = "STFC_BRIDGE_CONFIGURATION_RESTORE_CRASH_READY";
     private static readonly JsonSerializerOptions JournalJsonOptions =
         new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -410,10 +414,131 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
             context.Coordinator.ReadJournal()!.Phase);
     }
 
-    private static RestoreContext CreateContext(TemporaryDirectory directory)
+    [DataTestMethod]
+    [DataRow("Prepared")]
+    [DataRow("ConfigurationCommitted")]
+    [DataRow("BackupMarkedRestored")]
+    [DataRow("Completed")]
+    public async Task HardCrashAtEveryRestoreBoundaryRecoversWithoutFalseResult(string crashStage)
     {
-        var stateDirectory = directory.CreateDirectory("state");
-        var gameDirectory = directory.CreateDirectory("game");
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var directory = new TemporaryDirectory();
+        var readyPath = Path.Combine(directory.Path, "ready");
+        using var child = StartCrashProbe(crashStage, directory.Path, readyPath);
+        try
+        {
+            await WaitForCrashProbeAsync(child, readyPath);
+            var stateDirectory = Path.Combine(directory.Path, "state");
+            await using var competingLease = await new LauncherOperationLock(stateDirectory)
+                .TryAcquireAsync();
+            Assert.IsNull(
+                competingLease,
+                $"Restore stage '{crashStage}' released the root mutation lease before its terminal boundary.");
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+            var context = CreateContext(directory.Path);
+            var result = await context.Coordinator.RecoverAsync();
+            var committed = crashStage != "Prepared";
+            Assert.AreEqual(
+                committed
+                    ? crashStage == "Completed"
+                        ? ProviderConfigurationRestoreResultState.NoIncompleteRestore
+                        : ProviderConfigurationRestoreResultState.Succeeded
+                    : ProviderConfigurationRestoreResultState.NoIncompleteRestore,
+                result.State,
+                result.Message);
+            CollectionAssert.AreEqual(
+                Encoding.UTF8.GetBytes(committed ? "# selected history\r\n" : "# live baseline\n"),
+                await File.ReadAllBytesAsync(context.ConfigurationPath));
+            var history = context.Store.List(context.GameDirectory, "guffawaffle");
+            Assert.AreEqual(ProviderScopedConfigurationBackupStore.DefaultRetentionCount, history.Count);
+            var desiredRevision = ConfigurationDocumentRevision.FromContents(
+                Encoding.UTF8.GetBytes("# selected history\r\n"));
+            var selected = history.Single(receipt => string.Equals(
+                receipt.ContentSha256,
+                desiredRevision.Sha256,
+                StringComparison.Ordinal));
+            Assert.AreEqual(committed, selected.WasRestored);
+            if (committed)
+            {
+                var preRestore = history
+                    .Single(receipt => string.Equals(receipt.Reason, "manual-restore", StringComparison.Ordinal));
+                CollectionAssert.AreEqual(
+                    Encoding.UTF8.GetBytes("# live baseline\n"),
+                    context.Store.Read(
+                        context.GameDirectory,
+                        "guffawaffle",
+                        preRestore.BackupId));
+            }
+            Assert.AreEqual(
+                committed
+                    ? ProviderConfigurationRestorePhase.Completed
+                    : ProviderConfigurationRestorePhase.Failed,
+                context.Coordinator.ReadJournal()!.Phase);
+        }
+        finally
+        {
+            if (!child.HasExited)
+            {
+                child.Kill(entireProcessTree: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task ProviderConfigurationRestoreHardCrashProbe()
+    {
+        var configuredStage = Environment.GetEnvironmentVariable(CrashStageEnvironment);
+        if (string.IsNullOrWhiteSpace(configuredStage))
+        {
+            return;
+        }
+        var crashStage = Enum.Parse<ProviderConfigurationRestorePhase>(configuredStage);
+        var root = Environment.GetEnvironmentVariable(CrashRootEnvironment)
+            ?? throw new InvalidOperationException("The configuration-restore crash root is absent.");
+        var readyPath = Environment.GetEnvironmentVariable(CrashReadyEnvironment)
+            ?? throw new InvalidOperationException("The configuration-restore crash ready path is absent.");
+        async ValueTask Checkpoint(
+            ProviderConfigurationRestorePhase current,
+            CancellationToken cancellationToken)
+        {
+            if (current != crashStage)
+            {
+                return;
+            }
+            await File.WriteAllTextAsync(readyPath, current.ToString(), cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        var context = CreateContext(root, Checkpoint);
+        var baseline = Encoding.UTF8.GetBytes("# live baseline\n");
+        var desired = Encoding.UTF8.GetBytes("# selected history\r\n");
+        await File.WriteAllBytesAsync(context.ConfigurationPath, baseline);
+        var selected = await CreateBackupAsync(context, "guffawaffle", desired);
+        for (var index = 1; index < ProviderScopedConfigurationBackupStore.DefaultRetentionCount; index++)
+        {
+            _ = await CreateBackupAsync(
+                context,
+                "guffawaffle",
+                Encoding.UTF8.GetBytes($"# alternate history {index}\n"));
+        }
+        var preview = context.Coordinator.Preview(selected.BackupId);
+        _ = await context.Coordinator.ExecuteAsync(preview, "guffawaffle");
+        Assert.Fail($"Configuration-restore crash probe passed stage '{configuredStage}'.");
+    }
+
+    private static RestoreContext CreateContext(TemporaryDirectory directory)
+        => CreateContext(directory.Path);
+
+    private static RestoreContext CreateContext(
+        string root,
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null)
+    {
+        var stateDirectory = Directory.CreateDirectory(Path.Combine(root, "state")).FullName;
+        var gameDirectory = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
         TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
         var catalog = LauncherDistributionProviderTests.LoadFixtureCatalog();
@@ -443,7 +568,9 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
             evidence,
             stateDirectory,
             () => selectedPath.Path,
-            inspector);
+            inspector,
+            timeProvider: null,
+            checkpoint);
         return new(
             stateDirectory,
             gameDirectory,
@@ -452,6 +579,45 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
             coordinator,
             inspector,
             selectedPath);
+    }
+
+    private static Process StartCrashProbe(string crashStage, string root, string readyPath)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = AppContext.BaseDirectory,
+        };
+        start.ArgumentList.Add("vstest");
+        start.ArgumentList.Add(typeof(ProviderConfigurationRestoreCoordinatorTests).Assembly.Location);
+        start.ArgumentList.Add(
+            "--Tests:STFCCommunityMod.Launcher.Core.Tests."
+            + "ProviderConfigurationRestoreCoordinatorTests.ProviderConfigurationRestoreHardCrashProbe");
+        start.Environment[CrashStageEnvironment] = crashStage;
+        start.Environment[CrashRootEnvironment] = root;
+        start.Environment[CrashReadyEnvironment] = readyPath;
+        return Process.Start(start)
+            ?? throw new InvalidOperationException("Could not start the configuration-restore crash probe.");
+    }
+
+    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (!File.Exists(readyPath))
+        {
+            if (child.HasExited)
+            {
+                var output = await child.StandardOutput.ReadToEndAsync();
+                var error = await child.StandardError.ReadToEndAsync();
+                Assert.Fail(
+                    $"Configuration-restore crash probe exited before its hold point. "
+                    + $"Output: {output} Error: {error}");
+            }
+            await Task.Delay(50, timeout.Token);
+        }
     }
 
     private static Task<ConfigurationBackupReceipt> CreateBackupAsync(

@@ -71,6 +71,15 @@ public interface IConfigurationMutationBackup
         CancellationToken cancellationToken);
 }
 
+internal enum ProviderConfigurationBackupCheckpoint
+{
+    PayloadDurable,
+    ManifestDurable,
+    Published,
+    BeforePruneDelete,
+    AfterPruneDelete,
+}
+
 public sealed class ProviderScopedConfigurationMutationBackup(
     ProviderScopedConfigurationBackupStore store,
     string providerId,
@@ -190,6 +199,8 @@ public sealed class ProviderScopedConfigurationBackupStore
     private readonly IConfigurationBackupStorageSecurity storageSecurity;
     private readonly TimeProvider timeProvider;
     private readonly int retentionCount;
+    private readonly Func<ProviderConfigurationBackupCheckpoint, CancellationToken, ValueTask>?
+        checkpoint;
 
     public ProviderScopedConfigurationBackupStore(
         string stateDirectory,
@@ -197,6 +208,23 @@ public sealed class ProviderScopedConfigurationBackupStore
         IConfigurationBackupStorageSecurity? storageSecurity = null,
         TimeProvider? timeProvider = null,
         int retentionCount = DefaultRetentionCount)
+        : this(
+            stateDirectory,
+            protector,
+            storageSecurity,
+            timeProvider,
+            retentionCount,
+            checkpoint: null)
+    {
+    }
+
+    internal ProviderScopedConfigurationBackupStore(
+        string stateDirectory,
+        IConfigurationBackupProtector? protector,
+        IConfigurationBackupStorageSecurity? storageSecurity,
+        TimeProvider? timeProvider,
+        int retentionCount,
+        Func<ProviderConfigurationBackupCheckpoint, CancellationToken, ValueTask>? checkpoint)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         ArgumentOutOfRangeException.ThrowIfLessThan(retentionCount, 1);
@@ -207,6 +235,7 @@ public sealed class ProviderScopedConfigurationBackupStore
             ?? new WindowsCurrentUserConfigurationBackupStorageSecurity();
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.retentionCount = retentionCount;
+        this.checkpoint = checkpoint;
     }
 
     public async Task<ConfigurationBackupReceipt> CreateAsync(
@@ -268,6 +297,9 @@ public sealed class ProviderScopedConfigurationBackupStore
                     Path.Combine(temporaryDirectory, PayloadFileName),
                     protectedContents,
                     cancellationToken).ConfigureAwait(false);
+                await ObserveCheckpointAsync(
+                    ProviderConfigurationBackupCheckpoint.PayloadDurable,
+                    cancellationToken).ConfigureAwait(false);
 
                 var verified = protector.Unprotect(
                     await File.ReadAllBytesAsync(
@@ -302,15 +334,22 @@ public sealed class ProviderScopedConfigurationBackupStore
                     Path.Combine(temporaryDirectory, ManifestFileName),
                     JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions),
                     cancellationToken).ConfigureAwait(false);
+                await ObserveCheckpointAsync(
+                    ProviderConfigurationBackupCheckpoint.ManifestDurable,
+                    cancellationToken).ConfigureAwait(false);
                 ValidateCompletedBackup(temporaryDirectory, manifest);
                 Directory.Move(temporaryDirectory, completedDirectory);
+                await ObserveCheckpointAsync(
+                    ProviderConfigurationBackupCheckpoint.Published,
+                    cancellationToken).ConfigureAwait(false);
 
-                Prune(
+                await PruneAsync(
                     partition,
                     installationId,
                     request.ProviderId,
                     backupId,
-                    request.PinnedBackupId);
+                    request.PinnedBackupId,
+                    cancellationToken).ConfigureAwait(false);
                 return ToReceipt(manifest);
             }
             catch
@@ -460,12 +499,13 @@ public sealed class ProviderScopedConfigurationBackupStore
         }
     }
 
-    private void Prune(
+    private async Task PruneAsync(
         string partition,
         string installationId,
         string providerId,
         string newlyCreatedBackupId,
-        string? pinnedBackupId = null)
+        string? pinnedBackupId,
+        CancellationToken cancellationToken)
     {
         var completed = ReadManifests(partition, installationId, providerId)
             .OrderByDescending(manifest => manifest.CreatedAtUtc)
@@ -506,9 +546,20 @@ public sealed class ProviderScopedConfigurationBackupStore
             {
                 continue;
             }
+            await ObserveCheckpointAsync(
+                ProviderConfigurationBackupCheckpoint.BeforePruneDelete,
+                cancellationToken).ConfigureAwait(false);
             TryDeleteDirectory(Path.Combine(partition, manifest.BackupId));
+            await ObserveCheckpointAsync(
+                ProviderConfigurationBackupCheckpoint.AfterPruneDelete,
+                cancellationToken).ConfigureAwait(false);
         }
     }
+
+    private ValueTask ObserveCheckpointAsync(
+        ProviderConfigurationBackupCheckpoint current,
+        CancellationToken cancellationToken) =>
+        checkpoint?.Invoke(current, cancellationToken) ?? ValueTask.CompletedTask;
 
     private static List<ConfigurationBackupManifest> ReadManifests(
         string partition,
