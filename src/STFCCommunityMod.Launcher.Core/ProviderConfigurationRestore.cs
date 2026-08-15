@@ -382,6 +382,26 @@ public sealed class ProviderConfigurationRestoreCoordinator
                 "Select the game installation named in the interrupted restore before recovering it.");
         }
         EnsureGameClosed(target.GameDirectory);
+        var verifiedSourceBackup = backupStore.List(
+                target.GameDirectory,
+                activeSelection.ProviderId)
+            .SingleOrDefault(receipt => string.Equals(
+                receipt.BackupId,
+                journal.Preview.Backup.BackupId,
+                StringComparison.Ordinal));
+        if (verifiedSourceBackup is null
+            || !SourceReceiptMatchesJournal(journal, verifiedSourceBackup))
+        {
+            const string changed =
+                "The selected restore backup receipt is missing or changed; no recovery bookkeeping was applied.";
+            Persist(journal with
+            {
+                Phase = ProviderConfigurationRestorePhase.RecoveryRequired,
+                UpdatedAtUtc = timeProvider.GetUtcNow(),
+                Error = changed,
+            });
+            return new(ProviderConfigurationRestoreResultState.RecoveryRequired, changed);
+        }
         var desiredContents = backupStore.Read(
             target.GameDirectory,
             activeSelection.ProviderId,
@@ -414,18 +434,24 @@ public sealed class ProviderConfigurationRestoreCoordinator
         }
 
         var transactionIdentity = RestoreIdentity(journal.Preview.TransactionId);
-        var verifiedPreRestoreBackup = backupStore.List(
+        var preRestoreCandidates = backupStore.List(
                 target.GameDirectory,
                 activeSelection.ProviderId)
-            .SingleOrDefault(receipt =>
+            .Where(receipt =>
                 string.Equals(receipt.Reason, RestoreReason, StringComparison.Ordinal)
                 && string.Equals(
                     receipt.ReleaseIdentity,
                     transactionIdentity,
-                    StringComparison.Ordinal));
-        if (verifiedPreRestoreBackup is null
-            || journal.PreRestoreBackup is not null
-                && journal.PreRestoreBackup != verifiedPreRestoreBackup)
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    receipt.ContentSha256,
+                    journal.Preview.ExpectedLiveRevision.Sha256,
+                    StringComparison.Ordinal))
+            .ToArray();
+        var verifiedPreRestoreBackup = journal.PreRestoreBackup is null
+            ? preRestoreCandidates.FirstOrDefault()
+            : preRestoreCandidates.SingleOrDefault(receipt => receipt == journal.PreRestoreBackup);
+        if (verifiedPreRestoreBackup is null)
         {
             const string missing =
                 "The restored TOML is present, but its verified pre-restore backup receipt is missing or changed.";
@@ -437,10 +463,23 @@ public sealed class ProviderConfigurationRestoreCoordinator
             });
             return new(ProviderConfigurationRestoreResultState.RecoveryRequired, missing);
         }
-        _ = backupStore.Read(
+        var preRestoreContents = backupStore.Read(
             target.GameDirectory,
             activeSelection.ProviderId,
             verifiedPreRestoreBackup.BackupId);
+        if (ConfigurationDocumentRevision.FromContents(preRestoreContents)
+            != journal.Preview.ExpectedLiveRevision)
+        {
+            const string changed =
+                "The restored TOML is present, but its pre-restore backup no longer matches the reviewed live revision.";
+            Persist(journal with
+            {
+                Phase = ProviderConfigurationRestorePhase.RecoveryRequired,
+                UpdatedAtUtc = timeProvider.GetUtcNow(),
+                Error = changed,
+            });
+            return new(ProviderConfigurationRestoreResultState.RecoveryRequired, changed);
+        }
 
         var restored = await backupStore.MarkRestoredAsync(
             target.GameDirectory,
@@ -732,6 +771,35 @@ public sealed class ProviderConfigurationRestoreCoordinator
             throw new InvalidOperationException(
                 "The configuration history restore changed after review. Review it again.");
         }
+    }
+
+    private static bool SourceReceiptMatchesJournal(
+        ProviderConfigurationRestoreJournal journal,
+        ConfigurationBackupReceipt actual)
+    {
+        var expected = journal.Preview.Backup;
+        var immutableFieldsMatch = string.Equals(
+                actual.BackupId,
+                expected.BackupId,
+                StringComparison.Ordinal)
+            && string.Equals(actual.InstallationId, expected.InstallationId, StringComparison.Ordinal)
+            && string.Equals(actual.ProviderId, expected.ProviderId, StringComparison.Ordinal)
+            && string.Equals(actual.TargetProviderId, expected.TargetProviderId, StringComparison.Ordinal)
+            && actual.CreatedAtUtc == expected.CreatedAtUtc
+            && string.Equals(actual.ContentSha256, expected.ContentSha256, StringComparison.Ordinal)
+            && string.Equals(actual.Reason, expected.Reason, StringComparison.Ordinal)
+            && string.Equals(actual.ReleaseIdentity, expected.ReleaseIdentity, StringComparison.Ordinal);
+        if (!immutableFieldsMatch)
+        {
+            return false;
+        }
+        return actual == expected
+            || actual.WasRestored
+                && actual.RestoredAtUtc is not null
+                && string.Equals(
+                    actual.RestoreTransactionId,
+                    journal.Preview.TransactionId,
+                    StringComparison.Ordinal);
     }
 
     private static ProviderConfigurationRestoreResultState MapFailure(

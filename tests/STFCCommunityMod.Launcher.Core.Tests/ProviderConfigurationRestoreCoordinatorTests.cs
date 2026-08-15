@@ -320,6 +320,96 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
         CollectionAssert.AreEqual(desired, await File.ReadAllBytesAsync(context.ConfigurationPath));
     }
 
+    [TestMethod]
+    public async Task RecoveryRejectsChangedSourceReceiptWithoutFalseCompletion()
+    {
+        using var directory = new TemporaryDirectory();
+        var context = CreateContext(directory);
+        var baseline = Encoding.UTF8.GetBytes("# live baseline\n");
+        var desired = Encoding.UTF8.GetBytes("# selected history\n");
+        await File.WriteAllBytesAsync(context.ConfigurationPath, baseline);
+        var selected = await CreateBackupAsync(context, "guffawaffle", desired);
+        var preview = context.Coordinator.Preview(selected.BackupId);
+        _ = await CreatePreRestoreBackupAsync(context, preview, baseline);
+        await File.WriteAllBytesAsync(context.ConfigurationPath, desired);
+        WriteJournal(
+            context,
+            preview with
+            {
+                Backup = selected with { Reason = "forged-reason" },
+            },
+            preRestore: null);
+
+        var result = await context.Coordinator.RecoverAsync();
+
+        Assert.AreEqual(ProviderConfigurationRestoreResultState.RecoveryRequired, result.State);
+        Assert.IsFalse(
+            context.Store.List(context.GameDirectory, "guffawaffle")
+                .Single(receipt => receipt.BackupId == selected.BackupId)
+                .WasRestored);
+        CollectionAssert.AreEqual(desired, await File.ReadAllBytesAsync(context.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public async Task RecoveryAcceptsDuplicateExactPreRestoreReceiptsFromSafeRetry()
+    {
+        using var directory = new TemporaryDirectory();
+        var context = CreateContext(directory);
+        var baseline = Encoding.UTF8.GetBytes("# live baseline\n");
+        var desired = Encoding.UTF8.GetBytes("# selected history\n");
+        await File.WriteAllBytesAsync(context.ConfigurationPath, baseline);
+        var selected = await CreateBackupAsync(context, "guffawaffle", desired);
+        var preview = context.Coordinator.Preview(selected.BackupId);
+        _ = await CreatePreRestoreBackupAsync(context, preview, baseline);
+        _ = await CreatePreRestoreBackupAsync(context, preview, baseline);
+        await File.WriteAllBytesAsync(context.ConfigurationPath, desired);
+        WriteJournal(context, preview, preRestore: null);
+
+        var result = await context.Coordinator.RecoverAsync();
+
+        Assert.AreEqual(ProviderConfigurationRestoreResultState.Succeeded, result.State, result.Message);
+        Assert.IsNotNull(result.PreRestoreBackup);
+        CollectionAssert.AreEqual(
+            baseline,
+            context.Store.Read(
+                context.GameDirectory,
+                "guffawaffle",
+                result.PreRestoreBackup.BackupId));
+        Assert.IsTrue(result.RestoredBackup!.WasRestored);
+    }
+
+    [TestMethod]
+    public async Task RecoveryAcceptsSourceReceiptAlreadyMarkedByInterruptedTransaction()
+    {
+        using var directory = new TemporaryDirectory();
+        var context = CreateContext(directory);
+        var baseline = Encoding.UTF8.GetBytes("# live baseline\n");
+        var desired = Encoding.UTF8.GetBytes("# selected history\n");
+        await File.WriteAllBytesAsync(context.ConfigurationPath, baseline);
+        var selected = await CreateBackupAsync(context, "guffawaffle", desired);
+        var preview = context.Coordinator.Preview(selected.BackupId);
+        var preRestore = await CreatePreRestoreBackupAsync(context, preview, baseline);
+        await File.WriteAllBytesAsync(context.ConfigurationPath, desired);
+        _ = await context.Store.MarkRestoredAsync(
+            context.GameDirectory,
+            "guffawaffle",
+            selected.BackupId,
+            preview.TransactionId);
+        WriteJournal(
+            context,
+            preview,
+            preRestore,
+            ProviderConfigurationRestorePhase.BackupMarkedRestored);
+
+        var result = await context.Coordinator.RecoverAsync();
+
+        Assert.AreEqual(ProviderConfigurationRestoreResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(preview.TransactionId, result.RestoredBackup!.RestoreTransactionId);
+        Assert.AreEqual(
+            ProviderConfigurationRestorePhase.Completed,
+            context.Coordinator.ReadJournal()!.Phase);
+    }
+
     private static RestoreContext CreateContext(TemporaryDirectory directory)
     {
         var stateDirectory = directory.CreateDirectory("state");
@@ -392,11 +482,12 @@ public sealed class ProviderConfigurationRestoreCoordinatorTests
     private static void WriteJournal(
         RestoreContext context,
         ProviderConfigurationRestorePreview preview,
-        ConfigurationBackupReceipt? preRestore)
+        ConfigurationBackupReceipt? preRestore,
+        ProviderConfigurationRestorePhase phase = ProviderConfigurationRestorePhase.Prepared)
     {
         var journal = new ProviderConfigurationRestoreJournal(
             1,
-            ProviderConfigurationRestorePhase.Prepared,
+            phase,
             preview,
             preRestore,
             DateTimeOffset.UtcNow);

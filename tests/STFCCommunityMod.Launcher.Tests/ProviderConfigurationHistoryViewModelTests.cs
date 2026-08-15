@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Windows.Input;
 using System.Xml.Linq;
 using STFCCommunityMod.Launcher.Core;
@@ -10,6 +11,8 @@ namespace STFCCommunityMod.Launcher.Tests;
 [TestClass]
 public sealed class ProviderConfigurationHistoryViewModelTests
 {
+    private static readonly JsonSerializerOptions JournalJsonOptions =
+        new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private static readonly XNamespace Presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace Automation =
         "clr-namespace:System.Windows.Automation;assembly=PresentationCore";
@@ -100,6 +103,77 @@ public sealed class ProviderConfigurationHistoryViewModelTests
     }
 
     [TestMethod]
+    public async Task SuccessfulRefreshClearsEarlierUnavailableStatus()
+    {
+        using var directory = new TestDirectory();
+        var context = await CreateContextAsync(directory);
+        var history = new ProviderConfigurationHistoryViewModel(
+            context.Coordinator,
+            "guffawaffle",
+            "Guffawaffle",
+            () => false,
+            () => { });
+        context.SelectedConfigurationPath.Value = null;
+
+        await history.RefreshAsync();
+
+        StringAssert.StartsWith(history.OperationStatus, "Configuration history is unavailable:");
+        context.SelectedConfigurationPath.Value = context.ConfigurationPath;
+
+        await history.RefreshAsync();
+
+        Assert.AreEqual(string.Empty, history.OperationStatus);
+        Assert.AreEqual(1, history.Entries.Count);
+    }
+
+    [TestMethod]
+    public async Task SuccessfulRecoveryReloadsSiblingSettingsWorkspace()
+    {
+        using var directory = new TestDirectory();
+        var context = await CreateContextAsync(directory);
+        var reloaded = false;
+        var history = new ProviderConfigurationHistoryViewModel(
+            context.Coordinator,
+            "guffawaffle",
+            "Guffawaffle",
+            () => false,
+            () => reloaded = true);
+        var baseline = await File.ReadAllBytesAsync(context.ConfigurationPath);
+        var desired = context.Store.Read(
+            context.GameDirectory,
+            "guffawaffle",
+            context.Backup.BackupId);
+        var preview = context.Coordinator.Preview(context.Backup.BackupId);
+        _ = await context.Store.CreateAsync(new(
+            context.GameDirectory,
+            preview.Selection.ProviderId,
+            context.ConfigurationPath,
+            baseline,
+            "manual-restore",
+            ReleaseIdentity: $"configuration-history-restore/{preview.TransactionId}",
+            PinnedBackupId: preview.Backup.BackupId));
+        await File.WriteAllBytesAsync(context.ConfigurationPath, desired);
+        var journal = new ProviderConfigurationRestoreJournal(
+            1,
+            ProviderConfigurationRestorePhase.Prepared,
+            preview,
+            PreRestoreBackup: null,
+            DateTimeOffset.UtcNow);
+        await File.WriteAllTextAsync(
+            Path.Combine(context.StateDirectory, "configuration-restore-journal.json"),
+            JsonSerializer.Serialize(journal, JournalJsonOptions));
+
+        await history.RefreshAsync();
+
+        Assert.IsTrue(reloaded);
+        StringAssert.StartsWith(history.OperationStatus, "Finished the interrupted configuration restore");
+        Assert.IsTrue(
+            history.Entries.Single(entry =>
+                    entry.Entry.Receipt.BackupId == context.Backup.BackupId)
+                .Entry.Receipt.WasRestored);
+    }
+
+    [TestMethod]
     public void HistoryReviewExposesAccessibleConfirmationAndExactDestinationWithoutPayloadBinding()
     {
         var path = FindRepositoryFile(
@@ -154,6 +228,7 @@ public sealed class ProviderConfigurationHistoryViewModelTests
             Encoding.UTF8.GetBytes("# secret-history-value\r\n"),
             "settings-save",
             ReleaseIdentity: "guffawaffle/stable"));
+        var selectedConfigurationPath = new MutablePath(configurationPath);
         var coordinator = new ProviderConfigurationRestoreCoordinator(
             store,
             providerCatalog,
@@ -164,7 +239,7 @@ public sealed class ProviderConfigurationHistoryViewModelTests
                 selection.ReleaseChannelId,
                 configurationCatalog),
             stateDirectory,
-            () => configurationPath,
+            () => selectedConfigurationPath.Value,
             new StoppedGameInspector());
         return new(
             stateDirectory,
@@ -173,7 +248,8 @@ public sealed class ProviderConfigurationHistoryViewModelTests
             configurationCatalog,
             store,
             backup,
-            coordinator);
+            coordinator,
+            selectedConfigurationPath);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -208,7 +284,13 @@ public sealed class ProviderConfigurationHistoryViewModelTests
         LauncherConfigurationCatalog ConfigurationCatalog,
         ProviderScopedConfigurationBackupStore Store,
         ConfigurationBackupReceipt Backup,
-        ProviderConfigurationRestoreCoordinator Coordinator);
+        ProviderConfigurationRestoreCoordinator Coordinator,
+        MutablePath SelectedConfigurationPath);
+
+    private sealed class MutablePath(string? value)
+    {
+        public string? Value { get; set; } = value;
+    }
 
     private sealed class TestDirectory : IDisposable
     {

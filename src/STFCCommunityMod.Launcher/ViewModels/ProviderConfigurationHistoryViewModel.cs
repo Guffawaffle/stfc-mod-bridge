@@ -248,9 +248,20 @@ public sealed class ProviderConfigurationHistoryViewModel : INotifyPropertyChang
             var recovery = await coordinator.RecoverAsync();
             requiresRecovery = recovery.State is ProviderConfigurationRestoreResultState.Busy
                 or ProviderConfigurationRestoreResultState.RecoveryRequired;
-            if (recovery.State != ProviderConfigurationRestoreResultState.NoIncompleteRestore)
+            OperationStatus = recovery.State == ProviderConfigurationRestoreResultState.NoIncompleteRestore
+                ? string.Empty
+                : recovery.Message;
+            if (recovery.State == ProviderConfigurationRestoreResultState.Succeeded)
             {
-                OperationStatus = recovery.Message;
+                try
+                {
+                    restored();
+                }
+                catch (Exception exception) when (IsExpectedFailure(exception))
+                {
+                    OperationStatus =
+                        $"{recovery.Message} The Settings workspace could not refresh: {exception.Message}";
+                }
             }
             LoadEntries();
         }

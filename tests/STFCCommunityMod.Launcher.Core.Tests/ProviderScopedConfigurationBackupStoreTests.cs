@@ -119,6 +119,45 @@ public sealed class ProviderScopedConfigurationBackupStoreTests
     }
 
     [TestMethod]
+    public async Task PinnedRestoreSourceNeverDisplacesNewRollbackBackupAtMinimumRetention()
+    {
+        using var directory = new TemporaryDirectory();
+        var stateDirectory = directory.CreateDirectory("state");
+        var gameDirectory = CreateGameDirectory(directory, "game");
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var store = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity(),
+            new IncrementingTimeProvider(),
+            retentionCount: 1);
+        var source = await CreateAsync(
+            store,
+            gameDirectory,
+            configurationPath,
+            "guffawaffle",
+            1);
+        var rollbackContents = Encoding.UTF8.GetBytes("value = 'live-before-restore'\n");
+
+        var rollback = await store.CreateAsync(new(
+            gameDirectory,
+            "guffawaffle",
+            configurationPath,
+            rollbackContents,
+            "manual-restore",
+            ReleaseIdentity: $"configuration-history-restore/{Guid.NewGuid():N}",
+            PinnedBackupId: source.BackupId));
+
+        var retained = store.List(gameDirectory, "guffawaffle");
+        Assert.AreEqual(2, retained.Count);
+        Assert.IsTrue(retained.Any(receipt => receipt.BackupId == source.BackupId));
+        Assert.IsTrue(retained.Any(receipt => receipt.BackupId == rollback.BackupId));
+        CollectionAssert.AreEqual(
+            rollbackContents,
+            store.Read(gameDirectory, "guffawaffle", rollback.BackupId));
+    }
+
+    [TestMethod]
     public async Task RestoredReceiptIsDurableIdempotentAndRetainsExactPayload()
     {
         using var directory = new TemporaryDirectory();

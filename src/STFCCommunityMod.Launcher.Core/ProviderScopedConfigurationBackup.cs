@@ -309,6 +309,7 @@ public sealed class ProviderScopedConfigurationBackupStore
                     partition,
                     installationId,
                     request.ProviderId,
+                    backupId,
                     request.PinnedBackupId);
                 return ToReceipt(manifest);
             }
@@ -463,6 +464,7 @@ public sealed class ProviderScopedConfigurationBackupStore
         string partition,
         string installationId,
         string providerId,
+        string newlyCreatedBackupId,
         string? pinnedBackupId = null)
     {
         var completed = ReadManifests(partition, installationId, providerId)
@@ -473,21 +475,30 @@ public sealed class ProviderScopedConfigurationBackupStore
             .Take(retentionCount)
             .Select(manifest => manifest.BackupId)
             .ToHashSet(StringComparer.Ordinal);
+        var required = new HashSet<string>(StringComparer.Ordinal)
+        {
+            newlyCreatedBackupId,
+        };
         if (pinnedBackupId is not null
             && completed.Any(manifest => string.Equals(
                 manifest.BackupId,
                 pinnedBackupId,
-                StringComparison.Ordinal))
-            && !retained.Contains(pinnedBackupId))
+                StringComparison.Ordinal)))
         {
-            var displaced = completed
-                .Where(manifest => retained.Contains(manifest.BackupId))
-                .Last(manifest => !string.Equals(
-                    manifest.BackupId,
-                    pinnedBackupId,
-                    StringComparison.Ordinal));
-            retained.Remove(displaced.BackupId);
-            retained.Add(pinnedBackupId);
+            required.Add(pinnedBackupId);
+        }
+        retained.UnionWith(required);
+        var minimumRetained = Math.Max(retentionCount, required.Count);
+        foreach (var candidate in completed.Reverse())
+        {
+            if (retained.Count <= minimumRetained)
+            {
+                break;
+            }
+            if (!required.Contains(candidate.BackupId))
+            {
+                retained.Remove(candidate.BackupId);
+            }
         }
         foreach (var manifest in completed)
         {
