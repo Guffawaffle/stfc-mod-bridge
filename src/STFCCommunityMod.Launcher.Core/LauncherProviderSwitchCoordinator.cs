@@ -4,12 +4,19 @@ namespace STFCCommunityMod.Launcher.Core;
 
 public sealed record LauncherProviderSwitchEndpoint(
     string ProviderId,
-    ModManagementCoordinator Coordinator);
+    ModManagementCoordinator Coordinator,
+    string? ReleaseChannelId = null)
+{
+    public LauncherProviderSelection Selection => new(
+        ProviderId,
+        ReleaseChannelId ?? Coordinator.ReleaseChannelId);
+}
 
 public sealed record LauncherProviderAtomicSwitchPreview(
     LauncherProviderSwitchPreview Configuration,
     ModOperationPreparation? Artifact,
-    ModInstallationEvidence SourceInstallation)
+    ModInstallationEvidence SourceInstallation,
+    string? GameDirectory = null)
 {
     public string ConfirmationText => Configuration.ConfirmationText;
 }
@@ -34,6 +41,7 @@ public enum LauncherProviderAtomicSwitchPhase
     RollingBack,
     RolledBack,
     RecoveryRequired,
+    ConfigurationCommitting,
 }
 
 public sealed record LauncherProviderAtomicSwitchJournal(
@@ -42,7 +50,7 @@ public sealed record LauncherProviderAtomicSwitchJournal(
     LauncherProviderAtomicSwitchPhase Phase,
     LauncherProviderSwitchPreview Preview,
     ConfigurationBackupReceipt? ConfigurationBackup,
-    ModReleaseArtifact TargetArtifact,
+    ModReleaseArtifact? TargetArtifact,
     DateTimeOffset UpdatedAtUtc,
     string? Error = null);
 
@@ -53,13 +61,14 @@ public sealed record LauncherProviderAtomicSwitchJournal(
 /// </summary>
 public sealed class LauncherProviderAtomicSwitchCoordinator
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
+    private const int LegacySchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
     };
     private readonly LauncherProviderSourceSwitchService configurationSwitch;
-    private readonly Dictionary<string, ModManagementCoordinator> endpoints;
+    private readonly Dictionary<LauncherProviderSelection, ModManagementCoordinator> endpoints;
     private readonly string journalPath;
     private readonly LauncherOperationLock providerSwitchLock;
     private readonly LauncherOperationLock rootOperationLock;
@@ -74,15 +83,21 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         this.configurationSwitch = configurationSwitch
             ?? throw new ArgumentNullException(nameof(configurationSwitch));
         ArgumentNullException.ThrowIfNull(endpoints);
-        this.endpoints = endpoints.ToDictionary(
-            endpoint => endpoint.ProviderId,
+        var materializedEndpoints = endpoints.ToArray();
+        this.endpoints = materializedEndpoints.ToDictionary(
+            endpoint => endpoint.Selection,
             endpoint => endpoint.Coordinator,
-            StringComparer.Ordinal);
+            EqualityComparer<LauncherProviderSelection>.Default);
         if (this.endpoints.Count == 0)
         {
             throw new ArgumentException("At least one provider-switch endpoint is required.", nameof(endpoints));
         }
-        if (this.endpoints.Any(pair => !string.Equals(pair.Key, pair.Value.ProviderId, StringComparison.Ordinal)))
+        if (this.endpoints.Any(pair =>
+                !string.Equals(pair.Key.ProviderId, pair.Value.ProviderId, StringComparison.Ordinal)
+                || !string.Equals(
+                    pair.Key.ReleaseChannelId,
+                    pair.Value.ReleaseChannelId,
+                    StringComparison.Ordinal)))
         {
             throw new ArgumentException("A provider-switch endpoint is bound to the wrong provider.", nameof(endpoints));
         }
@@ -105,9 +120,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             stream,
             SerializerOptions)
             ?? throw new InvalidDataException("Provider-switch journal is empty.");
-        if (journal.SchemaVersion != SchemaVersion
+        if (journal.SchemaVersion is not (LegacySchemaVersion or SchemaVersion)
             || string.IsNullOrWhiteSpace(journal.TransactionId)
-            || !endpoints.ContainsKey(journal.Preview.Target.ProviderId))
+            || (journal.TargetArtifact is not null
+                && !endpoints.ContainsKey(journal.Preview.Target)))
         {
             throw new InvalidDataException("Provider-switch journal identity is invalid.");
         }
@@ -122,36 +138,61 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         string? configurationPath,
         CancellationToken cancellationToken = default)
     {
+        var gameValidation = GameInstallValidator.Validate(gameDirectory);
+        if (!gameValidation.IsValid)
+        {
+            throw new InvalidOperationException(gameValidation.Message);
+        }
+        var expectedConfigurationPath = Path.Combine(
+            gameValidation.GameDirectory,
+            "community_patch_settings.toml");
+        if (!string.IsNullOrWhiteSpace(configurationPath)
+            && !string.Equals(
+                Path.GetFullPath(configurationPath),
+                expectedConfigurationPath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The provider-switch configuration path does not belong to the selected game installation.");
+        }
         var configuration = configurationSwitch.Preview(
             targetProviderId,
             targetReleaseChannelId,
-            configurationPath);
+            expectedConfigurationPath);
         if (configuration.SourceResolutionState == LauncherProviderSelectionResolutionState.InvalidSelection)
         {
             throw new InvalidOperationException(
                 "Repair the unreadable release-source selection before switching the installed artifact.");
         }
-        if (!endpoints.TryGetValue(configuration.Source.ProviderId, out var sourceEndpoint))
+        if (!endpoints.TryGetValue(configuration.Source, out var sourceEndpoint))
         {
             throw new InvalidOperationException(
-                $"The source provider '{configuration.Source.ProviderId}' has no installation endpoint.");
+                $"The source provider/channel '{configuration.Source.ProviderId}/"
+                + $"{configuration.Source.ReleaseChannelId}' has no installation endpoint.");
         }
-        if (!endpoints.TryGetValue(configuration.Target.ProviderId, out var targetEndpoint))
+        if (!endpoints.TryGetValue(configuration.Target, out var targetEndpoint))
         {
             throw new InvalidOperationException(
-                $"The target provider '{configuration.Target.ProviderId}' has no installation endpoint.");
+                $"The target provider/channel '{configuration.Target.ProviderId}/"
+                + $"{configuration.Target.ReleaseChannelId}' has no installation endpoint.");
         }
 
-        var sourceHealth = sourceEndpoint.CaptureHealth(gameDirectory, isGameRunning);
+        var sourceHealth = sourceEndpoint.CaptureHealth(gameValidation.GameDirectory, isGameRunning);
         var sourceInstallation = sourceHealth.Installation;
         if (sourceInstallation.State == ModInstallationEvidenceState.NotInstalled)
         {
-            return new(configuration, Artifact: null, sourceInstallation);
+            return new(configuration, Artifact: null, sourceInstallation, gameValidation.GameDirectory);
         }
         if (sourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
             || !string.Equals(
                 sourceInstallation.InstalledProviderId,
                 configuration.Source.ProviderId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                sourceInstallation.InstalledReleaseChannelId,
+                configuration.Source.ReleaseChannelId,
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -159,11 +200,19 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 + "Use the separate install, adoption, or repair flow first.");
         }
         var artifact = await targetEndpoint.PrepareProviderSwitchTargetAsync(
-            gameDirectory,
+            gameValidation.GameDirectory,
             isGameRunning,
             sourceInstallation,
             cancellationToken).ConfigureAwait(false);
-        return new(configuration, artifact, sourceInstallation);
+        if (!string.Equals(
+                artifact.ProviderId,
+                configuration.Target.ProviderId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The target provider endpoint returned an artifact for a different provider.");
+        }
+        return new(configuration, artifact, sourceInstallation, gameValidation.GameDirectory);
     }
 
     public async Task<LauncherProviderAtomicSwitchResult> ExecuteAsync(
@@ -212,6 +261,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(preview);
+        ValidateAtomicPreviewScope(preview);
         await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
         if (providerSwitchLease is null)
         {
@@ -226,17 +276,100 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         }
         if (preview.Artifact is null)
         {
-            var selectionOnly = await configurationSwitch.ExecuteAsync(
+            var preparedConfiguration = await configurationSwitch.PrepareAsync(
                 preview.Configuration,
                 confirmationText,
                 cancellationToken).ConfigureAwait(false);
-            return new(
-                selectionOnly.Selection,
-                InstalledArtifact: null,
-                selectionOnly.ConfigurationBackup,
-                selectionOnly.Message);
+            var configurationJournal = new LauncherProviderAtomicSwitchJournal(
+                SchemaVersion,
+                preview.Configuration.TransactionId,
+                LauncherProviderAtomicSwitchPhase.Prepared,
+                preparedConfiguration.Preview,
+                preparedConfiguration.ConfigurationBackup,
+                TargetArtifact: null,
+                timeProvider.GetUtcNow());
+            Persist(configurationJournal);
+            try
+            {
+                configurationJournal = configurationJournal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.ConfigurationCommitting,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                };
+                Persist(configurationJournal);
+                var configurationOnly = await configurationSwitch.CommitAsync(
+                    preparedConfiguration,
+                    cancellationToken).ConfigureAwait(false);
+                configurationJournal = configurationJournal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.ConfigurationCommitted,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                };
+                Persist(configurationJournal);
+                Persist(configurationJournal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.Completed,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                });
+                return new(
+                    configurationOnly.Selection,
+                    InstalledArtifact: null,
+                    configurationOnly.ConfigurationBackup,
+                    configurationOnly.Message);
+            }
+            catch (Exception switchException) when (
+                switchException is OperationCanceledException
+                    or IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or InvalidOperationException)
+            {
+                configurationJournal = configurationJournal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.RollingBack,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    Error = switchException.Message,
+                };
+                Persist(configurationJournal);
+                try
+                {
+                    await configurationSwitch.RollBackAsync(
+                        preparedConfiguration,
+                        CancellationToken.None).ConfigureAwait(false);
+                    Persist(configurationJournal with
+                    {
+                        Phase = LauncherProviderAtomicSwitchPhase.RolledBack,
+                        UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    });
+                }
+                catch (Exception rollbackException) when (
+                    rollbackException is IOException
+                        or UnauthorizedAccessException
+                        or InvalidDataException
+                        or InvalidOperationException)
+                {
+                    Persist(configurationJournal with
+                    {
+                        Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                        UpdatedAtUtc = timeProvider.GetUtcNow(),
+                        Error = rollbackException.Message,
+                    });
+                    throw new InvalidOperationException(
+                        "The configuration-only provider switch failed and rollback requires recovery.",
+                        new AggregateException(switchException, rollbackException));
+                }
+                throw;
+            }
         }
-        if (!endpoints.TryGetValue(preview.Configuration.Target.ProviderId, out var targetEndpoint))
+        if (!string.Equals(
+                preview.Artifact.ProviderId,
+                preview.Configuration.Target.ProviderId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The reviewed target artifact does not match the provider-switch target.");
+        }
+        if (!endpoints.TryGetValue(preview.Configuration.Target, out var targetEndpoint))
         {
             throw new InvalidOperationException("The reviewed target provider is no longer available.");
         }
@@ -296,7 +429,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             || !string.Equals(
                 deployment.InstalledState.Sha256,
                 preview.Artifact.Artifact.Sha256,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                deployment.InstalledState.ReleaseChannelId,
+                preview.Configuration.Target.ReleaseChannelId,
+                StringComparison.Ordinal))
         {
             participant.MarkRecoveryRequired(
                 "The coordinated switch committed but target artifact verification did not match the reviewed plan.");
@@ -335,7 +472,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return new(true, false, "No incomplete provider-switch transaction was found.");
         }
-        if (!endpoints.TryGetValue(journal.Preview.Target.ProviderId, out var targetEndpoint))
+        ModManagementCoordinator? targetEndpoint = null;
+        if (journal.TargetArtifact is not null
+            && !endpoints.TryGetValue(journal.Preview.Target, out targetEndpoint))
         {
             Persist(journal with
             {
@@ -353,9 +492,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             UpdatedAtUtc = timeProvider.GetUtcNow(),
         };
         Persist(journal);
-        if (interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
+        if (journal.TargetArtifact is not null
+            && interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
         {
-            var artifactRollback = await targetEndpoint.RollBackCoordinatedCoreAsync(
+            var artifactRollback = await targetEndpoint!.RollBackCoordinatedCoreAsync(
                 journal.TransactionId,
                 rootLease,
                 cancellationToken).ConfigureAwait(false);
@@ -397,6 +537,39 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 Error = exception.Message,
             });
             return new(false, false, $"Provider-switch recovery failed: {exception.Message}");
+        }
+    }
+
+    private static void ValidateAtomicPreviewScope(LauncherProviderAtomicSwitchPreview preview)
+    {
+        if (string.IsNullOrWhiteSpace(preview.GameDirectory))
+        {
+            throw new InvalidDataException(
+                "The provider-switch preview is missing its exact game installation.");
+        }
+        var validation = GameInstallValidator.Validate(preview.GameDirectory);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(validation.Message);
+        }
+        var expectedConfigurationPath = Path.Combine(
+            validation.GameDirectory,
+            "community_patch_settings.toml");
+        var pathComparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!string.Equals(
+                preview.Configuration.ConfigurationPath,
+                expectedConfigurationPath,
+                pathComparison)
+            || (preview.Artifact is not null
+                && !string.Equals(
+                    Path.GetFullPath(preview.Artifact.GameDirectory),
+                    validation.GameDirectory,
+                    pathComparison)))
+        {
+            throw new InvalidOperationException(
+                "The provider-switch preview is bound to a different game installation or configuration path.");
         }
     }
 
