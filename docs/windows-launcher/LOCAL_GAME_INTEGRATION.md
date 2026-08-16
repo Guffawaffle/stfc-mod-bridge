@@ -87,6 +87,8 @@ opt-ins but does not imply live-provider network access:
 The recovery lab:
 
 - requires the exact selected game to be closed;
+- requires `version.dll` to match the reviewed Guffawaffle stable artifact before
+  attributing any TOML history to that provider partition;
 - captures the target and isolated launcher-state baseline;
 - preflights an existing TOML through the parser and exact Guffawaffle catalog,
   or creates a known-valid test-owned TOML when none exists;
@@ -101,8 +103,11 @@ The recovery lab:
   verifies the complete starting fingerprint after bounded harness cleanup.
 
 Parser-invalid or catalog-blocked existing TOML fails before game-file
-mutation. A recovery or cleanup defect still fails the run even if the bounded
-emergency safeguard restores the human-owned target afterward.
+mutation. An unknown, modified, manual, NetniV, or non-stable DLL also fails
+before TOML inspection or mutation. A recovery or cleanup defect still fails
+the run even if the bounded emergency safeguard restores the human-owned target
+afterward; isolated journals and encrypted receipts are retained for recovery
+inspection on any failed journey and deleted only after full verification.
 
 ## Explicit profiles
 

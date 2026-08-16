@@ -106,11 +106,13 @@ public sealed class LiveProviderInstallIntegrationTests
 
         if (cleanupFailure is not null)
         {
+            campaign.PreserveStateForRecovery();
             campaign.EmergencyRestore();
             campaign.AssertBaseline("Emergency restoration could not restore the maintained target.");
         }
         if (journeyFailure is not null || cleanupFailure is not null)
         {
+            campaign.PreserveStateForRecovery();
             var failure = journeyFailure is null
                 ? cleanupFailure!
                 : cleanupFailure is null
@@ -137,6 +139,7 @@ public sealed class LiveProviderInstallIntegrationTests
             Assert.Fail(
                 "The exact opted-in integration installation is running or cannot be attributed safely.");
         }
+        RequireKnownGuffawaffleStableArtifact(gameDirectory);
 
         using var campaign = new RestorableGameInstallCampaign(gameDirectory);
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
@@ -180,11 +183,13 @@ public sealed class LiveProviderInstallIntegrationTests
 
         if (cleanupFailure is not null)
         {
+            campaign.PreserveStateForRecovery();
             campaign.EmergencyRestore();
             campaign.AssertBaseline("Emergency restoration could not restore the maintained target.");
         }
         if (journeyFailure is not null || cleanupFailure is not null)
         {
+            campaign.PreserveStateForRecovery();
             var failure = journeyFailure is null
                 ? cleanupFailure!
                 : cleanupFailure is null
@@ -489,6 +494,38 @@ public sealed class LiveProviderInstallIntegrationTests
                 checkpoint);
     }
 
+    private static void RequireKnownGuffawaffleStableArtifact(string gameDirectory)
+    {
+        var artifactPath = Path.Combine(gameDirectory, "version.dll");
+        Assert.IsTrue(
+            File.Exists(artifactPath),
+            "The Guffawaffle recovery lab requires a known managed version.dll before attributing TOML history.");
+        var artifact = new FileInfo(artifactPath);
+        using var contents = artifact.OpenRead();
+        var sha256 = Convert.ToHexString(SHA256.HashData(contents));
+        var providerCatalog = LoadProviderCatalog();
+        using var knownArtifacts = File.OpenRead(Path.Combine(
+            RepositoryRoot(),
+            "providers",
+            "known-windows-artifacts.v1.json"));
+        var provenance = new ModBinaryProvenanceResolver(
+            new WindowsModBinaryVersionMetadataReader(),
+            KnownModArtifactCatalogLoader.Load(knownArtifacts, providerCatalog))
+            .Resolve(artifactPath, sha256, artifact.Length);
+        Assert.AreEqual(
+            ModBinaryProvenanceState.KnownProviderArtifact,
+            provenance.State,
+            "The recovery lab refuses to attribute configuration history from an unknown or modified DLL.");
+        Assert.AreEqual(
+            "guffawaffle",
+            provenance.KnownArtifact?.ProviderId,
+            "The current recovery lab is bound to Guffawaffle configuration evidence.");
+        Assert.AreEqual(
+            "stable",
+            provenance.KnownArtifact?.TrackId,
+            "The current recovery lab is bound to the Guffawaffle stable track.");
+    }
+
     private static async Task SwitchRoundTripAsync(
         LauncherDistributionProviderCatalog catalog,
         IReadOnlyDictionary<string, ProviderEndpoint> endpoints,
@@ -786,6 +823,7 @@ public sealed class LiveProviderInstallIntegrationTests
         private readonly string gameDirectory;
         private readonly Dictionary<string, FileBaseline> baseline;
         private bool disposed;
+        private bool preserveState;
 
         public RestorableGameInstallCampaign(string gameDirectory)
         {
@@ -830,6 +868,8 @@ public sealed class LiveProviderInstallIntegrationTests
         public void RestoreConfigurationBaseline() =>
             RestoreFile("community_patch_settings.toml");
 
+        public void PreserveStateForRecovery() => preserveState = true;
+
         public void Dispose()
         {
             if (disposed)
@@ -837,7 +877,7 @@ public sealed class LiveProviderInstallIntegrationTests
                 return;
             }
             disposed = true;
-            if (Directory.Exists(StateDirectory))
+            if (!preserveState && Directory.Exists(StateDirectory))
             {
                 Directory.Delete(StateDirectory, recursive: true);
             }
