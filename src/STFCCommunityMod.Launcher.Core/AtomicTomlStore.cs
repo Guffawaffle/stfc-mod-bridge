@@ -46,8 +46,20 @@ public sealed class AtomicTomlStore
     public AtomicTomlStore(
         IConfigurationMutationBackup mutationBackup,
         bool retainAdjacentBackup = false)
+        : this(
+            mutationBackup,
+            beforeReplace: null,
+            retainAdjacentBackup: retainAdjacentBackup)
+    {
+    }
+
+    internal AtomicTomlStore(
+        IConfigurationMutationBackup mutationBackup,
+        Func<string, string, CancellationToken, ValueTask>? beforeReplace,
+        bool retainAdjacentBackup = false)
     {
         this.mutationBackup = mutationBackup ?? throw new ArgumentNullException(nameof(mutationBackup));
+        this.beforeReplace = beforeReplace;
         this.retainAdjacentBackup = retainAdjacentBackup;
     }
 
