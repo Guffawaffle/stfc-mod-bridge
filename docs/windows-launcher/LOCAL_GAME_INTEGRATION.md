@@ -4,13 +4,14 @@ STFC Mod Bridge has an explicitly opted-in certification harness for a
 human-maintained real Star Trek Fleet Command installation. It is additional
 first-party dogfood evidence, not a contributor or GitHub CI requirement.
 
-Wave 0 implements the read-only **Inspect** profile. Later profiles will use the
-same exact-target and restoration boundary to exercise provider installation,
-updates, repair, switching, removal, direct game launch, and recovery. Their
-permutations and prerequisites are tracked by issue #63; provider-scoped TOML
-history and coordinated switching are product work tracked by #65.
+The harness implements the read-only **Inspect** profile, restorable provider
+install/remove and source-switch journeys behind **Mutate** plus **Live
+providers**, and a provider-scoped TOML restore/recovery journey behind the
+**Recovery lab** profile. Updates, repair, direct game launch, and the remaining
+permutations are tracked by issue #63. Provider-scoped TOML history and
+coordinated switching are tracked by #65.
 
-## Run the implemented Inspect profile
+## Run the Inspect profile
 
 Pass the directory that directly contains `prime.exe`:
 
@@ -31,7 +32,7 @@ test process. A configured path alone is insufficient to activate a live test.
 Ordinary solution tests and CI compile the deterministic contract tests, report
 the real-install cases as skipped, and never inspect a real installation.
 
-## Wave 0 coverage
+## Inspect coverage
 
 The local suite:
 
@@ -50,7 +51,8 @@ deploy a mod, install/update/repair/remove anything, or write TOML. Absolute
 paths, TOML values, tokens, and file hashes are not written to committed test
 artifacts.
 
-Wave 1 live install/remove dogfood requires both mutation and network switches:
+Live install/remove and provider-switch dogfood requires both mutation and
+network switches:
 
 ```powershell
 ./scripts/test-local-game-install.ps1 `
@@ -67,22 +69,58 @@ profiles, verifies each managed DLL attribution, then removes the mod and
 returns the target to its clean baseline. A different validated STFC
 installation may remain running.
 
-The maintained clean target currently proves the Bridge projects a valid game
-installation with no `version.dll` as **Not installed** and offers the expected
-**Install** action. The path and binary identities remain local-only.
+The maintained target proves Bridge projects the observed installation and mod
+state truthfully. The path and binary identities remain local-only.
 
-## Planned explicit profiles
+## Run the Recovery lab profile
+
+The configuration-history journey requires separate mutation and recovery
+opt-ins but does not imply live-provider network access:
+
+```powershell
+./scripts/test-local-game-install.ps1 `
+  -GameDirectory 'E:\path\to\Star Trek Fleet Command\default\game' `
+  -AllowRestorableMutation `
+  -ExerciseRecovery
+```
+
+The recovery lab:
+
+- requires the exact selected game to be closed;
+- requires `version.dll` to match the reviewed Guffawaffle stable artifact before
+  attributing any TOML history to that provider partition;
+- captures the target and isolated launcher-state baseline;
+- preflights an existing TOML through the parser and exact Guffawaffle catalog,
+  or creates a known-valid test-owned TOML when none exists;
+- protects the source bytes in encrypted provider-scoped history without
+  logging the path, values, secrets, or hashes;
+- changes the TOML through the production atomic repository and completes one
+  public manual restore;
+- injects an interruption immediately after a second restore commits its TOML,
+  then uses a fresh production coordinator to finish journal and receipt
+  recovery;
+- restores the original TOML bytes through the production restore path and
+  verifies the complete starting fingerprint after bounded harness cleanup.
+
+Parser-invalid or catalog-blocked existing TOML fails before game-file
+mutation. An unknown, modified, manual, NetniV, or non-stable DLL also fails
+before TOML inspection or mutation. A recovery or cleanup defect still fails
+the run even if the bounded emergency safeguard restores the human-owned target
+afterward; isolated journals and encrypted receipts are retained for recovery
+inspection on any failed journey and deleted only after full verification.
+
+## Explicit profiles
 
 Each profile will have its own runner switch. Supplying a target path never
 implicitly authorizes downloads, mutations, or process launch.
 
 | Profile | Intent |
 |---|---|
-| Inspect | Read-only discovery, health, provenance, Diagnostics, and TOML parsing |
-| Mutate | Journaled install, repair, provider switch, remove, TOML backup, and restore |
-| Live providers | Real Guffawaffle manifest/trust and NetniV reviewed-hash discovery/download |
-| Launch | Direct `prime.exe` launch with exact owned-PID observation and cleanup |
-| Recovery lab | Injected transaction failures with production rollback/recovery proof |
+| Inspect | Implemented: read-only discovery, health, provenance, Diagnostics, and TOML parsing |
+| Mutate | Partially implemented: provider install/remove, provider switch, TOML backup, and restore |
+| Live providers | Implemented for current journeys: real Guffawaffle manifest/trust and NetniV reviewed-hash discovery/download |
+| Launch | Planned: direct `prime.exe` launch with exact owned-PID observation and cleanup |
+| Recovery lab | Partially implemented: representative post-TOML-commit interruption with production recovery proof |
 
 The real target will run representative lifecycle journeys rather than a naive
 Cartesian product. Deterministic disposable tests own exhaustive malformed
