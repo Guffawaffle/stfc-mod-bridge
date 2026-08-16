@@ -224,6 +224,45 @@ public sealed class AtomicTomlStoreTests
     }
 
     [TestMethod]
+    public async Task VerifiedBackupStoreCanObserveTheDurableStagingBoundary()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var receipt = new ConfigurationBackupReceipt(
+            "backup-id",
+            "installation-id",
+            "guffawaffle",
+            null,
+            new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero),
+            ConfigurationDocumentRevision.FromContents(original).Sha256,
+            "settings-save",
+            "guffawaffle/stable");
+        var mutationBackup = new RecordingMutationBackup(receipt);
+        var stagingObservations = 0;
+        var store = new AtomicTomlStore(
+            mutationBackup,
+            (temporaryPath, targetPath, _) =>
+            {
+                stagingObservations++;
+                Assert.IsTrue(File.Exists(temporaryPath));
+                Assert.AreEqual(configPath, targetPath);
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await store.SaveDocumentAsync(configPath, original, updated);
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.AreEqual(1, stagingObservations);
+        Assert.AreEqual(1, mutationBackup.CallCount);
+        Assert.AreEqual(receipt, result.BackupReceipt);
+        CollectionAssert.AreEqual(updated, await File.ReadAllBytesAsync(configPath));
+        Assert.IsFalse(File.Exists(configPath + ".bak"));
+    }
+
+    [TestMethod]
     public async Task VerifiedBackupReceiptSurvivesPostBackupConflict()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -300,6 +339,21 @@ public sealed class AtomicTomlStoreTests
                 replacement,
                 cancellationToken);
             return receipt;
+        }
+    }
+
+    private sealed class RecordingMutationBackup(ConfigurationBackupReceipt receipt)
+        : IConfigurationMutationBackup
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<ConfigurationBackupReceipt> BeforeReplaceAsync(
+            string configurationPath,
+            byte[] expectedContents,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return ValueTask.FromResult(receipt);
         }
     }
 }
