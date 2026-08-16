@@ -641,9 +641,11 @@ public sealed class ProviderConfigurationRestoreCoordinator
                     diagnosisEvidence.Catalog.Identity.CatalogId,
                     diagnosisEvidence.Catalog.Identity.CatalogVersion);
             }
+            // Unknown entries are safe to preserve, but restoring them still deserves a warning.
             var attention = report.Findings.Count(finding =>
                 finding.Severity is ConfigurationDiagnosisSeverity.Attention
-                    or ConfigurationDiagnosisSeverity.Unknown);
+                    or ConfigurationDiagnosisSeverity.Unknown
+                || finding.Code is "CONFIG_UNKNOWN_KEY" or "CONFIG_UNKNOWN_TABLE");
             return new(
                 receipt,
                 destinationPath,

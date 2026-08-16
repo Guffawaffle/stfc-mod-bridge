@@ -34,12 +34,15 @@ public sealed class LauncherOperationContentionMatrixTests
         await WaitForLockOwnerAsync(owner, readyPath, operation);
         try
         {
-            var before = CaptureDurableFiles(directory.Path);
+            var before = CaptureDurableFiles(directory.Path, readyPath, releasePath);
 
             await scenario.AssertBusyAsync();
 
             scenario.AssertNoTransientMutation();
-            AssertDurableFilesEqual(before, CaptureDurableFiles(directory.Path), operation);
+            AssertDurableFilesEqual(
+                before,
+                CaptureDurableFiles(directory.Path, readyPath, releasePath),
+                operation);
         }
         finally
         {
@@ -628,19 +631,33 @@ public sealed class LauncherOperationContentionMatrixTests
         await owner.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
     }
 
-    private static Dictionary<string, byte[]> CaptureDurableFiles(string root) =>
+    private static Dictionary<string, byte[]> CaptureDurableFiles(
+        string root,
+        string readyPath,
+        string releasePath) =>
         Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             // The switch takes its narrower provider-switch lease before it discovers the
             // held root lease. Lock files are synchronization primitives, not mutation
-            // receipts; every user/configuration/deployment file remains in this snapshot.
+            // receipts. The ready/release files are child-process test controls, not product
+            // state; every user/configuration/deployment file remains in this snapshot.
             .Where(path => !string.Equals(
                 Path.GetFileName(path),
                 "operation.lock",
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.OrdinalIgnoreCase)
+                && !PathEquals(path, readyPath)
+                && !PathEquals(path, releasePath))
             .ToDictionary(
                 path => Path.GetRelativePath(root, path),
                 File.ReadAllBytes,
                 StringComparer.OrdinalIgnoreCase);
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
 
     private static void AssertDurableFilesEqual(
         IReadOnlyDictionary<string, byte[]> expected,
