@@ -719,8 +719,13 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         using var child = StartCrashProbe(crashMode, crashStage, directory.Path, readyPath);
         try
         {
-            await WaitForCrashProbeAsync(child, readyPath);
             var stateDirectory = Path.Combine(directory.Path, "state");
+            await WaitForCrashProbeAsync(
+                child,
+                readyPath,
+                stateDirectory,
+                crashMode,
+                crashStage);
             await using var competingProviderLease = await new LauncherOperationLock(
                     Path.Combine(stateDirectory, "provider-switch"))
                 .TryAcquireAsync();
@@ -1154,20 +1159,38 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             ?? throw new InvalidOperationException("Could not start the provider-switch crash probe.");
     }
 
-    private static async Task WaitForCrashProbeAsync(Process child, string readyPath)
+    private static async Task WaitForCrashProbeAsync(
+        Process child,
+        string readyPath,
+        string stateDirectory,
+        string crashMode,
+        string crashStage)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (!File.Exists(readyPath))
+        try
         {
-            if (child.HasExited)
+            while (!File.Exists(readyPath))
             {
-                var output = await child.StandardOutput.ReadToEndAsync();
-                var error = await child.StandardError.ReadToEndAsync();
-                Assert.Fail(
-                    "Provider-switch crash probe exited before its hold point. "
-                    + $"Output: {output} Error: {error}");
+                if (child.HasExited)
+                {
+                    var output = await child.StandardOutput.ReadToEndAsync();
+                    var error = await child.StandardError.ReadToEndAsync();
+                    Assert.Fail(
+                        $"Provider-switch crash probe {child.Id} exited before hold point "
+                        + $"'{crashMode}/{crashStage}'. Output: {output} Error: {error}");
+                }
+                await Task.Delay(50, timeout.Token);
             }
-            await Task.Delay(50, timeout.Token);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            await TerminateCrashProbeAsync(child, stateDirectory);
+            var output = await child.StandardOutput.ReadToEndAsync();
+            var error = await child.StandardError.ReadToEndAsync();
+            Assert.Fail(
+                $"Timed out after 30 seconds waiting for provider-switch crash probe {child.Id} "
+                + $"at '{crashMode}/{crashStage}' to publish '{readyPath}'. "
+                + $"Output: {output} Error: {error}");
         }
     }
 
@@ -1206,34 +1229,51 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     private static async Task WaitForCrashLocksReleasedAsync(string stateDirectory)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        while (true)
+        var unavailableLocks = "provider-switch and root mutation locks";
+        try
         {
-            LauncherOperationLease? providerLease = null;
-            LauncherOperationLease? rootLease = null;
-            try
+            while (true)
             {
-                providerLease = await new LauncherOperationLock(
-                        Path.Combine(stateDirectory, "provider-switch"))
-                    .TryAcquireAsync(timeout.Token);
-                rootLease = await new LauncherOperationLock(stateDirectory)
-                    .TryAcquireAsync(timeout.Token);
-                if (providerLease is not null && rootLease is not null)
+                LauncherOperationLease? providerLease = null;
+                LauncherOperationLease? rootLease = null;
+                try
                 {
-                    return;
+                    providerLease = await new LauncherOperationLock(
+                            Path.Combine(stateDirectory, "provider-switch"))
+                        .TryAcquireAsync(timeout.Token);
+                    rootLease = await new LauncherOperationLock(stateDirectory)
+                        .TryAcquireAsync(timeout.Token);
+                    unavailableLocks = (providerLease, rootLease) switch
+                    {
+                        (null, null) => "provider-switch and root mutation locks",
+                        (null, not null) => "provider-switch lock",
+                        (not null, null) => "root mutation lock",
+                        _ => string.Empty,
+                    };
+                    if (providerLease is not null && rootLease is not null)
+                    {
+                        return;
+                    }
                 }
+                finally
+                {
+                    if (rootLease is not null)
+                    {
+                        await rootLease.DisposeAsync();
+                    }
+                    if (providerLease is not null)
+                    {
+                        await providerLease.DisposeAsync();
+                    }
+                }
+                await Task.Delay(50, timeout.Token);
             }
-            finally
-            {
-                if (rootLease is not null)
-                {
-                    await rootLease.DisposeAsync();
-                }
-                if (providerLease is not null)
-                {
-                    await providerLease.DisposeAsync();
-                }
-            }
-            await Task.Delay(50, timeout.Token);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            Assert.Fail(
+                $"Timed out after 15 seconds waiting for the terminated crash probe to release "
+                + $"the {unavailableLocks} under '{stateDirectory}'.");
         }
     }
 
