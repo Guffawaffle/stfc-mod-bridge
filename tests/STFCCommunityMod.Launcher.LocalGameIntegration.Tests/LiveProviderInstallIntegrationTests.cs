@@ -12,6 +12,8 @@ public sealed class LiveProviderInstallIntegrationTests
         "STFC_BRIDGE_ALLOW_RESTORABLE_MUTATION";
     private const string LiveProvidersEnvironmentVariable =
         "STFC_BRIDGE_USE_LIVE_PROVIDER_RELEASES";
+    private const string RecoveryEnvironmentVariable =
+        "STFC_BRIDGE_EXERCISE_RECOVERY";
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -122,6 +124,369 @@ public sealed class LiveProviderInstallIntegrationTests
                     + $"Root cause: {failure.GetType().Name}: {summary}",
                 failure);
         }
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
+    [TestCategory("LocalGameRecovery")]
+    public async Task ConfigurationHistoryRestoreAndRecoveryReturnCleanBaseline()
+    {
+        var gameDirectory = RequireRecoveryTarget();
+        if (new SystemGameProcessInspector().Inspect(gameDirectory) != GameProcessInspectionState.NotRunning)
+        {
+            Assert.Fail(
+                "The exact opted-in integration installation is running or cannot be attributed safely.");
+        }
+
+        using var campaign = new RestorableGameInstallCampaign(gameDirectory);
+        var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
+        var baselineConfiguration = File.Exists(configurationPath)
+            ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
+            : null;
+
+        Exception? journeyFailure = null;
+        try
+        {
+            await RunConfigurationRestoreRecoveryAsync(
+                gameDirectory,
+                configurationPath,
+                campaign.StateDirectory,
+                baselineConfiguration).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            journeyFailure = exception;
+        }
+
+        var cleanupFailure = await TryConfigurationRecoveryCleanupAsync(
+            configurationPath,
+            campaign.StateDirectory,
+            baselineConfiguration).ConfigureAwait(false);
+        if (cleanupFailure is null)
+        {
+            campaign.RestoreConfigurationBaseline();
+        }
+        try
+        {
+            campaign.AssertBaseline(
+                "The configuration recovery lab did not restore the exact game target.");
+        }
+        catch (Exception exception)
+        {
+            cleanupFailure = cleanupFailure is null
+                ? exception
+                : new AggregateException(cleanupFailure, exception);
+        }
+
+        if (cleanupFailure is not null)
+        {
+            campaign.EmergencyRestore();
+            campaign.AssertBaseline("Emergency restoration could not restore the maintained target.");
+        }
+        if (journeyFailure is not null || cleanupFailure is not null)
+        {
+            var failure = journeyFailure is null
+                ? cleanupFailure!
+                : cleanupFailure is null
+                    ? journeyFailure
+                    : new AggregateException(journeyFailure, cleanupFailure);
+            var summary = failure.Message
+                .Replace(gameDirectory, "%GAME_DIR%", StringComparison.OrdinalIgnoreCase)
+                .Replace(campaign.StateDirectory, "%STATE_DIR%", StringComparison.OrdinalIgnoreCase);
+            throw new AssertFailedException(
+                $"The configuration recovery lab failed; the maintained game target was restored. "
+                    + $"Root cause: {failure.GetType().Name}: {summary}",
+                failure);
+        }
+
+        TestContext.WriteLine(
+            "configuration history: public restore and fresh-coordinator recovery restored exact bytes, receipts, and clean baseline");
+    }
+
+    private static async Task RunConfigurationRestoreRecoveryAsync(
+        string gameDirectory,
+        string configurationPath,
+        string stateDirectory,
+        byte[]? baselineConfiguration)
+    {
+        var selection = new LauncherProviderSelection("guffawaffle", "stable");
+        var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
+        selectionStore.Save(selection);
+        var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
+        var operationLock = new LauncherOperationLock(stateDirectory);
+        var original = baselineConfiguration
+            ?? "# local restore source\r\n[graphics]\r\nfree_resize = true\r\n"u8.ToArray();
+        var changed = "# local recovery source\n[graphics]\nfree_resize = false\n"u8.ToArray();
+        if (original.AsSpan().SequenceEqual(changed))
+        {
+            changed = "# alternate local recovery source\r\n[graphics]\r\nfree_resize = true\r\n"u8.ToArray();
+        }
+
+        if (baselineConfiguration is null)
+        {
+            var create = await new TomlConfigurationRepository(mutationAdmission: operationLock)
+                .CommitDocumentAsync(new(
+                    configurationPath,
+                    ConfigurationDocumentRevision.FromContents([]),
+                    [],
+                    original,
+                    baselineExisted: false)).ConfigureAwait(false);
+            Assert.IsTrue(create.IsSuccess, create.Error);
+        }
+        else
+        {
+            var read = new TomlConfigurationRepository().Read(configurationPath);
+            Assert.AreEqual(
+                ConfigurationRepositoryReadState.Succeeded,
+                read.State,
+                "The protected baseline TOML must be parser-safe before the recovery lab can mutate it.");
+        }
+
+        var sourceReceipt = await backupStore.CreateAsync(new(
+            gameDirectory,
+            selection.ProviderId,
+            configurationPath,
+            original,
+            "local-integration-restore-source",
+            ReleaseIdentity: "local-integration/restore-source")).ConfigureAwait(false);
+        var preflightCoordinator = CreateConfigurationRestoreCoordinator(
+            backupStore,
+            selectionStore,
+            selection,
+            stateDirectory,
+            configurationPath);
+        var preflight = preflightCoordinator.LoadHistory().Single(entry =>
+            string.Equals(
+                entry.Receipt.BackupId,
+                sourceReceipt.BackupId,
+                StringComparison.Ordinal));
+        Assert.IsTrue(
+            preflight.CanRestore,
+            "The protected baseline TOML must be restorable before the recovery lab can mutate it.");
+
+        var mutate = await new TomlConfigurationRepository(
+                mutationBackup: new ProviderScopedConfigurationMutationBackup(
+                    backupStore,
+                    selection.ProviderId,
+                    "local-integration/restore-source"),
+                mutationAdmission: operationLock)
+            .CommitDocumentAsync(new(
+                configurationPath,
+                ConfigurationDocumentRevision.FromContents(original),
+                original,
+                changed)).ConfigureAwait(false);
+        Assert.IsTrue(mutate.IsSuccess, mutate.Error);
+        Assert.IsNotNull(mutate.BackupReceipt);
+        CollectionAssert.AreEqual(
+            original,
+            backupStore.Read(
+                gameDirectory,
+                selection.ProviderId,
+                mutate.BackupReceipt.BackupId));
+        CollectionAssert.AreEqual(changed, await File.ReadAllBytesAsync(configurationPath));
+
+        var coordinator = CreateConfigurationRestoreCoordinator(
+            backupStore,
+            selectionStore,
+            selection,
+            stateDirectory,
+            configurationPath);
+        var sourceEntry = coordinator.LoadHistory().Single(entry =>
+            string.Equals(
+                entry.Receipt.BackupId,
+                sourceReceipt.BackupId,
+                StringComparison.Ordinal));
+        Assert.IsTrue(sourceEntry.CanRestore, sourceEntry.CompatibilitySummary);
+        var restorePreview = coordinator.Preview(sourceEntry.Receipt.BackupId);
+        var restored = await coordinator.ExecuteAsync(
+            restorePreview,
+            restorePreview.ConfirmationText).ConfigureAwait(false);
+        Assert.AreEqual(
+            ProviderConfigurationRestoreResultState.Succeeded,
+            restored.State,
+            restored.Message);
+        Assert.IsNotNull(restored.PreRestoreBackup);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+        CollectionAssert.AreEqual(
+            changed,
+            backupStore.Read(
+                gameDirectory,
+                selection.ProviderId,
+                restored.PreRestoreBackup.BackupId));
+
+        var checkpointObserved = false;
+        var interruptedCoordinator = CreateConfigurationRestoreCoordinator(
+            backupStore,
+            selectionStore,
+            selection,
+            stateDirectory,
+            configurationPath,
+            (phase, _) =>
+            {
+                if (phase == ProviderConfigurationRestorePhase.ConfigurationCommitted)
+                {
+                    checkpointObserved = true;
+                    throw new IOException("Injected local recovery-lab interruption after TOML commit.");
+                }
+                return ValueTask.CompletedTask;
+            });
+        var recoveryPreview = interruptedCoordinator.Preview(restored.PreRestoreBackup.BackupId);
+        var interrupted = await interruptedCoordinator.ExecuteAsync(
+            recoveryPreview,
+            recoveryPreview.ConfirmationText).ConfigureAwait(false);
+        Assert.IsTrue(checkpointObserved, "The post-commit recovery checkpoint was not exercised.");
+        Assert.AreEqual(
+            ProviderConfigurationRestoreResultState.RecoveryRequired,
+            interrupted.State,
+            interrupted.Message);
+        CollectionAssert.AreEqual(changed, await File.ReadAllBytesAsync(configurationPath));
+        Assert.AreEqual(
+            ProviderConfigurationRestorePhase.RecoveryRequired,
+            interruptedCoordinator.ReadJournal()?.Phase);
+
+        var freshCoordinator = CreateConfigurationRestoreCoordinator(
+            backupStore,
+            selectionStore,
+            selection,
+            stateDirectory,
+            configurationPath);
+        var recovered = await freshCoordinator.RecoverAsync().ConfigureAwait(false);
+        Assert.AreEqual(
+            ProviderConfigurationRestoreResultState.Succeeded,
+            recovered.State,
+            recovered.Message);
+        Assert.IsNotNull(recovered.PreRestoreBackup);
+        Assert.IsNotNull(recovered.RestoredBackup);
+        Assert.AreEqual(
+            recoveryPreview.TransactionId,
+            recovered.RestoredBackup.RestoreTransactionId);
+        Assert.AreEqual(
+            ProviderConfigurationRestorePhase.Completed,
+            freshCoordinator.ReadJournal()?.Phase);
+        CollectionAssert.AreEqual(changed, await File.ReadAllBytesAsync(configurationPath));
+        CollectionAssert.AreEqual(
+            original,
+            backupStore.Read(
+                gameDirectory,
+                selection.ProviderId,
+                recovered.PreRestoreBackup.BackupId));
+
+        var finalCoordinator = CreateConfigurationRestoreCoordinator(
+            backupStore,
+            selectionStore,
+            selection,
+            stateDirectory,
+            configurationPath);
+        var finalPreview = finalCoordinator.Preview(sourceReceipt.BackupId);
+        var finalRestore = await finalCoordinator.ExecuteAsync(
+            finalPreview,
+            finalPreview.ConfirmationText).ConfigureAwait(false);
+        Assert.AreEqual(
+            ProviderConfigurationRestoreResultState.Succeeded,
+            finalRestore.State,
+            finalRestore.Message);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+    }
+
+    private static async Task<Exception?> TryConfigurationRecoveryCleanupAsync(
+        string configurationPath,
+        string stateDirectory,
+        byte[]? baselineConfiguration)
+    {
+        try
+        {
+            var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
+            var selection = selectionStore.Load();
+            if (selection is not null)
+            {
+                var coordinator = CreateConfigurationRestoreCoordinator(
+                    new ProviderScopedConfigurationBackupStore(stateDirectory),
+                    selectionStore,
+                    selection,
+                    stateDirectory,
+                    configurationPath);
+                var journal = coordinator.ReadJournal();
+                if (journal is not null
+                    && journal.Phase is not ProviderConfigurationRestorePhase.Completed
+                        and not ProviderConfigurationRestorePhase.Failed)
+                {
+                    var recovery = await coordinator.RecoverAsync().ConfigureAwait(false);
+                    if (!recovery.IsSuccess)
+                    {
+                        return new InvalidOperationException(recovery.Message);
+                    }
+                }
+            }
+
+            if (baselineConfiguration is null)
+            {
+                if (File.Exists(configurationPath))
+                {
+                    File.Delete(configurationPath);
+                }
+            }
+            else
+            {
+                var restoredContents = File.Exists(configurationPath)
+                    ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
+                    : null;
+                if (restoredContents is null
+                    || !baselineConfiguration.AsSpan().SequenceEqual(restoredContents))
+                {
+                    return new InvalidOperationException(
+                        "Production configuration recovery did not restore the protected baseline bytes.");
+                }
+            }
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException
+                or System.Text.Json.JsonException
+                or System.Security.Cryptography.CryptographicException)
+        {
+            return exception;
+        }
+    }
+
+    private static ProviderConfigurationRestoreCoordinator CreateConfigurationRestoreCoordinator(
+        ProviderScopedConfigurationBackupStore backupStore,
+        ILauncherProviderSelectionStore selectionStore,
+        LauncherProviderSelection selection,
+        string stateDirectory,
+        string configurationPath,
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null)
+    {
+        var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
+            selection.ProviderId,
+            selection.ReleaseChannelId,
+            LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
+                RepositoryRoot(),
+                "docs",
+                "windows-launcher",
+                "config-schema.guffawaffle.v1.json")));
+        return checkpoint is null
+            ? new(
+                backupStore,
+                LoadProviderCatalog(),
+                selectionStore,
+                selection,
+                evidence,
+                stateDirectory,
+                () => configurationPath)
+            : new(
+                backupStore,
+                LoadProviderCatalog(),
+                selectionStore,
+                selection,
+                evidence,
+                stateDirectory,
+                () => configurationPath,
+                gameProcessInspector: null,
+                timeProvider: null,
+                checkpoint);
     }
 
     private static async Task SwitchRoundTripAsync(
@@ -386,6 +751,19 @@ public sealed class LiveProviderInstallIntegrationTests
         return LocalGameIntegrationTarget.RequireOptedInDirectory();
     }
 
+    private static string RequireRecoveryTarget()
+    {
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable(RecoveryEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            Assert.Inconclusive(
+                "The recovery lab is disabled. Add -ExerciseRecovery to the local runner.");
+        }
+        return RequireMutationTarget();
+    }
+
     private static string RepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -448,6 +826,9 @@ public sealed class LiveProviderInstallIntegrationTests
                 }
             }
         }
+
+        public void RestoreConfigurationBaseline() =>
+            RestoreFile("community_patch_settings.toml");
 
         public void Dispose()
         {
