@@ -73,12 +73,29 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     private readonly LauncherOperationLock providerSwitchLock;
     private readonly LauncherOperationLock rootOperationLock;
     private readonly TimeProvider timeProvider;
+    private readonly Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>?
+        checkpoint;
 
     public LauncherProviderAtomicSwitchCoordinator(
         LauncherProviderSourceSwitchService configurationSwitch,
         IEnumerable<LauncherProviderSwitchEndpoint> endpoints,
         string stateDirectory,
         TimeProvider? timeProvider = null)
+        : this(
+            configurationSwitch,
+            endpoints,
+            stateDirectory,
+            timeProvider,
+            checkpoint: null)
+    {
+    }
+
+    internal LauncherProviderAtomicSwitchCoordinator(
+        LauncherProviderSourceSwitchService configurationSwitch,
+        IEnumerable<LauncherProviderSwitchEndpoint> endpoints,
+        string stateDirectory,
+        TimeProvider? timeProvider,
+        Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint)
     {
         this.configurationSwitch = configurationSwitch
             ?? throw new ArgumentNullException(nameof(configurationSwitch));
@@ -107,6 +124,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         providerSwitchLock = new(Path.Combine(normalizedStateDirectory, "provider-switch"));
         rootOperationLock = new(normalizedStateDirectory);
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.checkpoint = checkpoint;
     }
 
     public LauncherProviderAtomicSwitchJournal? ReadJournal()
@@ -288,7 +306,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 preparedConfiguration.ConfigurationBackup,
                 TargetArtifact: null,
                 timeProvider.GetUtcNow());
-            Persist(configurationJournal);
+            await PersistAndObserveAsync(configurationJournal, cancellationToken)
+                .ConfigureAwait(false);
             try
             {
                 configurationJournal = configurationJournal with
@@ -296,7 +315,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     Phase = LauncherProviderAtomicSwitchPhase.ConfigurationCommitting,
                     UpdatedAtUtc = timeProvider.GetUtcNow(),
                 };
-                Persist(configurationJournal);
+                await PersistAndObserveAsync(configurationJournal, cancellationToken)
+                    .ConfigureAwait(false);
                 var configurationOnly = await configurationSwitch.CommitAsync(
                     preparedConfiguration,
                     cancellationToken).ConfigureAwait(false);
@@ -305,12 +325,15 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     Phase = LauncherProviderAtomicSwitchPhase.ConfigurationCommitted,
                     UpdatedAtUtc = timeProvider.GetUtcNow(),
                 };
-                Persist(configurationJournal);
-                Persist(configurationJournal with
-                {
-                    Phase = LauncherProviderAtomicSwitchPhase.Completed,
-                    UpdatedAtUtc = timeProvider.GetUtcNow(),
-                });
+                await PersistAndObserveAsync(configurationJournal, cancellationToken)
+                    .ConfigureAwait(false);
+                await PersistAndObserveAsync(
+                    configurationJournal with
+                    {
+                        Phase = LauncherProviderAtomicSwitchPhase.Completed,
+                        UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 return new(
                     configurationOnly.Selection,
                     InstalledArtifact: null,
@@ -330,17 +353,20 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     UpdatedAtUtc = timeProvider.GetUtcNow(),
                     Error = switchException.Message,
                 };
-                Persist(configurationJournal);
+                await PersistAndObserveAsync(configurationJournal, CancellationToken.None)
+                    .ConfigureAwait(false);
                 try
                 {
                     await configurationSwitch.RollBackAsync(
                         preparedConfiguration,
                         CancellationToken.None).ConfigureAwait(false);
-                    Persist(configurationJournal with
-                    {
-                        Phase = LauncherProviderAtomicSwitchPhase.RolledBack,
-                        UpdatedAtUtc = timeProvider.GetUtcNow(),
-                    });
+                    await PersistAndObserveAsync(
+                        configurationJournal with
+                        {
+                            Phase = LauncherProviderAtomicSwitchPhase.RolledBack,
+                            UpdatedAtUtc = timeProvider.GetUtcNow(),
+                        },
+                        CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception rollbackException) when (
                     rollbackException is IOException
@@ -348,12 +374,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                         or InvalidDataException
                         or InvalidOperationException)
                 {
-                    Persist(configurationJournal with
-                    {
-                        Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
-                        UpdatedAtUtc = timeProvider.GetUtcNow(),
-                        Error = rollbackException.Message,
-                    });
+                    await PersistAndObserveAsync(
+                        configurationJournal with
+                        {
+                            Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                            UpdatedAtUtc = timeProvider.GetUtcNow(),
+                            Error = rollbackException.Message,
+                        },
+                        CancellationToken.None).ConfigureAwait(false);
                     throw new InvalidOperationException(
                         "The configuration-only provider switch failed and rollback requires recovery.",
                         new AggregateException(switchException, rollbackException));
@@ -386,7 +414,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             prepared.ConfigurationBackup,
             preview.Artifact.Artifact,
             timeProvider.GetUtcNow());
-        Persist(journal);
+        await PersistAndObserveAsync(journal, cancellationToken).ConfigureAwait(false);
         var participant = new ConfigurationCommitParticipant(
             this,
             configurationSwitch,
@@ -413,13 +441,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         }
         catch (OperationCanceledException)
         {
-            participant.MarkCanceled();
+            await participant.MarkCanceledAsync(CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
         if (!deployment.IsSuccess || deployment.InstalledState is null)
         {
-            participant.MarkDeploymentFailure(deployment);
+            await participant.MarkDeploymentFailureAsync(deployment, CancellationToken.None)
+                .ConfigureAwait(false);
             throw new InvalidOperationException(deployment.Message);
         }
         if (!string.Equals(
@@ -435,8 +464,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 preview.Configuration.Target.ReleaseChannelId,
                 StringComparison.Ordinal))
         {
-            participant.MarkRecoveryRequired(
-                "The coordinated switch committed but target artifact verification did not match the reviewed plan.");
+            await participant.MarkRecoveryRequiredAsync(
+                "The coordinated switch committed but target artifact verification did not match the reviewed plan.",
+                CancellationToken.None).ConfigureAwait(false);
             throw new InvalidOperationException(
                 "The coordinated switch requires recovery because its final artifact identity did not match.");
         }
@@ -476,12 +506,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         if (journal.TargetArtifact is not null
             && !endpoints.TryGetValue(journal.Preview.Target, out targetEndpoint))
         {
-            Persist(journal with
-            {
-                Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
-                UpdatedAtUtc = timeProvider.GetUtcNow(),
-                Error = "The target provider endpoint is no longer available.",
-            });
+            await PersistAndObserveAsync(
+                journal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    Error = "The target provider endpoint is no longer available.",
+                },
+                cancellationToken).ConfigureAwait(false);
             return new(false, false, "Provider-switch recovery requires the original target provider endpoint.");
         }
 
@@ -491,7 +523,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             Phase = LauncherProviderAtomicSwitchPhase.RollingBack,
             UpdatedAtUtc = timeProvider.GetUtcNow(),
         };
-        Persist(journal);
+        await PersistAndObserveAsync(journal, cancellationToken).ConfigureAwait(false);
         if (journal.TargetArtifact is not null
             && interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
         {
@@ -501,12 +533,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 cancellationToken).ConfigureAwait(false);
             if (!artifactRollback.IsSuccess)
             {
-                Persist(journal with
-                {
-                    Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
-                    UpdatedAtUtc = timeProvider.GetUtcNow(),
-                    Error = artifactRollback.Message,
-                });
+                await PersistAndObserveAsync(
+                    journal with
+                    {
+                        Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                        UpdatedAtUtc = timeProvider.GetUtcNow(),
+                        Error = artifactRollback.Message,
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 return new(false, false, artifactRollback.Message);
             }
         }
@@ -516,12 +550,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             await configurationSwitch.RollBackAsync(
                 new(journal.Preview, journal.ConfigurationBackup, TargetConfiguration: null),
                 cancellationToken).ConfigureAwait(false);
-            Persist(journal with
-            {
-                Phase = LauncherProviderAtomicSwitchPhase.RolledBack,
-                UpdatedAtUtc = timeProvider.GetUtcNow(),
-                Error = null,
-            });
+            await PersistAndObserveAsync(
+                journal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.RolledBack,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    Error = null,
+                },
+                cancellationToken).ConfigureAwait(false);
             return new(true, true, "The incomplete provider switch was restored to its exact prior state.");
         }
         catch (Exception exception) when (
@@ -530,12 +566,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 or InvalidDataException
                 or InvalidOperationException)
         {
-            Persist(journal with
-            {
-                Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
-                UpdatedAtUtc = timeProvider.GetUtcNow(),
-                Error = exception.Message,
-            });
+            await PersistAndObserveAsync(
+                journal with
+                {
+                    Phase = LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                    Error = exception.Message,
+                },
+                cancellationToken).ConfigureAwait(false);
             return new(false, false, $"Provider-switch recovery failed: {exception.Message}");
         }
     }
@@ -612,6 +650,17 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         }
     }
 
+    private async ValueTask PersistAndObserveAsync(
+        LauncherProviderAtomicSwitchJournal journal,
+        CancellationToken cancellationToken)
+    {
+        Persist(journal);
+        if (checkpoint is not null)
+        {
+            await checkpoint(journal.Phase, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private sealed class ConfigurationCommitParticipant(
         LauncherProviderAtomicSwitchCoordinator owner,
         LauncherProviderSourceSwitchService configurationSwitch,
@@ -623,11 +672,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
 
         public LauncherProviderSwitchResult? ConfigurationResult { get; private set; }
 
-        public Task BeginAsync(
+        public async Task BeginAsync(
             ModDeploymentCommitContext context,
             CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             var previous = context.PreviousInstalledState;
             if (expectedSourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
                 || previous is null
@@ -651,31 +699,38 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 throw new InvalidOperationException(
                     "The installed source artifact changed after review. Review the provider switch again.");
             }
-            Persist(LauncherProviderAtomicSwitchPhase.ArtifactCommitting);
-            return Task.CompletedTask;
+            await PersistAsync(
+                LauncherProviderAtomicSwitchPhase.ArtifactCommitting,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         public async Task CommitAsync(CancellationToken cancellationToken)
         {
             ConfigurationResult = await configurationSwitch.CommitAsync(prepared, cancellationToken)
                 .ConfigureAwait(false);
-            Persist(LauncherProviderAtomicSwitchPhase.ConfigurationCommitted);
+            await PersistAsync(
+                LauncherProviderAtomicSwitchPhase.ConfigurationCommitted,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public Task CompleteAsync(CancellationToken cancellationToken)
+        public async Task CompleteAsync(CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
-            Persist(LauncherProviderAtomicSwitchPhase.Completed);
-            return Task.CompletedTask;
+            await PersistAsync(
+                LauncherProviderAtomicSwitchPhase.Completed,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         public async Task RollBackAsync(CancellationToken cancellationToken)
         {
-            Persist(LauncherProviderAtomicSwitchPhase.RollingBack);
+            await PersistAsync(
+                LauncherProviderAtomicSwitchPhase.RollingBack,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             try
             {
                 await configurationSwitch.RollBackAsync(prepared, cancellationToken).ConfigureAwait(false);
-                Persist(LauncherProviderAtomicSwitchPhase.RolledBack);
+                await PersistAsync(
+                    LauncherProviderAtomicSwitchPhase.RolledBack,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -683,12 +738,18 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     or InvalidDataException
                     or InvalidOperationException)
             {
-                Persist(LauncherProviderAtomicSwitchPhase.RecoveryRequired, exception.Message);
+                await PersistAsync(
+                    LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                    exception.Message,
+                    CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
         }
 
-        public void Persist(LauncherProviderAtomicSwitchPhase phase, string? error = null)
+        private async Task PersistAsync(
+            LauncherProviderAtomicSwitchPhase phase,
+            string? error = null,
+            CancellationToken cancellationToken = default)
         {
             journal = journal with
             {
@@ -696,33 +757,44 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 UpdatedAtUtc = owner.timeProvider.GetUtcNow(),
                 Error = error,
             };
-            owner.Persist(journal);
+            await owner.PersistAndObserveAsync(journal, cancellationToken).ConfigureAwait(false);
         }
 
-        public void MarkDeploymentFailure(ModDeploymentResult result)
+        public async Task MarkDeploymentFailureAsync(
+            ModDeploymentResult result,
+            CancellationToken cancellationToken)
         {
             if (journal.Phase is LauncherProviderAtomicSwitchPhase.RolledBack
                 or LauncherProviderAtomicSwitchPhase.RecoveryRequired)
             {
                 return;
             }
-            Persist(
+            await PersistAsync(
                 result.State == ModDeploymentResultState.RecoveryRequired
                     ? LauncherProviderAtomicSwitchPhase.RecoveryRequired
                     : LauncherProviderAtomicSwitchPhase.RolledBack,
-                result.Message);
+                result.Message,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        public void MarkCanceled()
+        public async Task MarkCanceledAsync(CancellationToken cancellationToken)
         {
             if (journal.Phase is not (LauncherProviderAtomicSwitchPhase.RolledBack
                 or LauncherProviderAtomicSwitchPhase.RecoveryRequired))
             {
-                Persist(LauncherProviderAtomicSwitchPhase.RolledBack, "The switch was canceled.");
+                await PersistAsync(
+                    LauncherProviderAtomicSwitchPhase.RolledBack,
+                    "The switch was canceled.",
+                    cancellationToken).ConfigureAwait(false);
             }
         }
 
-        public void MarkRecoveryRequired(string message) =>
-            Persist(LauncherProviderAtomicSwitchPhase.RecoveryRequired, message);
+        public Task MarkRecoveryRequiredAsync(
+            string message,
+            CancellationToken cancellationToken) =>
+            PersistAsync(
+                LauncherProviderAtomicSwitchPhase.RecoveryRequired,
+                message,
+                cancellationToken);
     }
 }
