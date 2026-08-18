@@ -793,6 +793,313 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
     [TestMethod]
     [TestCategory("Deterministic")]
+    public async Task PartialStageWritesRemainExactlyOwnedForCleanup()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+
+        using (var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            beforeStageFlush: _ => throw new IOException("Injected direct flush failure.")))
+        {
+            Assert.ThrowsException<IOException>(() =>
+                campaign.WriteGameFileAtomically(
+                    "community_patch_settings.toml",
+                    changed));
+            Assert.AreEqual(0, Directory.GetFiles(
+                target.GameDirectory,
+                ".stfc-bridge-integration-*.restore-stage").Length);
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        }
+
+        using var atomicCampaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: new HookedMutationAdmission(
+                atomicCampaign.AtomicTomlMutationAdmission,
+                beforeTemporaryFlush: _ => throw new IOException("Injected atomic flush failure.")));
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        Assert.AreEqual(0, Directory.GetFiles(
+            target.GameDirectory,
+            ".community_patch_settings.toml.*.tmp").Length);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task ProcessStartAtFinalCommitSeamBlocksDirectAndAtomicPromotion()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+
+        var directInspector = new MutableGameProcessInspector(target.GameDirectory);
+        using (var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            directInspector,
+            beforePromotionCommit: (_, _) => directInspector.SetState(
+                target.GameDirectory,
+                GameProcessInspectionState.RunningTarget)))
+        {
+            Assert.ThrowsException<InvalidOperationException>(() =>
+                campaign.WriteGameFileAtomically(
+                    "community_patch_settings.toml",
+                    changed));
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+            directInspector.SetState(target.GameDirectory, GameProcessInspectionState.NotRunning);
+            campaign.EmergencyRestore();
+        }
+
+        var atomicInspector = new MutableGameProcessInspector(target.GameDirectory);
+        using var atomicCampaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            atomicInspector);
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: new HookedMutationAdmission(
+                atomicCampaign.AtomicTomlMutationAdmission,
+                beforeCommitValidation: (_, _) => atomicInspector.SetState(
+                    target.GameDirectory,
+                    GameProcessInspectionState.RunningTarget)));
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SaveDocumentAsync(configurationPath, original, changed));
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        atomicInspector.SetState(target.GameDirectory, GameProcessInspectionState.NotRunning);
+        atomicCampaign.EmergencyRestore();
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow("save")]
+    [DataRow("create")]
+    [DataRow("transform")]
+    public async Task PostCommitOwnershipFailureReturnsWarningAndRetainsExactRecovery(string operation)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        if (operation != "create")
+        {
+            File.WriteAllBytes(configurationPath, original);
+        }
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: new HookedMutationAdmission(
+                campaign.AtomicTomlMutationAdmission,
+                afterPromotionBeforeOwnership: _ =>
+                    throw new InvalidDataException("Injected ownership confirmation failure.")));
+
+        var result = operation switch
+        {
+            "save" => await store.SaveDocumentAsync(configurationPath, original, changed),
+            "create" => await store.CreateDocumentAsync(configurationPath, changed),
+            "transform" => await store.SetOverrideAsync(
+                configurationPath,
+                "graphics.free_resize",
+                "false"),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+        };
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Warning));
+        campaign.EmergencyRestore();
+        if (operation == "create")
+        {
+            Assert.IsFalse(File.Exists(configurationPath));
+        }
+        else
+        {
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task SameBytePostCommitReplacementDoesNotInheritAtomicOwnership()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: new HookedMutationAdmission(
+                campaign.AtomicTomlMutationAdmission,
+                afterPromotionBeforeOwnership: path =>
+                {
+                    File.Delete(path);
+                    File.WriteAllBytes(path, changed);
+                }));
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Warning));
+        Assert.ThrowsException<InvalidOperationException>(() => campaign.EmergencyRestore());
+        CollectionAssert.AreEqual(changed, File.ReadAllBytes(configurationPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task SameByteDestinationReplacementBeforeAtomicSnapshotIsNotAdopted()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        File.Delete(configurationPath);
+        File.WriteAllBytes(configurationPath, original);
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: campaign.AtomicTomlMutationAdmission);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SaveDocumentAsync(configurationPath, original, changed));
+
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        Assert.ThrowsException<InvalidOperationException>(() => campaign.EmergencyRestore());
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow("process-start")]
+    [DataRow("same-byte-replacement")]
+    public async Task FailedAbsentSourceSwitchPreservesUnadmittedRollbackTarget(string fault)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var targetConfiguration = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        var inspector = new MutableGameProcessInspector(target.GameDirectory);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            inspector);
+        var selectionStore = new FailingSelectionStore();
+        selectionStore.Save(new("guffawaffle", "stable"));
+        var backupStore = new ProviderScopedConfigurationBackupStore(campaign.StateDirectory);
+        await backupStore.CreateAsync(new(
+            target.GameDirectory,
+            "netniv",
+            configurationPath,
+            targetConfiguration,
+            "rollback-safety-seed"));
+        var service = new LauncherProviderSourceSwitchService(
+            LoadProviderCatalog(),
+            selectionStore,
+            backupStore,
+            backupCompleted: null,
+            configurationEvidenceResolver: null,
+            atomicTomlMutationAdmission: campaign.AtomicTomlMutationAdmission);
+        var preview = service.Preview("netniv", "stable", configurationPath);
+        selectionStore.BeforeFailure = () =>
+        {
+            if (fault == "process-start")
+            {
+                inspector.SetState(
+                    target.GameDirectory,
+                    GameProcessInspectionState.RunningTarget);
+            }
+            else
+            {
+                File.Delete(configurationPath);
+                File.WriteAllBytes(configurationPath, targetConfiguration);
+            }
+        };
+        selectionStore.FailNextSave = true;
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            service.ExecuteAsync(preview, preview.ConfirmationText));
+
+        StringAssert.Contains(exception.Message, "rollback also failed");
+        CollectionAssert.AreEqual(targetConfiguration, File.ReadAllBytes(configurationPath));
+        if (fault == "process-start")
+        {
+            inspector.SetState(target.GameDirectory, GameProcessInspectionState.NotRunning);
+            campaign.EmergencyRestore();
+            Assert.IsFalse(File.Exists(configurationPath));
+        }
+        else
+        {
+            Assert.ThrowsException<InvalidOperationException>(() => campaign.EmergencyRestore());
+            CollectionAssert.AreEqual(targetConfiguration, File.ReadAllBytes(configurationPath));
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void DirectPostCommitFailureRetainsProvisionalExactOwnership()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "baseline"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        var failOwnershipConfirmation = true;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            afterPromotionBeforeOwnership: _ =>
+            {
+                if (failOwnershipConfirmation)
+                {
+                    failOwnershipConfirmation = false;
+                    throw new IOException("Injected direct ownership confirmation failure.");
+                }
+            });
+
+        Assert.ThrowsException<IOException>(() =>
+            campaign.WriteGameFileAtomically(
+                "community_patch_settings.toml",
+                "bridge"u8.ToArray()));
+
+        campaign.EmergencyRestore();
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
     public void FailureRenderingContainsNoRawGameOrStatePath()
     {
         const string gameDirectory = @"E:\sentinel-player\STFC\default\game";
@@ -901,11 +1208,31 @@ public sealed partial class LiveProviderInstallIntegrationTests
         public void TemporaryCompleted(string temporaryPath, ExactFileRevision revision) =>
             inner.TemporaryCompleted(temporaryPath, revision);
 
+        public void BeforeTemporaryFlush(string temporaryPath) =>
+            inner.BeforeTemporaryFlush(temporaryPath);
+
         public void TemporaryRemoved(string temporaryPath) =>
             inner.TemporaryRemoved(temporaryPath);
 
+        public void BeforeCommitValidation(
+            string temporaryPath,
+            string destinationPath) =>
+            inner.BeforeCommitValidation(temporaryPath, destinationPath);
+
+        public void DestinationObserved(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationObserved(destinationPath, revision);
+
+        public void DestinationPrepared(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationPrepared(destinationPath, revision);
+
+        public void AfterPromotionBeforeOwnership(string destinationPath) =>
+            inner.AfterPromotionBeforeOwnership(destinationPath);
+
         public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
             inner.DestinationCommitted(destinationPath, revision);
+
+        public void DeleteCreatedDestination(string destinationPath, string expectedSha256) =>
+            inner.DeleteCreatedDestination(destinationPath, expectedSha256);
 
         public void VerifyCommitAllowed(
             AtomicTomlMutationBoundary boundary,
@@ -936,19 +1263,18 @@ public sealed partial class LiveProviderInstallIntegrationTests
         public void TemporaryCompleted(string temporaryPath, ExactFileRevision revision) =>
             inner.TemporaryCompleted(temporaryPath, revision);
 
+        public void BeforeTemporaryFlush(string temporaryPath) =>
+            inner.BeforeTemporaryFlush(temporaryPath);
+
         public void TemporaryRemoved(string temporaryPath) =>
             inner.TemporaryRemoved(temporaryPath);
 
-        public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
-            inner.DestinationCommitted(destinationPath, revision);
-
-        public void VerifyCommitAllowed(
-            AtomicTomlMutationBoundary boundary,
+        public void BeforeCommitValidation(
             string temporaryPath,
             string destinationPath)
         {
-            inner.VerifyCommitAllowed(boundary, temporaryPath, destinationPath);
-            if (replaced || boundary != AtomicTomlMutationBoundary.Promotion)
+            inner.BeforeCommitValidation(temporaryPath, destinationPath);
+            if (replaced)
             {
                 return;
             }
@@ -959,6 +1285,113 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 ReplacedPath,
                 replaceStage ? "external-stage"u8.ToArray() : destinationContents);
         }
+
+        public void DestinationObserved(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationObserved(destinationPath, revision);
+
+        public void DestinationPrepared(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationPrepared(destinationPath, revision);
+
+        public void AfterPromotionBeforeOwnership(string destinationPath) =>
+            inner.AfterPromotionBeforeOwnership(destinationPath);
+
+        public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationCommitted(destinationPath, revision);
+
+        public void DeleteCreatedDestination(string destinationPath, string expectedSha256) =>
+            inner.DeleteCreatedDestination(destinationPath, expectedSha256);
+
+        public void VerifyCommitAllowed(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath)
+        {
+            inner.VerifyCommitAllowed(boundary, temporaryPath, destinationPath);
+        }
+    }
+
+    private sealed class HookedMutationAdmission(
+        IAtomicTomlMutationAdmission inner,
+        Action<string>? beforeTemporaryFlush = null,
+        Action<string, string>? beforeCommitValidation = null,
+        Action<string>? afterPromotionBeforeOwnership = null) : IAtomicTomlMutationAdmission
+    {
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken) =>
+            inner.AdmitAsync(boundary, temporaryPath, destinationPath, cancellationToken);
+
+        public void TemporaryCreated(string temporaryPath, ExactFileRevision revision) =>
+            inner.TemporaryCreated(temporaryPath, revision);
+
+        public void TemporaryCompleted(string temporaryPath, ExactFileRevision revision) =>
+            inner.TemporaryCompleted(temporaryPath, revision);
+
+        public void BeforeTemporaryFlush(string temporaryPath)
+        {
+            inner.BeforeTemporaryFlush(temporaryPath);
+            beforeTemporaryFlush?.Invoke(temporaryPath);
+        }
+
+        public void TemporaryRemoved(string temporaryPath) =>
+            inner.TemporaryRemoved(temporaryPath);
+
+        public void BeforeCommitValidation(string temporaryPath, string destinationPath)
+        {
+            inner.BeforeCommitValidation(temporaryPath, destinationPath);
+            beforeCommitValidation?.Invoke(temporaryPath, destinationPath);
+        }
+
+        public void DestinationObserved(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationObserved(destinationPath, revision);
+
+        public void DestinationPrepared(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationPrepared(destinationPath, revision);
+
+        public void AfterPromotionBeforeOwnership(string destinationPath)
+        {
+            afterPromotionBeforeOwnership?.Invoke(destinationPath);
+            inner.AfterPromotionBeforeOwnership(destinationPath);
+        }
+
+        public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationCommitted(destinationPath, revision);
+
+        public void DeleteCreatedDestination(string destinationPath, string expectedSha256) =>
+            inner.DeleteCreatedDestination(destinationPath, expectedSha256);
+
+        public void VerifyCommitAllowed(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath) =>
+            inner.VerifyCommitAllowed(boundary, temporaryPath, destinationPath);
+    }
+
+    private sealed class FailingSelectionStore : ILauncherProviderSelectionStore
+    {
+        private LauncherProviderSelection? selection;
+
+        public bool FailNextSave { get; set; }
+
+        public Action? BeforeFailure { get; set; }
+
+        public LauncherProviderSelection? Load() => selection;
+
+        public void Save(LauncherProviderSelection value)
+        {
+            selection = value;
+            if (!FailNextSave)
+            {
+                return;
+            }
+            FailNextSave = false;
+            BeforeFailure?.Invoke();
+            throw new IOException("Injected provider-selection write failure.");
+        }
+
+        public void Clear() => selection = null;
     }
 
     private static async Task<Exception> CaptureFailureAsync(Func<Task> action)

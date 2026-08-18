@@ -301,6 +301,7 @@ public sealed class LauncherProviderSourceSwitchService
     private readonly Action<ConfigurationBackupReceipt?>? backupCompleted;
     private readonly Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
         configurationEvidenceResolver;
+    private readonly IAtomicTomlMutationAdmission? atomicTomlMutationAdmission;
 
     public LauncherProviderSourceSwitchService(
         LauncherDistributionProviderCatalog catalog,
@@ -313,7 +314,8 @@ public sealed class LauncherProviderSourceSwitchService
             selectionStore,
             new ProviderScopedConfigurationBackupStore(stateDirectory),
             null,
-            configurationEvidenceResolver)
+            configurationEvidenceResolver,
+            atomicTomlMutationAdmission: null)
     {
     }
 
@@ -323,13 +325,15 @@ public sealed class LauncherProviderSourceSwitchService
         ProviderScopedConfigurationBackupStore backupStore,
         Action<ConfigurationBackupReceipt?>? backupCompleted,
         Func<LauncherProviderSelection, LauncherConfigurationDiagnosisEvidence>?
-            configurationEvidenceResolver = null)
+            configurationEvidenceResolver = null,
+        IAtomicTomlMutationAdmission? atomicTomlMutationAdmission = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.selectionStore = selectionStore ?? throw new ArgumentNullException(nameof(selectionStore));
         this.backupStore = backupStore ?? throw new ArgumentNullException(nameof(backupStore));
         this.backupCompleted = backupCompleted;
         this.configurationEvidenceResolver = configurationEvidenceResolver;
+        this.atomicTomlMutationAdmission = atomicTomlMutationAdmission;
     }
 
     public LauncherProviderSwitchPreview Preview(
@@ -658,7 +662,7 @@ public sealed class LauncherProviderSourceSwitchService
 
         if (preview.ConfigurationPath is not null && prepared.TargetConfiguration is not null)
         {
-            var configurationStore = new AtomicTomlStore(retainAdjacentBackup: false);
+            var configurationStore = CreateConfigurationStore();
             var configurationWrite = EffectiveConfigurationExisted(preview)
                 ? await configurationStore.SaveDocumentAsync(
                     preview.ConfigurationPath,
@@ -736,7 +740,7 @@ public sealed class LauncherProviderSourceSwitchService
                 cancellationToken).ConfigureAwait(false);
             if (!currentConfiguration.AsSpan().SequenceEqual(sourceConfiguration))
             {
-                var rollback = await new AtomicTomlStore(retainAdjacentBackup: false)
+                var rollback = await CreateConfigurationStore()
                     .SaveDocumentAsync(
                         preview.ConfigurationPath,
                         currentConfiguration,
@@ -752,17 +756,31 @@ public sealed class LauncherProviderSourceSwitchService
                  && File.Exists(preview.ConfigurationPath))
         {
             var expectedTargetSha256 = preview.TargetConfigurationSha256;
-            if (string.IsNullOrWhiteSpace(expectedTargetSha256)
-                || !string.Equals(
-                    HashConfiguration(preview.ConfigurationPath),
-                    expectedTargetSha256,
-                    StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(expectedTargetSha256))
             {
                 throw new InvalidOperationException(
                     "The configuration created during the provider switch no longer matches the reviewed "
                     + "target bytes. It was preserved for explicit recovery.");
             }
-            File.Delete(preview.ConfigurationPath);
+            if (atomicTomlMutationAdmission is not null)
+            {
+                atomicTomlMutationAdmission.DeleteCreatedDestination(
+                    preview.ConfigurationPath,
+                    expectedTargetSha256);
+            }
+            else
+            {
+                if (!string.Equals(
+                        HashConfiguration(preview.ConfigurationPath),
+                        expectedTargetSha256,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The configuration created during the provider switch no longer matches the reviewed "
+                        + "target bytes. It was preserved for explicit recovery.");
+                }
+                File.Delete(preview.ConfigurationPath);
+            }
             if (File.Exists(preview.ConfigurationPath))
             {
                 throw new IOException(
@@ -771,6 +789,14 @@ public sealed class LauncherProviderSourceSwitchService
         }
         RestoreSelection(preview.SourceResolutionState, preview.Source);
     }
+
+    private AtomicTomlStore CreateConfigurationStore() =>
+        atomicTomlMutationAdmission is null
+            ? new AtomicTomlStore(retainAdjacentBackup: false)
+            : new AtomicTomlStore(
+                beforeReplace: null,
+                retainAdjacentBackup: false,
+                mutationAdmission: atomicTomlMutationAdmission);
 
     private LauncherProviderSelectionResolution ResolveCurrent()
     {

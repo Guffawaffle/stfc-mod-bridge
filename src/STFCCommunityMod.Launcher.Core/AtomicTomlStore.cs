@@ -19,7 +19,8 @@ public sealed record AtomicTomlWriteResult(
     string? BackupPath = null,
     SparseTomlError? ValidationError = null,
     string? Error = null,
-    ConfigurationBackupReceipt? BackupReceipt = null)
+    ConfigurationBackupReceipt? BackupReceipt = null,
+    string? Warning = null)
 {
     public bool IsSuccess => State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange;
 }
@@ -47,12 +48,40 @@ internal interface IAtomicTomlMutationAdmission
     {
     }
 
+    void BeforeTemporaryFlush(string temporaryPath)
+    {
+    }
+
     void TemporaryRemoved(string temporaryPath)
+    {
+    }
+
+    void BeforeCommitValidation(
+        string temporaryPath,
+        string destinationPath)
+    {
+    }
+
+    void DestinationObserved(string destinationPath, ExactFileRevision revision)
+    {
+    }
+
+    void DestinationPrepared(string destinationPath, ExactFileRevision revision)
+    {
+    }
+
+    void AfterPromotionBeforeOwnership(string destinationPath)
     {
     }
 
     void DestinationCommitted(string destinationPath, ExactFileRevision revision)
     {
+    }
+
+    void DeleteCreatedDestination(string destinationPath, string expectedSha256)
+    {
+        throw new NotSupportedException(
+            "Exact created-destination deletion is not available for this mutation admission.");
     }
 
     void VerifyCommitAllowed(
@@ -228,6 +257,7 @@ public sealed class AtomicTomlStore
                     Error: "The configuration changed after the editing session began; the external changes were preserved.");
             }
             expectedDestinationRevision = CaptureExactRevisionForAdmission(fullPath);
+            NotifyDestinationObserved(fullPath, expectedDestinationRevision);
 
             await AdmitMutationAsync(
                 AtomicTomlMutationBoundary.TemporaryWrite,
@@ -307,10 +337,7 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
-            mutationAdmission?.VerifyCommitAllowed(
-                AtomicTomlMutationBoundary.Promotion,
-                temporaryPath,
-                fullPath);
+            mutationAdmission?.BeforeCommitValidation(temporaryPath, fullPath);
             VerifyExactRevisionForAdmission(
                 temporaryPath,
                 temporaryRevision,
@@ -319,15 +346,21 @@ public sealed class AtomicTomlStore
                 fullPath,
                 expectedDestinationRevision,
                 "The configuration destination changed before atomic promotion.");
+            PrepareDestinationOwnership(fullPath, temporaryRevision);
+            mutationAdmission?.VerifyCommitAllowed(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                fullPath);
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            NotifyDestinationCommitted(fullPath);
+            var commitWarning = ConfirmDestinationOwnership(fullPath, temporaryRevision);
             temporaryCreated = false;
             temporaryRevision = null;
             NotifyTemporaryRemoved(temporaryPath);
             return new(
                 AtomicTomlWriteState.Succeeded,
                 backupPath,
-                BackupReceipt: backupReceipt);
+                BackupReceipt: backupReceipt,
+                Warning: commitWarning);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -465,21 +498,19 @@ public sealed class AtomicTomlStore
                     Error: "The configuration was created outside Mod Bridge at the final promotion boundary.");
             }
 
+            mutationAdmission?.BeforeCommitValidation(temporaryPath, fullPath);
+            VerifyExactRevisionForAdmission(
+                temporaryPath,
+                temporaryRevision,
+                "The configuration staging file changed before atomic promotion.");
+            PrepareDestinationOwnership(fullPath, temporaryRevision);
+            mutationAdmission?.VerifyCommitAllowed(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                fullPath);
             try
             {
-                mutationAdmission?.VerifyCommitAllowed(
-                    AtomicTomlMutationBoundary.Promotion,
-                    temporaryPath,
-                    fullPath);
-                VerifyExactRevisionForAdmission(
-                    temporaryPath,
-                    temporaryRevision,
-                    "The configuration staging file changed before atomic promotion.");
                 File.Move(temporaryPath, fullPath);
-                NotifyDestinationCommitted(fullPath);
-                temporaryCreated = false;
-                temporaryRevision = null;
-                NotifyTemporaryRemoved(temporaryPath);
             }
             catch (IOException) when (File.Exists(fullPath))
             {
@@ -487,7 +518,11 @@ public sealed class AtomicTomlStore
                     AtomicTomlWriteState.Conflict,
                     Error: "The configuration was created outside Mod Bridge before the first save committed.");
             }
-            return new(AtomicTomlWriteState.Succeeded);
+            var commitWarning = ConfirmDestinationOwnership(fullPath, temporaryRevision);
+            temporaryCreated = false;
+            temporaryRevision = null;
+            NotifyTemporaryRemoved(temporaryPath);
+            return new(AtomicTomlWriteState.Succeeded, Warning: commitWarning);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -574,6 +609,7 @@ public sealed class AtomicTomlStore
             var original = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
             var originalSnapshot = DestinationSnapshot.Capture(fullPath, original);
             expectedDestinationRevision = CaptureExactRevisionForAdmission(fullPath);
+            NotifyDestinationObserved(fullPath, expectedDestinationRevision);
             var load = SparseTomlDocument.Load(original, out var document);
             if (!load.IsValid || document is null)
             {
@@ -693,10 +729,7 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
-            mutationAdmission?.VerifyCommitAllowed(
-                AtomicTomlMutationBoundary.Promotion,
-                temporaryPath,
-                fullPath);
+            mutationAdmission?.BeforeCommitValidation(temporaryPath, fullPath);
             VerifyExactRevisionForAdmission(
                 temporaryPath,
                 temporaryRevision,
@@ -705,15 +738,21 @@ public sealed class AtomicTomlStore
                 fullPath,
                 expectedDestinationRevision,
                 "The configuration destination changed before atomic promotion.");
+            PrepareDestinationOwnership(fullPath, temporaryRevision);
+            mutationAdmission?.VerifyCommitAllowed(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                fullPath);
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            NotifyDestinationCommitted(fullPath);
+            var commitWarning = ConfirmDestinationOwnership(fullPath, temporaryRevision);
             temporaryCreated = false;
             temporaryRevision = null;
             NotifyTemporaryRemoved(temporaryPath);
             return new(
                 AtomicTomlWriteState.Succeeded,
                 backupPath,
-                BackupReceipt: backupReceipt);
+                BackupReceipt: backupReceipt,
+                Warning: commitWarning);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -767,12 +806,13 @@ public sealed class AtomicTomlStore
         CancellationToken cancellationToken)
     {
         await using var stream = CreateTemporaryWriteStream(path);
+        CandidateFileIdentity? createdIdentity = null;
         if (mutationAdmission is not null)
         {
             try
             {
-                var identity = CandidateFileNative.ReadIdentity(stream.SafeFileHandle);
-                var createdRevision = CaptureOpenTemporaryRevision(path, stream, identity, []);
+                createdIdentity = CandidateFileNative.ReadIdentity(stream.SafeFileHandle);
+                var createdRevision = CaptureOpenTemporaryRevision(path, stream, createdIdentity, []);
                 created(createdRevision);
                 mutationAdmission.TemporaryCreated(path, createdRevision);
             }
@@ -791,18 +831,48 @@ public sealed class AtomicTomlStore
                 path,
                 destinationPath);
         }
-        await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        stream.Flush(flushToDisk: true);
-        if (mutationAdmission is not null)
+        try
         {
-            var completedRevision = CaptureOpenTemporaryRevision(
-                path,
-                stream,
-                CandidateFileNative.ReadIdentity(stream.SafeFileHandle),
-                contents);
-            completed(completedRevision);
-            mutationAdmission.TemporaryCompleted(path, completedRevision);
+            await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
+            mutationAdmission?.BeforeTemporaryFlush(path);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            stream.Flush(flushToDisk: true);
+            if (mutationAdmission is not null)
+            {
+                var completedRevision = CaptureOpenTemporaryRevision(
+                    path,
+                    stream,
+                    createdIdentity
+                        ?? CandidateFileNative.ReadIdentity(stream.SafeFileHandle),
+                    contents);
+                completed(completedRevision);
+                mutationAdmission.TemporaryCompleted(path, completedRevision);
+            }
+        }
+        catch
+        {
+            if (mutationAdmission is not null)
+            {
+                try
+                {
+                    var writtenLength = checked((int)Math.Min(stream.Length, contents.LongLength));
+                    var partialContents = contents.AsSpan(0, writtenLength).ToArray();
+                    var partialRevision = CaptureOpenTemporaryRevision(
+                        path,
+                        stream,
+                        createdIdentity
+                            ?? CandidateFileNative.ReadIdentity(stream.SafeFileHandle),
+                        partialContents);
+                    completed(partialRevision);
+                    mutationAdmission.TemporaryCompleted(path, partialRevision);
+                    CandidateFileNative.TryMarkDeleteOnClose(stream.SafeFileHandle);
+                }
+                catch
+                {
+                    CandidateFileNative.TryMarkDeleteOnClose(stream.SafeFileHandle);
+                }
+            }
+            throw;
         }
     }
 
@@ -948,14 +1018,70 @@ public sealed class AtomicTomlStore
         }
     }
 
-    private void NotifyDestinationCommitted(string destinationPath)
+    private void PrepareDestinationOwnership(
+        string destinationPath,
+        ExactFileRevision? expectedRevision)
     {
         if (mutationAdmission is null)
         {
             return;
         }
-        using var exact = ExactFileMutation.Open(destinationPath);
-        mutationAdmission.DestinationCommitted(destinationPath, exact.CaptureRevision());
+        if (expectedRevision is null)
+        {
+            throw new InvalidOperationException(
+                "The configuration staging receipt is missing before atomic promotion.");
+        }
+        mutationAdmission.DestinationPrepared(destinationPath, expectedRevision);
+    }
+
+    private void NotifyDestinationObserved(
+        string destinationPath,
+        ExactFileRevision? observedRevision)
+    {
+        if (mutationAdmission is null)
+        {
+            return;
+        }
+        if (observedRevision is null)
+        {
+            throw new InvalidOperationException(
+                "The observed configuration destination has no exact revision.");
+        }
+        mutationAdmission.DestinationObserved(destinationPath, observedRevision);
+    }
+
+    private string? ConfirmDestinationOwnership(
+        string destinationPath,
+        ExactFileRevision? expectedRevision)
+    {
+        if (mutationAdmission is null)
+        {
+            return null;
+        }
+        try
+        {
+            mutationAdmission.AfterPromotionBeforeOwnership(destinationPath);
+            using var exact = ExactFileMutation.Open(destinationPath);
+            var actualRevision = exact.CaptureRevision();
+            if (expectedRevision is null || !expectedRevision.Matches(actualRevision))
+            {
+                throw new InvalidOperationException(
+                    "The committed configuration no longer matches its exact staging receipt.");
+            }
+            mutationAdmission.DestinationCommitted(destinationPath, actualRevision);
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException
+                or InvalidDataException
+                or System.ComponentModel.Win32Exception
+                or CryptographicException)
+        {
+            return "The configuration commit completed, but exact ownership confirmation requires recovery.";
+        }
     }
 
     private static async ValueTask<ConfigurationBackupReceipt> CreateVerifiedBackupAsync(

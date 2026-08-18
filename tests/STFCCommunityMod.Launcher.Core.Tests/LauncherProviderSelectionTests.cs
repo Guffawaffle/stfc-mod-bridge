@@ -577,6 +577,41 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
+    public async Task ProviderHistorySwitchUsesExactAtomicMutationAdmission()
+    {
+        using var directory = new TemporaryDirectory();
+        var configurationPath = WriteConfiguration(directory.Path);
+        var store = new JsonLauncherProviderSelectionStore(directory.Path);
+        store.Save(new("guffawaffle", "stable"));
+        var backupStore = CreateBackupStore(directory.Path);
+        var targetConfiguration = Encoding.UTF8.GetBytes(
+            "[graphics]\nfree_resize = false\n");
+        await backupStore.CreateAsync(new(
+            directory.Path,
+            "netniv",
+            configurationPath,
+            targetConfiguration,
+            "test-seed"));
+        var admission = new TrackingAtomicTomlMutationAdmission();
+        var service = new LauncherProviderSourceSwitchService(
+            LauncherDistributionProviderTests.LoadFixtureCatalog(),
+            store,
+            backupStore,
+            backupCompleted: null,
+            configurationEvidenceResolver: ExactConfigurationEvidence(),
+            atomicTomlMutationAdmission: admission);
+        var preview = service.Preview("netniv", "stable", configurationPath);
+
+        var result = await service.ExecuteAsync(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), result.Selection);
+        CollectionAssert.AreEqual(targetConfiguration, File.ReadAllBytes(configurationPath));
+        Assert.AreEqual(1, admission.PreparedCount);
+        Assert.AreEqual(1, admission.CommittedCount);
+        Assert.IsTrue(admission.CommittedRevisionMatchedPrepared);
+    }
+
+    [TestMethod]
     public void SelectionDocumentRejectsUnknownFields()
     {
         using var directory = new TemporaryDirectory();
@@ -684,5 +719,38 @@ public sealed class LauncherProviderSelectionTests
         }
 
         public void Clear() => selection = null;
+    }
+
+    private sealed class TrackingAtomicTomlMutationAdmission : IAtomicTomlMutationAdmission
+    {
+        private ExactFileRevision? preparedRevision;
+
+        public int PreparedCount { get; private set; }
+
+        public int CommittedCount { get; private set; }
+
+        public bool CommittedRevisionMatchedPrepared { get; private set; }
+
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public void DestinationPrepared(string destinationPath, ExactFileRevision revision)
+        {
+            PreparedCount++;
+            preparedRevision = revision;
+        }
+
+        public void DestinationCommitted(string destinationPath, ExactFileRevision revision)
+        {
+            CommittedCount++;
+            CommittedRevisionMatchedPrepared = preparedRevision?.Matches(revision) == true;
+        }
     }
 }

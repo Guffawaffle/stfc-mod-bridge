@@ -52,6 +52,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly ReviewedReleaseCertification? reviewedCertification;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
     private readonly Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint;
+    private readonly Func<string, ExactFileRevision, bool>? afterArtifactCommitted;
 
     public ModDeploymentService(
         string stateDirectory,
@@ -87,7 +88,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         TimeProvider? timeProvider,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted,
         ReviewedReleaseCertification? reviewedCertification,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint)
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint,
+        Func<string, ExactFileRevision, bool>? afterArtifactCommitted = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -102,6 +104,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ?? throw new ArgumentNullException(nameof(installationAttribution));
         this.reviewedCertification = reviewedCertification;
         this.afterFileCheckpoint = afterFileCheckpoint;
+        this.afterArtifactCommitted = afterArtifactCommitted;
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -550,6 +553,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingArtifactIdentity: existingArtifactIdentity,
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
             TargetInstallationAttribution: installationAttribution);
+        ExactFileRevision? exactStagedArtifactRevision = null;
 
         try
         {
@@ -689,6 +693,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     cancellationToken);
             }
 
+            if (afterArtifactCommitted is not null)
+            {
+                using var exactStage = ExactFileMutation.Open(stagePath);
+                exactStagedArtifactRevision = exactStage.CaptureRevision();
+                journal = journal with
+                {
+                    PreserveLiveArtifactDuringRecovery = true,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                };
+                WriteJsonAtomically(JournalPath, journal);
+            }
             File.Move(stagePath, targetPath);
             await CheckpointAsync(ModDeploymentFileCheckpoint.TargetDllInstalled, cancellationToken);
             if (journal.Artifact.RuntimeManifest is not null)
@@ -700,6 +715,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             VerifyFile(targetPath, journal.Artifact);
             VerifyVersion(targetPath, journal.Artifact.ExpectedVersion);
+            if (exactStagedArtifactRevision is not null
+                && afterArtifactCommitted?.Invoke(targetPath, exactStagedArtifactRevision) != true)
+            {
+                return new(
+                    ModDeploymentResultState.RecoveryRequired,
+                    "The mod DLL committed, but its exact recovery ownership could not be confirmed. "
+                        + "The live file was preserved for explicit recovery.",
+                    Changed: true,
+                    RuntimeActivation: reviewedRuntimeActivation);
+            }
             if (journal.Artifact.RuntimeManifest is not null)
             {
                 VerifyFile(runtimeManifestPath, journal.Artifact.RuntimeManifest);
@@ -833,7 +858,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             try
             {
-                journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committed, cancellationToken);
+                journal = await PersistPhaseAsync(
+                    journal with { PreserveLiveArtifactDuringRecovery = false },
+                    ModDeploymentPhase.Committed,
+                    cancellationToken);
             }
             catch (Exception exception)
             {
@@ -863,6 +891,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 targetPath,
                 commitParticipant,
                 participantCommitStarted,
+                exactStagedArtifactRevision,
                 CancellationToken.None).ConfigureAwait(false);
             throw;
         }
@@ -873,6 +902,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 targetPath,
                 commitParticipant,
                 participantCommitStarted,
+                exactStagedArtifactRevision,
                 CancellationToken.None).ConfigureAwait(false);
             return new(
                 rolledBack ? ModDeploymentResultState.FailedAndRolledBack : ModDeploymentResultState.RecoveryRequired,
@@ -887,10 +917,41 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         string targetPath,
         IModDeploymentCommitParticipant? commitParticipant,
         bool participantCommitStarted,
+        ExactFileRevision? exactPromotedArtifactRevision,
         CancellationToken cancellationToken)
     {
-        var artifactRolledBack = await RollBackAsync(journal, targetPath, cancellationToken)
+        if (journal.PreserveLiveArtifactDuringRecovery)
+        {
+            try
+            {
+                using var exactTarget = ExactFileMutation.Open(targetPath);
+                if (exactPromotedArtifactRevision is null
+                    || !exactPromotedArtifactRevision.Matches(exactTarget.CaptureRevision()))
+                {
+                    return false;
+                }
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or InvalidOperationException
+                    or NotSupportedException
+                    or System.ComponentModel.Win32Exception)
+            {
+                return false;
+            }
+        }
+        var artifactRolledBack = await RollBackAsync(
+                journal,
+                targetPath,
+                cancellationToken,
+                journal.PreserveLiveArtifactDuringRecovery ? exactPromotedArtifactRevision : null)
             .ConfigureAwait(false);
+        if (journal.PreserveLiveArtifactDuringRecovery && !artifactRolledBack)
+        {
+            return false;
+        }
         if (!participantCommitStarted || commitParticipant is null)
         {
             return artifactRolledBack;
@@ -1294,6 +1355,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(ModDeploymentResultState.Succeeded, "The provider-switch DLL never reached commit.");
         }
+        if (journal.PreserveLiveArtifactDuringRecovery)
+        {
+            return PreserveLiveArtifactRecoveryResult();
+        }
         if (isGameRunning(journal.GameDirectory))
         {
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before provider-switch recovery.");
@@ -1333,6 +1398,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         if (journal is null)
         {
             return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
+        }
+        if (journal.PreserveLiveArtifactDuringRecovery)
+        {
+            return PreserveLiveArtifactRecoveryResult(installedState);
         }
         if (journal.Phase == ModDeploymentPhase.Committed)
         {
@@ -1531,6 +1600,14 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         return updated;
     }
 
+    private static ModDeploymentResult PreserveLiveArtifactRecoveryResult(
+        ModInstalledArtifactState? installedState = null) =>
+        new(
+            ModDeploymentResultState.RecoveryRequired,
+            "Automatic recovery was stopped because the live mod DLL did not match its exact commit identity. "
+                + "The live file was preserved for explicit recovery.",
+            installedState);
+
     private ValueTask CheckpointAsync(
         ModDeploymentFileCheckpoint checkpoint,
         CancellationToken cancellationToken) => afterFileCheckpoint is null
@@ -1638,7 +1715,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private async Task<bool> RollBackAsync(
         ModDeploymentJournal journal,
         string targetPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ExactFileRevision? exactLiveArtifactRevision = null)
     {
         try
         {
@@ -1648,7 +1726,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.RollingBack, cancellationToken);
             plan = await MaterializeSameVolumeRollbackStagesAsync(plan, journal, cancellationToken);
 
-            ApplyRollbackMember(plan.Dll);
+            ApplyRollbackMember(plan.Dll, exactLiveArtifactRevision);
             await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackDllRestored, cancellationToken);
             ApplyRollbackMember(plan.RuntimeManifest);
             await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestored, cancellationToken);
@@ -1694,7 +1772,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 journal.ExistingRuntimeManifestIdentity,
                 "redundant durable runtime-manifest rollback");
             RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState);
-            await PersistPhaseAsync(journal, ModDeploymentPhase.RolledBack, cancellationToken);
+            await PersistPhaseAsync(
+                journal with { PreserveLiveArtifactDuringRecovery = false },
+                ModDeploymentPhase.RolledBack,
+                cancellationToken);
             return true;
         }
         catch (SimulatedProcessTerminationException)
@@ -2011,10 +2092,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         return member with { BackupPath = restoreStagePath };
     }
 
-    private static void ApplyRollbackMember(RollbackMember? member)
+    private static void ApplyRollbackMember(
+        RollbackMember? member,
+        ExactFileRevision? exactLiveRevision = null)
     {
         if (member is null)
         {
+            return;
+        }
+        if (exactLiveRevision is not null)
+        {
+            ApplyExactRollbackMember(member, exactLiveRevision);
             return;
         }
         if (member.BackupPath is null)
@@ -2045,6 +2133,34 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
         }
         File.Move(member.BackupPath, member.LivePath);
+    }
+
+    private static void ApplyExactRollbackMember(
+        RollbackMember member,
+        ExactFileRevision expectedLiveRevision)
+    {
+        if (member.BackupPath is not null)
+        {
+            throw new InvalidDataException(
+                "Exact rollback requires restoring a prior mod DLL; automatic recovery preserved the live file "
+                    + "and the rollback evidence for explicit recovery.");
+        }
+
+        using var exactLive = ExactFileMutation.Open(member.LivePath);
+        if (!expectedLiveRevision.Matches(exactLive.CaptureRevision()))
+        {
+            throw new InvalidDataException(
+                "The live mod DLL changed before exact rollback; the current file was preserved.");
+        }
+
+        if (member.BackupPath is null)
+        {
+            if (!member.RestoreExisting)
+            {
+                exactLive.DeleteExact();
+            }
+            return;
+        }
     }
 
     private static void VerifyRollbackMember(RollbackMember? member)
