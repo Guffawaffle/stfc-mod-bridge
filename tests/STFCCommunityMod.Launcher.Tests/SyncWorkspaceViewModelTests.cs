@@ -410,6 +410,13 @@ public sealed class SyncWorkspaceViewModelTests
 
         Assert.IsTrue(viewModel.MigrateLegacyRoot);
         Assert.IsTrue(viewModel.CanSave);
+
+        viewModel.DiscardCommand.Execute(null);
+        viewModel.Targets.Single().Url = "https://second.example.invalid/sync";
+
+        Assert.IsFalse(viewModel.MigrateLegacyRoot);
+        Assert.AreEqual(WorkspaceSaveBlockerKind.LegacyMigration, viewModel.SaveState.Blocker);
+        Assert.IsFalse(viewModel.CanSave);
     }
 
     [TestMethod]
@@ -464,6 +471,25 @@ public sealed class SyncWorkspaceViewModelTests
         viewModel.SaveRecoveryCommand.Execute(null);
         Assert.IsFalse(viewModel.HasPendingChanges);
         Assert.IsFalse(viewModel.IsStale);
+        Assert.AreEqual(external, File.ReadAllText(fixture.Path));
+    }
+
+    [TestMethod]
+    public async Task FailedSyncRecoveryKeepsLoadErrorInsteadOfClaimingReloadSuccess()
+    {
+        using var fixture = SyncFixture.Create("[sync]\njobs = true\n");
+        var viewModel = fixture.CreateViewModel();
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        const string external = "[sync\ninvalid";
+        File.WriteAllText(fixture.Path, external, new UTF8Encoding(false));
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => viewModel.IsStale);
+
+        viewModel.SaveRecoveryCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.IsConfigurationReady);
+        StringAssert.Contains(viewModel.OperationStatus, "unsafe to edit");
+        Assert.IsFalse(viewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
         Assert.AreEqual(external, File.ReadAllText(fixture.Path));
     }
 

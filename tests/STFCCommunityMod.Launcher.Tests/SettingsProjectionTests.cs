@@ -102,6 +102,28 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void InvalidOnlyEditorDraftIsPendingActionableAndDiscardable()
+    {
+        using var fixture = SettingsFixture.Create();
+        var numeric = fixture.SettingsByPath["ui.extend_chest_purchase_max"];
+        fixture.Select(fixture.Layout.Place(numeric).Section);
+        var original = File.ReadAllBytes(fixture.ConfigurationPath);
+
+        fixture.Row(numeric.Path).NumericText = "not-a-number";
+
+        Assert.AreEqual(1, fixture.ViewModel.PendingChangeCount);
+        Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        Assert.IsTrue(fixture.ViewModel.IsSettingsFooterVisible);
+        Assert.AreEqual(WorkspaceSaveBlockerKind.InvalidSetting, fixture.ViewModel.SaveState.Blocker);
+        Assert.IsTrue(fixture.ViewModel.DiscardCommand.CanExecute(null));
+        fixture.ViewModel.DiscardCommand.Execute(null);
+
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
     public void StagedShortcutConflictNamesBothCommandsAndTargetsFirstConflict()
     {
         using var fixture = SettingsFixture.Create();
@@ -185,6 +207,71 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void SettingsDraftTransitionsNotifyDataSyncBlockerBindingsAndCommands()
+    {
+        using var fixture = SettingsFixture.Create(
+            "[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n");
+        fixture.ViewModel.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        Assert.IsTrue(fixture.ViewModel.SyncWorkspace.CanSave);
+        var properties = new List<string?>();
+        var commandChanges = 0;
+        fixture.ViewModel.SyncWorkspace.PropertyChanged += (_, args) => properties.Add(args.PropertyName);
+        fixture.ViewModel.SyncWorkspace.SaveCommand.CanExecuteChanged += (_, _) => ++commandChanges;
+        fixture.Select(LauncherSettingsSection.Graphics);
+
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+
+        CollectionAssert.Contains(properties, nameof(SyncWorkspaceViewModel.SaveState));
+        CollectionAssert.Contains(properties, nameof(SyncWorkspaceViewModel.CanSave));
+        CollectionAssert.Contains(properties, nameof(SyncWorkspaceViewModel.IsSaveBlocked));
+        CollectionAssert.Contains(properties, nameof(SyncWorkspaceViewModel.SaveAvailability));
+        Assert.IsTrue(commandChanges > 0);
+        Assert.IsFalse(fixture.ViewModel.SyncWorkspace.SaveCommand.CanExecute(null));
+
+        properties.Clear();
+        commandChanges = 0;
+        fixture.ViewModel.DiscardCommand.Execute(null);
+
+        Assert.IsTrue(fixture.ViewModel.SyncWorkspace.SaveCommand.CanExecute(null));
+        Assert.IsTrue(commandChanges > 0);
+        CollectionAssert.Contains(properties, nameof(SyncWorkspaceViewModel.SaveState));
+    }
+
+    [TestMethod]
+    public void DataSyncDraftIsBlockedAfterSelectingIdenticalDifferentConfiguration()
+    {
+        const string source = "[sync]\njobs = true\n";
+        using var fixture = SettingsFixture.Create(source);
+        var otherPath = Path.Combine(Path.GetTempPath(), $"stfc-launcher-sync-other-{Guid.NewGuid():N}.toml");
+        File.WriteAllText(otherPath, source, new UTF8Encoding(false));
+        try
+        {
+            var selectedPath = fixture.ConfigurationPath;
+            var viewModel = fixture.CreateAdditionalViewModel(() => selectedPath);
+            viewModel.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+            selectedPath = otherPath;
+
+            viewModel.ReloadConfiguration();
+
+            Assert.AreEqual(
+                WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
+                viewModel.SyncWorkspace.SaveState.Blocker);
+            Assert.IsFalse(viewModel.SyncWorkspace.SaveCommand.CanExecute(null));
+            Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+            Assert.AreEqual(source, File.ReadAllText(otherPath));
+
+            viewModel.SyncWorkspace.SaveRecoveryCommand.Execute(null);
+            Assert.IsFalse(viewModel.SyncWorkspace.HasPendingChanges);
+            Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+            Assert.AreEqual(source, File.ReadAllText(otherPath));
+        }
+        finally
+        {
+            File.Delete(otherPath);
+        }
+    }
+
+    [TestMethod]
     public void SelectedInstallationConflictDiscardsAndReloadsWithoutLeakingPaths()
     {
         using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
@@ -233,6 +320,120 @@ public sealed class SettingsProjectionTests
         Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
         fixture.ViewModel.SaveRecoveryCommand.Execute(null);
         Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public async Task SettingsSaveLocksBothEditorsAndDiscardUntilCommitCompletes()
+    {
+        const string source = "[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n";
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        fixture.Select(LauncherSettingsSection.Graphics);
+        var row = fixture.Row("graphics.free_resize");
+        row.BooleanValue = false;
+
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            Assert.IsTrue(fixture.ViewModel.IsSaveInProgress);
+            Assert.IsFalse(fixture.ViewModel.CanEdit);
+            Assert.IsFalse(fixture.ViewModel.SyncWorkspace.CanEdit);
+            Assert.IsFalse(row.CanEdit);
+            Assert.IsFalse(fixture.ViewModel.DiscardCommand.CanExecute(null));
+            row.BooleanValue = true;
+            Assert.IsFalse(row.BooleanValue);
+            Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        }
+        finally
+        {
+            pause.Release();
+        }
+
+        await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.IsSaveInProgress);
+        StringAssert.Contains(File.ReadAllText(fixture.ConfigurationPath), "free_resize = false");
+    }
+
+    [TestMethod]
+    public async Task DataSyncSaveLocksBothEditorsAndDiscardUntilCommitCompletes()
+    {
+        const string source = "[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n";
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        using var fixture = SettingsFixture.Create(source, repository: repository);
+        fixture.ViewModel.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+
+        fixture.ViewModel.SyncWorkspace.SaveCommand.Execute(null);
+        await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            fixture.Select(LauncherSettingsSection.Graphics);
+            var row = fixture.Row("graphics.free_resize");
+            Assert.IsTrue(fixture.ViewModel.SyncWorkspace.IsSaveInProgress);
+            Assert.IsFalse(fixture.ViewModel.SyncWorkspace.CanEdit);
+            Assert.IsFalse(fixture.ViewModel.CanEdit);
+            Assert.IsFalse(row.CanEdit);
+            Assert.IsFalse(fixture.ViewModel.SyncWorkspace.DiscardCommand.CanExecute(null));
+            row.BooleanValue = false;
+            Assert.IsTrue(row.BooleanValue);
+            Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        }
+        finally
+        {
+            pause.Release();
+        }
+
+        await WaitUntilAsync(() => !fixture.ViewModel.SyncWorkspace.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.SyncWorkspace.IsSaveInProgress);
+        var committed = File.ReadAllText(fixture.ConfigurationPath);
+        StringAssert.Contains(committed, "free_resize = true");
+        StringAssert.Contains(committed, "jobs = false");
+    }
+
+    [TestMethod]
+    public async Task StaleDataSyncWorkspaceBlocksNewSettingsDraftBeforeRecovery()
+    {
+        const string source = "[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n";
+        const string external = "# external\n[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n";
+        using var fixture = SettingsFixture.Create(source);
+        fixture.ViewModel.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        File.WriteAllText(fixture.ConfigurationPath, external, new UTF8Encoding(false));
+        fixture.ViewModel.SyncWorkspace.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => fixture.ViewModel.SyncWorkspace.IsStale);
+        fixture.Select(LauncherSettingsSection.Graphics);
+        var row = fixture.Row("graphics.free_resize");
+
+        Assert.IsFalse(fixture.ViewModel.CanEdit);
+        Assert.IsFalse(row.CanEdit);
+        row.BooleanValue = false;
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+
+        fixture.ViewModel.SyncWorkspace.SaveRecoveryCommand.Execute(null);
+        Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
+        Assert.IsFalse(fixture.ViewModel.SyncWorkspace.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+    }
+
+    [TestMethod]
+    public async Task FailedSettingsRecoveryKeepsLoadErrorInsteadOfClaimingReloadSuccess()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        const string external = "[graphics\ninvalid";
+        File.WriteAllText(fixture.ConfigurationPath, external, new UTF8Encoding(false));
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() =>
+            fixture.ViewModel.SaveState.Blocker == WorkspaceSaveBlockerKind.ExternalChange);
+
+        fixture.ViewModel.SaveRecoveryCommand.Execute(null);
+
+        Assert.IsFalse(fixture.ViewModel.IsConfigurationReady);
+        StringAssert.Contains(fixture.ViewModel.OperationStatus, "could not be loaded safely");
+        Assert.IsFalse(fixture.ViewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
         Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
     }
 

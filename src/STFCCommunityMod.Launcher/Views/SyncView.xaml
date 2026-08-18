@@ -226,6 +226,7 @@
     <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
     <ScrollViewer x:Name="PageScrollViewer" Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                  IsEnabled="{Binding CanEdit}"
                   HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
                   automation:AutomationProperties.Name="Data Sync page content">
       <ScrollViewer.Resources><Style BasedOn="{StaticResource SyncScrollBarStyle}" TargetType="{x:Type ScrollBar}" /></ScrollViewer.Resources>

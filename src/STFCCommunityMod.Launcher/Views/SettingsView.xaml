@@ -694,6 +694,7 @@
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  behaviors:KeepVisibleAboveFooterBehavior.Footer="{Binding ElementName=SettingsFooter}"
                  ItemsSource="{Binding FilteredSettings}"
+                 IsEnabled="{Binding CanEdit}"
                  Background="Transparent"
                  BorderThickness="0"
                  ScrollViewer.CanContentScroll="True"

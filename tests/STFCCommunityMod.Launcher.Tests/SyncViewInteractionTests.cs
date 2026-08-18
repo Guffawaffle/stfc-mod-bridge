@@ -146,6 +146,7 @@ public sealed class SyncViewInteractionTests
         var blocker = Named(document.Descendants(Presentation + "TextBlock"), "SyncSaveBlockerText");
         var recovery = Named(document.Descendants(Presentation + "Button"), "SyncSaveRecoveryButton");
         var legacy = Named(document.Descendants(Presentation + "CheckBox"), "LegacyMigrationApproval");
+        var page = Named(document.Descendants(Presentation + "ScrollViewer"), "PageScrollViewer");
         var blockerBorder = blocker.Ancestors(Presentation + "Border").FirstOrDefault();
 
         Assert.IsNotNull(blockerBorder);
@@ -165,6 +166,7 @@ public sealed class SyncViewInteractionTests
         Assert.AreEqual(
             "Approve moving the older sync setup into a named destination",
             (string?)legacy.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual("{Binding CanEdit}", (string?)page.Attribute("IsEnabled"));
     }
 
     [TestMethod]

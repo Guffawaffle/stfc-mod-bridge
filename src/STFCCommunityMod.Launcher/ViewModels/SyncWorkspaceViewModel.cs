@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using STFCCommunityMod.Launcher.Core;
@@ -40,6 +41,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private readonly Func<ConfigurationWorkspace?> configurationWorkspaceProvider;
     private readonly Action navigateToSiblingSettings;
     private readonly Action? reloadConfiguration;
+    private readonly Func<bool> configurationSelectionMatches;
+    private readonly Func<bool> siblingSaveInProgress;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private readonly SettingsActionCommand saveRecoveryCommand;
@@ -64,7 +67,9 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Func<bool>? hasSiblingPendingChanges = null,
         Func<ConfigurationWorkspace?>? configurationWorkspaceProvider = null,
         Action? navigateToSiblingSettings = null,
-        Action? reloadConfiguration = null)
+        Action? reloadConfiguration = null,
+        Func<bool>? configurationSelectionMatches = null,
+        Func<bool>? siblingSaveInProgress = null)
     {
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
@@ -73,12 +78,14 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         this.configurationWorkspaceProvider = configurationWorkspaceProvider ?? (() => null);
         this.navigateToSiblingSettings = navigateToSiblingSettings ?? (() => { });
         this.reloadConfiguration = reloadConfiguration;
-        discardCommand = new(Discard, () => !isInvalidating && !isInvalidated && HasPendingChanges);
+        this.configurationSelectionMatches = configurationSelectionMatches ?? (() => true);
+        this.siblingSaveInProgress = siblingSaveInProgress ?? (() => false);
+        discardCommand = new(Discard, () => CanEdit && HasPendingChanges);
         saveCommand = new(SaveAsync, () => CanSave);
         saveRecoveryCommand = new(
             ApplySaveRecovery,
             () => SaveState.HasRecoveryAction);
-        OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => IsConfigurationReady);
+        OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => CanEdit);
         Reload();
     }
 
@@ -105,6 +112,13 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public ICommand SaveRecoveryCommand => saveRecoveryCommand;
 
     public bool IsConfigurationReady => !isInvalidating && !isInvalidated && workspace is not null;
+
+    public bool IsSaveInProgress => activeSave is not null;
+
+    public bool CanEdit =>
+        IsConfigurationReady
+        && !IsSaveInProgress
+        && !siblingSaveInProgress();
 
     public bool HasPendingChanges => workspace?.HasPendingChanges ?? false;
 
@@ -163,7 +177,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         get => migrateLegacyRoot;
         set
         {
-            if (isInvalidating || isInvalidated)
+            if (!CanEdit)
             {
                 return;
             }
@@ -210,14 +224,17 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
                 "Save is unavailable because this Data Sync workspace is no longer active.");
         }
 
-        if (IsStale)
+        if (!ConfigurationSelectionMatchesSession())
         {
+            var includesSettings = hasSiblingPendingChanges();
             return new(
                 WorkspaceSaveStateKind.Blocked,
-                WorkspaceSaveBlockerKind.ExternalChange,
-                "This configuration changed outside Mod Bridge. Save is paused to protect the newer changes.",
+                WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
+                includesSettings
+                    ? "You selected a different game installation while Settings and Data Sync changes were staged. Save is paused so they are not applied to the wrong installation."
+                    : "You selected a different game installation while Data Sync changes were staged. Save is paused so they are not applied to the wrong installation.",
                 WorkspaceSaveRecoveryKind.DiscardAndReload,
-                "Discard my changes and reload");
+                includesSettings ? "Discard all changes and reload" : "Discard my changes and reload");
         }
 
         if (hasSiblingPendingChanges())
@@ -228,6 +245,16 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
                 "Settings has unsaved changes. Save or discard them before saving Data Sync.",
                 WorkspaceSaveRecoveryKind.GoToSettings,
                 "Go to Settings");
+        }
+
+        if (IsStale)
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.ExternalChange,
+                "This configuration changed outside Mod Bridge. Save is paused to protect the newer changes.",
+                WorkspaceSaveRecoveryKind.DiscardAndReload,
+                "Discard my changes and reload");
         }
 
         if (!IsCommittable)
@@ -337,6 +364,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
+        migrateLegacyRoot = false;
         workspace = null;
         if (configurationWorkspaceProvider() is { } configurationWorkspace)
         {
@@ -398,8 +426,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     private void DiscardAndReload()
     {
-        workspace?.Discard();
-        customProxyEditors.Clear();
+        DiscardForReload();
         if (reloadConfiguration is not null)
         {
             reloadConfiguration();
@@ -408,7 +435,14 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         {
             Reload();
         }
-        OperationStatus = "Unsaved Data Sync changes discarded and the current configuration reloaded.";
+        if (IsConfigurationReady)
+        {
+            OperationStatus = "Unsaved Data Sync changes discarded and the current configuration reloaded.";
+        }
+        else if (string.IsNullOrWhiteSpace(OperationStatus))
+        {
+            OperationStatus = "Data Sync could not be reloaded. Select a supported configuration and try again.";
+        }
         Rebuild();
     }
 
@@ -469,6 +503,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     internal void SetCustomProxyEditor(string name, bool enabled)
     {
+        if (!CanEdit)
+        {
+            return;
+        }
+
         if (enabled)
         {
             customProxyEditors.Add(name);
@@ -484,7 +523,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     internal void UpdateTarget(string name, Func<SyncTargetDraft, SyncTargetDraft> update)
     {
-        if (workspace is null
+        if (!CanEdit
+            || workspace is null
             || workspace.Desired.Targets.GetValueOrDefault(name)?.UsesNamedPipe == true)
         {
             return;
@@ -624,21 +664,31 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     private void Stage(SyncDesiredTopology desired)
     {
-        if (isInvalidating || isInvalidated || workspace is null)
+        if (!CanEdit || workspace is null)
         {
             return;
         }
         workspace.Stage(desired);
+        if (!workspace.HasPendingChanges)
+        {
+            migrateLegacyRoot = false;
+        }
         OperationStatus = string.Empty;
         Rebuild();
     }
 
     private void Discard()
     {
-        workspace?.Discard();
-        customProxyEditors.Clear();
+        DiscardForReload();
         OperationStatus = "Unsaved Data Sync changes discarded.";
         Rebuild();
+    }
+
+    internal void DiscardForReload()
+    {
+        workspace?.Discard();
+        customProxyEditors.Clear();
+        migrateLegacyRoot = false;
     }
 
     internal Task SaveAsync()
@@ -661,6 +711,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             activeSave = completion.Task;
         }
+        Rebuild();
         _ = CompleteSaveAsync(editingSession, configurationWorkspace, completion);
         return completion.Task;
     }
@@ -669,6 +720,13 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         SyncTopologyEditSession editingSession,
         ConfigurationWorkspace? configurationWorkspace)
     {
+        if (!ConfigurationSelectionMatchesSession())
+        {
+            OperationStatus =
+                "The selected game installation changed after this Data Sync session began. Discard these changes and reload before saving.";
+            return;
+        }
+
         OperationStatus = "Saving Data Sync…";
         var result = configurationWorkspace is null
             ? await editingSession.CommitAsync(MigrateLegacyRoot)
@@ -719,8 +777,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         if (failure is not null && !isInvalidating && !isInvalidated)
         {
             OperationStatus = $"Data Sync could not be saved: {failure.Message}";
-            Rebuild();
         }
+        Rebuild();
         completion.SetResult();
     }
 
@@ -801,6 +859,45 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         saveRecoveryCommand.RaiseCanExecuteChanged();
         (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal void NotifySiblingDraftStateChanged()
+    {
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(SaveState));
+        OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(IsSaveBlocked));
+        OnPropertyChanged(nameof(SaveAvailability));
+        discardCommand.RaiseCanExecuteChanged();
+        saveCommand.RaiseCanExecuteChanged();
+        saveRecoveryCommand.RaiseCanExecuteChanged();
+        (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private bool ConfigurationSelectionMatchesSession()
+    {
+        var selectedPath = configurationPathProvider();
+        if (!configurationSelectionMatches()
+            || workspace is null
+            || string.IsNullOrWhiteSpace(selectedPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(selectedPath),
+                workspace.DocumentPath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private void SelectTab(string id) => SelectedTab = Tabs.FirstOrDefault(tab => tab.Id == id) ?? SelectedTab;

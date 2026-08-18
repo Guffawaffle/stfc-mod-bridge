@@ -550,6 +550,8 @@ public sealed class SyncTopologyEditSession
 
     public ConfigurationDocumentRevision BaselineRevision => snapshot.Revision;
 
+    public string DocumentPath => snapshot.Path;
+
     public bool HasLegacyRootTarget => baseline.HasLegacyRootTarget;
 
     public SyncTopologyPersistencePlan PreparePlan(bool migrateLegacyRoot = false) =>

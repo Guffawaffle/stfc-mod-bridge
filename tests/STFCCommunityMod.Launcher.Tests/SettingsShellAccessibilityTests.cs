@@ -150,6 +150,8 @@ public sealed class SettingsShellAccessibilityTests
             (string?)element.Attribute(Xaml + "Name") == "SettingsSaveBlockerText");
         var recovery = document.Descendants(Presentation + "Button").Single(element =>
             (string?)element.Attribute(Xaml + "Name") == "SettingsSaveRecoveryButton");
+        var settingsList = document.Descendants(Presentation + "ListBox").Single(element =>
+            (string?)element.Attribute(Xaml + "Name") == "SettingsList");
         var blockerBorder = blocker.Ancestors(Presentation + "Border").FirstOrDefault();
 
         Assert.IsNotNull(blockerBorder);
@@ -166,6 +168,7 @@ public sealed class SettingsShellAccessibilityTests
         Assert.AreEqual(
             "{Binding SaveAvailability}",
             (string?)recovery.Attribute(Automation + "AutomationProperties.HelpText"));
+        Assert.AreEqual("{Binding CanEdit}", (string?)settingsList.Attribute("IsEnabled"));
     }
 
     [TestMethod]
