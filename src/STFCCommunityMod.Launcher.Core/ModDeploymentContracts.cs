@@ -132,7 +132,8 @@ public sealed record ModDeploymentJournal(
     bool CommitParticipantCompleted = false,
     ModArtifactIdentityReceipt? ExistingArtifactIdentity = null,
     ModArtifactIdentityReceipt? ExistingRuntimeManifestIdentity = null,
-    ModInstallationAttribution? TargetInstallationAttribution = null);
+    ModInstallationAttribution? TargetInstallationAttribution = null,
+    bool PreserveLiveArtifactDuringRecovery = false);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,

@@ -43,6 +43,318 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public async Task CleanTargetRollbackDoesNotPublishAnAbsentDllOwnershipReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var committedReceiptCount = 0;
+        var service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: null,
+            reviewedCertification: null,
+            afterFileCheckpoint: (checkpoint, _) => checkpoint == ModDeploymentFileCheckpoint.TargetDllInstalled
+                ? ValueTask.FromException(new IOException("Injected post-move failure."))
+                : ValueTask.CompletedTask,
+            afterArtifactCommitted: (_, _) =>
+            {
+                committedReceiptCount++;
+                return true;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State, result.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual(0, committedReceiptCount);
+    }
+
+    [TestMethod]
+    public async Task ArtifactCommitReceiptRetainsTheExactStagedIdentity()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var exactStageStillPresent = true;
+        var service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: null,
+            reviewedCertification: null,
+            afterFileCheckpoint: (checkpoint, _) =>
+            {
+                if (checkpoint == ModDeploymentFileCheckpoint.TargetDllInstalled)
+                {
+                    File.Delete(targetPath);
+                    File.WriteAllBytes(targetPath, ArtifactContents);
+                }
+                return ValueTask.CompletedTask;
+            },
+            afterArtifactCommitted: (path, stagedRevision) =>
+            {
+                using var exact = ExactFileMutation.Open(path);
+                exactStageStillPresent = stagedRevision.Matches(exact.CaptureRevision());
+                return exactStageStillPresent;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsFalse(exactStageStillPresent);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+        CandidateFileIdentity externalIdentity;
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            externalIdentity = exact.Identity;
+        }
+        Assert.IsNull(service.ReadInstalledState(gameDirectory));
+        var journal = service.ReadJournal()!;
+        Assert.AreEqual(ModDeploymentPhase.Committing, journal.Phase);
+        Assert.IsTrue(journal.PreserveLiveArtifactDuringRecovery);
+
+        var recovery = await service.RecoverAsync();
+        var coordinatedRecovery = await service.RollBackCoordinatedAsync(journal.TransactionId);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, recovery.State, recovery.Message);
+        Assert.AreEqual(
+            ModDeploymentResultState.RecoveryRequired,
+            coordinatedRecovery.State,
+            coordinatedRecovery.Message);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            Assert.AreEqual(externalIdentity, exact.Identity);
+        }
+        Assert.IsNull(service.ReadInstalledState(gameDirectory));
+    }
+
+    [TestMethod]
+    public async Task ExactArtifactOwnershipConfirmationClearsRecoveryQuarantineOnCommit()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: null,
+            reviewedCertification: null,
+            afterFileCheckpoint: null,
+            afterArtifactCommitted: (path, stagedRevision) =>
+            {
+                using var exact = ExactFileMutation.Open(path);
+                return stagedRevision.Matches(exact.CaptureRevision());
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.IsFalse(service.ReadJournal()!.PreserveLiveArtifactDuringRecovery);
+        Assert.IsNotNull(service.ReadInstalledState(gameDirectory));
+    }
+
+    [TestMethod]
+    public async Task ImmediateDeploymentFailureHonorsExactOwnershipQuarantine()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var ownershipCallbackInvoked = false;
+        var service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: null,
+            reviewedCertification: null,
+            afterFileCheckpoint: (checkpoint, _) =>
+            {
+                if (checkpoint != ModDeploymentFileCheckpoint.TargetDllInstalled)
+                {
+                    return ValueTask.CompletedTask;
+                }
+                File.Delete(targetPath);
+                File.WriteAllBytes(targetPath, ArtifactContents);
+                return ValueTask.FromException(new IOException("Injected post-replacement failure."));
+            },
+            afterArtifactCommitted: (_, _) =>
+            {
+                ownershipCallbackInvoked = true;
+                return true;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+        CandidateFileIdentity externalIdentity;
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            externalIdentity = exact.Identity;
+        }
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsFalse(ownershipCallbackInvoked);
+        Assert.IsTrue(service.ReadJournal()!.PreserveLiveArtifactDuringRecovery);
+        Assert.IsNull(service.ReadInstalledState(gameDirectory));
+
+        var recovery = await service.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, recovery.State, recovery.Message);
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            Assert.AreEqual(externalIdentity, exact.Identity);
+        }
+    }
+
+    [TestMethod]
+    public async Task RollingBackCheckpointReplacementIsPreservedByExactOwnershipQuarantine()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        CandidateFileIdentity? externalIdentity = null;
+        var service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase == ModDeploymentPhase.RollingBack)
+                {
+                    File.Delete(targetPath);
+                    File.WriteAllBytes(targetPath, ArtifactContents);
+                    using var exact = ExactFileMutation.Open(targetPath);
+                    externalIdentity = exact.Identity;
+                }
+                return ValueTask.CompletedTask;
+            },
+            reviewedCertification: null,
+            afterFileCheckpoint: (checkpoint, _) => checkpoint == ModDeploymentFileCheckpoint.TargetDllInstalled
+                ? ValueTask.FromException(new IOException("Injected post-move failure."))
+                : ValueTask.CompletedTask,
+            afterArtifactCommitted: (_, _) => true);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsNotNull(externalIdentity);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            Assert.AreEqual(externalIdentity, exact.Identity);
+        }
+        Assert.IsTrue(service.ReadJournal()!.PreserveLiveArtifactDuringRecovery);
+        Assert.IsNull(service.ReadInstalledState(gameDirectory));
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ExactQuarantinePreservesLiveDllWhenRollbackBackupChanges(bool replaceBackup)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        File.WriteAllBytes(targetPath, [0x50, 0x52, 0x49, 0x4f, 0x52]);
+        CandidateFileIdentity? committedIdentity = null;
+        CandidateFileIdentity? replacementBackupIdentity = null;
+        string? rollbackPath = null;
+        ModDeploymentService? service = null;
+        service = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(ReleaseArtifact().ExpectedVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            DefaultAttribution(),
+            timeProvider: null,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase == ModDeploymentPhase.RollingBack)
+                {
+                    rollbackPath = service!.ReadJournal()!.SameVolumeBackupPath;
+                    var rollbackBytes = File.ReadAllBytes(rollbackPath);
+                    File.Delete(rollbackPath);
+                    if (replaceBackup)
+                    {
+                        File.WriteAllBytes(rollbackPath, rollbackBytes);
+                        using var exact = ExactFileMutation.Open(rollbackPath);
+                        replacementBackupIdentity = exact.Identity;
+                    }
+                }
+                return ValueTask.CompletedTask;
+            },
+            reviewedCertification: null,
+            afterFileCheckpoint: (checkpoint, _) =>
+            {
+                if (checkpoint != ModDeploymentFileCheckpoint.TargetDllInstalled)
+                {
+                    return ValueTask.CompletedTask;
+                }
+                using var exact = ExactFileMutation.Open(targetPath);
+                committedIdentity = exact.Identity;
+                return ValueTask.FromException(new IOException("Injected post-move failure."));
+            },
+            afterArtifactCommitted: (_, _) => true);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            ReleaseArtifact(),
+            ExistingArtifactPolicy.AdoptAndPreserve);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsNotNull(committedIdentity);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(targetPath));
+        using (var exact = ExactFileMutation.Open(targetPath))
+        {
+            Assert.AreEqual(committedIdentity, exact.Identity);
+        }
+        Assert.IsNotNull(rollbackPath);
+        Assert.AreEqual(replaceBackup, File.Exists(rollbackPath));
+        if (replaceBackup)
+        {
+            using var exact = ExactFileMutation.Open(rollbackPath);
+            Assert.AreEqual(replacementBackupIdentity, exact.Identity);
+        }
+        Assert.IsTrue(service.ReadJournal()!.PreserveLiveArtifactDuringRecovery);
+        Assert.IsNull(service.ReadInstalledState(gameDirectory));
+    }
+
+    [TestMethod]
     public void UnattributedInstalledStateFailsClosed()
     {
         using var temporaryDirectory = new TemporaryDirectory();
