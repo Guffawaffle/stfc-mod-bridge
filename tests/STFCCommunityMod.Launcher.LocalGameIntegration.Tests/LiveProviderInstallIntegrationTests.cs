@@ -30,13 +30,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             Assert.Inconclusive(
                 "Live provider releases are disabled. Add -UseLiveProviderReleases to the local runner.");
         }
-        if (new SystemGameProcessInspector().Inspect(gameDirectory) != GameProcessInspectionState.NotRunning)
-        {
-            Assert.Fail(
-                "The exact opted-in integration installation is running or cannot be attributed safely.");
-        }
-
-        using var campaign = new RestorableGameInstallCampaign(gameDirectory);
+        using var campaign = OpenCampaignThroughSanitizedBoundary(gameDirectory);
         Assert.IsFalse(
             File.Exists(Path.Combine(gameDirectory, "version.dll")),
             "Wave 1 requires the maintained clean target without version.dll.");
@@ -71,7 +65,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
             {
                 await InstallAndRemoveAsync(
                     endpoints[providerId],
-                    gameDirectory).ConfigureAwait(false);
+                    gameDirectory,
+                    campaign).ConfigureAwait(false);
                 campaign.AssertBaseline(
                     $"{providerId} install/remove did not restore the exact game target.");
                 TestContext.WriteLine($"{providerId}: trusted install and production removal passed");
@@ -134,18 +129,37 @@ public sealed partial class LiveProviderInstallIntegrationTests
     public async Task ConfigurationHistoryRestoreAndRecoveryReturnCleanBaseline()
     {
         var gameDirectory = RequireRecoveryTarget();
-        if (new SystemGameProcessInspector().Inspect(gameDirectory) != GameProcessInspectionState.NotRunning)
+        using var campaign = OpenCampaignThroughSanitizedBoundary(gameDirectory);
+        try
         {
-            Assert.Fail(
-                "The exact opted-in integration installation is running or cannot be attributed safely.");
+            RequireKnownGuffawaffleStableArtifact(gameDirectory);
         }
-        RequireKnownGuffawaffleStableArtifact(gameDirectory);
-
-        using var campaign = new RestorableGameInstallCampaign(gameDirectory);
+        catch (Exception exception) when (IsCampaignFailure(exception))
+        {
+            campaign.PreserveStateForRecovery();
+            throw SanitizedFailure(
+                "The recovery artifact preflight failed; isolated state was retained.",
+                exception,
+                gameDirectory,
+                campaign.StateDirectory);
+        }
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
-        var baselineConfiguration = File.Exists(configurationPath)
-            ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
-            : null;
+        byte[]? baselineConfiguration;
+        try
+        {
+            baselineConfiguration = File.Exists(configurationPath)
+                ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
+                : null;
+        }
+        catch (Exception exception) when (IsCampaignFailure(exception))
+        {
+            campaign.PreserveStateForRecovery();
+            throw SanitizedFailure(
+                "The configuration recovery baseline could not be captured; isolated state was retained.",
+                exception,
+                gameDirectory,
+                campaign.StateDirectory);
+        }
 
         Exception? journeyFailure = null;
         try
@@ -211,7 +225,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
         string stateDirectory,
         byte[]? baselineConfiguration,
         RestorableGameInstallCampaign campaign,
-        Action? beforeDirectConfigurationMutation = null)
+        Action? beforeDirectConfigurationMutation = null,
+        byte[]? createdConfigurationContents = null,
+        LauncherConfigurationDiagnosisEvidence? preflightEvidence = null)
     {
         var selection = new LauncherProviderSelection("guffawaffle", "stable");
         var selectionStore = new JsonLauncherProviderSelectionStore(stateDirectory);
@@ -219,6 +235,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         var backupStore = new ProviderScopedConfigurationBackupStore(stateDirectory);
         var operationLock = new LauncherOperationLock(stateDirectory);
         var original = baselineConfiguration
+            ?? createdConfigurationContents
             ?? "# local restore source\r\n[graphics]\r\nfree_resize = true\r\n"u8.ToArray();
         var changed = "# local recovery source\n[graphics]\nfree_resize = false\n"u8.ToArray();
         if (original.AsSpan().SequenceEqual(changed))
@@ -226,21 +243,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             changed = "# alternate local recovery source\r\n[graphics]\r\nfree_resize = true\r\n"u8.ToArray();
         }
 
-        if (baselineConfiguration is null)
-        {
-            var create = await ExecuteDirectConfigurationMutationAsync(
-                campaign,
-                beforeDirectConfigurationMutation,
-                () => new TomlConfigurationRepository(mutationAdmission: operationLock)
-                    .CommitDocumentAsync(new(
-                        configurationPath,
-                        ConfigurationDocumentRevision.FromContents([]),
-                        [],
-                        original,
-                        baselineExisted: false))).ConfigureAwait(false);
-            Assert.IsTrue(create.IsSuccess, create.Error);
-        }
-        else
+        if (baselineConfiguration is not null)
         {
             var read = new TomlConfigurationRepository().Read(configurationPath);
             Assert.AreEqual(
@@ -261,7 +264,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
             selectionStore,
             selection,
             stateDirectory,
-            configurationPath);
+            configurationPath,
+            diagnosisEvidence: preflightEvidence);
         var preflight = preflightCoordinator.LoadHistory().Single(entry =>
             string.Equals(
                 entry.Receipt.BackupId,
@@ -271,14 +275,41 @@ public sealed partial class LiveProviderInstallIntegrationTests
             preflight.CanRestore,
             "The protected baseline TOML must be restorable before the recovery lab can mutate it.");
 
+        if (baselineConfiguration is null)
+        {
+            var create = await ExecuteDirectConfigurationMutationAsync(
+                campaign,
+                beforeDirectConfigurationMutation,
+                () => new TomlConfigurationRepository(
+                        store: new AtomicTomlStore(
+                            beforeReplace: null,
+                            retainAdjacentBackup: true,
+                            mutationAdmission: campaign.AtomicTomlMutationAdmission),
+                        mutationAdmission: operationLock)
+                    .CommitDocumentAsync(new(
+                        configurationPath,
+                        ConfigurationDocumentRevision.FromContents([]),
+                        [],
+                        original,
+                        baselineExisted: false))).ConfigureAwait(false);
+            Assert.IsTrue(create.IsSuccess, create.Error);
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                original);
+        }
+
         var mutate = await ExecuteDirectConfigurationMutationAsync(
             campaign,
             beforeDirectConfigurationMutation,
             () => new TomlConfigurationRepository(
-                    mutationBackup: new ProviderScopedConfigurationMutationBackup(
-                        backupStore,
-                        selection.ProviderId,
-                        "local-integration/restore-source"),
+                    store: new AtomicTomlStore(
+                        new ProviderScopedConfigurationMutationBackup(
+                            backupStore,
+                            selection.ProviderId,
+                            "local-integration/restore-source"),
+                        beforeReplace: null,
+                        retainAdjacentBackup: false,
+                        mutationAdmission: campaign.AtomicTomlMutationAdmission),
                     mutationAdmission: operationLock)
                 .CommitDocumentAsync(new(
                     configurationPath,
@@ -286,6 +317,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     original,
                     changed))).ConfigureAwait(false);
         Assert.IsTrue(mutate.IsSuccess, mutate.Error);
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            changed);
         Assert.IsNotNull(mutate.BackupReceipt);
         CollectionAssert.AreEqual(
             original,
@@ -317,6 +351,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
             restored.Message);
         Assert.IsNotNull(restored.PreRestoreBackup);
         CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            original);
         CollectionAssert.AreEqual(
             changed,
             backupStore.Read(
@@ -353,6 +390,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
         Assert.AreEqual(
             ProviderConfigurationRestorePhase.RecoveryRequired,
             interruptedCoordinator.ReadJournal()?.Phase);
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            changed);
 
         var freshCoordinator = CreateConfigurationRestoreCoordinator(
             backupStore,
@@ -374,6 +414,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
             ProviderConfigurationRestorePhase.Completed,
             freshCoordinator.ReadJournal()?.Phase);
         CollectionAssert.AreEqual(changed, await File.ReadAllBytesAsync(configurationPath));
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            changed);
         CollectionAssert.AreEqual(
             original,
             backupStore.Read(
@@ -396,6 +439,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
             finalRestore.State,
             finalRestore.Message);
         CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            original);
     }
 
     private static async Task<ConfigurationRepositoryCommitResult> ExecuteDirectConfigurationMutationAsync(
@@ -472,9 +518,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
         LauncherProviderSelection selection,
         string stateDirectory,
         string configurationPath,
-        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null)
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint = null,
+        LauncherConfigurationDiagnosisEvidence? diagnosisEvidence = null)
     {
-        var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
+        var evidence = diagnosisEvidence ?? LauncherConfigurationDiagnosisEvidence.Supported(
             selection.ProviderId,
             selection.ReleaseChannelId,
             LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
@@ -502,6 +549,30 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 gameProcessInspector: null,
                 timeProvider: null,
                 checkpoint);
+    }
+
+    private static RestorableGameInstallCampaign OpenCampaignThroughSanitizedBoundary(
+        string gameDirectory,
+        Func<string, RestorableGameInstallCampaign>? factory = null)
+    {
+        try
+        {
+            if (new SystemGameProcessInspector().Inspect(gameDirectory)
+                != GameProcessInspectionState.NotRunning)
+            {
+                throw new InvalidOperationException(
+                    "The exact opted-in integration installation is running or cannot be attributed safely.");
+            }
+            return (factory ?? (path => new RestorableGameInstallCampaign(path)))(gameDirectory);
+        }
+        catch (Exception exception) when (IsCampaignFailure(exception))
+        {
+            throw SanitizedFailure(
+                "The local recovery campaign could not be opened.",
+                exception,
+                gameDirectory,
+                "%STATE_DIR%");
+        }
     }
 
     private static AssertFailedException SanitizedFailure(
@@ -538,6 +609,17 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
     private static Exception CombineFailures(Exception primary, Exception? secondary) =>
         secondary is null ? primary : new AggregateException(primary, secondary);
+
+    private static bool IsCampaignFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException
+            or System.Text.Json.JsonException
+            or CryptographicException
+            or AssertFailedException;
 
     private static void RequireKnownGuffawaffleStableArtifact(string gameDirectory)
     {
@@ -591,6 +673,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
             var installed = await endpoints["guffawaffle"].Coordinator.ExecuteAsync(
                 guffawaffleInstall).ConfigureAwait(false);
             Assert.IsTrue(installed.IsSuccess, installed.Message);
+            campaign.RecordOwnedGameFileRevision(
+                "version.dll",
+                installed.InstalledState!.Sha256);
             campaign.WriteGameFileAtomically(
                 "community_patch_settings.toml",
                 guffawaffleConfiguration);
@@ -621,6 +706,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 toNetniv,
                 toNetniv.ConfirmationText).ConfigureAwait(false);
             Assert.AreEqual("netniv", netnivResult.InstalledArtifact!.ProviderId);
+            campaign.RecordOwnedGameFileRevision(
+                "version.dll",
+                netnivResult.InstalledArtifact.Sha256);
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                netnivConfiguration);
             CollectionAssert.AreEqual(netnivConfiguration, File.ReadAllBytes(configurationPath));
 
             var toGuffawaffle = await switchCoordinator.PreviewAsync(
@@ -633,6 +724,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 toGuffawaffle,
                 toGuffawaffle.ConfirmationText).ConfigureAwait(false);
             Assert.AreEqual("guffawaffle", guffawaffleResult.InstalledArtifact!.ProviderId);
+            campaign.RecordOwnedGameFileRevision(
+                "version.dll",
+                guffawaffleResult.InstalledArtifact.Sha256);
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                guffawaffleConfiguration);
             CollectionAssert.AreEqual(guffawaffleConfiguration, File.ReadAllBytes(configurationPath));
 
             var removal = await endpoints["guffawaffle"].Coordinator.UninstallAsync(gameDirectory).ConfigureAwait(false);
@@ -646,7 +743,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
     private static async Task InstallAndRemoveAsync(
         ProviderEndpoint endpoint,
-        string gameDirectory)
+        string gameDirectory,
+        RestorableGameInstallCampaign campaign)
     {
         var preparation = await endpoint.Coordinator.PrepareLatestAsync(
             gameDirectory,
@@ -658,6 +756,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
         Assert.IsTrue(installation.IsSuccess, installation.Message);
         Assert.AreEqual(endpoint.ProviderId, installation.InstalledState?.ProviderId);
         Assert.IsTrue(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+        campaign.RecordOwnedGameFileRevision(
+            "version.dll",
+            installation.InstalledState!.Sha256);
 
         var removal = await endpoint.Coordinator.UninstallAsync(gameDirectory).ConfigureAwait(false);
         Assert.IsTrue(removal.IsSuccess, removal.Message);
@@ -865,6 +966,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
     private enum DirectGameMutationKind
     {
+        WriteTomlTemporary,
+        PromoteTomlTemporary,
+        DeleteTomlTemporary,
         WriteRestoreStage,
         PromoteRestoreStage,
         DeleteGameFile,
@@ -879,26 +983,46 @@ public sealed partial class LiveProviderInstallIntegrationTests
         private readonly Dictionary<string, FileBaseline> baseline;
         private readonly IGameProcessInspector gameProcessInspector;
         private readonly Action<DirectGameMutationKind, string>? beforeMutation;
+        private readonly Action<string>? beforeStateDirectoryDelete;
+        private readonly Dictionary<string, CandidateFileIdentity> createdStages = new(
+            OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal);
+        private readonly Dictionary<string, HashSet<OwnedFileRevision>> ownedFileRevisions =
+            new(StringComparer.OrdinalIgnoreCase);
         private bool disposed;
         private bool preserveState;
 
         public RestorableGameInstallCampaign(
             string gameDirectory,
             IGameProcessInspector? gameProcessInspector = null,
-            Action<DirectGameMutationKind, string>? beforeMutation = null)
+            Action<DirectGameMutationKind, string>? beforeMutation = null,
+            Action<string>? beforeStateDirectoryDelete = null)
         {
-            this.gameDirectory = Path.GetFullPath(gameDirectory);
             this.gameProcessInspector = gameProcessInspector ?? new SystemGameProcessInspector();
             this.beforeMutation = beforeMutation;
-            baseline = Capture(this.gameDirectory);
-            StateDirectory = Path.Combine(
-                Path.GetTempPath(),
-                "stfc-bridge-local-integration",
-                Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(StateDirectory);
+            this.beforeStateDirectoryDelete = beforeStateDirectoryDelete;
+            try
+            {
+                this.gameDirectory = Path.GetFullPath(gameDirectory);
+                baseline = Capture(this.gameDirectory);
+                StateDirectory = Path.Combine(
+                    Path.GetTempPath(),
+                    "stfc-bridge-local-integration",
+                    Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(StateDirectory);
+                AtomicTomlMutationAdmission = new CampaignAtomicTomlMutationAdmission(this);
+            }
+            catch (Exception exception) when (IsCampaignFailure(exception))
+            {
+                throw new InvalidOperationException(
+                    "The local recovery campaign could not capture its protected baseline or create isolated recovery state.");
+            }
         }
 
         public string StateDirectory { get; }
+
+        public IAtomicTomlMutationAdmission AtomicTomlMutationAdmission { get; }
 
         public void AssertBaseline(string message)
         {
@@ -916,21 +1040,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
         {
             RestoreFile("version.dll");
             RestoreFile("community_patch_settings.toml");
-            foreach (var path in Directory.EnumerateFiles(gameDirectory, ".version.dll.*"))
+            foreach (var path in createdStages.Keys.ToArray())
             {
-                var name = Path.GetFileName(path);
-                if (name.EndsWith(".stage", StringComparison.Ordinal)
-                    || name.EndsWith(".rollback", StringComparison.Ordinal)
-                    || name.EndsWith(".restore-stage", StringComparison.Ordinal))
-                {
-                    DeleteGameFile(path, DirectGameMutationKind.DeleteRestoreStage);
-                }
-            }
-            foreach (var path in Directory.EnumerateFiles(
-                         gameDirectory,
-                         ".stfc-bridge-integration-*.restore-stage"))
-            {
-                DeleteGameFile(path, DirectGameMutationKind.DeleteRestoreStage);
+                DeleteCreatedStage(path);
             }
         }
 
@@ -945,7 +1057,33 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     nameof(fileName),
                     "The recovery harness writes only its two protected game files.");
             }
-            ReplaceFileAtomically(Path.Combine(gameDirectory, fileName), contents);
+            var path = Path.Combine(gameDirectory, fileName);
+            var current = File.Exists(path) ? FileBaseline.Capture(path) : null;
+            if (current is not null && !CanMutateProtectedRevision(fileName, current))
+            {
+                throw new InvalidOperationException(
+                    "The live protected file changed outside the campaign and was preserved.");
+            }
+            ReplaceFileAtomically(path, contents, current);
+        }
+
+        public void RecordOwnedGameFileRevision(string fileName, byte[] contents) =>
+            RecordOwnedGameFileRevision(
+                fileName,
+                Convert.ToHexString(SHA256.HashData(contents)));
+
+        public void RecordOwnedGameFileRevision(string fileName, string sha256)
+        {
+            ValidateProtectedFileName(fileName);
+            var path = Path.Combine(gameDirectory, fileName);
+            using var exact = ExactFileMutation.Open(path);
+            var live = FileBaseline.FromExact(exact);
+            if (!string.Equals(live.Sha256, sha256, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The live protected file does not match its completed mutation receipt.");
+            }
+            RecordOwnedGameFileRevision(fileName, exact.Identity, sha256);
         }
 
         public void EnsureGameClosedForMutation()
@@ -969,7 +1107,17 @@ public sealed partial class LiveProviderInstallIntegrationTests
             disposed = true;
             if (!preserveState && Directory.Exists(StateDirectory))
             {
-                Directory.Delete(StateDirectory, recursive: true);
+                try
+                {
+                    beforeStateDirectoryDelete?.Invoke(StateDirectory);
+                    Directory.Delete(StateDirectory, recursive: true);
+                }
+                catch (Exception exception) when (
+                    exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new AssertFailedException(
+                        "The isolated %STATE_DIR% could not be removed; no raw path was emitted.");
+                }
             }
         }
 
@@ -980,7 +1128,13 @@ public sealed partial class LiveProviderInstallIntegrationTests
             {
                 if (File.Exists(path))
                 {
-                    DeleteGameFile(path, DirectGameMutationKind.DeleteGameFile);
+                    var appeared = FileBaseline.Capture(path);
+                    if (!IsOwnedRevision(fileName, appeared))
+                    {
+                        throw new InvalidOperationException(
+                            "An unowned protected file appeared during cleanup and was preserved.");
+                    }
+                    DeleteOwnedGameFile(fileName, path, appeared);
                 }
                 return;
             }
@@ -994,30 +1148,94 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
             if (current is null || !original.ContentsMatch(current))
             {
-                ReplaceFileAtomically(path, original.Contents!);
+                if (current is not null && !IsOwnedRevision(fileName, current))
+                {
+                    throw new InvalidOperationException(
+                        "The live protected file changed outside the campaign and was preserved.");
+                }
+                ReplaceFileAtomically(path, original.Contents!, current);
+                current = FileBaseline.Capture(path);
             }
-            RestoreMetadata(path, original);
+            else if (!IsOwnedRevision(fileName, current))
+            {
+                throw new InvalidOperationException(
+                    "An external protected-file revision was preserved without metadata mutation.");
+            }
+            RestoreMetadata(fileName, path, original, current);
         }
 
-        private void ReplaceFileAtomically(string path, byte[] contents)
+        private void ReplaceFileAtomically(
+            string path,
+            byte[] contents,
+            FileBaseline? expectedCurrent)
         {
+            var fileName = Path.GetFileName(path);
             var stagePath = Path.Combine(
                 gameDirectory,
-                $".stfc-bridge-integration-{Path.GetFileName(path)}.{Guid.NewGuid():N}.restore-stage");
+                $".stfc-bridge-integration-{fileName}.{Guid.NewGuid():N}.restore-stage");
             Exception? primaryFailure = null;
             try
             {
                 AdmitMutation(DirectGameMutationKind.WriteRestoreStage, stagePath);
-                File.WriteAllBytes(stagePath, contents);
-                AdmitMutation(DirectGameMutationKind.PromoteRestoreStage, path);
-                if (File.Exists(path))
+                using (var stream = new FileStream(
+                    stagePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.WriteThrough))
                 {
-                    File.Replace(stagePath, path, null, ignoreMetadataErrors: true);
+                    createdStages.Add(
+                        stagePath,
+                        CandidateFileNative.ReadIdentity(stream.SafeFileHandle));
+                    stream.Write(contents);
+                    stream.Flush(flushToDisk: true);
+                }
+                AdmitMutation(DirectGameMutationKind.PromoteRestoreStage, path);
+                using (var stage = ExactFileMutation.Open(stagePath))
+                {
+                    if (!createdStages.TryGetValue(stagePath, out var stageIdentity)
+                        || stage.Identity != stageIdentity
+                        || !FileBaseline.FromExact(stage).ContentsMatch(
+                            FileBaseline.FromContents(contents)))
+                    {
+                        throw new InvalidOperationException(
+                            "The restore stage changed outside the campaign and was preserved.");
+                    }
+                }
+                if (expectedCurrent is null)
+                {
+                    if (File.Exists(path))
+                    {
+                        throw new InvalidOperationException(
+                            "A protected file appeared before atomic promotion and was preserved.");
+                    }
+                    EnsureGameClosedForMutation();
+                    File.Move(stagePath, path);
                 }
                 else
                 {
-                    File.Move(stagePath, path);
+                    using (var destination = ExactFileMutation.Open(path))
+                    {
+                        if (expectedCurrent.Identity != destination.Identity
+                            || !expectedCurrent.Matches(FileBaseline.FromExact(destination)))
+                        {
+                            throw new InvalidOperationException(
+                                "The protected file changed before atomic promotion and was preserved.");
+                        }
+                    }
+                    EnsureGameClosedForMutation();
+                    File.Replace(stagePath, path, null, ignoreMetadataErrors: true);
                 }
+                var promoted = FileBaseline.Capture(path);
+                if (!createdStages.TryGetValue(stagePath, out var promotedIdentity)
+                    || promoted.Identity != promotedIdentity)
+                {
+                    throw new InvalidOperationException(
+                        "The promoted protected file does not match its owned stage identity.");
+                }
+                RecordOwnedGameFileRevision(fileName, promotedIdentity, promoted.Sha256);
+                createdStages.Remove(stagePath);
             }
             catch (Exception exception)
             {
@@ -1030,7 +1248,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 {
                     try
                     {
-                        DeleteGameFile(stagePath, DirectGameMutationKind.DeleteRestoreStage);
+                        DeleteCreatedStage(stagePath);
                     }
                     catch when (primaryFailure is not null)
                     {
@@ -1040,40 +1258,192 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
         }
 
-        private void RestoreMetadata(string path, FileBaseline original)
+        private void RestoreMetadata(
+            string fileName,
+            string path,
+            FileBaseline original,
+            FileBaseline expectedCurrent)
         {
-            var attributes = File.GetAttributes(path);
-            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(path).Ticks;
+            using var exact = ExactFileMutation.OpenForMetadata(path);
+            var locked = FileBaseline.FromExact(exact);
+            if (expectedCurrent.Identity != exact.Identity
+                || !expectedCurrent.Matches(locked)
+                || !IsOwnedRevision(fileName, locked))
+            {
+                throw new InvalidOperationException(
+                    "The protected file changed before metadata restoration and was preserved.");
+            }
+            var attributes = locked.Attributes;
+            var lastWriteTimeUtc = locked.LastWriteTimeUtcTicks;
             if (lastWriteTimeUtc != original.LastWriteTimeUtcTicks
                 && attributes.HasFlag(FileAttributes.ReadOnly))
             {
                 AdmitMutation(DirectGameMutationKind.RestoreAttributes, path);
-                File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+                exact.SetMetadata(attributes & ~FileAttributes.ReadOnly, lastWriteTimeUtc);
+                attributes &= ~FileAttributes.ReadOnly;
             }
             if (lastWriteTimeUtc != original.LastWriteTimeUtcTicks)
             {
                 AdmitMutation(DirectGameMutationKind.RestoreLastWriteTime, path);
-                File.SetLastWriteTimeUtc(
-                    path,
-                    new(original.LastWriteTimeUtcTicks, DateTimeKind.Utc));
+                exact.SetMetadata(attributes, original.LastWriteTimeUtcTicks);
+                lastWriteTimeUtc = original.LastWriteTimeUtcTicks;
             }
-            if (File.GetAttributes(path) != original.Attributes)
+            if (attributes != original.Attributes)
             {
                 AdmitMutation(DirectGameMutationKind.RestoreAttributes, path);
-                File.SetAttributes(path, original.Attributes);
+                exact.SetMetadata(original.Attributes, lastWriteTimeUtc);
             }
-        }
-
-        private void DeleteGameFile(string path, DirectGameMutationKind kind)
-        {
-            AdmitMutation(kind, path);
-            File.Delete(path);
         }
 
         private void AdmitMutation(DirectGameMutationKind kind, string path)
         {
-            EnsureGameClosedForMutation();
             beforeMutation?.Invoke(kind, path);
+            EnsureGameClosedForMutation();
+        }
+
+        private void DeleteOwnedGameFile(
+            string fileName,
+            string path,
+            FileBaseline expected)
+        {
+            using var exact = ExactFileMutation.Open(path);
+            var locked = FileBaseline.FromExact(exact);
+            if (expected.Identity != exact.Identity
+                || !expected.Matches(locked)
+                || !IsOwnedRevision(fileName, locked))
+            {
+                throw new InvalidOperationException(
+                    "The protected file changed before owned cleanup and was preserved.");
+            }
+            AdmitMutation(DirectGameMutationKind.DeleteGameFile, path);
+            exact.DeleteExact();
+        }
+
+        private void DeleteCreatedStage(string path)
+        {
+            if (!createdStages.TryGetValue(path, out var expectedIdentity))
+            {
+                return;
+            }
+            if (!File.Exists(path))
+            {
+                createdStages.Remove(path);
+                return;
+            }
+            using var exact = ExactFileMutation.Open(path);
+            if (exact.Identity != expectedIdentity)
+            {
+                return;
+            }
+            AdmitMutation(DirectGameMutationKind.DeleteRestoreStage, path);
+            exact.DeleteExact();
+            createdStages.Remove(path);
+        }
+
+        private void AdmitAtomicTomlMutation(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath)
+        {
+            var canonicalDestination = Path.GetFullPath(destinationPath);
+            if (!string.Equals(
+                    Path.GetDirectoryName(canonicalDestination),
+                    gameDirectory,
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    Path.GetFileName(canonicalDestination),
+                    "community_patch_settings.toml",
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    Path.GetDirectoryName(Path.GetFullPath(temporaryPath)),
+                    gameDirectory,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Atomic TOML admission escaped the exact opted-in installation.");
+            }
+            AdmitMutation(
+                boundary switch
+                {
+                    AtomicTomlMutationBoundary.TemporaryWrite =>
+                        DirectGameMutationKind.WriteTomlTemporary,
+                    AtomicTomlMutationBoundary.Promotion =>
+                        DirectGameMutationKind.PromoteTomlTemporary,
+                    AtomicTomlMutationBoundary.TemporaryDelete =>
+                        DirectGameMutationKind.DeleteTomlTemporary,
+                    _ => throw new ArgumentOutOfRangeException(nameof(boundary)),
+                },
+                boundary == AtomicTomlMutationBoundary.Promotion
+                    ? canonicalDestination
+                    : temporaryPath);
+        }
+
+        private void RecordOwnedGameFileRevision(
+            string fileName,
+            CandidateFileIdentity identity,
+            string sha256)
+        {
+            ValidateProtectedFileName(fileName);
+            if (!ownedFileRevisions.TryGetValue(fileName, out var revisions))
+            {
+                revisions = [];
+                ownedFileRevisions.Add(fileName, revisions);
+            }
+            revisions.Add(new(identity, sha256));
+        }
+
+        private bool CanMutateProtectedRevision(string fileName, FileBaseline current) =>
+            (baseline.TryGetValue(fileName, out var original)
+                && original.Identity == current.Identity
+                && original.Matches(current))
+            || IsOwnedRevision(fileName, current);
+
+        private bool IsOwnedRevision(string fileName, FileBaseline current) =>
+            current.Identity is not null
+            && ownedFileRevisions.TryGetValue(fileName, out var revisions)
+            && revisions.Contains(new(current.Identity, current.Sha256));
+
+        private static void ValidateProtectedFileName(string fileName)
+        {
+            if (fileName is not ("version.dll" or "community_patch_settings.toml"))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(fileName),
+                    "The recovery harness owns only its two protected game files.");
+            }
+        }
+
+        private sealed record OwnedFileRevision(
+            CandidateFileIdentity Identity,
+            string Sha256);
+
+        private sealed class CampaignAtomicTomlMutationAdmission(
+            RestorableGameInstallCampaign campaign) : IAtomicTomlMutationAdmission
+        {
+            public ValueTask AdmitAsync(
+                AtomicTomlMutationBoundary boundary,
+                string temporaryPath,
+                string destinationPath,
+                CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                campaign.AdmitAtomicTomlMutation(boundary, temporaryPath, destinationPath);
+                return ValueTask.CompletedTask;
+            }
+
+            public void TemporaryCreated(
+                string temporaryPath,
+                CandidateFileIdentity identity) =>
+                campaign.createdStages[Path.GetFullPath(temporaryPath)] = identity;
+
+            public void TemporaryRemoved(string temporaryPath) =>
+                campaign.createdStages.Remove(Path.GetFullPath(temporaryPath));
+
+            public void VerifyCommitAllowed(
+                AtomicTomlMutationBoundary boundary,
+                string temporaryPath,
+                string destinationPath) =>
+                campaign.EnsureGameClosedForMutation();
         }
 
         private static Dictionary<string, FileBaseline> Capture(string directory) =>
@@ -1091,6 +1461,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
             string Sha256,
             byte[]? Contents)
         {
+            public CandidateFileIdentity? Identity { get; init; }
+
             public static FileBaseline Capture(string path)
             {
                 var attributes = File.GetAttributes(path);
@@ -1112,7 +1484,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new InvalidDataException(
                             "A restorable integration baseline file exceeds 128 MiB.");
                     }
-                    contents = File.ReadAllBytes(path);
+                    using var exact = ExactFileMutation.Open(path);
+                    return FromExact(exact, includeContents: true);
                 }
                 using var stream = File.OpenRead(path);
                 return new(
@@ -1122,6 +1495,30 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     Convert.ToHexString(SHA256.HashData(stream)),
                     contents);
             }
+
+            public static FileBaseline FromExact(
+                ExactFileMutation exact,
+                bool includeContents = false)
+            {
+                var revision = exact.CaptureRevision();
+                return new(
+                    revision.Attributes,
+                    revision.Length,
+                    revision.LastWriteTimeUtcTicks,
+                    revision.Sha256,
+                    includeContents ? exact.ReadAllBytes() : null)
+                {
+                    Identity = revision.Identity,
+                };
+            }
+
+            public static FileBaseline FromContents(byte[] contents) =>
+                new(
+                    FileAttributes.Normal,
+                    contents.LongLength,
+                    0,
+                    Convert.ToHexString(SHA256.HashData(contents)),
+                    contents);
 
             public bool Matches(FileBaseline other) =>
                 Attributes == other.Attributes
