@@ -295,12 +295,15 @@ public sealed class ConfigurationWorkspace
             ConfigurationWorkspaceTransitionReason.Committed,
             plan.Mutations.Select(mutation => mutation.Path),
             DraftInvalidations | ConfigurationWorkspaceInvalidation.ExternalState);
-        return new(
+        return new SyncTopologyPersistenceCommitResult(
             result.State,
             result.CommittedSnapshot,
             plan,
             result.BackupPath,
-            BackupReceipt: result.BackupReceipt);
+            BackupReceipt: result.BackupReceipt)
+        {
+            Warning = result.Warning,
+        };
     }
 
     public async Task<ConfigurationRepositoryCommitResult> CommitAsync(

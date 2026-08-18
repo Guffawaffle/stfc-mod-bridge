@@ -7,6 +7,47 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class AtomicTomlStoreTests
 {
     [TestMethod]
+    public void ExactFileMutationMovesTheLockedIdentityWithoutReplacement()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var source = Path.Combine(temporaryDirectory.Path, "source.tmp");
+        var destination = Path.Combine(temporaryDirectory.Path, "destination.toml");
+        File.WriteAllText(source, "owned");
+
+        using (var exact = ExactFileMutation.Open(source))
+        {
+            exact.MoveNoReplace(destination);
+            Assert.IsFalse(File.Exists(source));
+            Assert.IsTrue(File.Exists(destination));
+            Assert.AreEqual(destination, exact.Path);
+        }
+
+        Assert.AreEqual("owned", File.ReadAllText(destination));
+    }
+
+    [TestMethod]
+    public void ExactFileMutationQuarantinesThenPromotesWithoutReplacement()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var stagePath = Path.Combine(temporaryDirectory.Path, "stage.tmp");
+        var destinationPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var rollbackPath = Path.Combine(temporaryDirectory.Path, "rollback.tmp");
+        File.WriteAllText(stagePath, "new");
+        File.WriteAllText(destinationPath, "old");
+
+        using var stage = ExactFileMutation.Open(stagePath);
+        using (var destination = ExactFileMutation.Open(destinationPath))
+        {
+            destination.MoveNoReplace(rollbackPath);
+        }
+        stage.MoveNoReplace(destinationPath);
+        stage.Dispose();
+
+        Assert.AreEqual("new", File.ReadAllText(destinationPath));
+        Assert.AreEqual("old", File.ReadAllText(rollbackPath));
+    }
+
+    [TestMethod]
     public async Task SetOverrideReplacesAtomicallyAndMaintainsBackup()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -210,24 +251,20 @@ public sealed class AtomicTomlStoreTests
     [DataTestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task LateDestinationChangeAtFinalAdmissionIsRestored(bool useDocumentSave)
+    public async Task FinalAdmissionCannotSwapTheLockedDestination(bool useDocumentSave)
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
         var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
         var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
-        var external = Encoding.UTF8.GetBytes(
-            "[settings]\nenabled = false\nexternal = \"late\"\n");
         await File.WriteAllBytesAsync(configPath, original);
-        var injected = false;
         var admission = new CallbackMutationAdmission
         {
             OnVerifyCommit = (boundary, _, destination) =>
             {
-                if (!injected && boundary == AtomicTomlMutationBoundary.Promotion)
+                if (boundary == AtomicTomlMutationBoundary.Promotion)
                 {
-                    injected = true;
-                    File.WriteAllBytes(destination, external);
+                    File.WriteAllText(destination, "external path swap");
                 }
             },
         };
@@ -240,8 +277,156 @@ public sealed class AtomicTomlStoreTests
             ? await store.SaveDocumentAsync(configPath, original, updated)
             : await store.SetOverrideAsync(configPath, "settings.enabled", "true");
 
-        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State, result.Error);
-        CollectionAssert.AreEqual(external, await File.ReadAllBytesAsync(configPath));
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task FinalAdmissionCannotAlterTheLockedStage()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnVerifyCommit = (boundary, temporary, _) =>
+            {
+                if (boundary == AtomicTomlMutationBoundary.Promotion)
+                {
+                    File.WriteAllText(temporary, "external stage swap");
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: admission);
+
+        var result = await store.SetOverrideAsync(
+            configPath,
+            "settings.enabled",
+            "true");
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task RollbackPathSquattingCannotOverwriteExternalBytes()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var sentinel = Encoding.UTF8.GetBytes("external rollback sentinel");
+        string? rollbackPath = null;
+        await File.WriteAllBytesAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnPreparing = (role, temporary, _, _, _, _, _) =>
+            {
+                if (role == AtomicTomlTemporaryRole.Rollback)
+                {
+                    rollbackPath = temporary;
+                }
+            },
+            OnVerifyCommit = (boundary, _, _) =>
+            {
+                if (boundary == AtomicTomlMutationBoundary.Promotion
+                    && rollbackPath is not null)
+                {
+                    File.WriteAllBytes(rollbackPath, sentinel);
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: admission);
+
+        var result = await store.SetOverrideAsync(
+            configPath,
+            "settings.enabled",
+            "true");
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        Assert.IsNotNull(rollbackPath);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configPath));
+        CollectionAssert.AreEqual(sentinel, await File.ReadAllBytesAsync(rollbackPath));
+    }
+
+    [TestMethod]
+    public async Task ReceiptFailureAfterPromotionReportsCommittedSuccessWithRecoveryWarning()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnCreatedWithRole = (role, _) =>
+            {
+                if (role == AtomicTomlTemporaryRole.Rollback)
+                {
+                    throw new IOException("Injected post-commit receipt failure.");
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: admission);
+
+        var result = await store.SaveDocumentAsync(configPath, original, updated);
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, result.State, result.Error);
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Warning));
+        Assert.IsNotNull(result.BackupPath);
+        Assert.IsTrue(File.Exists(result.BackupPath));
+        CollectionAssert.AreEqual(updated, await File.ReadAllBytesAsync(configPath));
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(result.BackupPath));
+    }
+
+    [TestMethod]
+    public async Task RepositoryPropagatesCommittedCleanupWarningAndSnapshot()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnCreatedWithRole = (role, _) =>
+            {
+                if (role == AtomicTomlTemporaryRole.Rollback)
+                {
+                    throw new IOException("Injected post-commit receipt failure.");
+                }
+            },
+        };
+        var repository = new TomlConfigurationRepository(
+            new AtomicTomlStore(
+                beforeReplace: null,
+                retainAdjacentBackup: false,
+                mutationAdmission: admission));
+
+        var result = await repository.CommitDocumentAsync(
+            new ConfigurationDocumentCommitRequest(
+                configPath,
+                ConfigurationDocumentRevision.FromContents(original),
+                original,
+                updated));
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsNotNull(result.CommittedSnapshot);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Warning));
+        CollectionAssert.AreEqual(updated, result.CommittedSnapshot.Contents);
+        CollectionAssert.AreEqual(updated, await File.ReadAllBytesAsync(configPath));
     }
 
     [TestMethod]
@@ -308,6 +493,43 @@ public sealed class AtomicTomlStoreTests
             "true");
 
         Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State);
+        Assert.AreEqual(original, await File.ReadAllTextAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task TemporaryWriteRechecksAdmissionAfterReceiptPreparation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        await File.WriteAllTextAsync(configPath, original);
+        var prepared = false;
+        var admission = new CallbackMutationAdmission
+        {
+            OnPreparing = (role, _, _, _, _, _, _) =>
+            {
+                if (role == AtomicTomlTemporaryRole.WriteStage)
+                {
+                    prepared = true;
+                }
+            },
+            OnVerifyCommit = (boundary, _, _) =>
+            {
+                if (prepared && boundary == AtomicTomlMutationBoundary.TemporaryWrite)
+                {
+                    throw new InvalidOperationException("Injected post-receipt admission failure.");
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: admission);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SetOverrideAsync(configPath, "settings.enabled", "true"));
+
         Assert.AreEqual(original, await File.ReadAllTextAsync(configPath));
         Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
     }
@@ -414,7 +636,7 @@ public sealed class AtomicTomlStoreTests
                 "settings.enabled",
                 "true",
                 cancellation.Token));
-        Assert.AreEqual(1, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
 
         var retry = await store.SetOverrideAsync(
                 configPath,
@@ -773,6 +995,8 @@ public sealed class AtomicTomlStoreTests
 
         public Action<string>? OnCreated { get; init; }
 
+        public Action<AtomicTomlTemporaryRole, string>? OnCreatedWithRole { get; init; }
+
         public Action<string, long, string, bool>? OnCompleted { get; init; }
 
         public Action<string>? OnRemoved { get; init; }
@@ -797,7 +1021,12 @@ public sealed class AtomicTomlStoreTests
             long expectedSize,
             string expectedSha256,
             bool deletionAllowed,
-            string? committedDestinationSha256) =>
+            string? committedDestinationSha256,
+            CandidateFileIdentity? expectedIdentity = null,
+            FileAttributes? expectedAttributes = null,
+            long? expectedLastWriteTimeUtcTicks = null,
+            FileAttributes? committedDestinationAttributes = null,
+            long? committedDestinationLastWriteTimeUtcTicks = null) =>
             OnPreparing?.Invoke(
                 role,
                 temporaryPath,
@@ -809,8 +1038,12 @@ public sealed class AtomicTomlStoreTests
 
         public void TemporaryCreated(
             AtomicTomlTemporaryRole role,
-            string temporaryPath) =>
+            string temporaryPath,
+            CandidateFileIdentity identity)
+        {
             OnCreated?.Invoke(temporaryPath);
+            OnCreatedWithRole?.Invoke(role, temporaryPath);
+        }
 
         public void TemporaryCompleted(
             AtomicTomlTemporaryRole role,

@@ -155,6 +155,8 @@ public sealed record ConfigurationRepositoryCommitResult(
     public bool IsSuccess =>
         State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange
         && CommittedSnapshot is not null;
+
+    public string? Warning { get; init; }
 }
 
 public sealed class ConfigurationDocumentCommitRequest
