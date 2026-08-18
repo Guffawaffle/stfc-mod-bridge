@@ -130,14 +130,11 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                 BackupReceipt: write.BackupReceipt);
         }
 
-        return new ConfigurationRepositoryCommitResult(
+        return new(
             write.State,
             new ConfigurationDocumentSnapshot(request.Path, transformed.Contents),
             write.BackupPath,
-            BackupReceipt: write.BackupReceipt)
-        {
-            Warning = write.Warning,
-        };
+            BackupReceipt: write.BackupReceipt);
     }
 
     public async Task<ConfigurationRepositoryCommitResult> CommitDocumentAsync(
@@ -182,23 +179,18 @@ public sealed class TomlConfigurationRepository : IConfigurationRepository
                     request.DesiredContents,
                     token),
             cancellationToken).ConfigureAwait(false);
-        if (write.IsSuccess)
-        {
-            return new ConfigurationRepositoryCommitResult(
+        return write.IsSuccess
+            ? new(
                 write.State,
                 new ConfigurationDocumentSnapshot(request.Path, request.DesiredContents),
                 write.BackupPath,
                 BackupReceipt: write.BackupReceipt)
-            {
-                Warning = write.Warning,
-            };
-        }
-        return new(
-            write.State,
-            BackupPath: write.BackupPath,
-            ValidationError: write.ValidationError,
-            Error: write.Error,
-            BackupReceipt: write.BackupReceipt);
+            : new(
+                write.State,
+                BackupPath: write.BackupPath,
+                ValidationError: write.ValidationError,
+                Error: write.Error,
+                BackupReceipt: write.BackupReceipt);
     }
 
     private async Task<AtomicTomlWriteResult> WriteWithAdmissionAsync(

@@ -910,9 +910,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 diagnosticPreview = ProviderSession.ApplicationComposition.SharedServices.Diagnostics.BuildPreview();
                 viewModel.ReportDiagnosticAction(
                     true,
-                    result.Warning is not null
-                        ? $"Configuration cleanup applied, but cleanup needs attention: {result.Warning}"
-                        : result.State == AtomicTomlWriteState.NoChange
+                    result.State == AtomicTomlWriteState.NoChange
                         ? "The configuration was already clean; no bytes changed."
                         : $"Configuration cleanup applied and rescanned successfully. {receipt}");
             }

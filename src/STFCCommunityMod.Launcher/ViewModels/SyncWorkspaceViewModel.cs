@@ -534,8 +534,6 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
         OperationStatus = result.State switch
         {
-            AtomicTomlWriteState.Succeeded when result.Warning is not null =>
-                $"Data Sync saved, but cleanup needs attention: {result.Warning}",
             AtomicTomlWriteState.Succeeded => "Data Sync saved. Restart the game to activate the new topology.",
             AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
             AtomicTomlWriteState.Conflict => "The TOML changed outside Mod Bridge. External edits were preserved; reload before saving.",

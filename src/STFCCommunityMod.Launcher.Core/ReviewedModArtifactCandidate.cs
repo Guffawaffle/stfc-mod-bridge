@@ -1202,7 +1202,6 @@ internal static class CandidateFileNative
     private const uint GenericRead = 0x80000000;
     private const uint GenericWrite = 0x40000000;
     private const uint Delete = 0x00010000;
-    private const uint FileWriteAttributes = 0x00000100;
     private const uint WriteDac = 0x00040000;
     private const uint WriteOwner = 0x00080000;
     private const uint FileFlagOverlapped = 0x40000000;
@@ -1278,24 +1277,6 @@ internal static class CandidateFileNative
         FileShare.Read,
         flags: FileFlagOpenReparsePoint,
         "Could not lock the reviewed candidate recovery member for deletion.");
-
-    public static SafeFileHandle OpenExactReadDeleteNoFollow(string path) => OpenNoFollow(
-        path,
-        GenericRead | Delete,
-        FileShare.Read,
-        flags: FileFlagOpenReparsePoint,
-        "Could not lock the exact recovery member for deletion.",
-        linkErrorMessage: "Exact recovery refuses linked files.",
-        requireSingleLink: true);
-
-    public static SafeFileHandle OpenExactReadWriteAttributesDeleteNoFollow(string path) => OpenNoFollow(
-        path,
-        GenericRead | FileWriteAttributes | Delete,
-        FileShare.Read,
-        flags: FileFlagOpenReparsePoint,
-        "Could not lock the recovery member for exact metadata mutation.",
-        linkErrorMessage: "Exact recovery refuses linked files.",
-        requireSingleLink: true);
 
     public static SafeFileHandle OpenRecoveryDirectoryReadNoFollow(string path) => OpenNoFollow(
         path,

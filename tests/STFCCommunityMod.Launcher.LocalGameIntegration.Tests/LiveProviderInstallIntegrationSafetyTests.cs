@@ -69,9 +69,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
         var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
         var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
         File.WriteAllBytes(configurationPath, original);
-        var originalTime = new DateTime(2026, 8, 17, 9, 30, 0, DateTimeKind.Utc);
-        File.SetLastWriteTimeUtc(configurationPath, originalTime);
-        File.SetAttributes(configurationPath, FileAttributes.Archive);
         var failPromotion = true;
         string? retainedState = null;
 
@@ -89,14 +86,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     }
                 });
             File.WriteAllBytes(configurationPath, changed);
-            campaign.RecordOwnedGameFileRevision(
-                "community_patch_settings.toml",
-                changed);
             campaign.PreserveStateForRecovery();
             retainedState = campaign.StateDirectory;
 
-            Assert.ThrowsException<IOException>(
-                campaign.RestoreConfigurationBaseline);
+            Assert.ThrowsException<IOException>(campaign.RestoreConfigurationBaseline);
             CollectionAssert.AreEqual(changed, File.ReadAllBytes(configurationPath));
 
             campaign.EmergencyRestore();
@@ -130,6 +123,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             "community_patch_settings.toml");
         var original = System.Text.Encoding.UTF8.GetBytes(configuration);
         File.WriteAllBytes(configurationPath, original);
+        var admissions = 0;
         var mutations = 0;
 
         using var campaign = new RestorableGameInstallCampaign(
@@ -143,40 +137,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 configurationPath,
                 campaign.StateDirectory,
                 original,
-                campaign));
+                campaign,
+                () => admissions++));
 
+        Assert.AreEqual(0, admissions, "Unsafe preflight reached the direct-mutation boundary.");
         Assert.AreEqual(0, mutations, "Unsafe preflight performed a harness-owned game mutation.");
         campaign.AssertBaseline("Unsafe preflight changed the protected game target.");
-    }
-
-    [DataTestMethod]
-    [TestCategory("Deterministic")]
-    [DataRow("[graphics]\nfree_resize = true\nfree_resize = false\n")]
-    [DataRow("[graphics]\nfree_resize = \"not-a-boolean\"\n")]
-    public async Task UnsafeCleanBaselinePreflightCreatesNoToml(string configuration)
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var mutations = 0;
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            (_, _) => mutations++);
-
-        await Assert.ThrowsExceptionAsync<AssertFailedException>(() =>
-            RunConfigurationRestoreRecoveryAsync(
-                target.GameDirectory,
-                configurationPath,
-                campaign.StateDirectory,
-                baselineConfiguration: null,
-                campaign,
-                createdConfigurationContents: System.Text.Encoding.UTF8.GetBytes(configuration)));
-
-        Assert.AreEqual(0, mutations, "Unsafe clean-baseline preflight reached a game mutation.");
-        Assert.IsFalse(File.Exists(configurationPath));
-        campaign.AssertBaseline("Unsafe clean-baseline preflight changed the game target.");
     }
 
     [TestMethod]
@@ -190,97 +156,25 @@ public sealed partial class LiveProviderInstallIntegrationTests
         var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
         File.WriteAllBytes(configurationPath, original);
         var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        var mutationBoundaries = 0;
+        var mutations = 0;
 
         using var campaign = new RestorableGameInstallCampaign(
             target.GameDirectory,
             inspector,
-            (kind, _) =>
-            {
-                mutationBoundaries++;
-                if (kind == DirectGameMutationKind.WriteTomlTemporary)
-                {
-                    inspector.SelectedState = GameProcessInspectionState.RunningTarget;
-                }
-            });
+            (_, _) => mutations++);
 
         var failure = await CaptureFailureAsync(() => RunConfigurationRestoreRecoveryAsync(
                 target.GameDirectory,
                 configurationPath,
                 campaign.StateDirectory,
                 original,
-                campaign));
+                campaign,
+                () => inspector.SelectedState = GameProcessInspectionState.RunningTarget));
 
         Assert.IsInstanceOfType<InvalidOperationException>(failure, failure.ToString());
 
-        Assert.AreEqual(1, mutationBoundaries);
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(target.GameDirectory, ".community_patch_settings.toml.*.tmp").Length);
+        Assert.AreEqual(0, mutations, "The running target reached a direct game-file mutation.");
         campaign.AssertBaseline("The target changed after its game process started.");
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public async Task ExactInstallStartingBeforeRepositoryPromotionPreservesTargetAndRecoversStage()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        var promotionObserved = false;
-        string stateDirectory;
-        using (var campaign = new RestorableGameInstallCampaign(
-                   target.GameDirectory,
-                   inspector,
-                   (kind, _) =>
-                   {
-                       if (kind == DirectGameMutationKind.PromoteTomlTemporary)
-                       {
-                           promotionObserved = true;
-                           inspector.SelectedState = GameProcessInspectionState.RunningTarget;
-                       }
-                   }))
-        {
-            stateDirectory = campaign.StateDirectory;
-            campaign.PreserveStateForRecovery();
-            var failure = await CaptureFailureAsync(() => RunConfigurationRestoreRecoveryAsync(
-                target.GameDirectory,
-                configurationPath,
-                campaign.StateDirectory,
-                original,
-                campaign));
-
-            Assert.IsInstanceOfType<InvalidOperationException>(failure, failure.ToString());
-            Assert.IsTrue(promotionObserved);
-            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-            Assert.AreEqual(
-                1,
-                Directory.GetFiles(target.GameDirectory, ".community_patch_settings.toml.*.tmp").Length);
-        }
-
-        try
-        {
-            inspector.SelectedState = GameProcessInspectionState.NotRunning;
-            RestorableGameInstallCampaign.RecoverRetainedStages(
-                target.GameDirectory,
-                stateDirectory,
-                inspector);
-            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-            Assert.AreEqual(
-                0,
-                Directory.GetFiles(target.GameDirectory, ".community_patch_settings.toml.*.tmp").Length);
-        }
-        finally
-        {
-            if (Directory.Exists(stateDirectory))
-            {
-                Directory.Delete(stateDirectory, recursive: true);
-            }
-        }
     }
 
     [TestMethod]
@@ -292,626 +186,28 @@ public sealed partial class LiveProviderInstallIntegrationTests
             target.GameDirectory,
             "community_patch_settings.toml");
         var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        var mutationBoundaries = 0;
-        var owned = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var mutations = 0;
 
         using var campaign = new RestorableGameInstallCampaign(
             target.GameDirectory,
             inspector,
-            (_, _) => mutationBoundaries++);
+            (_, _) => mutations++);
         inspector.SelectedState = GameProcessInspectionState.RunningTarget;
 
         Assert.ThrowsException<InvalidOperationException>(() =>
             campaign.WriteGameFileAtomically(
                 "community_patch_settings.toml",
-                owned));
+                "[graphics]\nfree_resize = true\n"u8.ToArray()));
         Assert.IsFalse(File.Exists(configurationPath));
 
-        File.WriteAllBytes(configurationPath, owned);
-        campaign.RecordOwnedGameFileRevision("community_patch_settings.toml", owned);
+        File.WriteAllText(configurationPath, "[graphics]\nfree_resize = true\n");
         Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
 
-        Assert.AreEqual(2, mutationBoundaries);
+        Assert.AreEqual(0, mutations, "A running target reached the delete operation.");
         Assert.IsTrue(File.Exists(configurationPath));
         inspector.SelectedState = GameProcessInspectionState.NotRunning;
         campaign.RestoreConfigurationBaseline();
         campaign.AssertBaseline("Closed-target cleanup did not remove the harness-created TOML.");
-    }
-
-    [DataTestMethod]
-    [TestCategory("Deterministic")]
-    [DataRow("version.dll")]
-    [DataRow("community_patch_settings.toml")]
-    public void EmergencyRestorePreservesExternallyChangedProtectedBytes(string fileName)
-    {
-        using var target = new TemporaryHarnessTarget();
-        var path = Path.Combine(target.GameDirectory, fileName);
-        var original = "protected baseline"u8.ToArray();
-        var campaignRevision = "campaign revision"u8.ToArray();
-        var externalRevision = "external revision"u8.ToArray();
-        File.WriteAllBytes(path, original);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-        File.WriteAllBytes(path, campaignRevision);
-        campaign.RecordOwnedGameFileRevision(fileName, campaignRevision);
-        File.WriteAllBytes(path, externalRevision);
-
-        Assert.ThrowsException<InvalidOperationException>(campaign.EmergencyRestore);
-
-        CollectionAssert.AreEqual(externalRevision, File.ReadAllBytes(path));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void SameBytesCreatedExternallyDuringConflictAreNeverClaimedOrDeleted()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var intended = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            (kind, path) =>
-            {
-                if (kind == DirectGameMutationKind.PromoteRestoreStage)
-                {
-                    File.WriteAllBytes(path, intended);
-                }
-            });
-
-        Assert.ThrowsException<InvalidOperationException>(() =>
-            campaign.WriteGameFileAtomically(
-                "community_patch_settings.toml",
-                intended));
-        Assert.ThrowsException<InvalidOperationException>(campaign.EmergencyRestore);
-
-        CollectionAssert.AreEqual(intended, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void RestorePromotionLocksTheDestinationAtCommitBoundary()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var campaignRevision = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        var externalRevision = "[graphics]\nfree_resize = true\n# external\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        var injectExternal = false;
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            (kind, path) =>
-            {
-                if (injectExternal && kind == DirectGameMutationKind.CommitRestoreStage)
-                {
-                    File.WriteAllBytes(path, externalRevision);
-                }
-            });
-        File.WriteAllBytes(configurationPath, campaignRevision);
-        campaign.RecordOwnedGameFileRevision(
-            "community_patch_settings.toml",
-            campaignRevision);
-        injectExternal = true;
-
-        Assert.ThrowsException<IOException>(campaign.RestoreConfigurationBaseline);
-
-        CollectionAssert.AreEqual(campaignRevision, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void PreexistingBytesAtChosenRestoreStageArePreserved()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var sentinel = "external stage sentinel"u8.ToArray();
-        string? stagePath = null;
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            (kind, path) =>
-            {
-                if (kind == DirectGameMutationKind.WriteRestoreStage)
-                {
-                    stagePath = path;
-                    File.WriteAllBytes(path, sentinel);
-                }
-            });
-
-        Assert.ThrowsException<IOException>(() =>
-            campaign.WriteGameFileAtomically(
-                "community_patch_settings.toml",
-                "[graphics]\nfree_resize = true\n"u8.ToArray()));
-
-        Assert.IsNotNull(stagePath);
-        CollectionAssert.AreEqual(sentinel, File.ReadAllBytes(stagePath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void AlteredCompletedRestoreStageIsNeverPromotedOrDeleted()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var intended = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        var alteredStage = "external stage bytes"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        string? stagePath = null;
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            (kind, path) =>
-            {
-                if (kind == DirectGameMutationKind.WriteRestoreStage)
-                {
-                    stagePath = path;
-                }
-                else if (kind == DirectGameMutationKind.CommitRestoreStage)
-                {
-                    File.WriteAllBytes(stagePath!, alteredStage);
-                }
-            });
-        File.WriteAllBytes(configurationPath, intended);
-        campaign.RecordOwnedGameFileRevision(
-            "community_patch_settings.toml",
-            intended);
-
-        Assert.ThrowsException<IOException>(campaign.RestoreConfigurationBaseline);
-
-        CollectionAssert.AreEqual(intended, File.ReadAllBytes(configurationPath));
-        Assert.IsNotNull(stagePath);
-        Assert.IsFalse(File.Exists(stagePath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void FinalProcessAdmissionBlocksRestoreAfterValidation()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        var inspector = new SequencedGameProcessInspector(
-            target.GameDirectory,
-            GameProcessInspectionState.NotRunning,
-            GameProcessInspectionState.NotRunning,
-            GameProcessInspectionState.NotRunning,
-            GameProcessInspectionState.RunningTarget);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            inspector);
-        File.WriteAllBytes(configurationPath, changed);
-        campaign.RecordOwnedGameFileRevision(
-            "community_patch_settings.toml",
-            changed);
-
-        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
-
-        CollectionAssert.AreEqual(changed, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void FinalProcessAdmissionBlocksOwnedDeleteAfterHashValidation()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var owned = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var inspector = new SequencedGameProcessInspector(
-            target.GameDirectory,
-            GameProcessInspectionState.RunningTarget);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            inspector);
-        File.WriteAllBytes(configurationPath, owned);
-        campaign.RecordOwnedGameFileRevision(
-            "community_patch_settings.toml",
-            owned);
-
-        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
-
-        CollectionAssert.AreEqual(owned, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void FinalProcessAdmissionBlocksMetadataMutationAfterHashValidation()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        File.WriteAllText(configurationPath, "[graphics]\nfree_resize = true\n");
-        var originalTime = new DateTime(2026, 8, 17, 12, 0, 0, DateTimeKind.Utc);
-        File.SetLastWriteTimeUtc(configurationPath, originalTime);
-        var inspector = new SequencedGameProcessInspector(
-            target.GameDirectory,
-            GameProcessInspectionState.RunningTarget);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            inspector);
-        var changedTime = originalTime.AddMinutes(5);
-        File.SetLastWriteTimeUtc(configurationPath, changedTime);
-
-        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
-
-        Assert.AreEqual(changedTime, File.GetLastWriteTimeUtc(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void ReceiptPreparationFailureCreatesNoDirectGameStage()
-    {
-        using var target = new TemporaryHarnessTarget();
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory),
-            beforeReceiptPersist: _ =>
-                throw new IOException("Injected receipt-persistence failure."));
-
-        Assert.ThrowsException<IOException>(() =>
-            campaign.WriteGameFileAtomically(
-                "community_patch_settings.toml",
-                "[graphics]\nfree_resize = true\n"u8.ToArray()));
-
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(target.GameDirectory, "*.restore-stage").Length);
-        campaign.AssertBaseline("Receipt failure changed the game target.");
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void ProcessStartAfterReceiptPreparationPreventsDirectStageCreation()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            inspector,
-            beforeReceiptPersist: _ =>
-                inspector.SelectedState = GameProcessInspectionState.RunningTarget);
-
-        Assert.ThrowsException<InvalidOperationException>(() =>
-            campaign.WriteGameFileAtomically(
-                "community_patch_settings.toml",
-                "[graphics]\nfree_resize = true\n"u8.ToArray()));
-
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(target.GameDirectory, "*.restore-stage").Length);
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(campaign.StateDirectory, "recovery-stage-*.json").Length);
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void FreshRecoveryDeletesCreatedPartialStageByExactIdentity()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        string stateDirectory;
-        var persistCount = 0;
-        using (var campaign = new RestorableGameInstallCampaign(
-                   target.GameDirectory,
-                   inspector,
-                   beforeReceiptPersist: _ =>
-                   {
-                       persistCount++;
-                       if (persistCount == 3)
-                       {
-                           inspector.SelectedState = GameProcessInspectionState.RunningTarget;
-                           throw new IOException("Injected completion-receipt interruption.");
-                       }
-                   }))
-        {
-            stateDirectory = campaign.StateDirectory;
-            campaign.PreserveStateForRecovery();
-            Assert.ThrowsException<IOException>(() =>
-                campaign.WriteGameFileAtomically(
-                    "community_patch_settings.toml",
-                    "[graphics]\nfree_resize = true\n"u8.ToArray()));
-            Assert.AreEqual(
-                1,
-                Directory.GetFiles(target.GameDirectory, "*.restore-stage").Length);
-        }
-
-        try
-        {
-            inspector.SelectedState = GameProcessInspectionState.NotRunning;
-            RestorableGameInstallCampaign.RecoverRetainedStages(
-                target.GameDirectory,
-                stateDirectory,
-                inspector);
-            Assert.AreEqual(
-                0,
-                Directory.GetFiles(target.GameDirectory, "*.restore-stage").Length);
-        }
-        finally
-        {
-            if (Directory.Exists(stateDirectory))
-            {
-                Directory.Delete(stateDirectory, recursive: true);
-            }
-        }
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void MalformedRetainedReceiptProducesOnlySanitizedFailure()
-    {
-        using var target = new TemporaryHarnessTarget();
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-        var malformedReceipt = Path.Combine(
-            campaign.StateDirectory,
-            "recovery-stage-malformed.json");
-        File.WriteAllText(
-            malformedReceipt,
-            "{\"schemaVersion\":1,\"stagePath\":null,\"destinationPath\":null,\"expectedSha256\":null}");
-
-        var recoveryFailure = TryEmergencyRestore(campaign);
-        Assert.IsNotNull(recoveryFailure);
-        var sanitized = SanitizedFailure(
-            "The recovery lab failed.",
-            recoveryFailure,
-            target.GameDirectory,
-            campaign.StateDirectory);
-
-        Assert.IsNull(sanitized.InnerException);
-        Assert.IsFalse(
-            sanitized.ToString().Contains(
-                target.GameDirectory,
-                StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(
-            sanitized.ToString().Contains(
-                campaign.StateDirectory,
-                StringComparison.OrdinalIgnoreCase));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void FreshRecoveryUsesPreparedRollbackReceiptAfterReplacementInterruption()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        var originalTime = new DateTime(2026, 8, 17, 9, 30, 0, DateTimeKind.Utc);
-        File.SetLastWriteTimeUtc(configurationPath, originalTime);
-        File.SetAttributes(configurationPath, FileAttributes.Archive);
-        var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        string stateDirectory;
-        using (var campaign = new RestorableGameInstallCampaign(
-                   target.GameDirectory,
-                   inspector,
-                   (kind, _) =>
-                   {
-                       if (kind == DirectGameMutationKind.AfterRestoreReplacement)
-                       {
-                           throw new IOException("Injected post-replacement interruption.");
-                       }
-                   }))
-        {
-            stateDirectory = campaign.StateDirectory;
-            campaign.PreserveStateForRecovery();
-            File.WriteAllBytes(configurationPath, changed);
-            campaign.RecordOwnedGameFileRevision(
-                "community_patch_settings.toml",
-                changed);
-
-            Assert.ThrowsException<IOException>(campaign.RestoreConfigurationBaseline);
-            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-        }
-
-        try
-        {
-            RestorableGameInstallCampaign.RecoverRetainedStages(
-                target.GameDirectory,
-                stateDirectory,
-                inspector);
-            CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-            Assert.AreEqual(FileAttributes.Archive, File.GetAttributes(configurationPath));
-            Assert.AreEqual(originalTime, File.GetLastWriteTimeUtc(configurationPath));
-            Assert.AreEqual(
-                0,
-                Directory.GetFiles(target.GameDirectory, "*.restore-rollback").Length);
-        }
-        finally
-        {
-            if (Directory.Exists(stateDirectory))
-            {
-                Directory.Delete(stateDirectory, recursive: true);
-            }
-        }
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void PreparedRollbackReceiptNeverClaimsSameByteExternalFile()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        string? rollbackPath = null;
-        string stateDirectory;
-        using (var campaign = new RestorableGameInstallCampaign(
-                   target.GameDirectory,
-                   inspector,
-                   (kind, _) =>
-                   {
-                       if (kind == DirectGameMutationKind.CommitRestoreStage
-                           && rollbackPath is not null
-                           && !File.Exists(rollbackPath))
-                       {
-                           File.WriteAllBytes(rollbackPath, changed);
-                           throw new IOException(
-                               "Injected interruption after external rollback-path creation.");
-                       }
-                   },
-                   stagePath =>
-                   {
-                       if (stagePath.EndsWith(
-                               ".restore-rollback",
-                               StringComparison.Ordinal))
-                       {
-                           rollbackPath = stagePath;
-                       }
-                   }))
-        {
-            stateDirectory = campaign.StateDirectory;
-            campaign.PreserveStateForRecovery();
-            File.WriteAllBytes(configurationPath, changed);
-            campaign.RecordOwnedGameFileRevision(
-                "community_patch_settings.toml",
-                changed);
-
-            Assert.ThrowsException<IOException>(
-                campaign.RestoreConfigurationBaseline);
-            Assert.IsNotNull(rollbackPath);
-            CollectionAssert.AreEqual(changed, File.ReadAllBytes(rollbackPath));
-            Assert.ThrowsException<InvalidOperationException>(() =>
-                RestorableGameInstallCampaign.RecoverRetainedStages(
-                    target.GameDirectory,
-                    campaign.StateDirectory,
-                    inspector));
-            CollectionAssert.AreEqual(changed, File.ReadAllBytes(rollbackPath));
-            CollectionAssert.AreEqual(changed, File.ReadAllBytes(configurationPath));
-        }
-
-        if (Directory.Exists(stateDirectory))
-        {
-            Directory.Delete(stateDirectory, recursive: true);
-        }
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void CleanBaselineCleanupPreservesUnownedToml()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var external = "[graphics]\nfree_resize = true\n# external\n"u8.ToArray();
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-        File.WriteAllBytes(configurationPath, external);
-
-        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
-
-        CollectionAssert.AreEqual(external, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void SameByteExternalReplacementDoesNotInheritCampaignOwnership()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var bytes = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-        campaign.WriteGameFileAtomically(
-            "community_patch_settings.toml",
-            bytes);
-
-        File.Delete(configurationPath);
-        File.WriteAllBytes(configurationPath, bytes);
-
-        Assert.ThrowsException<InvalidOperationException>(
-            campaign.RestoreConfigurationBaseline);
-        CollectionAssert.AreEqual(bytes, File.ReadAllBytes(configurationPath));
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public async Task AtomicReceiptHandoffRecordsTheCommittedDestinationIdentity()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var configurationPath = Path.Combine(
-            target.GameDirectory,
-            "community_patch_settings.toml");
-        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
-        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
-        File.WriteAllBytes(configurationPath, original);
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-        var store = new AtomicTomlStore(
-            beforeReplace: null,
-            retainAdjacentBackup: false,
-            mutationAdmission: campaign.AtomicTomlMutationAdmission);
-
-        var write = await store.SaveDocumentAsync(
-            configurationPath,
-            original,
-            changed);
-
-        Assert.AreEqual(AtomicTomlWriteState.Succeeded, write.State, write.Error);
-        Assert.IsNull(write.Warning);
-        Assert.AreEqual(
-            0,
-            Directory.GetFiles(campaign.StateDirectory, "recovery-stage-*.json").Length);
-        campaign.RestoreConfigurationBaseline();
-        campaign.AssertBaseline(
-            "The atomic receipt handoff did not authorize exact baseline restoration.");
-    }
-
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void EmergencyRestorePreservesPreexistingStageAndRollbackFiles()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var sentinels = new[]
-        {
-            ".version.dll.preexisting.stage",
-            ".version.dll.preexisting.rollback",
-            ".stfc-bridge-integration-version.dll.preexisting.restore-stage",
-        };
-        foreach (var sentinel in sentinels)
-        {
-            File.WriteAllText(Path.Combine(target.GameDirectory, sentinel), sentinel);
-        }
-        using var campaign = new RestorableGameInstallCampaign(
-            target.GameDirectory,
-            new MutableGameProcessInspector(target.GameDirectory));
-
-        campaign.EmergencyRestore();
-
-        foreach (var sentinel in sentinels)
-        {
-            Assert.AreEqual(sentinel, File.ReadAllText(Path.Combine(target.GameDirectory, sentinel)));
-        }
-        campaign.AssertBaseline("Emergency cleanup changed a pre-existing residue.");
     }
 
     [TestMethod]
@@ -964,29 +260,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
         Assert.IsFalse(rendered.Contains(stateDirectory, StringComparison.OrdinalIgnoreCase));
     }
 
-    [TestMethod]
-    [TestCategory("Deterministic")]
-    public void CampaignSetupFailureCrossesSanitizedBoundaryWithoutInnerException()
-    {
-        using var target = new TemporaryHarnessTarget();
-        var rawStatePath = Path.Combine(
-            target.GameDirectory,
-            "sentinel-private-state");
-
-        var failure = Assert.ThrowsException<AssertFailedException>(() =>
-            OpenCampaignThroughSanitizedBoundary(
-                target.GameDirectory,
-                _ => throw new IOException(
-                    $"Capture failed for {target.GameDirectory} under {rawStatePath}.")));
-        var rendered = failure.ToString();
-
-        Assert.IsNull(failure.InnerException);
-        Assert.IsFalse(
-            rendered.Contains(target.GameDirectory, StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(
-            rendered.Contains(rawStatePath, StringComparison.OrdinalIgnoreCase));
-    }
-
     private sealed class MutableGameProcessInspector : IGameProcessInspector
     {
         private readonly Dictionary<string, GameProcessInspectionState> states =
@@ -1019,23 +292,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         public void SetState(string gameDirectory, GameProcessInspectionState state) =>
             states[Path.GetFullPath(gameDirectory)] = state;
-    }
-
-    private sealed class SequencedGameProcessInspector(
-        string selectedGameDirectory,
-        params GameProcessInspectionState[] states) : IGameProcessInspector
-    {
-        private int inspection;
-
-        public GameProcessInspectionState Inspect(string gameDirectory)
-        {
-            Assert.IsTrue(string.Equals(
-                Path.GetFullPath(selectedGameDirectory),
-                Path.GetFullPath(gameDirectory),
-                StringComparison.OrdinalIgnoreCase));
-            var index = Math.Min(inspection++, states.Length - 1);
-            return states[index];
-        }
     }
 
     private static async Task<Exception> CaptureFailureAsync(Func<Task> action)

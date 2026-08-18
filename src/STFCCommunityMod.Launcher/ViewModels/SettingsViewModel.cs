@@ -780,8 +780,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
         OperationStatus = result.State switch
         {
-            AtomicTomlWriteState.Succeeded when result.Warning is not null =>
-                $"Changes saved, but cleanup needs attention: {result.Warning}",
             AtomicTomlWriteState.Succeeded when result.BackupReceipt is not null =>
                 $"Changes saved. Protected provider backup {result.BackupReceipt.BackupId} was verified.",
             AtomicTomlWriteState.Succeeded => "Changes saved.",

@@ -32,8 +32,6 @@ public sealed record ConfigurationMigrationApplyResult(
         State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange
         && CommittedSnapshot is not null
         && ResultingDiagnosis is not null;
-
-    public string? Warning { get; init; }
 }
 
 public sealed class ConfigurationMigrationApplyCoordinator(
@@ -145,14 +143,11 @@ public sealed class ConfigurationMigrationApplyCoordinator(
         var resultingDiagnosis = analyzer.Analyze(
             commit.CommittedSnapshot,
             request.DiagnosisEvidence);
-        return new ConfigurationMigrationApplyResult(
+        return new(
             commit.State,
             commit.CommittedSnapshot,
             commit.BackupReceipt,
-            resultingDiagnosis)
-        {
-            Warning = commit.Warning,
-        };
+            resultingDiagnosis);
     }
 
     private static bool BindingMatches(
