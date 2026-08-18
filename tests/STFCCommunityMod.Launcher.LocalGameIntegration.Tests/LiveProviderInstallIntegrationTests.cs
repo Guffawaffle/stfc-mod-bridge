@@ -902,6 +902,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
         DeleteGameFile,
         DeleteRestoreStage,
         CommitRestoreStage,
+        AfterRestoreReplacement,
+        RestoreRollback,
         RestoreLastWriteTime,
         RestoreAttributes,
     }
@@ -912,6 +914,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         private readonly Dictionary<string, FileBaseline> baseline;
         private readonly IGameProcessInspector gameProcessInspector;
         private readonly Action<DirectGameMutationKind, string>? beforeMutation;
+        private readonly Action<string>? beforeReceiptPersist;
         private readonly Dictionary<string, HashSet<string>> ownedFileRevisions =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, RecoveryStageReceipt> createdStages = new(
@@ -924,11 +927,13 @@ public sealed partial class LiveProviderInstallIntegrationTests
         public RestorableGameInstallCampaign(
             string gameDirectory,
             IGameProcessInspector? gameProcessInspector = null,
-            Action<DirectGameMutationKind, string>? beforeMutation = null)
+            Action<DirectGameMutationKind, string>? beforeMutation = null,
+            Action<string>? beforeReceiptPersist = null)
         {
             this.gameDirectory = Path.GetFullPath(gameDirectory);
             this.gameProcessInspector = gameProcessInspector ?? new SystemGameProcessInspector();
             this.beforeMutation = beforeMutation;
+            this.beforeReceiptPersist = beforeReceiptPersist;
             baseline = Capture(this.gameDirectory);
             AtomicTomlMutationAdmission = new CampaignAtomicTomlMutationAdmission(this);
             StateDirectory = Path.Combine(
@@ -1068,22 +1073,41 @@ public sealed partial class LiveProviderInstallIntegrationTests
             try
             {
                 AdmitMutation(DirectGameMutationKind.WriteRestoreStage, stagePath);
-                using (var stream = new FileStream(
+                PrepareStage(
+                    RecoveryStageKind.WriteStage,
                     stagePath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    bufferSize: 4096,
-                    FileOptions.WriteThrough))
+                    path,
+                    contents.LongLength,
+                    Convert.ToHexString(SHA256.HashData(contents)),
+                    deletionAllowed: true,
+                    committedDestinationSha256: null);
+                var stageCreated = false;
+                try
                 {
-                    RecordCreatedStage(
+                    using var stream = new FileStream(
                         stagePath,
-                        path,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None,
+                        bufferSize: 4096,
+                        FileOptions.WriteThrough);
+                    stageCreated = true;
+                    MarkStageCreated(stagePath);
+                    stream.Write(contents);
+                    stream.Flush(flushToDisk: true);
+                    CompleteStage(
+                        stagePath,
                         contents.LongLength,
                         Convert.ToHexString(SHA256.HashData(contents)),
                         deletionAllowed: true);
-                    stream.Write(contents);
-                    stream.Flush(flushToDisk: true);
+                }
+                catch
+                {
+                    if (!stageCreated)
+                    {
+                        RemoveCreatedStageReceipt(stagePath);
+                    }
+                    throw;
                 }
                 AdmitMutation(DirectGameMutationKind.PromoteRestoreStage, path);
                 if (expectedCurrent is null)
@@ -1093,6 +1117,14 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new InvalidOperationException(
                             "The protected file appeared before atomic promotion and was preserved.");
                     }
+                    AdmitMutation(DirectGameMutationKind.CommitRestoreStage, path);
+                    EnsureStageMatches(createdStages[Path.GetFullPath(stagePath)]);
+                    if (File.Exists(path))
+                    {
+                        throw new InvalidOperationException(
+                            "The protected file appeared at the final promotion boundary and was preserved.");
+                    }
+                    EnsureGameClosedForMutation();
                     File.Move(stagePath, path);
                     RecordOwnedGameFileRevision(fileName, contents);
                     RemoveCreatedStageReceipt(stagePath);
@@ -1107,26 +1139,58 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new InvalidOperationException(
                             "The protected file changed before atomic promotion and was preserved.");
                     }
-                    AdmitMutation(DirectGameMutationKind.CommitRestoreStage, path);
                     var rollbackPath = Path.Combine(
                         gameDirectory,
                         $".stfc-bridge-integration-{fileName}.{Guid.NewGuid():N}.restore-rollback");
-                    File.Replace(
-                        stagePath,
-                        path,
+                    PrepareStage(
+                        RecoveryStageKind.Rollback,
                         rollbackPath,
-                        ignoreMetadataErrors: true);
-                    RecordOwnedGameFileRevision(fileName, contents);
-                    RemoveCreatedStageReceipt(stagePath);
+                        path,
+                        expectedCurrent.Length,
+                        expectedCurrent.Sha256,
+                        deletionAllowed: true,
+                        committedDestinationSha256: Convert.ToHexString(
+                            SHA256.HashData(contents)));
+                    try
+                    {
+                        AdmitMutation(DirectGameMutationKind.CommitRestoreStage, path);
+                        EnsureStageMatches(createdStages[Path.GetFullPath(stagePath)]);
+                        if (File.Exists(rollbackPath))
+                        {
+                            RemoveCreatedStageReceipt(rollbackPath);
+                            throw new InvalidOperationException(
+                                "The rollback path appeared before atomic promotion and was preserved.");
+                        }
+                        EnsureGameClosedForMutation();
+                        File.Replace(
+                            stagePath,
+                            path,
+                            rollbackPath,
+                            ignoreMetadataErrors: true);
+                        beforeMutation?.Invoke(
+                            DirectGameMutationKind.AfterRestoreReplacement,
+                            path);
+                    }
+                    catch
+                    {
+                        if (!File.Exists(rollbackPath))
+                        {
+                            RemoveCreatedStageReceipt(rollbackPath);
+                        }
+                        throw;
+                    }
 
+                    MarkStageCreated(rollbackPath);
                     var displaced = FileBaseline.Capture(rollbackPath);
-                    RecordCreatedStage(
+                    var displacedMatchesExpected = expectedCurrent.Matches(displaced);
+                    CompleteStage(
                         rollbackPath,
-                        path,
                         displaced.Length,
                         displaced.Sha256,
-                        deletionAllowed: false);
-                    if (!expectedCurrent.Matches(displaced))
+                        deletionAllowed: displacedMatchesExpected);
+                    RecordOwnedGameFileRevision(fileName, contents);
+                    RemoveCreatedStageReceipt(stagePath);
+                    if (!displacedMatchesExpected)
                     {
                         var promoted = FileBaseline.Capture(path);
                         if (!promoted.ContentsMatch(FileBaseline.FromContents(contents)))
@@ -1134,6 +1198,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
                             throw new InvalidOperationException(
                                 "The protected file changed again after promotion; all conflicting bytes were preserved.");
                         }
+                        AdmitMutation(DirectGameMutationKind.RestoreRollback, path);
+                        EnsureStageMatches(createdStages[Path.GetFullPath(rollbackPath)]);
+                        EnsureContentsMatch(path, FileBaseline.FromContents(contents));
+                        EnsureGameClosedForMutation();
                         File.Replace(
                             rollbackPath,
                             path,
@@ -1143,7 +1211,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new InvalidOperationException(
                             "The protected file changed during atomic promotion and was restored unchanged.");
                     }
-                    AllowStageDeletion(rollbackPath);
                     DeleteCreatedStage(rollbackPath);
                 }
             }
@@ -1177,12 +1244,14 @@ public sealed partial class LiveProviderInstallIntegrationTests
             {
                 AdmitMutation(DirectGameMutationKind.RestoreAttributes, path);
                 EnsureContentsMatch(path, original);
+                EnsureGameClosedForMutation();
                 File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
             }
             if (lastWriteTimeUtc != original.LastWriteTimeUtcTicks)
             {
                 AdmitMutation(DirectGameMutationKind.RestoreLastWriteTime, path);
                 EnsureContentsMatch(path, original);
+                EnsureGameClosedForMutation();
                 File.SetLastWriteTimeUtc(
                     path,
                     new(original.LastWriteTimeUtcTicks, DateTimeKind.Utc));
@@ -1191,6 +1260,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             {
                 AdmitMutation(DirectGameMutationKind.RestoreAttributes, path);
                 EnsureContentsMatch(path, original);
+                EnsureGameClosedForMutation();
                 File.SetAttributes(path, original.Attributes);
             }
         }
@@ -1208,6 +1278,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 throw new InvalidOperationException(
                     "The live protected file changed before cleanup and was preserved.");
             }
+            EnsureGameClosedForMutation();
             File.Delete(path);
         }
 
@@ -1215,6 +1286,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         {
             var canonicalPath = Path.GetFullPath(path);
             if (!createdStages.TryGetValue(canonicalPath, out var receipt)
+                || receipt.Phase != RecoveryStagePhase.Complete
                 || !receipt.DeletionAllowed)
             {
                 throw new InvalidOperationException(
@@ -1222,6 +1294,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
             AdmitMutation(DirectGameMutationKind.DeleteRestoreStage, path);
             EnsureStageMatches(receipt);
+            EnsureGameClosedForMutation();
             File.Delete(path);
             RemoveCreatedStageReceipt(path);
         }
@@ -1256,6 +1329,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             {
                 var canonicalPath = Path.GetFullPath(temporaryPath);
                 if (!createdStages.TryGetValue(canonicalPath, out var receipt)
+                    || receipt.Phase != RecoveryStagePhase.Complete
                     || !receipt.DeletionAllowed)
                 {
                     throw new InvalidOperationException(
@@ -1265,25 +1339,30 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
         }
 
-        private void RecordCreatedStage(
+        private void PrepareStage(
+            RecoveryStageKind kind,
             string stagePath,
             string destinationPath,
             long expectedSize,
             string expectedSha256,
-            bool deletionAllowed)
+            bool deletionAllowed,
+            string? committedDestinationSha256)
         {
             var receipt = CreateStageReceipt(
                 gameDirectory,
+                kind,
                 stagePath,
                 destinationPath,
                 expectedSize,
                 expectedSha256,
-                deletionAllowed);
+                deletionAllowed,
+                committedDestinationSha256,
+                RecoveryStagePhase.Prepared);
             createdStages[receipt.StagePath] = receipt;
-            PersistStageReceipt(StateDirectory, receipt);
+            PersistCampaignStageReceipt(receipt);
         }
 
-        private void AllowStageDeletion(string stagePath)
+        private void MarkStageCreated(string stagePath)
         {
             var canonicalPath = Path.GetFullPath(stagePath);
             if (!createdStages.TryGetValue(canonicalPath, out var receipt))
@@ -1291,8 +1370,48 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 throw new InvalidOperationException(
                     "The recovery harness cannot authorize an unrecorded stage path.");
             }
-            receipt = receipt with { DeletionAllowed = true };
+            receipt = receipt with { Phase = RecoveryStagePhase.Created };
             createdStages[canonicalPath] = receipt;
+            PersistCampaignStageReceipt(receipt);
+        }
+
+        private void CompleteStage(
+            string stagePath,
+            long actualSize,
+            string actualSha256,
+            bool deletionAllowed)
+        {
+            var canonicalPath = Path.GetFullPath(stagePath);
+            if (!createdStages.TryGetValue(canonicalPath, out var receipt)
+                || receipt.Phase != RecoveryStagePhase.Created)
+            {
+                throw new InvalidOperationException(
+                    "The recovery harness cannot complete an uncreated stage path.");
+            }
+            if (receipt.Kind == RecoveryStageKind.WriteStage
+                && (receipt.ExpectedSize != actualSize
+                    || !string.Equals(
+                        receipt.ExpectedSha256,
+                        actualSha256,
+                        StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(
+                    "The completed write stage does not match its prepared identity.");
+            }
+            receipt = receipt with
+            {
+                Phase = RecoveryStagePhase.Complete,
+                ExpectedSize = actualSize,
+                ExpectedSha256 = actualSha256,
+                DeletionAllowed = deletionAllowed,
+            };
+            createdStages[canonicalPath] = receipt;
+            PersistCampaignStageReceipt(receipt);
+        }
+
+        private void PersistCampaignStageReceipt(RecoveryStageReceipt receipt)
+        {
+            beforeReceiptPersist?.Invoke(receipt.StagePath);
             PersistStageReceipt(StateDirectory, receipt);
         }
 
@@ -1334,24 +1453,47 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     throw new InvalidDataException(
                         "A recovery-stage receipt filename does not match its stage identity.");
                 }
-                if (!receipt.DeletionAllowed)
-                {
-                    throw new InvalidOperationException(
-                        "A recovery rollback may contain external bytes and was preserved.");
-                }
                 if (!File.Exists(receipt.StagePath))
                 {
                     File.Delete(receiptPath);
                     continue;
                 }
+                if (receipt.Kind == RecoveryStageKind.Rollback
+                    && receipt.Phase == RecoveryStagePhase.Prepared)
+                {
+                    beforeMutation?.Invoke(
+                        DirectGameMutationKind.DeleteRestoreStage,
+                        receipt.StagePath);
+                    if (!StageBytesMatch(receipt)
+                        || !DestinationMatchesCommitted(receipt))
+                    {
+                        throw new InvalidOperationException(
+                            "A prepared rollback changed before recovery and was preserved.");
+                    }
+                    if (gameProcessInspector.Inspect(gameDirectory)
+                        != GameProcessInspectionState.NotRunning)
+                    {
+                        throw new InvalidOperationException(
+                            "The exact opted-in integration installation started running before rollback recovery.");
+                    }
+                    File.Delete(receipt.StagePath);
+                    File.Delete(receiptPath);
+                    continue;
+                }
+                if (receipt.Phase != RecoveryStagePhase.Complete
+                    || !receipt.DeletionAllowed)
+                {
+                    throw new InvalidOperationException(
+                        "An incomplete or externally changed recovery stage was preserved.");
+                }
                 beforeMutation?.Invoke(DirectGameMutationKind.DeleteRestoreStage, receipt.StagePath);
+                EnsureStageMatches(receipt);
                 if (gameProcessInspector.Inspect(gameDirectory)
                     != GameProcessInspectionState.NotRunning)
                 {
                     throw new InvalidOperationException(
                         "The exact opted-in integration installation started running before stage recovery.");
                 }
-                EnsureStageMatches(receipt);
                 File.Delete(receipt.StagePath);
                 File.Delete(receiptPath);
             }
@@ -1359,19 +1501,25 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         private static RecoveryStageReceipt CreateStageReceipt(
             string gameDirectory,
+            RecoveryStageKind kind,
             string stagePath,
             string destinationPath,
             long expectedSize,
             string expectedSha256,
-            bool deletionAllowed)
+            bool deletionAllowed,
+            string? committedDestinationSha256,
+            RecoveryStagePhase phase)
         {
             var receipt = new RecoveryStageReceipt(
                 1,
+                kind,
+                phase,
                 Path.GetFullPath(stagePath),
                 Path.GetFullPath(destinationPath),
                 expectedSize,
                 expectedSha256,
-                deletionAllowed);
+                deletionAllowed,
+                committedDestinationSha256);
             ValidateStageReceipt(gameDirectory, receipt);
             return receipt;
         }
@@ -1381,9 +1529,19 @@ public sealed partial class LiveProviderInstallIntegrationTests
             RecoveryStageReceipt receipt)
         {
             if (receipt.SchemaVersion != 1
+                || !Enum.IsDefined(receipt.Kind)
+                || !Enum.IsDefined(receipt.Phase)
                 || receipt.ExpectedSize < 0
+                || string.IsNullOrWhiteSpace(receipt.StagePath)
+                || string.IsNullOrWhiteSpace(receipt.DestinationPath)
+                || string.IsNullOrWhiteSpace(receipt.ExpectedSha256)
                 || receipt.ExpectedSha256.Length != 64
-                || receipt.ExpectedSha256.Any(character => !Uri.IsHexDigit(character)))
+                || receipt.ExpectedSha256.Any(character => !Uri.IsHexDigit(character))
+                || (receipt.Kind == RecoveryStageKind.Rollback
+                    && (string.IsNullOrWhiteSpace(receipt.CommittedDestinationSha256)
+                        || receipt.CommittedDestinationSha256.Length != 64
+                        || receipt.CommittedDestinationSha256.Any(
+                            character => !Uri.IsHexDigit(character)))))
             {
                 throw new InvalidDataException("A recovery-stage receipt is invalid.");
             }
@@ -1407,10 +1565,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
             var stageName = Path.GetFileName(canonicalStagePath);
             var directPrefix = $".stfc-bridge-integration-{destinationName}.";
             var atomicPrefix = $".{destinationName}.";
-            var isDirect = HasGuidIdentity(stageName, directPrefix, ".restore-stage")
-                || HasGuidIdentity(stageName, directPrefix, ".restore-rollback");
-            var isAtomic = HasGuidIdentity(stageName, atomicPrefix, ".tmp");
-            if (!isDirect && !isAtomic)
+            var isWriteStage = HasGuidIdentity(stageName, directPrefix, ".restore-stage")
+                || HasGuidIdentity(stageName, atomicPrefix, ".tmp");
+            var isRollback = HasGuidIdentity(stageName, directPrefix, ".restore-rollback")
+                || HasGuidIdentity(stageName, atomicPrefix, ".rollback");
+            if ((receipt.Kind == RecoveryStageKind.WriteStage && !isWriteStage)
+                || (receipt.Kind == RecoveryStageKind.Rollback && !isRollback))
             {
                 throw new InvalidDataException(
                     "A recovery-stage receipt does not name a harness-owned stage pattern.");
@@ -1433,16 +1593,40 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         private static void EnsureStageMatches(RecoveryStageReceipt receipt)
         {
-            var current = FileBaseline.Capture(receipt.StagePath);
-            if (current.Length != receipt.ExpectedSize
-                || !string.Equals(
-                    current.Sha256,
-                    receipt.ExpectedSha256,
-                    StringComparison.Ordinal))
+            if (receipt.Phase != RecoveryStagePhase.Complete)
+            {
+                throw new InvalidOperationException(
+                    "An incomplete recovery stage was preserved.");
+            }
+            if (!StageBytesMatch(receipt))
             {
                 throw new InvalidOperationException(
                     "A recovery stage changed after its ownership receipt was recorded and was preserved.");
             }
+        }
+
+        private static bool StageBytesMatch(RecoveryStageReceipt receipt)
+        {
+            var current = FileBaseline.Capture(receipt.StagePath);
+            return current.Length == receipt.ExpectedSize
+                && string.Equals(
+                    current.Sha256,
+                    receipt.ExpectedSha256,
+                    StringComparison.Ordinal);
+        }
+
+        private static bool DestinationMatchesCommitted(RecoveryStageReceipt receipt)
+        {
+            if (string.IsNullOrWhiteSpace(receipt.CommittedDestinationSha256)
+                || !File.Exists(receipt.DestinationPath))
+            {
+                return false;
+            }
+            using var stream = File.OpenRead(receipt.DestinationPath);
+            return string.Equals(
+                Convert.ToHexString(SHA256.HashData(stream)),
+                receipt.CommittedDestinationSha256,
+                StringComparison.Ordinal);
         }
 
         private static string StageReceiptPath(string stateDirectory, string stagePath)
@@ -1607,13 +1791,29 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     contents);
         }
 
+        private enum RecoveryStageKind
+        {
+            WriteStage,
+            Rollback,
+        }
+
+        private enum RecoveryStagePhase
+        {
+            Prepared,
+            Created,
+            Complete,
+        }
+
         private sealed record RecoveryStageReceipt(
             int SchemaVersion,
+            RecoveryStageKind Kind,
+            RecoveryStagePhase Phase,
             string StagePath,
             string DestinationPath,
             long ExpectedSize,
             string ExpectedSha256,
-            bool DeletionAllowed);
+            bool DeletionAllowed,
+            string? CommittedDestinationSha256);
 
         private sealed class CampaignAtomicTomlMutationAdmission(
             RestorableGameInstallCampaign campaign) : IAtomicTomlMutationAdmission
@@ -1632,20 +1832,50 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 return ValueTask.CompletedTask;
             }
 
-            public void TemporaryCreated(
+            public void TemporaryPreparing(
+                AtomicTomlTemporaryRole role,
                 string temporaryPath,
                 string destinationPath,
                 long expectedSize,
-                string expectedSha256) =>
-                campaign.RecordCreatedStage(
+                string expectedSha256,
+                bool deletionAllowed,
+                string? committedDestinationSha256) =>
+                campaign.PrepareStage(
+                    role == AtomicTomlTemporaryRole.Rollback
+                        ? RecoveryStageKind.Rollback
+                        : RecoveryStageKind.WriteStage,
                     temporaryPath,
                     destinationPath,
                     expectedSize,
                     expectedSha256,
-                    deletionAllowed: true);
+                    deletionAllowed,
+                    committedDestinationSha256);
+
+            public void TemporaryCreated(
+                AtomicTomlTemporaryRole role,
+                string temporaryPath) =>
+                campaign.MarkStageCreated(temporaryPath);
+
+            public void TemporaryCompleted(
+                AtomicTomlTemporaryRole role,
+                string temporaryPath,
+                long actualSize,
+                string actualSha256,
+                bool deletionAllowed) =>
+                campaign.CompleteStage(
+                    temporaryPath,
+                    actualSize,
+                    actualSha256,
+                    deletionAllowed);
 
             public void TemporaryRemoved(string temporaryPath) =>
                 campaign.RemoveCreatedStageReceipt(temporaryPath);
+
+            public void VerifyCommitAllowed(
+                AtomicTomlMutationBoundary boundary,
+                string temporaryPath,
+                string destinationPath) =>
+                campaign.EnsureGameClosedForMutation();
         }
     }
 }

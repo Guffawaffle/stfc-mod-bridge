@@ -31,6 +31,12 @@ internal enum AtomicTomlMutationBoundary
     TemporaryDelete,
 }
 
+internal enum AtomicTomlTemporaryRole
+{
+    WriteStage,
+    Rollback,
+}
+
 internal interface IAtomicTomlMutationAdmission
 {
     ValueTask AdmitAsync(
@@ -39,15 +45,39 @@ internal interface IAtomicTomlMutationAdmission
         string destinationPath,
         CancellationToken cancellationToken);
 
-    void TemporaryCreated(
+    void TemporaryPreparing(
+        AtomicTomlTemporaryRole role,
         string temporaryPath,
         string destinationPath,
         long expectedSize,
-        string expectedSha256)
+        string expectedSha256,
+        bool deletionAllowed,
+        string? committedDestinationSha256)
+    {
+    }
+
+
+    void TemporaryCreated(AtomicTomlTemporaryRole role, string temporaryPath)
+    {
+    }
+
+    void TemporaryCompleted(
+        AtomicTomlTemporaryRole role,
+        string temporaryPath,
+        long actualSize,
+        string actualSha256,
+        bool deletionAllowed)
     {
     }
 
     void TemporaryRemoved(string temporaryPath)
+    {
+    }
+
+    void VerifyCommitAllowed(
+        AtomicTomlMutationBoundary boundary,
+        string temporaryPath,
+        string destinationPath)
     {
     }
 }
@@ -287,9 +317,20 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
-            File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            temporaryCreated = false;
-            NotifyTemporaryRemoved(temporaryPath);
+            var commit = await CommitReplacementAsync(
+                temporaryPath,
+                fullPath,
+                expectedContents,
+                updatedContents,
+                backupPath).ConfigureAwait(false);
+            temporaryCreated = !commit.Promoted;
+            if (commit.Conflict)
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: commit.Error,
+                    BackupReceipt: backupReceipt);
+            }
             return new(
                 AtomicTomlWriteState.Succeeded,
                 backupPath,
@@ -319,7 +360,8 @@ public sealed class AtomicTomlStore
                 await TryCleanupTemporaryAsync(
                     temporaryCreated,
                     temporaryPath,
-                    fullPath).ConfigureAwait(false);
+                    fullPath,
+                    updatedContents).ConfigureAwait(false);
             }
             finally
             {
@@ -413,6 +455,14 @@ public sealed class AtomicTomlStore
 
             try
             {
+                EnsureFileContents(
+                    temporaryPath,
+                    contents,
+                    "The staged configuration changed before its first save and was preserved.");
+                mutationAdmission?.VerifyCommitAllowed(
+                    AtomicTomlMutationBoundary.Promotion,
+                    temporaryPath,
+                    fullPath);
                 File.Move(temporaryPath, fullPath);
                 temporaryCreated = false;
                 NotifyTemporaryRemoved(temporaryPath);
@@ -432,7 +482,8 @@ public sealed class AtomicTomlStore
         catch (Exception exception) when (
             exception is IOException
                 or UnauthorizedAccessException
-                or NotSupportedException)
+                or NotSupportedException
+                or InvalidDataException)
         {
             return new(AtomicTomlWriteState.IoFailure, Error: exception.Message);
         }
@@ -443,7 +494,8 @@ public sealed class AtomicTomlStore
                 await TryCleanupTemporaryAsync(
                     temporaryCreated,
                     temporaryPath,
-                    fullPath).ConfigureAwait(false);
+                    fullPath,
+                    contents).ConfigureAwait(false);
             }
             finally
             {
@@ -490,6 +542,7 @@ public sealed class AtomicTomlStore
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
         var temporaryCreated = false;
+        byte[]? temporaryContents = null;
         ConfigurationBackupReceipt? backupReceipt = null;
 
         try
@@ -541,6 +594,7 @@ public sealed class AtomicTomlStore
                 temporaryPath,
                 fullPath,
                 cancellationToken).ConfigureAwait(false);
+            temporaryContents = edit.Contents;
             await WriteDurablyAsync(
                 temporaryPath,
                 fullPath,
@@ -611,9 +665,20 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
-            File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
-            temporaryCreated = false;
-            NotifyTemporaryRemoved(temporaryPath);
+            var commit = await CommitReplacementAsync(
+                temporaryPath,
+                fullPath,
+                original,
+                edit.Contents,
+                backupPath).ConfigureAwait(false);
+            temporaryCreated = !commit.Promoted;
+            if (commit.Conflict)
+            {
+                return new(
+                    AtomicTomlWriteState.Conflict,
+                    Error: commit.Error,
+                    BackupReceipt: backupReceipt);
+            }
             return new(
                 AtomicTomlWriteState.Succeeded,
                 backupPath,
@@ -643,7 +708,8 @@ public sealed class AtomicTomlStore
                 await TryCleanupTemporaryAsync(
                     temporaryCreated,
                     temporaryPath,
-                    fullPath).ConfigureAwait(false);
+                    fullPath,
+                    temporaryContents ?? []).ConfigureAwait(false);
             }
             finally
             {
@@ -662,22 +728,47 @@ public sealed class AtomicTomlStore
         Action created,
         CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 4096,
-            FileOptions.Asynchronous | FileOptions.WriteThrough);
-        created();
-        mutationAdmission?.TemporaryCreated(
+        mutationAdmission?.TemporaryPreparing(
+            AtomicTomlTemporaryRole.WriteStage,
             path,
             destinationPath,
             contents.LongLength,
-            Convert.ToHexString(SHA256.HashData(contents)));
-        await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        stream.Flush(flushToDisk: true);
+            Convert.ToHexString(SHA256.HashData(contents)),
+            deletionAllowed: true,
+            committedDestinationSha256: null);
+        var opened = false;
+        try
+        {
+            await using var stream = new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.WriteThrough);
+            opened = true;
+            created();
+            mutationAdmission?.TemporaryCreated(
+                AtomicTomlTemporaryRole.WriteStage,
+                path);
+            await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            stream.Flush(flushToDisk: true);
+            mutationAdmission?.TemporaryCompleted(
+                AtomicTomlTemporaryRole.WriteStage,
+                path,
+                contents.LongLength,
+                Convert.ToHexString(SHA256.HashData(contents)),
+                deletionAllowed: true);
+        }
+        catch
+        {
+            if (!opened)
+            {
+                NotifyTemporaryRemoved(path);
+            }
+            throw;
+        }
     }
 
     private ValueTask AdmitMutationAsync(
@@ -693,10 +784,178 @@ public sealed class AtomicTomlStore
                 destinationPath,
                 cancellationToken);
 
+    private async Task<ReplacementCommitResult> CommitReplacementAsync(
+        string temporaryPath,
+        string destinationPath,
+        byte[] expectedDestination,
+        byte[] intendedContents,
+        string? retainedBackupPath)
+    {
+        var rollbackPath = retainedBackupPath ?? Path.Combine(
+            Path.GetDirectoryName(destinationPath)!,
+            $".{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.rollback");
+        var transientRollback = retainedBackupPath is null;
+        if (transientRollback)
+        {
+            mutationAdmission?.TemporaryPreparing(
+                AtomicTomlTemporaryRole.Rollback,
+                rollbackPath,
+                destinationPath,
+                expectedDestination.LongLength,
+                Convert.ToHexString(SHA256.HashData(expectedDestination)),
+                deletionAllowed: true,
+                committedDestinationSha256: Convert.ToHexString(
+                    SHA256.HashData(intendedContents)));
+        }
+
+        EnsureFileContents(
+            temporaryPath,
+            intendedContents,
+            "The staged configuration changed before atomic promotion and was preserved.");
+        byte[] current;
+        try
+        {
+            current = File.ReadAllBytes(destinationPath);
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            if (transientRollback)
+            {
+                NotifyTemporaryRemoved(rollbackPath);
+            }
+            return new(
+                Promoted: false,
+                Conflict: true,
+                "The configuration disappeared immediately before atomic promotion.");
+        }
+        if (!current.AsSpan().SequenceEqual(expectedDestination))
+        {
+            if (transientRollback)
+            {
+                NotifyTemporaryRemoved(rollbackPath);
+            }
+            return new(
+                Promoted: false,
+                Conflict: true,
+                "The configuration changed immediately before atomic promotion; the external changes were preserved.");
+        }
+        if (transientRollback && File.Exists(rollbackPath))
+        {
+            NotifyTemporaryRemoved(rollbackPath);
+            throw new IOException("The transaction rollback path already exists.");
+        }
+
+        try
+        {
+            mutationAdmission?.VerifyCommitAllowed(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                destinationPath);
+            File.Replace(
+                temporaryPath,
+                destinationPath,
+                rollbackPath,
+                ignoreMetadataErrors: true);
+        }
+        catch
+        {
+            if (transientRollback && !File.Exists(rollbackPath))
+            {
+                NotifyTemporaryRemoved(rollbackPath);
+            }
+            throw;
+        }
+        NotifyTemporaryRemoved(temporaryPath);
+
+        var displaced = File.ReadAllBytes(rollbackPath);
+        var displacedSha256 = Convert.ToHexString(SHA256.HashData(displaced));
+        if (transientRollback)
+        {
+            mutationAdmission?.TemporaryCreated(
+                AtomicTomlTemporaryRole.Rollback,
+                rollbackPath);
+            mutationAdmission?.TemporaryCompleted(
+                AtomicTomlTemporaryRole.Rollback,
+                rollbackPath,
+                displaced.LongLength,
+                displacedSha256,
+                deletionAllowed: displaced.AsSpan().SequenceEqual(expectedDestination));
+        }
+
+        if (!displaced.AsSpan().SequenceEqual(expectedDestination))
+        {
+            var promoted = File.ReadAllBytes(destinationPath);
+            if (promoted.AsSpan().SequenceEqual(intendedContents))
+            {
+                EnsureFileContents(
+                    rollbackPath,
+                    displaced,
+                    "The transaction rollback changed before restoration and was preserved.");
+                mutationAdmission?.VerifyCommitAllowed(
+                    AtomicTomlMutationBoundary.Promotion,
+                    rollbackPath,
+                    destinationPath);
+                File.Replace(
+                    rollbackPath,
+                    destinationPath,
+                    null,
+                    ignoreMetadataErrors: true);
+                if (transientRollback)
+                {
+                    NotifyTemporaryRemoved(rollbackPath);
+                }
+                return new(
+                    Promoted: true,
+                    Conflict: true,
+                    "The configuration changed during atomic promotion and was restored unchanged.");
+            }
+            return new(
+                Promoted: true,
+                Conflict: true,
+                $"The configuration changed repeatedly during atomic promotion; conflicting bytes were preserved in '{Path.GetFileName(rollbackPath)}'.");
+        }
+
+        if (transientRollback)
+        {
+            await TryCleanupTemporaryAsync(
+                temporaryCreated: true,
+                rollbackPath,
+                destinationPath,
+                expectedDestination).ConfigureAwait(false);
+        }
+        return new(Promoted: true, Conflict: false, Error: null);
+    }
+
+    private static void EnsureFileContents(
+        string path,
+        byte[] expectedContents,
+        string failureMessage)
+    {
+        if (!FileContentsMatch(path, expectedContents))
+        {
+            throw new InvalidDataException(failureMessage);
+        }
+    }
+
+    private static bool FileContentsMatch(string path, byte[] expectedContents)
+    {
+        var fileInfo = new FileInfo(path);
+        if (!fileInfo.Exists || fileInfo.Length != expectedContents.LongLength)
+        {
+            return false;
+        }
+        using var stream = fileInfo.OpenRead();
+        var actualSha256 = Convert.ToHexString(SHA256.HashData(stream));
+        var expectedSha256 = Convert.ToHexString(SHA256.HashData(expectedContents));
+        return string.Equals(actualSha256, expectedSha256, StringComparison.Ordinal);
+    }
+
     private async ValueTask TryCleanupTemporaryAsync(
         bool temporaryCreated,
         string temporaryPath,
-        string destinationPath)
+        string destinationPath,
+        byte[] expectedContents)
     {
         try
         {
@@ -709,11 +968,19 @@ public sealed class AtomicTomlStore
                 NotifyTemporaryRemoved(temporaryPath);
                 return;
             }
+            if (!FileContentsMatch(temporaryPath, expectedContents))
+            {
+                return;
+            }
             await AdmitMutationAsync(
                 AtomicTomlMutationBoundary.TemporaryDelete,
                 temporaryPath,
                 destinationPath,
                 CancellationToken.None).ConfigureAwait(false);
+            mutationAdmission?.VerifyCommitAllowed(
+                AtomicTomlMutationBoundary.TemporaryDelete,
+                temporaryPath,
+                destinationPath);
             File.Delete(temporaryPath);
             NotifyTemporaryRemoved(temporaryPath);
         }
@@ -743,6 +1010,11 @@ public sealed class AtomicTomlStore
             // The temporary path is already absent. A stale external receipt is safe to retry.
         }
     }
+
+    private sealed record ReplacementCommitResult(
+        bool Promoted,
+        bool Conflict,
+        string? Error);
 
     private static async ValueTask<ConfigurationBackupReceipt> CreateVerifiedBackupAsync(
         IConfigurationMutationBackup mutationBackup,
