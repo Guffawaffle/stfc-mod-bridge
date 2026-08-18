@@ -143,6 +143,32 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
+    public void SettingsFooterKeepsBlockedSaveReasonAndRecoveryVisibleAndAccessible()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/Views/SettingsView.xaml");
+        var blocker = document.Descendants(Presentation + "TextBlock").Single(element =>
+            (string?)element.Attribute(Xaml + "Name") == "SettingsSaveBlockerText");
+        var recovery = document.Descendants(Presentation + "Button").Single(element =>
+            (string?)element.Attribute(Xaml + "Name") == "SettingsSaveRecoveryButton");
+        var blockerBorder = blocker.Ancestors(Presentation + "Border").FirstOrDefault();
+
+        Assert.IsNotNull(blockerBorder);
+        Assert.AreEqual("{Binding SaveAvailability}", (string?)blocker.Attribute("Text"));
+        Assert.AreEqual("Wrap", (string?)blocker.Attribute("TextWrapping"));
+        Assert.AreEqual("Polite", (string?)blocker.Attribute(Automation + "AutomationProperties.LiveSetting"));
+        Assert.AreEqual(
+            "{Binding IsSaveBlocked, Converter={StaticResource BooleanToVisibilityConverter}}",
+            (string?)blockerBorder.Attribute("Visibility"));
+        Assert.AreEqual("{Binding SaveRecoveryCommand}", (string?)recovery.Attribute("Command"));
+        Assert.AreEqual(
+            "{Binding SaveState.RecoveryActionLabel}",
+            (string?)recovery.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual(
+            "{Binding SaveAvailability}",
+            (string?)recovery.Attribute(Automation + "AutomationProperties.HelpText"));
+    }
+
+    [TestMethod]
     public void DiagnosticsUsesDedicatedStructuredAccessibleWorkspace()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");

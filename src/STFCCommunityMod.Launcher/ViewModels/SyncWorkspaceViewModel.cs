@@ -38,8 +38,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private readonly Func<bool> hasSiblingPendingChanges;
     private readonly IConfigurationRepository repository;
     private readonly Func<ConfigurationWorkspace?> configurationWorkspaceProvider;
+    private readonly Action navigateToSiblingSettings;
+    private readonly Action? reloadConfiguration;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
+    private readonly SettingsActionCommand saveRecoveryCommand;
     private readonly object lifecycleSync = new();
     private readonly HashSet<string> customProxyEditors = new(StringComparer.Ordinal);
     private SyncTopologyEditSession? workspace;
@@ -52,20 +55,29 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private bool restartRequired;
     private bool isInvalidating;
     private bool isInvalidated;
+    private int recoveryFocusRevision;
+    private string? recoveryFocusTargetId;
 
     public SyncWorkspaceViewModel(
         Func<string?> configurationPathProvider,
         IConfigurationRepository repository,
         Func<bool>? hasSiblingPendingChanges = null,
-        Func<ConfigurationWorkspace?>? configurationWorkspaceProvider = null)
+        Func<ConfigurationWorkspace?>? configurationWorkspaceProvider = null,
+        Action? navigateToSiblingSettings = null,
+        Action? reloadConfiguration = null)
     {
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
         this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
         this.hasSiblingPendingChanges = hasSiblingPendingChanges ?? (() => false);
         this.configurationWorkspaceProvider = configurationWorkspaceProvider ?? (() => null);
+        this.navigateToSiblingSettings = navigateToSiblingSettings ?? (() => { });
+        this.reloadConfiguration = reloadConfiguration;
         discardCommand = new(Discard, () => !isInvalidating && !isInvalidated && HasPendingChanges);
         saveCommand = new(SaveAsync, () => CanSave);
+        saveRecoveryCommand = new(
+            ApplySaveRecovery,
+            () => SaveState.HasRecoveryAction);
         OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => IsConfigurationReady);
         Reload();
     }
@@ -89,6 +101,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public ICommand DiscardCommand => discardCommand;
 
     public ICommand SaveCommand => saveCommand;
+
+    public ICommand SaveRecoveryCommand => saveRecoveryCommand;
 
     public bool IsConfigurationReady => !isInvalidating && !isInvalidated && workspace is not null;
 
@@ -160,12 +174,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanSave =>
-        IsConfigurationReady
-        && HasPendingChanges
-        && IsCommittable
-        && !IsStale
-        && !hasSiblingPendingChanges();
+    public WorkspaceSaveState SaveState => BuildSaveState();
+
+    public bool CanSave => SaveState.CanSave;
+
+    public bool IsSaveBlocked => SaveState.IsBlocked;
 
     public string ConfigurationStatus => IsConfigurationReady
         ? "Changes are staged until Save. The running game keeps its startup topology until restart."
@@ -173,19 +186,101 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     public string PendingChangesText => HasPendingChanges ? "Unsaved data sync changes" : "No unsaved data sync changes";
 
-    public string SaveAvailability => IsStale
-        ? "The TOML changed outside Mod Bridge. Reload before saving."
-        : hasSiblingPendingChanges()
-            ? "Save or discard the pending non-sync settings before saving Data Sync."
-        : !IsCommittable
-            ? $"Fix the target validation errors before saving. {BlockingValidationSummary}"
-            : CanSave
-                ? "Save all staged Data Sync changes atomically."
-                : "Stage a valid Data Sync change before saving.";
+    public string SaveAvailability => SaveState.Message;
 
-    private string BlockingValidationSummary => workspace?.Desired.Resolve().Diagnostics
-        .FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)?.Message
-        ?? string.Empty;
+    public int RecoveryFocusRevision => recoveryFocusRevision;
+
+    public string? RecoveryFocusTargetId => recoveryFocusTargetId;
+
+    private WorkspaceSaveState BuildSaveState()
+    {
+        if (!HasPendingChanges)
+        {
+            return new(
+                WorkspaceSaveStateKind.NoChanges,
+                WorkspaceSaveBlockerKind.None,
+                "Stage a valid Data Sync change before saving.");
+        }
+
+        if (!IsConfigurationReady)
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.WorkspaceUnavailable,
+                "Save is unavailable because this Data Sync workspace is no longer active.");
+        }
+
+        if (IsStale)
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.ExternalChange,
+                "This configuration changed outside Mod Bridge. Save is paused to protect the newer changes.",
+                WorkspaceSaveRecoveryKind.DiscardAndReload,
+                "Discard my changes and reload");
+        }
+
+        if (hasSiblingPendingChanges())
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.SiblingWorkspace,
+                "Settings has unsaved changes. Save or discard them before saving Data Sync.",
+                WorkspaceSaveRecoveryKind.GoToSettings,
+                "Go to Settings");
+        }
+
+        if (!IsCommittable)
+        {
+            var diagnostic = FirstBlockingDiagnostic();
+            if (diagnostic is null)
+            {
+                return new(
+                    WorkspaceSaveStateKind.Blocked,
+                    WorkspaceSaveBlockerKind.DataSyncValidation,
+                    "Save is paused because the Data Sync setup needs attention.",
+                    WorkspaceSaveRecoveryKind.ReviewDestination,
+                    "Review Data Sync",
+                    "global");
+            }
+
+            if (string.Equals(
+                    diagnostic.Code,
+                    "SYNC_LEGACY_MIGRATION_REQUIRED",
+                    StringComparison.Ordinal))
+            {
+                return new(
+                    WorkspaceSaveStateKind.Blocked,
+                    WorkspaceSaveBlockerKind.LegacyMigration,
+                    "Save is paused because changes to the older sync setup need your approval to move into a named destination.",
+                    WorkspaceSaveRecoveryKind.ApproveLegacyMigration,
+                    "Approve migration",
+                    "legacy-migration");
+            }
+
+            var target = string.IsNullOrWhiteSpace(diagnostic.TargetName)
+                ? "the Data Sync setup"
+                : $"destination '{diagnostic.TargetName}'";
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.DataSyncValidation,
+                $"Save is paused because {target} needs attention. {diagnostic.Message}",
+                WorkspaceSaveRecoveryKind.ReviewDestination,
+                "Review destination",
+                diagnostic.TargetName ?? "global");
+        }
+
+        return new(
+            WorkspaceSaveStateKind.Ready,
+            WorkspaceSaveBlockerKind.None,
+            "Save all staged Data Sync changes atomically.");
+    }
+
+    private SyncTopologyDiagnostic? FirstBlockingDiagnostic() =>
+        workspace?.PreparePlan(MigrateLegacyRoot).Diagnostics
+            .FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)
+        ?? workspace?.Desired.Resolve().Diagnostics
+            .FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error);
 
     public string OperationStatus
     {
@@ -278,6 +373,56 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
 
         Rebuild();
+    }
+
+    private void ApplySaveRecovery()
+    {
+        var state = SaveState;
+        switch (state.Recovery)
+        {
+            case WorkspaceSaveRecoveryKind.GoToSettings:
+                navigateToSiblingSettings();
+                break;
+            case WorkspaceSaveRecoveryKind.DiscardAndReload:
+                DiscardAndReload();
+                break;
+            case WorkspaceSaveRecoveryKind.ApproveLegacyMigration:
+                SelectedTab = Tabs.FirstOrDefault(tab => tab.IsGlobal) ?? SelectedTab;
+                MigrateLegacyRoot = true;
+                break;
+            case WorkspaceSaveRecoveryKind.ReviewDestination:
+                FocusDestination(state.TargetId);
+                break;
+        }
+    }
+
+    private void DiscardAndReload()
+    {
+        workspace?.Discard();
+        customProxyEditors.Clear();
+        if (reloadConfiguration is not null)
+        {
+            reloadConfiguration();
+        }
+        else
+        {
+            Reload();
+        }
+        OperationStatus = "Unsaved Data Sync changes discarded and the current configuration reloaded.";
+        Rebuild();
+    }
+
+    private void FocusDestination(string? targetId)
+    {
+        var tabId = string.IsNullOrWhiteSpace(targetId)
+            || string.Equals(targetId, "global", StringComparison.Ordinal)
+                ? "global"
+                : "destination:" + targetId;
+        SelectTab(tabId);
+        recoveryFocusTargetId = targetId ?? "global";
+        ++recoveryFocusRevision;
+        OnPropertyChanged(nameof(RecoveryFocusTargetId));
+        OnPropertyChanged(nameof(RecoveryFocusRevision));
     }
 
     internal Task InvalidateAsync()
@@ -653,6 +798,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         OnPropertyChanged(string.Empty);
         discardCommand.RaiseCanExecuteChanged();
         saveCommand.RaiseCanExecuteChanged();
+        saveRecoveryCommand.RaiseCanExecuteChanged();
         (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

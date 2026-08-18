@@ -67,6 +67,176 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public void InvalidStagedSettingProjectsActionAndCorrectionReenablesSave()
+    {
+        const string source = "[graphics]\nfree_resize = true\n";
+        using var fixture = SettingsFixture.Create(source);
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        var numeric = fixture.SettingsByPath["ui.extend_chest_purchase_max"];
+        fixture.Select(fixture.Layout.Place(numeric).Section);
+        fixture.Row(numeric.Path).NumericText = "not-a-number";
+
+        var blocked = fixture.ViewModel.SaveState;
+        Assert.AreEqual(WorkspaceSaveStateKind.Blocked, blocked.Kind);
+        Assert.AreEqual(WorkspaceSaveBlockerKind.InvalidSetting, blocked.Blocker);
+        Assert.AreEqual(WorkspaceSaveRecoveryKind.ReviewSetting, blocked.Recovery);
+        Assert.AreEqual(numeric.Path, blocked.TargetId);
+        StringAssert.Contains(blocked.Message, numeric.Presentation.Label);
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+
+        fixture.ViewModel.SaveRecoveryCommand.Execute(null);
+
+        Assert.AreEqual(fixture.Layout.Place(numeric).Section, fixture.ViewModel.SelectedSection);
+        Assert.AreEqual(numeric.Path, fixture.ViewModel.RecoveryFocusTargetId);
+        Assert.IsTrue(fixture.ViewModel.RecoveryFocusRevision > 0);
+        fixture.Row(numeric.Path).NumericText = "100";
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+        Assert.IsTrue(fixture.ViewModel.CanSave, fixture.ViewModel.SaveAvailability);
+
+        fixture.Row(numeric.Path).NumericText = "still-not-a-number";
+        fixture.ViewModel.DiscardCommand.Execute(null);
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public void StagedShortcutConflictNamesBothCommandsAndTargetsFirstConflict()
+    {
+        using var fixture = SettingsFixture.Create();
+        var original = File.ReadAllBytes(fixture.ConfigurationPath);
+        fixture.Select(LauncherSettingsSection.Hotkeys);
+        var candidates = fixture.ViewModel.FilteredSettings
+            .OfType<SettingsRowViewModel>()
+            .Where(row => row.IsKeybindingEditor)
+            .GroupBy(row => row.Setting.KeybindingMetadata?.ConflictGroup)
+            .First(group =>
+                !string.IsNullOrWhiteSpace(group.Key)
+                && !string.Equals(group.Key, "None", StringComparison.OrdinalIgnoreCase)
+                && group.Count() >= 2)
+            .Take(2)
+            .ToArray();
+        candidates[0].AddKeybindingCommand.Execute("CTRL-ALT-F12");
+        candidates[1].AddKeybindingCommand.Execute("CTRL-ALT-F12");
+
+        var blocked = fixture.ViewModel.SaveState;
+        Assert.AreEqual(WorkspaceSaveBlockerKind.InvalidSetting, blocked.Blocker);
+        Assert.IsTrue(candidates.Any(candidate => candidate.Path == blocked.TargetId));
+        var blockedCandidate = candidates.Single(candidate => candidate.Path == blocked.TargetId);
+        var otherCandidate = candidates.Single(candidate => candidate.Path != blocked.TargetId);
+        StringAssert.Contains(blocked.Message, blockedCandidate.Setting.Presentation.Label);
+        StringAssert.Contains(blocked.Message, otherCandidate.Setting.Title);
+        Assert.IsFalse(fixture.ViewModel.CanSave);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public void EditingDiagnosedShortcutMakesItBlockingUntilDiscardRestoresBaseline()
+    {
+        const string source =
+            "[shortcuts]\n"
+            + "action_primary = \"MOUSE1\"\n"
+            + "action_queue = \"MOUSE1\"\n";
+        using var fixture = SettingsFixture.Create(source, LoadNetniVStableCatalog());
+        fixture.Select(LauncherSettingsSection.Hotkeys);
+        var diagnosed = fixture.Row("shortcuts.action_primary");
+        Assert.IsTrue(diagnosed.KeybindingNeedsAttention);
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+
+        diagnosed.AddKeybindingCommand.Execute("CTRL-ALT-F12");
+
+        Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        Assert.IsTrue(fixture.ViewModel.HasInvalidInput);
+        Assert.AreEqual(
+            WorkspaceSaveBlockerKind.InvalidSetting,
+            fixture.ViewModel.SaveState.Blocker);
+        fixture.ViewModel.DiscardCommand.Execute(null);
+
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+        fixture.Select(LauncherSettingsSection.Hotkeys);
+        Assert.IsTrue(fixture.Row("shortcuts.action_primary").KeybindingNeedsAttention);
+    }
+
+    [TestMethod]
+    public void SiblingDraftActionsNavigateBetweenSettingsAndDataSync()
+    {
+        using var fixture = SettingsFixture.Create(
+            "[graphics]\nfree_resize = true\n\n[sync]\njobs = true\n");
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        fixture.ViewModel.SyncWorkspace.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+
+        Assert.AreEqual(
+            WorkspaceSaveRecoveryKind.GoToDataSync,
+            fixture.ViewModel.SaveState.Recovery);
+        fixture.ViewModel.SaveRecoveryCommand.Execute(null);
+        Assert.IsTrue(fixture.ViewModel.IsDataSyncSelected);
+        Assert.AreEqual(
+            WorkspaceSaveRecoveryKind.GoToSettings,
+            fixture.ViewModel.SyncWorkspace.SaveState.Recovery);
+
+        fixture.ViewModel.SyncWorkspace.SaveRecoveryCommand.Execute(null);
+        Assert.AreEqual(LauncherSettingsSection.Graphics, fixture.ViewModel.SelectedSection);
+        Assert.IsTrue(fixture.ViewModel.HasPendingChanges);
+        Assert.IsTrue(fixture.ViewModel.SyncWorkspace.HasPendingChanges);
+    }
+
+    [TestMethod]
+    public void SelectedInstallationConflictDiscardsAndReloadsWithoutLeakingPaths()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        var otherPath = Path.Combine(Path.GetTempPath(), $"stfc-launcher-other-{Guid.NewGuid():N}.toml");
+        File.WriteAllText(otherPath, "[graphics]\nfree_resize = false\n", new UTF8Encoding(false));
+        try
+        {
+            var selectedPath = fixture.ConfigurationPath;
+            var viewModel = fixture.CreateAdditionalViewModel(() => selectedPath);
+            SettingsFixture.Select(viewModel, LauncherSettingsSection.Graphics);
+            viewModel.FilteredSettings.OfType<SettingsRowViewModel>()
+                .Single(row => row.Path == "graphics.free_resize").BooleanValue = false;
+            selectedPath = otherPath;
+
+            var blocked = viewModel.SaveState;
+            Assert.AreEqual(WorkspaceSaveBlockerKind.SelectedConfigurationChanged, blocked.Blocker);
+            Assert.AreEqual(WorkspaceSaveRecoveryKind.DiscardAndReload, blocked.Recovery);
+            Assert.IsFalse(blocked.Message.Contains(fixture.ConfigurationPath, StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(blocked.Message.Contains(otherPath, StringComparison.OrdinalIgnoreCase));
+
+            viewModel.SaveRecoveryCommand.Execute(null);
+            Assert.IsFalse(viewModel.HasPendingChanges);
+            Assert.AreEqual("[graphics]\nfree_resize = true\n", File.ReadAllText(fixture.ConfigurationPath));
+            Assert.AreEqual("[graphics]\nfree_resize = false\n", File.ReadAllText(otherPath));
+        }
+        finally
+        {
+            File.Delete(otherPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExternalSettingsChangeBecomesBlockedUntilExplicitDiscardAndReload()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        const string external = "# external\n[graphics]\nfree_resize = true\n";
+        File.WriteAllText(fixture.ConfigurationPath, external, new UTF8Encoding(false));
+
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() =>
+            fixture.ViewModel.SaveState.Blocker == WorkspaceSaveBlockerKind.ExternalChange);
+
+        Assert.IsFalse(fixture.ViewModel.CanSave);
+        Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
+        fixture.ViewModel.SaveRecoveryCommand.Execute(null);
+        Assert.IsFalse(fixture.ViewModel.HasPendingChanges);
+        Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
     public void BoundedNumericSliderAndTextboxStaySynchronized()
     {
         using var fixture = SettingsFixture.Create();
@@ -299,20 +469,24 @@ public sealed class SettingsProjectionTests
     public async Task ExistingShortcutDiagnosticsDoNotBlockAnUnrelatedSparseSave()
     {
         const string source =
-            "# preserve the player's existing shortcut diagnostics\n"
-            + "[graphics]\n"
-            + "free_resize = true\n"
-            + "\n"
-            + "[shortcuts]\n"
-            + "action_primary = \"MOUSE1\"\n"
-            + "action_queue = \"MOUSE4|MOUSE1\"\n"
-            + "action_queue_clear = \"CTRL-C|MOUSE3\"\n"
-            + "action_repair = \"MOUSE3\"\n"
-            + "zoom_in = \"EQUAL\"\n"
-            + "\n"
-            + "[custom]\n"
-            + "keep = \"verbatim\"\n";
-        using var fixture = SettingsFixture.Create(source, LoadNetniVStableCatalog());
+            "# preserve the player's existing shortcut diagnostics\r\n"
+            + "[graphics]\r\n"
+            + "free_resize = true\r\n"
+            + "\r\n"
+            + "[shortcuts]\r\n"
+            + "action_primary = \"MOUSE1\"\r\n"
+            + "action_queue = \"MOUSE4|MOUSE1\"\r\n"
+            + "action_queue_clear = \"CTRL-C|MOUSE3\"\r\n"
+            + "action_repair = \"MOUSE3\"\r\n"
+            + "zoom_in = \"EQUAL\"\r\n"
+            + "\r\n"
+            + "[custom]\r\n"
+            + "keep = \"verbatim\"\r\n";
+        var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        using var fixture = SettingsFixture.Create(
+            source,
+            LoadNetniVStableCatalog(),
+            encoding: encoding);
 
         fixture.Select(LauncherSettingsSection.Hotkeys);
         var primary = fixture.Row("shortcuts.action_primary");
@@ -332,9 +506,12 @@ public sealed class SettingsProjectionTests
         fixture.ViewModel.SaveCommand.Execute(null);
         await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
 
-        Assert.AreEqual(
-            source.Replace("free_resize = true", "free_resize = false", StringComparison.Ordinal),
-            await File.ReadAllTextAsync(fixture.ConfigurationPath));
+        var expectedText = source.Replace(
+            "free_resize = true",
+            "free_resize = false",
+            StringComparison.Ordinal);
+        var expectedBytes = encoding.GetPreamble().Concat(encoding.GetBytes(expectedText)).ToArray();
+        CollectionAssert.AreEqual(expectedBytes, await File.ReadAllBytesAsync(fixture.ConfigurationPath));
         Assert.IsFalse(fixture.ViewModel.HasInvalidInput);
     }
 
@@ -961,7 +1138,8 @@ public sealed class SettingsProjectionTests
         public static SettingsFixture Create(
             string contents = "# disposable launcher projection fixture\n",
             LauncherConfigurationCatalog? catalog = null,
-            IConfigurationRepository? repository = null)
+            IConfigurationRepository? repository = null,
+            Encoding? encoding = null)
         {
             if (catalog is null)
             {
@@ -977,7 +1155,7 @@ public sealed class SettingsProjectionTests
             File.WriteAllText(
                 configurationPath,
                 contents,
-                new UTF8Encoding(false));
+                encoding ?? new UTF8Encoding(false));
             var command = new TestCommand();
             var viewModel = new SettingsViewModel(
                 catalog,
