@@ -84,8 +84,12 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         saveCommand = new(SaveAsync, () => CanSave);
         saveRecoveryCommand = new(
             ApplySaveRecovery,
-            () => SaveState.HasRecoveryAction);
-        OpenAddDestinationCommand = new SettingsActionCommand(OpenAddDestination, () => CanEdit);
+            () => SaveState.HasRecoveryAction
+                && !IsSaveInProgress
+                && !this.siblingSaveInProgress());
+        OpenAddDestinationCommand = new SettingsActionCommand(
+            OpenAddDestination,
+            () => CanEdit && !IsAddWizardOpen);
         Reload();
     }
 
@@ -118,7 +122,10 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public bool CanEdit =>
         IsConfigurationReady
         && !IsSaveInProgress
-        && !siblingSaveInProgress();
+        && !siblingSaveInProgress()
+        && !IsStale
+        && configurationWorkspaceProvider()?.IsStale != true
+        && ConfigurationSelectionMatchesSession();
 
     public bool HasPendingChanges => workspace?.HasPendingChanges ?? false;
 
@@ -153,6 +160,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             if (SetField(ref addWizard, value))
             {
                 OnPropertyChanged(nameof(IsAddWizardOpen));
+                (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
             }
         }
     }
@@ -357,22 +365,27 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
     }
 
-    public void Reload()
+    public void Reload(bool preserveAddWizard = false)
     {
         if (isInvalidating || isInvalidated || HasPendingChanges)
         {
             return;
         }
 
+        if (!preserveAddWizard)
+        {
+            CloseAddDestination();
+        }
         migrateLegacyRoot = false;
         workspace = null;
         if (configurationWorkspaceProvider() is { } configurationWorkspace)
         {
             var sharedLoad = configurationWorkspace.CreateSyncTopologyEditSession(out workspace);
+            CloseAddDestinationUnlessBoundToCurrentWorkspace();
             OperationStatus = sharedLoad.IsValid && workspace is not null
                 ? sharedLoad.Diagnostics.FirstOrDefault(item => item.Severity == SyncTopologyDiagnosticSeverity.Error)?.Message
                     ?? string.Empty
-                : $"Data Sync is unavailable because the topology could not be loaded: {sharedLoad.Error?.Message}";
+                : "Data Sync is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made.";
             Rebuild();
             return;
         }
@@ -380,19 +393,22 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         var read = repository.Read(configurationPathProvider());
         if (!read.IsSuccess || read.Snapshot is null)
         {
+            CloseAddDestinationUnlessBoundToCurrentWorkspace();
             OperationStatus = read.State == ConfigurationRepositoryReadState.Invalid
-                ? $"Data Sync is unavailable because the TOML is unsafe to edit: {read.ValidationError?.Message}"
+                ? "Data Sync is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made."
                 : read.State == ConfigurationRepositoryReadState.IoFailure
-                    ? $"Data Sync is unavailable: {read.Error}"
+                    ? "Data Sync is unavailable because Mod Bridge could not read the selected configuration. Close other tools using it, check access, and try again."
                     : string.Empty;
             Rebuild();
             return;
         }
 
         var load = SyncTopologyEditSession.Load(read.Snapshot, out workspace);
+        CloseAddDestinationUnlessBoundToCurrentWorkspace();
         if (!load.IsValid || workspace is null)
         {
-            OperationStatus = $"Data Sync is unavailable because the topology could not be loaded: {load.Error?.Message}";
+            OperationStatus =
+                "Data Sync is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made.";
         }
         else
         {
@@ -577,19 +593,31 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
 
     private void OpenAddDestination()
     {
-        if (workspace is null)
+        if (workspace is null || AddWizard is not null)
         {
             return;
         }
 
-        AddWizard = new SyncAddDestinationWizardViewModel(this, workspace.Desired);
+        AddWizard = new SyncAddDestinationWizardViewModel(
+            this,
+            workspace.Desired,
+            workspace.DocumentPath);
     }
 
-    internal void CancelAddDestination() => AddWizard = null;
+    internal void CancelAddDestination(SyncAddDestinationWizardViewModel wizard)
+    {
+        if (ReferenceEquals(AddWizard, wizard) && wizard.IsActive)
+        {
+            CloseAddDestination();
+        }
+    }
 
     internal void CompleteAddDestination(SyncAddDestinationWizardViewModel wizard)
     {
-        if (workspace is null || !ReferenceEquals(AddWizard, wizard))
+        if (workspace is null
+            || !CanEdit
+            || !ReferenceEquals(AddWizard, wizard)
+            || !wizard.IsForDocument(workspace.DocumentPath))
         {
             return;
         }
@@ -646,9 +674,29 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             return;
         }
 
-        Stage(update.Topology);
+        if (!Stage(update.Topology))
+        {
+            return;
+        }
+        wizard.Close();
         AddWizard = null;
         SelectTab("destination:" + identity);
+    }
+
+    private void CloseAddDestination()
+    {
+        var wizard = AddWizard;
+        AddWizard = null;
+        wizard?.Close();
+    }
+
+    private void CloseAddDestinationUnlessBoundToCurrentWorkspace()
+    {
+        if (AddWizard is not null
+            && (workspace is null || !AddWizard.IsForDocument(workspace.DocumentPath)))
+        {
+            CloseAddDestination();
+        }
     }
 
     private void Apply(SyncTopologyTransitionResult transition)
@@ -662,11 +710,11 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Stage(transition.Topology);
     }
 
-    private void Stage(SyncDesiredTopology desired)
+    private bool Stage(SyncDesiredTopology desired)
     {
         if (!CanEdit || workspace is null)
         {
-            return;
+            return false;
         }
         workspace.Stage(desired);
         if (!workspace.HasPendingChanges)
@@ -675,6 +723,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
         OperationStatus = string.Empty;
         Rebuild();
+        return true;
     }
 
     private void Discard()
@@ -687,6 +736,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     internal void DiscardForReload()
     {
         workspace?.Discard();
+        CloseAddDestination();
         customProxyEditors.Clear();
         migrateLegacyRoot = false;
     }
@@ -741,8 +791,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
             AtomicTomlWriteState.NoChange => "No Data Sync changes were needed.",
             AtomicTomlWriteState.Conflict => "The TOML changed outside Mod Bridge. External edits were preserved; reload before saving.",
             AtomicTomlWriteState.Busy => "Another Mod Bridge change is still in progress. Nothing was written; try saving Data Sync again when it finishes.",
-            AtomicTomlWriteState.Invalid => $"Nothing was written: {result.ValidationError?.Message ?? FirstPlanDiagnostic(result)}",
-            _ => $"Data Sync could not be saved: {result.Error}",
+            AtomicTomlWriteState.Invalid => "Nothing was written because the Data Sync setup needs attention. Review the highlighted destination and try again.",
+            _ => "Data Sync could not be saved. Close other tools using the configuration, check access, and try again.",
         };
         if (result.State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange)
         {
@@ -776,10 +826,38 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
         if (failure is not null && !isInvalidating && !isInvalidated)
         {
-            OperationStatus = $"Data Sync could not be saved: {failure.Message}";
+            OperationStatus =
+                "Data Sync could not be saved. Close other tools using the configuration, check access, and try again.";
         }
+        ReconcileSelectedConfigurationAfterSave(editingSession);
         Rebuild();
         completion.SetResult();
+    }
+
+    private void ReconcileSelectedConfigurationAfterSave(
+        SyncTopologyEditSession editingSession)
+    {
+        if (isInvalidating
+            || isInvalidated
+            || editingSession.HasPendingChanges
+            || ConfigurationSelectionMatchesSession())
+        {
+            return;
+        }
+
+        if (reloadConfiguration is not null)
+        {
+            reloadConfiguration();
+        }
+        else
+        {
+            Reload();
+        }
+        if (IsConfigurationReady)
+        {
+            OperationStatus =
+                "The Data Sync save finished for the previous selection, and the newly selected configuration is now loaded.";
+        }
     }
 
     private async Task CompleteInvalidationAsync(Task? save, TaskCompletionSource completion)
@@ -797,7 +875,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         {
             workspace?.Discard();
             workspace = null;
-            AddWizard = null;
+            CloseAddDestination();
             customProxyEditors.Clear();
             isInvalidated = true;
             isInvalidating = false;
@@ -858,6 +936,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         saveCommand.RaiseCanExecuteChanged();
         saveRecoveryCommand.RaiseCanExecuteChanged();
         (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        AddWizard?.NotifyOwnerStateChanged();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -872,6 +951,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         saveCommand.RaiseCanExecuteChanged();
         saveRecoveryCommand.RaiseCanExecuteChanged();
         (OpenAddDestinationCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        AddWizard?.NotifyOwnerStateChanged();
     }
 
     private bool ConfigurationSelectionMatchesSession()
@@ -1404,15 +1484,21 @@ public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
 {
     private readonly SyncWorkspaceViewModel owner;
     private readonly SyncDesiredTopology baseline;
+    private readonly string documentPath;
     private SyncAddChoiceViewModel? selectedChoice;
     private SyncAddDestinationStep step;
     private string identity = string.Empty;
     private string error = string.Empty;
+    private bool isActive = true;
 
-    internal SyncAddDestinationWizardViewModel(SyncWorkspaceViewModel owner, SyncDesiredTopology baseline)
+    internal SyncAddDestinationWizardViewModel(
+        SyncWorkspaceViewModel owner,
+        SyncDesiredTopology baseline,
+        string documentPath)
     {
         this.owner = owner;
         this.baseline = baseline;
+        this.documentPath = documentPath;
         var choices = new List<SyncAddChoiceViewModel>();
         foreach (var definition in SyncTargetTypeCatalog.All.Values
                      .Where(type => type.ExposurePolicy == SyncTargetExposurePolicy.Creatable)
@@ -1425,9 +1511,13 @@ public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
         }
 
         Choices = choices;
-        BackCommand = new SettingsActionCommand(Back, () => Step != SyncAddDestinationStep.Choose);
+        BackCommand = new SettingsActionCommand(
+            Back,
+            () => IsCurrentAndEditable && Step != SyncAddDestinationStep.Choose);
         NextCommand = new SettingsActionCommand(Next, CanContinue);
-        CancelCommand = new SettingsActionCommand(owner.CancelAddDestination);
+        CancelCommand = new SettingsActionCommand(
+            () => owner.CancelAddDestination(this),
+            () => IsCurrent);
         FinishCommand = new SettingsActionCommand(() => owner.CompleteAddDestination(this), CanFinish);
     }
 
@@ -1513,6 +1603,36 @@ public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
 
     internal void SetError(string message) => Error = message;
 
+    internal bool IsActive => isActive;
+
+    internal bool IsForDocument(string candidatePath) =>
+        isActive
+        && string.Equals(
+            documentPath,
+            candidatePath,
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+
+    internal void Close()
+    {
+        if (!isActive)
+        {
+            return;
+        }
+
+        isActive = false;
+        identity = string.Empty;
+        error = string.Empty;
+        foreach (var field in Fields)
+        {
+            field.Value = string.Empty;
+        }
+        NotifyAll();
+    }
+
+    internal void NotifyOwnerStateChanged() => NotifyAll();
+
     private void Back()
     {
         Error = string.Empty;
@@ -1532,8 +1652,16 @@ public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
         Step++;
     }
 
-    private bool CanContinue() => Step != SyncAddDestinationStep.FeedsAndReview && SelectedChoice is not null;
-    private bool CanFinish() => IsFeedsStep && SelectedChoice is not null
+    private bool IsCurrent =>
+        isActive
+        && ReferenceEquals(owner.AddWizard, this);
+
+    private bool IsCurrentAndEditable => IsCurrent && owner.CanEdit;
+
+    private bool CanContinue() => IsCurrentAndEditable
+        && Step != SyncAddDestinationStep.FeedsAndReview
+        && SelectedChoice is not null;
+    private bool CanFinish() => IsCurrentAndEditable && IsFeedsStep && SelectedChoice is not null
         && !string.IsNullOrWhiteSpace(Identity) && RequiredFieldsComplete();
 
     private bool RequiredFieldsComplete() =>
@@ -1554,6 +1682,7 @@ public sealed class SyncAddDestinationWizardViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new(string.Empty));
         (BackCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
         (NextCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
+        (CancelCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
         (FinishCommand as SettingsActionCommand)?.RaiseCanExecuteChanged();
     }
 }

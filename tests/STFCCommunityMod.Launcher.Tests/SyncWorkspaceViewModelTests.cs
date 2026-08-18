@@ -461,10 +461,12 @@ public sealed class SyncWorkspaceViewModelTests
         File.WriteAllText(fixture.Path, external, new UTF8Encoding(false));
 
         viewModel.SaveCommand.Execute(null);
-        await WaitUntilAsync(() => viewModel.IsStale);
+        await WaitUntilAsync(() => viewModel.IsStale && !viewModel.IsSaveInProgress);
 
         Assert.AreEqual(WorkspaceSaveBlockerKind.ExternalChange, viewModel.SaveState.Blocker);
         Assert.AreEqual(WorkspaceSaveRecoveryKind.DiscardAndReload, viewModel.SaveState.Recovery);
+        Assert.IsFalse(viewModel.CanEdit);
+        Assert.IsFalse(viewModel.DiscardCommand.CanExecute(null));
         Assert.IsFalse(viewModel.SaveAvailability.Contains(fixture.Path, StringComparison.OrdinalIgnoreCase));
         Assert.AreEqual(external, File.ReadAllText(fixture.Path));
 
@@ -483,12 +485,12 @@ public sealed class SyncWorkspaceViewModelTests
         const string external = "[sync\ninvalid";
         File.WriteAllText(fixture.Path, external, new UTF8Encoding(false));
         viewModel.SaveCommand.Execute(null);
-        await WaitUntilAsync(() => viewModel.IsStale);
+        await WaitUntilAsync(() => viewModel.IsStale && !viewModel.IsSaveInProgress);
 
         viewModel.SaveRecoveryCommand.Execute(null);
 
         Assert.IsFalse(viewModel.IsConfigurationReady);
-        StringAssert.Contains(viewModel.OperationStatus, "unsafe to edit");
+        StringAssert.Contains(viewModel.OperationStatus, "cannot edit safely");
         Assert.IsFalse(viewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
         Assert.AreEqual(external, File.ReadAllText(fixture.Path));
     }
@@ -553,6 +555,55 @@ public sealed class SyncWorkspaceViewModelTests
         Assert.IsFalse(viewModel.IsAddWizardOpen);
         Assert.IsFalse(viewModel.HasPendingChanges);
         Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
+    public void ClosedWizardCancelCannotCloseANewerWizard()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var oldWizard = viewModel.AddWizard!;
+        oldWizard.CancelCommand.Execute(null);
+        Assert.IsFalse(oldWizard.CancelCommand.CanExecute(null));
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var currentWizard = viewModel.AddWizard!;
+        oldWizard.CancelCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.IsAddWizardOpen);
+        Assert.AreSame(currentWizard, viewModel.AddWizard);
+        Assert.IsTrue(currentWizard.CancelCommand.CanExecute(null));
+    }
+
+    [TestMethod]
+    public void LiveWizardCannotBeReplacedByASecondOpenInvocation()
+    {
+        const string secret = "live-wizard-private-token";
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "live-wizard";
+        wizard.Endpoint = "https://private.example.invalid/sync";
+        wizard.Token = secret;
+
+        Assert.IsFalse(viewModel.OpenAddDestinationCommand.CanExecute(null));
+        viewModel.OpenAddDestinationCommand.Execute(null);
+
+        Assert.AreSame(wizard, viewModel.AddWizard);
+        Assert.AreEqual(secret, wizard.Token);
+        Assert.IsTrue(wizard.CancelCommand.CanExecute(null));
+        wizard.CancelCommand.Execute(null);
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.AreEqual(string.Empty, wizard.Token);
+        Assert.IsTrue(viewModel.OpenAddDestinationCommand.CanExecute(null));
+        Assert.IsFalse(viewModel.HasPendingChanges);
     }
 
     [TestMethod]
