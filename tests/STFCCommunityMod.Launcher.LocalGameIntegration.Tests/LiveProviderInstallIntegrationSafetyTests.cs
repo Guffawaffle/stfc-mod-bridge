@@ -982,11 +982,34 @@ public sealed partial class LiveProviderInstallIntegrationTests
         var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
         var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
         File.WriteAllBytes(configurationPath, original);
+        ExactFileRevision baselineRevision;
+        using (var exact = ExactFileMutation.Open(configurationPath))
+        {
+            baselineRevision = exact.CaptureRevision();
+        }
         using var campaign = new RestorableGameInstallCampaign(
             target.GameDirectory,
             new MutableGameProcessInspector(target.GameDirectory));
+        var replacementPath = Path.Combine(target.GameDirectory, "external-replacement.toml");
+        File.WriteAllBytes(replacementPath, original);
+        File.SetAttributes(replacementPath, baselineRevision.Attributes);
+        File.SetLastWriteTimeUtc(
+            replacementPath,
+            new DateTime(baselineRevision.LastWriteTimeUtcTicks, DateTimeKind.Utc));
         File.Delete(configurationPath);
-        File.WriteAllBytes(configurationPath, original);
+        File.Move(replacementPath, configurationPath);
+        ExactFileRevision replacementRevision;
+        using (var exact = ExactFileMutation.Open(configurationPath))
+        {
+            replacementRevision = exact.CaptureRevision();
+        }
+        Assert.AreNotEqual(baselineRevision.Identity, replacementRevision.Identity);
+        Assert.AreEqual(baselineRevision.Length, replacementRevision.Length);
+        Assert.AreEqual(baselineRevision.Sha256, replacementRevision.Sha256);
+        Assert.AreEqual(baselineRevision.Attributes, replacementRevision.Attributes);
+        Assert.AreEqual(
+            baselineRevision.LastWriteTimeUtcTicks,
+            replacementRevision.LastWriteTimeUtcTicks);
         var store = new AtomicTomlStore(
             beforeReplace: null,
             retainAdjacentBackup: false,
@@ -996,8 +1019,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
             store.SaveDocumentAsync(configurationPath, original, changed));
 
         CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
-        Assert.ThrowsException<InvalidOperationException>(() => campaign.EmergencyRestore());
+        campaign.EmergencyRestore();
         CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        using (var exact = ExactFileMutation.Open(configurationPath))
+        {
+            Assert.AreEqual(replacementRevision.Identity, exact.Identity);
+        }
     }
 
     [DataTestMethod]
