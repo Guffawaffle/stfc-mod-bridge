@@ -48,7 +48,10 @@ public sealed class AtomicTomlStoreTests
         await File.WriteAllTextAsync(configPath, original);
         var admission = new RecordingMutationAdmission(
             AtomicTomlMutationBoundary.TemporaryWrite);
-        var store = new AtomicTomlStore(mutationAdmission: admission);
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             store.SetOverrideAsync(configPath, "settings.enabled", "true"));
@@ -69,7 +72,10 @@ public sealed class AtomicTomlStoreTests
         await File.WriteAllTextAsync(configPath, original);
         var admission = new RecordingMutationAdmission(
             AtomicTomlMutationBoundary.Promotion);
-        var store = new AtomicTomlStore(mutationAdmission: admission);
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             store.SetOverrideAsync(configPath, "settings.enabled", "true"));
@@ -84,6 +90,183 @@ public sealed class AtomicTomlStoreTests
             admission.Boundaries);
         Assert.AreEqual(original, await File.ReadAllTextAsync(configPath));
         Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ExternalChangeDuringPromotionAdmissionWins(bool useDocumentSave)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var original = Encoding.UTF8.GetBytes("[settings]\nenabled = false\n");
+        var updated = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        var external = Encoding.UTF8.GetBytes(
+            "[settings]\nenabled = false\nexternal = \"preserve\"\n");
+        await File.WriteAllBytesAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnAdmit = (boundary, _, destination) =>
+            {
+                if (boundary == AtomicTomlMutationBoundary.Promotion)
+                {
+                    File.WriteAllBytes(destination, external);
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
+
+        var result = useDocumentSave
+            ? await store.SaveDocumentAsync(configPath, original, updated)
+            : await store.SetOverrideAsync(configPath, "settings.enabled", "true");
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State, result.Error);
+        CollectionAssert.AreEqual(external, await File.ReadAllBytesAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task ExternalCreateDuringPromotionAdmissionWins()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        var intended = Encoding.UTF8.GetBytes("[settings]\nenabled = true\n");
+        var external = Encoding.UTF8.GetBytes("[settings]\nexternal = \"preserve\"\n");
+        var admission = new CallbackMutationAdmission
+        {
+            OnAdmit = (boundary, _, destination) =>
+            {
+                if (boundary == AtomicTomlMutationBoundary.Promotion)
+                {
+                    File.WriteAllBytes(destination, external);
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
+
+        var result = await store.CreateDocumentAsync(configPath, intended);
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State, result.Error);
+        CollectionAssert.AreEqual(external, await File.ReadAllBytesAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task ExternallyCreatedTemporaryPathIsNeverDeleted()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        var sentinel = Encoding.UTF8.GetBytes("external temporary sentinel");
+        string? temporaryPath = null;
+        await File.WriteAllTextAsync(configPath, original);
+        var admission = new CallbackMutationAdmission
+        {
+            OnAdmit = (boundary, temporary, _) =>
+            {
+                if (boundary == AtomicTomlMutationBoundary.TemporaryWrite)
+                {
+                    temporaryPath = temporary;
+                    File.WriteAllBytes(temporary, sentinel);
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
+
+        var result = await store.SetOverrideAsync(
+            configPath,
+            "settings.enabled",
+            "true");
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State);
+        Assert.IsNotNull(temporaryPath);
+        CollectionAssert.AreEqual(sentinel, await File.ReadAllBytesAsync(temporaryPath));
+    }
+
+    [TestMethod]
+    public async Task CleanupAdmissionFailureNeverLeaksThePerPathGate()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        await File.WriteAllTextAsync(configPath, original);
+        var reject = true;
+        var admission = new CallbackMutationAdmission
+        {
+            OnAdmit = (boundary, _, _) =>
+            {
+                if (reject && boundary is AtomicTomlMutationBoundary.Promotion
+                    or AtomicTomlMutationBoundary.TemporaryDelete)
+                {
+                    throw new InvalidOperationException("Injected admission failure.");
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SetOverrideAsync(configPath, "settings.enabled", "true"));
+        reject = false;
+        var retry = await store.SetOverrideAsync(
+                configPath,
+                "settings.enabled",
+                "true")
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, retry.State, retry.Error);
+    }
+
+    [TestMethod]
+    public async Task CancellationAfterTemporaryCreationStillCleansAndReleasesGate()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        await File.WriteAllTextAsync(configPath, original);
+        using var cancellation = new CancellationTokenSource();
+        var cancelOnce = true;
+        var admission = new CallbackMutationAdmission
+        {
+            OnCreated = (_, _, _, _) =>
+            {
+                if (cancelOnce)
+                {
+                    cancelOnce = false;
+                    cancellation.Cancel();
+                }
+            },
+        };
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: true,
+            mutationAdmission: admission);
+
+        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() =>
+            store.SetOverrideAsync(
+                configPath,
+                "settings.enabled",
+                "true",
+                cancellation.Token));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+
+        var retry = await store.SetOverrideAsync(
+                configPath,
+                "settings.enabled",
+                "true")
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(AtomicTomlWriteState.Succeeded, retry.State, retry.Error);
     }
 
     [TestMethod]
@@ -425,5 +608,39 @@ public sealed class AtomicTomlStoreTests
             }
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class CallbackMutationAdmission : IAtomicTomlMutationAdmission
+    {
+        public Action<AtomicTomlMutationBoundary, string, string>? OnAdmit { get; init; }
+
+        public Action<string, string, long, string>? OnCreated { get; init; }
+
+        public Action<string>? OnRemoved { get; init; }
+
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnAdmit?.Invoke(boundary, temporaryPath, destinationPath);
+            return ValueTask.CompletedTask;
+        }
+
+        public void TemporaryCreated(
+            string temporaryPath,
+            string destinationPath,
+            long expectedSize,
+            string expectedSha256) =>
+            OnCreated?.Invoke(
+                temporaryPath,
+                destinationPath,
+                expectedSize,
+                expectedSha256);
+
+        public void TemporaryRemoved(string temporaryPath) =>
+            OnRemoved?.Invoke(temporaryPath);
     }
 }

@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher.LocalGameIntegration.Tests;
@@ -144,9 +146,22 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         using var campaign = new RestorableGameInstallCampaign(gameDirectory);
         var configurationPath = Path.Combine(gameDirectory, "community_patch_settings.toml");
-        var baselineConfiguration = File.Exists(configurationPath)
-            ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
-            : null;
+        byte[]? baselineConfiguration;
+        try
+        {
+            baselineConfiguration = File.Exists(configurationPath)
+                ? await File.ReadAllBytesAsync(configurationPath).ConfigureAwait(false)
+                : null;
+        }
+        catch (Exception exception) when (IsCampaignFailure(exception))
+        {
+            campaign.PreserveStateForRecovery();
+            throw SanitizedFailure(
+                "The configuration recovery baseline could not be captured; isolated state was retained.",
+                exception,
+                gameDirectory,
+                campaign.StateDirectory);
+        }
 
         Exception? journeyFailure = null;
         try
@@ -261,11 +276,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         if (baselineConfiguration is null)
         {
-            campaign.RecordOwnedGameFileRevision(
-                "community_patch_settings.toml",
-                original);
             var create = await new TomlConfigurationRepository(
                     store: new AtomicTomlStore(
+                        beforeReplace: null,
+                        retainAdjacentBackup: true,
                         mutationAdmission: campaign.AtomicTomlMutationAdmission),
                     mutationAdmission: operationLock)
                 .CommitDocumentAsync(new(
@@ -275,17 +289,19 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     original,
                     baselineExisted: false)).ConfigureAwait(false);
             Assert.IsTrue(create.IsSuccess, create.Error);
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                original);
         }
 
-        campaign.RecordOwnedGameFileRevision(
-            "community_patch_settings.toml",
-            changed);
         var mutate = await new TomlConfigurationRepository(
                 store: new AtomicTomlStore(
                     new ProviderScopedConfigurationMutationBackup(
                         backupStore,
                         selection.ProviderId,
                         "local-integration/restore-source"),
+                    beforeReplace: null,
+                    retainAdjacentBackup: false,
                     mutationAdmission: campaign.AtomicTomlMutationAdmission),
                 mutationAdmission: operationLock)
             .CommitDocumentAsync(new(
@@ -294,6 +310,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 original,
                 changed)).ConfigureAwait(false);
         Assert.IsTrue(mutate.IsSuccess, mutate.Error);
+        campaign.RecordOwnedGameFileRevision(
+            "community_patch_settings.toml",
+            changed);
         Assert.IsNotNull(mutate.BackupReceipt);
         CollectionAssert.AreEqual(
             original,
@@ -452,13 +471,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             campaign.RestoreConfigurationBaseline();
             return null;
         }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or InvalidDataException
-                or InvalidOperationException
-                or System.Text.Json.JsonException
-                or System.Security.Cryptography.CryptographicException)
+        catch (Exception exception) when (IsCampaignFailure(exception))
         {
             return exception;
         }
@@ -523,16 +536,22 @@ public sealed partial class LiveProviderInstallIntegrationTests
             campaign.AssertBaseline("Emergency restoration could not restore the maintained target.");
             return null;
         }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or InvalidDataException
-                or InvalidOperationException
-                or AssertFailedException)
+        catch (Exception exception) when (IsCampaignFailure(exception))
         {
             return exception;
         }
     }
+
+    private static bool IsCampaignFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException
+            or JsonException
+            or CryptographicException
+            or AssertFailedException;
 
     private static Exception CombineFailures(Exception primary, Exception? secondary) =>
         secondary is null ? primary : new AggregateException(primary, secondary);
@@ -595,9 +614,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
             campaign.WriteGameFileAtomically(
                 "community_patch_settings.toml",
                 guffawaffleConfiguration);
-            campaign.RecordOwnedGameFileRevision(
-                "community_patch_settings.toml",
-                netnivConfiguration);
             selectionStore.Save(new("guffawaffle", "stable"));
             await backupStore.CreateAsync(new(
                 gameDirectory,
@@ -629,6 +645,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 "version.dll",
                 netnivResult.InstalledArtifact.Sha256);
             CollectionAssert.AreEqual(netnivConfiguration, File.ReadAllBytes(configurationPath));
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                netnivConfiguration);
 
             var toGuffawaffle = await switchCoordinator.PreviewAsync(
                 "guffawaffle",
@@ -713,11 +732,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
             return null;
         }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or InvalidDataException
-                or InvalidOperationException)
+        catch (Exception exception) when (IsCampaignFailure(exception))
         {
             return exception;
         }
@@ -886,6 +901,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         PromoteRestoreStage,
         DeleteGameFile,
         DeleteRestoreStage,
+        CommitRestoreStage,
         RestoreLastWriteTime,
         RestoreAttributes,
     }
@@ -898,7 +914,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         private readonly Action<DirectGameMutationKind, string>? beforeMutation;
         private readonly Dictionary<string, HashSet<string>> ownedFileRevisions =
             new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> createdStagePaths = new(
+        private readonly Dictionary<string, RecoveryStageReceipt> createdStages = new(
             OperatingSystem.IsWindows()
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal);
@@ -940,10 +956,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         public void EmergencyRestore()
         {
-            foreach (var path in createdStagePaths.Where(File.Exists).ToArray())
-            {
-                DeleteCreatedStage(path);
-            }
+            RecoverRetainedStages(
+                gameDirectory,
+                StateDirectory,
+                gameProcessInspector,
+                beforeMutation);
+            createdStages.Clear();
             RestoreFile("version.dll");
             RestoreFile("community_patch_settings.toml");
         }
@@ -961,16 +979,15 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 throw new InvalidOperationException(
                     "The live protected file is not a campaign-owned revision and was preserved.");
             }
-            RecordOwnedGameFileRevision(fileName, contents);
             ReplaceFileAtomically(path, contents, current);
+            RecordOwnedGameFileRevision(fileName, contents);
         }
 
         public void RecordOwnedGameFileRevision(string fileName, byte[] contents)
         {
             ValidateProtectedFileName(fileName);
-            RecordOwnedGameFileRevision(
-                fileName,
-                Convert.ToHexString(SHA256.HashData(contents)));
+            var expectedSha256 = Convert.ToHexString(SHA256.HashData(contents));
+            RecordOwnedGameFileRevision(fileName, expectedSha256);
         }
 
         public void EnsureGameClosedForMutation()
@@ -1043,15 +1060,31 @@ public sealed partial class LiveProviderInstallIntegrationTests
             byte[] contents,
             FileBaseline? expectedCurrent)
         {
+            var fileName = Path.GetFileName(path);
             var stagePath = Path.Combine(
                 gameDirectory,
-                $".stfc-bridge-integration-{Path.GetFileName(path)}.{Guid.NewGuid():N}.restore-stage");
+                $".stfc-bridge-integration-{fileName}.{Guid.NewGuid():N}.restore-stage");
             Exception? primaryFailure = null;
             try
             {
                 AdmitMutation(DirectGameMutationKind.WriteRestoreStage, stagePath);
-                createdStagePaths.Add(stagePath);
-                File.WriteAllBytes(stagePath, contents);
+                using (var stream = new FileStream(
+                    stagePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.WriteThrough))
+                {
+                    RecordCreatedStage(
+                        stagePath,
+                        path,
+                        contents.LongLength,
+                        Convert.ToHexString(SHA256.HashData(contents)),
+                        deletionAllowed: true);
+                    stream.Write(contents);
+                    stream.Flush(flushToDisk: true);
+                }
                 AdmitMutation(DirectGameMutationKind.PromoteRestoreStage, path);
                 if (expectedCurrent is null)
                 {
@@ -1061,6 +1094,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                             "The protected file appeared before atomic promotion and was preserved.");
                     }
                     File.Move(stagePath, path);
+                    RecordOwnedGameFileRevision(fileName, contents);
+                    RemoveCreatedStageReceipt(stagePath);
                 }
                 else
                 {
@@ -1072,7 +1107,44 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new InvalidOperationException(
                             "The protected file changed before atomic promotion and was preserved.");
                     }
-                    File.Replace(stagePath, path, null, ignoreMetadataErrors: true);
+                    AdmitMutation(DirectGameMutationKind.CommitRestoreStage, path);
+                    var rollbackPath = Path.Combine(
+                        gameDirectory,
+                        $".stfc-bridge-integration-{fileName}.{Guid.NewGuid():N}.restore-rollback");
+                    File.Replace(
+                        stagePath,
+                        path,
+                        rollbackPath,
+                        ignoreMetadataErrors: true);
+                    RecordOwnedGameFileRevision(fileName, contents);
+                    RemoveCreatedStageReceipt(stagePath);
+
+                    var displaced = FileBaseline.Capture(rollbackPath);
+                    RecordCreatedStage(
+                        rollbackPath,
+                        path,
+                        displaced.Length,
+                        displaced.Sha256,
+                        deletionAllowed: false);
+                    if (!expectedCurrent.Matches(displaced))
+                    {
+                        var promoted = FileBaseline.Capture(path);
+                        if (!promoted.ContentsMatch(FileBaseline.FromContents(contents)))
+                        {
+                            throw new InvalidOperationException(
+                                "The protected file changed again after promotion; all conflicting bytes were preserved.");
+                        }
+                        File.Replace(
+                            rollbackPath,
+                            path,
+                            null,
+                            ignoreMetadataErrors: true);
+                        RemoveCreatedStageReceipt(rollbackPath);
+                        throw new InvalidOperationException(
+                            "The protected file changed during atomic promotion and was restored unchanged.");
+                    }
+                    AllowStageDeletion(rollbackPath);
+                    DeleteCreatedStage(rollbackPath);
                 }
             }
             catch (Exception exception)
@@ -1141,14 +1213,17 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         private void DeleteCreatedStage(string path)
         {
-            if (!createdStagePaths.Contains(path))
+            var canonicalPath = Path.GetFullPath(path);
+            if (!createdStages.TryGetValue(canonicalPath, out var receipt)
+                || !receipt.DeletionAllowed)
             {
                 throw new InvalidOperationException(
                     "The recovery harness refused to delete an unowned stage path.");
             }
             AdmitMutation(DirectGameMutationKind.DeleteRestoreStage, path);
+            EnsureStageMatches(receipt);
             File.Delete(path);
-            createdStagePaths.Remove(path);
+            RemoveCreatedStageReceipt(path);
         }
 
         private void AdmitMutation(DirectGameMutationKind kind, string path)
@@ -1177,15 +1252,241 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 : temporaryPath;
             beforeMutation?.Invoke(kind, path);
             EnsureGameClosedForMutation();
-            if (boundary == AtomicTomlMutationBoundary.TemporaryWrite)
+            if (boundary == AtomicTomlMutationBoundary.TemporaryDelete)
             {
-                createdStagePaths.Add(temporaryPath);
+                var canonicalPath = Path.GetFullPath(temporaryPath);
+                if (!createdStages.TryGetValue(canonicalPath, out var receipt)
+                    || !receipt.DeletionAllowed)
+                {
+                    throw new InvalidOperationException(
+                        "The recovery harness refused to delete an unowned TOML stage path.");
+                }
+                EnsureStageMatches(receipt);
             }
-            else if (boundary == AtomicTomlMutationBoundary.TemporaryDelete
-                     && !createdStagePaths.Contains(temporaryPath))
+        }
+
+        private void RecordCreatedStage(
+            string stagePath,
+            string destinationPath,
+            long expectedSize,
+            string expectedSha256,
+            bool deletionAllowed)
+        {
+            var receipt = CreateStageReceipt(
+                gameDirectory,
+                stagePath,
+                destinationPath,
+                expectedSize,
+                expectedSha256,
+                deletionAllowed);
+            createdStages[receipt.StagePath] = receipt;
+            PersistStageReceipt(StateDirectory, receipt);
+        }
+
+        private void AllowStageDeletion(string stagePath)
+        {
+            var canonicalPath = Path.GetFullPath(stagePath);
+            if (!createdStages.TryGetValue(canonicalPath, out var receipt))
             {
                 throw new InvalidOperationException(
-                    "The recovery harness refused to delete an unowned TOML stage path.");
+                    "The recovery harness cannot authorize an unrecorded stage path.");
+            }
+            receipt = receipt with { DeletionAllowed = true };
+            createdStages[canonicalPath] = receipt;
+            PersistStageReceipt(StateDirectory, receipt);
+        }
+
+        private void RemoveCreatedStageReceipt(string stagePath)
+        {
+            var canonicalPath = Path.GetFullPath(stagePath);
+            createdStages.Remove(canonicalPath);
+            var receiptPath = StageReceiptPath(StateDirectory, canonicalPath);
+            if (File.Exists(receiptPath))
+            {
+                File.Delete(receiptPath);
+            }
+        }
+
+        public static void RecoverRetainedStages(
+            string gameDirectory,
+            string stateDirectory,
+            IGameProcessInspector gameProcessInspector,
+            Action<DirectGameMutationKind, string>? beforeMutation = null)
+        {
+            if (!Directory.Exists(stateDirectory))
+            {
+                return;
+            }
+            foreach (var receiptPath in Directory.EnumerateFiles(
+                         stateDirectory,
+                         "recovery-stage-*.json",
+                         SearchOption.TopDirectoryOnly))
+            {
+                var receipt = JsonSerializer.Deserialize<RecoveryStageReceipt>(
+                    File.ReadAllBytes(receiptPath))
+                    ?? throw new InvalidDataException("A recovery-stage receipt was empty.");
+                ValidateStageReceipt(gameDirectory, receipt);
+                if (!string.Equals(
+                        Path.GetFullPath(receiptPath),
+                        Path.GetFullPath(StageReceiptPath(stateDirectory, receipt.StagePath)),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException(
+                        "A recovery-stage receipt filename does not match its stage identity.");
+                }
+                if (!receipt.DeletionAllowed)
+                {
+                    throw new InvalidOperationException(
+                        "A recovery rollback may contain external bytes and was preserved.");
+                }
+                if (!File.Exists(receipt.StagePath))
+                {
+                    File.Delete(receiptPath);
+                    continue;
+                }
+                beforeMutation?.Invoke(DirectGameMutationKind.DeleteRestoreStage, receipt.StagePath);
+                if (gameProcessInspector.Inspect(gameDirectory)
+                    != GameProcessInspectionState.NotRunning)
+                {
+                    throw new InvalidOperationException(
+                        "The exact opted-in integration installation started running before stage recovery.");
+                }
+                EnsureStageMatches(receipt);
+                File.Delete(receipt.StagePath);
+                File.Delete(receiptPath);
+            }
+        }
+
+        private static RecoveryStageReceipt CreateStageReceipt(
+            string gameDirectory,
+            string stagePath,
+            string destinationPath,
+            long expectedSize,
+            string expectedSha256,
+            bool deletionAllowed)
+        {
+            var receipt = new RecoveryStageReceipt(
+                1,
+                Path.GetFullPath(stagePath),
+                Path.GetFullPath(destinationPath),
+                expectedSize,
+                expectedSha256,
+                deletionAllowed);
+            ValidateStageReceipt(gameDirectory, receipt);
+            return receipt;
+        }
+
+        private static void ValidateStageReceipt(
+            string gameDirectory,
+            RecoveryStageReceipt receipt)
+        {
+            if (receipt.SchemaVersion != 1
+                || receipt.ExpectedSize < 0
+                || receipt.ExpectedSha256.Length != 64
+                || receipt.ExpectedSha256.Any(character => !Uri.IsHexDigit(character)))
+            {
+                throw new InvalidDataException("A recovery-stage receipt is invalid.");
+            }
+            var canonicalGameDirectory = Path.GetFullPath(gameDirectory);
+            var canonicalStagePath = Path.GetFullPath(receipt.StagePath);
+            var canonicalDestinationPath = Path.GetFullPath(receipt.DestinationPath);
+            if (!string.Equals(
+                    Path.GetDirectoryName(canonicalStagePath),
+                    canonicalGameDirectory,
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    Path.GetDirectoryName(canonicalDestinationPath),
+                    canonicalGameDirectory,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "A recovery-stage receipt escaped the exact opted-in installation.");
+            }
+            var destinationName = Path.GetFileName(canonicalDestinationPath);
+            ValidateProtectedFileName(destinationName);
+            var stageName = Path.GetFileName(canonicalStagePath);
+            var directPrefix = $".stfc-bridge-integration-{destinationName}.";
+            var atomicPrefix = $".{destinationName}.";
+            var isDirect = HasGuidIdentity(stageName, directPrefix, ".restore-stage")
+                || HasGuidIdentity(stageName, directPrefix, ".restore-rollback");
+            var isAtomic = HasGuidIdentity(stageName, atomicPrefix, ".tmp");
+            if (!isDirect && !isAtomic)
+            {
+                throw new InvalidDataException(
+                    "A recovery-stage receipt does not name a harness-owned stage pattern.");
+            }
+        }
+
+        private static bool HasGuidIdentity(
+            string fileName,
+            string prefix,
+            string suffix)
+        {
+            if (!fileName.StartsWith(prefix, StringComparison.Ordinal)
+                || !fileName.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            var identity = fileName[prefix.Length..^suffix.Length];
+            return Guid.TryParseExact(identity, "N", out _);
+        }
+
+        private static void EnsureStageMatches(RecoveryStageReceipt receipt)
+        {
+            var current = FileBaseline.Capture(receipt.StagePath);
+            if (current.Length != receipt.ExpectedSize
+                || !string.Equals(
+                    current.Sha256,
+                    receipt.ExpectedSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "A recovery stage changed after its ownership receipt was recorded and was preserved.");
+            }
+        }
+
+        private static string StageReceiptPath(string stateDirectory, string stagePath)
+        {
+            var identity = Convert.ToHexString(SHA256.HashData(
+                Encoding.UTF8.GetBytes(Path.GetFullPath(stagePath).ToUpperInvariant())));
+            return Path.Combine(stateDirectory, $"recovery-stage-{identity}.json");
+        }
+
+        private static void PersistStageReceipt(
+            string stateDirectory,
+            RecoveryStageReceipt receipt)
+        {
+            var receiptPath = StageReceiptPath(stateDirectory, receipt.StagePath);
+            var temporaryPath = receiptPath + $".{Guid.NewGuid():N}.tmp";
+            var contents = JsonSerializer.SerializeToUtf8Bytes(receipt);
+            try
+            {
+                using (var stream = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.WriteThrough))
+                {
+                    stream.Write(contents);
+                    stream.Flush(flushToDisk: true);
+                }
+                if (File.Exists(receiptPath))
+                {
+                    File.Replace(temporaryPath, receiptPath, null, ignoreMetadataErrors: true);
+                }
+                else
+                {
+                    File.Move(temporaryPath, receiptPath);
+                }
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
         }
 
@@ -1193,6 +1494,21 @@ public sealed partial class LiveProviderInstallIntegrationTests
         {
             ValidateProtectedFileName(fileName);
             ArgumentException.ThrowIfNullOrWhiteSpace(sha256);
+            var path = Path.Combine(gameDirectory, fileName);
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException(
+                    "The campaign cannot record ownership for a missing protected file.");
+            }
+            using (var stream = File.OpenRead(path))
+            {
+                var liveSha256 = Convert.ToHexString(SHA256.HashData(stream));
+                if (!string.Equals(liveSha256, sha256, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The live protected file does not match its completed mutation receipt.");
+                }
+            }
             if (!ownedFileRevisions.TryGetValue(fileName, out var revisions))
             {
                 revisions = new(StringComparer.Ordinal);
@@ -1281,7 +1597,23 @@ public sealed partial class LiveProviderInstallIntegrationTests
             public bool ContentsMatch(FileBaseline other) =>
                 Length == other.Length
                 && string.Equals(Sha256, other.Sha256, StringComparison.Ordinal);
+
+            public static FileBaseline FromContents(byte[] contents) =>
+                new(
+                    FileAttributes.Normal,
+                    contents.LongLength,
+                    0,
+                    Convert.ToHexString(SHA256.HashData(contents)),
+                    contents);
         }
+
+        private sealed record RecoveryStageReceipt(
+            int SchemaVersion,
+            string StagePath,
+            string DestinationPath,
+            long ExpectedSize,
+            string ExpectedSha256,
+            bool DeletionAllowed);
 
         private sealed class CampaignAtomicTomlMutationAdmission(
             RestorableGameInstallCampaign campaign) : IAtomicTomlMutationAdmission
@@ -1299,6 +1631,21 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     destinationPath);
                 return ValueTask.CompletedTask;
             }
+
+            public void TemporaryCreated(
+                string temporaryPath,
+                string destinationPath,
+                long expectedSize,
+                string expectedSha256) =>
+                campaign.RecordCreatedStage(
+                    temporaryPath,
+                    destinationPath,
+                    expectedSize,
+                    expectedSha256,
+                    deletionAllowed: true);
+
+            public void TemporaryRemoved(string temporaryPath) =>
+                campaign.RemoveCreatedStageReceipt(temporaryPath);
         }
     }
 }
