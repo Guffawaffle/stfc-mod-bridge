@@ -106,6 +106,44 @@ public sealed class ConfigurationWorkspaceTests
     }
 
     [TestMethod]
+    public async Task DataSyncCommitRejectsSessionFromDifferentDocumentWithIdenticalRevision()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var firstPath = Path.Combine(temporaryDirectory.Path, "first.toml");
+        var secondPath = Path.Combine(temporaryDirectory.Path, "second.toml");
+        var original = Encoding.UTF8.GetBytes("[sync]\njobs = true\n");
+        await File.WriteAllBytesAsync(firstPath, original);
+        await File.WriteAllBytesAsync(secondPath, original);
+        var repository = new TomlConfigurationRepository();
+        var firstLoad = ConfigurationWorkspace.Load(
+            firstPath,
+            LoadCatalog(),
+            repository,
+            out var firstWorkspace);
+        var secondLoad = ConfigurationWorkspace.Load(
+            secondPath,
+            LoadCatalog(),
+            repository,
+            out var secondWorkspace);
+        Assert.IsTrue(firstLoad.IsSuccess, firstLoad.Error);
+        Assert.IsTrue(secondLoad.IsSuccess, secondLoad.Error);
+        var syncLoad = firstWorkspace!.CreateSyncTopologyEditSession(out var session);
+        Assert.IsTrue(syncLoad.IsValid, syncLoad.Error?.Message);
+        session!.Stage(
+            session.Desired.WithGlobalDefaults(
+                session.Desired.GlobalDefaults.WithDataKind(SyncDataKind.Jobs, false)));
+
+        var result = await secondWorkspace!.CommitSyncAsync(session);
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        Assert.IsTrue(session.IsStale);
+        Assert.IsTrue(session.HasPendingChanges);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(firstPath));
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(secondPath));
+        Assert.IsFalse(File.Exists(secondPath + ".bak"));
+    }
+
+    [TestMethod]
     public async Task DataSyncCommitPropagatesDurableBackupReceipt()
     {
         var snapshot = new ConfigurationDocumentSnapshot(

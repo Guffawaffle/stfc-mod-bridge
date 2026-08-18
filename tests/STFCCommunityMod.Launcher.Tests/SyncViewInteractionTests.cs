@@ -16,6 +16,8 @@ public sealed class SyncViewInteractionTests
         "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace Xaml =
         "http://schemas.microsoft.com/winfx/2006/xaml";
+    private static readonly XNamespace Automation =
+        "clr-namespace:System.Windows.Automation;assembly=PresentationCore";
 
     [TestMethod]
     public void ReloadedViewRestoresItsViewModelSubscription()
@@ -135,6 +137,36 @@ public sealed class SyncViewInteractionTests
         Assert.IsTrue(
             wizardWidth <= MainWindow.SettingsMinWidth - navigationWidth,
             "The Add destination wizard must fit beside navigation at the supported minimum width.");
+    }
+
+    [TestMethod]
+    public void DataSyncFooterKeepsBlockedSaveReasonAndRecoveryVisibleAndAccessible()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/Views/SyncView.xaml");
+        var blocker = Named(document.Descendants(Presentation + "TextBlock"), "SyncSaveBlockerText");
+        var recovery = Named(document.Descendants(Presentation + "Button"), "SyncSaveRecoveryButton");
+        var legacy = Named(document.Descendants(Presentation + "CheckBox"), "LegacyMigrationApproval");
+        var page = Named(document.Descendants(Presentation + "ScrollViewer"), "PageScrollViewer");
+        var blockerBorder = blocker.Ancestors(Presentation + "Border").FirstOrDefault();
+
+        Assert.IsNotNull(blockerBorder);
+        Assert.AreEqual("{Binding SaveAvailability}", (string?)blocker.Attribute("Text"));
+        Assert.AreEqual("Wrap", (string?)blocker.Attribute("TextWrapping"));
+        Assert.AreEqual("Polite", (string?)blocker.Attribute(Automation + "AutomationProperties.LiveSetting"));
+        Assert.AreEqual(
+            "{Binding IsSaveBlocked, Converter={StaticResource BooleanToVisibilityConverter}}",
+            (string?)blockerBorder.Attribute("Visibility"));
+        Assert.AreEqual("{Binding SaveRecoveryCommand}", (string?)recovery.Attribute("Command"));
+        Assert.AreEqual(
+            "{Binding SaveState.RecoveryActionLabel}",
+            (string?)recovery.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual(
+            "{Binding SaveAvailability}",
+            (string?)recovery.Attribute(Automation + "AutomationProperties.HelpText"));
+        Assert.AreEqual(
+            "Approve moving the older sync setup into a named destination",
+            (string?)legacy.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual("{Binding CanEdit}", (string?)page.Attribute("IsEnabled"));
     }
 
     [TestMethod]

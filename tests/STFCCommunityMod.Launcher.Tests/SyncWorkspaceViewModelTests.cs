@@ -337,7 +337,10 @@ public sealed class SyncWorkspaceViewModelTests
             token = "fixture-secret"
             """);
         var siblingPending = false;
-        var viewModel = fixture.CreateViewModel(() => siblingPending);
+        var navigated = false;
+        var viewModel = fixture.CreateViewModel(
+            () => siblingPending,
+            () => navigated = true);
         viewModel.GlobalVerifySsl = false;
         viewModel.GlobalUnsafeTls = true;
         Assert.IsTrue(viewModel.CanSave);
@@ -346,7 +349,12 @@ public sealed class SyncWorkspaceViewModelTests
 
         Assert.IsFalse(viewModel.CanSave);
         Assert.IsTrue(viewModel.HasPendingChanges);
-        StringAssert.Contains(viewModel.SaveAvailability, "non-sync settings");
+        Assert.AreEqual(WorkspaceSaveBlockerKind.SiblingWorkspace, viewModel.SaveState.Blocker);
+        Assert.AreEqual(WorkspaceSaveRecoveryKind.GoToSettings, viewModel.SaveState.Recovery);
+        StringAssert.Contains(viewModel.SaveAvailability, "Settings has unsaved changes");
+        viewModel.SaveRecoveryCommand.Execute(null);
+        Assert.IsTrue(navigated);
+        Assert.IsTrue(viewModel.HasPendingChanges);
     }
 
     [TestMethod]
@@ -393,10 +401,98 @@ public sealed class SyncWorkspaceViewModelTests
 
         Assert.IsTrue(viewModel.HasLegacyRootTarget);
         Assert.IsFalse(viewModel.CanSave);
+        Assert.AreEqual(WorkspaceSaveBlockerKind.LegacyMigration, viewModel.SaveState.Blocker);
+        Assert.AreEqual(
+            WorkspaceSaveRecoveryKind.ApproveLegacyMigration,
+            viewModel.SaveState.Recovery);
 
-        viewModel.MigrateLegacyRoot = true;
+        viewModel.SaveRecoveryCommand.Execute(null);
 
+        Assert.IsTrue(viewModel.MigrateLegacyRoot);
         Assert.IsTrue(viewModel.CanSave);
+
+        viewModel.DiscardCommand.Execute(null);
+        viewModel.Targets.Single().Url = "https://second.example.invalid/sync";
+
+        Assert.IsFalse(viewModel.MigrateLegacyRoot);
+        Assert.AreEqual(WorkspaceSaveBlockerKind.LegacyMigration, viewModel.SaveState.Blocker);
+        Assert.IsFalse(viewModel.CanSave);
+    }
+
+    [TestMethod]
+    public void InvalidDestinationProjectsNamedRedactedFocusActionAndCorrection()
+    {
+        using var fixture = SyncFixture.Create(
+            """
+            [sync.targets.community]
+            url = "https://private-user.example.invalid/sync"
+            token = "fixture-super-secret"
+            """);
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.GlobalVerifySsl = false;
+
+        var blocked = viewModel.SaveState;
+        Assert.AreEqual(WorkspaceSaveBlockerKind.DataSyncValidation, blocked.Blocker);
+        Assert.AreEqual(WorkspaceSaveRecoveryKind.ReviewDestination, blocked.Recovery);
+        Assert.AreEqual("community", blocked.TargetId);
+        StringAssert.Contains(blocked.Message, "destination 'community'");
+        Assert.IsFalse(blocked.Message.Contains("fixture-super-secret", StringComparison.Ordinal));
+        Assert.IsFalse(blocked.Message.Contains("private-user", StringComparison.Ordinal));
+        Assert.IsFalse(blocked.Message.Contains(fixture.Path, StringComparison.OrdinalIgnoreCase));
+
+        viewModel.SaveRecoveryCommand.Execute(null);
+        Assert.AreEqual("community", viewModel.SelectedDestination?.Name);
+        Assert.AreEqual("community", viewModel.RecoveryFocusTargetId);
+        Assert.IsTrue(viewModel.RecoveryFocusRevision > 0);
+
+        viewModel.GlobalUnsafeTls = true;
+        Assert.IsTrue(viewModel.CanSave, viewModel.SaveAvailability);
+    }
+
+    [TestMethod]
+    public async Task ExternalSyncChangeIsPreservedUntilExplicitDiscardAndReload()
+    {
+        const string source = "[sync]\njobs = true\n";
+        const string external = "# external\n[sync]\njobs = true\n";
+        using var fixture = SyncFixture.Create(source);
+        var viewModel = fixture.CreateViewModel();
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        File.WriteAllText(fixture.Path, external, new UTF8Encoding(false));
+
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => viewModel.IsStale && !viewModel.IsSaveInProgress);
+
+        Assert.AreEqual(WorkspaceSaveBlockerKind.ExternalChange, viewModel.SaveState.Blocker);
+        Assert.AreEqual(WorkspaceSaveRecoveryKind.DiscardAndReload, viewModel.SaveState.Recovery);
+        Assert.IsFalse(viewModel.CanEdit);
+        Assert.IsFalse(viewModel.DiscardCommand.CanExecute(null));
+        Assert.IsFalse(viewModel.SaveAvailability.Contains(fixture.Path, StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(external, File.ReadAllText(fixture.Path));
+
+        viewModel.SaveRecoveryCommand.Execute(null);
+        Assert.IsFalse(viewModel.HasPendingChanges);
+        Assert.IsFalse(viewModel.IsStale);
+        Assert.AreEqual(external, File.ReadAllText(fixture.Path));
+    }
+
+    [TestMethod]
+    public async Task FailedSyncRecoveryKeepsLoadErrorInsteadOfClaimingReloadSuccess()
+    {
+        using var fixture = SyncFixture.Create("[sync]\njobs = true\n");
+        var viewModel = fixture.CreateViewModel();
+        viewModel.GlobalFeeds.Single(feed => feed.Label == "Jobs").IsEnabled = false;
+        const string external = "[sync\ninvalid";
+        File.WriteAllText(fixture.Path, external, new UTF8Encoding(false));
+        viewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => viewModel.IsStale && !viewModel.IsSaveInProgress);
+
+        viewModel.SaveRecoveryCommand.Execute(null);
+
+        Assert.IsFalse(viewModel.IsConfigurationReady);
+        StringAssert.Contains(viewModel.OperationStatus, "cannot edit safely");
+        Assert.IsFalse(viewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(external, File.ReadAllText(fixture.Path));
     }
 
     [TestMethod]
@@ -459,6 +555,55 @@ public sealed class SyncWorkspaceViewModelTests
         Assert.IsFalse(viewModel.IsAddWizardOpen);
         Assert.IsFalse(viewModel.HasPendingChanges);
         Assert.AreEqual(0, viewModel.Targets.Count);
+    }
+
+    [TestMethod]
+    public void ClosedWizardCancelCannotCloseANewerWizard()
+    {
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var oldWizard = viewModel.AddWizard!;
+        oldWizard.CancelCommand.Execute(null);
+        Assert.IsFalse(oldWizard.CancelCommand.CanExecute(null));
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var currentWizard = viewModel.AddWizard!;
+        oldWizard.CancelCommand.Execute(null);
+
+        Assert.IsTrue(viewModel.IsAddWizardOpen);
+        Assert.AreSame(currentWizard, viewModel.AddWizard);
+        Assert.IsTrue(currentWizard.CancelCommand.CanExecute(null));
+    }
+
+    [TestMethod]
+    public void LiveWizardCannotBeReplacedByASecondOpenInvocation()
+    {
+        const string secret = "live-wizard-private-token";
+        using var fixture = SyncFixture.Create("# empty\n");
+        var viewModel = fixture.CreateViewModel();
+
+        viewModel.OpenAddDestinationCommand.Execute(null);
+        var wizard = viewModel.AddWizard!;
+        wizard.SelectedChoice = wizard.Choices.Single(choice =>
+            choice.Kind == SyncTargetKind.LegacyCommunity && choice.Preset is null);
+        wizard.NextCommand.Execute(null);
+        wizard.Identity = "live-wizard";
+        wizard.Endpoint = "https://private.example.invalid/sync";
+        wizard.Token = secret;
+
+        Assert.IsFalse(viewModel.OpenAddDestinationCommand.CanExecute(null));
+        viewModel.OpenAddDestinationCommand.Execute(null);
+
+        Assert.AreSame(wizard, viewModel.AddWizard);
+        Assert.AreEqual(secret, wizard.Token);
+        Assert.IsTrue(wizard.CancelCommand.CanExecute(null));
+        wizard.CancelCommand.Execute(null);
+        Assert.IsFalse(viewModel.IsAddWizardOpen);
+        Assert.AreEqual(string.Empty, wizard.Token);
+        Assert.IsTrue(viewModel.OpenAddDestinationCommand.CanExecute(null));
+        Assert.IsFalse(viewModel.HasPendingChanges);
     }
 
     [TestMethod]
@@ -607,8 +752,14 @@ public sealed class SyncWorkspaceViewModelTests
             return new(path);
         }
 
-        public SyncWorkspaceViewModel CreateViewModel(Func<bool>? siblingPending = null) =>
-            new(() => Path, new TomlConfigurationRepository(), siblingPending);
+        public SyncWorkspaceViewModel CreateViewModel(
+            Func<bool>? siblingPending = null,
+            Action? navigateToSiblingSettings = null) =>
+            new(
+                () => Path,
+                new TomlConfigurationRepository(),
+                siblingPending,
+                navigateToSiblingSettings: navigateToSiblingSettings);
 
         public void Dispose()
         {

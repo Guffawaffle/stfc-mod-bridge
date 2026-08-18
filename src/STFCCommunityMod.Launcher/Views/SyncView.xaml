@@ -226,6 +226,7 @@
     <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
     <ScrollViewer x:Name="PageScrollViewer" Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                  IsEnabled="{Binding CanEdit}"
                   HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
                   automation:AutomationProperties.Name="Data Sync page content">
       <ScrollViewer.Resources><Style BasedOn="{StaticResource SyncScrollBarStyle}" TargetType="{x:Type ScrollBar}" /></ScrollViewer.Resources>
@@ -341,7 +342,9 @@
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
               <StackPanel><TextBlock FontWeight="SemiBold" Text="Older root sync migration required" />
                 <TextBlock Margin="0,3,18,0" FontSize="12" Text="Move sync.url and sync.token into a named destination when saving." /></StackPanel>
-              <CheckBox Grid.Column="1" Style="{StaticResource SyncSwitchStyle}" IsChecked="{Binding MigrateLegacyRoot}" />
+              <CheckBox x:Name="LegacyMigrationApproval" Grid.Column="1" Style="{StaticResource SyncSwitchStyle}"
+                        IsChecked="{Binding MigrateLegacyRoot}"
+                        automation:AutomationProperties.Name="Approve moving the older sync setup into a named destination" />
             </Grid>
           </Border>
         </StackPanel>
@@ -488,15 +491,33 @@
       </StackPanel>
     </ScrollViewer>
 
-    <Border Grid.Row="1" Padding="24,11,24,12" Background="{DynamicResource WindowBackgroundBrush}"
+    <Border x:Name="SyncFooter" Grid.Row="1" Padding="24,11,24,12" Background="{DynamicResource WindowBackgroundBrush}"
             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding PendingChangesText}" />
           <TextBlock Margin="0,3,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding OperationStatus}" automation:AutomationProperties.LiveSetting="Polite" /></StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal">
-          <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DiscardCommand}" Content="Discard" />
-          <Button Command="{Binding SaveCommand}" Content="Save changes" ToolTip="{Binding SaveAvailability}" />
+          <Button Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DiscardCommand}" Content="Discard"
+                  automation:AutomationProperties.Name="Discard unsaved Data Sync changes" />
+          <Button Command="{Binding SaveCommand}" Content="Save changes" ToolTip="{Binding SaveAvailability}"
+                  automation:AutomationProperties.Name="Save Data Sync changes"
+                  automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
         </StackPanel>
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="10,7"
+                Background="{DynamicResource WarningSoftBrush}" CornerRadius="6"
+                Visibility="{Binding IsSaveBlocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="SyncSaveBlockerText" MaxWidth="600" Margin="0,0,16,0" VerticalAlignment="Center"
+                       Foreground="{DynamicResource WarningBrush}" Text="{Binding SaveAvailability}" TextWrapping="Wrap"
+                       automation:AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="SyncSaveRecoveryButton" Grid.Column="1" MinWidth="132"
+                    Style="{StaticResource SecondaryButtonStyle}" Command="{Binding SaveRecoveryCommand}"
+                    Content="{Binding SaveState.RecoveryActionLabel}"
+                    automation:AutomationProperties.Name="{Binding SaveState.RecoveryActionLabel}"
+                    automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
+          </Grid>
+        </Border>
       </Grid>
     </Border>
 

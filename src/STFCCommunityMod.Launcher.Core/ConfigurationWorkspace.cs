@@ -231,6 +231,13 @@ public sealed class ConfigurationWorkspace
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (!PathsEqual(session.DocumentPath, baseline.Path))
+        {
+            session.MarkStale();
+            return new(
+                AtomicTomlWriteState.Conflict,
+                Error: "The Data Sync session belongs to a different selected configuration.");
+        }
         if (session.BaselineRevision != baseline.Revision)
         {
             session.MarkStale();
@@ -302,6 +309,14 @@ public sealed class ConfigurationWorkspace
             result.BackupPath,
             BackupReceipt: result.BackupReceipt);
     }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
 
     public async Task<ConfigurationRepositoryCommitResult> CommitAsync(
         CancellationToken cancellationToken = default)

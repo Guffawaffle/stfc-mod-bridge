@@ -694,6 +694,7 @@
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  behaviors:KeepVisibleAboveFooterBehavior.Footer="{Binding ElementName=SettingsFooter}"
                  ItemsSource="{Binding FilteredSettings}"
+                 IsEnabled="{Binding CanEdit}"
                  Background="Transparent"
                  BorderThickness="0"
                  ScrollViewer.CanContentScroll="True"
@@ -1773,6 +1774,10 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
         <StackPanel VerticalAlignment="Center">
           <TextBlock FontSize="13"
@@ -1807,6 +1812,37 @@
                   automation:AutomationProperties.Name="Save configuration changes"
                   automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
         </StackPanel>
+
+        <Border Grid.Row="1"
+                Grid.ColumnSpan="2"
+                Margin="0,8,0,0"
+                Padding="10,7"
+                Background="{DynamicResource WarningSoftBrush}"
+                CornerRadius="6"
+                Visibility="{Binding IsSaveBlocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="SettingsSaveBlockerText"
+                       MaxWidth="600"
+                       Margin="0,0,16,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WarningBrush}"
+                       Text="{Binding SaveAvailability}"
+                       TextWrapping="Wrap"
+                       automation:AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="SettingsSaveRecoveryButton"
+                    Grid.Column="1"
+                    MinWidth="132"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Command="{Binding SaveRecoveryCommand}"
+                    Content="{Binding SaveState.RecoveryActionLabel}"
+                    automation:AutomationProperties.Name="{Binding SaveState.RecoveryActionLabel}"
+                    automation:AutomationProperties.HelpText="{Binding SaveAvailability}" />
+          </Grid>
+        </Border>
       </Grid>
     </Border>
   </Grid>

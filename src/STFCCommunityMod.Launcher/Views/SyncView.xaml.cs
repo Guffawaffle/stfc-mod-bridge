@@ -228,6 +228,12 @@ public partial class SyncView : UserControl
             EnsureSelectedTabVisible();
         }
 
+        if (e.PropertyName == nameof(SyncWorkspaceViewModel.RecoveryFocusRevision))
+        {
+            EnsureSelectedTabVisible();
+            FocusSelectedTab();
+        }
+
         if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SyncWorkspaceViewModel.IsAddWizardOpen))
         {
             _ = Dispatcher.BeginInvoke(UpdateWizardFocus);

@@ -30,6 +30,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
+    private readonly SettingsActionCommand saveRecoveryCommand;
     private readonly SettingsActionCommand searchClearCommand;
     private readonly SettingsActionCommand enablePatchEditingCommand;
     private readonly SettingsActionCommand lockPatchEditingCommand;
@@ -45,6 +46,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool isInvalidating;
     private bool isInvalidated;
     private int projectionRevision;
+    private int recoveryFocusRevision;
+    private string? recoveryFocusTargetId;
 
     public SettingsViewModel(
         LauncherConfigurationCatalog catalog,
@@ -86,16 +89,29 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OpenRawTomlCommand.CanExecuteChanged += OpenRawTomlCommand_CanExecuteChanged;
         discardCommand = new SettingsActionCommand(
             Discard,
-            () => !isInvalidating && !isInvalidated && HasPendingChanges);
+            () => CanEdit && HasPendingChanges);
         saveCommand = new AsyncSettingsActionCommand(SaveAsync, () => CanSave);
+        saveRecoveryCommand = new SettingsActionCommand(
+            ApplySaveRecovery,
+            () => SaveState.HasRecoveryAction
+                && !IsSaveInProgress
+                && SyncWorkspace?.IsSaveInProgress != true);
         enablePatchEditingCommand = new SettingsActionCommand(
             EnablePatchEditing,
-            () => IsConfigurationReady && !IsPatchEditingUnlocked && PatchSettings.Count > 0);
+            () => CanEdit && !IsPatchEditingUnlocked && PatchSettings.Count > 0);
         lockPatchEditingCommand = new SettingsActionCommand(
             LockPatchEditing,
             () => IsPatchEditingUnlocked);
 
-        SyncWorkspace = new(configurationPathProvider, this.repository, () => HasPendingChanges, () => workspace);
+        SyncWorkspace = new(
+            configurationPathProvider,
+            this.repository,
+            () => HasPendingChanges,
+            () => workspace,
+            NavigateToSettingsDraft,
+            ReloadAfterSyncConflict,
+            ConfigurationPathMatchesLoadedSession,
+            () => IsSaveInProgress);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
         SyncWorkspace.Committed += SyncWorkspace_Committed;
         ConfigurationHistory = configurationHistoryCoordinator is null
@@ -142,6 +158,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public ICommand DiscardCommand => discardCommand;
 
     public ICommand SaveCommand => saveCommand;
+
+    public ICommand SaveRecoveryCommand => saveRecoveryCommand;
 
     public ICommand SearchOpenCommand { get; }
 
@@ -250,7 +268,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         !IsAboutSelected && !IsDataSyncSelected && !IsConfigurationHistorySelected;
 
     public bool IsSettingsFooterVisible =>
-        HasPendingChanges && !IsDataSyncSelected && !IsConfigurationHistorySelected;
+        (HasPendingChanges
+            || !IsConfigurationReady && !string.IsNullOrWhiteSpace(OperationStatus))
+        && !IsDataSyncSelected
+        && !IsConfigurationHistorySelected;
 
     public int VisibleSettingCount =>
         projectedItems.OfType<SettingsRowViewModel>().Count()
@@ -285,6 +306,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public bool IsConfigurationReady => !isInvalidating && !isInvalidated && workspace is not null;
 
+    public bool IsSaveInProgress => activeSave is not null;
+
+    public bool CanEdit =>
+        IsConfigurationReady
+        && !IsSaveInProgress
+        && !SyncWorkspace.IsSaveInProgress
+        && workspace?.IsStale != true
+        && !SyncWorkspace.IsStale
+        && ConfigurationPathMatchesLoadedSession();
+
     public string DetectedRuntime => settingsDiagnostics.DetectedRuntime;
 
     public string SemanticGroupingStatus =>
@@ -303,7 +334,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 : "No TOML exists yet. Your first saved change will create it."
             : "Select a game folder with a supported configuration to enable editing.";
 
-    public int PendingChangeCount => workspace?.PendingChangeCount ?? 0;
+    public int PendingChangeCount => catalog.VisibleSettings.Count(setting =>
+        GetValueState(setting).IsDirty
+        || editorInvalidInputPaths.Contains(setting.Path));
 
     public bool HasPendingChanges => PendingChangeCount > 0;
 
@@ -321,27 +354,103 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public string PendingApplyTimingText =>
         LauncherConfigurationApplySummary.From(
             catalog.VisibleSettings
-                .Where(setting => GetValueState(setting).IsDirty)
+                .Where(setting =>
+                    GetValueState(setting).IsDirty
+                    || editorInvalidInputPaths.Contains(setting.Path))
                 .Select(setting => setting.ApplyBehavior))
             .Text;
 
-    public bool CanSave =>
-        !isInvalidating
-        && !isInvalidated
-        && IsConfigurationReady
-        && HasPendingChanges
-        && !HasInvalidInput
-        && !SyncWorkspace.HasPendingChanges
-        && ConfigurationPathMatchesLoadedSession();
+    public WorkspaceSaveState SaveState => BuildSaveState();
 
-    public string SaveAvailability =>
-        SyncWorkspace.HasPendingChanges
-            ? "Save or discard the pending sync setup before saving other settings."
-            : HasInvalidInput
-            ? "Fix the highlighted setting before saving."
-            : CanSave
-                ? "Save all staged configuration changes."
-                : "Stage a valid configuration change before saving.";
+    public bool CanSave => SaveState.CanSave;
+
+    public bool IsSaveBlocked => SaveState.IsBlocked;
+
+    public string SaveAvailability => SaveState.Message;
+
+    public int RecoveryFocusRevision => recoveryFocusRevision;
+
+    public string? RecoveryFocusTargetId => recoveryFocusTargetId;
+
+    private WorkspaceSaveState BuildSaveState()
+    {
+        if (!HasPendingChanges)
+        {
+            return new(
+                WorkspaceSaveStateKind.NoChanges,
+                WorkspaceSaveBlockerKind.None,
+                "Stage a valid configuration change before saving.");
+        }
+
+        if (!IsConfigurationReady)
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.WorkspaceUnavailable,
+                "Save is unavailable because this Settings workspace is no longer active.");
+        }
+
+        if (!ConfigurationPathMatchesLoadedSession())
+        {
+            var includesDataSync = SyncWorkspace.HasPendingChanges;
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
+                includesDataSync
+                    ? "You selected a different game installation while Settings and Data Sync changes were staged. Save is paused so they are not applied to the wrong installation."
+                    : "You selected a different game installation while these changes were staged. Save is paused so they are not applied to the wrong installation.",
+                WorkspaceSaveRecoveryKind.DiscardAndReload,
+                includesDataSync ? "Discard all changes and reload" : "Discard my changes and reload");
+        }
+
+        if (workspace?.IsStale == true)
+        {
+            var includesDataSync = SyncWorkspace.HasPendingChanges;
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.ExternalChange,
+                includesDataSync
+                    ? "This configuration changed outside Mod Bridge while Settings and Data Sync changes were staged. Save is paused to protect the newer changes."
+                    : "This configuration changed outside Mod Bridge. Save is paused to protect the newer changes.",
+                WorkspaceSaveRecoveryKind.DiscardAndReload,
+                includesDataSync ? "Discard all changes and reload" : "Discard my changes and reload");
+        }
+
+        if (FirstInvalidSetting() is { } invalidSetting)
+        {
+            var conflict = keybindingIssueMessages.GetValueOrDefault(invalidSetting.Path);
+            var message = string.IsNullOrWhiteSpace(conflict)
+                ? $"Save is paused because {invalidSetting.Presentation.Label} contains a value Mod Bridge cannot use."
+                : $"Save is paused because {invalidSetting.Presentation.Label} needs attention: {conflict}";
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.InvalidSetting,
+                message,
+                WorkspaceSaveRecoveryKind.ReviewSetting,
+                "Review setting",
+                invalidSetting.Path);
+        }
+
+        if (SyncWorkspace.HasPendingChanges)
+        {
+            return new(
+                WorkspaceSaveStateKind.Blocked,
+                WorkspaceSaveBlockerKind.SiblingWorkspace,
+                "Data Sync has unsaved changes. Save or discard them before saving these Settings changes.",
+                WorkspaceSaveRecoveryKind.GoToDataSync,
+                "Go to Data Sync");
+        }
+
+        return new(
+            WorkspaceSaveStateKind.Ready,
+            WorkspaceSaveBlockerKind.None,
+            "Save all staged configuration changes.");
+    }
+
+    private LauncherConfigurationSetting? FirstInvalidSetting() =>
+        catalog.VisibleSettings.FirstOrDefault(setting =>
+            editorInvalidInputPaths.Contains(setting.Path)
+            || keybindingInvalidPaths.Contains(setting.Path));
 
     public string OperationStatus
     {
@@ -376,6 +485,81 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return;
         }
 
+        ClearEditorDrafts();
+        TryLoadConfiguration();
+        SyncWorkspace.Reload();
+        RefreshAllStates();
+        NotifySessionChanged();
+    }
+
+    private void ApplySaveRecovery()
+    {
+        var state = SaveState;
+        switch (state.Recovery)
+        {
+            case WorkspaceSaveRecoveryKind.ReviewSetting when state.TargetId is not null:
+                FocusSetting(state.TargetId);
+                break;
+            case WorkspaceSaveRecoveryKind.GoToDataSync:
+                SelectSection(LauncherSettingsSection.DataSync);
+                break;
+            case WorkspaceSaveRecoveryKind.DiscardAndReload:
+                DiscardAndReloadSettings();
+                break;
+        }
+    }
+
+    private void FocusSetting(string path)
+    {
+        var setting = catalog.VisibleSettings.FirstOrDefault(item =>
+            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (setting is null)
+        {
+            return;
+        }
+
+        SearchText = string.Empty;
+        SelectSection(layoutProvider.Place(setting).Section);
+        recoveryFocusTargetId = setting.Path;
+        ++recoveryFocusRevision;
+        OnPropertyChanged(nameof(RecoveryFocusTargetId));
+        OnPropertyChanged(nameof(RecoveryFocusRevision));
+    }
+
+    private void NavigateToSettingsDraft()
+    {
+        if (FirstInvalidSetting() is { } invalidSetting)
+        {
+            FocusSetting(invalidSetting.Path);
+            return;
+        }
+
+        var firstDraft = catalog.VisibleSettings.FirstOrDefault(setting =>
+            GetValueState(setting).IsDirty);
+        if (firstDraft is not null)
+        {
+            SearchText = string.Empty;
+            SelectSection(layoutProvider.Place(firstDraft).Section);
+        }
+    }
+
+    private void DiscardAndReloadSettings()
+    {
+        workspace?.Discard();
+        SyncWorkspace.DiscardForReload();
+        ClearEditorDrafts();
+        TryLoadConfiguration();
+        SyncWorkspace.Reload();
+        if (IsConfigurationReady)
+        {
+            OperationStatus = "Unsaved changes discarded and the current configuration reloaded.";
+        }
+        RefreshAllStates();
+        NotifySessionChanged();
+    }
+
+    private void ReloadAfterSyncConflict()
+    {
         ClearEditorDrafts();
         TryLoadConfiguration();
         SyncWorkspace.Reload();
@@ -518,7 +702,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsSettingsFooterVisible));
         if (section == LauncherSettingsSection.DataSync)
         {
-            SyncWorkspace.Reload();
+            SyncWorkspace.Reload(preserveAddWizard: true);
         }
         else if (section == LauncherSettingsSection.ConfigurationHistory
             && ConfigurationHistory is not null)
@@ -587,8 +771,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         if (!load.IsSuccess || loadedWorkspace is null)
         {
             OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
-                ? $"Editing is unavailable because the TOML could not be loaded safely: {load.ValidationError?.Message}"
-                : $"Editing is unavailable: {load.Error}";
+                ? "Editing is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made."
+                : "Editing is unavailable because Mod Bridge could not read the selected configuration. Close other tools using it, check access, and try again.";
             RefreshPatchEditingAvailability();
             return;
         }
@@ -655,8 +839,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         string renderedTomlValue)
     {
-        if (isInvalidating
-            || isInvalidated
+        if (!CanEdit
             || workspace is null
             || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
@@ -678,8 +861,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private bool RevertDraft(LauncherConfigurationSetting setting)
     {
-        if (isInvalidating
-            || isInvalidated
+        if (!CanEdit
             || workspace is null
             || IsPatchSetting(setting) && !IsPatchEditingUnlocked)
         {
@@ -703,6 +885,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         LauncherConfigurationSetting setting,
         bool isValid)
     {
+        if (!CanEdit)
+        {
+            return;
+        }
+
         var changed = isValid
             ? editorInvalidInputPaths.Remove(setting.Path)
             : editorInvalidInputPaths.Add(setting.Path);
@@ -716,28 +903,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void NotifyValidationChanged()
     {
-        OnPropertyChanged(nameof(HasInvalidInput));
-        OnPropertyChanged(nameof(CanSave));
-        OnPropertyChanged(nameof(SaveAvailability));
-        saveCommand.RaiseCanExecuteChanged();
+        NotifySessionChanged();
     }
 
     private void Discard()
     {
-        var selectedConfigurationChanged = !ConfigurationPathMatchesLoadedSession();
         workspace?.Discard();
-        if (selectedConfigurationChanged)
-        {
-            TryLoadConfiguration();
-            SyncWorkspace.Reload();
-        }
-
         ClearEditorDrafts();
-        OperationStatus = selectedConfigurationChanged
-            ? "Unsaved changes discarded and the selected configuration reloaded."
-            : "Unsaved changes discarded.";
+        OperationStatus = "Unsaved changes discarded.";
         RefreshAllStates();
-        SyncWorkspace.Reload();
+        SyncWorkspace.Reload(preserveAddWizard: true);
         NotifySessionChanged();
     }
 
@@ -759,6 +934,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             activeSave = completion.Task;
         }
+        RefreshAllStates();
+        NotifySessionChanged();
         _ = CompleteSaveAsync(editingSession, completion);
         return completion.Task;
     }
@@ -789,16 +966,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             AtomicTomlWriteState.Busy =>
                 "Another Mod Bridge change is still in progress. Nothing was written; try saving again when it finishes.",
             AtomicTomlWriteState.Invalid =>
-                $"Nothing was written because the TOML is not safe to update: {result.ValidationError?.Message}",
+                "Nothing was written because the configuration is not safe to update. Review the highlighted setting and try again.",
             AtomicTomlWriteState.NoConfigurationSelected =>
                 "Select a supported configuration before saving.",
-            _ => $"The changes could not be saved: {result.Error}",
+            _ => "The changes could not be saved. Close other tools using the configuration, check access, and try again.",
         };
 
         RefreshAllStates();
         if (result.IsSuccess)
         {
-            SyncWorkspace.Reload();
+            SyncWorkspace.Reload(preserveAddWizard: true);
         }
         NotifySessionChanged();
     }
@@ -825,11 +1002,33 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
         if (failure is not null && !isInvalidating && !isInvalidated)
         {
-            OperationStatus = $"The changes could not be saved: {failure.Message}";
-            RefreshAllStates();
-            NotifySessionChanged();
+            OperationStatus =
+                "The changes could not be saved. Close other tools using the configuration, check access, and try again.";
         }
+        ReconcileSelectedConfigurationAfterSave();
+        RefreshAllStates();
+        NotifySessionChanged();
         completion.SetResult();
+    }
+
+    private void ReconcileSelectedConfigurationAfterSave()
+    {
+        if (isInvalidating
+            || isInvalidated
+            || HasPendingChanges
+            || ConfigurationPathMatchesLoadedSession())
+        {
+            return;
+        }
+
+        ClearEditorDrafts();
+        TryLoadConfiguration();
+        SyncWorkspace.Reload();
+        if (IsConfigurationReady)
+        {
+            OperationStatus =
+                "The save finished for the previous selection, and the newly selected configuration is now loaded.";
+        }
     }
 
     private async Task CompleteInvalidationAsync(
@@ -880,7 +1079,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         var hasPatchGate = projectedItems.OfType<AdvancedPatchEditingGateViewModel>().Any();
         foreach (var setting in projectedRowsByPath.Values)
         {
-            setting.UpdateState(GetValueState(setting.Setting), IsConfigurationReady);
+            setting.UpdateState(GetValueState(setting.Setting), CanEdit);
         }
 
         RefreshKeybindingConflicts();
@@ -895,7 +1094,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         if (projectedRowsByPath.TryGetValue(setting.Path, out var row))
         {
-            row.UpdateState(GetValueState(setting), workspace is not null);
+            row.UpdateState(GetValueState(setting), CanEdit);
         }
     }
 
@@ -1002,6 +1201,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private void NotifySessionChanged()
     {
         OnPropertyChanged(nameof(IsConfigurationReady));
+        OnPropertyChanged(nameof(IsSaveInProgress));
+        OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(ConfigurationStatus));
         OnPropertyChanged(nameof(PendingChangeCount));
         OnPropertyChanged(nameof(HasPendingChanges));
@@ -1009,10 +1210,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PendingChangesText));
         OnPropertyChanged(nameof(PendingApplyTimingText));
         OnPropertyChanged(nameof(HasInvalidInput));
+        OnPropertyChanged(nameof(SaveState));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(IsSaveBlocked));
         OnPropertyChanged(nameof(SaveAvailability));
         discardCommand.RaiseCanExecuteChanged();
         saveCommand.RaiseCanExecuteChanged();
+        saveRecoveryCommand.RaiseCanExecuteChanged();
+        SyncWorkspace.NotifySiblingDraftStateChanged();
         ConfigurationHistory?.NotifySiblingDraftStateChanged();
     }
 
@@ -1049,6 +1254,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         {
             return;
         }
+        RefreshAllStates();
         NotifySessionChanged();
     }
 
@@ -1114,7 +1320,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     var row = new SettingsRowViewModel(
                         setting.Setting,
                         GetValueState(setting.Setting),
-                        workspace is not null,
+                        CanEdit,
                         StageValue,
                         RevertDraft,
                         SetInputValidity,
@@ -1155,13 +1361,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                     setting.Presentation.Label,
                     FormatPatchSummaryValue(state.DraftValue ?? setting.DefaultValue),
                     state.IsDirty,
-                    IsConfigurationReady,
+                    CanEdit,
                     state.DraftHasOverride);
             })
             .ToArray();
         return new(
             IsPatchEditingUnlocked,
-            IsConfigurationReady,
+            CanEdit,
             summaries,
             EnablePatchEditingCommand,
             LockPatchEditingCommand);
