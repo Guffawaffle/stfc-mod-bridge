@@ -24,6 +24,22 @@ public sealed record AtomicTomlWriteResult(
     public bool IsSuccess => State is AtomicTomlWriteState.Succeeded or AtomicTomlWriteState.NoChange;
 }
 
+public enum AtomicTomlMutationBoundary
+{
+    TemporaryWrite,
+    Promotion,
+    TemporaryDelete,
+}
+
+public interface IAtomicTomlMutationAdmission
+{
+    ValueTask AdmitAsync(
+        AtomicTomlMutationBoundary boundary,
+        string temporaryPath,
+        string destinationPath,
+        CancellationToken cancellationToken);
+}
+
 public sealed class AtomicTomlStore
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates = new(
@@ -33,34 +49,41 @@ public sealed class AtomicTomlStore
 
     private readonly Func<string, string, CancellationToken, ValueTask>? beforeReplace;
     private readonly IConfigurationMutationBackup? mutationBackup;
+    private readonly IAtomicTomlMutationAdmission? mutationAdmission;
     private readonly bool retainAdjacentBackup;
 
     public AtomicTomlStore(
         Func<string, string, CancellationToken, ValueTask>? beforeReplace = null,
-        bool retainAdjacentBackup = true)
+        bool retainAdjacentBackup = true,
+        IAtomicTomlMutationAdmission? mutationAdmission = null)
     {
         this.beforeReplace = beforeReplace;
         this.retainAdjacentBackup = retainAdjacentBackup;
+        this.mutationAdmission = mutationAdmission;
     }
 
     public AtomicTomlStore(
         IConfigurationMutationBackup mutationBackup,
-        bool retainAdjacentBackup = false)
+        bool retainAdjacentBackup = false,
+        IAtomicTomlMutationAdmission? mutationAdmission = null)
         : this(
             mutationBackup,
             beforeReplace: null,
-            retainAdjacentBackup: retainAdjacentBackup)
+            retainAdjacentBackup: retainAdjacentBackup,
+            mutationAdmission: mutationAdmission)
     {
     }
 
     internal AtomicTomlStore(
         IConfigurationMutationBackup mutationBackup,
         Func<string, string, CancellationToken, ValueTask>? beforeReplace,
-        bool retainAdjacentBackup = false)
+        bool retainAdjacentBackup = false,
+        IAtomicTomlMutationAdmission? mutationAdmission = null)
     {
         this.mutationBackup = mutationBackup ?? throw new ArgumentNullException(nameof(mutationBackup));
         this.beforeReplace = beforeReplace;
         this.retainAdjacentBackup = retainAdjacentBackup;
+        this.mutationAdmission = mutationAdmission;
     }
 
     public bool ProducesVerifiedBackupReceipt => mutationBackup is not null;
@@ -173,6 +196,11 @@ public sealed class AtomicTomlStore
                     Error: "The configuration changed after the editing session began; the external changes were preserved.");
             }
 
+            await AdmitMutationAsync(
+                AtomicTomlMutationBoundary.TemporaryWrite,
+                temporaryPath,
+                fullPath,
+                cancellationToken).ConfigureAwait(false);
             await WriteDurablyAsync(temporaryPath, updatedContents, cancellationToken).ConfigureAwait(false);
             if (beforeReplace is not null)
             {
@@ -230,6 +258,11 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
+            await AdmitMutationAsync(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                fullPath,
+                cancellationToken).ConfigureAwait(false);
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
             return new(
                 AtomicTomlWriteState.Succeeded,
@@ -259,6 +292,11 @@ public sealed class AtomicTomlStore
             {
                 if (File.Exists(temporaryPath))
                 {
+                    await AdmitMutationAsync(
+                        AtomicTomlMutationBoundary.TemporaryDelete,
+                        temporaryPath,
+                        fullPath,
+                        cancellationToken).ConfigureAwait(false);
                     File.Delete(temporaryPath);
                 }
             }
@@ -327,6 +365,11 @@ public sealed class AtomicTomlStore
                     Error: "The configuration was created outside Mod Bridge after the editing session began.");
             }
 
+            await AdmitMutationAsync(
+                AtomicTomlMutationBoundary.TemporaryWrite,
+                temporaryPath,
+                fullPath,
+                cancellationToken).ConfigureAwait(false);
             await WriteDurablyAsync(temporaryPath, contents, cancellationToken).ConfigureAwait(false);
             if (beforeReplace is not null)
             {
@@ -341,6 +384,11 @@ public sealed class AtomicTomlStore
 
             try
             {
+                await AdmitMutationAsync(
+                    AtomicTomlMutationBoundary.Promotion,
+                    temporaryPath,
+                    fullPath,
+                    cancellationToken).ConfigureAwait(false);
                 File.Move(temporaryPath, fullPath);
             }
             catch (IOException) when (File.Exists(fullPath))
@@ -368,6 +416,11 @@ public sealed class AtomicTomlStore
             {
                 if (File.Exists(temporaryPath))
                 {
+                    await AdmitMutationAsync(
+                        AtomicTomlMutationBoundary.TemporaryDelete,
+                        temporaryPath,
+                        fullPath,
+                        cancellationToken).ConfigureAwait(false);
                     File.Delete(temporaryPath);
                 }
             }
@@ -464,6 +517,11 @@ public sealed class AtomicTomlStore
                     ValidationError: transformedValidation.Error);
             }
 
+            await AdmitMutationAsync(
+                AtomicTomlMutationBoundary.TemporaryWrite,
+                temporaryPath,
+                fullPath,
+                cancellationToken).ConfigureAwait(false);
             await WriteDurablyAsync(temporaryPath, edit.Contents, cancellationToken).ConfigureAwait(false);
             if (beforeReplace is not null)
             {
@@ -524,6 +582,11 @@ public sealed class AtomicTomlStore
                     BackupReceipt: backupReceipt);
             }
 
+            await AdmitMutationAsync(
+                AtomicTomlMutationBoundary.Promotion,
+                temporaryPath,
+                fullPath,
+                cancellationToken).ConfigureAwait(false);
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
             return new(
                 AtomicTomlWriteState.Succeeded,
@@ -553,6 +616,11 @@ public sealed class AtomicTomlStore
             {
                 if (File.Exists(temporaryPath))
                 {
+                    await AdmitMutationAsync(
+                        AtomicTomlMutationBoundary.TemporaryDelete,
+                        temporaryPath,
+                        fullPath,
+                        cancellationToken).ConfigureAwait(false);
                     File.Delete(temporaryPath);
                 }
             }
@@ -585,6 +653,19 @@ public sealed class AtomicTomlStore
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         stream.Flush(flushToDisk: true);
     }
+
+    private ValueTask AdmitMutationAsync(
+        AtomicTomlMutationBoundary boundary,
+        string temporaryPath,
+        string destinationPath,
+        CancellationToken cancellationToken) =>
+        mutationAdmission is null
+            ? ValueTask.CompletedTask
+            : mutationAdmission.AdmitAsync(
+                boundary,
+                temporaryPath,
+                destinationPath,
+                cancellationToken);
 
     private static async ValueTask<ConfigurationBackupReceipt> CreateVerifiedBackupAsync(
         IConfigurationMutationBackup mutationBackup,

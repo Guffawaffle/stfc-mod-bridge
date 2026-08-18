@@ -40,6 +40,53 @@ public sealed class AtomicTomlStoreTests
     }
 
     [TestMethod]
+    public async Task MutationAdmissionRejectsBeforeTemporaryWriteWithoutTouchingDisk()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        await File.WriteAllTextAsync(configPath, original);
+        var admission = new RecordingMutationAdmission(
+            AtomicTomlMutationBoundary.TemporaryWrite);
+        var store = new AtomicTomlStore(mutationAdmission: admission);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SetOverrideAsync(configPath, "settings.enabled", "true"));
+
+        CollectionAssert.AreEqual(
+            new[] { AtomicTomlMutationBoundary.TemporaryWrite },
+            admission.Boundaries);
+        Assert.AreEqual(original, await File.ReadAllTextAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public async Task MutationAdmissionRechecksPromotionAndTemporaryCleanup()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var configPath = Path.Combine(temporaryDirectory.Path, "settings.toml");
+        const string original = "[settings]\nenabled = false\n";
+        await File.WriteAllTextAsync(configPath, original);
+        var admission = new RecordingMutationAdmission(
+            AtomicTomlMutationBoundary.Promotion);
+        var store = new AtomicTomlStore(mutationAdmission: admission);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SetOverrideAsync(configPath, "settings.enabled", "true"));
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                AtomicTomlMutationBoundary.TemporaryWrite,
+                AtomicTomlMutationBoundary.Promotion,
+                AtomicTomlMutationBoundary.TemporaryDelete,
+            },
+            admission.Boundaries);
+        Assert.AreEqual(original, await File.ReadAllTextAsync(configPath));
+        Assert.AreEqual(0, Directory.GetFiles(temporaryDirectory.Path, "*.tmp").Length);
+    }
+
+    [TestMethod]
     public async Task MissingSelectionIsExplicitAndDoesNotTouchDisk()
     {
         var store = new AtomicTomlStore();
@@ -354,6 +401,29 @@ public sealed class AtomicTomlStoreTests
         {
             CallCount++;
             return ValueTask.FromResult(receipt);
+        }
+    }
+
+    private sealed class RecordingMutationAdmission(AtomicTomlMutationBoundary rejectOnce)
+        : IAtomicTomlMutationAdmission
+    {
+        private bool rejected;
+
+        public List<AtomicTomlMutationBoundary> Boundaries { get; } = [];
+
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken)
+        {
+            Boundaries.Add(boundary);
+            if (!rejected && boundary == rejectOnce)
+            {
+                rejected = true;
+                throw new InvalidOperationException("Injected mutation-admission rejection.");
+            }
+            return ValueTask.CompletedTask;
         }
     }
 }

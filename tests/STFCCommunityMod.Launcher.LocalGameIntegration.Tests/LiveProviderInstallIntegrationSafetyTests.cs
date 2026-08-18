@@ -85,6 +85,9 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         throw new IOException("Injected atomic-promotion interruption.");
                     }
                 });
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                changed);
             File.WriteAllBytes(configurationPath, changed);
             campaign.PreserveStateForRecovery();
             retainedState = campaign.StateDirectory;
@@ -123,7 +126,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
             "community_patch_settings.toml");
         var original = System.Text.Encoding.UTF8.GetBytes(configuration);
         File.WriteAllBytes(configurationPath, original);
-        var admissions = 0;
         var mutations = 0;
 
         using var campaign = new RestorableGameInstallCampaign(
@@ -137,12 +139,40 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 configurationPath,
                 campaign.StateDirectory,
                 original,
-                campaign,
-                () => admissions++));
+                campaign));
 
-        Assert.AreEqual(0, admissions, "Unsafe preflight reached the direct-mutation boundary.");
         Assert.AreEqual(0, mutations, "Unsafe preflight performed a harness-owned game mutation.");
         campaign.AssertBaseline("Unsafe preflight changed the protected game target.");
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow("[graphics]\nfree_resize = true\nfree_resize = false\n")]
+    [DataRow("[graphics]\nfree_resize = \"not-a-boolean\"\n")]
+    public async Task UnsafeCleanBaselinePreflightCreatesNoToml(string configuration)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var mutations = 0;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            (_, _) => mutations++);
+
+        await Assert.ThrowsExceptionAsync<AssertFailedException>(() =>
+            RunConfigurationRestoreRecoveryAsync(
+                target.GameDirectory,
+                configurationPath,
+                campaign.StateDirectory,
+                baselineConfiguration: null,
+                campaign,
+                createdConfigurationContents: System.Text.Encoding.UTF8.GetBytes(configuration)));
+
+        Assert.AreEqual(0, mutations, "Unsafe clean-baseline preflight reached a game mutation.");
+        Assert.IsFalse(File.Exists(configurationPath));
+        campaign.AssertBaseline("Unsafe clean-baseline preflight changed the game target.");
     }
 
     [TestMethod]
@@ -156,25 +186,77 @@ public sealed partial class LiveProviderInstallIntegrationTests
         var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
         File.WriteAllBytes(configurationPath, original);
         var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        var mutations = 0;
+        var mutationBoundaries = 0;
 
         using var campaign = new RestorableGameInstallCampaign(
             target.GameDirectory,
             inspector,
-            (_, _) => mutations++);
+            (kind, _) =>
+            {
+                mutationBoundaries++;
+                if (kind == DirectGameMutationKind.WriteTomlTemporary)
+                {
+                    inspector.SelectedState = GameProcessInspectionState.RunningTarget;
+                }
+            });
 
         var failure = await CaptureFailureAsync(() => RunConfigurationRestoreRecoveryAsync(
                 target.GameDirectory,
                 configurationPath,
                 campaign.StateDirectory,
                 original,
-                campaign,
-                () => inspector.SelectedState = GameProcessInspectionState.RunningTarget));
+                campaign));
 
         Assert.IsInstanceOfType<InvalidOperationException>(failure, failure.ToString());
 
-        Assert.AreEqual(0, mutations, "The running target reached a direct game-file mutation.");
+        Assert.AreEqual(1, mutationBoundaries);
+        Assert.AreEqual(
+            0,
+            Directory.GetFiles(target.GameDirectory, ".community_patch_settings.toml.*.tmp").Length);
         campaign.AssertBaseline("The target changed after its game process started.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task ExactInstallStartingBeforeRepositoryPromotionPreservesTargetAndRecoversStage()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        var inspector = new MutableGameProcessInspector(target.GameDirectory);
+        var promotionObserved = false;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            inspector,
+            (kind, _) =>
+            {
+                if (kind == DirectGameMutationKind.PromoteTomlTemporary)
+                {
+                    promotionObserved = true;
+                    inspector.SelectedState = GameProcessInspectionState.RunningTarget;
+                }
+            });
+
+        var failure = await CaptureFailureAsync(() => RunConfigurationRestoreRecoveryAsync(
+            target.GameDirectory,
+            configurationPath,
+            campaign.StateDirectory,
+            original,
+            campaign));
+
+        Assert.IsInstanceOfType<InvalidOperationException>(failure, failure.ToString());
+        Assert.IsTrue(promotionObserved);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        Assert.AreEqual(
+            1,
+            Directory.GetFiles(target.GameDirectory, ".community_patch_settings.toml.*.tmp").Length);
+
+        inspector.SelectedState = GameProcessInspectionState.NotRunning;
+        campaign.EmergencyRestore();
+        campaign.AssertBaseline("Exact-stage cleanup did not restore the target baseline.");
     }
 
     [TestMethod]
@@ -186,28 +268,100 @@ public sealed partial class LiveProviderInstallIntegrationTests
             target.GameDirectory,
             "community_patch_settings.toml");
         var inspector = new MutableGameProcessInspector(target.GameDirectory);
-        var mutations = 0;
+        var mutationBoundaries = 0;
+        var owned = "[graphics]\nfree_resize = true\n"u8.ToArray();
 
         using var campaign = new RestorableGameInstallCampaign(
             target.GameDirectory,
             inspector,
-            (_, _) => mutations++);
+            (_, _) => mutationBoundaries++);
+        campaign.RecordOwnedGameFileRevision("community_patch_settings.toml", owned);
         inspector.SelectedState = GameProcessInspectionState.RunningTarget;
 
         Assert.ThrowsException<InvalidOperationException>(() =>
             campaign.WriteGameFileAtomically(
                 "community_patch_settings.toml",
-                "[graphics]\nfree_resize = true\n"u8.ToArray()));
+                owned));
         Assert.IsFalse(File.Exists(configurationPath));
 
-        File.WriteAllText(configurationPath, "[graphics]\nfree_resize = true\n");
+        File.WriteAllBytes(configurationPath, owned);
         Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
 
-        Assert.AreEqual(0, mutations, "A running target reached the delete operation.");
+        Assert.AreEqual(2, mutationBoundaries);
         Assert.IsTrue(File.Exists(configurationPath));
         inspector.SelectedState = GameProcessInspectionState.NotRunning;
         campaign.RestoreConfigurationBaseline();
         campaign.AssertBaseline("Closed-target cleanup did not remove the harness-created TOML.");
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow("version.dll")]
+    [DataRow("community_patch_settings.toml")]
+    public void EmergencyRestorePreservesExternallyChangedProtectedBytes(string fileName)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var path = Path.Combine(target.GameDirectory, fileName);
+        var original = "protected baseline"u8.ToArray();
+        var campaignRevision = "campaign revision"u8.ToArray();
+        var externalRevision = "external revision"u8.ToArray();
+        File.WriteAllBytes(path, original);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        campaign.RecordOwnedGameFileRevision(fileName, campaignRevision);
+        File.WriteAllBytes(path, externalRevision);
+
+        Assert.ThrowsException<InvalidOperationException>(campaign.EmergencyRestore);
+
+        CollectionAssert.AreEqual(externalRevision, File.ReadAllBytes(path));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void CleanBaselineCleanupPreservesUnownedToml()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var external = "[graphics]\nfree_resize = true\n# external\n"u8.ToArray();
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        File.WriteAllBytes(configurationPath, external);
+
+        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
+
+        CollectionAssert.AreEqual(external, File.ReadAllBytes(configurationPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void EmergencyRestorePreservesPreexistingStageAndRollbackFiles()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var sentinels = new[]
+        {
+            ".version.dll.preexisting.stage",
+            ".version.dll.preexisting.rollback",
+            ".stfc-bridge-integration-version.dll.preexisting.restore-stage",
+        };
+        foreach (var sentinel in sentinels)
+        {
+            File.WriteAllText(Path.Combine(target.GameDirectory, sentinel), sentinel);
+        }
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+
+        campaign.EmergencyRestore();
+
+        foreach (var sentinel in sentinels)
+        {
+            Assert.AreEqual(sentinel, File.ReadAllText(Path.Combine(target.GameDirectory, sentinel)));
+        }
+        campaign.AssertBaseline("Emergency cleanup changed a pre-existing residue.");
     }
 
     [TestMethod]
