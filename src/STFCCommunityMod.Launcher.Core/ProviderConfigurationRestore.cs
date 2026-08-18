@@ -102,6 +102,7 @@ public sealed class ProviderConfigurationRestoreCoordinator
     private readonly IGameProcessInspector gameProcessInspector;
     private readonly LauncherOperationLock mutationAdmission;
     private readonly TimeProvider timeProvider;
+    private readonly IAtomicTomlMutationAdmission? atomicTomlMutationAdmission;
     private readonly string journalPath;
     private readonly Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>?
         checkpoint;
@@ -126,7 +127,8 @@ public sealed class ProviderConfigurationRestoreCoordinator
             configurationPathProvider,
             gameProcessInspector,
             timeProvider,
-            checkpoint: null)
+            checkpoint: null,
+            atomicTomlMutationAdmission: null)
     {
     }
 
@@ -140,7 +142,8 @@ public sealed class ProviderConfigurationRestoreCoordinator
         Func<string?> configurationPathProvider,
         IGameProcessInspector? gameProcessInspector,
         TimeProvider? timeProvider,
-        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint)
+        Func<ProviderConfigurationRestorePhase, CancellationToken, ValueTask>? checkpoint,
+        IAtomicTomlMutationAdmission? atomicTomlMutationAdmission = null)
     {
         this.backupStore = backupStore ?? throw new ArgumentNullException(nameof(backupStore));
         this.providerCatalog = providerCatalog ?? throw new ArgumentNullException(nameof(providerCatalog));
@@ -156,6 +159,7 @@ public sealed class ProviderConfigurationRestoreCoordinator
         mutationAdmission = new LauncherOperationLock(stateDirectory);
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.checkpoint = checkpoint;
+        this.atomicTomlMutationAdmission = atomicTomlMutationAdmission;
         journalPath = Path.Combine(
             Path.GetFullPath(stateDirectory),
             "configuration-restore-journal.json");
@@ -281,7 +285,14 @@ public sealed class ProviderConfigurationRestoreCoordinator
                 transactionIdentity,
                 RestoreReason,
                 pinnedBackupId: canonical.Backup.BackupId);
-            var repository = new TomlConfigurationRepository(mutationBackup: mutationBackup);
+            var repository = new TomlConfigurationRepository(
+                store: atomicTomlMutationAdmission is null
+                    ? new AtomicTomlStore(mutationBackup)
+                    : new AtomicTomlStore(
+                        mutationBackup,
+                        beforeReplace: null,
+                        retainAdjacentBackup: false,
+                        mutationAdmission: atomicTomlMutationAdmission));
             EnsureActiveSelection();
             var selectedBeforeCommit = ResolveSelectedTarget();
             if (!PathEquals(selectedBeforeCommit.ConfigurationPath, target.ConfigurationPath))

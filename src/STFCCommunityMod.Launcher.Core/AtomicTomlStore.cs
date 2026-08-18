@@ -39,11 +39,19 @@ internal interface IAtomicTomlMutationAdmission
         string destinationPath,
         CancellationToken cancellationToken);
 
-    void TemporaryCreated(string temporaryPath, CandidateFileIdentity identity)
+    void TemporaryCreated(string temporaryPath, ExactFileRevision revision)
+    {
+    }
+
+    void TemporaryCompleted(string temporaryPath, ExactFileRevision revision)
     {
     }
 
     void TemporaryRemoved(string temporaryPath)
+    {
+    }
+
+    void DestinationCommitted(string destinationPath, ExactFileRevision revision)
     {
     }
 
@@ -190,8 +198,8 @@ public sealed class AtomicTomlStore
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
         var temporaryCreated = false;
-        var temporaryCompleted = false;
-        CandidateFileIdentity? temporaryIdentity = null;
+        ExactFileRevision? temporaryRevision = null;
+        ExactFileRevision? expectedDestinationRevision = null;
         ConfigurationBackupReceipt? backupReceipt = null;
 
         try
@@ -219,6 +227,7 @@ public sealed class AtomicTomlStore
                     AtomicTomlWriteState.Conflict,
                     Error: "The configuration changed after the editing session began; the external changes were preserved.");
             }
+            expectedDestinationRevision = CaptureExactRevisionForAdmission(fullPath);
 
             await AdmitMutationAsync(
                 AtomicTomlMutationBoundary.TemporaryWrite,
@@ -229,13 +238,13 @@ public sealed class AtomicTomlStore
                 temporaryPath,
                 fullPath,
                 updatedContents,
-                identity =>
+                revision =>
                 {
                     temporaryCreated = true;
-                    temporaryIdentity = identity;
+                    temporaryRevision = revision;
                 },
+                revision => temporaryRevision = revision,
                 cancellationToken).ConfigureAwait(false);
-            temporaryCompleted = true;
             if (beforeReplace is not null)
             {
                 await beforeReplace(temporaryPath, fullPath, cancellationToken).ConfigureAwait(false);
@@ -302,10 +311,18 @@ public sealed class AtomicTomlStore
                 AtomicTomlMutationBoundary.Promotion,
                 temporaryPath,
                 fullPath);
+            VerifyExactRevisionForAdmission(
+                temporaryPath,
+                temporaryRevision,
+                "The configuration staging file changed before atomic promotion.");
+            VerifyExactRevisionForAdmission(
+                fullPath,
+                expectedDestinationRevision,
+                "The configuration destination changed before atomic promotion.");
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
+            NotifyDestinationCommitted(fullPath);
             temporaryCreated = false;
-            temporaryCompleted = false;
-            temporaryIdentity = null;
+            temporaryRevision = null;
             NotifyTemporaryRemoved(temporaryPath);
             return new(
                 AtomicTomlWriteState.Succeeded,
@@ -337,9 +354,7 @@ public sealed class AtomicTomlStore
                     temporaryCreated,
                     temporaryPath,
                     fullPath,
-                    updatedContents,
-                    temporaryIdentity,
-                    temporaryCompleted).ConfigureAwait(false);
+                    temporaryRevision).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -398,8 +413,7 @@ public sealed class AtomicTomlStore
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
         var temporaryCreated = false;
-        var temporaryCompleted = false;
-        CandidateFileIdentity? temporaryIdentity = null;
+        ExactFileRevision? temporaryRevision = null;
         try
         {
             await pathGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -421,13 +435,13 @@ public sealed class AtomicTomlStore
                 temporaryPath,
                 fullPath,
                 contents,
-                identity =>
+                revision =>
                 {
                     temporaryCreated = true;
-                    temporaryIdentity = identity;
+                    temporaryRevision = revision;
                 },
+                revision => temporaryRevision = revision,
                 cancellationToken).ConfigureAwait(false);
-            temporaryCompleted = true;
             if (beforeReplace is not null)
             {
                 await beforeReplace(temporaryPath, fullPath, cancellationToken).ConfigureAwait(false);
@@ -457,10 +471,14 @@ public sealed class AtomicTomlStore
                     AtomicTomlMutationBoundary.Promotion,
                     temporaryPath,
                     fullPath);
+                VerifyExactRevisionForAdmission(
+                    temporaryPath,
+                    temporaryRevision,
+                    "The configuration staging file changed before atomic promotion.");
                 File.Move(temporaryPath, fullPath);
+                NotifyDestinationCommitted(fullPath);
                 temporaryCreated = false;
-                temporaryCompleted = false;
-                temporaryIdentity = null;
+                temporaryRevision = null;
                 NotifyTemporaryRemoved(temporaryPath);
             }
             catch (IOException) when (File.Exists(fullPath))
@@ -490,9 +508,7 @@ public sealed class AtomicTomlStore
                     temporaryCreated,
                     temporaryPath,
                     fullPath,
-                    contents,
-                    temporaryIdentity,
-                    temporaryCompleted).ConfigureAwait(false);
+                    temporaryRevision).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -545,9 +561,9 @@ public sealed class AtomicTomlStore
         var pathGate = PathGates.GetOrAdd(fullPath, static _ => new(1, 1));
         var gateHeld = false;
         var temporaryCreated = false;
-        var temporaryCompleted = false;
-        CandidateFileIdentity? temporaryIdentity = null;
+        ExactFileRevision? temporaryRevision = null;
         byte[]? temporaryContents = null;
+        ExactFileRevision? expectedDestinationRevision = null;
         ConfigurationBackupReceipt? backupReceipt = null;
 
         try
@@ -557,6 +573,7 @@ public sealed class AtomicTomlStore
             cancellationToken.ThrowIfCancellationRequested();
             var original = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
             var originalSnapshot = DestinationSnapshot.Capture(fullPath, original);
+            expectedDestinationRevision = CaptureExactRevisionForAdmission(fullPath);
             var load = SparseTomlDocument.Load(original, out var document);
             if (!load.IsValid || document is null)
             {
@@ -604,13 +621,13 @@ public sealed class AtomicTomlStore
                 temporaryPath,
                 fullPath,
                 temporaryContents,
-                identity =>
+                revision =>
                 {
                     temporaryCreated = true;
-                    temporaryIdentity = identity;
+                    temporaryRevision = revision;
                 },
+                revision => temporaryRevision = revision,
                 cancellationToken).ConfigureAwait(false);
-            temporaryCompleted = true;
             if (beforeReplace is not null)
             {
                 await beforeReplace(temporaryPath, fullPath, cancellationToken).ConfigureAwait(false);
@@ -680,10 +697,18 @@ public sealed class AtomicTomlStore
                 AtomicTomlMutationBoundary.Promotion,
                 temporaryPath,
                 fullPath);
+            VerifyExactRevisionForAdmission(
+                temporaryPath,
+                temporaryRevision,
+                "The configuration staging file changed before atomic promotion.");
+            VerifyExactRevisionForAdmission(
+                fullPath,
+                expectedDestinationRevision,
+                "The configuration destination changed before atomic promotion.");
             File.Replace(temporaryPath, fullPath, backupPath, ignoreMetadataErrors: true);
+            NotifyDestinationCommitted(fullPath);
             temporaryCreated = false;
-            temporaryCompleted = false;
-            temporaryIdentity = null;
+            temporaryRevision = null;
             NotifyTemporaryRemoved(temporaryPath);
             return new(
                 AtomicTomlWriteState.Succeeded,
@@ -715,9 +740,7 @@ public sealed class AtomicTomlStore
                     temporaryCreated,
                     temporaryPath,
                     fullPath,
-                    temporaryContents ?? [],
-                    temporaryIdentity,
-                    temporaryCompleted).ConfigureAwait(false);
+                    temporaryRevision).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -739,21 +762,25 @@ public sealed class AtomicTomlStore
         string path,
         string destinationPath,
         byte[] contents,
-        Action<CandidateFileIdentity> created,
+        Action<ExactFileRevision> created,
+        Action<ExactFileRevision> completed,
         CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 4096,
-            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await using var stream = CreateTemporaryWriteStream(path);
         if (mutationAdmission is not null)
         {
-            var identity = CandidateFileNative.ReadIdentity(stream.SafeFileHandle);
-            created(identity);
-            mutationAdmission.TemporaryCreated(path, identity);
+            try
+            {
+                var identity = CandidateFileNative.ReadIdentity(stream.SafeFileHandle);
+                var createdRevision = CaptureOpenTemporaryRevision(path, stream, identity, []);
+                created(createdRevision);
+                mutationAdmission.TemporaryCreated(path, createdRevision);
+            }
+            catch
+            {
+                CandidateFileNative.TryMarkDeleteOnClose(stream.SafeFileHandle);
+                throw;
+            }
             await AdmitMutationAsync(
                 AtomicTomlMutationBoundary.TemporaryWrite,
                 path,
@@ -767,6 +794,48 @@ public sealed class AtomicTomlStore
         await stream.WriteAsync(contents, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         stream.Flush(flushToDisk: true);
+        if (mutationAdmission is not null)
+        {
+            var completedRevision = CaptureOpenTemporaryRevision(
+                path,
+                stream,
+                CandidateFileNative.ReadIdentity(stream.SafeFileHandle),
+                contents);
+            completed(completedRevision);
+            mutationAdmission.TemporaryCompleted(path, completedRevision);
+        }
+    }
+
+    private FileStream CreateTemporaryWriteStream(string path)
+    {
+        if (mutationAdmission is null)
+        {
+            return new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.WriteThrough);
+        }
+        Microsoft.Win32.SafeHandles.SafeFileHandle handle;
+        try
+        {
+            handle = CandidateFileNative.CreateWriteDelete(path);
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            throw new IOException("The configuration staging file could not be created.", exception);
+        }
+        try
+        {
+            return new FileStream(handle, FileAccess.Write, bufferSize: 4096, isAsync: true);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     private ValueTask AdmitMutationAsync(
@@ -786,9 +855,7 @@ public sealed class AtomicTomlStore
         bool temporaryCreated,
         string temporaryPath,
         string destinationPath,
-        byte[] expectedContents,
-        CandidateFileIdentity? expectedIdentity,
-        bool temporaryCompleted)
+        ExactFileRevision? expectedRevision)
     {
         if (mutationAdmission is null)
         {
@@ -808,21 +875,10 @@ public sealed class AtomicTomlStore
             return;
         }
         using var temporary = ExactFileMutation.Open(temporaryPath);
-        if (expectedIdentity is null || temporary.Identity != expectedIdentity)
+        if (expectedRevision is null
+            || !expectedRevision.Matches(temporary.CaptureRevision()))
         {
             return;
-        }
-        if (temporaryCompleted)
-        {
-            var revision = temporary.CaptureRevision();
-            if (revision.Length != expectedContents.LongLength
-                || !string.Equals(
-                    revision.Sha256,
-                    Convert.ToHexString(SHA256.HashData(expectedContents)),
-                    StringComparison.Ordinal))
-            {
-                return;
-            }
         }
 
         await AdmitMutationAsync(
@@ -836,6 +892,44 @@ public sealed class AtomicTomlStore
             destinationPath);
         temporary.DeleteExact();
         NotifyTemporaryRemoved(temporaryPath);
+    }
+
+    private static ExactFileRevision CaptureOpenTemporaryRevision(
+        string path,
+        FileStream stream,
+        CandidateFileIdentity identity,
+        byte[] contents) =>
+        new(
+            identity,
+            stream.Length,
+            Convert.ToHexString(SHA256.HashData(contents)),
+            File.GetAttributes(path),
+            File.GetLastWriteTimeUtc(path).Ticks);
+
+    private ExactFileRevision? CaptureExactRevisionForAdmission(string path)
+    {
+        if (mutationAdmission is null)
+        {
+            return null;
+        }
+        using var exact = ExactFileMutation.Open(path);
+        return exact.CaptureRevision();
+    }
+
+    private void VerifyExactRevisionForAdmission(
+        string path,
+        ExactFileRevision? expected,
+        string error)
+    {
+        if (mutationAdmission is null)
+        {
+            return;
+        }
+        using var exact = ExactFileMutation.Open(path);
+        if (expected is null || !expected.Matches(exact.CaptureRevision()))
+        {
+            throw new IOException(error);
+        }
     }
 
     private void NotifyTemporaryRemoved(string temporaryPath)
@@ -852,6 +946,16 @@ public sealed class AtomicTomlStore
         {
             // The file is already absent. A stale harness receipt is safe to retry.
         }
+    }
+
+    private void NotifyDestinationCommitted(string destinationPath)
+    {
+        if (mutationAdmission is null)
+        {
+            return;
+        }
+        using var exact = ExactFileMutation.Open(destinationPath);
+        mutationAdmission.DestinationCommitted(destinationPath, exact.CaptureRevision());
     }
 
     private static async ValueTask<ConfigurationBackupReceipt> CreateVerifiedBackupAsync(

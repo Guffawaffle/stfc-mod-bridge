@@ -48,7 +48,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         File.SetLastWriteTimeUtc(
             configurationPath,
             File.GetLastWriteTimeUtc(configurationPath).AddMinutes(1));
-        campaign.RecordOwnedGameFileRevision(
+        campaign.RecordFixtureOwnedGameFileRevision(
             "community_patch_settings.toml",
             original);
 
@@ -80,6 +80,30 @@ public sealed partial class LiveProviderInstallIntegrationTests
             campaign.RestoreConfigurationBaseline);
 
         StringAssert.Contains(failure.Message, "external protected-file revision");
+        Assert.AreEqual(externalTimestamp, File.GetLastWriteTimeUtc(configurationPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void MetadataEditAfterOwnershipReceiptIsPreserved()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        File.WriteAllText(configurationPath, "baseline");
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        campaign.WriteGameFileAtomically(
+            "community_patch_settings.toml",
+            "bridge"u8.ToArray());
+        var externalTimestamp = File.GetLastWriteTimeUtc(configurationPath).AddMinutes(1);
+        File.SetLastWriteTimeUtc(configurationPath, externalTimestamp);
+
+        Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
+
+        Assert.AreEqual("bridge", File.ReadAllText(configurationPath));
         Assert.AreEqual(externalTimestamp, File.GetLastWriteTimeUtc(configurationPath));
     }
 
@@ -190,13 +214,17 @@ public sealed partial class LiveProviderInstallIntegrationTests
             new MutableGameProcessInspector(target.GameDirectory),
             (_, _) => mutations++);
         var source = catalogBlocked
-            ? "[graphics]\nfree_resize = true\n"u8.ToArray()
-            : "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
+            ? "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray()
+            : "[graphics]\nfree_resize = true\nfree_resize = false\n"u8.ToArray();
         var evidence = catalogBlocked
-            ? LauncherConfigurationDiagnosisEvidence.Unavailable(
-                "netniv",
+            ? LauncherConfigurationDiagnosisEvidence.Supported(
+                "guffawaffle",
                 "stable",
-                LauncherProviderCapabilityStatus.Unsupported)
+                LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
+                    RepositoryRoot(),
+                    "docs",
+                    "windows-launcher",
+                    "config-schema.guffawaffle.v1.json")))
             : null;
 
         var failure = await CaptureFailureAsync(() =>
@@ -209,9 +237,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 createdConfigurationContents: source,
                 preflightEvidence: evidence));
 
-        Assert.IsTrue(
-            failure is AssertFailedException or ArgumentException,
-            failure.ToString());
+        Assert.IsInstanceOfType<AssertFailedException>(failure, failure.ToString());
         Assert.IsFalse(File.Exists(configurationPath));
         Assert.AreEqual(0, mutations, "Blocked clean-target preflight reached a game mutation.");
         campaign.AssertBaseline("Blocked clean-target preflight changed the game target.");
@@ -273,7 +299,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         Assert.IsFalse(File.Exists(configurationPath));
 
         File.WriteAllText(configurationPath, "[graphics]\nfree_resize = true\n");
-        campaign.RecordOwnedGameFileRevision(
+        campaign.RecordFixtureOwnedGameFileRevision(
             "community_patch_settings.toml",
             "[graphics]\nfree_resize = true\n"u8.ToArray());
         Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
@@ -283,6 +309,44 @@ public sealed partial class LiveProviderInstallIntegrationTests
         inspector.SelectedState = GameProcessInspectionState.NotRunning;
         campaign.RestoreConfigurationBaseline();
         campaign.AssertBaseline("Closed-target cleanup did not remove the harness-created TOML.");
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow(1)]
+    [DataRow(2)]
+    public void DirectStageWriteRechecksExactInstallAfterCreation(int blockedOccurrence)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var inspector = new MutableGameProcessInspector(target.GameDirectory);
+        var occurrence = 0;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            inspector,
+            (kind, _) =>
+            {
+                if (kind == DirectGameMutationKind.WriteRestoreStage
+                    && ++occurrence == blockedOccurrence)
+                {
+                    inspector.SelectedState = GameProcessInspectionState.RunningTarget;
+                }
+            });
+
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.WriteGameFileAtomically(
+                "community_patch_settings.toml",
+                "bridge"u8.ToArray()));
+
+        Assert.AreEqual(
+            blockedOccurrence == 1 ? 0 : 1,
+            Directory.GetFiles(
+                target.GameDirectory,
+                ".stfc-bridge-integration-*.restore-stage").Length);
+        inspector.SelectedState = GameProcessInspectionState.NotRunning;
+        campaign.EmergencyRestore();
+        Assert.AreEqual(0, Directory.GetFiles(
+            target.GameDirectory,
+            ".stfc-bridge-integration-*.restore-stage").Length);
     }
 
     [TestMethod]
@@ -382,7 +446,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             new MutableGameProcessInspector(target.GameDirectory),
             (kind, _) =>
             {
-                if (kind == DirectGameMutationKind.PromoteRestoreStage && !changed)
+                if (kind == DirectGameMutationKind.PromoteRestoreDestination && !changed)
                 {
                     changed = true;
                     File.WriteAllText(configurationPath, "external-edit");
@@ -393,6 +457,90 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 "community_patch_settings.toml",
                 "bridge"u8.ToArray()));
         Assert.AreEqual("external-edit", File.ReadAllText(configurationPath));
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ModifiedRestoreStageIsPreserved(bool metadataOnly)
+    {
+        using var target = new TemporaryHarnessTarget();
+        string? stagePath = null;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            (kind, path) =>
+            {
+                if (kind != DirectGameMutationKind.PromoteRestoreStage)
+                {
+                    return;
+                }
+                stagePath = path;
+                if (metadataOnly)
+                {
+                    File.SetLastWriteTimeUtc(
+                        path,
+                        File.GetLastWriteTimeUtc(path).AddMinutes(1));
+                }
+                else
+                {
+                    File.WriteAllText(path, "external-stage");
+                }
+            });
+
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.WriteGameFileAtomically(
+                "community_patch_settings.toml",
+                "bridge"u8.ToArray()));
+
+        Assert.IsNotNull(stagePath);
+        Assert.IsTrue(File.Exists(stagePath));
+        if (!metadataOnly)
+        {
+            Assert.AreEqual("external-stage", File.ReadAllText(stagePath));
+        }
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FinalDirectPromotionRecheckPreservesPathReplacement(bool replaceStage)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var baseline = "baseline"u8.ToArray();
+        File.WriteAllBytes(configurationPath, baseline);
+        string? replacedStage = null;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            beforePromotionCommit: (stagePath, destinationPath) =>
+            {
+                var replacementPath = replaceStage ? stagePath : destinationPath;
+                var replacement = replaceStage ? "external-stage"u8.ToArray() : baseline;
+                File.Delete(replacementPath);
+                File.WriteAllBytes(replacementPath, replacement);
+                if (replaceStage)
+                {
+                    replacedStage = replacementPath;
+                }
+            });
+
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.WriteGameFileAtomically(
+                "community_patch_settings.toml",
+                "bridge"u8.ToArray()));
+
+        CollectionAssert.AreEqual(baseline, File.ReadAllBytes(configurationPath));
+        if (replaceStage)
+        {
+            Assert.IsNotNull(replacedStage);
+            Assert.AreEqual("external-stage", File.ReadAllText(replacedStage));
+        }
     }
 
     [TestMethod]
@@ -413,6 +561,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
         File.Delete(configurationPath);
         File.WriteAllBytes(configurationPath, contents);
 
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.RecordOwnedGameFileRevision(
+                "community_patch_settings.toml",
+                contents));
         Assert.ThrowsException<InvalidOperationException>(campaign.RestoreConfigurationBaseline);
         CollectionAssert.AreEqual(contents, File.ReadAllBytes(configurationPath));
     }
@@ -484,6 +636,159 @@ public sealed partial class LiveProviderInstallIntegrationTests
             target.GameDirectory,
             ".community_patch_settings.toml.*.tmp").Length);
         campaign.AssertBaseline("Atomic boundary recovery did not restore the exact baseline.");
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task AtomicPromotionPreservesModifiedStage(bool metadataOnly)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        string? stagePath = null;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            (temporaryPath, _, _) =>
+            {
+                stagePath = temporaryPath;
+                if (metadataOnly)
+                {
+                    File.SetLastWriteTimeUtc(
+                        temporaryPath,
+                        File.GetLastWriteTimeUtc(temporaryPath).AddMinutes(1));
+                }
+                else
+                {
+                    File.WriteAllText(temporaryPath, "external-stage");
+                }
+                return ValueTask.CompletedTask;
+            },
+            retainAdjacentBackup: false,
+            mutationAdmission: campaign.AtomicTomlMutationAdmission);
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        Assert.IsNotNull(stagePath);
+        Assert.IsTrue(File.Exists(stagePath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task AtomicPromotionPreservesSameByteDestinationReplacement()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            (_, destinationPath, _) =>
+            {
+                File.Delete(destinationPath);
+                File.WriteAllBytes(destinationPath, original);
+                return ValueTask.CompletedTask;
+            },
+            retainAdjacentBackup: false,
+            mutationAdmission: campaign.AtomicTomlMutationAdmission);
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task FinalAtomicPromotionRecheckPreservesPathReplacement(bool replaceStage)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var admission = new FinalPromotionSwapAdmission(
+            campaign.AtomicTomlMutationAdmission,
+            replaceStage,
+            original);
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: admission);
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        if (replaceStage)
+        {
+            Assert.IsNotNull(admission.ReplacedPath);
+            Assert.AreEqual("external-stage", File.ReadAllText(admission.ReplacedPath));
+        }
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task StageRegistrationFailureDeletesThroughCreationHandle()
+    {
+        using var target = new TemporaryHarnessTarget();
+        using (var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            beforeStageReceipt: _ => throw new IOException("Injected receipt failure.")))
+        {
+            Assert.ThrowsException<IOException>(() =>
+                campaign.WriteGameFileAtomically(
+                    "community_patch_settings.toml",
+                    "bridge"u8.ToArray()));
+            Assert.AreEqual(0, Directory.GetFiles(
+                target.GameDirectory,
+                ".stfc-bridge-integration-*.restore-stage").Length);
+        }
+
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = true\n"u8.ToArray();
+        var changed = "[graphics]\nfree_resize = false\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        using var atomicCampaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var store = new AtomicTomlStore(
+            beforeReplace: null,
+            retainAdjacentBackup: false,
+            mutationAdmission: new ThrowingTemporaryCreatedAdmission(
+                atomicCampaign.AtomicTomlMutationAdmission));
+
+        var result = await store.SaveDocumentAsync(configurationPath, original, changed);
+
+        Assert.AreEqual(AtomicTomlWriteState.IoFailure, result.State, result.Error);
+        Assert.AreEqual(0, Directory.GetFiles(
+            target.GameDirectory,
+            ".community_patch_settings.toml.*.tmp").Length);
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
     }
 
     [TestMethod]
@@ -578,6 +883,82 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         public void SetState(string gameDirectory, GameProcessInspectionState state) =>
             states[Path.GetFullPath(gameDirectory)] = state;
+    }
+
+    private sealed class ThrowingTemporaryCreatedAdmission(
+        IAtomicTomlMutationAdmission inner) : IAtomicTomlMutationAdmission
+    {
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken) =>
+            inner.AdmitAsync(boundary, temporaryPath, destinationPath, cancellationToken);
+
+        public void TemporaryCreated(string temporaryPath, ExactFileRevision revision) =>
+            throw new IOException("Injected receipt failure.");
+
+        public void TemporaryCompleted(string temporaryPath, ExactFileRevision revision) =>
+            inner.TemporaryCompleted(temporaryPath, revision);
+
+        public void TemporaryRemoved(string temporaryPath) =>
+            inner.TemporaryRemoved(temporaryPath);
+
+        public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationCommitted(destinationPath, revision);
+
+        public void VerifyCommitAllowed(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath) =>
+            inner.VerifyCommitAllowed(boundary, temporaryPath, destinationPath);
+    }
+
+    private sealed class FinalPromotionSwapAdmission(
+        IAtomicTomlMutationAdmission inner,
+        bool replaceStage,
+        byte[] destinationContents) : IAtomicTomlMutationAdmission
+    {
+        private bool replaced;
+
+        public string? ReplacedPath { get; private set; }
+
+        public ValueTask AdmitAsync(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath,
+            CancellationToken cancellationToken) =>
+            inner.AdmitAsync(boundary, temporaryPath, destinationPath, cancellationToken);
+
+        public void TemporaryCreated(string temporaryPath, ExactFileRevision revision) =>
+            inner.TemporaryCreated(temporaryPath, revision);
+
+        public void TemporaryCompleted(string temporaryPath, ExactFileRevision revision) =>
+            inner.TemporaryCompleted(temporaryPath, revision);
+
+        public void TemporaryRemoved(string temporaryPath) =>
+            inner.TemporaryRemoved(temporaryPath);
+
+        public void DestinationCommitted(string destinationPath, ExactFileRevision revision) =>
+            inner.DestinationCommitted(destinationPath, revision);
+
+        public void VerifyCommitAllowed(
+            AtomicTomlMutationBoundary boundary,
+            string temporaryPath,
+            string destinationPath)
+        {
+            inner.VerifyCommitAllowed(boundary, temporaryPath, destinationPath);
+            if (replaced || boundary != AtomicTomlMutationBoundary.Promotion)
+            {
+                return;
+            }
+            replaced = true;
+            ReplacedPath = replaceStage ? temporaryPath : destinationPath;
+            File.Delete(ReplacedPath);
+            File.WriteAllBytes(
+                ReplacedPath,
+                replaceStage ? "external-stage"u8.ToArray() : destinationContents);
+        }
     }
 
     private static async Task<Exception> CaptureFailureAsync(Func<Task> action)
