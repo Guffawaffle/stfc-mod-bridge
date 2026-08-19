@@ -104,21 +104,25 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
     }
 
     [TestMethod]
-    public async Task PublicSwitchBoundaryBlocksCatalogInvalidConfigurationBeforeMutation()
+    public async Task PublicSwitchBoundaryWarnsAndPreservesCatalogInvalidConfiguration()
     {
-        using var context = await CreateSwitchContextAsync(
-            "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray());
+        var original = "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
+        using var context = await CreateSwitchContextAsync(original);
 
-        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-            () => context.Coordinator.PreviewAsync(
-                "netniv",
-                "stable",
-                context.GameDirectory,
-                isGameRunning: false,
-                context.ConfigurationPath));
+        var preview = await context.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            context.GameDirectory,
+            isGameRunning: false,
+            context.ConfigurationPath);
+        var result = await context.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
 
-        StringAssert.Contains(exception.Message, "CONFIG_VALUE_INVALID");
-        context.AssertUnchanged();
+        Assert.IsTrue(preview.Configuration.Concerns.Any(concern =>
+            concern.Kind == LauncherProviderCompatibilityKind.Warning
+            && concern.Message.Contains("ignore invalid overrides", StringComparison.Ordinal)));
+        Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), result.Selection);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(context.ConfigurationPath));
+        Assert.AreEqual(1, context.BackupStore.List(context.GameDirectory, "guffawaffle").Count);
     }
 
     [TestMethod]
@@ -266,18 +270,20 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
     }
 
     [TestMethod]
-    public void PublicRestoreBoundaryBlocksCatalogInvalidHistoryBeforeJournalMutation()
+    public async Task PublicRestoreBoundaryWarnsAndRestoresCatalogInvalidHistoryByteExactly()
     {
         using var context = CreateRestoreContext("[graphics]\nfree_resize = true\n"u8.ToArray());
-        var source = context.CreateBackup(
-            "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray());
+        var desired = "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
+        var source = context.CreateBackup(desired);
 
         var history = context.Coordinator.LoadHistory().Single();
-        Assert.AreEqual(ProviderConfigurationCompatibilityState.Blocked, history.CompatibilityState);
-        Assert.IsFalse(history.CanRestore);
-        Assert.ThrowsException<InvalidOperationException>(
-            () => context.Coordinator.Preview(source.BackupId));
-        context.AssertUnchanged();
+        Assert.AreEqual(ProviderConfigurationCompatibilityState.Attention, history.CompatibilityState);
+        Assert.IsTrue(history.CanRestore);
+        var preview = context.Coordinator.Preview(source.BackupId);
+        var result = await context.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(ProviderConfigurationRestoreResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(desired, await File.ReadAllBytesAsync(context.ConfigurationPath));
     }
 
     [TestMethod]

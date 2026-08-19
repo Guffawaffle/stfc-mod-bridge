@@ -270,16 +270,15 @@ public sealed partial class LiveProviderInstallIntegrationTests
         }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [TestCategory("Deterministic")]
-    [DataRow("[graphics]\nfree_resize = true\nfree_resize = false\n")]
-    [DataRow("[graphics]\nfree_resize = \"not-a-boolean\"\n")]
-    public async Task UnsafePreflightNeverReachesDirectGameMutation(string configuration)
+    public async Task ParserInvalidPreflightNeverReachesDirectGameMutation()
     {
         using var target = new TemporaryHarnessTarget();
         var configurationPath = Path.Combine(
             target.GameDirectory,
             "community_patch_settings.toml");
+        const string configuration = "[graphics]\nfree_resize = true\nfree_resize = false\n";
         var original = System.Text.Encoding.UTF8.GetBytes(configuration);
         File.WriteAllBytes(configurationPath, original);
         var admissions = 0;
@@ -305,11 +304,42 @@ public sealed partial class LiveProviderInstallIntegrationTests
         campaign.AssertBaseline("Unsafe preflight changed the protected game target.");
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [TestCategory("Deterministic")]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task UnsafeCleanBaselinePreflightCreatesNoToml(bool catalogBlocked)
+    public async Task CatalogInvalidOverrideCompletesRecoveryAndReturnsExactBaseline()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var original = "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
+        File.WriteAllBytes(configurationPath, original);
+        var admissions = 0;
+        var mutations = 0;
+
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            (_, _) => mutations++);
+
+        await RunConfigurationRestoreRecoveryAsync(
+            target.GameDirectory,
+            configurationPath,
+            campaign.StateDirectory,
+            original,
+            campaign,
+            () => admissions++);
+
+        Assert.IsTrue(admissions > 0, "The advisory override did not reach the admitted mutation path.");
+        Assert.IsTrue(mutations > 0, "The advisory override did not exercise exact restoration.");
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        campaign.RestoreConfigurationBaseline();
+        campaign.AssertBaseline("The advisory override did not return to its exact protected baseline.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task ParserInvalidCleanBaselinePreflightCreatesNoToml()
     {
         using var target = new TemporaryHarnessTarget();
         var configurationPath = Path.Combine(
@@ -320,19 +350,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             target.GameDirectory,
             new MutableGameProcessInspector(target.GameDirectory),
             (_, _) => mutations++);
-        var source = catalogBlocked
-            ? "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray()
-            : "[graphics]\nfree_resize = true\nfree_resize = false\n"u8.ToArray();
-        var evidence = catalogBlocked
-            ? LauncherConfigurationDiagnosisEvidence.Supported(
-                "guffawaffle",
-                "stable",
-                LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
-                    RepositoryRoot(),
-                    "docs",
-                    "windows-launcher",
-                    "config-schema.guffawaffle.v1.json")))
-            : null;
+        var source = "[graphics]\nfree_resize = true\nfree_resize = false\n"u8.ToArray();
 
         var failure = await CaptureFailureAsync(() =>
             RunConfigurationRestoreRecoveryAsync(
@@ -341,13 +359,51 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 campaign.StateDirectory,
                 baselineConfiguration: null,
                 campaign: campaign,
-                createdConfigurationContents: source,
-                preflightEvidence: evidence));
+                createdConfigurationContents: source));
 
         Assert.IsInstanceOfType<AssertFailedException>(failure, failure.ToString());
         Assert.IsFalse(File.Exists(configurationPath));
         Assert.AreEqual(0, mutations, "Blocked clean-target preflight reached a game mutation.");
         campaign.AssertBaseline("Blocked clean-target preflight changed the game target.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public async Task CatalogInvalidOverrideCanCreateAndRestoreAConfiguration()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var source = "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
+        var mutations = 0;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            (_, _) => mutations++);
+        var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
+            "guffawaffle",
+            "stable",
+            LauncherConfigurationSchemaLoader.LoadFile(Path.Combine(
+                RepositoryRoot(),
+                "docs",
+                "windows-launcher",
+                "config-schema.guffawaffle.v1.json")));
+
+        await RunConfigurationRestoreRecoveryAsync(
+            target.GameDirectory,
+            configurationPath,
+            campaign.StateDirectory,
+            baselineConfiguration: null,
+            campaign: campaign,
+            createdConfigurationContents: source,
+            preflightEvidence: evidence);
+
+        Assert.IsTrue(mutations > 0, "The advisory override did not exercise exact restoration.");
+        CollectionAssert.AreEqual(source, File.ReadAllBytes(configurationPath));
+        campaign.RestoreConfigurationBaseline();
+        Assert.IsFalse(File.Exists(configurationPath));
+        campaign.AssertBaseline("The advisory clean-target journey did not restore the absent baseline.");
     }
 
     [TestMethod]

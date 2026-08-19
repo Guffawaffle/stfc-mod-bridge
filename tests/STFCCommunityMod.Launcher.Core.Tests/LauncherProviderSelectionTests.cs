@@ -119,9 +119,10 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public void CatalogInvalidTargetValueIsRejectedBeforeBackupOrSelectionMutation()
+    public async Task CatalogInvalidTargetValueWarnsAndSwitchesWithoutChangingToml()
     {
         using var directory = new TemporaryDirectory();
+        TemporaryDirectory.CreateFile(directory.Path, "prime.exe");
         var configurationPath = Path.Combine(directory.Path, "community_patch_settings.toml");
         File.WriteAllText(configurationPath, "[graphics]\nfree_resize = \"not-a-boolean\"\n");
         var store = new JsonLauncherProviderSelectionStore(directory.Path);
@@ -134,12 +135,18 @@ public sealed class LauncherProviderSelectionTests
             null,
             ExactConfigurationEvidence());
 
-        var exception = Assert.ThrowsException<InvalidOperationException>(
-            () => service.Preview("netniv", "stable", configurationPath));
+        var original = File.ReadAllBytes(configurationPath);
+        var preview = service.Preview("netniv", "stable", configurationPath);
+        var result = await service.ExecuteAsync(preview, preview.ConfirmationText);
 
-        StringAssert.Contains(exception.Message, "CONFIG_VALUE_INVALID");
-        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
-        Assert.AreEqual(0, backupStore.List(directory.Path, "guffawaffle").Count);
+        Assert.IsTrue(preview.TargetConfigurationAnalysis!.BlockingFindingCodes.Count == 0);
+        Assert.IsTrue(preview.Concerns.Any(concern =>
+            concern.Kind == LauncherProviderCompatibilityKind.Warning
+            && concern.Message.Contains("ignore invalid overrides", StringComparison.Ordinal)));
+        Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), result.Selection);
+        Assert.AreEqual(result.Selection, store.Load());
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(configurationPath));
+        Assert.AreEqual(1, backupStore.List(directory.Path, "guffawaffle").Count);
     }
 
     [TestMethod]

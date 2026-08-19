@@ -1087,6 +1087,37 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public async Task ExistingInvalidOverrideDoesNotBlockUnrelatedSaveForSupportedProviders()
+    {
+        await AssertProviderAsync(catalog: null);
+        await AssertProviderAsync(LoadNetniVStableCatalog());
+
+        static async Task AssertProviderAsync(LauncherConfigurationCatalog? catalog)
+        {
+            const string source =
+                "# preserve the ignored invalid override\r\n"
+                + "[graphics]\r\n"
+                + "allow_cursor = \"not-a-boolean\"\r\n"
+                + "free_resize = true\r\n";
+            using var fixture = SettingsFixture.Create(source, catalog);
+
+            fixture.Select(LauncherSettingsSection.Graphics);
+            fixture.Row("graphics.free_resize").BooleanValue = false;
+
+            Assert.IsFalse(
+                fixture.ViewModel.HasInvalidInput,
+                "An existing invalid override is diagnostic information, not an editor-draft blocker.");
+            Assert.IsTrue(fixture.ViewModel.CanSave, fixture.ViewModel.SaveAvailability);
+            fixture.ViewModel.SaveCommand.Execute(null);
+            await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+
+            var saved = await File.ReadAllTextAsync(fixture.ConfigurationPath);
+            StringAssert.Contains(saved, "allow_cursor = \"not-a-boolean\"");
+            StringAssert.Contains(saved, "free_resize = false");
+        }
+    }
+
+    [TestMethod]
     public void NetnivSemanticNavigationOmitsEmptySections()
     {
         using var fixture = SettingsFixture.Create(catalog: LoadNetniVStableCatalog());

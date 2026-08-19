@@ -123,11 +123,14 @@ The recovery lab:
   verifies the complete starting fingerprint after bounded harness cleanup.
 
 Parser-invalid or catalog-blocked existing TOML fails before game-file
-mutation. An unknown, modified, manual, NetniV, or non-stable DLL also fails
-before TOML inspection or mutation. A recovery or cleanup defect still fails
-the run even if the bounded emergency safeguard restores the human-owned target
-afterward; isolated journals and encrypted receipts are retained for recovery
-inspection on any failed journey and deleted only after full verification.
+mutation. A catalog-invalid setting value is advisory rather than blocking:
+supported mod runtimes ignore the invalid override and Bridge preserves its
+exact TOML bytes. An unknown, modified, manual, NetniV, or non-stable DLL also
+fails before TOML inspection or mutation. A recovery or cleanup defect still
+fails the run even if the bounded emergency safeguard restores the human-owned
+target afterward; isolated journals and encrypted receipts are retained for
+recovery inspection on any failed journey and deleted only after full
+verification.
 
 ## Explicit profiles
 

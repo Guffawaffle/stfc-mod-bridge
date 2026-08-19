@@ -315,8 +315,9 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         findings.Add(
             Finding(
                 "CONFIG_VALUE_INVALID",
-                ConfigurationDiagnosisSeverity.Error,
-                "A known setting has a value that is invalid for its declared type or constraints.",
+                ConfigurationDiagnosisSeverity.Attention,
+                "A known setting has a value outside its declared type or constraints. "
+                + "The mod ignores the invalid override.",
                 setting,
                 configured.LineNumber,
                 "review-invalid-configuration-value"));

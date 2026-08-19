@@ -931,9 +931,21 @@ public sealed class LauncherProviderSourceSwitchService
                     + "that are ignored, removed, legacy, or parsed without runtime effect. Their bytes will remain intact."));
         }
 
+        var invalidValueCount = CountFindings(analysis, "CONFIG_VALUE_INVALID");
+        if (invalidValueCount > 0)
+        {
+            concerns.Add(
+                new(
+                    LauncherProviderCapabilityIds.ConfigurationMigration,
+                    LauncherProviderCompatibilityKind.Warning,
+                    $"The target catalog reports {invalidValueCount} configured value(s) outside its accepted "
+                    + "type or constraints. Supported mod runtimes ignore invalid overrides, so switching remains "
+                    + "available and Mod Bridge will preserve their exact bytes."));
+        }
+
         var otherAttentionCount = Math.Max(
             0,
-            analysis.AttentionFindingCount - runtimeLimitedCount);
+            analysis.AttentionFindingCount - runtimeLimitedCount - invalidValueCount);
         if (otherAttentionCount > 0)
         {
             concerns.Add(
