@@ -505,6 +505,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             _ => "Install community mod?",
         };
         ModOperationSummary.Text = pendingModOperation.Message;
+        ModOperationSource.Text = viewModel.ModSourceMetadata;
         ModOperationTarget.Text = pendingModOperation.GameDirectory;
         ConfirmModOperationButton.Content = pendingModOperation.ActionKind switch
         {

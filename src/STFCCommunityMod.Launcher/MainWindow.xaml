@@ -953,19 +953,19 @@
                       Content="{Binding ModSourceMetadata}"
                       Foreground="{DynamicResource TextSecondaryBrush}"
                       automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
-                      automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the Mod Bridge update source." />
+                      automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the community mod release source." />
             </StackPanel>
             <Button x:Name="ModActionButton"
                     Grid.Column="2"
                     MinHeight="44"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Style="{StaticResource QuietButtonStyle}"
+                    Style="{StaticResource UtilityActionButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
                     IsEnabled="{Binding CanManageMod}"
                     automation:AutomationProperties.Name="{Binding ModActionAutomationName}"
-                    automation:AutomationProperties.HelpText="Downloads and verifies the selected community mod release before asking for confirmation." />
+                    automation:AutomationProperties.HelpText="Checks the selected community mod source for its latest trusted release, then asks before installing it." />
           </Grid>
         </Grid>
       </Border>
@@ -1303,6 +1303,14 @@
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,0"
                    FontWeight="SemiBold"
+                   Text="Release source" />
+        <TextBlock x:Name="ModOperationSource"
+                   Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,0"
+                   FontWeight="SemiBold"
                    Text="Exact game target" />
         <TextBlock x:Name="ModOperationTarget"
                    Margin="0,4,0,0"
@@ -1313,7 +1321,7 @@
         <TextBlock Margin="0,12,0,0"
                    FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="The download must match the release size and SHA-256, pass Authenticode for Joseph Gustavson, and report the expected embedded version. The game must remain closed."
+                   Text="Mod Bridge verifies the download before changing version.dll. Your settings stay unchanged, and a failed operation restores the previous file state. Keep Star Trek Fleet Command closed."
                    TextWrapping="Wrap" />
         <Button x:Name="ConfirmModOperationButton"
                 Margin="0,20,0,0"

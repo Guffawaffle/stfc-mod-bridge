@@ -775,7 +775,7 @@ public static class LauncherHealthResolver
                 providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider
                     || !provider.CanMutate
                     ? "Unavailable"
-                    : "Check for updates",
+                    : "Update mod",
                 providerCompatibility == LauncherProviderCompatibilityState.DifferentProvider
                     || !provider.CanMutate
                     ? ModManagementActionKind.None
@@ -787,7 +787,7 @@ public static class LauncherHealthResolver
                         ? providerReason
                         : installation.IsGameRunning
                             ? "Close Star Trek Fleet Command before changing the community mod."
-                            : "Check the selected release source; replacement requires a separate confirmation."),
+                            : "Find the latest release from the selected community mod source, then review the replacement."),
             ModInstallationEvidenceState.NotInstalled => new(
                 "Not installed",
                 LauncherHomeTone.Neutral,
@@ -835,7 +835,7 @@ public static class LauncherHealthResolver
                 when updateAvailability == ModUpdateEvidenceState.UpdateAvailable => new(
                     "Update available",
                     LauncherHomeTone.Warning,
-                    provider.CanMutate ? "Update" : "Unavailable",
+                    provider.CanMutate ? "Update mod" : "Unavailable",
                     provider.CanMutate ? ModManagementActionKind.CheckForUpdate : ModManagementActionKind.None,
                     canMutate,
                     provider.CanMutate
@@ -846,13 +846,13 @@ public static class LauncherHealthResolver
             ModInstallationEvidenceState.ManagedVerified => new(
                 $"Installed {installation.InstalledVersion}",
                 LauncherHomeTone.Success,
-                provider.CanMutate ? "Check for updates" : "Unavailable",
+                provider.CanMutate ? "Update mod" : "Unavailable",
                 provider.CanMutate ? ModManagementActionKind.CheckForUpdate : ModManagementActionKind.None,
                 provider.CanMutate,
                 provider.CanMutate
                     ? installation.IsGameRunning
-                        ? $"Check for updates; close STFC only before installing one. Installed {installation.InstalledVersion}"
-                        : $"Check for a community mod update; installed version {installation.InstalledVersion}"
+                        ? $"Find the latest community mod release; close STFC before installing it. Installed {installation.InstalledVersion}"
+                        : $"Find and install the latest community mod release; installed version {installation.InstalledVersion}"
                     : providerReason),
             _ => throw new ArgumentOutOfRangeException(nameof(installation)),
         };

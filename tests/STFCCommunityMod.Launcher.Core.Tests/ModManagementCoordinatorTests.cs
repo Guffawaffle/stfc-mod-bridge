@@ -49,7 +49,7 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, presentation.ActionKind);
         Assert.AreEqual("Manual installation detected", presentation.Status);
-        Assert.AreEqual("Check for updates", presentation.ActionLabel);
+        Assert.AreEqual("Update mod", presentation.ActionLabel);
     }
 
     [TestMethod]
@@ -516,7 +516,7 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual(LauncherHomeTone.Success, presentation.Tone);
         Assert.AreEqual("Installed 2.1.0.8", presentation.Status);
-        Assert.AreEqual("Check for updates", presentation.ActionLabel);
+        Assert.AreEqual("Update mod", presentation.ActionLabel);
         Assert.IsTrue(presentation.CanExecute);
         Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
         StringAssert.Contains(preparation.Message, "Close Star Trek Fleet Command");

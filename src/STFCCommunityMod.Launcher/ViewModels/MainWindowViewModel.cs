@@ -766,7 +766,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             return null;
         }
 
-        if (!actionFeedback.Mod.TryBegin("Release check accepted. Checking the selected release…"))
+        if (!actionFeedback.Mod.TryBegin("Checking the selected source for the latest community mod…"))
         {
             return null;
         }
@@ -785,7 +785,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             {
                 actionFeedback.Mod.Complete(
                     true,
-                    $"Community mod {preparation.ReleaseVersion} is ready for confirmation.");
+                    $"Community mod {preparation.ReleaseVersion} is ready to update.");
             }
             return preparation;
         }

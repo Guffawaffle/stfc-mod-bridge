@@ -255,6 +255,59 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
+    public void CommunityModUpdateIsOneGuidedHomeActionSeparateFromBridgeUpdate()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var modAction = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ModActionButton");
+        var releaseSource = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ReleaseSourceButton");
+        var confirmation = document.Descendants()
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ModOperationDialog");
+        var prepareHandler = Slice(
+            source,
+            "private async void ModActionButton_Click",
+            "private void DiagnosticsButton_Click");
+        var executeHandler = Slice(
+            source,
+            "private async void ConfirmModOperationButton_Click",
+            "private void ReleaseSourceButton_Click");
+
+        Assert.AreEqual("{Binding ModActionLabel}", (string?)modAction.Attribute("Content"));
+        Assert.AreEqual(
+            "{StaticResource UtilityActionButtonStyle}",
+            (string?)modAction.Attribute("Style"));
+        StringAssert.Contains(
+            (string?)modAction.Attribute(Automation + "AutomationProperties.HelpText"),
+            "latest trusted release");
+        StringAssert.Contains(
+            (string?)releaseSource.Attribute(Automation + "AutomationProperties.HelpText"),
+            "community mod release source");
+        Assert.IsFalse(
+            ((string?)releaseSource.Attribute(Automation + "AutomationProperties.HelpText"))!
+                .Contains("Mod Bridge update source", StringComparison.Ordinal));
+
+        StringAssert.Contains(prepareHandler, "PrepareModOperationAsync");
+        StringAssert.Contains(prepareHandler, "ModOperationPreparationState.Ready");
+        StringAssert.Contains(prepareHandler, "ModOperationSource.Text = viewModel.ModSourceMetadata");
+        StringAssert.Contains(prepareHandler, "ModOperationDialog.IsOpen = true");
+        StringAssert.Contains(executeHandler, "ExecuteModOperationAsync");
+
+        Assert.IsTrue(confirmation.Descendants(Presentation + "TextBlock").Any(element =>
+            (string?)element.Attribute(Xaml + "Name") == "ModOperationSource"));
+        var confirmationText = string.Join(
+            " ",
+            confirmation.Descendants(Presentation + "TextBlock")
+                .Select(element => (string?)element.Attribute("Text"))
+                .Where(text => !string.IsNullOrWhiteSpace(text)));
+        StringAssert.Contains(confirmationText, "Your settings stay unchanged");
+        StringAssert.Contains(confirmationText, "failed operation restores the previous file state");
+    }
+
+    [TestMethod]
     public void ConfigurationCleanupAndEffectiveExportKeepDistinctSafetyContracts()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
