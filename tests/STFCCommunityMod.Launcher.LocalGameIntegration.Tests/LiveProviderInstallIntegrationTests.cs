@@ -920,8 +920,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 "Install/remove introduced an unauthorized runtime manifest.");
         }
         Assert.IsNull(endpoint.Deployment.ReadInstalledState(gameDirectory));
-
-        campaign.RestoreProtectedBaseline();
     }
 
     private static async Task FinishLiveCampaignAsync(
@@ -1094,6 +1092,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 return ValueTask.CompletedTask;
             },
             afterArtifactCommitted: (path, revision) =>
+                campaign.TryRecordCommittedGameFileRevision(Path.GetFileName(path), revision),
+            afterRuntimeManifestCommitted: (path, revision) =>
                 campaign.TryRecordCommittedGameFileRevision(Path.GetFileName(path), revision),
             reviewedCertifications: reviewed.Certifications);
         var health = new LauncherHealthService(
@@ -1404,17 +1404,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     "The deployment checkpoint has no durable transaction receipt.");
             switch (checkpoint)
             {
-                case ModDeploymentFileCheckpoint.TargetDllInstalled
-                    when journal.Artifact.RuntimeManifest is not null:
-                    CaptureDeploymentPromotion(
-                        Path.Combine(
-                            journal.GameDirectory,
-                            $".{RuntimeManifestFileName}.{journal.TransactionId}.stage"),
-                        RuntimeManifestFileName);
-                    break;
-                case ModDeploymentFileCheckpoint.TargetRuntimeManifestInstalled:
-                    CommitDeploymentPromotion(RuntimeManifestFileName);
-                    break;
                 case ModDeploymentFileCheckpoint.AdoptedDllRestoreStaged:
                     CaptureDeploymentPromotion(journal.StagePath, "version.dll");
                     break;
@@ -1514,19 +1503,6 @@ public sealed partial class LiveProviderInstallIntegrationTests
             ValidateProtectedFileName(targetFileName);
             using var stage = ExactFileMutation.Open(stagePath);
             pendingDeploymentPromotions[targetFileName] = stage.CaptureRevision();
-        }
-
-        private void CommitDeploymentPromotion(string targetFileName)
-        {
-            if (!pendingDeploymentPromotions.TryGetValue(
-                    targetFileName,
-                    out var stagedRevision)
-                || !TryRecordCommittedGameFileRevision(targetFileName, stagedRevision))
-            {
-                throw new InvalidOperationException(
-                    "The promoted protected file did not retain its exact staged identity.");
-            }
-            pendingDeploymentPromotions.Remove(targetFileName);
         }
 
         public void CommitAdoptedRestoration(string targetFileName)

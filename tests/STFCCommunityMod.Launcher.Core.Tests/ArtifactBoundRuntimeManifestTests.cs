@@ -194,6 +194,95 @@ public sealed class ArtifactBoundRuntimeManifestTests
     }
 
     [TestMethod]
+    public async Task ReviewedPairReportsBothExactCommittedRevisionsFromLockedHandles()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        var committed = new Dictionary<string, ExactFileRevision>(StringComparer.OrdinalIgnoreCase);
+        bool RecordCommitted(string path, ExactFileRevision revision)
+        {
+            Assert.ThrowsException<IOException>(
+                () => File.Delete(path),
+                "The commit callback must run while deployment still holds the exact file handle.");
+            committed.Add(Path.GetFileName(path), revision);
+            return true;
+        }
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterArtifactCommitted: RecordCommitted,
+            afterRuntimeManifestCommitted: RecordCommitted);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            fixture.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(2, committed.Count);
+        using var exactDll = ExactFileMutation.Open(Path.Combine(gameDirectory, "version.dll"));
+        using var exactRuntime = ExactFileMutation.Open(
+            Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName));
+        Assert.IsTrue(committed["version.dll"].Matches(exactDll.CaptureRevision()));
+        Assert.IsTrue(
+            committed[ArtifactBoundRuntimeManifestParser.ManagedFileName]
+                .Matches(exactRuntime.CaptureRevision()));
+    }
+
+    [TestMethod]
+    public async Task RejectedRuntimeCommitOwnershipPreservesTheLivePairForRecovery()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        var runtimeCallbackObserved = false;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterArtifactCommitted: (_, _) => true,
+            afterRuntimeManifestCommitted: (path, _) =>
+            {
+                runtimeCallbackObserved = true;
+                Assert.ThrowsException<IOException>(
+                    () => File.Delete(path),
+                    "Rejected ownership must still be evaluated under the exact runtime handle.");
+                return false;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            fixture.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsTrue(runtimeCallbackObserved);
+        CollectionAssert.AreEqual(
+            fixture.PayloadBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            fixture.ManifestBytes,
+            File.ReadAllBytes(
+                Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+        Assert.IsNull(service.ReadInstalledState());
+        var journal = service.ReadJournal();
+        Assert.IsNotNull(journal);
+        Assert.IsTrue(journal.PreserveLiveArtifactDuringRecovery);
+    }
+
+    [TestMethod]
     public async Task PairToLegacyUpdateRemovesManagedManifestButLeavesBaseHealthy()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -1770,7 +1859,9 @@ public sealed class ArtifactBoundRuntimeManifestTests
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
         string? expectedProductVersion = null,
-        Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null) =>
+        Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
+        Func<string, ExactFileRevision, bool>? afterArtifactCommitted = null,
+        Func<string, ExactFileRevision, bool>? afterRuntimeManifestCommitted = null) =>
         new(
             temporaryDirectory.CreateDirectory("state"),
             new RouteDownloader(downloads),
@@ -1782,6 +1873,8 @@ public sealed class ArtifactBoundRuntimeManifestTests
             afterPhasePersisted: afterPhasePersisted,
             reviewedCertification: certification,
             afterFileCheckpoint: afterFileCheckpoint,
+            afterArtifactCommitted: afterArtifactCommitted,
+            afterRuntimeManifestCommitted: afterRuntimeManifestCommitted,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten);
 
     private static WindowsReleaseManifest ReleaseManifest(PairFixture fixture) => new(

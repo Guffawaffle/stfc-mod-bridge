@@ -68,6 +68,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
     private readonly Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint;
     private readonly Func<string, ExactFileRevision, bool>? afterArtifactCommitted;
+    private readonly Func<string, ExactFileRevision, bool>? afterRuntimeManifestCommitted;
     private readonly Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed;
     private readonly Func<string, string, long, CancellationToken, ValueTask>?
         afterDurableCopyChunkWritten;
@@ -117,6 +118,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ReviewedReleaseCertification? reviewedCertification,
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint,
         Func<string, ExactFileRevision, bool>? afterArtifactCommitted = null,
+        Func<string, ExactFileRevision, bool>? afterRuntimeManifestCommitted = null,
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
@@ -146,6 +148,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             .ToArray();
         this.afterFileCheckpoint = afterFileCheckpoint;
         this.afterArtifactCommitted = afterArtifactCommitted;
+        this.afterRuntimeManifestCommitted = afterRuntimeManifestCommitted;
         this.afterDurableCopyBytesFlushed = afterDurableCopyBytesFlushed;
         this.afterDurableCopyChunkWritten = afterDurableCopyChunkWritten;
         this.afterDurableCopyCompleted = afterDurableCopyCompleted;
@@ -825,7 +828,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                             + cleanupException.Message);
                 }
             }
-            if (afterArtifactCommitted is not null)
+            if (afterArtifactCommitted is not null || afterRuntimeManifestCommitted is not null)
             {
                 journal = journal with
                 {
@@ -866,6 +869,22 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 VerifyFile(
                     exactStagedRuntimeManifest!.CaptureRevision(),
                     journal.Artifact.RuntimeManifest);
+                if (afterRuntimeManifestCommitted is not null
+                    && !afterRuntimeManifestCommitted(
+                        runtimeManifestPath,
+                        exactStagedRuntimeManifest.CaptureRevision()))
+                {
+                    exactStagedArtifact.Dispose();
+                    exactStagedArtifact = null;
+                    exactStagedRuntimeManifest.Dispose();
+                    exactStagedRuntimeManifest = null;
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        "The runtime manifest committed, but its exact recovery ownership could not be confirmed. "
+                            + "The live files were preserved for explicit recovery.",
+                        Changed: true,
+                        RuntimeActivation: reviewedRuntimeActivation);
+                }
             }
             exactStagedArtifact.Dispose();
             exactStagedArtifact = null;
