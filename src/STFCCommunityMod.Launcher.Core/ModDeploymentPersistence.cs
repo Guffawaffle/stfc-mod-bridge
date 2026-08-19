@@ -16,7 +16,8 @@ public sealed partial class ModDeploymentService
             or JsonException
             or NotSupportedException
             or ArgumentException
-            or InvalidDataException;
+            or InvalidDataException
+            or OverflowException;
 
     private void ValidatePersistedJournal(ModDeploymentJournal journal)
     {
@@ -27,7 +28,7 @@ public sealed partial class ModDeploymentService
             || journal.StagePath is null
             || journal.SameVolumeBackupPath is null
             || journal.DurableBackupPath is null
-            || journal.SchemaVersion != DeploymentJournalSchemaVersion
+            || journal.SchemaVersion is not 1 and not DeploymentJournalSchemaVersion
             || !Guid.TryParseExact(journal.TransactionId, "N", out _)
             || !Enum.IsDefined(journal.Operation)
             || !Enum.IsDefined(journal.Phase)
@@ -54,6 +55,10 @@ public sealed partial class ModDeploymentService
             || !string.Equals(journal.Artifact.FileName, ManagedFileName, StringComparison.OrdinalIgnoreCase)
             || journal.Artifact.Size <= 0
             || journal.Artifact.Size > MaximumArtifactSize
+            || string.IsNullOrWhiteSpace(journal.Artifact.ExpectedVersion)
+            || journal.Artifact.ExpectedProductVersion is not null
+                && (journal.Artifact.ExpectedProductVersion.Length is <= 0 or > 160
+                    || journal.Artifact.ExpectedProductVersion.Any(char.IsControl))
             || !TryNormalizeSha256(journal.Artifact.Sha256, out _))
         {
             throw new InvalidDataException("The deployment journal contains an unsafe artifact or recovery path.");
@@ -82,12 +87,71 @@ public sealed partial class ModDeploymentService
                 journal.ExistingRuntimeManifestIdentity,
                 "deployment journal prior runtime manifest");
         }
+        if (journal.TargetArtifactFileIdentity is not null)
+        {
+            ValidateFileIdentityReceipt(
+                journal.TargetArtifactFileIdentity,
+                "deployment journal target DLL");
+        }
+        if (journal.TargetRuntimeManifestFileIdentity is not null)
+        {
+            ValidateFileIdentityReceipt(
+                journal.TargetRuntimeManifestFileIdentity,
+                "deployment journal target runtime manifest");
+            if (journal.Artifact.RuntimeManifest is null)
+            {
+                throw new InvalidDataException(
+                    "The deployment journal records a target runtime-manifest identity without an artifact.");
+            }
+        }
+        if (journal.RestoredAdoptedArtifactFileIdentity is not null)
+        {
+            ValidateFileIdentityReceipt(
+                journal.RestoredAdoptedArtifactFileIdentity,
+                "deployment journal restored adopted DLL");
+        }
+        if (journal.RestoredAdoptedRuntimeManifestFileIdentity is not null)
+        {
+            ValidateFileIdentityReceipt(
+                journal.RestoredAdoptedRuntimeManifestFileIdentity,
+                "deployment journal restored adopted runtime manifest");
+        }
+        if (journal.SchemaVersion == 1
+            && (journal.TargetArtifactFileIdentity is not null
+                || journal.TargetRuntimeManifestFileIdentity is not null
+                || journal.RestoredAdoptedArtifactFileIdentity is not null
+                || journal.RestoredAdoptedRuntimeManifestFileIdentity is not null))
+        {
+            throw new InvalidDataException(
+                "A legacy deployment journal cannot carry v2 file-identity receipts.");
+        }
+        if (journal.Operation == ModDeploymentOperation.Deploy
+            && (journal.RestoredAdoptedArtifactFileIdentity is not null
+                || journal.RestoredAdoptedRuntimeManifestFileIdentity is not null)
+            || journal.Operation == ModDeploymentOperation.Uninstall
+                && (journal.TargetArtifactFileIdentity is not null
+                    || journal.TargetRuntimeManifestFileIdentity is not null))
+        {
+            throw new InvalidDataException(
+                "The deployment journal file-identity receipts do not match its operation.");
+        }
         if (journal.TargetInstallationAttribution is not null
             && (!IsStableIdentity(journal.TargetInstallationAttribution.ProviderId)
                 || !IsStableIdentity(journal.TargetInstallationAttribution.ReleaseChannelId)
                 || !IsStableIdentity(journal.TargetInstallationAttribution.RuntimeDistributionId)))
         {
             throw new InvalidDataException("The deployment journal target attribution is invalid.");
+        }
+    }
+
+    private static void ValidateFileIdentityReceipt(ModFileIdentityReceipt receipt, string subject)
+    {
+        if (receipt.VolumeSerialNumber is not { Length: 8 }
+            || !receipt.VolumeSerialNumber.All(Uri.IsHexDigit)
+            || receipt.FileIndex is not { Length: 16 }
+            || !receipt.FileIndex.All(Uri.IsHexDigit))
+        {
+            throw new InvalidDataException($"The {subject} file-identity receipt is invalid.");
         }
     }
 
@@ -104,10 +168,23 @@ public sealed partial class ModDeploymentService
             || state.Size <= 0
             || state.Size > MaximumArtifactSize
             || string.IsNullOrWhiteSpace(state.Version)
+            || !IsValidReleaseProductVersion(state.ReleaseProductVersion)
             || !TryNormalizeSha256(state.Sha256, out _)
             || !IsStableIdentity(state.ProviderId)
             || !IsStableIdentity(state.ReleaseChannelId)
-            || !IsStableIdentity(state.RuntimeDistributionId))
+            || !IsStableIdentity(state.RuntimeDistributionId)
+            || state.ReleaseHighWaterMarks is not null
+                && (!AreValidReleaseHighWaterMarks(state.ReleaseHighWaterMarks)
+                    || state.ReleaseHighWaterMarks.Any(mark =>
+                        string.Equals(mark.ProviderId, state.ProviderId, StringComparison.Ordinal)
+                        && string.Equals(
+                            mark.ReleaseChannelId,
+                            state.ReleaseChannelId,
+                            StringComparison.Ordinal)
+                        && string.Equals(
+                            mark.RuntimeDistributionId,
+                            state.RuntimeDistributionId,
+                            StringComparison.Ordinal))))
         {
             throw new InvalidDataException("The installed-mod state is invalid or unsupported.");
         }
@@ -155,9 +232,71 @@ public sealed partial class ModDeploymentService
         if (receipt is null
             || receipt.Size <= 0
             || receipt.Size > MaximumArtifactSize
-            || !TryNormalizeSha256(receipt.Sha256, out _))
+            || !TryNormalizeSha256(receipt.Sha256, out _)
+            || receipt.Attributes.HasValue != receipt.LastWriteTimeUtcTicks.HasValue
+            || receipt.Attributes is { } attributes
+                && (attributes.HasFlag(FileAttributes.Directory)
+                    || attributes.HasFlag(FileAttributes.ReparsePoint)
+                    || attributes.HasFlag(FileAttributes.Device))
+            || receipt.LastWriteTimeUtcTicks is { } ticks
+                && (ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks))
         {
             throw new InvalidDataException($"The {subject} identity receipt is invalid or missing.");
+        }
+    }
+
+    private static bool AreValidReleaseHighWaterMarks(
+        IReadOnlyList<ModReleaseHighWaterState> marks)
+    {
+        if (marks.Count > 32)
+        {
+            return false;
+        }
+        var identities = new HashSet<(string ProviderId, string ChannelId, string RuntimeId)>();
+        foreach (var mark in marks)
+        {
+            if (mark is null
+                || !IsStableIdentity(mark.ProviderId)
+                || !IsStableIdentity(mark.ReleaseChannelId)
+                || !IsStableIdentity(mark.RuntimeDistributionId)
+                || string.IsNullOrWhiteSpace(mark.ReleaseProductVersion)
+                || !IsValidReleaseProductVersion(mark.ReleaseProductVersion)
+                || mark.AcceptedArtifactSize <= 0
+                || mark.AcceptedArtifactSize > MaximumArtifactSize
+                || !TryNormalizeSha256(mark.AcceptedArtifactSha256, out _)
+                || !identities.Add((
+                    mark.ProviderId,
+                    mark.ReleaseChannelId,
+                    mark.RuntimeDistributionId)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static bool IsValidReleaseProductVersion(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+        if (value.Length is <= 0 or > 160 || value.Any(char.IsControl))
+        {
+            return false;
+        }
+        try
+        {
+            _ = WindowsReleaseSelectionPolicy.ParseProductReleaseOrderingVersion(value);
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or FormatException
+                or OverflowException
+                or ArgumentException)
+        {
+            return false;
         }
     }
 
@@ -212,13 +351,15 @@ public sealed partial class ModDeploymentService
         foreach (var state in registry.Installations)
         {
             ValidatePersistedInstalledState(state);
-            var gameDirectory = NormalizeGameDirectory(state.GameDirectory);
+            var normalizedState = NormalizeReleaseEvidence(state);
+            ValidatePersistedInstalledState(normalizedState);
+            var gameDirectory = NormalizeGameDirectory(normalizedState.GameDirectory);
             if (!canonicalPaths.Add(gameDirectory))
             {
                 throw new InvalidDataException(
                     "The installed-mod registry contains duplicate canonical game installations.");
             }
-            installations.Add(state with { GameDirectory = gameDirectory });
+            installations.Add(normalizedState with { GameDirectory = gameDirectory });
         }
 
         var detached = new List<ModDetachedAdoptionBackupState>();
@@ -243,6 +384,86 @@ public sealed partial class ModDeploymentService
                 .OrderBy(backup => backup.DetachedAtUtc)
                 .ThenBy(backup => backup.DetachmentId, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    private ModInstalledArtifactState NormalizeReleaseEvidence(ModInstalledArtifactState state)
+    {
+        var currentProductVersion = state.ReleaseProductVersion
+            ?? InferReviewedReleaseProductVersion(state);
+        var marks = (state.ReleaseHighWaterMarks ?? [])
+            .Where(mark => currentProductVersion is null
+                || !string.Equals(mark.ProviderId, state.ProviderId, StringComparison.Ordinal)
+                || !string.Equals(
+                    mark.ReleaseChannelId,
+                    state.ReleaseChannelId,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    mark.RuntimeDistributionId,
+                    state.RuntimeDistributionId,
+                    StringComparison.Ordinal))
+            .GroupBy(mark => (
+                mark.ProviderId,
+                mark.ReleaseChannelId,
+                mark.RuntimeDistributionId))
+            .Select(group => group
+                .OrderByDescending(mark =>
+                    mark.ReleaseProductVersion,
+                    Comparer<string>.Create(
+                        WindowsReleaseSelectionPolicy.CompareProductReleaseOrderingVersions))
+                .First())
+            .OrderBy(mark => mark.ProviderId, StringComparer.Ordinal)
+            .ThenBy(mark => mark.ReleaseChannelId, StringComparer.Ordinal)
+            .ThenBy(mark => mark.RuntimeDistributionId, StringComparer.Ordinal)
+            .ToArray();
+        return state with
+        {
+            ReleaseProductVersion = currentProductVersion,
+            ReleaseHighWaterMarks = marks.Length == 0 ? null : marks,
+        };
+    }
+
+    private string? InferReviewedReleaseProductVersion(ModInstalledArtifactState state)
+    {
+        var matches = reviewedCertifications.Where(certification =>
+                IsOrderableReleaseProductVersion(certification.Tag)
+                && certification.ProviderId == state.ProviderId
+                && certification.ChannelId == state.ReleaseChannelId
+                && certification.RuntimeDistributionId == state.RuntimeDistributionId
+                && certification.PayloadFileName.Equals(
+                    state.FileName,
+                    StringComparison.OrdinalIgnoreCase)
+                && certification.PayloadSize == state.Size
+                && certification.PayloadSha256.Equals(
+                    state.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && certification.PayloadVersion == state.Version
+                && (certification.RuntimeManifest is null
+                    ? state.RuntimeManifest is null
+                    : state.RuntimeManifest is not null
+                        && certification.RuntimeManifest.FileName == state.RuntimeManifest.FileName
+                        && certification.RuntimeManifest.Size == state.RuntimeManifest.Size
+                        && certification.RuntimeManifest.Sha256.Equals(
+                            state.RuntimeManifest.Sha256,
+                            StringComparison.OrdinalIgnoreCase)
+                        && certification.SourceCommit.Equals(
+                            state.RuntimeManifest.SourceRevision,
+                            StringComparison.OrdinalIgnoreCase)
+                        && certification.Repository.Equals(
+                            state.RuntimeManifest.Repository,
+                            StringComparison.Ordinal)
+                        && certification.Tag.Equals(
+                            state.RuntimeManifest.Tag,
+                            StringComparison.Ordinal)))
+            .Select(certification => certification.Tag)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => null,
+            1 => matches[0],
+            _ => throw new InvalidDataException(
+                "The installed-mod state matches multiple reviewed release identities."),
+        };
     }
 
     private void ValidateDetachedAdoptionBackup(ModDetachedAdoptionBackupState backup)

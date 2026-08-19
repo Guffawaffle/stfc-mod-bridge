@@ -34,9 +34,23 @@ internal enum ModDeploymentFileCheckpoint
 internal sealed class SimulatedProcessTerminationException(ModDeploymentFileCheckpoint checkpoint)
     : Exception($"Simulated process termination after {checkpoint}.");
 
+internal sealed record ModDeploymentCopyStageReceipt(
+    int SchemaVersion,
+    string StagePath,
+    ModDeploymentCopyStagePhase Phase,
+    CandidateFileIdentity FileIdentity,
+    ExactFileRevision? LastOwnedRevision = null);
+
+internal enum ModDeploymentCopyStagePhase
+{
+    Writing,
+    Complete,
+}
+
 public sealed partial class ModDeploymentService : IModDeploymentStateReader
 {
-    private const int DeploymentJournalSchemaVersion = 1;
+    private const int DeploymentJournalSchemaVersion = 2;
+    private const int CopyStageReceiptSchemaVersion = 2;
     private const int InstalledReceiptSchemaVersion = 1;
     private const int InstalledRegistrySchemaVersion = 2;
     private const long MaximumArtifactSize = 128L * 1024L * 1024L;
@@ -50,9 +64,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly TimeProvider timeProvider;
     private readonly ModInstallationAttribution installationAttribution;
     private readonly ReviewedReleaseCertification? reviewedCertification;
+    private readonly IReadOnlyList<ReviewedReleaseCertification> reviewedCertifications;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
     private readonly Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint;
     private readonly Func<string, ExactFileRevision, bool>? afterArtifactCommitted;
+    private readonly Func<string, ExactFileRevision, bool>? afterRuntimeManifestCommitted;
+    private readonly Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed;
+    private readonly Func<string, string, long, CancellationToken, ValueTask>?
+        afterDurableCopyChunkWritten;
+    private readonly Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted;
 
     public ModDeploymentService(
         string stateDirectory,
@@ -63,7 +83,11 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModInstallationAttribution installationAttribution,
         TimeProvider? timeProvider = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
-        ReviewedReleaseCertification? reviewedCertification = null)
+        ReviewedReleaseCertification? reviewedCertification = null,
+        IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
+        Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
         : this(
             stateDirectory,
             downloader,
@@ -74,7 +98,11 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             timeProvider,
             afterPhasePersisted,
             reviewedCertification,
-            afterFileCheckpoint: null)
+            afterFileCheckpoint: null,
+            reviewedCertifications: reviewedCertifications,
+            afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
+            afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
+            afterDurableCopyCompleted: afterDurableCopyCompleted)
     {
     }
 
@@ -89,7 +117,12 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted,
         ReviewedReleaseCertification? reviewedCertification,
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint,
-        Func<string, ExactFileRevision, bool>? afterArtifactCommitted = null)
+        Func<string, ExactFileRevision, bool>? afterArtifactCommitted = null,
+        Func<string, ExactFileRevision, bool>? afterRuntimeManifestCommitted = null,
+        IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
+        Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -103,8 +136,22 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.installationAttribution = installationAttribution
             ?? throw new ArgumentNullException(nameof(installationAttribution));
         this.reviewedCertification = reviewedCertification;
+        this.reviewedCertifications = (reviewedCertifications
+                ?? (reviewedCertification is null ? [] : [reviewedCertification]))
+            .GroupBy(
+                certification => (
+                    certification.ProviderId,
+                    certification.ChannelId,
+                    certification.RuntimeDistributionId),
+                EqualityComparer<(string, string, string)>.Default)
+            .Select(group => group.Single())
+            .ToArray();
         this.afterFileCheckpoint = afterFileCheckpoint;
         this.afterArtifactCommitted = afterArtifactCommitted;
+        this.afterRuntimeManifestCommitted = afterRuntimeManifestCommitted;
+        this.afterDurableCopyBytesFlushed = afterDurableCopyBytesFlushed;
+        this.afterDurableCopyChunkWritten = afterDurableCopyChunkWritten;
+        this.afterDurableCopyCompleted = afterDurableCopyCompleted;
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -143,6 +190,40 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     public IReadOnlyList<ModInstalledArtifactState> ReadInstalledStates() =>
         ReadInstalledRegistry().Installations;
+
+    public string? ReadReleaseProductVersionFloor(string gameDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
+        return FindReleaseProductVersionFloor(
+            ReadInstalledState(gameDirectory),
+            installationAttribution)?.ReleaseProductVersion;
+    }
+
+    public string? GetReleaseProductVersionAdmissionFailure(
+        string gameDirectory,
+        ModReleaseArtifact artifact)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
+        ArgumentNullException.ThrowIfNull(artifact);
+        return ValidateReleaseProductVersionFloor(
+            ReadInstalledState(gameDirectory),
+            artifact,
+            installationAttribution);
+    }
+
+    public bool MatchesRecordedRelease(
+        ModInstalledArtifactState receipt,
+        ModReleaseArtifact artifact)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        ArgumentNullException.ThrowIfNull(artifact);
+        return ArtifactMatchesInstalledReceipt(receipt, artifact)
+            && (receipt.ReleaseProductVersion is null
+                || string.Equals(
+                    receipt.ReleaseProductVersion,
+                    ResolveReleaseProductVersion(artifact, installationAttribution),
+                    StringComparison.Ordinal));
+    }
 
     public async Task<ModDeploymentResult> DeployAsync(
         string gameDirectory,
@@ -416,6 +497,14 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.VerificationFailed,
                 "Repair requires the exact artifact and provider attribution recorded for this installation.");
         }
+        var releaseFloorFailure = ValidateReleaseProductVersionFloor(
+            previousInstalledState,
+            artifact,
+            installationAttribution);
+        if (releaseFloorFailure is not null)
+        {
+            return new(ModDeploymentResultState.VerificationFailed, releaseFloorFailure);
+        }
         ReviewedModArtifactCandidateContents? candidateContents = null;
         if (candidateLease is not null)
         {
@@ -554,6 +643,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
             TargetInstallationAttribution: installationAttribution);
         ExactFileRevision? exactStagedArtifactRevision = null;
+        ExactFileMutation? exactStagedArtifact = null;
+        ExactFileMutation? exactStagedRuntimeManifest = null;
 
         try
         {
@@ -627,25 +718,91 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Verified, cancellationToken);
             await WriteStageAsync(stagePath, download.Contents, cancellationToken);
-            VerifyFile(stagePath, journal.Artifact);
+            exactStagedArtifact = ExactFileMutation.Open(stagePath);
+            exactStagedArtifactRevision = exactStagedArtifact.CaptureRevision();
+            VerifyFile(exactStagedArtifactRevision, journal.Artifact);
             VerifyAuthenticity(stagePath);
+            VerifyVersion(stagePath, journal.Artifact);
             if (runtimeManifestDownload is not null && journal.Artifact.RuntimeManifest is not null)
             {
                 await WriteStageAsync(
                     RuntimeManifestStagePath(journal),
                     runtimeManifestDownload.Contents,
                     cancellationToken);
-                VerifyFile(RuntimeManifestStagePath(journal), journal.Artifact.RuntimeManifest);
+                exactStagedRuntimeManifest = ExactFileMutation.Open(RuntimeManifestStagePath(journal));
+                VerifyFile(
+                    exactStagedRuntimeManifest.CaptureRevision(),
+                    journal.Artifact.RuntimeManifest);
             }
+            exactStagedArtifactRevision = exactStagedArtifact.CaptureRevision();
+            journal = journal with
+            {
+                TargetArtifactFileIdentity = FileIdentity(exactStagedArtifact.Identity),
+                TargetRuntimeManifestFileIdentity = exactStagedRuntimeManifest is null
+                    ? null
+                    : FileIdentity(exactStagedRuntimeManifest.Identity),
+            };
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Staged, cancellationToken);
+            var commitMutationStarted = false;
             try
             {
-                ValidateCommitPreconditions(journal);
+                using var exactExistingArtifact = OpenValidatedLiveMember(
+                    targetPath,
+                    journal.HadExistingArtifact,
+                    journal.ExistingArtifactIdentity,
+                    "DLL");
+                using var exactExistingRuntimeManifest = OpenValidatedLiveMember(
+                    runtimeManifestPath,
+                    journal.HadExistingRuntimeManifest,
+                    journal.ExistingRuntimeManifestIdentity,
+                    "runtime manifest");
+                ValidateCommitPreconditions(
+                    journal,
+                    exactStagedArtifact,
+                    exactStagedRuntimeManifest,
+                    exactExistingArtifact,
+                    exactExistingRuntimeManifest);
+                journal = await PersistPhaseAsync(
+                    journal,
+                    ModDeploymentPhase.Committing,
+                    cancellationToken);
+
+                if (hadExistingArtifact)
+                {
+                    commitMutationStarted = true;
+                    exactExistingArtifact!.MoveExactNoReplace(sameVolumeBackupPath);
+                    VerifyFile(
+                        exactExistingArtifact.CaptureRevision(),
+                        existingArtifactIdentity!,
+                        "prior DLL");
+                    await CheckpointAsync(
+                        ModDeploymentFileCheckpoint.PriorDllBackedUp,
+                        cancellationToken);
+                }
+                if (ShouldMutateRuntimeManifest(journal) && hadExistingRuntimeManifest)
+                {
+                    commitMutationStarted = true;
+                    exactExistingRuntimeManifest!.MoveExactNoReplace(
+                        RuntimeManifestSameVolumeBackupPath(journal));
+                    VerifyFile(
+                        exactExistingRuntimeManifest.CaptureRevision(),
+                        existingRuntimeManifestIdentity!,
+                        "prior runtime manifest");
+                    await CheckpointAsync(
+                        ModDeploymentFileCheckpoint.PriorRuntimeManifestBackedUp,
+                        cancellationToken);
+                }
             }
-            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            catch (Exception exception) when (
+                !commitMutationStarted
+                && exception is InvalidDataException or InvalidOperationException)
             {
                 try
                 {
+                    exactStagedArtifact.Dispose();
+                    exactStagedArtifact = null;
+                    exactStagedRuntimeManifest?.Dispose();
+                    exactStagedRuntimeManifest = null;
                     DeleteVerifiedResidue(journal.StagePath, Identity(journal.Artifact), "DLL stage");
                     DeleteVerifiedResidue(
                         RuntimeManifestStagePath(journal),
@@ -671,32 +828,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                             + cleanupException.Message);
                 }
             }
-            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committing, cancellationToken);
-
-            if (hadExistingArtifact)
+            if (afterArtifactCommitted is not null || afterRuntimeManifestCommitted is not null)
             {
-                File.Move(targetPath, sameVolumeBackupPath);
-                VerifyFile(sameVolumeBackupPath, existingArtifactIdentity!, "prior DLL");
-                await CheckpointAsync(
-                    ModDeploymentFileCheckpoint.PriorDllBackedUp,
-                    cancellationToken);
-            }
-            if (ShouldMutateRuntimeManifest(journal) && hadExistingRuntimeManifest)
-            {
-                File.Move(runtimeManifestPath, RuntimeManifestSameVolumeBackupPath(journal));
-                VerifyFile(
-                    RuntimeManifestSameVolumeBackupPath(journal),
-                    existingRuntimeManifestIdentity!,
-                    "prior runtime manifest");
-                await CheckpointAsync(
-                    ModDeploymentFileCheckpoint.PriorRuntimeManifestBackedUp,
-                    cancellationToken);
-            }
-
-            if (afterArtifactCommitted is not null)
-            {
-                using var exactStage = ExactFileMutation.Open(stagePath);
-                exactStagedArtifactRevision = exactStage.CaptureRevision();
                 journal = journal with
                 {
                     PreserveLiveArtifactDuringRecovery = true,
@@ -704,20 +837,26 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 };
                 WriteJsonAtomically(JournalPath, journal);
             }
-            File.Move(stagePath, targetPath);
+            exactStagedArtifact.MoveExactNoReplace(targetPath);
             await CheckpointAsync(ModDeploymentFileCheckpoint.TargetDllInstalled, cancellationToken);
             if (journal.Artifact.RuntimeManifest is not null)
             {
-                File.Move(RuntimeManifestStagePath(journal), runtimeManifestPath);
+                exactStagedRuntimeManifest!.MoveExactNoReplace(runtimeManifestPath);
                 await CheckpointAsync(
                     ModDeploymentFileCheckpoint.TargetRuntimeManifestInstalled,
                     cancellationToken);
             }
-            VerifyFile(targetPath, journal.Artifact);
-            VerifyVersion(targetPath, journal.Artifact.ExpectedVersion);
-            if (exactStagedArtifactRevision is not null
-                && afterArtifactCommitted?.Invoke(targetPath, exactStagedArtifactRevision) != true)
+            VerifyFile(exactStagedArtifact.CaptureRevision(), journal.Artifact);
+            VerifyAuthenticity(targetPath);
+            VerifyVersion(targetPath, journal.Artifact);
+            if (afterArtifactCommitted is not null
+                && exactStagedArtifactRevision is not null
+                && !afterArtifactCommitted(targetPath, exactStagedArtifactRevision))
             {
+                exactStagedArtifact.Dispose();
+                exactStagedArtifact = null;
+                exactStagedRuntimeManifest?.Dispose();
+                exactStagedRuntimeManifest = null;
                 return new(
                     ModDeploymentResultState.RecoveryRequired,
                     "The mod DLL committed, but its exact recovery ownership could not be confirmed. "
@@ -727,8 +866,30 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             if (journal.Artifact.RuntimeManifest is not null)
             {
-                VerifyFile(runtimeManifestPath, journal.Artifact.RuntimeManifest);
+                VerifyFile(
+                    exactStagedRuntimeManifest!.CaptureRevision(),
+                    journal.Artifact.RuntimeManifest);
+                if (afterRuntimeManifestCommitted is not null
+                    && !afterRuntimeManifestCommitted(
+                        runtimeManifestPath,
+                        exactStagedRuntimeManifest.CaptureRevision()))
+                {
+                    exactStagedArtifact.Dispose();
+                    exactStagedArtifact = null;
+                    exactStagedRuntimeManifest.Dispose();
+                    exactStagedRuntimeManifest = null;
+                    return new(
+                        ModDeploymentResultState.RecoveryRequired,
+                        "The runtime manifest committed, but its exact recovery ownership could not be confirmed. "
+                            + "The live files were preserved for explicit recovery.",
+                        Changed: true,
+                        RuntimeActivation: reviewedRuntimeActivation);
+                }
             }
+            exactStagedArtifact.Dispose();
+            exactStagedArtifact = null;
+            exactStagedRuntimeManifest?.Dispose();
+            exactStagedRuntimeManifest = null;
 
             var retainedBackupPath = isManagedUpdate
                 ? previousInstalledState?.PreviousArtifactBackupPath
@@ -775,7 +936,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 isManagedUpdate
                     ? previousInstalledState?.PreviousRuntimeManifestBackupIdentity
                         ?? (retainedRuntimeBackupPath is null ? null : existingRuntimeManifestIdentity)
-                    : retainedRuntimeBackupPath is null ? null : existingRuntimeManifestIdentity);
+                    : retainedRuntimeBackupPath is null ? null : existingRuntimeManifestIdentity,
+                ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
+                BuildReleaseHighWaterMarks(
+                    previousInstalledState,
+                    installationAttribution,
+                    ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
+                    journal.Artifact));
             UpsertInstalledState(installedState);
 
             if (commitParticipant is not null)
@@ -882,10 +1049,14 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
         catch (SimulatedProcessTerminationException)
         {
+            exactStagedArtifact?.Dispose();
+            exactStagedRuntimeManifest?.Dispose();
             throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            exactStagedArtifact?.Dispose();
+            exactStagedRuntimeManifest?.Dispose();
             await RollBackCoordinatedAsync(
                 journal,
                 targetPath,
@@ -897,6 +1068,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
         catch (Exception exception)
         {
+            exactStagedArtifact?.Dispose();
+            exactStagedRuntimeManifest?.Dispose();
             var rolledBack = await RollBackCoordinatedAsync(
                 journal with { Error = exception.Message },
                 targetPath,
@@ -1191,11 +1364,56 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         try
         {
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Planned, cancellationToken);
+            var commitMutationStarted = false;
             try
             {
-                ValidateUninstallCommitPreconditions(journal, installedState);
+                using var exactManagedArtifact = OpenValidatedLiveMember(
+                    targetPath,
+                    existed: true,
+                    journal.ExistingArtifactIdentity,
+                    "managed DLL");
+                using var exactManagedRuntimeManifest = installedState.RuntimeManifest is null
+                    ? null
+                    : OpenValidatedLiveMember(
+                        runtimeManifestPath,
+                        existed: true,
+                        journal.ExistingRuntimeManifestIdentity,
+                        "managed runtime manifest");
+                ValidateUninstallCommitPreconditions(
+                    journal,
+                    installedState,
+                    exactManagedArtifact!,
+                    exactManagedRuntimeManifest);
+                journal = await PersistPhaseAsync(
+                    journal,
+                    ModDeploymentPhase.Committing,
+                    cancellationToken);
+                commitMutationStarted = true;
+                exactManagedArtifact!.MoveExactNoReplace(removedArtifactPath);
+                VerifyFile(
+                    exactManagedArtifact.CaptureRevision(),
+                    journal.ExistingArtifactIdentity!,
+                    "managed DLL rollback");
+                await CheckpointAsync(
+                    ModDeploymentFileCheckpoint.ManagedDllRemoved,
+                    cancellationToken);
+                if (managedRuntimeManifestMatches)
+                {
+                    commitMutationStarted = true;
+                    exactManagedRuntimeManifest!.MoveExactNoReplace(
+                        RuntimeManifestSameVolumeBackupPath(journal));
+                    VerifyFile(
+                        exactManagedRuntimeManifest.CaptureRevision(),
+                        journal.ExistingRuntimeManifestIdentity!,
+                        "managed runtime-manifest rollback");
+                    await CheckpointAsync(
+                        ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved,
+                        cancellationToken);
+                }
             }
-            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
+            catch (Exception exception) when (
+                !commitMutationStarted
+                && exception is InvalidDataException or InvalidOperationException)
             {
                 await PersistPhaseAsync(
                     journal with { Error = exception.Message },
@@ -1208,22 +1426,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     exception.Message,
                     installedState);
             }
-            journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Committing, cancellationToken);
-            File.Move(targetPath, removedArtifactPath);
-            VerifyFile(removedArtifactPath, journal.ExistingArtifactIdentity!, "managed DLL rollback");
-            await CheckpointAsync(ModDeploymentFileCheckpoint.ManagedDllRemoved, cancellationToken);
-            if (managedRuntimeManifestMatches)
-            {
-                File.Move(runtimeManifestPath, RuntimeManifestSameVolumeBackupPath(journal));
-                VerifyFile(
-                    RuntimeManifestSameVolumeBackupPath(journal),
-                    journal.ExistingRuntimeManifestIdentity!,
-                    "managed runtime-manifest rollback");
-                await CheckpointAsync(
-                    ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved,
-                    cancellationToken);
-            }
-
             if (!string.IsNullOrWhiteSpace(installedState.PreviousArtifactBackupPath)
                 && File.Exists(installedState.PreviousArtifactBackupPath))
             {
@@ -1234,7 +1436,20 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ModDeploymentFileCheckpoint.AdoptedDllRestoreCopyStarted,
                     ModDeploymentFileCheckpoint.AdoptedDllRestoreStaged,
                     cancellationToken);
-                File.Move(journal.StagePath, targetPath);
+                journal = journal with
+                {
+                    RestoredAdoptedArtifactFileIdentity = FileIdentity(
+                        GetCompletedOwnedCopyStageFileIdentity(
+                            journal.StagePath,
+                            "adopted DLL restore stage")),
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                };
+                WriteJsonAtomically(JournalPath, journal);
+                MoveCompletedOwnedCopyStage(
+                    journal.StagePath,
+                    targetPath,
+                    installedState.PreviousArtifactBackupIdentity!,
+                    "adopted DLL restore stage");
                 await CheckpointAsync(ModDeploymentFileCheckpoint.AdoptedDllRestored, cancellationToken);
             }
             if (!File.Exists(runtimeManifestPath)
@@ -1248,7 +1463,20 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestoreCopyStarted,
                     ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestoreStaged,
                     cancellationToken);
-                File.Move(RuntimeManifestStagePath(journal), runtimeManifestPath);
+                journal = journal with
+                {
+                    RestoredAdoptedRuntimeManifestFileIdentity = FileIdentity(
+                        GetCompletedOwnedCopyStageFileIdentity(
+                            RuntimeManifestStagePath(journal),
+                            "adopted runtime-manifest restore stage")),
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                };
+                WriteJsonAtomically(JournalPath, journal);
+                MoveCompletedOwnedCopyStage(
+                    RuntimeManifestStagePath(journal),
+                    runtimeManifestPath,
+                    installedState.PreviousRuntimeManifestBackupIdentity!,
+                    "adopted runtime-manifest restore stage");
                 await CheckpointAsync(
                     ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestored,
                     cancellationToken);
@@ -1495,6 +1723,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             || artifact.Size <= 0
             || artifact.Size > MaximumArtifactSize
             || string.IsNullOrWhiteSpace(artifact.ExpectedVersion)
+            || artifact.ExpectedProductVersion is not null
+                && (artifact.ExpectedProductVersion.Length is <= 0 or > 160
+                    || artifact.ExpectedProductVersion.Any(char.IsControl))
             || !TryNormalizeSha256(artifact.Sha256, out _)
             || artifact.DownloadUri is null
             || !artifact.DownloadUri.IsAbsoluteUri
@@ -1614,7 +1845,12 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ? ValueTask.CompletedTask
         : afterFileCheckpoint(checkpoint, cancellationToken);
 
-    private void ValidateCommitPreconditions(ModDeploymentJournal journal)
+    private void ValidateCommitPreconditions(
+        ModDeploymentJournal journal,
+        ExactFileMutation exactStagedArtifact,
+        ExactFileMutation? exactStagedRuntimeManifest,
+        ExactFileMutation? exactExistingArtifact,
+        ExactFileMutation? exactExistingRuntimeManifest)
     {
         var gameValidation = GameInstallValidator.Validate(journal.GameDirectory);
         if (!gameValidation.IsValid)
@@ -1627,20 +1863,24 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             throw new InvalidOperationException(
                 "Star Trek Fleet Command started while the release was being prepared; no mod files were changed.");
         }
-        ValidateUnchangedLiveMember(
-            Path.Combine(journal.GameDirectory, ManagedFileName),
+        ValidateOpenedLiveMember(
+            exactExistingArtifact,
             journal.HadExistingArtifact,
             journal.ExistingArtifactIdentity,
             "DLL");
-        ValidateUnchangedLiveMember(
-            RuntimeManifestTargetPath(journal.GameDirectory),
+        ValidateOpenedLiveMember(
+            exactExistingRuntimeManifest,
             journal.HadExistingRuntimeManifest,
             journal.ExistingRuntimeManifestIdentity,
             "runtime manifest");
-        VerifyFile(journal.StagePath, journal.Artifact);
+        VerifyFile(exactStagedArtifact.CaptureRevision(), journal.Artifact);
         if (journal.Artifact.RuntimeManifest is not null)
         {
-            VerifyFile(RuntimeManifestStagePath(journal), journal.Artifact.RuntimeManifest);
+            VerifyFile(
+                exactStagedRuntimeManifest?.CaptureRevision()
+                    ?? throw new InvalidDataException(
+                        "The runtime-manifest stage lost its exact commit handle."),
+                journal.Artifact.RuntimeManifest);
         }
         var previous = journal.PreviousInstalledState;
         var failure = ValidateDeclaredBackup(
@@ -1659,7 +1899,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     private void ValidateUninstallCommitPreconditions(
         ModDeploymentJournal journal,
-        ModInstalledArtifactState installedState)
+        ModInstalledArtifactState installedState,
+        ExactFileMutation exactManagedArtifact,
+        ExactFileMutation? exactManagedRuntimeManifest)
     {
         var validation = GameInstallValidator.Validate(journal.GameDirectory);
         if (!validation.IsValid)
@@ -1672,15 +1914,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             throw new InvalidOperationException(
                 "Star Trek Fleet Command started before uninstall; no mod files were changed.");
         }
-        ValidateUnchangedLiveMember(
-            Path.Combine(journal.GameDirectory, ManagedFileName),
+        ValidateOpenedLiveMember(
+            exactManagedArtifact,
             existed: true,
             journal.ExistingArtifactIdentity,
             "managed DLL");
         if (installedState.RuntimeManifest is not null)
         {
-            ValidateUnchangedLiveMember(
-                RuntimeManifestTargetPath(journal.GameDirectory),
+            ValidateOpenedLiveMember(
+                exactManagedRuntimeManifest,
                 existed: true,
                 journal.ExistingRuntimeManifestIdentity,
                 "managed runtime manifest");
@@ -1712,6 +1954,57 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
     }
 
+    private static ExactFileMutation? OpenValidatedLiveMember(
+        string path,
+        bool existed,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (!existed)
+        {
+            ValidateUnchangedLiveMember(path, existed: false, identity, subject);
+            return null;
+        }
+        if (identity is null)
+        {
+            throw new InvalidDataException(
+                $"The live {subject} has no exact transaction identity and was preserved.");
+        }
+        var exact = ExactFileMutation.Open(path);
+        try
+        {
+            ValidateOpenedLiveMember(exact, existed: true, identity, subject);
+            return exact;
+        }
+        catch
+        {
+            exact.Dispose();
+            throw;
+        }
+    }
+
+    private static void ValidateOpenedLiveMember(
+        ExactFileMutation? exact,
+        bool existed,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (!existed)
+        {
+            if (exact is not null)
+            {
+                throw new InvalidDataException(
+                    $"The live {subject} appeared while the release was being prepared; no live files were replaced.");
+            }
+            return;
+        }
+        if (exact is null || identity is null || !MatchesIdentity(exact.CaptureRevision(), identity))
+        {
+            throw new InvalidDataException(
+                $"The live {subject} changed while the release was being prepared; no live files were replaced.");
+        }
+    }
+
     private async Task<bool> RollBackAsync(
         ModDeploymentJournal journal,
         string targetPath,
@@ -1726,40 +2019,57 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.RollingBack, cancellationToken);
             plan = await MaterializeSameVolumeRollbackStagesAsync(plan, journal, cancellationToken);
 
+            var dllRollbackStage = plan.Dll.BackupPath;
             ApplyRollbackMember(plan.Dll, exactLiveArtifactRevision);
+            if (dllRollbackStage is not null && !File.Exists(dllRollbackStage))
+            {
+                ReleaseOwnedCopyStage(dllRollbackStage);
+            }
             await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackDllRestored, cancellationToken);
+            var runtimeRollbackStage = plan.RuntimeManifest?.BackupPath;
             ApplyRollbackMember(plan.RuntimeManifest);
+            if (runtimeRollbackStage is not null && !File.Exists(runtimeRollbackStage))
+            {
+                ReleaseOwnedCopyStage(runtimeRollbackStage);
+            }
             await CheckpointAsync(ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestored, cancellationToken);
             VerifyRollbackMember(plan.Dll);
             VerifyRollbackMember(plan.RuntimeManifest);
 
-            DeleteVerifiedResidue(
-                journal.StagePath,
-                journal.Operation == ModDeploymentOperation.Uninstall
-                    ? journal.PreviousInstalledState?.PreviousArtifactBackupIdentity
-                    : Identity(journal.Artifact),
-                "DLL stage");
-            DeleteVerifiedResidue(
-                RuntimeManifestStagePath(journal),
-                journal.Operation == ModDeploymentOperation.Uninstall
-                    ? journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity
-                    : journal.Artifact.RuntimeManifest is null
+            if (journal.Operation == ModDeploymentOperation.Uninstall)
+            {
+                DeleteVerifiedCopyStageResidue(
+                    journal.StagePath,
+                    journal.PreviousInstalledState?.PreviousArtifactBackupIdentity,
+                    "DLL stage");
+                DeleteVerifiedCopyStageResidue(
+                    RuntimeManifestStagePath(journal),
+                    journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity,
+                    "runtime-manifest stage");
+            }
+            else
+            {
+                DeleteVerifiedResidue(journal.StagePath, Identity(journal.Artifact), "DLL stage");
+                DeleteVerifiedResidue(
+                    RuntimeManifestStagePath(journal),
+                    journal.Artifact.RuntimeManifest is null
                         ? null
                         : Identity(journal.Artifact.RuntimeManifest),
-                "runtime-manifest stage");
-            DeleteVerifiedResidue(
+                    "runtime-manifest stage");
+            }
+            DeleteVerifiedCopyStageResidue(
                 DurablePromotionStagePath(journal),
                 journal.ExistingArtifactIdentity,
                 "durable DLL promotion stage");
-            DeleteVerifiedResidue(
+            DeleteVerifiedCopyStageResidue(
                 RuntimeManifestDurablePromotionStagePath(journal),
                 journal.ExistingRuntimeManifestIdentity,
                 "durable runtime-manifest promotion stage");
-            DeleteVerifiedResidue(
+            DeleteVerifiedCopyStageResidue(
                 RollbackRestoreStagePath(journal),
                 journal.ExistingArtifactIdentity,
                 "DLL rollback restore stage");
-            DeleteVerifiedResidue(
+            DeleteVerifiedCopyStageResidue(
                 RuntimeManifestRollbackRestoreStagePath(journal),
                 journal.ExistingRuntimeManifestIdentity,
                 "runtime-manifest rollback restore stage");
@@ -1839,6 +2149,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             journal.HadExistingArtifact,
             priorDllIdentity,
             Identity(journal.Artifact),
+            journal.TargetArtifactFileIdentity,
             FindExactBackup(
                 journal.DurableBackupPath,
                 journal.SameVolumeBackupPath,
@@ -1848,6 +2159,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ? journal.PreviousInstalledState?.PreviousArtifactBackupPath
                 : null,
             journal.PreviousInstalledState?.PreviousArtifactBackupIdentity,
+            journal.RestoredAdoptedArtifactFileIdentity,
             "DLL");
         var shouldHandleRuntime = ShouldMutateRuntimeManifest(journal) || journal.HadExistingRuntimeManifest;
         var runtime = shouldHandleRuntime
@@ -1856,6 +2168,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 journal.HadExistingRuntimeManifest,
                 priorRuntimeIdentity,
                 journal.Artifact.RuntimeManifest is null ? null : Identity(journal.Artifact.RuntimeManifest),
+                journal.TargetRuntimeManifestFileIdentity,
                 FindExactBackup(
                     RuntimeManifestDurableBackupPath(journal),
                     RuntimeManifestSameVolumeBackupPath(journal),
@@ -1865,6 +2178,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ? journal.PreviousInstalledState?.PreviousRuntimeManifestBackupPath
                     : null,
                 journal.PreviousInstalledState?.PreviousRuntimeManifestBackupIdentity,
+                journal.RestoredAdoptedRuntimeManifestFileIdentity,
                 "runtime manifest")
             : null;
         ValidateResidue(
@@ -1923,22 +2237,116 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         }
     }
 
-    private static void NormalizeIncompleteOwnedCopyStage(
+    private void NormalizeIncompleteOwnedCopyStage(
         string stagePath,
         ModArtifactIdentityReceipt? identity,
         params string?[] authoritativeSources)
     {
-        if (!File.Exists(stagePath) || identity is null || MatchesIdentity(stagePath, identity))
+        if (!File.Exists(stagePath))
         {
+            ReleaseOwnedCopyStage(stagePath);
+            return;
+        }
+        if (identity is null)
+        {
+            throw new InvalidDataException(
+                "An incomplete copy stage has no expected artifact identity and was preserved.");
+        }
+        var receipt = ReadOwnedCopyStage(stagePath);
+        if (receipt is null)
+        {
+            throw new InvalidDataException(
+                "An incomplete copy stage has no durable file-identity receipt and was preserved.");
+        }
+        using var exactStage = ExactFileMutation.OpenForMetadata(stagePath);
+        var stageRevision = exactStage.CaptureRevision();
+        if (exactStage.Identity != receipt.FileIdentity)
+        {
+            throw new InvalidDataException(
+                "An incomplete copy stage was replaced after Bridge recorded it and was preserved.");
+        }
+        if (receipt.Phase == ModDeploymentCopyStagePhase.Complete)
+        {
+            if (receipt.LastOwnedRevision is null
+                || !receipt.LastOwnedRevision.Matches(stageRevision)
+                || !MatchesIdentity(stageRevision, identity))
+            {
+                throw new InvalidDataException(
+                    "A completed copy stage changed after Bridge recorded it and was preserved.");
+            }
             return;
         }
         if (!authoritativeSources.Any(path =>
                 !string.IsNullOrWhiteSpace(path) && MatchesIdentity(path, identity)))
         {
             throw new InvalidDataException(
-                "An incomplete copy stage has no exact authoritative source and was preserved.");
+                "An interrupted copy stage has no exact authoritative source and was preserved.");
         }
-        File.Delete(stagePath);
+        exactStage.DeleteExactIgnoringReadOnly();
+        ReleaseOwnedCopyStage(stagePath);
+    }
+
+    private void VerifyCompletedOwnedCopyStage(
+        string stagePath,
+        ModArtifactIdentityReceipt identity,
+        string subject)
+    {
+        var receipt = ReadOwnedCopyStage(stagePath)
+            ?? throw new InvalidDataException($"The {subject} has no durable ownership receipt.");
+        using var exact = ExactFileMutation.OpenForMetadata(stagePath);
+        var revision = exact.CaptureRevision();
+        if (receipt.Phase != ModDeploymentCopyStagePhase.Complete
+            || exact.Identity != receipt.FileIdentity
+            || receipt.LastOwnedRevision is null
+            || !receipt.LastOwnedRevision.Matches(revision)
+            || !MatchesIdentity(revision, identity))
+        {
+            throw new InvalidDataException($"The {subject} was replaced or changed and was preserved.");
+        }
+    }
+
+    private CandidateFileIdentity GetCompletedOwnedCopyStageFileIdentity(
+        string stagePath,
+        string subject)
+    {
+        var receipt = ReadOwnedCopyStage(stagePath)
+            ?? throw new InvalidDataException($"The {subject} has no durable ownership receipt.");
+        if (receipt.Phase != ModDeploymentCopyStagePhase.Complete
+            || receipt.LastOwnedRevision is null
+            || receipt.LastOwnedRevision.Identity != receipt.FileIdentity)
+        {
+            throw new InvalidDataException($"The {subject} ownership receipt is incomplete.");
+        }
+        return receipt.FileIdentity;
+    }
+
+    private void MoveCompletedOwnedCopyStage(
+        string stagePath,
+        string destinationPath,
+        ModArtifactIdentityReceipt identity,
+        string subject)
+    {
+        var receipt = ReadOwnedCopyStage(stagePath)
+            ?? throw new InvalidDataException($"The {subject} has no durable ownership receipt.");
+        using (var exact = ExactFileMutation.OpenForMetadata(stagePath))
+        {
+            var revision = exact.CaptureRevision();
+            if (receipt.Phase != ModDeploymentCopyStagePhase.Complete
+                || exact.Identity != receipt.FileIdentity
+                || receipt.LastOwnedRevision is null
+                || !receipt.LastOwnedRevision.Matches(revision)
+                || !MatchesIdentity(revision, identity))
+            {
+                throw new InvalidDataException($"The {subject} was replaced or changed and was preserved.");
+            }
+            exact.MoveExactNoReplace(destinationPath);
+            if (!receipt.LastOwnedRevision.Matches(exact.CaptureRevision()))
+            {
+                throw new InvalidDataException(
+                    $"The {subject} changed during its exact ownership-preserving move.");
+            }
+        }
+        ReleaseOwnedCopyStage(stagePath);
     }
 
     private static RollbackMember BuildRollbackMember(
@@ -1946,9 +2354,11 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         bool hadExisting,
         ModArtifactIdentityReceipt? priorIdentity,
         ModArtifactIdentityReceipt? targetIdentity,
+        ModFileIdentityReceipt? targetFileIdentity,
         string? backupPath,
         string? displacedLiveDestination,
         ModArtifactIdentityReceipt? displacedLiveIdentity,
+        ModFileIdentityReceipt? displacedLiveFileIdentity,
         string subject)
     {
         var liveExists = File.Exists(livePath);
@@ -1967,6 +2377,22 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             {
                 throw new InvalidDataException($"The retained adopted {subject} backup changed.");
             }
+            if (hadExisting
+                && liveExists
+                && MatchesIdentity(livePath, priorIdentity!)
+                && displacedExists)
+            {
+                return new(
+                    livePath,
+                    null,
+                    RestoreExisting: true,
+                    displacedLiveDestination,
+                    displacedLiveIdentity,
+                    displacedLiveFileIdentity,
+                    priorIdentity,
+                    targetIdentity,
+                    targetFileIdentity);
+            }
             if (backupPath is null)
             {
                 if (!liveExists || !MatchesIdentity(livePath, priorIdentity!) || !displacedExists)
@@ -1979,7 +2405,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     RestoreExisting: true,
                     displacedLiveDestination,
                     displacedLiveIdentity,
-                    priorIdentity);
+                    displacedLiveFileIdentity,
+                    priorIdentity,
+                    targetIdentity,
+                    targetFileIdentity);
             }
             if (liveExists)
             {
@@ -1998,7 +2427,23 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 RestoreExisting: true,
                 displacedLiveDestination,
                 displacedLiveIdentity,
-                priorIdentity);
+                displacedLiveFileIdentity,
+                priorIdentity,
+                targetIdentity,
+                targetFileIdentity);
+        }
+        if (hadExisting && liveExists && MatchesIdentity(livePath, priorIdentity!))
+        {
+            return new(
+                livePath,
+                null,
+                RestoreExisting: true,
+                null,
+                null,
+                null,
+                priorIdentity,
+                targetIdentity,
+                targetFileIdentity);
         }
         if (backupPath is null)
         {
@@ -2010,7 +2455,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             {
                 throw new InvalidDataException($"The live {subject} is not an exact transaction artifact.");
             }
-            return new(livePath, null, hadExisting, null, null, priorIdentity);
+            return new(
+                livePath,
+                null,
+                hadExisting,
+                null,
+                null,
+                null,
+                priorIdentity,
+                targetIdentity,
+                targetFileIdentity);
         }
         if (liveExists
             && (targetIdentity is null || !MatchesIdentity(livePath, targetIdentity))
@@ -2018,7 +2472,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             throw new InvalidDataException($"The live {subject} changed during rollback.");
         }
-        return new(livePath, backupPath, RestoreExisting: true, null, null, priorIdentity);
+        return new(
+            livePath,
+            backupPath,
+            RestoreExisting: true,
+            null,
+            null,
+            null,
+            priorIdentity,
+            targetIdentity,
+            targetFileIdentity);
     }
 
     private static string? FindExactBackup(
@@ -2084,15 +2547,20 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             await CopyFileDurablyAsync(
                 durablePath,
                 restoreStagePath,
+                member.PriorIdentity,
                 copyStartedCheckpoint,
                 cancellationToken);
         }
         VerifyFile(restoreStagePath, member.PriorIdentity, "same-volume rollback restore stage");
+        VerifyCompletedOwnedCopyStage(
+            restoreStagePath,
+            member.PriorIdentity,
+            "same-volume rollback restore stage");
         await CheckpointAsync(checkpoint, cancellationToken);
         return member with { BackupPath = restoreStagePath };
     }
 
-    private static void ApplyRollbackMember(
+    private void ApplyRollbackMember(
         RollbackMember? member,
         ExactFileRevision? exactLiveRevision = null)
     {
@@ -2109,7 +2577,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             if (!member.RestoreExisting)
             {
-                DeleteIfExists(member.LivePath);
+                DeleteRollbackLiveMember(member);
             }
             return;
         }
@@ -2119,20 +2587,89 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             {
                 if (File.Exists(member.DisplacedLiveDestination))
                 {
-                    File.Delete(member.LivePath);
+                    DeleteOrMoveRestoredAdoptedMember(member, destinationPath: null);
                 }
                 else
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(member.DisplacedLiveDestination)!);
-                    File.Move(member.LivePath, member.DisplacedLiveDestination);
+                    DeleteOrMoveRestoredAdoptedMember(
+                        member,
+                        member.DisplacedLiveDestination);
                 }
             }
             else
             {
-                File.Delete(member.LivePath);
+                DeleteRollbackLiveMember(member);
             }
         }
-        File.Move(member.BackupPath, member.LivePath);
+        if (File.Exists(CopyStageReceiptPath(member.BackupPath)))
+        {
+            MoveCompletedOwnedCopyStage(
+                member.BackupPath,
+                member.LivePath,
+                member.PriorIdentity
+                    ?? throw new InvalidDataException(
+                        "The rollback copy has no exact prior identity receipt."),
+                "rollback restore stage");
+        }
+        else
+        {
+            File.Move(member.BackupPath, member.LivePath);
+        }
+    }
+
+    private static void DeleteOrMoveRestoredAdoptedMember(
+        RollbackMember member,
+        string? destinationPath)
+    {
+        var contentIdentity = member.DisplacedLiveIdentity
+            ?? throw new InvalidDataException(
+                "The displaced rollback member has no exact content receipt.");
+        var fileIdentity = member.DisplacedLiveFileIdentity
+            ?? throw new InvalidDataException(
+                "The restored adopted rollback member has no exact file-identity receipt and was preserved.");
+        using var exact = ExactFileMutation.Open(member.LivePath);
+        var revision = exact.CaptureRevision();
+        if (!MatchesIdentity(revision, contentIdentity)
+            || !MatchesFileIdentity(exact.Identity, fileIdentity))
+        {
+            throw new InvalidDataException(
+                "The restored adopted rollback member was replaced or changed and was preserved.");
+        }
+        if (destinationPath is null)
+        {
+            exact.DeleteExactIgnoringReadOnly();
+        }
+        else
+        {
+            exact.MoveExactNoReplace(destinationPath);
+        }
+    }
+
+    private static void DeleteRollbackLiveMember(RollbackMember member)
+    {
+        if (!File.Exists(member.LivePath))
+        {
+            return;
+        }
+        using var exact = ExactFileMutation.Open(member.LivePath);
+        var revision = exact.CaptureRevision();
+        if (member.TargetIdentity is not null && MatchesIdentity(revision, member.TargetIdentity))
+        {
+            if (member.TargetFileIdentity is null
+                || !MatchesFileIdentity(exact.Identity, member.TargetFileIdentity))
+            {
+                throw new InvalidDataException(
+                    "The live rollback member has the target bytes but not the exact transaction file identity "
+                        + "and was preserved.");
+            }
+        }
+        else if (member.PriorIdentity is null || !MatchesIdentity(revision, member.PriorIdentity))
+        {
+            throw new InvalidDataException(
+                "The live rollback member is not an exact transaction-owned revision and was preserved.");
+        }
+        exact.DeleteExactIgnoringReadOnly();
     }
 
     private static void ApplyExactRollbackMember(
@@ -2205,7 +2742,44 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         string subject)
     {
         ValidateResidue(path, identity, subject);
-        DeleteIfExists(path);
+        if (identity is not null)
+        {
+            DeleteOwnedFile(path, identity, subject);
+        }
+    }
+
+    private void DeleteVerifiedCopyStageResidue(
+        string path,
+        ModArtifactIdentityReceipt? identity,
+        string subject)
+    {
+        if (!File.Exists(path))
+        {
+            ReleaseOwnedCopyStage(path);
+            return;
+        }
+        if (identity is null)
+        {
+            throw new InvalidDataException($"The {subject} has no exact identity and was preserved.");
+        }
+        var receipt = ReadOwnedCopyStage(path);
+        if (receipt is null)
+        {
+            throw new InvalidDataException(
+                $"The {subject} has no durable ownership receipt and was preserved.");
+        }
+        using var exact = ExactFileMutation.OpenForMetadata(path);
+        var revision = exact.CaptureRevision();
+        if (exact.Identity != receipt.FileIdentity
+            || receipt.Phase == ModDeploymentCopyStagePhase.Complete
+                && (receipt.LastOwnedRevision is null
+                    || !receipt.LastOwnedRevision.Matches(revision)
+                    || !MatchesIdentity(revision, identity)))
+        {
+            throw new InvalidDataException($"The {subject} was replaced or changed and was preserved.");
+        }
+        exact.DeleteExactIgnoringReadOnly();
+        ReleaseOwnedCopyStage(path);
     }
 
     private sealed record RollbackPlan(RollbackMember Dll, RollbackMember? RuntimeManifest);
@@ -2216,7 +2790,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         bool RestoreExisting,
         string? DisplacedLiveDestination,
         ModArtifactIdentityReceipt? DisplacedLiveIdentity,
-        ModArtifactIdentityReceipt? PriorIdentity);
+        ModFileIdentityReceipt? DisplacedLiveFileIdentity,
+        ModArtifactIdentityReceipt? PriorIdentity,
+        ModArtifactIdentityReceipt? TargetIdentity,
+        ModFileIdentityReceipt? TargetFileIdentity);
 
     private void RestoreInstalledState(
         string gameDirectory,
@@ -2317,13 +2894,18 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         await CopyFileDurablyAsync(
             sameVolumeSource,
             promotionStage,
+            identity,
             copyStartedCheckpoint,
             cancellationToken);
         VerifyFile(promotionStage, identity, "durable backup promotion stage");
-        File.Move(promotionStage, durablePath);
+        MoveCompletedOwnedCopyStage(
+            promotionStage,
+            durablePath,
+            identity,
+            "durable backup promotion stage");
         await CheckpointAsync(promotedCheckpoint, cancellationToken);
         VerifyFile(sameVolumeSource, identity, "same-volume rollback source");
-        File.Delete(sameVolumeSource);
+        DeleteOwnedFile(sameVolumeSource, identity, "same-volume rollback source");
         await CheckpointAsync(sourceRemovedCheckpoint, cancellationToken);
     }
 
@@ -2338,6 +2920,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         await CopyFileDurablyAsync(
             durableSource,
             stagePath,
+            identity,
             copyStartedCheckpoint,
             cancellationToken);
         VerifyFile(stagePath, identity, "adopted restore stage");
@@ -2347,39 +2930,247 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private async Task CopyFileDurablyAsync(
         string sourcePath,
         string destinationPath,
+        ModArtifactIdentityReceipt identity,
         ModDeploymentFileCheckpoint copyStartedCheckpoint,
         CancellationToken cancellationToken)
     {
-        await using var source = new FileStream(
+        var sourceAttributes = identity.Attributes ?? File.GetAttributes(sourcePath);
+        var sourceLastWriteTimeUtc = identity.LastWriteTimeUtcTicks is { } ticks
+            ? new DateTime(ticks, DateTimeKind.Utc)
+            : File.GetLastWriteTimeUtc(sourcePath);
+        ExactFileRevision completedRevision;
+        await using (var source = new FileStream(
             sourcePath,
             FileMode.Open,
             FileAccess.Read,
             FileShare.None,
             81920,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using var destination = new FileStream(
+            FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var destination = new FileStream(
             destinationPath,
             FileMode.CreateNew,
-            FileAccess.Write,
+            FileAccess.ReadWrite,
             FileShare.None,
             81920,
-            FileOptions.Asynchronous | FileOptions.WriteThrough);
-        await CheckpointAsync(copyStartedCheckpoint, cancellationToken);
-        await source.CopyToAsync(destination, cancellationToken);
-        await destination.FlushAsync(cancellationToken);
-        destination.Flush(true);
+            FileOptions.Asynchronous | FileOptions.WriteThrough))
+        {
+            try
+            {
+                RegisterOwnedCopyStage(destinationPath, destination.SafeFileHandle);
+            }
+            catch
+            {
+                CandidateFileNative.TryMarkDeleteOnClose(destination.SafeFileHandle);
+                throw;
+            }
+            await CheckpointAsync(copyStartedCheckpoint, cancellationToken);
+            var buffer = new byte[81920];
+            long written = 0;
+            while (true)
+            {
+                var count = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    break;
+                }
+                await destination.WriteAsync(buffer.AsMemory(0, count), cancellationToken)
+                    .ConfigureAwait(false);
+                written += count;
+                if (afterDurableCopyChunkWritten is not null)
+                {
+                    await afterDurableCopyChunkWritten(
+                        sourcePath,
+                        destinationPath,
+                        written,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+            await destination.FlushAsync(cancellationToken);
+            destination.Flush(true);
+            if (afterDurableCopyBytesFlushed is not null)
+            {
+                await afterDurableCopyBytesFlushed(
+                    sourcePath,
+                    destinationPath,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            ExactFileMutation.SetMetadata(
+                destination.SafeFileHandle,
+                sourceAttributes,
+                sourceLastWriteTimeUtc.Ticks);
+            destination.Flush(true);
+            var fileIdentity = CandidateFileNative.ReadIdentity(destination.SafeFileHandle);
+            completedRevision = ExactFileMutation.CaptureRevision(
+                destination,
+                destinationPath,
+                fileIdentity);
+            if (!MatchesIdentity(completedRevision, identity))
+            {
+                throw new InvalidDataException(
+                    "The durable backup copy bytes or metadata changed before completion.");
+            }
+            CompleteOwnedCopyStage(destinationPath, fileIdentity, completedRevision);
+        }
+        if (afterDurableCopyCompleted is not null)
+        {
+            await afterDurableCopyCompleted(sourcePath, destinationPath, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        VerifyCompletedOwnedCopyStage(destinationPath, identity, "durable backup copy");
+    }
+
+    private string CopyStageReceiptPath(string stagePath)
+    {
+        var normalized = NormalizeGameDirectory(stagePath);
+        var key = Convert.ToHexString(
+            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized)));
+        return Path.Combine(stateDirectory, "copy-stage-ownership", $"{key}.json");
+    }
+
+    private void RegisterOwnedCopyStage(
+        string stagePath,
+        Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
+        var fileIdentity = CandidateFileNative.ReadIdentity(handle);
+        var receipt = new ModDeploymentCopyStageReceipt(
+            CopyStageReceiptSchemaVersion,
+            Path.GetFullPath(stagePath),
+            ModDeploymentCopyStagePhase.Writing,
+            fileIdentity,
+            LastOwnedRevision: null);
+        WriteJsonAtomically(CopyStageReceiptPath(stagePath), receipt);
+    }
+
+    private void CompleteOwnedCopyStage(
+        string stagePath,
+        CandidateFileIdentity fileIdentity,
+        ExactFileRevision completedRevision)
+    {
+        var receipt = ReadOwnedCopyStage(stagePath)
+            ?? throw new InvalidDataException(
+                "The durable copy stage lost its ownership receipt before completion.");
+        if (receipt.Phase != ModDeploymentCopyStagePhase.Writing
+            || receipt.FileIdentity != fileIdentity
+            || !completedRevision.Identity.Equals(fileIdentity))
+        {
+            throw new InvalidDataException(
+                "The durable copy stage was replaced before its owned revision could be recorded.");
+        }
+        WriteJsonAtomically(
+            CopyStageReceiptPath(stagePath),
+            receipt with
+            {
+                Phase = ModDeploymentCopyStagePhase.Complete,
+                LastOwnedRevision = completedRevision,
+            });
+    }
+
+    private ModDeploymentCopyStageReceipt? ReadOwnedCopyStage(string stagePath)
+    {
+        var receipt = ReadJson<ModDeploymentCopyStageReceipt>(CopyStageReceiptPath(stagePath));
+        if (receipt is null)
+        {
+            return null;
+        }
+        if (receipt.SchemaVersion != CopyStageReceiptSchemaVersion
+            || !Path.IsPathFullyQualified(receipt.StagePath)
+            || !PathEquals(receipt.StagePath, stagePath)
+            || !Enum.IsDefined(receipt.Phase)
+            || receipt.FileIdentity is null
+            || receipt.FileIdentity.VolumeSerialNumber is not { Length: 8 }
+            || !receipt.FileIdentity.VolumeSerialNumber.All(Uri.IsHexDigit)
+            || receipt.FileIdentity.FileIndex is not { Length: 16 }
+            || !receipt.FileIdentity.FileIndex.All(Uri.IsHexDigit)
+            || receipt.Phase == ModDeploymentCopyStagePhase.Writing
+                && receipt.LastOwnedRevision is not null
+            || receipt.Phase == ModDeploymentCopyStagePhase.Complete
+                && receipt.LastOwnedRevision is null
+            || receipt.LastOwnedRevision is { } revision
+                && (revision.Identity is null
+                    || revision.Identity != receipt.FileIdentity
+                    || revision.Length < 0
+                    || revision.Length > MaximumArtifactSize
+                    || !TryNormalizeSha256(revision.Sha256, out _)
+                    || revision.Attributes.HasFlag(FileAttributes.Directory)
+                    || revision.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                    || revision.Attributes.HasFlag(FileAttributes.Device)
+                    || revision.LastWriteTimeUtcTicks < DateTime.MinValue.Ticks
+                    || revision.LastWriteTimeUtcTicks > DateTime.MaxValue.Ticks))
+        {
+            throw new InvalidDataException(
+                "The durable copy-stage ownership receipt is invalid; the stage was preserved.");
+        }
+        return receipt;
+    }
+
+    private void ReleaseOwnedCopyStage(string stagePath)
+    {
+        var receiptPath = CopyStageReceiptPath(stagePath);
+        if (!File.Exists(receiptPath))
+        {
+            return;
+        }
+        if (File.Exists(stagePath))
+        {
+            _ = ReadOwnedCopyStage(stagePath);
+        }
+        DeleteIfExists(receiptPath);
+        var directory = Path.GetDirectoryName(receiptPath)!;
+        if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+        {
+            Directory.Delete(directory, recursive: false);
+        }
     }
 
     private static void VerifyFile(string path, ModReleaseArtifact artifact)
         => VerifyFile(path, artifact.Size, artifact.Sha256, "artifact");
 
+    private static void VerifyFile(ExactFileRevision revision, ModReleaseArtifact artifact)
+        => VerifyFile(revision, artifact.Size, artifact.Sha256, "artifact");
+
     private static void VerifyFile(string path, ModRuntimeManifestArtifact artifact) =>
         VerifyFile(path, artifact.Size, artifact.Sha256, "runtime manifest");
 
     private static void VerifyFile(
+        ExactFileRevision revision,
+        ModRuntimeManifestArtifact artifact) =>
+        VerifyFile(revision, artifact.Size, artifact.Sha256, "runtime manifest");
+
+    private static void VerifyFile(
         string path,
         ModArtifactIdentityReceipt identity,
-        string subject) => VerifyFile(path, identity.Size, identity.Sha256, subject);
+        string subject)
+    {
+        if (!MatchesIdentity(path, identity))
+        {
+            throw new InvalidDataException($"The staged {subject} bytes or metadata changed before commit.");
+        }
+    }
+
+    private static void VerifyFile(
+        ExactFileRevision revision,
+        ModArtifactIdentityReceipt identity,
+        string subject)
+    {
+        if (!MatchesIdentity(revision, identity))
+        {
+            throw new InvalidDataException(
+                $"The staged {subject} bytes or metadata changed before commit.");
+        }
+    }
+
+    private static void VerifyFile(
+        ExactFileRevision revision,
+        long expectedSize,
+        string expectedSha256,
+        string subject)
+    {
+        if (revision.Length != expectedSize
+            || !string.Equals(revision.Sha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"The staged {subject} does not match reviewed metadata.");
+        }
+    }
 
     private static void VerifyFile(string path, long expectedSize, string expectedSha256, string subject)
     {
@@ -2633,78 +3424,67 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             new CleanupCandidate(
                 journal.StagePath,
                 journal.Operation == ModDeploymentOperation.Uninstall
-                    ? previous?.PreviousArtifactBackupIdentity?.Size
-                    : journal.Artifact.Size,
-                journal.Operation == ModDeploymentOperation.Uninstall
-                    ? previous?.PreviousArtifactBackupIdentity?.Sha256
-                    : journal.Artifact.Sha256,
+                    ? previous?.PreviousArtifactBackupIdentity
+                    : Identity(journal.Artifact),
                 "DLL stage"),
             new CleanupCandidate(
                 journal.SameVolumeBackupPath,
-                journal.ExistingArtifactIdentity?.Size ?? previous?.Size,
-                journal.ExistingArtifactIdentity?.Sha256 ?? previous?.Sha256,
+                journal.ExistingArtifactIdentity ?? Identity(previous?.Size, previous?.Sha256),
                 "DLL rollback"),
             new CleanupCandidate(
                 RuntimeManifestStagePath(journal),
                 journal.Operation == ModDeploymentOperation.Uninstall
-                    ? previous?.PreviousRuntimeManifestBackupIdentity?.Size
-                    : journal.Artifact.RuntimeManifest?.Size,
-                journal.Operation == ModDeploymentOperation.Uninstall
-                    ? previous?.PreviousRuntimeManifestBackupIdentity?.Sha256
-                    : journal.Artifact.RuntimeManifest?.Sha256,
+                    ? previous?.PreviousRuntimeManifestBackupIdentity
+                    : journal.Artifact.RuntimeManifest is null
+                        ? null
+                        : Identity(journal.Artifact.RuntimeManifest),
                 "runtime-manifest stage"),
             new CleanupCandidate(
                 RuntimeManifestSameVolumeBackupPath(journal),
-                journal.ExistingRuntimeManifestIdentity?.Size ?? previous?.RuntimeManifest?.Size,
-                journal.ExistingRuntimeManifestIdentity?.Sha256 ?? previous?.RuntimeManifest?.Sha256,
+                journal.ExistingRuntimeManifestIdentity
+                    ?? Identity(previous?.RuntimeManifest?.Size, previous?.RuntimeManifest?.Sha256),
                 "runtime-manifest rollback"),
             new CleanupCandidate(
                 DurablePromotionStagePath(journal),
-                journal.ExistingArtifactIdentity?.Size,
-                journal.ExistingArtifactIdentity?.Sha256,
+                journal.ExistingArtifactIdentity,
                 "durable DLL promotion stage"),
             new CleanupCandidate(
                 RuntimeManifestDurablePromotionStagePath(journal),
-                journal.ExistingRuntimeManifestIdentity?.Size,
-                journal.ExistingRuntimeManifestIdentity?.Sha256,
+                journal.ExistingRuntimeManifestIdentity,
                 "durable runtime-manifest promotion stage"),
             new CleanupCandidate(
                 RollbackRestoreStagePath(journal),
-                journal.ExistingArtifactIdentity?.Size,
-                journal.ExistingArtifactIdentity?.Sha256,
+                journal.ExistingArtifactIdentity,
                 "DLL rollback restore stage"),
             new CleanupCandidate(
                 RuntimeManifestRollbackRestoreStagePath(journal),
-                journal.ExistingRuntimeManifestIdentity?.Size,
-                journal.ExistingRuntimeManifestIdentity?.Sha256,
+                journal.ExistingRuntimeManifestIdentity,
                 "runtime-manifest rollback restore stage"),
             new CleanupCandidate(
                 journal.Operation == ModDeploymentOperation.Uninstall
                     ? previous?.PreviousArtifactBackupPath ?? string.Empty
                     : string.Empty,
-                previous?.PreviousArtifactBackupIdentity?.Size,
-                previous?.PreviousArtifactBackupIdentity?.Sha256,
+                previous?.PreviousArtifactBackupIdentity,
                 "retired adopted DLL backup"),
             new CleanupCandidate(
                 journal.Operation == ModDeploymentOperation.Uninstall
                     ? previous?.PreviousRuntimeManifestBackupPath ?? string.Empty
                     : string.Empty,
-                previous?.PreviousRuntimeManifestBackupIdentity?.Size,
-                previous?.PreviousRuntimeManifestBackupIdentity?.Sha256,
+                previous?.PreviousRuntimeManifestBackupIdentity,
                 "retired adopted runtime-manifest backup"),
         };
         try
         {
+            foreach (var candidate in candidates.Where(candidate =>
+                !string.IsNullOrWhiteSpace(candidate.Path) && !File.Exists(candidate.Path)))
+            {
+                ReleaseOwnedCopyStage(candidate.Path);
+            }
             var existing = candidates.Where(candidate => File.Exists(candidate.Path)).ToArray();
             foreach (var candidate in existing)
             {
-                if (candidate.ExpectedSize is null
-                    || candidate.ExpectedSha256 is null
-                    || new FileInfo(candidate.Path).Length != candidate.ExpectedSize
-                    || !string.Equals(
-                        ComputeFileSha256(candidate.Path),
-                        candidate.ExpectedSha256,
-                        StringComparison.OrdinalIgnoreCase))
+                if (candidate.Identity is null
+                    || !MatchesIdentity(candidate.Path, candidate.Identity))
                 {
                     return new(
                         false,
@@ -2714,7 +3494,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             }
             foreach (var candidate in existing)
             {
-                DeleteIfExists(candidate.Path);
+                if (File.Exists(CopyStageReceiptPath(candidate.Path)))
+                {
+                    DeleteVerifiedCopyStageResidue(
+                        candidate.Path,
+                        candidate.Identity!,
+                        candidate.Description);
+                }
+                else
+                {
+                    DeleteOwnedFile(candidate.Path, candidate.Identity!, candidate.Description);
+                }
             }
             return new(true, existing.Length > 0, string.Empty);
         }
@@ -2730,19 +3520,38 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     private sealed record CleanupCandidate(
         string Path,
-        long? ExpectedSize,
-        string? ExpectedSha256,
+        ModArtifactIdentityReceipt? Identity,
         string Description);
 
     private sealed record CommittedCleanupResult(bool IsSuccess, bool Changed, string Message);
 
-    private void VerifyVersion(string path, string expectedVersion)
+    private void VerifyVersion(string path, ModReleaseArtifact artifact)
     {
         var actualVersion = versionReader.ReadVersion(path);
-        if (!string.Equals(actualVersion, expectedVersion, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(actualVersion, artifact.ExpectedVersion, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException(
-                $"The installed artifact version '{actualVersion ?? "unreadable"}' does not match '{expectedVersion}'.");
+                $"The installed artifact version '{actualVersion ?? "unreadable"}' "
+                    + $"does not match '{artifact.ExpectedVersion}'.");
+        }
+        if (artifact.ExpectedProductVersion is null)
+        {
+            return;
+        }
+        if (versionReader is not IModArtifactProductVersionReader productVersionReader)
+        {
+            throw new InvalidDataException(
+                "The selected release requires signed product-version evidence that the version reader cannot inspect.");
+        }
+        var actualProductVersion = productVersionReader.ReadProductVersion(path);
+        if (!string.Equals(
+                actualProductVersion,
+                artifact.ExpectedProductVersion,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"The installed artifact product version '{actualProductVersion ?? "unreadable"}' "
+                    + $"does not match '{artifact.ExpectedProductVersion}'.");
         }
     }
 
@@ -2775,7 +3584,11 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             throw new InvalidDataException("The prior artifact is outside the supported backup size boundary.");
         }
-        return new(size, Convert.ToHexString(SHA256.HashData(stream)));
+        return new(
+            size,
+            Convert.ToHexString(SHA256.HashData(stream)),
+            File.GetAttributes(path),
+            File.GetLastWriteTimeUtc(path).Ticks);
     }
 
     private static ModArtifactIdentityReceipt Identity(ModReleaseArtifact artifact) =>
@@ -2783,6 +3596,23 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     private static ModArtifactIdentityReceipt Identity(ModRuntimeManifestArtifact artifact) =>
         new(artifact.Size, artifact.Sha256);
+
+    private static ModFileIdentityReceipt FileIdentity(CandidateFileIdentity identity) =>
+        new(identity.VolumeSerialNumber, identity.FileIndex);
+
+    private static bool MatchesFileIdentity(
+        CandidateFileIdentity identity,
+        ModFileIdentityReceipt receipt) =>
+        string.Equals(
+            identity.VolumeSerialNumber,
+            receipt.VolumeSerialNumber,
+            StringComparison.OrdinalIgnoreCase)
+        && string.Equals(identity.FileIndex, receipt.FileIndex, StringComparison.OrdinalIgnoreCase);
+
+    private static ModArtifactIdentityReceipt? Identity(long? size, string? sha256) =>
+        size is null || string.IsNullOrWhiteSpace(sha256)
+            ? null
+            : new(size.Value, sha256);
 
     private static bool ArtifactMatchesInstalledReceipt(
         ModInstalledArtifactState receipt,
@@ -2815,6 +3645,238 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     artifact.RuntimeManifest.ExpectedTag,
                     StringComparison.Ordinal));
 
+    private sealed record ReleaseFloorEvidence(
+        string ReleaseProductVersion,
+        long AcceptedArtifactSize,
+        string AcceptedArtifactSha256);
+
+    private static ReleaseFloorEvidence? FindReleaseProductVersionFloor(
+        ModInstalledArtifactState? state,
+        ModInstallationAttribution attribution)
+    {
+        if (state is null)
+        {
+            return null;
+        }
+        var retained = state.ReleaseHighWaterMarks?
+            .SingleOrDefault(mark =>
+                string.Equals(mark.ProviderId, attribution.ProviderId, StringComparison.Ordinal)
+                && string.Equals(
+                    mark.ReleaseChannelId,
+                    attribution.ReleaseChannelId,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    mark.RuntimeDistributionId,
+                    attribution.RuntimeDistributionId,
+                    StringComparison.Ordinal));
+        if (retained is not null)
+        {
+            return new(
+                retained.ReleaseProductVersion,
+                retained.AcceptedArtifactSize,
+                retained.AcceptedArtifactSha256);
+        }
+        return string.Equals(state.ProviderId, attribution.ProviderId, StringComparison.Ordinal)
+            && string.Equals(
+                state.ReleaseChannelId,
+                attribution.ReleaseChannelId,
+                StringComparison.Ordinal)
+            && string.Equals(
+                state.RuntimeDistributionId,
+                attribution.RuntimeDistributionId,
+                StringComparison.Ordinal)
+                ? state.ReleaseProductVersion is null
+                    ? null
+                    : new(state.ReleaseProductVersion, state.Size, state.Sha256)
+                : null;
+    }
+
+    private string? ValidateReleaseProductVersionFloor(
+        ModInstalledArtifactState? state,
+        ModReleaseArtifact artifact,
+        ModInstallationAttribution attribution)
+    {
+        if (state is not null
+            && state.ReleaseProductVersion is null
+            && (!MatchesAttribution(state, attribution)
+                || !ArtifactMatchesInstalledReceipt(state, artifact)))
+        {
+            return "The managed installation predates signed release-order receipts, and its exact release "
+                + "cannot be established from the bundled reviewed evidence. Mod Bridge preserved it and "
+                + "requires an explicit migration or downgrade recovery decision before replacing it.";
+        }
+        var floor = FindReleaseProductVersionFloor(state, attribution);
+        if (floor is null)
+        {
+            return null;
+        }
+        var candidateProductVersion = ResolveReleaseProductVersion(artifact, attribution);
+        if (candidateProductVersion is null)
+        {
+            return $"The selected release has no signed product-version identity, but this installation retains {floor.ReleaseProductVersion} as its highest accepted release for this provider and channel.";
+        }
+        int order;
+        try
+        {
+            order = WindowsReleaseSelectionPolicy.CompareProductReleaseOrderingVersions(
+                candidateProductVersion,
+                floor.ReleaseProductVersion);
+        }
+        catch (InvalidDataException)
+        {
+            return $"The selected {candidateProductVersion} release cannot be safely ordered against this installation's retained {floor.ReleaseProductVersion} release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
+        }
+        if (order < 0)
+        {
+            return $"The selected {candidateProductVersion} release is older than this installation's retained {floor.ReleaseProductVersion} release floor. Use an explicit downgrade recovery flow to install it.";
+        }
+        if (order == 0
+            && (!string.Equals(
+                    candidateProductVersion,
+                    floor.ReleaseProductVersion,
+                    StringComparison.Ordinal)
+                || artifact.Size != floor.AcceptedArtifactSize
+                || !string.Equals(
+                    artifact.Sha256,
+                    floor.AcceptedArtifactSha256,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            return $"The selected {candidateProductVersion} release does not exactly match the retained signed tag and artifact identity for this release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
+        }
+        return null;
+    }
+
+    private static bool MatchesAttribution(
+        ModInstalledArtifactState state,
+        ModInstallationAttribution attribution) =>
+        string.Equals(state.ProviderId, attribution.ProviderId, StringComparison.Ordinal)
+        && string.Equals(
+            state.ReleaseChannelId,
+            attribution.ReleaseChannelId,
+            StringComparison.Ordinal)
+        && string.Equals(
+            state.RuntimeDistributionId,
+            attribution.RuntimeDistributionId,
+            StringComparison.Ordinal);
+
+    private string? ResolveReleaseProductVersion(
+        ModReleaseArtifact artifact,
+        ModInstallationAttribution attribution)
+    {
+        if (artifact.ExpectedProductVersion is not null)
+        {
+            return artifact.ExpectedProductVersion;
+        }
+        var matches = reviewedCertifications
+            .Where(certification =>
+                IsOrderableReleaseProductVersion(certification.Tag)
+                &&
+                certification.ProviderId == attribution.ProviderId
+                && certification.ChannelId == attribution.ReleaseChannelId
+                && certification.RuntimeDistributionId == attribution.RuntimeDistributionId
+                && certification.PayloadFileName.Equals(
+                    artifact.FileName,
+                    StringComparison.OrdinalIgnoreCase)
+                && certification.PayloadSize == artifact.Size
+                && certification.PayloadSha256.Equals(
+                    artifact.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && certification.PayloadVersion == artifact.ExpectedVersion
+                && (artifact.RuntimeManifest is null
+                    ? certification.RuntimeManifest is null
+                    : certification.RuntimeManifest is not null
+                        && certification.RuntimeManifest.FileName.Equals(
+                            artifact.RuntimeManifest.FileName,
+                            StringComparison.OrdinalIgnoreCase)
+                        && certification.RuntimeManifest.Size == artifact.RuntimeManifest.Size
+                        && certification.RuntimeManifest.Sha256.Equals(
+                            artifact.RuntimeManifest.Sha256,
+                            StringComparison.OrdinalIgnoreCase)
+                        && certification.SourceCommit.Equals(
+                            artifact.RuntimeManifest.ExpectedSourceRevision,
+                            StringComparison.OrdinalIgnoreCase)
+                        && certification.Repository == artifact.RuntimeManifest.ExpectedRepository
+                        && certification.Tag == artifact.RuntimeManifest.ExpectedTag))
+            .Select(certification => certification.Tag)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => null,
+            1 => matches[0],
+            _ => throw new InvalidDataException(
+                "The selected release matches multiple reviewed product-version identities."),
+        };
+    }
+
+    private static bool IsOrderableReleaseProductVersion(string value)
+    {
+        try
+        {
+            _ = WindowsReleaseSelectionPolicy.ParseProductReleaseOrderingVersion(value);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static ModReleaseHighWaterState[]? BuildReleaseHighWaterMarks(
+        ModInstalledArtifactState? previous,
+        ModInstallationAttribution target,
+        string? targetProductVersion,
+        ModReleaseArtifact targetArtifact)
+    {
+        var candidates = new List<ModReleaseHighWaterState>(previous?.ReleaseHighWaterMarks ?? []);
+        if (previous?.ReleaseProductVersion is not null)
+        {
+            candidates.Add(new(
+                previous.ProviderId,
+                previous.ReleaseChannelId,
+                previous.RuntimeDistributionId,
+                previous.ReleaseProductVersion,
+                previous.Size,
+                previous.Sha256));
+        }
+        if (targetProductVersion is not null)
+        {
+            candidates.Add(new(
+                target.ProviderId,
+                target.ReleaseChannelId,
+                target.RuntimeDistributionId,
+                targetProductVersion,
+                targetArtifact.Size,
+                targetArtifact.Sha256));
+        }
+        var marks = candidates
+            .GroupBy(mark => (
+                mark.ProviderId,
+                mark.ReleaseChannelId,
+                mark.RuntimeDistributionId))
+            .Select(group => group
+                .OrderByDescending(mark =>
+                    mark.ReleaseProductVersion,
+                    Comparer<string>.Create(
+                        WindowsReleaseSelectionPolicy.CompareProductReleaseOrderingVersions))
+                .First())
+            .Where(mark => targetProductVersion is null
+                || !string.Equals(mark.ProviderId, target.ProviderId, StringComparison.Ordinal)
+                || !string.Equals(
+                    mark.ReleaseChannelId,
+                    target.ReleaseChannelId,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    mark.RuntimeDistributionId,
+                    target.RuntimeDistributionId,
+                    StringComparison.Ordinal))
+            .OrderBy(mark => mark.ProviderId, StringComparer.Ordinal)
+            .ThenBy(mark => mark.ReleaseChannelId, StringComparer.Ordinal)
+            .ThenBy(mark => mark.RuntimeDistributionId, StringComparer.Ordinal)
+            .ToArray();
+        return marks.Length == 0 ? null : marks;
+    }
+
     private static bool MatchesIdentity(string path, ModArtifactIdentityReceipt identity)
     {
         if (!File.Exists(path))
@@ -2832,7 +3894,38 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             && string.Equals(
                 Convert.ToHexString(SHA256.HashData(stream)),
                 identity.Sha256,
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase)
+            && (identity.Attributes is null
+                || File.GetAttributes(path) == identity.Attributes)
+            && (identity.LastWriteTimeUtcTicks is null
+                || File.GetLastWriteTimeUtc(path).Ticks == identity.LastWriteTimeUtcTicks);
+    }
+
+    private static bool MatchesIdentity(
+        ExactFileRevision revision,
+        ModArtifactIdentityReceipt identity) =>
+        revision.Length == identity.Size
+        && string.Equals(revision.Sha256, identity.Sha256, StringComparison.OrdinalIgnoreCase)
+        && (identity.Attributes is null || revision.Attributes == identity.Attributes)
+        && (identity.LastWriteTimeUtcTicks is null
+            || revision.LastWriteTimeUtcTicks == identity.LastWriteTimeUtcTicks);
+
+    private static void DeleteOwnedFile(
+        string path,
+        ModArtifactIdentityReceipt identity,
+        string subject)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+        using var exact = ExactFileMutation.OpenForMetadata(path);
+        var revision = exact.CaptureRevision();
+        if (!MatchesIdentity(revision, identity))
+        {
+            throw new InvalidDataException($"The {subject} is unrecognized and was preserved.");
+        }
+        exact.DeleteExactIgnoringReadOnly();
     }
 
     private static string? ValidateDeclaredBackup(

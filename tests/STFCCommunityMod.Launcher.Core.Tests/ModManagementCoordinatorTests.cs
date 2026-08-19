@@ -72,6 +72,28 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ManualCurrentArtifactStillRequiresExplicitAdoption()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), ArtifactContents);
+        var (coordinator, _) = CreateCoordinator(temporaryDirectory);
+
+        var preparation = await coordinator.PrepareLatestAsync(
+            gameDirectory,
+            isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State);
+        Assert.AreEqual(
+            ModManagementActionKind.UpdateManualInstallation,
+            preparation.ActionKind);
+        Assert.AreEqual(
+            ExistingArtifactPolicy.AdoptAndPreserve,
+            preparation.ExistingArtifactPolicy);
+        StringAssert.Contains(preparation.Message, "Update the existing installation");
+    }
+
+    [TestMethod]
     public async Task PreparationPassesExactResolvedReleaseChannelToDiscovery()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -150,17 +172,335 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
-    public async Task RunningVerifiedInstallationCanCheckButCannotPrepareMutation()
+    public async Task ManagedSignedReleaseRejectsAnOlderAdvertisedRelease()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
-        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
-        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        var attribution = new ModInstallationAttribution(
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows");
+        var deploymentService = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(),
+            new FakeVersionReader("v2.1.0-guffa.10"),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution);
+        var installed = ReleaseArtifact() with
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.10",
+        };
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                installed,
+                ExistingArtifactPolicy.Reject)).State);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(
+                deploymentService,
+                new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(OlderSignedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+
+        var preparation = await coordinator.PrepareLatestAsync(
+            gameDirectory,
+            isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        StringAssert.Contains(preparation.Message, "older than");
+        StringAssert.Contains(preparation.Message, "v2.1.0-guffa.10");
+        Assert.AreEqual(
+            ModUpdateEvidenceState.Unknown,
+            coordinator.CaptureHealth(gameDirectory, false).UpdateAvailability,
+            "An older signed release must not be recorded as an available update.");
+        Assert.AreEqual(
+            "v2.1.0-guffa.10",
+            deploymentService.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+        CollectionAssert.AreEqual(
+            ArtifactContents,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task ProviderSwitchPreparationRejectsReleaseBelowRetainedProviderFloor()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var guffAttribution = new ModInstallationAttribution(
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows");
+        var guffTenService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader("v2.1.0-guffa.10"),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            guffAttribution);
+        var guffTen = ReleaseArtifact() with
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.10",
+        };
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await guffTenService.DeployAsync(
+                gameDirectory,
+                guffTen,
+                ExistingArtifactPolicy.Reject)).State);
+
+        var netnivAttribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var netnivArtifact = ReleaseArtifact() with
+        {
+            ExpectedProductVersion = "v1.1.4",
+        };
+        var netnivService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader(netnivArtifact.ExpectedProductVersion),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            netnivAttribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await netnivService.DeployAsync(
+                gameDirectory,
+                netnivArtifact,
+                ExistingArtifactPolicy.Reject)).State);
+        var sourceInstallation = new LauncherHealthService(
+                new ModInstallationInspector(
+                    netnivService,
+                    new SystemModInstallationFileSystem()),
+                new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty))
+            .Capture(gameDirectory, isGameRunning: false)
+            .Installation;
+        var targetService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader("v2.1.0-guffa.9"),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            guffAttribution);
+        var targetHealth = new LauncherHealthService(
+            new ModInstallationInspector(
+                targetService,
+                new SystemModInstallationFileSystem()),
+            new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            targetService,
+            new FakeReleaseDiscoveryClient(OlderSignedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: targetHealth);
+
+        var preparation = await coordinator.PrepareProviderSwitchTargetAsync(
+            gameDirectory,
+            isGameRunning: false,
+            sourceInstallation);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        StringAssert.Contains(preparation.Message, "v2.1.0-guffa.10");
+        Assert.AreEqual("netniv", targetService.ReadInstalledState(gameDirectory)?.ProviderId);
+        CollectionAssert.AreEqual(
+            ArtifactContents,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task ExactReviewedNetnivReleaseIsUpToDateDespiteHavingNoEmbeddedProductVersion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var certification = ReviewedCertification(
+            attribution,
+            "v1.1.4",
+            ReleaseArtifact());
+        var deploymentService = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(),
+            new FakeVersionReader(),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution,
+            reviewedCertifications: [certification]);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
             (await deploymentService.DeployAsync(
                 gameDirectory,
                 ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(
+                deploymentService,
+                new SystemModInstallationFileSystem()),
+            new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: healthService);
+
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.UpToDate, preparation.State, preparation.Message);
+        Assert.AreEqual("v1.1.4", deploymentService.ReadInstalledState(gameDirectory)!.ReleaseProductVersion);
+    }
+
+    [TestMethod]
+    public async Task ExactReviewedNetnivReleaseCanRepairWithoutEmbeddedProductVersion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var artifact = ReleaseArtifact();
+        var certification = ReviewedCertification(attribution, "v1.1.4", artifact);
+        var deploymentService = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(),
+            new FakeVersionReader(),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution,
+            reviewedCertifications: [certification]);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                artifact,
+                ExistingArtifactPolicy.Reject)).State);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [0, 0, 0]);
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: new LauncherHealthService(
+                new ModInstallationInspector(
+                    deploymentService,
+                    new SystemModInstallationFileSystem()),
+                new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty)));
+
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+        var result = await coordinator.ExecuteAsync(preparation);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State, preparation.Message);
+        Assert.AreEqual(ModManagementActionKind.Repair, preparation.ActionKind);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(ArtifactContents, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+    }
+
+    [TestMethod]
+    public async Task ExactReviewedNetnivReleaseCanReturnAfterAProviderRoundTrip()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var netnivAttribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var certification = ReviewedCertification(
+            netnivAttribution,
+            "v1.1.4",
+            ReleaseArtifact());
+        var netnivService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader(),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            netnivAttribution,
+            reviewedCertifications: [certification]);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await netnivService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        var guffAttribution = new ModInstallationAttribution(
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows");
+        var guffArtifact = ReleaseArtifact() with
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.10",
+        };
+        var guffService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader(guffArtifact.ExpectedProductVersion),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            guffAttribution,
+            reviewedCertifications: [certification]);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await guffService.DeployAsync(
+                gameDirectory,
+                guffArtifact,
+                ExistingArtifactPolicy.Reject)).State);
+        var coordinator = new ModManagementCoordinator(
+            netnivService,
+            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: new LauncherHealthService(
+                new ModInstallationInspector(
+                    netnivService,
+                    new SystemModInstallationFileSystem()),
+                new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty)));
+        var source = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedVerified,
+            IsGameRunning: false,
+            InstalledVersion: guffArtifact.ExpectedVersion,
+            InstalledProviderId: "guffawaffle",
+            InstalledReleaseChannelId: "stable",
+            InstalledRuntimeDistributionId: "guffawaffle.windows",
+            InstalledSha256: guffArtifact.Sha256);
+
+        var preparation = await coordinator.PrepareProviderSwitchTargetAsync(
+            gameDirectory,
+            isGameRunning: false,
+            source);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State, preparation.Message);
+    }
+
+    [TestMethod]
+    public async Task RunningVerifiedInstallationCanCheckButCannotPrepareMutation()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var installedArtifact = ReleaseArtifact() with
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.8",
+        };
+        var deploymentService = new ModDeploymentService(
+            temporaryDirectory.CreateDirectory("state"),
+            new FakeDownloader(),
+            new FakeVersionReader(installedArtifact.ExpectedProductVersion),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                installedArtifact,
                 ExistingArtifactPolicy.Reject)).State);
         var healthService = new LauncherHealthService(
             new ModInstallationInspector(deploymentService, new SystemModInstallationFileSystem()),
@@ -372,8 +712,52 @@ public sealed class ModManagementCoordinatorTests
                 "version.dll",
                 updatedContents.LongLength,
                 Convert.ToHexString(SHA256.HashData(updatedContents)),
-                "2.1.0.9"));
+                "2.1.0.9",
+                ExpectedProductVersion: "v2.1.0-guffa.9"));
     }
+
+    private static WindowsReleaseDiscovery OlderSignedReleaseDiscovery()
+    {
+        byte[] olderContents = [2, 1, 0, 9];
+        return new(
+            new WindowsReleaseManifest(
+                1,
+                "2.1.0-guffa.9",
+                "v2.1.0-guffa.9",
+                "stable",
+                "active",
+                new Version(0, 1, 0),
+                new("Guffawaffle/stfc-mod", "1123456789abcdef0123456789abcdef01234567"),
+                "none",
+                []),
+            new(
+                new Uri("https://example.invalid/older-version.dll"),
+                "version.dll",
+                olderContents.LongLength,
+                Convert.ToHexString(SHA256.HashData(olderContents)),
+                "2.1.0.8",
+                ExpectedProductVersion: "v2.1.0-guffa.9"));
+    }
+
+    private static ReviewedReleaseCertification ReviewedCertification(
+        ModInstallationAttribution attribution,
+        string tag,
+        ModReleaseArtifact artifact) => new(
+            attribution.ProviderId,
+            attribution.ReleaseChannelId,
+            attribution.RuntimeDistributionId,
+            "netniV/stfc-mod",
+            tag,
+            tag.TrimStart('v'),
+            new string('A', 40),
+            artifact.FileName,
+            artifact.Size,
+            artifact.Sha256,
+            artifact.FileName,
+            artifact.Size,
+            artifact.Sha256,
+            artifact.ExpectedVersion,
+            DateTimeOffset.UtcNow);
 
     private static string CreateGameDirectory(TemporaryDirectory temporaryDirectory)
     {
@@ -425,9 +809,12 @@ public sealed class ModManagementCoordinatorTests
                 ArtifactContents.LongLength));
     }
 
-    private sealed class FakeVersionReader : IModArtifactVersionReader
+    private sealed class FakeVersionReader(string? productVersion = null)
+        : IModArtifactProductVersionReader
     {
         public string? ReadVersion(string artifactPath) => "2.1.0.8";
+
+        public string? ReadProductVersion(string artifactPath) => productVersion;
     }
 
     private sealed class FakeAuthenticityVerifier : IModArtifactAuthenticityVerifier

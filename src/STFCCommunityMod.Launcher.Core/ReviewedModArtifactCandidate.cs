@@ -672,7 +672,7 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
                 FileOptions.Asynchronous))
             {
                 VerifyLockedStream(verificationLock, artifact.Size, artifact.Sha256, "DLL");
-                VerifyVersionAndAuthenticity(dllPath, artifact.ExpectedVersion);
+                VerifyVersionAndAuthenticity(dllPath, artifact);
             }
             dllLock = OpenLockedRead(dllPath);
             VerifyLockedStream(dllLock, artifact.Size, artifact.Sha256, "DLL");
@@ -1048,11 +1048,23 @@ public sealed class ReviewedModArtifactCandidateAcquirer : IAsyncDisposable
         }
     }
 
-    private void VerifyVersionAndAuthenticity(string path, string expectedVersion)
+    private void VerifyVersionAndAuthenticity(string path, ModReleaseArtifact artifact)
     {
-        if (versionReader.ReadVersion(path) != expectedVersion)
+        if (versionReader.ReadVersion(path) != artifact.ExpectedVersion)
         {
             throw new InvalidDataException("The candidate DLL embedded version does not match the reviewed release.");
+        }
+        if (artifact.ExpectedProductVersion is not null)
+        {
+            if (versionReader is not IModArtifactProductVersionReader productVersionReader
+                || !string.Equals(
+                    productVersionReader.ReadProductVersion(path),
+                    artifact.ExpectedProductVersion,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The candidate DLL signed ProductVersion does not match the reviewed release tag.");
+            }
         }
         var result = authenticityVerifier.Verify(path);
         if (!result.IsTrusted)
@@ -1288,6 +1300,15 @@ internal static class CandidateFileNative
         linkErrorMessage: "Exact recovery refuses linked files.",
         requireSingleLink: true);
 
+    public static SafeFileHandle OpenSharedExactReadNoFollow(string path) => OpenNoFollow(
+        path,
+        GenericRead,
+        FileShare.ReadWrite | FileShare.Delete,
+        flags: FileFlagOpenReparsePoint,
+        "Could not open the exact artifact for shared verification.",
+        linkErrorMessage: "Exact artifact verification refuses linked files.",
+        requireSingleLink: true);
+
     public static SafeFileHandle OpenExactReadWriteAttributesDeleteNoFollow(string path) => OpenNoFollow(
         path,
         GenericRead | FileWriteAttributes | Delete,
@@ -1358,6 +1379,52 @@ internal static class CandidateFileNative
             Marshal.SizeOf<FileDispositionInfo>());
     }
 
+    public static bool TryMarkDeleteOnCloseIgnoringReadOnly(SafeFileHandle handle)
+    {
+        const uint fileDispositionFlagDelete = 0x00000001;
+        const uint fileDispositionFlagPosixSemantics = 0x00000002;
+        const uint fileDispositionFlagIgnoreReadOnlyAttribute = 0x00000010;
+        var disposition = new FileDispositionInfoEx
+        {
+            Flags = fileDispositionFlagDelete
+                | fileDispositionFlagPosixSemantics
+                | fileDispositionFlagIgnoreReadOnlyAttribute,
+        };
+        return SetFileInformationByHandleEx(
+            handle,
+            FileInfoByHandleClass.FileDispositionInfoEx,
+            ref disposition,
+            Marshal.SizeOf<FileDispositionInfoEx>());
+    }
+
+    public static bool TryMoveNoReplace(SafeFileHandle handle, string destinationPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        var destination = Path.GetFullPath(destinationPath);
+        var nameBytes = Encoding.Unicode.GetBytes(destination);
+        var fileNameOffset = IntPtr.Size == 8 ? 20 : 12;
+        var bufferSize = checked(fileNameOffset + nameBytes.Length + sizeof(char));
+        var buffer = Marshal.AllocHGlobal(bufferSize);
+        try
+        {
+            Marshal.Copy(new byte[bufferSize], 0, buffer, bufferSize);
+            const uint fileRenameFlagPosixSemantics = 0x00000002;
+            Marshal.WriteInt32(buffer, 0, checked((int)fileRenameFlagPosixSemantics));
+            Marshal.WriteIntPtr(buffer, IntPtr.Size == 8 ? 8 : 4, IntPtr.Zero);
+            Marshal.WriteInt32(buffer, IntPtr.Size == 8 ? 16 : 8, nameBytes.Length);
+            Marshal.Copy(nameBytes, 0, IntPtr.Add(buffer, fileNameOffset), nameBytes.Length);
+            return SetFileInformationByHandleBuffer(
+                handle,
+                FileInfoByHandleClass.FileRenameInfoEx,
+                buffer,
+                bufferSize);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     public static CandidateFileIdentity ReadIdentity(SafeFileHandle handle)
     {
         if (!OperatingSystem.IsWindows())
@@ -1392,6 +1459,22 @@ internal static class CandidateFileNative
         ref FileDispositionInfo fileInformation,
         int bufferSize);
 
+    [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandleEx(
+        SafeFileHandle file,
+        FileInfoByHandleClass fileInformationClass,
+        ref FileDispositionInfoEx fileInformation,
+        int bufferSize);
+
+    [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandleBuffer(
+        SafeFileHandle file,
+        FileInfoByHandleClass fileInformationClass,
+        IntPtr fileInformation,
+        int bufferSize);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandle(
@@ -1401,12 +1484,20 @@ internal static class CandidateFileNative
     private enum FileInfoByHandleClass
     {
         FileDispositionInfo = 4,
+        FileDispositionInfoEx = 21,
+        FileRenameInfoEx = 22,
     }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileDispositionInfo
     {
         public byte DeleteFile;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileDispositionInfoEx
+    {
+        public uint Flags;
     }
 
     [StructLayout(LayoutKind.Sequential)]

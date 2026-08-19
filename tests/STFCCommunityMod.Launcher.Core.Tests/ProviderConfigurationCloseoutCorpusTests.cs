@@ -559,7 +559,16 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
             "version.dll",
             contents.LongLength,
             Convert.ToHexString(SHA256.HashData(contents)),
-            version);
+            version,
+            ExpectedProductVersion: ProductVersion(version));
+
+    private static string ProductVersion(string version) => version switch
+    {
+        "2.1.0.8" => "v2.1.0-guffa.8",
+        "2.1.0.9" => "v2.1.0-guffa.9",
+        "1.1.5.1" => "v1.1.5",
+        _ => $"v{version}",
+    };
 
     private static string CreateGameDirectory(TemporaryDirectory directory)
     {
@@ -713,9 +722,11 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
             Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
     }
 
-    private sealed class FakeVersionReader(string version) : IModArtifactVersionReader
+    private sealed class FakeVersionReader(string version) : IModArtifactProductVersionReader
     {
         public string? ReadVersion(string artifactPath) => version;
+
+        public string? ReadProductVersion(string artifactPath) => ProductVersion(version);
     }
 
     private sealed class FakeAuthenticityVerifier : IModArtifactAuthenticityVerifier

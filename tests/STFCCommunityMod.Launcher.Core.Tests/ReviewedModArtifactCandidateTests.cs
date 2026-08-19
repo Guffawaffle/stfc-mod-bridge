@@ -82,6 +82,32 @@ public sealed class ReviewedModArtifactCandidateTests
     }
 
     [TestMethod]
+    public async Task CandidateProductVersionMustMatchBeforeTheLeaseCanBePublished()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CandidateFixture.Create(includeRuntimeManifest: false);
+        var artifact = fixture.Artifact with
+        {
+            ExpectedProductVersion = fixture.Certification.Tag,
+        };
+        var acquirer = new ReviewedModArtifactCandidateAcquirer(
+            temporaryDirectory.CreateDirectory("state"),
+            new CountingDownloader(fixture.Downloads),
+            new StaticProductVersionReader(
+                fixture.Artifact.ExpectedVersion,
+                "v2.1.0-guffa.older"),
+            new TrustedVerifier(),
+            fixture.Attribution,
+            fixture.Certification);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            acquirer.AcquireAsync(artifact));
+        var candidateRoot = Path.Combine(temporaryDirectory.Path, "state", "artifact-candidates");
+        Assert.IsTrue(
+            !Directory.Exists(candidateRoot) || !Directory.EnumerateDirectories(candidateRoot).Any());
+    }
+
+    [TestMethod]
     public async Task StaleCertificationRejectsReceiptBeforeJournalOrLiveMutation()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -1195,17 +1221,33 @@ public sealed class ReviewedModArtifactCandidateTests
     {
         public string? ReadVersion(string artifactPath)
         {
-            using var stream = File.OpenRead(artifactPath);
+            using var stream = new FileStream(
+                artifactPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
             Assert.IsTrue(stream.ReadByte() >= 0);
             return version;
         }
+    }
+
+    private sealed class StaticProductVersionReader(string version, string productVersion)
+        : IModArtifactVersionReader, IModArtifactProductVersionReader
+    {
+        public string? ReadVersion(string artifactPath) => version;
+
+        public string? ReadProductVersion(string artifactPath) => productVersion;
     }
 
     private sealed class TrustedVerifier : IModArtifactAuthenticityVerifier
     {
         public ModArtifactAuthenticityResult Verify(string artifactPath)
         {
-            using var stream = File.OpenRead(artifactPath);
+            using var stream = new FileStream(
+                artifactPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
             Assert.IsTrue(stream.Length > 0);
             return new(true, "trusted test DLL");
         }
@@ -1217,7 +1259,11 @@ public sealed class ReviewedModArtifactCandidateTests
 
         public ModArtifactAuthenticityResult Verify(string artifactPath)
         {
-            using (var stream = File.OpenRead(artifactPath))
+            using (var stream = new FileStream(
+                artifactPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
             {
                 Assert.IsTrue(stream.Length > 0);
             }

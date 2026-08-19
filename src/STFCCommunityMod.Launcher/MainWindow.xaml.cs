@@ -1264,6 +1264,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     targetProvider.DefaultReleaseChannel.DisplayName,
                     providerSwitchReviewAcknowledged);
                 ProviderSwitchPreviewText.Text = review.Summary;
+                if (review.IsBlocked)
+                {
+                    ProviderSourceSelector.IsEnabled = true;
+                    SetProviderSwitchAction("Switch", targetProvider, enabled: false);
+                    return;
+                }
                 if (review.RequiresReview)
                 {
                     ProviderSourceSelector.IsEnabled = true;
@@ -1326,7 +1332,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             isProviderSwitchOperationPending = false;
             if (pendingProviderSwitch is not null)
             {
-                ProviderSwitchActionButton.IsEnabled = true;
+                ProviderSwitchActionButton.IsEnabled = pendingProviderSwitch.CanExecute;
             }
         }
     }

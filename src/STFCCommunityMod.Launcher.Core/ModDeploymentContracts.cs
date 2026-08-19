@@ -48,7 +48,8 @@ public sealed record ModReleaseArtifact(
     long Size,
     string Sha256,
     string ExpectedVersion,
-    ModRuntimeManifestArtifact? RuntimeManifest = null);
+    ModRuntimeManifestArtifact? RuntimeManifest = null,
+    string? ExpectedProductVersion = null);
 
 public sealed record ModRuntimeManifestArtifact(
     Uri DownloadUri,
@@ -79,7 +80,17 @@ public sealed record ModInstalledArtifactState(
     ModInstalledRuntimeManifestState? RuntimeManifest = null,
     string? PreviousRuntimeManifestBackupPath = null,
     ModArtifactIdentityReceipt? PreviousArtifactBackupIdentity = null,
-    ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null);
+    ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null,
+    string? ReleaseProductVersion = null,
+    IReadOnlyList<ModReleaseHighWaterState>? ReleaseHighWaterMarks = null);
+
+public sealed record ModReleaseHighWaterState(
+    string ProviderId,
+    string ReleaseChannelId,
+    string RuntimeDistributionId,
+    string ReleaseProductVersion,
+    long AcceptedArtifactSize,
+    string AcceptedArtifactSha256);
 
 public sealed record ModInstalledArtifactRegistry(
     int SchemaVersion,
@@ -98,7 +109,15 @@ public sealed record ModDetachedAdoptionBackupState(
     string? PreviousRuntimeManifestBackupPath,
     ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity);
 
-public sealed record ModArtifactIdentityReceipt(long Size, string Sha256);
+public sealed record ModArtifactIdentityReceipt(
+    long Size,
+    string Sha256,
+    FileAttributes? Attributes = null,
+    long? LastWriteTimeUtcTicks = null);
+
+public sealed record ModFileIdentityReceipt(
+    string VolumeSerialNumber,
+    string FileIndex);
 
 public sealed record ModInstalledRuntimeManifestState(
     string FileName,
@@ -133,7 +152,11 @@ public sealed record ModDeploymentJournal(
     ModArtifactIdentityReceipt? ExistingArtifactIdentity = null,
     ModArtifactIdentityReceipt? ExistingRuntimeManifestIdentity = null,
     ModInstallationAttribution? TargetInstallationAttribution = null,
-    bool PreserveLiveArtifactDuringRecovery = false);
+    bool PreserveLiveArtifactDuringRecovery = false,
+    ModFileIdentityReceipt? TargetArtifactFileIdentity = null,
+    ModFileIdentityReceipt? TargetRuntimeManifestFileIdentity = null,
+    ModFileIdentityReceipt? RestoredAdoptedArtifactFileIdentity = null,
+    ModFileIdentityReceipt? RestoredAdoptedRuntimeManifestFileIdentity = null);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,
@@ -153,6 +176,11 @@ public interface IModArtifactDownloader
 public interface IModArtifactVersionReader
 {
     string? ReadVersion(string artifactPath);
+}
+
+public interface IModArtifactProductVersionReader : IModArtifactVersionReader
+{
+    string? ReadProductVersion(string artifactPath);
 }
 
 public enum AuthenticodeRevocationMode

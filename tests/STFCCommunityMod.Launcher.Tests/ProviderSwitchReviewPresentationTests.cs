@@ -99,6 +99,41 @@ public sealed class ProviderSwitchReviewPresentationTests
     }
 
     [TestMethod]
+    public void BlockedArtifactSwitchPresentsTheAdmissionFailureWithoutInvitingReview()
+    {
+        const string blockedMessage =
+            "The selected signed release is older than this installation's retained release floor.";
+        var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with
+        {
+            Artifact = new(
+                ModOperationPreparationState.MutationBlocked,
+                blockedMessage,
+                "game",
+                "2.1.0-guffa.9",
+                new(
+                    new Uri("https://example.invalid/version.dll"),
+                    "version.dll",
+                    42,
+                    new('A', 64),
+                    "2.1.0.0",
+                    ExpectedProductVersion: "v2.1.0-guffa.9"),
+                ExistingArtifactPolicy.Reject,
+                ModManagementActionKind.CheckForUpdate,
+                "guffawaffle"),
+        };
+
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview,
+            "Stable",
+            introductoryReviewAcknowledged: false);
+
+        Assert.IsTrue(presentation.IsBlocked);
+        Assert.IsFalse(presentation.RequiresReview);
+        StringAssert.Contains(presentation.Summary, blockedMessage);
+        Assert.IsFalse(presentation.Summary.Contains("will change", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void ExpectedMissingTomlExplainsAbsenceRecheck()
     {
         var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with

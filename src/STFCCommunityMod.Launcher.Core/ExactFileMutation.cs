@@ -38,7 +38,7 @@ internal sealed class ExactFileMutation : IDisposable
         Identity = CandidateFileNative.ReadIdentity(stream.SafeFileHandle);
     }
 
-    public string Path { get; }
+    public string Path { get; private set; }
 
     public CandidateFileIdentity Identity { get; }
 
@@ -132,6 +132,36 @@ internal sealed class ExactFileMutation : IDisposable
         Dispose();
     }
 
+    public void DeleteExactIgnoringReadOnly()
+    {
+        ThrowIfDisposed();
+        if (!CandidateFileNative.TryMarkDeleteOnCloseIgnoringReadOnly(stream.SafeFileHandle))
+        {
+            throw new IOException(
+                "The exact owned file could not be marked for deletion.",
+                new Win32Exception(Marshal.GetLastWin32Error()));
+        }
+
+        Dispose();
+    }
+
+    public void MoveExactNoReplace(string destinationPath)
+    {
+        ThrowIfDisposed();
+        var destination = System.IO.Path.GetFullPath(destinationPath);
+        if (File.Exists(destination) || Directory.Exists(destination))
+        {
+            throw new IOException("The exact move destination already exists.");
+        }
+        if (!CandidateFileNative.TryMoveNoReplace(stream.SafeFileHandle, destination))
+        {
+            throw new IOException(
+                "The exact owned file could not be moved without replacement.",
+                new Win32Exception(Marshal.GetLastWin32Error()));
+        }
+        Path = destination;
+    }
+
     public void SetMetadata(FileAttributes attributes, long lastWriteTimeUtcTicks)
     {
         ThrowIfDisposed();
@@ -139,6 +169,30 @@ internal sealed class ExactFileMutation : IDisposable
             stream.SafeFileHandle,
             attributes,
             new DateTime(lastWriteTimeUtcTicks, DateTimeKind.Utc).ToFileTimeUtc());
+    }
+
+    internal static void SetMetadata(
+        SafeFileHandle handle,
+        FileAttributes attributes,
+        long lastWriteTimeUtcTicks) =>
+        FileHandleMetadata.Set(
+            handle,
+            attributes,
+            new DateTime(lastWriteTimeUtcTicks, DateTimeKind.Utc).ToFileTimeUtc());
+
+    internal static ExactFileRevision CaptureRevision(
+        FileStream exactStream,
+        string path,
+        CandidateFileIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(exactStream);
+        exactStream.Position = 0;
+        return new(
+            identity,
+            exactStream.Length,
+            Convert.ToHexString(SHA256.HashData(exactStream)),
+            File.GetAttributes(path),
+            File.GetLastWriteTimeUtc(path).Ticks);
     }
 
     public void Dispose()

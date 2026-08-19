@@ -45,11 +45,11 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
-| Release discovery | Repository release manifest constrained by the exact launcher-reviewed current release; exact reviewed fallback if the manifest asset is absent | Exact launcher-reviewed GitHub release asset |
+| Release discovery | Repository release manifest plus exact reviewed fallback if the manifest asset is absent | Exact launcher-reviewed GitHub release asset |
 | Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |
 | Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
-| Withdrawal | Signed release-manifest policy | Unknown |
+| Withdrawal | Repository-reported release state; no authenticated withdrawal contract | Unknown |
 | Migration compatibility | Same-provider TOML preservation | Cross-provider compatibility unknown |
 
 NetniV is the default source for a new launcher-owned selection. Existing
@@ -61,15 +61,27 @@ one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
 are checked before the atomic deployment transaction commits. A newer or
 changed release fails closed until a maintainer reviews and updates the entry.
 
-The current Guffawaffle stable release, `v2.1.0-guffa.9`, publishes the release
-manifest, signed DLL, runtime manifest, and compatibility ZIP. The release
+Guffawaffle stable releases publish a release manifest, signed DLL, runtime
+manifest, and compatibility ZIP. The release
 manifest remains integrity/discovery metadata with
 `manifestAuthenticity.scheme: none`; it does not authorize newer bytes by
-itself. Mod Bridge therefore binds its repository, tag, source commit, ZIP,
-DLL, and runtime-manifest bytes to the exact reviewed certification and still
-requires the normal Authenticode publisher policy. It falls back to the
-reviewed ZIP only if the release-manifest asset is absent. An invalid or
-tampered manifest never falls back.
+itself. Mod Bridge permits a newly published DLL only after its live bytes pass
+the exact Authenticode publisher and durable Artifact Signing identity policy;
+routine signed releases do not require a Bridge catalog update. The reviewed
+entry remains the narrow missing-manifest fallback and the authority for its
+exact runtime-manifest pair. An invalid or tampered manifest never falls back.
+The manifest's active/withdrawn state is a repository assertion, not an
+authenticated withdrawal instruction. Ordinary update preparation therefore
+also retains the highest signed ProductVersion and exact accepted DLL digest
+recorded for each managed
+installation and stable provider/channel/runtime tuple, including across a
+switch to another provider and back. Channels retain independent floors rather
+than being compared across channel identities. Both preparation and the locked
+deployment boundary reject an older advertised or stale-prepared release. An
+equal release order must match both the canonical signed tag and retained
+digest, so mutable repository metadata cannot silently authorize a same-tag
+rebuild. An intentional downgrade requires a separate explicit recovery design; Remove or
+Stop managing explicitly ends that installation's retained release history.
 
 An optional `runtimeManifest` member in a launcher-bundled reviewed release
 certification authorizes one exact `stfc-runtime-manifest.json` companion by
@@ -80,9 +92,9 @@ closed. The separately downloaded runtime-manifest asset must match the same
 certification. These checks compose with the DLL, version, repository, tag,
 source-commit, provider, channel, and runtime-distribution binding. The mod's
 schema-v1 release manifest cannot activate runtime capabilities on its own. A
-new producer release therefore remains unavailable until its exact DLL/JSON
-pair and container are deliberately reviewed and the bundled certification is
-updated.
+newer signed DLL can therefore be installed without its unsigned runtime
+manifest becoming operational; runtime capability activation remains limited
+to an exact launcher-reviewed DLL/JSON pair.
 
 `providers/known-windows-artifacts.v1.json` separately recognizes reviewed
 stable and dev DLL hashes for local provenance display. The dev entry is

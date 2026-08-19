@@ -56,6 +56,9 @@ public sealed class ReviewedReleaseCertificationCatalog
 
     public int Count => certifications.Count;
 
+    public IReadOnlyCollection<ReviewedReleaseCertification> Certifications =>
+        certifications.Values;
+
     public ReviewedReleaseCertification? Find(string providerId, string channelId) =>
         certifications.GetValueOrDefault((providerId, channelId));
 }
@@ -543,7 +546,11 @@ public sealed class ManifestWithReviewedFallbackReleaseClient(
                 channel,
                 currentLauncherVersion,
                 cancellationToken).ConfigureAwait(false);
-            if (reviewedCertification?.RuntimeManifest is null)
+            if (reviewedCertification?.RuntimeManifest is null
+                || !WindowsReleaseSelectionPolicy.MatchesReviewedReleaseArtifact(
+                    discovery.Manifest,
+                    discovery.ModArtifact,
+                    reviewedCertification))
             {
                 return discovery;
             }
@@ -563,10 +570,19 @@ public sealed class ManifestWithReviewedFallbackReleaseClient(
         catch (InvalidDataException exception) when (
             ReleaseManifestFallbackPolicy.IsMissingManifest(exception))
         {
-            return await reviewedFallback.DiscoverLatestAsync(
+            var fallback = await reviewedFallback.DiscoverLatestAsync(
                 channel,
                 currentLauncherVersion,
                 cancellationToken).ConfigureAwait(false);
+            return reviewedCertification is null
+                ? fallback
+                : fallback with
+                {
+                    ModArtifact = fallback.ModArtifact with
+                    {
+                        ExpectedProductVersion = reviewedCertification.Tag,
+                    },
+                };
         }
     }
 }
@@ -620,9 +636,19 @@ public sealed class ManifestWithReviewedFallbackArtifactDownloader : IModArtifac
 
     private bool IsRepositoryDllUri(Uri uri)
     {
-        return uri == new Uri(
-            $"https://github.com/{certification.Repository}/releases/download/"
-            + $"{Uri.EscapeDataString(certification.Tag)}/version.dll");
+        var repository = certification.Repository.Split('/');
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return uri.Scheme == Uri.UriSchemeHttps
+            && string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment)
+            && segments.Length == 6
+            && string.Equals(segments[0], repository[0], StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[1], repository[1], StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[2], "releases", StringComparison.Ordinal)
+            && string.Equals(segments[3], "download", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(segments[4])
+            && string.Equals(segments[5], "version.dll", StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -635,10 +661,11 @@ public sealed class ReviewedExactHashAuthenticityVerifier(
         {
             return new(false, "The reviewed artifact does not exist.");
         }
-        var info = new FileInfo(artifactPath);
-        using var stream = File.OpenRead(artifactPath);
+        using var stream = new FileStream(
+            CandidateFileNative.OpenSharedExactReadNoFollow(artifactPath),
+            FileAccess.Read);
         var sha256 = Convert.ToHexString(SHA256.HashData(stream));
-        return info.Length == certification.PayloadSize
+        return stream.Length == certification.PayloadSize
             && string.Equals(sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase)
                 ? new(true, "The DLL matches the launcher-reviewed exact SHA-256 allowlist.")
                 : new(false, "The DLL does not match the launcher-reviewed exact SHA-256 allowlist.");

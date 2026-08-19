@@ -3,7 +3,7 @@
   "provider": {
     "id": "guffawaffle",
     "displayName": "Guffawaffle",
-    "description": "Community distribution with launcher-authenticated Windows release manifests.",
+    "description": "Community distribution with publisher-authenticated Windows mod artifacts.",
     "runtimeDistributionId": "guffawaffle.stfc-community-mod",
     "defaultReleaseChannelId": "stable",
     "releaseChannels": [
@@ -37,7 +37,7 @@
       { "id": "runtime.manifest", "status": "supported" },
       { "id": "mod.release-discovery", "status": "supported" },
       { "id": "mod.artifact-trust", "status": "supported" },
-      { "id": "release.withdrawal", "status": "supported" },
+      { "id": "release.withdrawal", "status": "unknown" },
       { "id": "config.migration", "status": "supported" }
     ],
     "artifactPolicy": {
@@ -48,8 +48,8 @@
       "windowsArtifactSigningIdentityEku": "1.3.6.1.4.1.311.97.664386437.910814316.510550690.722133748"
     },
     "withdrawalPolicy": {
-      "status": "supported",
-      "mode": "signed-release-manifest"
+      "status": "unknown",
+      "mode": null
     },
     "migration": {
       "status": "supported",
