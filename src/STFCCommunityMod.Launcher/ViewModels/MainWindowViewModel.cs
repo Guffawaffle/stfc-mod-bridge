@@ -985,7 +985,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var result = await packagedLauncherUpdateService.CheckAsync(cancellationToken);
-            actionFeedback.LauncherUpdate.Complete(result.CanOpenAppInstaller, result.Message);
+            actionFeedback.LauncherUpdate.Complete(result.CanOpenUpdateSource, result.Message);
             return result;
         }
         catch (OperationCanceledException)
@@ -1004,20 +1004,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public bool TryOpenPackagedLauncherUpdate(PackagedLauncherUpdateCheck check)
+    public bool TryOpenPackagedLauncherUpdateSource(PackagedLauncherUpdateCheck check)
     {
         ArgumentNullException.ThrowIfNull(check);
-        if (!check.CanOpenAppInstaller || check.AppInstallerUri is null)
+        if (!check.CanOpenUpdateSource || check.AppInstallerUri is null)
         {
             return false;
         }
 
         try
         {
-            packagedLauncherUpdateService.OpenAppInstaller(check.AppInstallerUri);
+            packagedLauncherUpdateService.OpenUpdateSource(check.AppInstallerUri);
             actionFeedback.LauncherUpdate.Complete(
                 true,
-                "Windows App Installer is opening the source associated with this Mod Bridge installation.");
+                "The official App Installer file opened in your default browser. "
+                    + "Open the downloaded STFCModBridge.appinstaller file to continue; Windows will handle the update.");
             return true;
         }
         catch (Exception exception) when (
@@ -1026,7 +1027,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 or System.ComponentModel.Win32Exception)
         {
             actionFeedback.LauncherUpdate.Fail(
-                $"Windows App Installer could not open the Mod Bridge update source: {exception.Message}");
+                $"The official Mod Bridge update download could not be opened in your default browser: "
+                    + exception.Message);
             return false;
         }
     }

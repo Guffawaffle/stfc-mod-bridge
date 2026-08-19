@@ -238,6 +238,23 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
+    public void PackagedUpdateHandoffKeepsBridgeOpenForDownloadGuidance()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var handler = Slice(
+            source,
+            "private async void CheckLauncherUpdateButton_Click",
+            "private void ConfirmLauncherUpdateButton_Click");
+
+        StringAssert.Contains(handler, "TryOpenPackagedLauncherUpdateSource");
+        Assert.IsFalse(
+            handler.Contains("Application.Current.Shutdown()", StringComparison.Ordinal),
+            "Opening the supported packaged-update source must not close Bridge before the user opens the downloaded descriptor.");
+    }
+
+    [TestMethod]
     public void ConfigurationCleanupAndEffectiveExportKeepDistinctSafetyContracts()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");

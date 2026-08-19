@@ -18,7 +18,7 @@ internal sealed record PackagedLauncherUpdateCheck(
     string Message,
     Uri? AppInstallerUri)
 {
-    internal bool CanOpenAppInstaller =>
+    internal bool CanOpenUpdateSource =>
         Availability is PackagedLauncherUpdateAvailability.Available
             or PackagedLauncherUpdateAvailability.Required
         && AppInstallerUri is not null;
@@ -28,7 +28,7 @@ internal interface IPackagedLauncherUpdateService
 {
     Task<PackagedLauncherUpdateCheck> CheckAsync(CancellationToken cancellationToken = default);
 
-    void OpenAppInstaller(Uri appInstallerUri);
+    void OpenUpdateSource(Uri appInstallerUri);
 }
 
 internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUpdateService
@@ -62,19 +62,9 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
         return FromWindowsAvailability(result.Availability, result.ExtendedError, appInstallerUri);
     }
 
-    public void OpenAppInstaller(Uri appInstallerUri)
+    public void OpenUpdateSource(Uri appInstallerUri)
     {
-        if (!IsSupportedAppInstallerUri(appInstallerUri))
-        {
-            throw new InvalidOperationException(
-                "The packaged update source is not an absolute HTTPS .appinstaller URI.");
-        }
-
-        var activationUri = BuildAppInstallerActivationUri(appInstallerUri);
-        _ = Process.Start(new ProcessStartInfo(activationUri.AbsoluteUri)
-        {
-            UseShellExecute = true,
-        }) ?? throw new InvalidOperationException("Windows App Installer did not start.");
+        _ = Process.Start(BuildUpdateSourceStartInfo(appInstallerUri));
     }
 
     internal static PackagedLauncherUpdateCheck FromWindowsAvailability(
@@ -88,12 +78,11 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
                 appInstallerUri),
             PackageUpdateAvailability.Available => new(
                 PackagedLauncherUpdateAvailability.Available,
-                "A Mod Bridge update is available. Opening Windows App Installer for review.",
+                "A Mod Bridge update is available.",
                 appInstallerUri),
             PackageUpdateAvailability.Required => new(
                 PackagedLauncherUpdateAvailability.Required,
-                "The associated App Installer source marks an update as required. "
-                    + "Opening Windows App Installer for review.",
+                "The associated App Installer source marks an update as required.",
                 appInstallerUri),
             PackageUpdateAvailability.Unknown => new(
                 PackagedLauncherUpdateAvailability.AssociationUnavailable,
@@ -108,7 +97,7 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
             _ => throw new ArgumentOutOfRangeException(nameof(availability), availability, null),
         };
 
-    internal static Uri BuildAppInstallerActivationUri(Uri appInstallerUri)
+    internal static ProcessStartInfo BuildUpdateSourceStartInfo(Uri appInstallerUri)
     {
         if (!IsSupportedAppInstallerUri(appInstallerUri))
         {
@@ -117,9 +106,10 @@ internal sealed class WindowsPackagedLauncherUpdateService : IPackagedLauncherUp
                 nameof(appInstallerUri));
         }
 
-        return new Uri(
-            $"ms-appinstaller:?source={Uri.EscapeDataString(appInstallerUri.AbsoluteUri)}",
-            UriKind.Absolute);
+        return new ProcessStartInfo(appInstallerUri.AbsoluteUri)
+        {
+            UseShellExecute = true,
+        };
     }
 
     private static bool IsSupportedAppInstallerUri(Uri? uri) =>

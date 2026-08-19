@@ -1034,9 +1034,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         if (MainWindowViewModel.IsPackagedInstallation)
         {
             var packagedCheck = await viewModel.CheckPackagedLauncherUpdateAsync(lifetimeCancellation.Token);
-            if (packagedCheck is not null && viewModel.TryOpenPackagedLauncherUpdate(packagedCheck))
+            if (packagedCheck is not null)
             {
-                Application.Current.Shutdown();
+                viewModel.TryOpenPackagedLauncherUpdateSource(packagedCheck);
             }
             return;
         }
