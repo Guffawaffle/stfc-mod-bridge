@@ -21,7 +21,8 @@ public sealed class WindowsReleaseManifestTests
             Repository);
 
         Assert.AreEqual("2.1.0-guffa.8", manifest.ReleaseVersion);
-        Assert.AreEqual("2.1.0.8", artifact.ExpectedVersion);
+        Assert.AreEqual("2.1.0.0", artifact.ExpectedVersion);
+        Assert.AreEqual("v2.1.0-guffa.8", artifact.ExpectedProductVersion);
         Assert.AreEqual(123L, artifact.Size);
         Assert.AreEqual(new string('a', 64), artifact.Sha256);
         Assert.AreEqual(
@@ -31,14 +32,91 @@ public sealed class WindowsReleaseManifestTests
 
     [DataTestMethod]
     [DataRow("2.1.0", "2.1.0.0")]
-    [DataRow("2.1.0-guffa.8", "2.1.0.8")]
-    [DataRow("2.1.0-guffa.rc9", "2.1.0.9")]
+    [DataRow("2.1.0-guffa.8", "2.1.0.0")]
+    [DataRow("2.1.0-guffa.rc9", "2.1.0.0")]
     [DataRow("2.1.0-rc.9", "2.1.0.9")]
     [DataRow("2.1.0.alpha.3", "2.1.0.3")]
     [DataRow("2.1.0.beta.4", "2.1.0.4")]
     public void ReleaseVersionsMapToNumericFileVersions(string releaseVersion, string expected)
     {
         Assert.AreEqual(expected, WindowsReleaseSelectionPolicy.DeriveEmbeddedFileVersion(releaseVersion));
+    }
+
+    [TestMethod]
+    public void GuffawaffleReleaseIterationOrdersIndependentlyOfItsFileVersion()
+    {
+        Assert.IsTrue(
+            WindowsReleaseSelectionPolicy.ParseReleaseOrderingVersion("2.1.0-guffa.10")
+                > WindowsReleaseSelectionPolicy.ParseReleaseOrderingVersion("2.1.0-guffa.9"));
+        Assert.AreEqual(
+            WindowsReleaseSelectionPolicy.DeriveEmbeddedFileVersion("2.1.0-guffa.9"),
+            WindowsReleaseSelectionPolicy.DeriveEmbeddedFileVersion("2.1.0-guffa.10"));
+        Assert.IsTrue(
+            WindowsReleaseSelectionPolicy.CompareProductReleaseOrderingVersions(
+                "v2.1.0-guffa.9",
+                "v2.1.0-guffa.rc9") > 0,
+            "A final Guffawaffle iteration must order above its release candidate.");
+    }
+
+    [DataTestMethod]
+    [DataRow("0.6.0", "0.6.0.beta.99")]
+    [DataRow("0.6.0", "0.6.0-rc.99")]
+    [DataRow("2.1.0-guffa.1", "2.1.0-guffa.rc99")]
+    public void FinalReleaseOrdersAboveEverySameCorePrerelease(
+        string finalRelease,
+        string prerelease)
+    {
+        Assert.IsTrue(
+            WindowsReleaseSelectionPolicy.CompareReleaseOrderingVersions(
+                finalRelease,
+                prerelease) > 0);
+    }
+
+    [TestMethod]
+    public void HighestEligibleSelectionPrefersFinalOverHigherIterationBeta()
+    {
+        using var stream = JsonStream(Manifest());
+        var template = WindowsReleaseManifestParser.Parse(stream);
+        var beta = template with
+        {
+            ReleaseVersion = "0.6.0.beta.99",
+            Tag = "v0.6.0.beta.99",
+        };
+        var final = template with
+        {
+            ReleaseVersion = "0.6.0",
+            Tag = "v0.6.0",
+        };
+
+        var selected = WindowsReleaseSelectionPolicy.SelectHighestEligibleRelease(
+            [beta, final],
+            "stable",
+            new Version(0, 1, 0),
+            Repository);
+
+        Assert.AreEqual("0.6.0", selected.ReleaseVersion);
+    }
+
+    [DataTestMethod]
+    [DataRow("0.6.0.alpha.2", "0.6.0.beta.1")]
+    [DataRow("0.6.0.beta.2", "0.6.0-rc.1")]
+    [DataRow("2.1.0", "2.1.0-guffa.1")]
+    public void AmbiguousSameCoreReleaseFamiliesFailClosed(string left, string right)
+    {
+        Assert.ThrowsException<InvalidDataException>(() =>
+            WindowsReleaseSelectionPolicy.CompareReleaseOrderingVersions(left, right));
+    }
+
+    [DataTestMethod]
+    [DataRow("02.1.0")]
+    [DataRow("2.01.0")]
+    [DataRow("2.1.00")]
+    [DataRow("2.1.0-guffa.010")]
+    [DataRow("2.1.0.beta.01")]
+    public void ZeroPaddedReleaseAliasesFailClosed(string releaseVersion)
+    {
+        Assert.ThrowsException<InvalidDataException>(() =>
+            WindowsReleaseSelectionPolicy.ParseReleaseOrderingVersion(releaseVersion));
     }
 
     [TestMethod]

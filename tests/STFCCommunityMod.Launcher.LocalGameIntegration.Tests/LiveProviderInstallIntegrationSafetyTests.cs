@@ -31,6 +31,113 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
     [TestMethod]
     [TestCategory("Deterministic")]
+    public void RuntimeManifestFixtureRestoresItsExactCampaignBaseline()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var manifestPath = Path.Combine(target.GameDirectory, RuntimeManifestFileName);
+        var baseline = "{\"source\":\"human\"}\r\n"u8.ToArray();
+        File.WriteAllBytes(manifestPath, baseline);
+        var baselineTimestamp = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(manifestPath, baselineTimestamp);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+
+        campaign.WriteGameFileAtomically(
+            RuntimeManifestFileName,
+            "{\"source\":\"test-fixture\"}\n"u8.ToArray());
+        campaign.RestoreProtectedBaseline();
+
+        CollectionAssert.AreEqual(baseline, File.ReadAllBytes(manifestPath));
+        Assert.AreEqual(baselineTimestamp, File.GetLastWriteTimeUtc(manifestPath));
+        campaign.AssertBaseline("Runtime-manifest cleanup did not restore its exact baseline.");
+    }
+
+    [DataTestMethod]
+    [TestCategory("Deterministic")]
+    [DataRow("version.dll")]
+    [DataRow(RuntimeManifestFileName)]
+    public void AdoptedHumanRestorationCannotInheritCampaignCleanupOwnership(string fileName)
+    {
+        using var target = new TemporaryHarnessTarget();
+        var protectedPath = Path.Combine(target.GameDirectory, fileName);
+        var baseline = "human-baseline"u8.ToArray();
+        var external = "human-replacement"u8.ToArray();
+        File.WriteAllBytes(protectedPath, baseline);
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var stagePath = Path.Combine(target.GameDirectory, $".{fileName}.adopted-restore-stage");
+        File.WriteAllBytes(stagePath, external);
+
+        campaign.CaptureDeploymentPromotion(stagePath, fileName);
+        File.Delete(protectedPath);
+        File.Move(stagePath, protectedPath);
+
+        var ownershipFailure = Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.CommitAdoptedRestoration(fileName));
+
+        StringAssert.Contains(ownershipFailure.Message, "preserved without granting cleanup ownership");
+        Assert.ThrowsException<InvalidOperationException>(campaign.EmergencyRestore);
+        CollectionAssert.AreEqual(external, File.ReadAllBytes(protectedPath));
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void CleanProviderJourneyRejectsAnOrphanRuntimeManifest()
+    {
+        using var target = new TemporaryHarnessTarget();
+        Assert.IsTrue(IsCleanProviderJourneyTarget(target.GameDirectory));
+
+        File.WriteAllText(
+            Path.Combine(target.GameDirectory, RuntimeManifestFileName),
+            "{\"managedBy\":\"external\"}\r\n");
+
+        Assert.IsFalse(
+            IsCleanProviderJourneyTarget(target.GameDirectory),
+            "An orphan runtime manifest must route away from the clean install/switch journey.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void FinalResidueAuditRejectsIsolatedRollbackBytes()
+    {
+        using var target = new TemporaryHarnessTarget();
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var rollbackDirectory = Path.Combine(campaign.StateDirectory, "rollback", "transaction");
+        Directory.CreateDirectory(rollbackDirectory);
+        File.WriteAllBytes(Path.Combine(rollbackDirectory, "version.dll"), [1, 2, 3]);
+
+        var failure = Assert.ThrowsException<AssertFailedException>(() =>
+            campaign.AssertNoFinalResidue([]));
+
+        StringAssert.Contains(failure.Message, "transaction staging or rollback bytes");
+        campaign.AssertBaseline("Residue detection changed the game target.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void FinalResidueAuditRejectsAnOrphanCopyStageOwnershipReceipt()
+    {
+        using var target = new TemporaryHarnessTarget();
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory));
+        var ownershipDirectory = Path.Combine(campaign.StateDirectory, "copy-stage-ownership");
+        Directory.CreateDirectory(ownershipDirectory);
+        File.WriteAllText(Path.Combine(ownershipDirectory, "orphan.json"), "{}");
+
+        var failure = Assert.ThrowsException<AssertFailedException>(() =>
+            campaign.AssertNoFinalResidue([]));
+
+        StringAssert.Contains(failure.Message, "transaction staging or rollback bytes");
+        campaign.AssertBaseline("Residue detection changed the game target.");
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
     public void MetadataOnlyCleanupDoesNotRewriteBytes()
     {
         using var target = new TemporaryHarnessTarget();
@@ -541,6 +648,38 @@ public sealed partial class LiveProviderInstallIntegrationTests
             Assert.IsNotNull(replacedStage);
             Assert.AreEqual("external-stage", File.ReadAllText(replacedStage));
         }
+    }
+
+    [TestMethod]
+    [TestCategory("Deterministic")]
+    public void ExactPromotionLockPreservesALateSameByteDestinationReplacement()
+    {
+        using var target = new TemporaryHarnessTarget();
+        var configurationPath = Path.Combine(
+            target.GameDirectory,
+            "community_patch_settings.toml");
+        var baseline = "baseline"u8.ToArray();
+        File.WriteAllBytes(configurationPath, baseline);
+        CandidateFileIdentity? replacementIdentity = null;
+        using var campaign = new RestorableGameInstallCampaign(
+            target.GameDirectory,
+            new MutableGameProcessInspector(target.GameDirectory),
+            beforeExactPromotionLock: (_, destinationPath) =>
+            {
+                File.Delete(destinationPath);
+                File.WriteAllBytes(destinationPath, baseline);
+                using var replacement = ExactFileMutation.Open(destinationPath);
+                replacementIdentity = replacement.Identity;
+            });
+
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            campaign.WriteGameFileAtomically(
+                "community_patch_settings.toml",
+                "bridge"u8.ToArray()));
+
+        CollectionAssert.AreEqual(baseline, File.ReadAllBytes(configurationPath));
+        using var preserved = ExactFileMutation.Open(configurationPath);
+        Assert.AreEqual(replacementIdentity, preserved.Identity);
     }
 
     [TestMethod]

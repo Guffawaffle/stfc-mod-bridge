@@ -209,14 +209,18 @@ public sealed class ArtifactBoundRuntimeManifestTests
             "version.dll",
             legacyBytes.LongLength,
             Sha256(legacyBytes),
-            "2.1.0.9");
+            "2.1.0.9")
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.9",
+        };
         var legacyService = CreateService(
             temporaryDirectory,
             new Dictionary<Uri, ModArtifactDownload>
             {
                 [legacy.DownloadUri] = Download(legacyBytes),
             },
-            expectedVersion: legacy.ExpectedVersion);
+            expectedVersion: legacy.ExpectedVersion,
+            expectedProductVersion: legacy.ExpectedProductVersion);
 
         var result = await legacyService.DeployAsync(
             gameDirectory,
@@ -325,10 +329,17 @@ public sealed class ArtifactBoundRuntimeManifestTests
         var fixture = PairFixture.Create();
         var originalDll = new byte[] { 1, 2, 3 };
         var looseManifest = Encoding.UTF8.GetBytes("local user data");
-        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), originalDll);
-        File.WriteAllBytes(
-            Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName),
-            looseManifest);
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        File.WriteAllBytes(dllPath, originalDll);
+        File.WriteAllBytes(runtimePath, looseManifest);
+        var expectedTime = new DateTime(2026, 8, 18, 10, 20, 30, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(dllPath, expectedTime);
+        File.SetLastWriteTimeUtc(runtimePath, expectedTime);
+        var dllAttributes = File.GetAttributes(dllPath) | FileAttributes.ReadOnly;
+        var runtimeAttributes = File.GetAttributes(runtimePath) | FileAttributes.ReadOnly;
+        File.SetAttributes(dllPath, dllAttributes);
+        File.SetAttributes(runtimePath, runtimeAttributes);
         var service = CreateService(temporaryDirectory, fixture);
 
         Assert.AreEqual(
@@ -341,10 +352,14 @@ public sealed class ArtifactBoundRuntimeManifestTests
             ModDeploymentResultState.Succeeded,
             (await service.UninstallAsync(gameDirectory)).State);
 
-        CollectionAssert.AreEqual(originalDll, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
-        CollectionAssert.AreEqual(
-            looseManifest,
-            File.ReadAllBytes(Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+        CollectionAssert.AreEqual(originalDll, File.ReadAllBytes(dllPath));
+        CollectionAssert.AreEqual(looseManifest, File.ReadAllBytes(runtimePath));
+        Assert.AreEqual(expectedTime, File.GetLastWriteTimeUtc(dllPath));
+        Assert.AreEqual(expectedTime, File.GetLastWriteTimeUtc(runtimePath));
+        Assert.AreEqual(dllAttributes, File.GetAttributes(dllPath));
+        Assert.AreEqual(runtimeAttributes, File.GetAttributes(runtimePath));
+        File.SetAttributes(dllPath, dllAttributes & ~FileAttributes.ReadOnly);
+        File.SetAttributes(runtimePath, runtimeAttributes & ~FileAttributes.ReadOnly);
     }
 
     [TestMethod]
@@ -391,14 +406,18 @@ public sealed class ArtifactBoundRuntimeManifestTests
             "version.dll",
             legacyBytes.LongLength,
             Sha256(legacyBytes),
-            "2.1.0.9");
+            "2.1.0.9")
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.9",
+        };
         var service = CreateService(
             temporaryDirectory,
             new Dictionary<Uri, ModArtifactDownload>
             {
                 [legacy.DownloadUri] = Download(legacyBytes),
             },
-            expectedVersion: legacy.ExpectedVersion);
+            expectedVersion: legacy.ExpectedVersion,
+            expectedProductVersion: legacy.ExpectedProductVersion);
 
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
@@ -421,11 +440,15 @@ public sealed class ArtifactBoundRuntimeManifestTests
             "version.dll",
             legacyBytes.LongLength,
             Sha256(legacyBytes),
-            "2.1.0.9");
+            "2.1.0.9")
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.7",
+        };
         var legacyService = CreateService(
             temporaryDirectory,
             new Dictionary<Uri, ModArtifactDownload> { [legacy.DownloadUri] = Download(legacyBytes) },
-            expectedVersion: legacy.ExpectedVersion);
+            expectedVersion: legacy.ExpectedVersion,
+            expectedProductVersion: legacy.ExpectedProductVersion);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
             (await legacyService.DeployAsync(gameDirectory, legacy, ExistingArtifactPolicy.Reject)).State);
@@ -603,6 +626,66 @@ public sealed class ArtifactBoundRuntimeManifestTests
     }
 
     [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PairAdoptionRecoversFromMidCopyInterruption(bool interruptRuntime)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var priorDll = Enumerable.Range(0, 200_000)
+            .Select(index => checked((byte)(index % 251)))
+            .ToArray();
+        var priorRuntime = Enumerable.Range(0, 180_000)
+            .Select(index => checked((byte)(index % 239)))
+            .ToArray();
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), priorDll);
+        File.WriteAllBytes(
+            Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName),
+            priorRuntime);
+        var fixture = PairFixture.Create();
+        var interrupted = false;
+        var crashing = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterDurableCopyChunkWritten: (source, _, written, _) =>
+            {
+                var isRuntime = Path.GetFileName(source).Contains(
+                    ArtifactBoundRuntimeManifestParser.ManagedFileName,
+                    StringComparison.OrdinalIgnoreCase);
+                if (!interrupted && isRuntime == interruptRuntime)
+                {
+                    interrupted = true;
+                    Assert.IsTrue(written < (isRuntime ? priorRuntime.LongLength : priorDll.LongLength));
+                    throw new SimulatedProcessTerminationException(
+                        isRuntime
+                            ? ModDeploymentFileCheckpoint.DurableRuntimeManifestBackupCopyStarted
+                            : ModDeploymentFileCheckpoint.DurableDllBackupCopyStarted);
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() => crashing.DeployAsync(
+            gameDirectory,
+            fixture.Dll,
+            ExistingArtifactPolicy.AdoptAndPreserve));
+        var recovery = CreateService(temporaryDirectory, fixture);
+        var result = await recovery.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(priorDll, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            priorRuntime,
+            File.ReadAllBytes(Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+        Assert.IsNull(recovery.ReadInstalledState());
+    }
+
+    [DataTestMethod]
     [DataRow((int)ModDeploymentFileCheckpoint.ManagedDllRemoved)]
     [DataRow((int)ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved)]
     [DataRow((int)ModDeploymentFileCheckpoint.AdoptedDllRestoreCopyStarted)]
@@ -654,6 +737,147 @@ public sealed class ArtifactBoundRuntimeManifestTests
         var state = recovery.ReadInstalledState()!;
         CollectionAssert.AreEqual(priorDll, File.ReadAllBytes(state.PreviousArtifactBackupPath!));
         CollectionAssert.AreEqual(priorRuntime, File.ReadAllBytes(state.PreviousRuntimeManifestBackupPath!));
+    }
+
+    [DataTestMethod]
+    [DataRow((int)ModDeploymentFileCheckpoint.AdoptedDllRestored)]
+    [DataRow((int)ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestored)]
+    public async Task ReadOnlyAdoptedPairUninstallRecoveryIsIdempotentAfterRestore(int checkpointValue)
+    {
+        var checkpoint = (ModDeploymentFileCheckpoint)checkpointValue;
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var priorDll = new byte[] { 9, 2, 2 };
+        var priorRuntime = Encoding.UTF8.GetBytes("read-only prior runtime companion");
+        File.WriteAllBytes(dllPath, priorDll);
+        File.WriteAllBytes(runtimePath, priorRuntime);
+        File.SetAttributes(dllPath, File.GetAttributes(dllPath) | FileAttributes.ReadOnly);
+        File.SetAttributes(runtimePath, File.GetAttributes(runtimePath) | FileAttributes.ReadOnly);
+        var fixture = PairFixture.Create();
+        var installer = CreateService(temporaryDirectory, fixture);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installer.DeployAsync(
+                gameDirectory,
+                fixture.Dll,
+                ExistingArtifactPolicy.AdoptAndPreserve)).State);
+        var crashing = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            (observed, _) => observed == checkpoint
+                ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
+                : ValueTask.CompletedTask);
+
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(
+            () => crashing.UninstallAsync(gameDirectory));
+        var recovery = CreateService(temporaryDirectory, fixture);
+        var result = await recovery.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(fixture.PayloadBytes, File.ReadAllBytes(dllPath));
+        CollectionAssert.AreEqual(fixture.ManifestBytes, File.ReadAllBytes(runtimePath));
+        var state = recovery.ReadInstalledState()!;
+        CollectionAssert.AreEqual(priorDll, File.ReadAllBytes(state.PreviousArtifactBackupPath!));
+        CollectionAssert.AreEqual(priorRuntime, File.ReadAllBytes(state.PreviousRuntimeManifestBackupPath!));
+        Assert.IsTrue(File.GetAttributes(state.PreviousArtifactBackupPath!).HasFlag(FileAttributes.ReadOnly));
+        Assert.IsTrue(File.GetAttributes(state.PreviousRuntimeManifestBackupPath!).HasFlag(FileAttributes.ReadOnly));
+        File.SetAttributes(state.PreviousArtifactBackupPath!, FileAttributes.Normal);
+        File.SetAttributes(state.PreviousRuntimeManifestBackupPath!, FileAttributes.Normal);
+    }
+
+    [DataTestMethod]
+    [DataRow((int)ModDeploymentFileCheckpoint.AdoptedDllRestored)]
+    [DataRow((int)ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestored)]
+    public async Task FreshRecoveryPreservesSameByteReplacementOfRestoredAdoptedMember(int checkpointValue)
+    {
+        var checkpoint = (ModDeploymentFileCheckpoint)checkpointValue;
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var priorDll = new byte[] { 9, 3, 3 };
+        var priorRuntime = Encoding.UTF8.GetBytes("same-byte adopted runtime companion");
+        File.WriteAllBytes(dllPath, priorDll);
+        File.WriteAllBytes(runtimePath, priorRuntime);
+        var fixture = PairFixture.Create();
+        var installer = CreateService(temporaryDirectory, fixture);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installer.DeployAsync(
+                gameDirectory,
+                fixture.Dll,
+                ExistingArtifactPolicy.AdoptAndPreserve)).State);
+        var crashing = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            (observed, _) => observed == checkpoint
+                ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
+                : ValueTask.CompletedTask);
+
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(
+            () => crashing.UninstallAsync(gameDirectory));
+        var replacedPath = checkpoint == ModDeploymentFileCheckpoint.AdoptedDllRestored
+            ? dllPath
+            : runtimePath;
+        var journal = crashing.ReadJournal()!;
+        var persistedIdentity = checkpoint == ModDeploymentFileCheckpoint.AdoptedDllRestored
+            ? journal.RestoredAdoptedArtifactFileIdentity
+            : journal.RestoredAdoptedRuntimeManifestFileIdentity;
+        Assert.IsNotNull(persistedIdentity);
+        var contents = File.ReadAllBytes(replacedPath);
+        var attributes = File.GetAttributes(replacedPath);
+        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(replacedPath);
+        File.Delete(replacedPath);
+        File.WriteAllBytes(replacedPath, contents);
+        File.SetLastWriteTimeUtc(replacedPath, lastWriteTimeUtc);
+        File.SetAttributes(replacedPath, attributes);
+        CandidateFileIdentity externalIdentity;
+        using (var exact = ExactFileMutation.Open(replacedPath))
+        {
+            externalIdentity = exact.Identity;
+            Assert.IsFalse(
+                string.Equals(
+                    persistedIdentity.VolumeSerialNumber,
+                    exact.Identity.VolumeSerialNumber,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    persistedIdentity.FileIndex,
+                    exact.Identity.FileIndex,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        var recovery = CreateService(temporaryDirectory, fixture);
+        var result = await recovery.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        CollectionAssert.AreEqual(contents, File.ReadAllBytes(replacedPath));
+        using (var exact = ExactFileMutation.Open(replacedPath))
+        {
+            Assert.AreEqual(externalIdentity, exact.Identity);
+        }
+        Assert.AreEqual(ModDeploymentPhase.RollingBack, recovery.ReadJournal()!.Phase);
+        var retainedRollbackPath = checkpoint == ModDeploymentFileCheckpoint.AdoptedDllRestored
+            ? journal.SameVolumeBackupPath
+            : RuntimeBackupPath(gameDirectory, journal.TransactionId);
+        Assert.IsTrue(File.Exists(retainedRollbackPath));
     }
 
     [DataTestMethod]
@@ -813,6 +1037,86 @@ public sealed class ArtifactBoundRuntimeManifestTests
     }
 
     [TestMethod]
+    public async Task DurableReadOnlyPairRollbackCanResumeAfterBothFilesWereRestored()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var priorDll = new byte[] { 0x52, 0x4f, 0x2d, 0x44, 0x4c, 0x4c };
+        var priorRuntime = Encoding.UTF8.GetBytes("read-only-runtime");
+        File.WriteAllBytes(dllPath, priorDll);
+        File.WriteAllBytes(runtimePath, priorRuntime);
+        var expectedTime = new DateTime(2026, 8, 18, 9, 8, 7, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(dllPath, expectedTime);
+        File.SetLastWriteTimeUtc(runtimePath, expectedTime);
+        var dllAttributes = File.GetAttributes(dllPath) | FileAttributes.ReadOnly;
+        var runtimeAttributes = File.GetAttributes(runtimePath) | FileAttributes.ReadOnly;
+        File.SetAttributes(dllPath, dllAttributes);
+        File.SetAttributes(runtimePath, runtimeAttributes);
+        var target = PairFixture.Create();
+        try
+        {
+            var forwardCrash = CreateService(
+                temporaryDirectory,
+                new Dictionary<Uri, ModArtifactDownload>
+                {
+                    [target.Dll.DownloadUri] = Download(target.PayloadBytes),
+                    [target.Manifest.DownloadUri] = Download(target.ManifestBytes),
+                },
+                target.Certification,
+                target.Dll.ExpectedVersion,
+                (observed, _) => observed
+                        == ModDeploymentFileCheckpoint.DurableRuntimeManifestSourceRemoved
+                    ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
+                    : ValueTask.CompletedTask);
+            await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() =>
+                forwardCrash.DeployAsync(
+                    gameDirectory,
+                    target.Dll,
+                    ExistingArtifactPolicy.AdoptAndPreserve));
+            var rollbackCrash = CreateService(
+                temporaryDirectory,
+                new Dictionary<Uri, ModArtifactDownload>(),
+                target.Certification,
+                target.Dll.ExpectedVersion,
+                (observed, _) => observed
+                        == ModDeploymentFileCheckpoint.RollbackRuntimeManifestRestored
+                    ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
+                    : ValueTask.CompletedTask);
+            await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(
+                () => rollbackCrash.RecoverAsync());
+
+            var recovery = CreateService(temporaryDirectory, target);
+            var result = await recovery.RecoverAsync();
+
+            Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+            CollectionAssert.AreEqual(priorDll, File.ReadAllBytes(dllPath));
+            CollectionAssert.AreEqual(priorRuntime, File.ReadAllBytes(runtimePath));
+            Assert.AreEqual(expectedTime, File.GetLastWriteTimeUtc(dllPath));
+            Assert.AreEqual(expectedTime, File.GetLastWriteTimeUtc(runtimePath));
+            Assert.AreEqual(dllAttributes, File.GetAttributes(dllPath));
+            Assert.AreEqual(runtimeAttributes, File.GetAttributes(runtimePath));
+            Assert.IsNull(recovery.ReadInstalledState());
+        }
+        finally
+        {
+            if (File.Exists(dllPath))
+            {
+                File.SetAttributes(dllPath, File.GetAttributes(dllPath) & ~FileAttributes.ReadOnly);
+            }
+            if (File.Exists(runtimePath))
+            {
+                File.SetAttributes(
+                    runtimePath,
+                    File.GetAttributes(runtimePath) & ~FileAttributes.ReadOnly);
+            }
+        }
+    }
+
+    [TestMethod]
     public async Task SameProcessDurableCopyFailureRollsBackExactPair()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -851,7 +1155,7 @@ public sealed class ArtifactBoundRuntimeManifestTests
     }
 
     [TestMethod]
-    public async Task PartialDurablePromotionStageIsRemovedOnlyWithExactSource()
+    public async Task UnreceiptedDurablePromotionStageIsPreservedEvenWithExactSource()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -881,16 +1185,16 @@ public sealed class ArtifactBoundRuntimeManifestTests
         File.WriteAllBytes(journal.DurableBackupPath + ".stage", [0xde, 0xad]);
 
         var recovery = CreateService(temporaryDirectory, fixture);
-        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recovery.RecoverAsync()).State);
-        CollectionAssert.AreEqual(priorDll, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        var result = await recovery.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
         CollectionAssert.AreEqual(
-            priorRuntime,
-            File.ReadAllBytes(Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
-        Assert.IsFalse(File.Exists(journal.DurableBackupPath + ".stage"));
+            new byte[] { 0xde, 0xad },
+            File.ReadAllBytes(journal.DurableBackupPath + ".stage"));
     }
 
     [TestMethod]
-    public async Task PartialGameVolumeRestoreStageIsRemovedOnlyWithExactDurableSource()
+    public async Task UnreceiptedGameVolumeRestoreStageIsPreservedEvenWithExactDurableSource()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -919,12 +1223,10 @@ public sealed class ArtifactBoundRuntimeManifestTests
         File.WriteAllBytes(journal.StagePath, [0xba, 0xd0]);
 
         var recovery = CreateService(temporaryDirectory, fixture);
-        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recovery.RecoverAsync()).State);
-        CollectionAssert.AreEqual(fixture.PayloadBytes, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
-        CollectionAssert.AreEqual(
-            fixture.ManifestBytes,
-            File.ReadAllBytes(Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
-        Assert.IsFalse(File.Exists(journal.StagePath));
+        var result = await recovery.RecoverAsync();
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        CollectionAssert.AreEqual(new byte[] { 0xba, 0xd0 }, File.ReadAllBytes(journal.StagePath));
     }
 
     [DataTestMethod]
@@ -948,12 +1250,16 @@ public sealed class ArtifactBoundRuntimeManifestTests
             "version.dll",
             legacyBytes.LongLength,
             Sha256(legacyBytes),
-            "2.1.0.9");
+            "2.1.0.9")
+        {
+            ExpectedProductVersion = "v2.1.0-guffa.9",
+        };
         var checkpoint = (ModDeploymentFileCheckpoint)checkpointValue;
         var crashing = CreateService(
             temporaryDirectory,
             new Dictionary<Uri, ModArtifactDownload> { [legacy.DownloadUri] = Download(legacyBytes) },
             expectedVersion: legacy.ExpectedVersion,
+            expectedProductVersion: legacy.ExpectedProductVersion,
             afterFileCheckpoint: (observed, _) => observed == checkpoint
                 ? ValueTask.FromException(new SimulatedProcessTerminationException(observed))
                 : ValueTask.CompletedTask);
@@ -965,7 +1271,8 @@ public sealed class ArtifactBoundRuntimeManifestTests
         var recovery = CreateService(
             temporaryDirectory,
             new Dictionary<Uri, ModArtifactDownload>(),
-            expectedVersion: legacy.ExpectedVersion);
+            expectedVersion: legacy.ExpectedVersion,
+            expectedProductVersion: legacy.ExpectedProductVersion);
         Assert.AreEqual(ModDeploymentResultState.Succeeded, (await recovery.RecoverAsync()).State);
         CollectionAssert.AreEqual(prior.PayloadBytes, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
         CollectionAssert.AreEqual(
@@ -1028,6 +1335,380 @@ public sealed class ArtifactBoundRuntimeManifestTests
             Path.Combine(gameDirectory, ArtifactBoundRuntimeManifestParser.ManagedFileName)));
     }
 
+    [TestMethod]
+    public async Task PairUpdateRollbackReplacesExactReadOnlyTransactionTargets()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var prior = PairFixture.Create();
+        var installer = CreateService(temporaryDirectory, prior);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installer.DeployAsync(
+                gameDirectory,
+                prior.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        var target = PairFixture.Create(payloadBytes: [0x4e, 0x45, 0x57], runtimeVersion: "2.1.0.9");
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var injected = false;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [target.Dll.DownloadUri] = Download(target.PayloadBytes),
+                [target.Manifest.DownloadUri] = Download(target.ManifestBytes),
+            },
+            target.Certification,
+            target.Dll.ExpectedVersion,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (!injected && phase == ModDeploymentPhase.CleanupPending)
+                {
+                    injected = true;
+                    File.SetAttributes(dllPath, File.GetAttributes(dllPath) | FileAttributes.ReadOnly);
+                    File.SetAttributes(
+                        runtimePath,
+                        File.GetAttributes(runtimePath) | FileAttributes.ReadOnly);
+                    return ValueTask.FromException(new IOException("Injected pair cleanup-boundary failure."));
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            target.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State, result.Message);
+        Assert.IsTrue(injected);
+        CollectionAssert.AreEqual(prior.PayloadBytes, File.ReadAllBytes(dllPath));
+        CollectionAssert.AreEqual(prior.ManifestBytes, File.ReadAllBytes(runtimePath));
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, (await service.RecoverAsync()).State);
+    }
+
+    [TestMethod]
+    public async Task VerifiedPairStagesCannotBeReplacedBeforeExactPromotion()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        var blockedReplacementCount = 0;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase != ModDeploymentPhase.Staged)
+                {
+                    return ValueTask.CompletedTask;
+                }
+                foreach (var stagePath in Directory.GetFiles(gameDirectory, "*.stage"))
+                {
+                    try
+                    {
+                        File.Delete(stagePath);
+                    }
+                    catch (IOException)
+                    {
+                        blockedReplacementCount++;
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        blockedReplacementCount++;
+                    }
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            fixture.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(2, blockedReplacementCount);
+        CollectionAssert.AreEqual(
+            fixture.PayloadBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            fixture.ManifestBytes,
+            File.ReadAllBytes(Path.Combine(
+                gameDirectory,
+                ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+    }
+
+    [TestMethod]
+    public async Task PairUpdateLocksExistingMembersAcrossTheCommittingBackupBoundary()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var prior = PairFixture.Create();
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await CreateService(temporaryDirectory, prior).DeployAsync(
+                gameDirectory,
+                prior.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        var target = PairFixture.Create(payloadBytes: [0x55, 0x50, 0x44], runtimeVersion: "2.1.0.9");
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var blockedMutations = 0;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [target.Dll.DownloadUri] = Download(target.PayloadBytes),
+                [target.Manifest.DownloadUri] = Download(target.ManifestBytes),
+            },
+            target.Certification,
+            target.Dll.ExpectedVersion,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase == ModDeploymentPhase.Committing)
+                {
+                    blockedMutations += CountBlockedLiveMutations(
+                        dllPath,
+                        prior.PayloadBytes);
+                    blockedMutations += CountBlockedLiveMutations(
+                        runtimePath,
+                        prior.ManifestBytes);
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            target.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(4, blockedMutations);
+        CollectionAssert.AreEqual(target.PayloadBytes, File.ReadAllBytes(dllPath));
+        CollectionAssert.AreEqual(target.ManifestBytes, File.ReadAllBytes(runtimePath));
+    }
+
+    [TestMethod]
+    public async Task PairUninstallLocksManagedMembersAcrossTheCommittingBackupBoundary()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await CreateService(temporaryDirectory, fixture).DeployAsync(
+                gameDirectory,
+                fixture.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        var blockedMutations = 0;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>(),
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase == ModDeploymentPhase.Committing)
+                {
+                    blockedMutations += CountBlockedLiveMutations(
+                        dllPath,
+                        fixture.PayloadBytes);
+                    blockedMutations += CountBlockedLiveMutations(
+                        runtimePath,
+                        fixture.ManifestBytes);
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await service.UninstallAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(4, blockedMutations);
+        Assert.IsFalse(File.Exists(dllPath));
+        Assert.IsFalse(File.Exists(runtimePath));
+    }
+
+    [DataTestMethod]
+    [DataRow((int)ModDeploymentFileCheckpoint.PriorDllBackedUp)]
+    [DataRow((int)ModDeploymentFileCheckpoint.PriorRuntimeManifestBackedUp)]
+    public async Task PairUpdateCheckpointFailureAfterBackupRestoresTheExactPriorPair(int checkpointValue)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var prior = PairFixture.Create();
+        var installer = CreateService(temporaryDirectory, prior);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installer.DeployAsync(
+                gameDirectory,
+                prior.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        var priorState = installer.ReadInstalledState(gameDirectory);
+        var target = PairFixture.Create(payloadBytes: [0x55, 0x50, 0x44], runtimeVersion: "2.1.0.9");
+        var checkpoint = (ModDeploymentFileCheckpoint)checkpointValue;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [target.Dll.DownloadUri] = Download(target.PayloadBytes),
+                [target.Manifest.DownloadUri] = Download(target.ManifestBytes),
+            },
+            target.Certification,
+            target.Dll.ExpectedVersion,
+            afterFileCheckpoint: (observed, _) => observed == checkpoint
+                ? ValueTask.FromException(new InvalidDataException("Injected exact-backup checkpoint failure."))
+                : ValueTask.CompletedTask);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            target.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State, result.Message);
+        CollectionAssert.AreEqual(
+            prior.PayloadBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            prior.ManifestBytes,
+            File.ReadAllBytes(Path.Combine(
+                gameDirectory,
+                ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+        Assert.AreEqual(priorState, service.ReadInstalledState(gameDirectory));
+        Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+    }
+
+    [DataTestMethod]
+    [DataRow((int)ModDeploymentFileCheckpoint.ManagedDllRemoved)]
+    [DataRow((int)ModDeploymentFileCheckpoint.ManagedRuntimeManifestRemoved)]
+    public async Task PairUninstallCheckpointFailureAfterRemovalRestoresTheExactManagedPair(int checkpointValue)
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        var installer = CreateService(temporaryDirectory, fixture);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await installer.DeployAsync(
+                gameDirectory,
+                fixture.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        var installedState = installer.ReadInstalledState(gameDirectory);
+        var checkpoint = (ModDeploymentFileCheckpoint)checkpointValue;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>(),
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterFileCheckpoint: (observed, _) => observed == checkpoint
+                ? ValueTask.FromException(new InvalidDataException("Injected exact-removal checkpoint failure."))
+                : ValueTask.CompletedTask);
+
+        var result = await service.UninstallAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.FailedAndRolledBack, result.State, result.Message);
+        CollectionAssert.AreEqual(
+            fixture.PayloadBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            fixture.ManifestBytes,
+            File.ReadAllBytes(Path.Combine(
+                gameDirectory,
+                ArtifactBoundRuntimeManifestParser.ManagedFileName)));
+        Assert.AreEqual(installedState, service.ReadInstalledState(gameDirectory));
+        Assert.AreEqual(ModDeploymentPhase.RolledBack, service.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
+    public async Task SameByteRuntimeAppearingAfterDllPromotionIsPreservedDuringRollback()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var fixture = PairFixture.Create();
+        var dllPath = Path.Combine(gameDirectory, "version.dll");
+        var runtimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        CandidateFileIdentity? externalIdentity = null;
+        var service = CreateService(
+            temporaryDirectory,
+            new Dictionary<Uri, ModArtifactDownload>
+            {
+                [fixture.Dll.DownloadUri] = Download(fixture.PayloadBytes),
+                [fixture.Manifest.DownloadUri] = Download(fixture.ManifestBytes),
+            },
+            fixture.Certification,
+            fixture.Dll.ExpectedVersion,
+            afterFileCheckpoint: (checkpoint, _) =>
+            {
+                if (checkpoint == ModDeploymentFileCheckpoint.TargetDllInstalled)
+                {
+                    File.WriteAllBytes(runtimePath, fixture.ManifestBytes);
+                    using var exact = ExactFileMutation.Open(runtimePath);
+                    externalIdentity = exact.Identity;
+                }
+                return ValueTask.CompletedTask;
+            });
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            fixture.Dll,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.RecoveryRequired, result.State, result.Message);
+        Assert.IsFalse(File.Exists(dllPath));
+        Assert.IsNotNull(externalIdentity);
+        CollectionAssert.AreEqual(fixture.ManifestBytes, File.ReadAllBytes(runtimePath));
+        using (var exact = ExactFileMutation.Open(runtimePath))
+        {
+            Assert.AreEqual(externalIdentity, exact.Identity);
+        }
+        Assert.AreEqual(ModDeploymentPhase.RollingBack, service.ReadJournal()!.Phase);
+    }
+
+    private static int CountBlockedLiveMutations(string path, byte[] sameBytes)
+    {
+        var blocked = 0;
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            blocked++;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            blocked++;
+        }
+        try
+        {
+            File.WriteAllBytes(path, sameBytes);
+        }
+        catch (IOException)
+        {
+            blocked++;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            blocked++;
+        }
+        return blocked;
+    }
+
     [DataTestMethod]
     [DataRow("dll")]
     [DataRow("runtime")]
@@ -1087,18 +1768,21 @@ public sealed class ArtifactBoundRuntimeManifestTests
         ReviewedReleaseCertification? certification = null,
         string expectedVersion = "2.1.0.8",
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
-        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null) =>
+        Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
+        string? expectedProductVersion = null,
+        Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null) =>
         new(
             temporaryDirectory.CreateDirectory("state"),
             new RouteDownloader(downloads),
-            new StaticVersionReader(expectedVersion),
+            new StaticVersionReader(expectedVersion, expectedProductVersion),
             new TrustedVerifier(),
             _ => false,
             new("guffawaffle", "stable", DistributionId),
             timeProvider: null,
             afterPhasePersisted: afterPhasePersisted,
             reviewedCertification: certification,
-            afterFileCheckpoint: afterFileCheckpoint);
+            afterFileCheckpoint: afterFileCheckpoint,
+            afterDurableCopyChunkWritten: afterDurableCopyChunkWritten);
 
     private static WindowsReleaseManifest ReleaseManifest(PairFixture fixture) => new(
         1,
@@ -1163,6 +1847,9 @@ public sealed class ArtifactBoundRuntimeManifestTests
             string runtimeVersion = "2.1.0.8")
         {
             payloadBytes ??= DllBytes;
+            var releaseTag = runtimeVersion == "2.1.0.8"
+                ? Tag
+                : $"v2.1.0-guffa.{runtimeVersion.Split('.')[^1]}";
             var dllSha256 = Sha256(payloadBytes);
             var capabilities = new List<string>
             {
@@ -1223,15 +1910,15 @@ public sealed class ArtifactBoundRuntimeManifestTests
             var manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifestObject);
             var manifestSha256 = Sha256(manifestBytes);
             var manifest = new ModRuntimeManifestArtifact(
-                new Uri($"https://github.com/{Repository}/releases/download/{Tag}/stfc-runtime-manifest.json"),
+                new Uri($"https://github.com/{Repository}/releases/download/{releaseTag}/stfc-runtime-manifest.json"),
                 "stfc-runtime-manifest.json",
                 manifestBytes.LongLength,
                 manifestSha256,
                 SourceRevision,
                 Repository,
-                Tag);
+                releaseTag);
             var dll = new ModReleaseArtifact(
-                new Uri($"https://github.com/{Repository}/releases/download/{Tag}/version.dll"),
+                new Uri($"https://github.com/{Repository}/releases/download/{releaseTag}/version.dll"),
                 "version.dll",
                 payloadBytes.LongLength,
                 dllSha256,
@@ -1242,8 +1929,8 @@ public sealed class ArtifactBoundRuntimeManifestTests
                 "stable",
                 DistributionId,
                 Repository,
-                Tag,
-                "2.1.0-guffa.8",
+                releaseTag,
+                releaseTag.TrimStart('v'),
                 SourceRevision,
                 "version.dll",
                 payloadBytes.LongLength,
@@ -1270,9 +1957,12 @@ public sealed class ArtifactBoundRuntimeManifestTests
         }
     }
 
-    private sealed class StaticVersionReader(string version) : IModArtifactVersionReader
+    private sealed class StaticVersionReader(string version, string? productVersion = null)
+        : IModArtifactProductVersionReader
     {
         public string? ReadVersion(string artifactPath) => version;
+
+        public string? ReadProductVersion(string artifactPath) => productVersion;
     }
 
     private sealed class TrustedVerifier : IModArtifactAuthenticityVerifier

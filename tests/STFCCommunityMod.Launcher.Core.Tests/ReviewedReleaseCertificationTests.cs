@@ -306,17 +306,20 @@ public sealed class ReviewedReleaseCertificationTests
     [TestMethod]
     public async Task MissingManifestUsesReviewedFallback()
     {
-        var expected = Discovery(Certification());
+        var certification = Certification();
+        var expected = Discovery(certification);
         var fallback = new RecordingDiscoveryClient(expected);
         var client = new ManifestWithReviewedFallbackReleaseClient(
             new RecordingDiscoveryClient(
                 ReleaseManifestFallbackPolicy.MissingManifest("No manifest asset.")),
-            fallback);
+            fallback,
+            certification);
 
         var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
 
-        Assert.AreSame(expected, result);
         Assert.AreEqual(1, fallback.CallCount);
+        Assert.AreEqual(certification.PayloadSha256, result.ModArtifact.Sha256);
+        Assert.AreEqual(certification.Tag, result.ModArtifact.ExpectedProductVersion);
     }
 
     [TestMethod]
@@ -362,7 +365,7 @@ public sealed class ReviewedReleaseCertificationTests
     }
 
     [TestMethod]
-    public async Task ReviewedManifestPayloadVersionOverrideRequiresExactCertifiedIdentity()
+    public async Task NewSignedManifestReleaseIsNotPinnedToReviewedRuntimePair()
     {
         var certification = Certification() with
         {
@@ -387,10 +390,11 @@ public sealed class ReviewedReleaseCertificationTests
             fallback,
             certification);
 
-        await Assert.ThrowsExceptionAsync<InvalidDataException>(
-            () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
+        var result = await client.DiscoverLatestAsync("stable", new Version(0, 1, 0));
 
         Assert.AreEqual(0, fallback.CallCount);
+        Assert.AreEqual("1.1.4.9", result.ModArtifact.ExpectedVersion);
+        Assert.IsNull(result.ModArtifact.RuntimeManifest);
     }
 
     [TestMethod]
@@ -417,6 +421,30 @@ public sealed class ReviewedReleaseCertificationTests
         Assert.AreEqual(0, result.Contents.Length);
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
             downloader.DownloadAsync(new Uri("https://example.invalid/file.json"), CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task NewSignedReleaseDllUsesTheManifestRepositoryDownloadBoundary()
+    {
+        var bytes = "new signed release"u8.ToArray();
+        var certification = Certification();
+        var downloader = new ManifestWithReviewedFallbackArtifactDownloader(
+            new(new ByteHandler(bytes)),
+            certification);
+        var permitted = new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/v2.0.0/version.dll");
+
+        var result = await downloader.DownloadAsync(permitted, CancellationToken.None);
+
+        CollectionAssert.AreEqual(bytes, result.Contents);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(
+                new Uri("https://github.com/other/repository/releases/download/v2.0.0/version.dll"),
+                CancellationToken.None));
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            downloader.DownloadAsync(
+                new Uri($"https://github.com/{certification.Repository}/releases/download/v2.0.0/other.dll"),
+                CancellationToken.None));
     }
 
     private static ReviewedReleaseCertification Certification(byte[]? archive = null, byte[]? payload = null)

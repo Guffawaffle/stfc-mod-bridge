@@ -55,12 +55,16 @@ it contains:
 |---|---|---|---|---|
 | Guffawaffle | Stable | `v2.1.0-guffa.9` | `FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A` | Valid expected Authenticode publisher and timestamp |
 | NetniV | Stable | `v1.1.4` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
-| NetniV | Dev | commit `7f0536bebc20d0d30bca44e89bfef56b0fb85ebc` | `CBEEDA425DB044D8E2D7CAE1B45408434DE437F3526FB08E1906994463E4D8A5` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
+| NetniV | Dev | Actions run `30677057536` at commit `238004460c4bb93aa717e47c41089fe8b71c4cf9` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 
-The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Bridge build. This
-prevents a mutable GitHub release or Actions artifact from becoming trusted merely because it was newest when the
-launcher ran. NetniV Actions artifacts also require GitHub authentication and expire, so the dev entry records the
-source commit and observation time.
+The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Bridge build before
+they gain exact-catalog recognition. This prevents a mutable GitHub release or Actions artifact from becoming a
+reviewed identity merely because it was newest when the launcher ran. Guffawaffle installation has an additional,
+separate path for new releases whose live DLL passes the exact Authenticode publisher, durable Artifact Signing
+identity, signed ProductVersion, monotonic release checks, and the retained exact digest at an equal release order;
+that does not add the hash to this snapshot or authorize
+an unsigned runtime manifest. NetniV Actions artifacts also require GitHub authentication and expire, so the dev entry
+records the source commit and observation time.
 
 ## Update boundary
 
@@ -76,9 +80,10 @@ fresh prepared observation, but it must not query `latest` again or silently
 cross provider/channel/runtime identity. Passive refresh, source selection,
 Diagnostics, and launch perform no release discovery.
 
-Guffawaffle release manifests plus the expected Authenticode publisher are the canonical installation path. The current
-stable manifest is still constrained to the exact reviewed repository, tag, source commit, DLL, and runtime-manifest
-bytes because schema v1 declares no manifest authenticity. Its narrow fallback ZIP must contain exactly that certified
-DLL/runtime-manifest pair. NetniV stable installation is likewise available only for the exact reviewed ZIP and
-inner-DLL bytes. Either provider fails closed when GitHub's latest release differs from the bundled certification; these
-shims are replaced only by an accepted provider-published provenance contract.
+Guffawaffle release manifests plus the expected Authenticode publisher are the canonical installation path. A new
+release can install without a Bridge catalog refresh only when the downloaded DLL itself passes the exact publisher and
+durable Artifact Signing identity policy. Because schema v1 declares no manifest authenticity, its unsigned runtime
+manifest does not gain operational authority from that alone. The narrow missing-manifest fallback and runtime
+activation remain limited to the exact reviewed DLL/runtime-manifest pair. NetniV stable installation remains available
+only for the exact reviewed ZIP and inner-DLL bytes and fails closed when GitHub's latest release differs from its
+bundled certification.

@@ -123,6 +123,7 @@ public sealed class ModBinaryProvenanceTests
             "guffawaffle.stfc-community-mod",
             new FakeMetadataReader(new("2.1.0.0", "local", IdentityComment)));
         Assert.AreEqual("2.1.0.0", matching.ReadVersion("version.dll"));
+        Assert.AreEqual("local", matching.ReadProductVersion("version.dll"));
 
         var mismatched = new WindowsModArtifactVersionReader(
             "netniv.stfc-community-mod",

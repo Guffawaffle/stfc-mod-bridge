@@ -19,6 +19,10 @@ public sealed record LauncherProviderAtomicSwitchPreview(
     string? GameDirectory = null)
 {
     public string ConfirmationText => Configuration.ConfirmationText;
+
+    public bool CanExecute => Artifact is null || Artifact.State == ModOperationPreparationState.Ready;
+
+    public string? BlockedMessage => CanExecute ? null : Artifact!.Message;
 }
 
 public sealed record LauncherProviderAtomicSwitchResult(
@@ -280,6 +284,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     {
         ArgumentNullException.ThrowIfNull(preview);
         ValidateAtomicPreviewScope(preview);
+        if (!preview.CanExecute)
+        {
+            throw new InvalidOperationException(
+                preview.BlockedMessage
+                    ?? "The reviewed provider switch is not ready to execute.");
+        }
         await using var providerSwitchLease = await providerSwitchLock.TryAcquireAsync(cancellationToken);
         if (providerSwitchLease is null)
         {

@@ -8,6 +8,7 @@ namespace STFCCommunityMod.Launcher.LocalGameIntegration.Tests;
 [TestCategory("LocalGameMutation")]
 public sealed partial class LiveProviderInstallIntegrationTests
 {
+    private const string RuntimeManifestFileName = "stfc-runtime-manifest.json";
     private const string MutationEnvironmentVariable =
         "STFC_BRIDGE_ALLOW_RESTORABLE_MUTATION";
     private const string LiveProvidersEnvironmentVariable =
@@ -31,12 +32,13 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 "Live provider releases are disabled. Add -UseLiveProviderReleases to the local runner.");
         }
         using var campaign = OpenCampaignThroughSanitizedBoundary(gameDirectory);
-        Assert.IsFalse(
-            File.Exists(Path.Combine(gameDirectory, "version.dll")),
-            "Wave 1 requires the maintained clean target without version.dll.");
-        Assert.IsFalse(
-            File.Exists(Path.Combine(gameDirectory, "community_patch_settings.toml")),
-            "The provider-switch journey currently requires the maintained clean target without TOML.");
+        if (!IsCleanProviderJourneyTarget(gameDirectory))
+        {
+            Assert.Inconclusive(
+                "The provider install/switch journey requires a clean target without version.dll, "
+                    + "runtime manifest, or TOML; "
+                    + "the separately isolated manual-adoption journey can still run on this target.");
+        }
         var catalog = LoadProviderCatalog();
         var reviewed = LoadReviewedReleases(catalog);
         using var httpClient = new HttpClient(new HttpClientHandler
@@ -82,46 +84,86 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 "Provider switch round trip did not restore the exact game target.");
             TestContext.WriteLine(
                 "provider switch: Guffawaffle → NetniV → Guffawaffle restored provider TOML and clean baseline");
+
         }
         catch (Exception exception)
         {
             journeyFailure = exception;
         }
 
-        var cleanupFailure = await TryProductionCleanupAsync(
-            endpoints).ConfigureAwait(false);
+        await FinishLiveCampaignAsync(
+            gameDirectory,
+            campaign,
+            endpoints,
+            journeyFailure,
+            "The live provider campaign failed; isolated recovery state was retained.")
+            .ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    [Timeout(600_000)]
+    public async Task ManualDeveloperDllAdoptionRestoresExactFilesAndLeavesNoResidue()
+    {
+        var gameDirectory = RequireMutationTarget();
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable(LiveProvidersEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            Assert.Inconclusive(
+                "Live provider releases are disabled. Add -UseLiveProviderReleases to the local runner.");
+        }
+        using var campaign = OpenCampaignThroughSanitizedBoundary(gameDirectory);
+        if (!File.Exists(Path.Combine(gameDirectory, "version.dll")))
+        {
+            Assert.Inconclusive(
+                "The manual-adoption journey requires an existing human-managed version.dll; "
+                    + "it never replaces human files with a test fixture before production adoption begins.");
+        }
+        var catalog = LoadProviderCatalog();
+        var reviewed = LoadReviewedReleases(catalog);
+        using var httpClient = new HttpClient(new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(45),
+        };
+        var endpoint = CreateEndpoint(
+            catalog.GetProvider("guffawaffle"),
+            reviewed,
+            campaign.StateDirectory,
+            httpClient,
+            campaign);
+        var endpoints = new Dictionary<string, ProviderEndpoint>(StringComparer.Ordinal)
+        {
+            [endpoint.ProviderId] = endpoint,
+        };
+
+        Exception? journeyFailure = null;
         try
         {
-            campaign.AssertBaseline("Final production cleanup did not restore the campaign baseline.");
+            await ManualAdoptionRoundTripAsync(
+                endpoint,
+                gameDirectory,
+                campaign).ConfigureAwait(false);
+            campaign.AssertBaseline(
+                "Manual adoption did not restore the exact game target.");
+            TestContext.WriteLine(
+                "manual adoption: refusal made no download or write; explicit adoption and removal restored exact developer bytes");
         }
         catch (Exception exception)
         {
-            cleanupFailure = cleanupFailure is null
-                ? exception
-                : new AggregateException(cleanupFailure, exception);
+            journeyFailure = exception;
         }
 
-        if (cleanupFailure is not null)
-        {
-            campaign.PreserveStateForRecovery();
-            cleanupFailure = CombineFailures(
-                cleanupFailure,
-                TryEmergencyRestore(campaign));
-        }
-        if (journeyFailure is not null || cleanupFailure is not null)
-        {
-            campaign.PreserveStateForRecovery();
-            var failure = journeyFailure is null
-                ? cleanupFailure!
-                : cleanupFailure is null
-                    ? journeyFailure
-                    : new AggregateException(journeyFailure, cleanupFailure);
-            throw SanitizedFailure(
-                "The live provider campaign failed; isolated recovery state was retained.",
-                failure,
-                gameDirectory,
-                campaign.StateDirectory);
-        }
+        await FinishLiveCampaignAsync(
+            gameDirectory,
+            campaign,
+            endpoints,
+            journeyFailure,
+            "The manual-adoption campaign failed; isolated recovery state was retained.")
+            .ConfigureAwait(false);
     }
 
     [TestMethod]
@@ -769,6 +811,169 @@ public sealed partial class LiveProviderInstallIntegrationTests
         Assert.IsNull(endpoint.Deployment.ReadInstalledState());
     }
 
+    private static bool IsCleanProviderJourneyTarget(string gameDirectory) =>
+        !File.Exists(Path.Combine(gameDirectory, "version.dll"))
+        && !File.Exists(Path.Combine(gameDirectory, RuntimeManifestFileName))
+        && !File.Exists(Path.Combine(gameDirectory, "community_patch_settings.toml"));
+
+    private static async Task ManualAdoptionRoundTripAsync(
+        ProviderEndpoint endpoint,
+        string gameDirectory,
+        RestorableGameInstallCampaign campaign)
+    {
+        var manualDll = await File.ReadAllBytesAsync(
+            Path.Combine(gameDirectory, "version.dll")).ConfigureAwait(false);
+        var runtimeManifestPath = Path.Combine(gameDirectory, RuntimeManifestFileName);
+        var manualRuntimeManifest = File.Exists(runtimeManifestPath)
+            ? await File.ReadAllBytesAsync(runtimeManifestPath).ConfigureAwait(false)
+            : null;
+        var manualDllRevision = campaign.CaptureProtectedRevision("version.dll");
+        var manualRuntimeRevision = manualRuntimeManifest is null
+            ? null
+            : campaign.CaptureProtectedRevision(RuntimeManifestFileName);
+
+        var manualHealth = endpoint.Coordinator.CaptureHealth(
+            gameDirectory,
+            isGameRunning: false);
+        Assert.AreEqual(
+            ModInstallationEvidenceState.ManualInstallation,
+            manualHealth.Installation.State);
+        Assert.AreEqual(
+            ModManagementActionKind.UpdateManualInstallation,
+            manualHealth.ModManagement.ActionKind);
+
+        var preparation = await endpoint.Coordinator.PrepareLatestAsync(
+            gameDirectory,
+            isGameRunning: false).ConfigureAwait(false);
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State);
+        Assert.AreEqual(
+            ExistingArtifactPolicy.AdoptAndPreserve,
+            preparation.ExistingArtifactPolicy);
+        Assert.AreEqual(
+            ModManagementActionKind.UpdateManualInstallation,
+            preparation.ActionKind);
+
+        var downloadsBeforeRefusal = endpoint.Downloader.CallCount;
+        var rejection = await endpoint.Coordinator.ExecuteAsync(
+            preparation with { ExistingArtifactPolicy = ExistingArtifactPolicy.Reject })
+            .ConfigureAwait(false);
+        Assert.AreEqual(
+            ModDeploymentResultState.ExistingArtifactRequiresAdoption,
+            rejection.State,
+            rejection.Message);
+        Assert.AreEqual(
+            downloadsBeforeRefusal,
+            endpoint.Downloader.CallCount,
+            "Refusing an unattributed DLL must happen before artifact download.");
+        campaign.AssertProtectedRevision(
+            "version.dll",
+            manualDllRevision,
+            "Refusing adoption changed the manual DLL.");
+        if (manualRuntimeRevision is not null)
+        {
+            campaign.AssertProtectedRevision(
+                RuntimeManifestFileName,
+                manualRuntimeRevision,
+                "Refusing adoption changed the manual runtime manifest.");
+        }
+        Assert.IsNull(endpoint.Deployment.ReadInstalledState(gameDirectory));
+
+        var installation = await endpoint.Coordinator.ExecuteAsync(preparation).ConfigureAwait(false);
+        Assert.IsTrue(installation.IsSuccess, installation.Message);
+        Assert.AreEqual(endpoint.ProviderId, installation.InstalledState?.ProviderId);
+        Assert.IsNotNull(installation.InstalledState?.PreviousArtifactBackupPath);
+        Assert.IsNull(
+            installation.InstalledState?.RuntimeManifest,
+            "A newer signed DLL must not inherit reviewed runtime activation from an older catalog entry.");
+        Assert.IsNull(installation.InstalledState?.PreviousRuntimeManifestBackupPath);
+        campaign.RecordOwnedGameFileRevision(
+            "version.dll",
+            installation.InstalledState!.Sha256);
+
+        var managedHealth = endpoint.Coordinator.CaptureHealth(
+            gameDirectory,
+            isGameRunning: false);
+        Assert.AreEqual(
+            ModInstallationEvidenceState.ManagedVerified,
+            managedHealth.Installation.State);
+        Assert.AreEqual(
+            ManagedRuntimeManifestEvidenceState.NotManaged,
+            managedHealth.Installation.RuntimeManifestState);
+
+        var removal = await endpoint.Coordinator.UninstallAsync(gameDirectory).ConfigureAwait(false);
+        Assert.IsTrue(removal.IsSuccess, removal.Message);
+        CollectionAssert.AreEqual(
+            manualDll,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")),
+            "Remove did not restore the exact manual DLL bytes.");
+        if (manualRuntimeManifest is not null)
+        {
+            CollectionAssert.AreEqual(
+                manualRuntimeManifest,
+                File.ReadAllBytes(runtimeManifestPath),
+                "Install/remove changed the independently human-managed runtime-manifest bytes.");
+        }
+        else
+        {
+            Assert.IsFalse(
+                File.Exists(runtimeManifestPath),
+                "Install/remove introduced an unauthorized runtime manifest.");
+        }
+        Assert.IsNull(endpoint.Deployment.ReadInstalledState(gameDirectory));
+
+        campaign.RestoreProtectedBaseline();
+    }
+
+    private static async Task FinishLiveCampaignAsync(
+        string gameDirectory,
+        RestorableGameInstallCampaign campaign,
+        IReadOnlyDictionary<string, ProviderEndpoint> endpoints,
+        Exception? journeyFailure,
+        string failureContext)
+    {
+        var cleanupFailure = await TryProductionCleanupAsync(endpoints).ConfigureAwait(false);
+        try
+        {
+            campaign.AssertBaseline("Final production cleanup did not restore the campaign baseline.");
+            campaign.AssertNoFinalResidue(
+                endpoints.Values.Select(endpoint => endpoint.Deployment));
+        }
+        catch (Exception exception)
+        {
+            cleanupFailure = cleanupFailure is null
+                ? exception
+                : new AggregateException(cleanupFailure, exception);
+        }
+
+        if (cleanupFailure is not null)
+        {
+            campaign.PreserveStateForRecovery();
+            cleanupFailure = CombineFailures(
+                cleanupFailure,
+                TryEmergencyRestore(campaign));
+        }
+        if (journeyFailure is not null || cleanupFailure is not null)
+        {
+            campaign.PreserveStateForRecovery();
+            var failure = journeyFailure is null
+                ? cleanupFailure!
+                : cleanupFailure is null
+                    ? journeyFailure
+                    : new AggregateException(journeyFailure, cleanupFailure);
+            throw SanitizedFailure(
+                failureContext,
+                failure,
+                gameDirectory,
+                campaign.StateDirectory);
+        }
+
+        var isolatedStateDirectory = campaign.StateDirectory;
+        campaign.Dispose();
+        Assert.IsFalse(
+            Directory.Exists(isolatedStateDirectory),
+            "The verified isolated campaign state was not removed.");
+    }
+
     private static async Task<Exception?> TryProductionCleanupAsync(
         IReadOnlyDictionary<string, ProviderEndpoint> endpoints)
     {
@@ -855,6 +1060,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 : new ReviewedZipModArtifactDownloader(
                     httpClient,
                     binding.ReviewedCertification);
+        var countingDownloader = new CountingModArtifactDownloader(downloader);
         IModArtifactAuthenticityVerifier verifier = binding.TrustKind switch
         {
             LauncherProviderArtifactTrustKind.AuthenticodePublisher =>
@@ -870,9 +1076,10 @@ public sealed partial class LiveProviderInstallIntegrationTests
             binding.ProviderId,
             binding.ReleaseChannelId,
             provider.RuntimeDistributionId);
-        var deployment = new ModDeploymentService(
+        ModDeploymentService? deployment = null;
+        deployment = new ModDeploymentService(
             stateDirectory,
-            downloader,
+            countingDownloader,
             new WindowsModArtifactVersionReader(provider.RuntimeDistributionId),
             verifier,
             gameDirectory =>
@@ -881,13 +1088,19 @@ public sealed partial class LiveProviderInstallIntegrationTests
             timeProvider: null,
             afterPhasePersisted: null,
             reviewedCertification: binding.ReviewedCertification,
-            afterFileCheckpoint: null,
-            afterArtifactCommitted: (_, revision) =>
-                campaign.TryRecordCommittedGameFileRevision("version.dll", revision));
+            afterFileCheckpoint: (checkpoint, _) =>
+            {
+                campaign.ObserveDeploymentCheckpoint(deployment!, checkpoint);
+                return ValueTask.CompletedTask;
+            },
+            afterArtifactCommitted: (path, revision) =>
+                campaign.TryRecordCommittedGameFileRevision(Path.GetFileName(path), revision),
+            reviewedCertifications: reviewed.Certifications);
         var health = new LauncherHealthService(
             new ModInstallationInspector(
                 deployment,
-                new SystemModInstallationFileSystem()),
+                new SystemModInstallationFileSystem(),
+                reviewedCertification: binding.ReviewedCertification),
             new(
                 binding.ProviderId,
                 binding.ReleaseChannelId,
@@ -902,7 +1115,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 releaseClient,
                 new Version(0, 1, 0),
                 binding.ReleaseChannelId,
-                healthService: health));
+                healthService: health),
+            countingDownloader);
     }
 
     private static LauncherDistributionProviderCatalog LoadProviderCatalog()
@@ -971,7 +1185,24 @@ public sealed partial class LiveProviderInstallIntegrationTests
     private sealed record ProviderEndpoint(
         string ProviderId,
         ModDeploymentService Deployment,
-        ModManagementCoordinator Coordinator);
+        ModManagementCoordinator Coordinator,
+        CountingModArtifactDownloader Downloader);
+
+    private sealed class CountingModArtifactDownloader(IModArtifactDownloader inner)
+        : IModArtifactDownloader
+    {
+        private int callCount;
+
+        public int CallCount => Volatile.Read(ref callCount);
+
+        public Task<ModArtifactDownload> DownloadAsync(
+            Uri uri,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref callCount);
+            return inner.DownloadAsync(uri, cancellationToken);
+        }
+    }
 
     private enum DirectGameMutationKind
     {
@@ -997,11 +1228,14 @@ public sealed partial class LiveProviderInstallIntegrationTests
         private readonly Action<string>? beforeStageReceipt;
         private readonly Action<string>? beforeStageFlush;
         private readonly Action<string, string>? beforePromotionCommit;
+        private readonly Action<string, string>? beforeExactPromotionLock;
         private readonly Action<string>? afterPromotionBeforeOwnership;
         private readonly Dictionary<string, ExactFileRevision> createdStages = new(
             OperatingSystem.IsWindows()
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal);
+        private readonly Dictionary<string, ExactFileRevision> pendingDeploymentPromotions = new(
+            StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, HashSet<OwnedFileRevision>> ownedFileRevisions =
             new(StringComparer.OrdinalIgnoreCase);
         private bool disposed;
@@ -1015,6 +1249,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             Action<string>? beforeStageReceipt = null,
             Action<string>? beforeStageFlush = null,
             Action<string, string>? beforePromotionCommit = null,
+            Action<string, string>? beforeExactPromotionLock = null,
             Action<string>? afterPromotionBeforeOwnership = null)
         {
             this.gameProcessInspector = gameProcessInspector ?? new SystemGameProcessInspector();
@@ -1023,6 +1258,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
             this.beforeStageReceipt = beforeStageReceipt;
             this.beforeStageFlush = beforeStageFlush;
             this.beforePromotionCommit = beforePromotionCommit;
+            this.beforeExactPromotionLock = beforeExactPromotionLock;
             this.afterPromotionBeforeOwnership = afterPromotionBeforeOwnership;
             try
             {
@@ -1061,6 +1297,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
         public void EmergencyRestore()
         {
             RestoreFile("version.dll");
+            RestoreFile(RuntimeManifestFileName);
             RestoreFile("community_patch_settings.toml");
             foreach (var path in createdStages.Keys.ToArray())
             {
@@ -1068,16 +1305,19 @@ public sealed partial class LiveProviderInstallIntegrationTests
             }
         }
 
+        public void RestoreProtectedBaseline() => EmergencyRestore();
+
         public void RestoreConfigurationBaseline() =>
             RestoreFile("community_patch_settings.toml");
 
         public void WriteGameFileAtomically(string fileName, byte[] contents)
         {
-            if (fileName is not ("version.dll" or "community_patch_settings.toml"))
+            if (fileName is not (
+                "version.dll" or RuntimeManifestFileName or "community_patch_settings.toml"))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(fileName),
-                    "The recovery harness writes only its two protected game files.");
+                    "The recovery harness writes only its protected game files.");
             }
             var path = Path.Combine(gameDirectory, fileName);
             var current = File.Exists(path) ? FileBaseline.Capture(path) : null;
@@ -1087,6 +1327,25 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     "The live protected file changed outside the campaign and was preserved.");
             }
             ReplaceFileAtomically(path, contents, current);
+        }
+
+        public ExactFileRevision CaptureProtectedRevision(string fileName)
+        {
+            ValidateProtectedFileName(fileName);
+            using var exact = ExactFileMutation.Open(Path.Combine(gameDirectory, fileName));
+            return exact.CaptureRevision();
+        }
+
+        public void AssertProtectedRevision(
+            string fileName,
+            ExactFileRevision expected,
+            string message)
+        {
+            var actual = CaptureProtectedRevision(fileName);
+            if (!expected.Matches(actual))
+            {
+                throw new AssertFailedException(message);
+            }
         }
 
         public void RecordOwnedGameFileRevision(string fileName, byte[] contents) =>
@@ -1131,24 +1390,87 @@ public sealed partial class LiveProviderInstallIntegrationTests
             ExactFileRevision expectedRevision)
         {
             ValidateProtectedFileName(fileName);
-            var path = Path.Combine(gameDirectory, fileName);
-            try
+            RecordOwnedGameFileRevision(fileName, expectedRevision);
+            return true;
+        }
+
+        public void ObserveDeploymentCheckpoint(
+            ModDeploymentService deployment,
+            ModDeploymentFileCheckpoint checkpoint)
+        {
+            ArgumentNullException.ThrowIfNull(deployment);
+            var journal = deployment.ReadJournal()
+                ?? throw new InvalidOperationException(
+                    "The deployment checkpoint has no durable transaction receipt.");
+            switch (checkpoint)
             {
-                using var exact = ExactFileMutation.Open(path);
-                var actualRevision = exact.CaptureRevision();
-                if (!expectedRevision.Matches(actualRevision))
-                {
-                    return false;
-                }
-                RecordOwnedGameFileRevision(fileName, actualRevision);
-                return true;
+                case ModDeploymentFileCheckpoint.TargetDllInstalled
+                    when journal.Artifact.RuntimeManifest is not null:
+                    CaptureDeploymentPromotion(
+                        Path.Combine(
+                            journal.GameDirectory,
+                            $".{RuntimeManifestFileName}.{journal.TransactionId}.stage"),
+                        RuntimeManifestFileName);
+                    break;
+                case ModDeploymentFileCheckpoint.TargetRuntimeManifestInstalled:
+                    CommitDeploymentPromotion(RuntimeManifestFileName);
+                    break;
+                case ModDeploymentFileCheckpoint.AdoptedDllRestoreStaged:
+                    CaptureDeploymentPromotion(journal.StagePath, "version.dll");
+                    break;
+                case ModDeploymentFileCheckpoint.AdoptedDllRestored:
+                    CommitAdoptedRestoration("version.dll");
+                    break;
+                case ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestoreStaged:
+                    CaptureDeploymentPromotion(
+                        Path.Combine(
+                            journal.GameDirectory,
+                            $".{RuntimeManifestFileName}.{journal.TransactionId}.stage"),
+                        RuntimeManifestFileName);
+                    break;
+                case ModDeploymentFileCheckpoint.AdoptedRuntimeManifestRestored:
+                    CommitAdoptedRestoration(RuntimeManifestFileName);
+                    break;
             }
-            catch (Exception exception) when (
-                exception is IOException
-                    or UnauthorizedAccessException
-                    or InvalidOperationException)
+        }
+
+        public void AssertNoFinalResidue(IEnumerable<ModDeploymentService> deployments)
+        {
+            if (pendingDeploymentPromotions.Count != 0 || createdStages.Count != 0)
             {
-                return false;
+                throw new AssertFailedException(
+                    "The campaign retained an unfinished exact-file promotion receipt.");
+            }
+            foreach (var deployment in deployments.Distinct())
+            {
+                Assert.AreEqual(
+                    0,
+                    deployment.ReadInstalledStates().Count,
+                    "Final cleanup retained a managed-installation receipt.");
+                var journal = deployment.ReadJournal();
+                Assert.IsTrue(
+                    journal is null
+                        || journal.Phase is ModDeploymentPhase.Committed
+                            or ModDeploymentPhase.RolledBack,
+                    "Final cleanup retained a nonterminal deployment journal.");
+            }
+
+            var residue = Directory.EnumerateFiles(
+                    StateDirectory,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(StateDirectory, path))
+                .FirstOrDefault(IsTransactionResidue);
+            if (residue is not null)
+            {
+                throw new AssertFailedException(
+                    "The isolated campaign state retained transaction staging or rollback bytes.");
+            }
+            if (gameProcessInspector.Inspect(gameDirectory)
+                != GameProcessInspectionState.NotRunning)
+            {
+                throw new AssertFailedException(
+                    "The exact opted-in installation was not closed at final audit.");
             }
         }
 
@@ -1185,6 +1507,76 @@ public sealed partial class LiveProviderInstallIntegrationTests
                         "The isolated %STATE_DIR% could not be removed; no raw path was emitted.");
                 }
             }
+        }
+
+        public void CaptureDeploymentPromotion(string stagePath, string targetFileName)
+        {
+            ValidateProtectedFileName(targetFileName);
+            using var stage = ExactFileMutation.Open(stagePath);
+            pendingDeploymentPromotions[targetFileName] = stage.CaptureRevision();
+        }
+
+        private void CommitDeploymentPromotion(string targetFileName)
+        {
+            if (!pendingDeploymentPromotions.TryGetValue(
+                    targetFileName,
+                    out var stagedRevision)
+                || !TryRecordCommittedGameFileRevision(targetFileName, stagedRevision))
+            {
+                throw new InvalidOperationException(
+                    "The promoted protected file did not retain its exact staged identity.");
+            }
+            pendingDeploymentPromotions.Remove(targetFileName);
+        }
+
+        public void CommitAdoptedRestoration(string targetFileName)
+        {
+            if (!pendingDeploymentPromotions.TryGetValue(
+                    targetFileName,
+                    out var stagedRevision))
+            {
+                throw new InvalidOperationException(
+                    "The adopted protected file has no exact restoration-stage receipt.");
+            }
+            using var exact = ExactFileMutation.Open(Path.Combine(gameDirectory, targetFileName));
+            var restored = FileBaseline.FromExact(exact);
+            if (!stagedRevision.Matches(exact.CaptureRevision()))
+            {
+                throw new InvalidOperationException(
+                    "The adopted protected file did not retain its exact staged identity.");
+            }
+            pendingDeploymentPromotions.Remove(targetFileName);
+            if (!baseline.TryGetValue(targetFileName, out var original)
+                || !original.Matches(restored))
+            {
+                throw new InvalidOperationException(
+                    "Production restored an adopted human-managed revision that differs from the campaign baseline. "
+                    + "The restored file was preserved without granting cleanup ownership.");
+            }
+        }
+
+        private static bool IsTransactionResidue(string relativePath)
+        {
+            var segments = relativePath.Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Any(segment =>
+                    string.Equals(segment, "rollback", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(
+                        segment,
+                        "copy-stage-ownership",
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+            var fileName = segments.LastOrDefault() ?? string.Empty;
+            return fileName.EndsWith(".stage", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".rollback", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".restore", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".download", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".partial", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".previous", StringComparison.OrdinalIgnoreCase);
         }
 
         private void RestoreFile(string fileName)
@@ -1297,16 +1689,51 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 beforePromotionCommit?.Invoke(stagePath, path);
                 VerifyRestoreStage(stagePath);
                 VerifyPromotionDestination(path, expectedCurrent);
+                beforeExactPromotionLock?.Invoke(stagePath, path);
                 EnsureGameClosedForMutation();
                 var promotedStage = createdStages[stagePath];
-                RecordOwnedGameFileRevision(fileName, promotedStage);
-                if (expectedCurrent is null)
+                using (var exactStage = ExactFileMutation.OpenForMetadata(stagePath))
                 {
-                    File.Move(stagePath, path);
-                }
-                else
-                {
-                    File.Replace(stagePath, path, null, ignoreMetadataErrors: true);
+                    if (!promotedStage.Matches(exactStage.CaptureRevision()))
+                    {
+                        throw new InvalidOperationException(
+                            "The restore stage changed before its exact promotion and was preserved.");
+                    }
+                    RecordOwnedGameFileRevision(fileName, promotedStage);
+                    if (expectedCurrent is null)
+                    {
+                        if (File.Exists(path))
+                        {
+                            throw new InvalidOperationException(
+                                "A protected file appeared before exact promotion and was preserved.");
+                        }
+                        exactStage.MoveExactNoReplace(path);
+                    }
+                    else
+                    {
+                        using var exactDestination = ExactFileMutation.OpenForMetadata(path);
+                        if (expectedCurrent.Identity != exactDestination.Identity
+                            || !expectedCurrent.Matches(FileBaseline.FromExact(exactDestination)))
+                        {
+                            throw new InvalidOperationException(
+                                "The protected file changed before exact promotion and was preserved.");
+                        }
+                        var displacedPath = stagePath + ".destination";
+                        exactDestination.MoveExactNoReplace(displacedPath);
+                        try
+                        {
+                            exactStage.MoveExactNoReplace(path);
+                        }
+                        catch
+                        {
+                            if (!File.Exists(path))
+                            {
+                                exactDestination.MoveExactNoReplace(path);
+                            }
+                            throw;
+                        }
+                        exactDestination.DeleteExactIgnoringReadOnly();
+                    }
                 }
                 afterPromotionBeforeOwnership?.Invoke(path);
                 var promoted = FileBaseline.Capture(path);
@@ -1611,11 +2038,12 @@ public sealed partial class LiveProviderInstallIntegrationTests
 
         private static void ValidateProtectedFileName(string fileName)
         {
-            if (fileName is not ("version.dll" or "community_patch_settings.toml"))
+            if (fileName is not (
+                "version.dll" or RuntimeManifestFileName or "community_patch_settings.toml"))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(fileName),
-                    "The recovery harness owns only its two protected game files.");
+                    "The recovery harness owns only its protected game files.");
             }
         }
 
@@ -1747,7 +2175,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 }
                 var fileInfo = new FileInfo(path);
                 byte[]? contents = null;
-                if (Path.GetFileName(path) is "version.dll" or "community_patch_settings.toml")
+                if (Path.GetFileName(path) is
+                    "version.dll" or RuntimeManifestFileName or "community_patch_settings.toml")
                 {
                     if (fileInfo.Length > 128L * 1024L * 1024L)
                     {

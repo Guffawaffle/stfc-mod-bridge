@@ -29,7 +29,8 @@ public sealed class GitHubWindowsReleaseClientTests
             new Version(0, 1, 0));
 
         Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
-        Assert.AreEqual("2.1.0.8", result.ModArtifact.ExpectedVersion);
+        Assert.AreEqual("2.1.0.0", result.ModArtifact.ExpectedVersion);
+        Assert.AreEqual("v2.1.0-guffa.8", result.ModArtifact.ExpectedProductVersion);
         Assert.AreEqual(2, handler.Requests.Count);
         Assert.IsTrue(handler.Requests.All(request => request.UserAgent.Contains("STFC-Mod-Control/0.1")));
     }
@@ -51,7 +52,8 @@ public sealed class GitHubWindowsReleaseClientTests
             new Version(0, 1, 0));
 
         Assert.AreEqual("v2.1.0-guffa.rc9", result.Manifest.Tag);
-        Assert.AreEqual("2.1.0.9", result.ModArtifact.ExpectedVersion);
+        Assert.AreEqual("2.1.0.0", result.ModArtifact.ExpectedVersion);
+        Assert.AreEqual("v2.1.0-guffa.rc9", result.ModArtifact.ExpectedProductVersion);
     }
 
     [TestMethod]
@@ -77,7 +79,7 @@ public sealed class GitHubWindowsReleaseClientTests
             new Version(0, 1, 0));
 
         Assert.AreEqual("v2.1.0-guffa.8", result.Manifest.Tag);
-        Assert.AreEqual("2.1.0.8", result.ModArtifact.ExpectedVersion);
+        Assert.AreEqual("2.1.0.0", result.ModArtifact.ExpectedVersion);
     }
 
     [TestMethod]

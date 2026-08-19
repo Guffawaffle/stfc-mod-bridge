@@ -5,7 +5,8 @@ namespace STFCCommunityMod.Launcher.ViewModels;
 internal sealed record ProviderSwitchReviewPresentation(
     string Summary,
     bool IsIntroductoryReview,
-    bool HasFocusedWarning)
+    bool HasFocusedWarning,
+    bool IsBlocked = false)
 {
     public bool RequiresReview => IsIntroductoryReview || HasFocusedWarning;
 
@@ -18,6 +19,17 @@ internal sealed record ProviderSwitchReviewPresentation(
         ArgumentException.ThrowIfNullOrWhiteSpace(targetChannelDisplayName);
 
         var configuration = preview.Configuration;
+        if (!preview.CanExecute)
+        {
+            return new(
+                $"{configuration.SourceDisplayName} → {configuration.TargetDisplayName} · {targetChannelDisplayName}"
+                + Environment.NewLine + Environment.NewLine
+                + (preview.BlockedMessage
+                    ?? "This provider switch is blocked until the release evidence is repaired."),
+                IsIntroductoryReview: false,
+                HasFocusedWarning: false,
+                IsBlocked: true);
+        }
         var warnings = configuration.Concerns
             .Where(concern => concern.Kind is
                 LauncherProviderCompatibilityKind.Warning

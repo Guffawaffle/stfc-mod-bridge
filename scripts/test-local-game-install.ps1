@@ -46,6 +46,7 @@ try {
   if ($UseLiveProviderReleases) {
     $env:STFC_BRIDGE_USE_LIVE_PROVIDER_RELEASES = "1"
     $profiles += "Live providers"
+    $scenarios += "existing manual/developer DLL adoption, independent runtime-manifest preservation, and final residue audit"
   }
   if ($ExerciseRecovery) {
     $env:STFC_BRIDGE_EXERCISE_RECOVERY = "1"

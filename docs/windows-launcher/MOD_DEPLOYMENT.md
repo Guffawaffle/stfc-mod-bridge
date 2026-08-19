@@ -26,9 +26,26 @@ migration, and write uses one Windows case-insensitive comparison routine and
 rejects duplicate canonical paths.
 
 The registry persists durable facts only: exact managed artifact identity,
-provider/channel/runtime attribution, installation time, optional reviewed
-runtime-manifest identity, and any adopted-backup receipts. It does not persist
-a health status. Bridge derives status from the selected folder's live files:
+provider/channel/runtime attribution, installation time, the optional signed
+release ProductVersion verified during installation, optional reviewed
+runtime-manifest identity, compact historical release floors, and any
+adopted-backup receipts. Release floors are independent per stable
+`{ providerId, releaseChannelId, runtimeDistributionId }` tuple and survive a
+managed provider round trip; channels are not ordered against one another.
+The active tuple uses its signed ProductVersion plus managed size/SHA-256,
+while historical tuple floors retain the same exact tag-and-digest identity in
+separate entries. A final release outranks any prerelease of the same semantic
+core. An equal ordering value is accepted only when the canonical signed tag
+and artifact digest also match; a same-tag rebuild or incomparable same-core
+release families require an explicit recovery or replacement decision.
+Preparation and the leased deployment
+transaction both enforce the floor, so a stale prepared candidate or mutable
+repository metadata cannot replay an older publisher-signed DLL. Exact bundled
+certification may project the ProductVersion of a matching legacy receipt in
+memory without rewriting it during a passive read. These floors do not
+authorize an unsigned runtime manifest or silently permit a downgrade. The
+registry does not persist a health status. Bridge derives status from the
+selected folder's live files:
 
 - no receipt and no DLL: not installed;
 - no receipt with a DLL: manual installation;
@@ -363,8 +380,10 @@ Settings/Data Sync writers in another Mod Bridge process.
 4. require HTTPS plus bounded artifact metadata;
 5. verify HTTP status, declared length when present, actual length, and
    SHA-256 before writing beside the game;
-6. write and re-verify a same-volume stage file, then require Windows
-   `WinVerifyTrust` and the configured Authenticode publisher identity;
+6. write and re-verify a same-volume stage file, require Windows
+   `WinVerifyTrust`, the configured Authenticode publisher identity, the
+   embedded numeric file version, and any signed ProductVersion before the DLL
+   can reach the live game path;
 7. journal `Committing`, preserve any existing artifact, and replace the
    target;
 8. re-verify target size, SHA-256, and the expected embedded numeric file
@@ -372,9 +391,13 @@ Settings/Data Sync writers in another Mod Bridge process.
 9. persist managed ownership before journaling `Committed`.
 
 The expected embedded version is deliberately separate from the release tag.
-For example, release `2.1.0-guffa.8` carries numeric Windows file version
-`2.1.0.8`; release discovery must perform that explicit mapping instead of
-comparing the descriptive tag directly to `FileVersionInfo`.
+For example, release `2.1.0-guffa.10` carries numeric Windows file version
+`2.1.0.0` and product version `v2.1.0-guffa.10`. Release discovery maps the
+numeric semantic base and also binds the signed product-version string to the
+exact release tag instead of comparing the descriptive tag to the numeric
+`FileVersionInfo.FileVersion` field. Release ordering independently treats the
+numeric `guffa` suffix as an iteration, so `.10` sorts after `.9` even though
+both signed files share the same numeric file version.
 
 `WindowsReleaseManifestParser` and `WindowsReleaseSelectionPolicy` provide that
 bridge from the published release contract. They reject unknown schema fields,
@@ -394,6 +417,34 @@ incomplete transaction blocks new mutations. `RecoverAsync` is deterministic
 and idempotently restores the preserved artifact or removes a partially
 committed fresh install, restores the previous installed-state record, and
 removes transaction-scoped files.
+
+Deployment-journal schema v2 binds each staged target and each adopted file
+restored during uninstall to its Windows file identity before promotion. That
+identity is required, in addition to bytes and metadata, before rollback may
+delete or relocate the live path. Older Bridge builds reject v2 rather than
+silently ignoring this ownership evidence. Current Bridge can read a legacy v1
+journal, but missing file identity is treated conservatively: ambiguous live
+bytes are preserved for explicit recovery.
+
+Adopted-backup receipts bind size, SHA-256, file attributes, and last-write
+time. Durable copies are complete only after both bytes and metadata match that
+receipt; recovery rebuilds an interrupted metadata-incomplete stage from an
+exact authoritative source. Cleanup removes only an exact receipt-matching
+file and uses one exact handle-scoped delete operation that honors ownership
+while ignoring `ReadOnly`; it does not first rewrite the file's metadata.
+Restoration retains the original attributes and time.
+Durable-copy stages receive a state-directory `Writing` ownership receipt with
+their Windows file identity before Bridge writes them. Bridge keeps the
+exclusive handle through byte flush, metadata restoration, exact verification,
+and publication of the `Complete` revision. Recovery may rebuild a `Writing`
+stage only when that same file identity and an exact authoritative source still
+exist. A `Complete` stage is accepted or promoted only when its receipt binds
+the full identity, bytes, attributes, and timestamp; a same-path replacement is
+preserved even when its bytes and metadata are identical. An orphan receipt is
+removed without parsing only after its computed stage path is confirmed absent.
+Adoption receipts written by older Bridge builds did not record file metadata;
+those legacy backups remain content-protected, but Bridge cannot reconstruct
+attributes or timestamps that the older copy operation already discarded.
 
 Uninstall verifies that the live DLL still matches Mod Bridge-managed state. It
 then uses the same operation lock and journal boundary. A fresh managed DLL is
@@ -416,7 +467,9 @@ selected installation's active ownership receipt and never changes a game
 file, configuration, logs, provider preference, or another installation's
 receipt. When the active receipt refers to an adopted DLL or runtime-manifest
 backup, Bridge retains that exact backup and its identity in a non-owning
-detachment receipt instead of orphaning or deleting recovery evidence.
+detachment receipt instead of orphaning or deleting recovery evidence. Remove
+and Stop managing both end the active receipt and its retained release-floor
+history; reinstalling after either action starts a new managed history.
 
 ## Launcher-local health contract
 

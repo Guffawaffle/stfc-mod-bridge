@@ -147,7 +147,6 @@ public sealed class ModManagementCoordinator(
             channel,
             launcherVersion,
             cancellationToken);
-        healthService.RecordUpdateObservation(health.Installation, discovery);
         if (presentation.ActionKind == ModManagementActionKind.Repair)
         {
             var receipt = deploymentService.ReadInstalledState(gameDirectory);
@@ -158,7 +157,7 @@ public sealed class ModManagementCoordinator(
                     receipt.RuntimeDistributionId,
                     healthService.RuntimeDistributionId,
                     StringComparison.Ordinal)
-                || !MatchesRecordedArtifact(receipt, discovery.ModArtifact))
+                || !deploymentService.MatchesRecordedRelease(receipt, discovery.ModArtifact))
             {
                 return new(
                     ModOperationPreparationState.MutationBlocked,
@@ -172,7 +171,27 @@ public sealed class ModManagementCoordinator(
                     healthService.ProviderId);
             }
         }
-        if (presentation.ActionKind != ModManagementActionKind.Repair
+        if (presentation.ActionKind == ModManagementActionKind.CheckForUpdate)
+        {
+            var releaseAdmissionFailure = deploymentService.GetReleaseProductVersionAdmissionFailure(
+                gameDirectory,
+                discovery.ModArtifact);
+            if (releaseAdmissionFailure is not null)
+            {
+                return new(
+                    ModOperationPreparationState.MutationBlocked,
+                    releaseAdmissionFailure,
+                    Path.GetFullPath(gameDirectory),
+                    discovery.Manifest.ReleaseVersion,
+                    discovery.ModArtifact,
+                    ExistingArtifactPolicy.Reject,
+                    presentation.ActionKind,
+                    healthService.ProviderId);
+            }
+        }
+        healthService.RecordUpdateObservation(health.Installation, discovery);
+        if (presentation.ActionKind is not (
+                ModManagementActionKind.Repair or ModManagementActionKind.UpdateManualInstallation)
             && string.Equals(
                 health.Installation.InstalledSha256,
                 discovery.ModArtifact.Sha256,
@@ -278,6 +297,21 @@ public sealed class ModManagementCoordinator(
             channel,
             launcherVersion,
             cancellationToken).ConfigureAwait(false);
+        var releaseAdmissionFailure = deploymentService.GetReleaseProductVersionAdmissionFailure(
+            validation.GameDirectory,
+            discovery.ModArtifact);
+        if (releaseAdmissionFailure is not null)
+        {
+            return new(
+                ModOperationPreparationState.MutationBlocked,
+                releaseAdmissionFailure,
+                validation.GameDirectory,
+                discovery.Manifest.ReleaseVersion,
+                discovery.ModArtifact,
+                ExistingArtifactPolicy.Reject,
+                ModManagementActionKind.UpdateManualInstallation,
+                ProviderId);
+        }
         return new(
             ModOperationPreparationState.Ready,
             $"Switch the managed community mod to {discovery.Manifest.ReleaseVersion}.",
@@ -404,30 +438,6 @@ public sealed class ModManagementCoordinator(
         string gameDirectory,
         CancellationToken cancellationToken = default) =>
         deploymentService.StopManagingAsync(gameDirectory, cancellationToken);
-
-    private static bool MatchesRecordedArtifact(
-        ModInstalledArtifactState receipt,
-        ModReleaseArtifact artifact) =>
-        receipt.Size == artifact.Size
-        && string.Equals(receipt.Sha256, artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(receipt.Version, artifact.ExpectedVersion, StringComparison.Ordinal)
-        && MatchesRecordedRuntimeManifest(receipt.RuntimeManifest, artifact.RuntimeManifest);
-
-    private static bool MatchesRecordedRuntimeManifest(
-        ModInstalledRuntimeManifestState? receipt,
-        ModRuntimeManifestArtifact? artifact) =>
-        receipt is null
-            ? artifact is null
-            : artifact is not null
-                && receipt.Size == artifact.Size
-                && string.Equals(receipt.Sha256, artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(receipt.FileName, artifact.FileName, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(
-                    receipt.SourceRevision,
-                    artifact.ExpectedSourceRevision,
-                    StringComparison.OrdinalIgnoreCase)
-                && string.Equals(receipt.Repository, artifact.ExpectedRepository, StringComparison.Ordinal)
-                && string.Equals(receipt.Tag, artifact.ExpectedTag, StringComparison.Ordinal);
 
 }
 

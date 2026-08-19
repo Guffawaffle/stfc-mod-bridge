@@ -46,7 +46,7 @@ public sealed class HttpModArtifactDownloader(
 
 public sealed class WindowsModArtifactVersionReader(
     string expectedRuntimeDistributionId,
-    IModBinaryVersionMetadataReader? metadataReader = null) : IModArtifactVersionReader
+    IModBinaryVersionMetadataReader? metadataReader = null) : IModArtifactProductVersionReader
 {
     private readonly string expectedRuntimeDistributionId = !string.IsNullOrWhiteSpace(expectedRuntimeDistributionId)
         ? expectedRuntimeDistributionId
@@ -56,7 +56,13 @@ public sealed class WindowsModArtifactVersionReader(
     private readonly IModBinaryVersionMetadataReader metadataReader =
         metadataReader ?? new WindowsModBinaryVersionMetadataReader();
 
-    public string? ReadVersion(string artifactPath)
+    public string? ReadVersion(string artifactPath) =>
+        ReadValidatedMetadata(artifactPath).FileVersion;
+
+    public string? ReadProductVersion(string artifactPath) =>
+        ReadValidatedMetadata(artifactPath).ProductVersion;
+
+    private ModBinaryVersionMetadata ReadValidatedMetadata(string artifactPath)
     {
         var metadata = metadataReader.Read(artifactPath);
         var identity = ModBuildIdentityCommentParser.Parse(metadata.Comments);
@@ -74,7 +80,7 @@ public sealed class WindowsModArtifactVersionReader(
                 $"The artifact declares runtime distribution '{identity.Identity.DistributionId}', "
                 + $"not '{expectedRuntimeDistributionId}'.");
         }
-        return metadata.FileVersion;
+        return metadata;
     }
 }
 

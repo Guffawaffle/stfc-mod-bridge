@@ -571,6 +571,50 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task BlockedArtifactPreviewCannotPrepareConfigurationOrCreateAJournal()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var blockedMessage = "The retained release floor blocks this provider switch.";
+        var blocked = preview with
+        {
+            Artifact = preview.Artifact! with
+            {
+                State = ModOperationPreparationState.MutationBlocked,
+                Message = blockedMessage,
+            },
+        };
+        var sourceBackupsBefore = fixture.BackupStore.List(
+            fixture.GameDirectory,
+            "guffawaffle").Count;
+
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.ExecuteAsync(blocked, blocked.ConfirmationText));
+
+        Assert.AreEqual(blockedMessage, exception.Message);
+        Assert.IsFalse(blocked.CanExecute);
+        Assert.AreEqual(
+            sourceBackupsBefore,
+            fixture.BackupStore.List(fixture.GameDirectory, "guffawaffle").Count);
+        CollectionAssert.AreEqual(
+            GuffawaffleArtifact,
+            File.ReadAllBytes(Path.Combine(fixture.GameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(
+            fixture.GuffawaffleConfiguration,
+            File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(
+            new LauncherProviderSelection("guffawaffle", "stable"),
+            fixture.SelectionStore.Load());
+        Assert.IsNull(fixture.Coordinator.ReadJournal());
+    }
+
+    [TestMethod]
     public async Task RecoveryIsRejectedWhileRootMutationLeaseIsHeld()
     {
         using var directory = new TemporaryDirectory();
@@ -637,6 +681,13 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             $".version.dll.{preview.Configuration.TransactionId}.rollback");
         File.Move(targetPath, rollbackPath);
         File.WriteAllBytes(targetPath, NetnivArtifact);
+        ModFileIdentityReceipt targetFileIdentity;
+        using (var exactTarget = ExactFileMutation.Open(targetPath))
+        {
+            targetFileIdentity = new(
+                exactTarget.Identity.VolumeSerialNumber,
+                exactTarget.Identity.FileIndex);
+        }
         File.WriteAllBytes(fixture.ConfigurationPath, fixture.NetnivConfiguration);
         fixture.SelectionStore.Save(new("netniv", "stable"));
         var targetState = sourceState with
@@ -649,7 +700,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             RuntimeDistributionId = "netniv.stfc-community-mod",
         };
         var deploymentJournal = new ModDeploymentJournal(
-            1,
+            2,
             preview.Configuration.TransactionId,
             ModDeploymentOperation.Deploy,
             ModDeploymentPhase.Committed,
@@ -664,7 +715,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 "version.dll"),
             HadExistingArtifact: true,
             sourceState,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            TargetArtifactFileIdentity: targetFileIdentity);
         WriteJson(fixture.TargetDeployment.InstalledStatePath, targetState);
         WriteJson(fixture.TargetDeployment.JournalPath, deploymentJournal);
         WriteJson(
@@ -759,11 +811,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                     liveSelectionStore.Load());
                 CollectionAssert.AreEqual(
                     GuffawaffleArtifact,
-                    await File.ReadAllBytesAsync(liveDllPath));
+                    await ReadAllBytesSharedAsync(liveDllPath));
             }
             else if (crashMode == "artifact-partial")
             {
-                CollectionAssert.AreEqual(NetnivArtifact, await File.ReadAllBytesAsync(liveDllPath));
+                CollectionAssert.AreEqual(NetnivArtifact, await ReadAllBytesSharedAsync(liveDllPath));
                 CollectionAssert.AreEqual(
                     Encoding.UTF8.GetBytes(
                         "# guffawaffle\r\n[graphics]\r\nfree_resize = true\r\n"),
@@ -793,7 +845,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                     liveSelectionStore.Load());
                 CollectionAssert.AreEqual(
                     GuffawaffleArtifact,
-                    await File.ReadAllBytesAsync(liveDllPath));
+                    await ReadAllBytesSharedAsync(liveDllPath));
             }
             await TerminateCrashProbeAsync(child, stateDirectory);
 
@@ -837,7 +889,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             {
                 CollectionAssert.AreEqual(
                     targetCommitted ? NetnivArtifact : GuffawaffleArtifact,
-                    await File.ReadAllBytesAsync(dllPath));
+                    await ReadAllBytesSharedAsync(dllPath));
                 var installedState = fixture.TargetDeployment.ReadInstalledState();
                 Assert.IsNotNull(installedState);
                 Assert.AreEqual(targetCommitted ? "netniv" : "guffawaffle", installedState.ProviderId);
@@ -856,7 +908,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                         fixture.TargetDeployment.ReadJournal()!.Phase);
                     CollectionAssert.AreEqual(
                         NetnivArtifact,
-                        await File.ReadAllBytesAsync(dllPath));
+                        await ReadAllBytesSharedAsync(dllPath));
                     Assert.AreEqual(
                         new LauncherProviderSelection("netniv", "stable"),
                         fixture.SelectionStore.Load());
@@ -1056,6 +1108,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         }
 
         var sourceArtifact = Artifact(GuffawaffleArtifact, "2.1.0.8");
+        var sourceCertification = GuffawaffleCertification(
+            GuffawaffleArtifact,
+            sourceArtifact.ExpectedVersion);
         var targetCertification = reviewedTarget
             ? Certification(NetnivArtifact, "1.1.5.1")
             : null;
@@ -1069,7 +1124,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             stateDirectory,
             GuffawaffleArtifact,
             sourceArtifact.ExpectedVersion,
-            new("guffawaffle", "stable", "guffawaffle.windows"));
+            new("guffawaffle", "stable", "guffawaffle.windows"),
+            reviewedCertification: sourceCertification);
         var targetDeployment = Deployment(
             stateDirectory,
             NetnivArtifact,
@@ -1192,6 +1248,20 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 + $"at '{crashMode}/{crashStage}' to publish '{readyPath}'. "
                 + $"Output: {output} Error: {error}");
         }
+    }
+
+    private static async Task<byte[]> ReadAllBytesSharedAsync(string path)
+    {
+        await using var source = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var destination = new MemoryStream(checked((int)source.Length));
+        await source.CopyToAsync(destination);
+        return destination.ToArray();
     }
 
     private static async Task TerminateCrashProbeAsync(Process child, string stateDirectory)
@@ -1394,6 +1464,29 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             "v1.1.5.1",
             "1.1.5.1",
             new string('1', 40),
+            "version.dll",
+            contents.LongLength,
+            hash,
+            "version.dll",
+            contents.LongLength,
+            hash,
+            version,
+            DateTimeOffset.Parse("2026-08-09T00:00:00Z", CultureInfo.InvariantCulture));
+    }
+
+    private static ReviewedReleaseCertification GuffawaffleCertification(
+        byte[] contents,
+        string version)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(contents));
+        return new(
+            "guffawaffle",
+            "stable",
+            "guffawaffle.windows",
+            "Guffawaffle/stfc-mod",
+            "v2.1.0-guffa.8",
+            "2.1.0-guffa.8",
+            new string('2', 40),
             "version.dll",
             contents.LongLength,
             hash,

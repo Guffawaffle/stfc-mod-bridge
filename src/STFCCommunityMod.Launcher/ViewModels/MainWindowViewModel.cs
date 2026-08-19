@@ -493,7 +493,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 gameDirectory =>
                     processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId),
-                reviewedCertification: binding.ReviewedCertification);
+                reviewedCertification: binding.ReviewedCertification,
+                reviewedCertifications: reviewedReleases.Certifications);
             var candidateAcquirer = binding.IsAvailable
                 && binding.ReviewedCertification is not null
                     ? new ReviewedModArtifactCandidateAcquirer(

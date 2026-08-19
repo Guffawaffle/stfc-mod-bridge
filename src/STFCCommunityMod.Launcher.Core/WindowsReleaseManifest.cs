@@ -333,9 +333,27 @@ public static partial class WindowsReleaseSelectionPolicy
     private const string RuntimeManifestArtifactId = "windows-mod-runtime-manifest-x64";
 
     [GeneratedRegex(
-        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
+        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?<guffa>-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReleaseVersionPattern();
+
+    private enum ReleaseFamily
+    {
+        Final,
+        GuffawaffleFinal,
+        Alpha,
+        Beta,
+        ReleaseCandidate,
+        GuffawaffleReleaseCandidate,
+    }
+
+    private sealed record ReleaseOrderingIdentity(
+        Version CoreVersion,
+        ReleaseFamily Family,
+        int Iteration)
+    {
+        public bool IsFinal => Family is ReleaseFamily.Final or ReleaseFamily.GuffawaffleFinal;
+    }
 
     public static WindowsReleaseManifest SelectHighestEligibleRelease(
         IEnumerable<WindowsReleaseManifest> manifests,
@@ -356,9 +374,11 @@ public static partial class WindowsReleaseSelectionPolicy
             .Select(manifest => new
             {
                 Manifest = manifest,
-                Version = Version.Parse(DeriveEmbeddedFileVersion(manifest.ReleaseVersion)),
+                manifest.ReleaseVersion,
             })
-            .OrderByDescending(candidate => candidate.Version)
+            .OrderByDescending(
+                candidate => candidate.ReleaseVersion,
+                Comparer<string>.Create(CompareReleaseOrderingVersions))
             .ThenByDescending(candidate => candidate.Manifest.Tag, StringComparer.Ordinal)
             .FirstOrDefault();
         return eligible?.Manifest
@@ -422,7 +442,8 @@ public static partial class WindowsReleaseSelectionPolicy
             artifact.FileName,
             artifact.Size,
             artifact.Sha256,
-            expectedFileVersion);
+            expectedFileVersion,
+            ExpectedProductVersion: manifest.Tag);
     }
 
     public static ModRuntimeManifestArtifact SelectReviewedRuntimeManifestArtifact(
@@ -435,18 +456,7 @@ public static partial class WindowsReleaseSelectionPolicy
         ArgumentNullException.ThrowIfNull(certification);
         var reviewed = certification.RuntimeManifest
             ?? throw new InvalidDataException("The launcher-reviewed release does not authorize a runtime manifest.");
-        var expectedDllUri = new Uri(
-            $"https://github.com/{certification.Repository}/releases/download/"
-            + $"{Uri.EscapeDataString(certification.Tag)}/{Uri.EscapeDataString(certification.PayloadFileName)}");
-        if (manifest.ReleaseVersion != certification.ReleaseVersion
-            || manifest.Tag != certification.Tag
-            || manifest.Channel != certification.ChannelId
-            || manifest.Source.Repository != certification.Repository
-            || manifest.Source.TargetCommit != certification.SourceCommit
-            || dll.DownloadUri != expectedDllUri
-            || dll.FileName != certification.PayloadFileName
-            || dll.Size != certification.PayloadSize
-            || !string.Equals(dll.Sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase))
+        if (!MatchesReviewedReleaseArtifact(manifest, dll, certification))
         {
             throw new InvalidDataException("The discovered DLL does not match the launcher-reviewed pair certification.");
         }
@@ -481,6 +491,28 @@ public static partial class WindowsReleaseSelectionPolicy
             manifest.Source.TargetCommit,
             manifest.Source.Repository,
             manifest.Tag);
+    }
+
+    public static bool MatchesReviewedReleaseArtifact(
+        WindowsReleaseManifest manifest,
+        ModReleaseArtifact dll,
+        ReviewedReleaseCertification certification)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(dll);
+        ArgumentNullException.ThrowIfNull(certification);
+        var expectedDllUri = new Uri(
+            $"https://github.com/{certification.Repository}/releases/download/"
+            + $"{Uri.EscapeDataString(certification.Tag)}/{Uri.EscapeDataString(certification.PayloadFileName)}");
+        return manifest.ReleaseVersion == certification.ReleaseVersion
+            && manifest.Tag == certification.Tag
+            && manifest.Channel == certification.ChannelId
+            && manifest.Source.Repository == certification.Repository
+            && manifest.Source.TargetCommit == certification.SourceCommit
+            && dll.DownloadUri == expectedDllUri
+            && dll.FileName == certification.PayloadFileName
+            && dll.Size == certification.PayloadSize
+            && string.Equals(dll.Sha256, certification.PayloadSha256, StringComparison.OrdinalIgnoreCase);
     }
 
     public static LauncherReleaseArtifact SelectLauncherArtifact(
@@ -554,14 +586,107 @@ public static partial class WindowsReleaseSelectionPolicy
 
     public static string DeriveEmbeddedFileVersion(string releaseVersion)
     {
+        var identity = ParseReleaseOrderingIdentity(releaseVersion);
+        var patch = identity.Family is ReleaseFamily.Alpha
+            or ReleaseFamily.Beta
+            or ReleaseFamily.ReleaseCandidate
+                ? identity.Iteration
+                : 0;
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{identity.CoreVersion.Major}.{identity.CoreVersion.Minor}.{identity.CoreVersion.Build}.{patch}");
+    }
+
+    public static Version ParseReleaseOrderingVersion(string releaseVersion)
+    {
+        var identity = ParseReleaseOrderingIdentity(releaseVersion);
+        return new(
+            identity.CoreVersion.Major,
+            identity.CoreVersion.Minor,
+            identity.CoreVersion.Build,
+            identity.Iteration);
+    }
+
+    public static Version ParseProductReleaseOrderingVersion(string productVersion)
+    {
+        if (!productVersion.StartsWith('v'))
+        {
+            throw new InvalidDataException(
+                $"Product version '{productVersion}' is not a release tag.");
+        }
+        return ParseReleaseOrderingVersion(productVersion[1..]);
+    }
+
+    public static int CompareReleaseOrderingVersions(string left, string right)
+    {
+        var leftIdentity = ParseReleaseOrderingIdentity(left);
+        var rightIdentity = ParseReleaseOrderingIdentity(right);
+        var core = leftIdentity.CoreVersion.CompareTo(rightIdentity.CoreVersion);
+        if (core != 0)
+        {
+            return core;
+        }
+        if (leftIdentity.Family == rightIdentity.Family)
+        {
+            return leftIdentity.Iteration.CompareTo(rightIdentity.Iteration);
+        }
+        if (leftIdentity.IsFinal != rightIdentity.IsFinal)
+        {
+            return leftIdentity.IsFinal ? 1 : -1;
+        }
+        throw new InvalidDataException(
+            $"Release versions '{left}' and '{right}' use incomparable release families.");
+    }
+
+    public static int CompareProductReleaseOrderingVersions(string left, string right)
+    {
+        if (!left.StartsWith('v') || !right.StartsWith('v'))
+        {
+            throw new InvalidDataException("Product versions must be canonical release tags.");
+        }
+        return CompareReleaseOrderingVersions(left[1..], right[1..]);
+    }
+
+    private static ReleaseOrderingIdentity ParseReleaseOrderingIdentity(string releaseVersion)
+    {
         var match = ReleaseVersionPattern().Match(releaseVersion);
         if (!match.Success)
         {
-            throw new InvalidDataException($"Release version '{releaseVersion}' cannot map to a Windows file version.");
+            throw new InvalidDataException($"Release version '{releaseVersion}' cannot be ordered.");
         }
-        var patch = match.Groups["patch"].Success ? match.Groups["patch"].Value : "0";
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{match.Groups["major"].Value}.{match.Groups["minor"].Value}.{match.Groups["revision"].Value}.{patch}");
+        var core = new Version(
+            ParseCanonicalComponent(match.Groups["major"].Value, releaseVersion),
+            ParseCanonicalComponent(match.Groups["minor"].Value, releaseVersion),
+            ParseCanonicalComponent(match.Groups["revision"].Value, releaseVersion));
+        var iteration = match.Groups["patch"].Success
+            ? ParseCanonicalComponent(match.Groups["patch"].Value, releaseVersion)
+            : 0;
+        var family = match.Groups["guffa"].Success
+            ? releaseVersion.Contains("-guffa.rc", StringComparison.Ordinal)
+                ? ReleaseFamily.GuffawaffleReleaseCandidate
+                : ReleaseFamily.GuffawaffleFinal
+            : releaseVersion.Contains(".alpha.", StringComparison.Ordinal)
+                ? ReleaseFamily.Alpha
+                : releaseVersion.Contains(".beta.", StringComparison.Ordinal)
+                    ? ReleaseFamily.Beta
+                    : releaseVersion.Contains("-rc.", StringComparison.Ordinal)
+                        ? ReleaseFamily.ReleaseCandidate
+                        : ReleaseFamily.Final;
+        return new(core, family, iteration);
+    }
+
+    private static int ParseCanonicalComponent(string value, string releaseVersion)
+    {
+        if (value.Length > 1 && value[0] == '0'
+            || !int.TryParse(
+                value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var component))
+        {
+            throw new InvalidDataException(
+                $"Release version '{releaseVersion}' contains a noncanonical or unsupported numeric component.");
+        }
+        return component;
     }
 }

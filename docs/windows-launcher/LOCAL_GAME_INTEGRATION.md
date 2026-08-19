@@ -5,11 +5,11 @@ human-maintained real Star Trek Fleet Command installation. It is additional
 first-party dogfood evidence, not a contributor or GitHub CI requirement.
 
 The harness implements the read-only **Inspect** profile, restorable provider
-install/remove and source-switch journeys behind **Mutate** plus **Live
-providers**, and a provider-scoped TOML restore/recovery journey behind the
-**Recovery lab** profile. Updates, repair, direct game launch, and the remaining
-permutations are tracked by issue #63. Provider-scoped TOML history and
-coordinated switching are tracked by #65.
+install/remove, manual/developer DLL adoption, final-residue, and source-switch
+journeys behind **Mutate** plus **Live providers**, and a provider-scoped TOML
+restore/recovery journey behind the **Recovery lab** profile. Updates, repair,
+direct game launch, and the remaining permutations are tracked by issue #63.
+Provider-scoped TOML history and coordinated switching are tracked by #65.
 
 ## Run the Inspect profile
 
@@ -61,13 +61,33 @@ network switches:
   -UseLiveProviderReleases
 ```
 
-This profile requires a clean maintained target without `version.dll`. It uses
+The provider-install and switch journey within this profile requires a clean
+maintained target without `version.dll`, `stfc-runtime-manifest.json`, or TOML;
+it reports an explicit skip on a changed starting state while other eligible
+live journeys continue. It uses
 isolated launcher state, production provider trust/deployment/removal paths,
-and an exact before/after target fingerprint. The live campaign also performs
-Guffawaffle → NetniV → Guffawaffle using distinct byte-identifiable TOML
-profiles, verifies each managed DLL attribution, then removes the mod and
+and an exact before/after target fingerprint. The clean-target campaign also
+performs Guffawaffle → NetniV → Guffawaffle using distinct byte-identifiable
+TOML profiles, verifies each managed DLL attribution, then removes the mod and
 returns the target to its clean baseline. A different validated STFC
 installation may remain running.
+
+The same profile also runs a separately isolated manual-adoption journey when
+the target already has a human-managed `version.dll`. The harness never
+replaces human files with a test fixture before production adoption begins. It
+proves the production health model classifies the DLL as manual and that a
+missing adoption decision refuses before artifact download or game-file
+mutation. Explicit adoption then installs the latest publisher-authenticated
+Guffawaffle DLL through the production trust and transaction path. Production
+Remove must restore the exact prior DLL. A human-managed runtime manifest, when
+present, remains outside a newer signed DLL's reviewed runtime-activation
+authority and is preserved byte-for-byte.
+
+Every successful live campaign additionally verifies that no managed receipt,
+nonterminal journal, transaction stage, rollback, restore, partial download,
+temporary file, or exact owned game process remains. The complete top-level
+game fingerprint must match its baseline before the isolated launcher state is
+deleted and its absence is asserted.
 
 The maintained target proves Bridge projects the observed installation and mod
 state truthfully. The path and binary identities remain local-only.
@@ -117,8 +137,8 @@ implicitly authorizes downloads, mutations, or process launch.
 | Profile | Intent |
 |---|---|
 | Inspect | Implemented: read-only discovery, health, provenance, Diagnostics, and TOML parsing |
-| Mutate | Partially implemented: provider install/remove, provider switch, TOML backup, and restore |
-| Live providers | Implemented for current journeys: real Guffawaffle manifest/trust and NetniV reviewed-hash discovery/download |
+| Mutate | Partially implemented: provider install/remove, manual adoption, provider switch, TOML backup, and restore |
+| Live providers | Implemented for current journeys: real Guffawaffle manifest/trust, NetniV reviewed-hash discovery/download, manual adoption, and final residue audit |
 | Launch | Planned: direct `prime.exe` launch with exact owned-PID observation and cleanup |
 | Recovery lab | Partially implemented: representative post-TOML-commit interruption with production recovery proof |
 
