@@ -28,6 +28,14 @@ MSIX, installs and activates it, proves an unpackaged reader observes a
 nonce-bound marker at that nominal path, and removes both package and test
 certificate before the canonical unsigned artifact is uploaded.
 
+That statement records the currently qualified package baseline, not an
+irreversible permission-model decision. The meaning of those capabilities and
+the evidence required to reduce them are now owned by
+[`APP_INSTALLER_PERMISSIONS.md`](APP_INSTALLER_PERMISSIONS.md) and issue #219.
+Any accepted lower-authority topology supersedes this paragraph only after it
+requalifies the same external-state, recovery, signing, and lifecycle
+boundaries.
+
 This decision does not close issue #66. The Windows packaging mechanics are
 proven, but the native Battle implementation and selected SQLite provider do
 not exist yet, so their exact compressed and runtime deltas cannot be measured.
