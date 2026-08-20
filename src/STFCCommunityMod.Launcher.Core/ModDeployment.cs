@@ -70,7 +70,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly TimeProvider timeProvider;
     private readonly ModInstallationAttribution installationAttribution;
     private readonly ReviewedReleaseCertification? reviewedCertification;
-    private readonly IReadOnlyList<ReviewedReleaseCertification> reviewedCertifications;
+    private readonly IReadOnlyList<ReviewedReleaseCertification> reviewedReleaseEvidence;
     private readonly Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted;
     private readonly Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint;
     private readonly Func<string, ExactFileRevision, bool>? afterArtifactCommitted;
@@ -142,15 +142,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.installationAttribution = installationAttribution
             ?? throw new ArgumentNullException(nameof(installationAttribution));
         this.reviewedCertification = reviewedCertification;
-        this.reviewedCertifications = (reviewedCertifications
+        reviewedReleaseEvidence = (reviewedCertifications
                 ?? (reviewedCertification is null ? [] : [reviewedCertification]))
-            .GroupBy(
-                certification => (
-                    certification.ProviderId,
-                    certification.ChannelId,
-                    certification.RuntimeDistributionId),
-                EqualityComparer<(string, string, string)>.Default)
-            .Select(group => group.Single())
+            .Distinct()
             .ToArray();
         this.afterFileCheckpoint = afterFileCheckpoint;
         this.afterArtifactCommitted = afterArtifactCommitted;
@@ -3778,6 +3772,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModReleaseArtifact artifact,
         ModInstallationAttribution attribution)
     {
+        var candidateProductVersion = ResolveReleaseProductVersion(artifact, attribution);
+        if (reviewedCertification is not null
+            && artifact.ExpectedProductVersion is null
+            && candidateProductVersion is null)
+        {
+            return "The selected release does not match the current launcher-reviewed release identity.";
+        }
         if (state is not null
             && state.ReleaseProductVersion is null
             && (!MatchesAttribution(state, attribution)
@@ -3792,7 +3793,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return null;
         }
-        var candidateProductVersion = ResolveReleaseProductVersion(artifact, attribution);
         if (candidateProductVersion is null)
         {
             return $"The selected release has no signed product-version identity, but this installation retains {floor.ReleaseProductVersion} as its highest accepted release for this provider and channel.";
@@ -3849,7 +3849,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return artifact.ExpectedProductVersion;
         }
-        var matches = reviewedCertifications
+        var matches = (reviewedCertification is null
+                ? []
+                : new[] { reviewedCertification })
             .Where(certification =>
                 IsOrderableReleaseProductVersion(certification.Tag)
                 &&

@@ -1118,6 +1118,36 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
+    public async Task DeferredNetniv116SettingsRemainBytePreservedDuringUnrelatedSave()
+    {
+        const string source =
+            "# preserve 1.1.6.0 settings until their typed catalog review\r\n"
+            + "[graphics]\r\n"
+            + "free_resize = true\r\n"
+            + "ui_scale_ship = 1.25\r\n"
+            + "\r\n"
+            + "[ui]\r\n"
+            + "auto_confirm_instant_warp = \"warp\"\r\n"
+            + "hud_daily_goals = \"always\"\r\n";
+        using var fixture = SettingsFixture.Create(source, LoadNetniVStableCatalog());
+
+        Assert.IsFalse(fixture.Catalog.Settings.Any(setting =>
+            setting.Path == "graphics.ui_scale_ship"));
+        Assert.IsFalse(fixture.Catalog.Settings.Any(setting =>
+            setting.Path == "ui.auto_confirm_instant_warp"));
+        Assert.IsFalse(fixture.Catalog.Settings.Any(setting =>
+            setting.Path == "ui.hud_daily_goals"));
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        fixture.ViewModel.SaveCommand.Execute(null);
+        await WaitUntilAsync(() => !fixture.ViewModel.HasPendingChanges);
+
+        Assert.AreEqual(
+            source.Replace("free_resize = true", "free_resize = false", StringComparison.Ordinal),
+            await File.ReadAllTextAsync(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
     public void NetnivSemanticNavigationOmitsEmptySections()
     {
         using var fixture = SettingsFixture.Create(catalog: LoadNetniVStableCatalog());
@@ -1706,8 +1736,8 @@ public sealed class SettingsProjectionTests
             new(
                 "netniv",
                 "stable",
-                "1.1.4",
-                "d912611fa1eca49fc54f363bdf8377dfebf8def0"));
+                "1.1.6.0",
+                "e80a303a9949c89100b6e59b8a5e5cc2271e7144"));
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)

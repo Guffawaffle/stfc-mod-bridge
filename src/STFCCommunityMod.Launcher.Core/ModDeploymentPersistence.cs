@@ -424,7 +424,7 @@ public sealed partial class ModDeploymentService
 
     private string? InferReviewedReleaseProductVersion(ModInstalledArtifactState state)
     {
-        var matches = reviewedCertifications.Where(certification =>
+        var matches = reviewedReleaseEvidence.Where(certification =>
                 IsOrderableReleaseProductVersion(certification.Tag)
                 && certification.ProviderId == state.ProviderId
                 && certification.ChannelId == state.ReleaseChannelId

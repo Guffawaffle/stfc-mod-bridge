@@ -39,13 +39,16 @@ public sealed class ProviderStartupContextTests
         var providerCatalog = BundledLauncherProviderCatalog.Load();
         var artifacts = BundledLauncherProviderCatalog.LoadKnownWindowsArtifacts(providerCatalog);
 
-        Assert.AreEqual(3, artifacts.Count);
+        Assert.AreEqual(4, artifacts.Count);
         var netnivStable = artifacts.Find(
-            "020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A",
-            19630080);
+            "6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9",
+            17920000);
         Assert.IsNotNull(netnivStable);
         Assert.AreEqual("netniv", netnivStable.ProviderId);
         Assert.AreEqual("stable", netnivStable.TrackId);
+        Assert.IsNotNull(artifacts.Find(
+            "020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A",
+            19630080));
     }
 
     [TestMethod]
@@ -98,9 +101,9 @@ public sealed class ProviderStartupContextTests
         var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
 
         Assert.AreEqual("netniv", catalog.Source.StableId);
-        Assert.AreEqual("netniv.configuration.stable-1.1.4", catalog.Identity.CatalogId);
-        Assert.AreEqual("1.1.4", catalog.Identity.ReleaseVersion);
-        Assert.AreEqual("d912611fa1eca49fc54f363bdf8377dfebf8def0", catalog.Identity.SourceCommit);
+        Assert.AreEqual("netniv.configuration.stable-1.1.6.0", catalog.Identity.CatalogId);
+        Assert.AreEqual("1.1.6.0", catalog.Identity.ReleaseVersion);
+        Assert.AreEqual("e80a303a9949c89100b6e59b8a5e5cc2271e7144", catalog.Identity.SourceCommit);
         Assert.AreEqual(
             LauncherFeatureImplementations.PrincipalCatalogSettingsLayout,
             catalog.ReviewedSettingsLayoutId);
@@ -123,8 +126,8 @@ public sealed class ProviderStartupContextTests
         Assert.AreEqual(LauncherProviderCapabilityStatus.Supported, evidence.CapabilityStatus);
         Assert.AreEqual("netniv", report.Binding.ProviderId);
         Assert.AreEqual("stable", report.Binding.ChannelId);
-        Assert.AreEqual("netniv.configuration.stable-1.1.4", report.Binding.CatalogId);
-        Assert.AreEqual("1.1.4.3", report.Binding.CatalogVersion);
+        Assert.AreEqual("netniv.configuration.stable-1.1.6.0", report.Binding.CatalogId);
+        Assert.AreEqual("1.1.6.3", report.Binding.CatalogVersion);
     }
 
     [TestMethod]

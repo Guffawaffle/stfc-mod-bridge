@@ -24,6 +24,16 @@
     {
       "providerId": "netniv",
       "runtimeDistributionId": "netniv.stfc-community-mod",
+      "trackId": "stable",
+      "version": "1.1.6.0",
+      "size": 17920000,
+      "sha256": "6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9",
+      "sourceReference": "github-release:v1.1.6.0",
+      "observedAtUtc": "2026-08-20T10:24:33.0000000+00:00"
+    },
+    {
+      "providerId": "netniv",
+      "runtimeDistributionId": "netniv.stfc-community-mod",
       "trackId": "dev",
       "version": "1.1.5.1",
       "size": 19730944,

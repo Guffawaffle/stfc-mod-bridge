@@ -327,23 +327,25 @@ public sealed class ModManagementCoordinatorTests
             "netniv",
             "stable",
             "netniv.stfc-community-mod");
+        var artifact = NetnivReleaseArtifact();
         var certification = ReviewedCertification(
             attribution,
-            "v1.1.4",
-            ReleaseArtifact());
+            "v1.1.6.0",
+            artifact);
         var deploymentService = new ModDeploymentService(
             temporaryDirectory.CreateDirectory("state"),
             new FakeDownloader(),
-            new FakeVersionReader(),
+            new FakeVersionReader(fileVersion: artifact.ExpectedVersion),
             new FakeAuthenticityVerifier(),
             _ => false,
             attribution,
+            reviewedCertification: certification,
             reviewedCertifications: [certification]);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
             (await deploymentService.DeployAsync(
                 gameDirectory,
-                ReleaseArtifact(),
+                artifact,
                 ExistingArtifactPolicy.Reject)).State);
         var healthService = new LauncherHealthService(
             new ModInstallationInspector(
@@ -352,14 +354,14 @@ public sealed class ModManagementCoordinatorTests
             new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty));
         var coordinator = new ModManagementCoordinator(
             deploymentService,
-            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new FakeReleaseDiscoveryClient(NetnivReleaseDiscovery()),
             new Version(0, 1, 0),
             healthService: healthService);
 
         var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
 
         Assert.AreEqual(ModOperationPreparationState.UpToDate, preparation.State, preparation.Message);
-        Assert.AreEqual("v1.1.4", deploymentService.ReadInstalledState(gameDirectory)!.ReleaseProductVersion);
+        Assert.AreEqual("v1.1.6.0", deploymentService.ReadInstalledState(gameDirectory)!.ReleaseProductVersion);
     }
 
     [TestMethod]
@@ -371,15 +373,16 @@ public sealed class ModManagementCoordinatorTests
             "netniv",
             "stable",
             "netniv.stfc-community-mod");
-        var artifact = ReleaseArtifact();
-        var certification = ReviewedCertification(attribution, "v1.1.4", artifact);
+        var artifact = NetnivReleaseArtifact();
+        var certification = ReviewedCertification(attribution, "v1.1.6.0", artifact);
         var deploymentService = new ModDeploymentService(
             temporaryDirectory.CreateDirectory("state"),
             new FakeDownloader(),
-            new FakeVersionReader(),
+            new FakeVersionReader(fileVersion: artifact.ExpectedVersion),
             new FakeAuthenticityVerifier(),
             _ => false,
             attribution,
+            reviewedCertification: certification,
             reviewedCertifications: [certification]);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
@@ -390,7 +393,7 @@ public sealed class ModManagementCoordinatorTests
         File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [0, 0, 0]);
         var coordinator = new ModManagementCoordinator(
             deploymentService,
-            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new FakeReleaseDiscoveryClient(NetnivReleaseDiscovery()),
             new Version(0, 1, 0),
             healthService: new LauncherHealthService(
                 new ModInstallationInspector(
@@ -408,6 +411,76 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
+    public async Task LegacyNetnivReceiptUpdatesToCurrentReviewedReleaseThroughCoordinator()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var oldBytes = new byte[] { 1, 1, 4 };
+        var oldArtifact = new ModReleaseArtifact(
+            new Uri("https://example.invalid/v1.1.4/version.dll"),
+            "version.dll",
+            oldBytes.LongLength,
+            Convert.ToHexString(SHA256.HashData(oldBytes)),
+            "1.1.4.0");
+        var legacyService = new ModDeploymentService(
+            stateDirectory,
+            new StaticDownloader(oldBytes),
+            new FakeVersionReader(fileVersion: oldArtifact.ExpectedVersion),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await legacyService.DeployAsync(
+                gameDirectory,
+                oldArtifact,
+                ExistingArtifactPolicy.Reject)).State);
+        Assert.IsNull(legacyService.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+
+        var currentArtifact = NetnivReleaseArtifact();
+        var historical = ReviewedCertification(attribution, "v1.1.4", oldArtifact);
+        var current = ReviewedCertification(attribution, "v1.1.6.0", currentArtifact);
+        var deploymentService = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(),
+            new FakeVersionReader(fileVersion: currentArtifact.ExpectedVersion),
+            new FakeAuthenticityVerifier(),
+            _ => false,
+            attribution,
+            reviewedCertification: current,
+            reviewedCertifications: [current, historical]);
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(NetnivReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: new(
+                new ModInstallationInspector(
+                    deploymentService,
+                    new SystemModInstallationFileSystem()),
+                new("netniv", "stable", "netniv.stfc-community-mod", true, string.Empty)));
+
+        var preparation = await coordinator.PrepareLatestAsync(
+            gameDirectory,
+            isGameRunning: false);
+        var result = await coordinator.ExecuteAsync(preparation);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, preparation.State, preparation.Message);
+        Assert.AreEqual(ModManagementActionKind.CheckForUpdate, preparation.ActionKind);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        CollectionAssert.AreEqual(
+            ArtifactContents,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual(
+            "v1.1.6.0",
+            deploymentService.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+    }
+
+    [TestMethod]
     public async Task ExactReviewedNetnivReleaseCanReturnAfterAProviderRoundTrip()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -419,21 +492,22 @@ public sealed class ModManagementCoordinatorTests
             "netniv.stfc-community-mod");
         var certification = ReviewedCertification(
             netnivAttribution,
-            "v1.1.4",
-            ReleaseArtifact());
+            "v1.1.6.0",
+            NetnivReleaseArtifact());
         var netnivService = new ModDeploymentService(
             stateDirectory,
             new FakeDownloader(),
-            new FakeVersionReader(),
+            new FakeVersionReader(fileVersion: NetnivReleaseArtifact().ExpectedVersion),
             new FakeAuthenticityVerifier(),
             _ => false,
             netnivAttribution,
+            reviewedCertification: certification,
             reviewedCertifications: [certification]);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
             (await netnivService.DeployAsync(
                 gameDirectory,
-                ReleaseArtifact(),
+                NetnivReleaseArtifact(),
                 ExistingArtifactPolicy.Reject)).State);
         var guffAttribution = new ModInstallationAttribution(
             "guffawaffle",
@@ -459,7 +533,7 @@ public sealed class ModManagementCoordinatorTests
                 ExistingArtifactPolicy.Reject)).State);
         var coordinator = new ModManagementCoordinator(
             netnivService,
-            new FakeReleaseDiscoveryClient(ReleaseDiscovery()),
+            new FakeReleaseDiscoveryClient(NetnivReleaseDiscovery()),
             new Version(0, 1, 0),
             healthService: new LauncherHealthService(
                 new ModInstallationInspector(
@@ -859,6 +933,22 @@ public sealed class ModManagementCoordinatorTests
                 ExpectedProductVersion: "v2.1.0-guffa.9"));
     }
 
+    private static WindowsReleaseDiscovery NetnivReleaseDiscovery() =>
+        new(
+            new WindowsReleaseManifest(
+                1,
+                "1.1.6.0",
+                "v1.1.6.0",
+                "stable",
+                "active",
+                new Version(0, 1, 0),
+                new(
+                    "netniV/stfc-mod",
+                    "e80a303a9949c89100b6e59b8a5e5cc2271e7144"),
+                "launcher-reviewed-exact-hash",
+                []),
+            NetnivReleaseArtifact());
+
     private static WindowsReleaseDiscovery OlderSignedReleaseDiscovery()
     {
         byte[] olderContents = [2, 1, 0, 9];
@@ -916,6 +1006,14 @@ public sealed class ModManagementCoordinatorTests
         Convert.ToHexString(SHA256.HashData(ArtifactContents)),
         "2.1.0.8");
 
+    private static ModReleaseArtifact NetnivReleaseArtifact() =>
+        ReleaseArtifact() with
+        {
+            DownloadUri = new Uri(
+                "https://github.com/netniV/stfc-mod/releases/download/v1.1.6.0/stfc-community-mod.zip"),
+            ExpectedVersion = "1.1.6.0",
+        };
+
     private sealed class FakeReleaseDiscoveryClient(WindowsReleaseDiscovery discovery)
         : IWindowsReleaseDiscoveryClient
     {
@@ -956,13 +1054,26 @@ public sealed class ModManagementCoordinatorTests
                     : ArtifactContents.LongLength));
     }
 
-    private sealed class FakeVersionReader(string? productVersion = null)
+    private sealed class StaticDownloader(byte[] contents) : IModArtifactDownloader
+    {
+        public Task<ModArtifactDownload> DownloadAsync(
+            Uri uri,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModArtifactDownload(
+                HttpStatusCode.OK,
+                contents,
+                contents.LongLength));
+    }
+
+    private sealed class FakeVersionReader(
+        string? productVersion = null,
+        string? fileVersion = null)
         : IModArtifactProductVersionReader
     {
         public string? ReadVersion(string artifactPath) =>
-            new FileInfo(artifactPath).Length == UpdatedArtifactContents.LongLength
+            fileVersion ?? (new FileInfo(artifactPath).Length == UpdatedArtifactContents.LongLength
                 ? "2.1.0.9"
-                : "2.1.0.8";
+                : "2.1.0.8");
 
         public string? ReadProductVersion(string artifactPath) =>
             new FileInfo(artifactPath).Length == UpdatedArtifactContents.LongLength

@@ -54,7 +54,7 @@ it contains:
 | Provider | Track | Version/source | Windows DLL SHA-256 | Signature evidence |
 |---|---|---|---|---|
 | Guffawaffle | Stable | `v2.1.0-guffa.9` | `FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A` | Valid expected Authenticode publisher and timestamp |
-| NetniV | Stable | `v1.1.4` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
+| NetniV | Stable | `v1.1.6.0` | `6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 | NetniV | Dev | Actions run `30677057536` at commit `238004460c4bb93aa717e47c41089fe8b71c4cf9` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` | Upstream artifact is unsigned; identity is exact reviewed bytes only |
 
 The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Bridge build before

@@ -60,6 +60,10 @@ release and downloaded ZIP exactly match the manually reviewed entry in
 one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
 are checked before the atomic deployment transaction commits. A newer or
 changed release fails closed until a maintainer reviews and updates the entry.
+Historical exact certifications are retained separately from the one current,
+installable certification. They cannot drive discovery or download; they only
+let Mod Bridge recover the release-order identity of an older exact managed
+receipt before applying the monotonic update floor.
 
 Guffawaffle stable releases publish a release manifest, signed DLL, runtime
 manifest, and compatibility ZIP. The release
@@ -104,12 +108,12 @@ The upstream provenance contract will supersede this shim; no publisher,
 configuration schema, runtime manifest, withdrawal policy, or migration
 compatibility is inferred from the allowlist.
 
-Manual observation refreshed 2026-08-13:
+Manual observation refreshed 2026-08-20:
 
-| Track | Immutable source | Download/container SHA-256 | `version.dll` SHA-256 |
+| Track | Reviewed source reference | Download/container SHA-256 | `version.dll` SHA-256 |
 |---|---|---|---|
 | Guffawaffle stable 2.1.0-guffa.9 | signed merge commit `5b5919cfb59dbe736be775adf7076b8f525bc067` | two-file release ZIP `4D978DDE0F855C6DCD894BECB34D4BE690F4CF00918398BB237B4AFD2C78E9D4` | `FF1DE2F6BD17E54760C75F7E94CA3FA6F01A380AD6C03DDFD98C0AF84910B80A` |
-| NetniV stable 1.1.4 | tag commit `d912611fa1eca49fc54f363bdf8377dfebf8def0` | release ZIP `EDC67ED72E4C942B08AB81D92D23B416F80E250CE5DB151FC4B7781C174D468C` | `020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A` |
+| NetniV stable 1.1.6.0 | unsigned tag commit `e80a303a9949c89100b6e59b8a5e5cc2271e7144`; GitHub release metadata observed mutable | release ZIP `9FDEA8CF4DD25D90A58EEE82952627D97A1B409B899F246C7594D5DC367D20B9` | `6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9` |
 | NetniV dev 1.1.5.1 | successful Actions run `30677057536` at `238004460c4bb93aa717e47c41089fe8b71c4cf9` | expiring Actions artifact `7DD716E85643F489A74E463A4A3B8604087338D3ED46E79F24F2FD439FA74732` | `6B0555C7052E3857B7441A6BE931AC0A21830F57886DC14AB9F2C69D3D9973EE` |
 
 ## Launcher-owned source selection

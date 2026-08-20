@@ -28,6 +28,25 @@
       "channelId": "stable",
       "runtimeDistributionId": "netniv.stfc-community-mod",
       "repository": "netniV/stfc-mod",
+      "tag": "v1.1.6.0",
+      "releaseVersion": "1.1.6.0",
+      "sourceCommit": "e80a303a9949c89100b6e59b8a5e5cc2271e7144",
+      "assetName": "stfc-community-mod.zip",
+      "assetSize": 9448048,
+      "assetSha256": "9FDEA8CF4DD25D90A58EEE82952627D97A1B409B899F246C7594D5DC367D20B9",
+      "payloadFileName": "version.dll",
+      "payloadSize": 17920000,
+      "payloadSha256": "6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9",
+      "payloadVersion": "1.1.6.0",
+      "observedAtUtc": "2026-08-20T10:24:33.0000000+00:00"
+    }
+  ],
+  "historicalCertifications": [
+    {
+      "providerId": "netniv",
+      "channelId": "stable",
+      "runtimeDistributionId": "netniv.stfc-community-mod",
+      "repository": "netniV/stfc-mod",
       "tag": "v1.1.4",
       "releaseVersion": "1.1.4",
       "sourceCommit": "d912611fa1eca49fc54f363bdf8377dfebf8def0",

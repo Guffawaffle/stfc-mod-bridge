@@ -20,10 +20,21 @@ public sealed class ReviewedReleaseCertificationTests
         var certification = catalog.Find("netniv", "stable");
 
         Assert.IsNotNull(certification);
-        Assert.AreEqual("v1.1.4", certification.Tag);
-        Assert.AreEqual("d912611fa1eca49fc54f363bdf8377dfebf8def0", certification.SourceCommit);
-        Assert.AreEqual("EDC67ED72E4C942B08AB81D92D23B416F80E250CE5DB151FC4B7781C174D468C", certification.AssetSha256);
-        Assert.AreEqual("020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A", certification.PayloadSha256);
+        Assert.AreEqual("v1.1.6.0", certification.Tag);
+        Assert.AreEqual("e80a303a9949c89100b6e59b8a5e5cc2271e7144", certification.SourceCommit);
+        Assert.AreEqual(9448048, certification.AssetSize);
+        Assert.AreEqual("9FDEA8CF4DD25D90A58EEE82952627D97A1B409B899F246C7594D5DC367D20B9", certification.AssetSha256);
+        Assert.AreEqual(17920000, certification.PayloadSize);
+        Assert.AreEqual("6B4C201D70AF8A00380AF3C07211051C571256640621063FC219A66785BFE4D9", certification.PayloadSha256);
+        Assert.AreEqual("1.1.6.0", certification.PayloadVersion);
+        Assert.IsNull(certification.RuntimeManifest);
+        var historical = catalog.ReleaseEvidence.Single(candidate =>
+            candidate.ProviderId == "netniv" && candidate.Tag == "v1.1.4");
+        Assert.AreEqual(19630080, historical.PayloadSize);
+        Assert.AreEqual(
+            "020C975FD2391DF1814897B9D5F03A55443F99367EA6ACC4065AF7E240D9547A",
+            historical.PayloadSha256);
+        Assert.AreEqual(3, catalog.ReleaseEvidence.Count);
     }
 
     [TestMethod]
@@ -90,7 +101,7 @@ public sealed class ReviewedReleaseCertificationTests
     public async Task UnreviewedNewLatestReleaseFailsClosed()
     {
         var certification = Certification();
-        var response = JsonResponse(certification).Replace("v1.1.4", "v1.1.5", StringComparison.Ordinal);
+        var response = JsonResponse(certification).Replace("v1.1.6.0", "v1.1.7.0", StringComparison.Ordinal);
         var client = new ReviewedGitHubReleaseAssetClient(new(new StaticHandler(response)), certification);
 
         var exception = await Assert.ThrowsExceptionAsync<InvalidDataException>(
@@ -456,17 +467,17 @@ public sealed class ReviewedReleaseCertificationTests
             "stable",
             "netniv.stfc-community-mod",
             "netniV/stfc-mod",
-            "v1.1.4",
-            "1.1.4",
-            "d912611fa1eca49fc54f363bdf8377dfebf8def0",
+            "v1.1.6.0",
+            "1.1.6.0",
+            "e80a303a9949c89100b6e59b8a5e5cc2271e7144",
             "stfc-community-mod.zip",
             archive.LongLength,
             Convert.ToHexString(SHA256.HashData(archive)),
             "version.dll",
             payload.LongLength,
             Convert.ToHexString(SHA256.HashData(payload)),
-            "1.1.4.0",
-            DateTimeOffset.Parse("2026-07-19T15:55:25Z", CultureInfo.InvariantCulture));
+            "1.1.6.0",
+            DateTimeOffset.Parse("2026-08-20T10:24:33Z", CultureInfo.InvariantCulture));
     }
 
     private static string JsonResponse(

@@ -6,7 +6,8 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class LauncherConfigurationSchemaSetLoaderTests
 {
-    private const string StableCommit = "d912611fa1eca49fc54f363bdf8377dfebf8def0";
+    private const string LegacyStableCommit = "d912611fa1eca49fc54f363bdf8377dfebf8def0";
+    private const string CurrentStableCommit = "e80a303a9949c89100b6e59b8a5e5cc2271e7144";
     private const string DevCommit = "238004460c4bb93aa717e47c41089fe8b71c4cf9";
     private static readonly string[] DisabledHotkeyAliases =
         ["shortcuts.set_hotkeys_disble", "shortcuts.set_hotkeys_disable"];
@@ -18,15 +19,20 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
     ];
 
     [TestMethod]
-    public void ExactStableAndDevApplicabilityPreservesReviewedDelta()
+    public void ExactReviewedApplicabilityPreservesReleaseDeltas()
     {
-        var stable = Load("stable", "1.1.4", StableCommit);
+        var legacyStable = Load("stable", "1.1.4", LegacyStableCommit);
+        var currentStable = Load("stable", "1.1.6.0", CurrentStableCommit);
         var dev = Load("dev", "1.1.5.1", DevCommit);
 
-        Assert.AreEqual("netniv.configuration.stable-1.1.4", stable.Identity.CatalogId);
-        Assert.AreEqual(new Version(1, 1, 4, 3), stable.Identity.CatalogVersion);
-        Assert.AreEqual(StableCommit, stable.Identity.SourceCommit);
-        Assert.AreEqual(203, stable.Settings.Count);
+        Assert.AreEqual("netniv.configuration.stable-1.1.4", legacyStable.Identity.CatalogId);
+        Assert.AreEqual(new Version(1, 1, 4, 3), legacyStable.Identity.CatalogVersion);
+        Assert.AreEqual(LegacyStableCommit, legacyStable.Identity.SourceCommit);
+        Assert.AreEqual(203, legacyStable.Settings.Count);
+        Assert.AreEqual("netniv.configuration.stable-1.1.6.0", currentStable.Identity.CatalogId);
+        Assert.AreEqual(new Version(1, 1, 6, 3), currentStable.Identity.CatalogVersion);
+        Assert.AreEqual(CurrentStableCommit, currentStable.Identity.SourceCommit);
+        Assert.AreEqual(204, currentStable.Settings.Count);
         Assert.AreEqual("netniv.configuration.dev-1.1.5.1", dev.Identity.CatalogId);
         Assert.AreEqual(new Version(1, 1, 5, 3), dev.Identity.CatalogVersion);
         Assert.AreEqual(DevCommit, dev.Identity.SourceCommit);
@@ -39,19 +45,57 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
             "ui.cargo_significant_decimals",
         };
         Assert.IsTrue(devOnly.All(path => dev.Settings.Any(setting => setting.Path == path)));
-        Assert.IsTrue(devOnly.All(path => stable.Settings.All(setting => setting.Path != path)));
+        Assert.IsTrue(devOnly.All(path => currentStable.Settings.Any(setting => setting.Path == path)));
+        Assert.IsTrue(devOnly.All(path => legacyStable.Settings.All(setting => setting.Path != path)));
+        var retiredInCurrentStable = new[]
+        {
+            "graphics.show_all_resolutions",
+            "patches.resolutionlistfix",
+        };
+        Assert.IsTrue(retiredInCurrentStable.All(path =>
+            currentStable.Settings.All(setting => setting.Path != path)));
+        Assert.IsTrue(retiredInCurrentStable.All(path =>
+            legacyStable.Settings.Any(setting => setting.Path == path)));
+        Assert.IsTrue(retiredInCurrentStable.All(path =>
+            dev.Settings.Any(setting => setting.Path == path)));
         StringAssert.Contains(
-            stable.Settings.Single(setting => setting.Path == "ui.extend_donation_max").Description,
+            legacyStable.Settings.Single(setting => setting.Path == "ui.extend_donation_max").Description,
             "ordinary donation cap");
+        StringAssert.Contains(
+            currentStable.Settings.Single(setting => setting.Path == "ui.extend_donation_max").Description,
+            "zero or less");
         StringAssert.Contains(
             dev.Settings.Single(setting => setting.Path == "ui.extend_donation_max").Description,
             "set to 0 for unlimited");
     }
 
     [TestMethod]
+    public void CurrentStableDefersNewControlsWithoutProjectingAdjacentMetadata()
+    {
+        var currentStable = Load("stable", "1.1.6.0", CurrentStableCommit);
+        var deferredPaths = new[]
+        {
+            "graphics.ui_scale_ship",
+            "shortcuts.toggle_instant_warp",
+            "shortcuts.ui_scaleshipdown",
+            "shortcuts.ui_scaleshipup",
+            "ui.auto_confirm_ft_upgrade",
+            "ui.auto_confirm_instant_warp",
+            "ui.hud_daily_goals",
+            "ui.hud_field_training",
+            "ui.hud_missions",
+            "ui.hud_outposts",
+            "ui.hud_q_trials",
+        };
+
+        Assert.IsTrue(deferredPaths.All(path =>
+            currentStable.Settings.All(setting => setting.Path != path)));
+    }
+
+    [TestMethod]
     public void ReviewedPresentationCoversEveryVisibleStableSetting()
     {
-        var stable = Load("stable", "1.1.4", StableCommit);
+        var stable = Load("stable", "1.1.6.0", CurrentStableCommit);
         var layout = new PrincipalCatalogSettingsLayoutProvider();
 
         Assert.AreEqual(155, stable.VisibleSettings.Count);
@@ -77,8 +121,8 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
             .GroupBy(setting => layout.Place(setting).Section)
             .ToDictionary(group => group.Key, group => group.Count());
         Assert.AreEqual(6, sectionCounts[LauncherSettingsSection.General]);
-        Assert.AreEqual(20, sectionCounts[LauncherSettingsSection.Interface]);
-        Assert.AreEqual(23, sectionCounts[LauncherSettingsSection.Graphics]);
+        Assert.AreEqual(21, sectionCounts[LauncherSettingsSection.Interface]);
+        Assert.AreEqual(22, sectionCounts[LauncherSettingsSection.Graphics]);
         Assert.AreEqual(89, sectionCounts[LauncherSettingsSection.Hotkeys]);
         Assert.AreEqual(17, sectionCounts[LauncherSettingsSection.DataSync]);
 
@@ -95,7 +139,7 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         StringAssert.Contains(
             stable.Settings.Single(setting => setting.Path == "ui.extend_donation_max")
                 .Presentation.Help!,
-            "ordinary donation cap");
+            "zero or less");
     }
 
     [TestMethod]
@@ -189,10 +233,10 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
     }
 
     [DataTestMethod]
-    [DataRow("stable", "1.1.4", "238004460c4bb93aa717e47c41089fe8b71c4cf9")]
-    [DataRow("stable", "1.1.5", StableCommit)]
-    [DataRow("dev", "1.1.5.1", StableCommit)]
-    [DataRow("preview", "1.1.4", StableCommit)]
+    [DataRow("stable", "1.1.6.0", LegacyStableCommit)]
+    [DataRow("stable", "1.1.6", CurrentStableCommit)]
+    [DataRow("dev", "1.1.5.1", CurrentStableCommit)]
+    [DataRow("preview", "1.1.4", LegacyStableCommit)]
     public void UnreviewedApplicabilityFailsClosed(
         string trackId,
         string releaseVersion,
@@ -216,7 +260,7 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         Assert.ThrowsException<LauncherConfigurationSchemaException>(
             () => LauncherConfigurationSchemaSetLoader.Load(
                 stream,
-                new("guffawaffle", "stable", "1.1.4", StableCommit)));
+                new("guffawaffle", "stable", "1.1.6.0", CurrentStableCommit)));
     }
 
     private static LauncherConfigurationCatalog Load(
@@ -259,7 +303,7 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
         var exception = Assert.ThrowsException<LauncherConfigurationSchemaException>(
             () => LauncherConfigurationSchemaSetLoader.Load(
                 stream,
-                new("netniv", "stable", "1.1.4", StableCommit)));
+                new("netniv", "stable", "1.1.6.0", CurrentStableCommit)));
 
         StringAssert.Contains(exception.Message, expectedMessage);
     }
@@ -267,7 +311,9 @@ public sealed class LauncherConfigurationSchemaSetLoaderTests
     private static JsonObject StableRevision(JsonObject root) =>
         root["revisions"]!.AsArray()
             .Select(revision => revision!.AsObject())
-            .Single(revision => revision["trackId"]!.GetValue<string>() == "stable");
+            .Single(revision =>
+                revision["trackId"]!.GetValue<string>() == "stable"
+                && revision["releaseVersion"]!.GetValue<string>() == "1.1.6.0");
 
     private static void AssertSetting(
         LauncherConfigurationCatalog catalog,
