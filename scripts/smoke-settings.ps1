@@ -968,7 +968,7 @@ try {
   }
   [void](Find-AutomationElement `
     -Root $root `
-    -Name "Check for a Mod Bridge self-update" `
+    -Name "Check Mod Bridge update. Check for a Mod Bridge self-update." `
     -ControlType ([System.Windows.Automation.ControlType]::Button) `
     -Deadline $deadline)
   if ($diagnosticText.IndexOf($env:USERPROFILE, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
