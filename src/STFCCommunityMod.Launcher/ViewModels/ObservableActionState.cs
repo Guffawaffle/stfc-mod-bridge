@@ -78,6 +78,7 @@ public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
     private ObservableActionState? mostRecent;
     private string lastText = string.Empty;
     private bool lastHasFeedback;
+    private bool lastCanDismiss;
 
     public HomeActionFeedbackArbiter(ObservableActionState mod, ObservableActionState launch)
     {
@@ -92,6 +93,27 @@ public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
     public string Text => Current?.StatusText ?? string.Empty;
 
     public bool HasFeedback => !string.IsNullOrWhiteSpace(Text);
+
+    public bool CanDismiss => Current is
+    {
+        HasStatus: true,
+        IsWorking: false,
+        Status: ObservableActionStatus.Idle
+            or ObservableActionStatus.CompletedChanged
+            or ObservableActionStatus.CompletedUnchanged,
+    };
+
+    public bool Dismiss()
+    {
+        var current = Current;
+        if (current is null || !CanDismiss)
+        {
+            return false;
+        }
+
+        current.ClearStatus();
+        return true;
+    }
 
     private ObservableActionState? Current =>
         mod.IsWorking ? mod
@@ -114,6 +136,7 @@ public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
         }
         var afterText = Text;
         var afterHasFeedback = HasFeedback;
+        var afterCanDismiss = CanDismiss;
         if (!string.Equals(lastText, afterText, StringComparison.Ordinal))
         {
             lastText = afterText;
@@ -123,6 +146,11 @@ public sealed class HomeActionFeedbackArbiter : INotifyPropertyChanged
         {
             lastHasFeedback = afterHasFeedback;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasFeedback)));
+        }
+        if (lastCanDismiss != afterCanDismiss)
+        {
+            lastCanDismiss = afterCanDismiss;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanDismiss)));
         }
     }
 }

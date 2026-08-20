@@ -129,6 +129,26 @@ public sealed class ConfigurationMigrationPlanner(TimeProvider? timeProvider = n
 {
     private readonly ConfigurationHealthAnalyzer analyzer = new(timeProvider);
 
+    public static ReadOnlyCollection<string> GetEligibleRemediationIds(
+        ConfigurationDiagnosisReport diagnosis,
+        LauncherConfigurationDiagnosisEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(diagnosis);
+        ArgumentNullException.ThrowIfNull(evidence);
+
+        var catalog = evidence.Catalog;
+        if (catalog is null)
+        {
+            return Array.AsReadOnly(Array.Empty<string>());
+        }
+
+        return Array.AsReadOnly(
+            BuildEligibleOperations(diagnosis, catalog)
+                .Keys
+                .Order(StringComparer.Ordinal)
+                .ToArray());
+    }
+
     public ConfigurationMigrationPlanResult Plan(
         ConfigurationDocumentSnapshot snapshot,
         LauncherConfigurationDiagnosisEvidence evidence,

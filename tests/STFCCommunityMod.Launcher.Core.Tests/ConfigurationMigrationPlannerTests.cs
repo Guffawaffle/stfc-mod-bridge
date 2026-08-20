@@ -70,6 +70,30 @@ public sealed class ConfigurationMigrationPlannerTests
     }
 
     [TestMethod]
+    public void EligibleSelectionExcludesManualReviewAdvisoriesWithoutBlockingAliasCleanup()
+    {
+        var snapshot = Snapshot(
+            "shortcuts.set_hotkeys_disable = \"CTRL-ALT-MINUS\"\n"
+            + "graphics.default_system_zoom = -1\n");
+        var evidence = Evidence();
+        var diagnosis = Analyzer().Analyze(snapshot, evidence);
+        var planner = Planner();
+
+        Assert.IsTrue(diagnosis.Findings.Any(
+            finding => finding.Code == "CONFIG_VALUE_INVALID"
+                && finding.RemediationId == "review-invalid-configuration-value"));
+        var selected = ConfigurationMigrationPlanner.GetEligibleRemediationIds(diagnosis, evidence);
+
+        Assert.AreEqual(1, selected.Count);
+        StringAssert.StartsWith(selected[0], "configuration.alias.move:");
+        var plan = planner.Plan(snapshot, evidence, diagnosis, selected);
+        Assert.AreEqual(ConfigurationMigrationPlanState.Ready, plan.State, plan.Message);
+        Assert.AreEqual(1, plan.Operations.Count);
+        Assert.IsTrue(plan.ResultingDiagnosis!.Findings.Any(
+            finding => finding.Code == "CONFIG_VALUE_INVALID"));
+    }
+
+    [TestMethod]
     public void RedundantCanonicalAliasRemovalPreservesCanonicalAndUnrelatedBytes()
     {
         const string source =

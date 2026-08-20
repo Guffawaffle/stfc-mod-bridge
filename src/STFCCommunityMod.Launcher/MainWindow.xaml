@@ -989,14 +989,37 @@
               Background="{DynamicResource SurfaceMutedBrush}"
               CornerRadius="8"
               Visibility="{Binding HasHomeOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <TextBlock FontSize="13"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="{Binding HomeOperationFeedback}"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap"
-                   automation:AutomationProperties.Name="{Binding HomeOperationFeedback}"
-                   automation:AutomationProperties.LiveSetting="Polite"
-                   controls:LiveRegionBehavior.Announcement="{Binding HomeOperationFeedback}" />
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock VerticalAlignment="Center"
+                     FontSize="13"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     Text="{Binding HomeOperationFeedback}"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"
+                     automation:AutomationProperties.Name="{Binding HomeOperationFeedback}"
+                     automation:AutomationProperties.LiveSetting="Polite"
+                     controls:LiveRegionBehavior.Announcement="{Binding HomeOperationFeedback}" />
+          <Button Grid.Column="1"
+                  Width="36"
+                  Height="36"
+                  MinHeight="36"
+                  Margin="8,0,0,0"
+                  Padding="0"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="DismissHomeFeedbackButton_Click"
+                  ToolTip="Dismiss this message"
+                  Visibility="{Binding CanDismissHomeOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  automation:AutomationProperties.AutomationId="DismissHomeOperationFeedback"
+                  automation:AutomationProperties.Name="Dismiss this Mod Bridge message"
+                  automation:AutomationProperties.HelpText="Hides this completed-operation message without changing the completed operation.">
+            <controls:AppIcon Width="16" Height="16" FontSize="16" Kind="Remove" />
+          </Button>
+        </Grid>
       </Border>
 
       <Border x:Name="ProviderRecoveryBanner"
@@ -1133,6 +1156,10 @@
                 Background="{DynamicResource SurfaceMutedBrush}"
                 CornerRadius="7">
           <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
@@ -1151,6 +1178,15 @@
                     Click="ReviewConfigurationCleanupButton_Click"
                     Content="Review _cleanup…"
                     automation:AutomationProperties.Name="Review eligible configuration cleanup" />
+            <TextBlock x:Name="ConfigurationCleanupStatus"
+                       Grid.Row="1"
+                       Grid.ColumnSpan="2"
+                       Margin="0,10,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed"
+                       automation:AutomationProperties.LiveSetting="Polite"
+                       controls:LiveRegionBehavior.Announcement="{Binding Text, RelativeSource={RelativeSource Self}}" />
           </Grid>
         </Border>
 
@@ -1438,9 +1474,12 @@
     <controls:InAppDialog x:Name="ConfigurationCleanupDialog"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
+                          DialogWidth="760"
+                          DialogMaxHeight="680"
                           DialogTitle="Review configuration cleanup"
+                          Closed="ConfigurationCleanupDialog_Closed"
                           automation:AutomationProperties.Name="Configuration cleanup review dialog">
-      <Grid MaxHeight="620" MinWidth="620">
+      <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
@@ -1456,11 +1495,19 @@
                    FontFamily="Consolas"
                    FontSize="11"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   TextWrapping="Wrap" />
-        <ScrollViewer Grid.Row="2"
-                      MaxHeight="390"
+                   TextTrimming="CharacterEllipsis"
+                   TextWrapping="NoWrap"
+                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                   automation:AutomationProperties.HelpText="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        <ScrollViewer x:Name="ConfigurationCleanupScroller"
+                      Grid.Row="2"
                       Margin="0,16,0,0"
+                      HorizontalScrollBarVisibility="Disabled"
                       VerticalScrollBarVisibility="Auto">
+          <ScrollViewer.Resources>
+            <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}"
+                   TargetType="{x:Type ScrollBar}" />
+          </ScrollViewer.Resources>
           <StackPanel>
             <TextBlock FontWeight="SemiBold" Text="Selected fixes" />
             <ItemsControl x:Name="ConfigurationCleanupOperations" Margin="0,6,0,0">
@@ -1515,7 +1562,8 @@
       </Grid>
     </controls:InAppDialog>
 
-    <controls:InAppDialog x:Name="MaintenanceDialog"
+      <controls:InAppDialog x:Name="MaintenanceDialog"
+                          Closed="MaintenanceDialog_Closed"
                           Grid.RowSpan="2"
                           Style="{StaticResource InAppDialogStyle}"
                           DialogTitle="Confirm maintenance"

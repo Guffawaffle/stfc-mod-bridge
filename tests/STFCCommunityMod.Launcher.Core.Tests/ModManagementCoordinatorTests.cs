@@ -7,6 +7,7 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class ModManagementCoordinatorTests
 {
     private static readonly byte[] ArtifactContents = [3, 1, 4, 1, 5, 9];
+    private static readonly byte[] UpdatedArtifactContents = [2, 7, 1, 8, 2, 8, 1];
 
     [TestMethod]
     public void MissingGameSelectionCannotOfferMutation()
@@ -583,7 +584,7 @@ public sealed class ModManagementCoordinatorTests
     }
 
     [TestMethod]
-    public async Task RepairIsBlockedWhenLatestReleaseDoesNotMatchRecordedReceipt()
+    public async Task UnavailableExactRepairOffersSafeStopManagingThenManualUpdateRoute()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var gameDirectory = CreateGameDirectory(temporaryDirectory);
@@ -609,10 +610,150 @@ public sealed class ModManagementCoordinatorTests
         var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
 
         Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        Assert.AreEqual(ModOperationRecoveryAction.StopManagingThenUpdate, preparation.RecoveryAction);
         StringAssert.Contains(preparation.Message, "exact release recorded");
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => coordinator.ExecuteAsync(preparation));
         CollectionAssert.AreEqual(new byte[] { 0, 0, 0 }, File.ReadAllBytes(targetPath));
+
+        var stopManaging = await coordinator.StopManagingAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, stopManaging.State, stopManaging.Message);
+        Assert.IsNull(deploymentService.ReadInstalledState(gameDirectory));
+        CollectionAssert.AreEqual(new byte[] { 0, 0, 0 }, File.ReadAllBytes(targetPath));
+
+        var manualPresentation = coordinator.CapturePresentation(gameDirectory, isGameRunning: false);
+        var updatePreparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, manualPresentation.ActionKind);
+        Assert.AreEqual("Update mod", manualPresentation.ActionLabel);
+        Assert.AreEqual(ModOperationPreparationState.Ready, updatePreparation.State);
+        Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, updatePreparation.ActionKind);
+        Assert.AreEqual(ExistingArtifactPolicy.AdoptAndPreserve, updatePreparation.ExistingArtifactPolicy);
+        CollectionAssert.AreEqual(new byte[] { 0, 0, 0 }, File.ReadAllBytes(targetPath));
+
+        var update = await coordinator.ExecuteAsync(updatePreparation);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, update.State, update.Message);
+        CollectionAssert.AreEqual(UpdatedArtifactContents, File.ReadAllBytes(targetPath));
+        var installed = deploymentService.ReadInstalledState(gameDirectory);
+        Assert.IsNotNull(installed);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(installed.PreviousArtifactBackupPath));
+        CollectionAssert.AreEqual(
+            new byte[] { 0, 0, 0 },
+            File.ReadAllBytes(installed.PreviousArtifactBackupPath));
+
+        var removal = await coordinator.UninstallAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, removal.State, removal.Message);
+        CollectionAssert.AreEqual(new byte[] { 0, 0, 0 }, File.ReadAllBytes(targetPath));
+        Assert.IsNull(deploymentService.ReadInstalledState(gameDirectory));
+    }
+
+    [TestMethod]
+    public async Task UnavailableManagedMissingRepairProjectsStopManagingThenInstall()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        File.Delete(targetPath);
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(UpdatedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: new(
+                new ModInstallationInspector(
+                    deploymentService,
+                    new SystemModInstallationFileSystem()),
+                new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty)));
+
+        var preparation = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        Assert.AreEqual(ModOperationRecoveryAction.StopManagingThenInstall, preparation.RecoveryAction);
+        Assert.IsFalse(File.Exists(targetPath));
+        Assert.IsNotNull(deploymentService.ReadInstalledState(gameDirectory));
+
+        var stopped = await coordinator.StopManagingAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, stopped.State, stopped.Message);
+        Assert.AreEqual(
+            ModManagementActionKind.Install,
+            coordinator.CapturePresentation(gameDirectory, isGameRunning: false).ActionKind);
+        Assert.IsFalse(File.Exists(targetPath));
+    }
+
+    [TestMethod]
+    public async Task KnownDifferentLiveDllProjectsSourceAlignmentAfterStopManaging()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var targetPath = Path.Combine(gameDirectory, "version.dll");
+        var attribution = new ModInstallationAttribution("guffawaffle", "stable", "guffawaffle.windows");
+        var deploymentService = CreateDeploymentService(temporaryDirectory, attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await deploymentService.DeployAsync(
+                gameDirectory,
+                ReleaseArtifact(),
+                ExistingArtifactPolicy.Reject)).State);
+        byte[] replacement = [0, 0, 0];
+        File.WriteAllBytes(targetPath, replacement);
+        var replacementSha = Convert.ToHexString(SHA256.HashData(replacement));
+        var knownNetniv = new KnownModArtifactIdentity(
+            "netniv",
+            "netniv.stfc-community-mod",
+            "stable",
+            "1.1.4",
+            replacement.LongLength,
+            replacementSha,
+            "github-release:v1.1.4",
+            DateTimeOffset.UnixEpoch);
+        var provenance = new ModBinaryProvenance(
+            ModBinaryProvenanceState.KnownProviderArtifact,
+            replacementSha,
+            replacement.LongLength,
+            "1.1.4.0",
+            "v1.1.4",
+            KnownArtifact: knownNetniv);
+        var evidence = new ModInstallationEvidence(
+            ModInstallationEvidenceState.ManagedChanged,
+            false,
+            "2.1.0.8",
+            attribution.ProviderId,
+            attribution.ReleaseChannelId,
+            attribution.RuntimeDistributionId,
+            replacementSha,
+            provenance);
+        var coordinator = new ModManagementCoordinator(
+            deploymentService,
+            new FakeReleaseDiscoveryClient(UpdatedReleaseDiscovery()),
+            new Version(0, 1, 0),
+            healthService: new(
+                new ModInstallationInspector(
+                    deploymentService,
+                    new SystemModInstallationFileSystem()),
+                new("guffawaffle", "stable", "guffawaffle.windows", true, string.Empty)));
+
+        var preparation = await coordinator.PrepareLatestFromEvidenceAsync(
+            gameDirectory,
+            isGameRunning: false,
+            evidence);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
+        Assert.AreEqual(
+            ModOperationRecoveryAction.StopManagingThenSelectSource,
+            preparation.RecoveryAction);
+        Assert.IsNotNull(deploymentService.ReadInstalledState(gameDirectory));
+        CollectionAssert.AreEqual(replacement, File.ReadAllBytes(targetPath));
     }
 
     [TestMethod]
@@ -698,7 +839,6 @@ public sealed class ModManagementCoordinatorTests
 
     private static WindowsReleaseDiscovery UpdatedReleaseDiscovery()
     {
-        byte[] updatedContents = [2, 7, 1, 8, 2, 8];
         return new(
             new WindowsReleaseManifest(
                 1,
@@ -713,8 +853,8 @@ public sealed class ModManagementCoordinatorTests
             new(
                 new Uri("https://example.invalid/updated-version.dll"),
                 "version.dll",
-                updatedContents.LongLength,
-                Convert.ToHexString(SHA256.HashData(updatedContents)),
+                UpdatedArtifactContents.LongLength,
+                Convert.ToHexString(SHA256.HashData(UpdatedArtifactContents)),
                 "2.1.0.9",
                 ExpectedProductVersion: "v2.1.0-guffa.9"));
     }
@@ -808,16 +948,26 @@ public sealed class ModManagementCoordinatorTests
         public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken) =>
             Task.FromResult(new ModArtifactDownload(
                 HttpStatusCode.OK,
-                ArtifactContents,
-                ArtifactContents.LongLength));
+                uri.AbsoluteUri.Contains("updated-version.dll", StringComparison.Ordinal)
+                    ? UpdatedArtifactContents
+                    : ArtifactContents,
+                uri.AbsoluteUri.Contains("updated-version.dll", StringComparison.Ordinal)
+                    ? UpdatedArtifactContents.LongLength
+                    : ArtifactContents.LongLength));
     }
 
     private sealed class FakeVersionReader(string? productVersion = null)
         : IModArtifactProductVersionReader
     {
-        public string? ReadVersion(string artifactPath) => "2.1.0.8";
+        public string? ReadVersion(string artifactPath) =>
+            new FileInfo(artifactPath).Length == UpdatedArtifactContents.LongLength
+                ? "2.1.0.9"
+                : "2.1.0.8";
 
-        public string? ReadProductVersion(string artifactPath) => productVersion;
+        public string? ReadProductVersion(string artifactPath) =>
+            new FileInfo(artifactPath).Length == UpdatedArtifactContents.LongLength
+                ? "v2.1.0-guffa.9"
+                : productVersion;
     }
 
     private sealed class FakeAuthenticityVerifier : IModArtifactAuthenticityVerifier

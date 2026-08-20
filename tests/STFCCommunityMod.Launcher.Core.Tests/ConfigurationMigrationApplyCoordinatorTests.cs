@@ -105,6 +105,144 @@ public sealed class ConfigurationMigrationApplyCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ActiveProviderChangeRejectsReviewedCleanupWithoutBackupOrWrite()
+    {
+        using var directory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(directory);
+        var configurationPath = Path.Combine(
+            gameDirectory,
+            "community_patch_settings.toml");
+        var original = Encoding.UTF8.GetBytes(
+            "[shortcuts]\nset_hotkeys_disable = \"CTRL-ALT-MINUS\"\n");
+        await File.WriteAllBytesAsync(configurationPath, original);
+        var baseline = new ConfigurationDocumentSnapshot(configurationPath, original);
+        var (plan, reviewedEvidence) = PlanAliasMigration(baseline);
+        var currentEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
+            "netniv",
+            "stable",
+            LauncherProviderCapabilityStatus.Unsupported);
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            directory.CreateDirectory("state"),
+            new ReversingProtector(),
+            new NoOpStorageSecurity());
+        var repository = new TomlConfigurationRepository(
+            mutationBackup: new ProviderScopedConfigurationMutationBackup(
+                backupStore,
+                "guffawaffle",
+                reason: "configuration-migration"));
+
+        var result = await new ConfigurationMigrationApplyCoordinator(repository).ApplyAsync(
+            new(
+                baseline,
+                plan,
+                reviewedEvidence,
+                currentEvidence,
+                configurationPath));
+
+        Assert.AreEqual(AtomicTomlWriteState.Conflict, result.State);
+        StringAssert.Contains(result.Error, "provider");
+        Assert.IsNull(result.BackupReceipt);
+        Assert.IsNull(result.CommittedSnapshot);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+        Assert.AreEqual(0, backupStore.List(gameDirectory, "guffawaffle").Count);
+    }
+
+    [TestMethod]
+    public async Task OperationLeaseSpansAuthorityCaptureBackupAndCommit()
+    {
+        using var directory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(directory);
+        var configurationPath = Path.Combine(
+            gameDirectory,
+            "community_patch_settings.toml");
+        var original = Encoding.UTF8.GetBytes(
+            "[shortcuts]\nset_hotkeys_disable = \"CTRL-ALT-MINUS\"\n");
+        await File.WriteAllBytesAsync(configurationPath, original);
+        var baseline = new ConfigurationDocumentSnapshot(configurationPath, original);
+        var (plan, evidence) = PlanAliasMigration(baseline);
+        var stateDirectory = directory.CreateDirectory("state");
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity());
+        var backupStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBackup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new TomlConfigurationRepository(
+            mutationBackup: new BlockingMutationBackup(
+                new ProviderScopedConfigurationMutationBackup(
+                    backupStore,
+                    "guffawaffle",
+                    reason: "configuration-migration"),
+                backupStarted,
+                releaseBackup));
+        var operationLock = new LauncherOperationLock(stateDirectory);
+        var applyTask = new ConfigurationMigrationApplyCoordinator(repository)
+            .ApplyUnderOperationLockAsync(
+                operationLock,
+                new(baseline, plan, evidence),
+                () => new(configurationPath, evidence));
+
+        await backupStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await using var competingLease = await new LauncherOperationLock(stateDirectory)
+            .TryAcquireAsync();
+        Assert.IsNull(
+            competingLease,
+            "The global operation lease must remain held through the backup/write boundary.");
+
+        releaseBackup.TrySetResult();
+        var result = await applyTask;
+
+        Assert.IsTrue(result.IsSuccess, result.Error);
+        Assert.IsNotNull(result.BackupReceipt);
+    }
+
+    [TestMethod]
+    public async Task BusyOperationLockCreatesNoBackupAndDoesNotCaptureStaleAuthority()
+    {
+        using var directory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(directory);
+        var configurationPath = Path.Combine(
+            gameDirectory,
+            "community_patch_settings.toml");
+        var original = Encoding.UTF8.GetBytes(
+            "[shortcuts]\nset_hotkeys_disable = \"CTRL-ALT-MINUS\"\n");
+        await File.WriteAllBytesAsync(configurationPath, original);
+        var baseline = new ConfigurationDocumentSnapshot(configurationPath, original);
+        var (plan, evidence) = PlanAliasMigration(baseline);
+        var stateDirectory = directory.CreateDirectory("state");
+        var backupStore = new ProviderScopedConfigurationBackupStore(
+            stateDirectory,
+            new ReversingProtector(),
+            new NoOpStorageSecurity());
+        var repository = new TomlConfigurationRepository(
+            mutationBackup: new ProviderScopedConfigurationMutationBackup(
+                backupStore,
+                "guffawaffle",
+                reason: "configuration-migration"));
+        var operationLock = new LauncherOperationLock(stateDirectory);
+        await using var heldLease = await operationLock.TryAcquireAsync();
+        Assert.IsNotNull(heldLease);
+        var authorityCaptured = false;
+
+        var result = await new ConfigurationMigrationApplyCoordinator(repository)
+            .ApplyUnderOperationLockAsync(
+                operationLock,
+                new(baseline, plan, evidence),
+                () =>
+                {
+                    authorityCaptured = true;
+                    return new(configurationPath, evidence);
+                });
+
+        Assert.AreEqual(AtomicTomlWriteState.Busy, result.State);
+        Assert.IsFalse(authorityCaptured);
+        Assert.AreEqual(0, backupStore.List(gameDirectory, "guffawaffle").Count);
+        CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(configurationPath));
+        Assert.IsFalse(Directory.EnumerateFiles(gameDirectory).Any(
+            path => Path.GetFileName(path).Contains(".tmp", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
     public async Task PostBackupConflictReturnsReceiptAndPreservesExternalChange()
     {
         using var directory = new TemporaryDirectory();
@@ -303,6 +441,25 @@ public sealed class ConfigurationMigrationApplyCoordinatorTests
                 replacement,
                 cancellationToken);
             return receipt;
+        }
+    }
+
+    private sealed class BlockingMutationBackup(
+        IConfigurationMutationBackup inner,
+        TaskCompletionSource backupStarted,
+        TaskCompletionSource releaseBackup) : IConfigurationMutationBackup
+    {
+        public async ValueTask<ConfigurationBackupReceipt> BeforeReplaceAsync(
+            string configurationPath,
+            byte[] expectedContents,
+            CancellationToken cancellationToken)
+        {
+            backupStarted.TrySetResult();
+            await releaseBackup.Task.WaitAsync(cancellationToken);
+            return await inner.BeforeReplaceAsync(
+                configurationPath,
+                expectedContents,
+                cancellationToken);
         }
     }
 }

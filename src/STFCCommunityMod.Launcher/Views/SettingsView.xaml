@@ -643,7 +643,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel>
+        <StackPanel x:Name="SettingsWorkspaceHeading">
           <TextBlock FontSize="22"
                      FontWeight="SemiBold"
                      Text="{Binding WorkspaceTitle}" />
@@ -661,20 +661,29 @@
           </TextBlock>
         </StackPanel>
 
-        <StackPanel Grid.Column="1"
+        <StackPanel x:Name="ReleaseSourceMetadata"
+                    Grid.Column="1"
                     Margin="20,0,0,0"
+                    MaxWidth="240"
                     HorizontalAlignment="Right"
                     Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
           <TextBlock HorizontalAlignment="Right"
                      FontSize="11"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="Release source" />
-          <TextBlock Margin="0,2,0,0"
+          <TextBlock x:Name="ReleaseSourceIdentityText"
+                     Margin="0,2,0,0"
+                     MaxWidth="240"
                      HorizontalAlignment="Right"
                      FontSize="12"
                      FontWeight="SemiBold"
                      Text="{Binding SourceIdentity}"
-                     automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}" />
+                     TextAlignment="Right"
+                     TextTrimming="CharacterEllipsis"
+                     TextWrapping="Wrap"
+                     ToolTip="{Binding SourceIdentity}"
+                     automation:AutomationProperties.Name="{Binding SourceIdentity, StringFormat='Release source, {0}'}"
+                     automation:AutomationProperties.HelpText="{Binding SourceIdentity}" />
         </StackPanel>
         <Button Grid.Column="1"
                 Margin="20,0,0,0"
@@ -1418,7 +1427,8 @@
                        FontWeight="SemiBold"
                        Text="Protected history" />
             <Border Height="1" Background="{DynamicResource BorderBrush}" />
-            <ItemsControl ItemsSource="{Binding ConfigurationHistory.Entries}">
+            <ItemsControl x:Name="ConfigurationHistoryEntries"
+                          ItemsSource="{Binding ConfigurationHistory.Entries}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="{x:Type viewModels:ProviderConfigurationHistoryEntryViewModel}">
                   <Border Padding="4,15"
@@ -1432,9 +1442,9 @@
                       </Grid.ColumnDefinitions>
                       <StackPanel>
                         <TextBlock FontSize="15" FontWeight="SemiBold">
-                          <Run Text="{Binding ProviderDisplayName}" />
+                          <Run Text="{Binding ProviderDisplayName, Mode=OneWay}" />
                           <Run Text=" · " />
-                          <Run Text="{Binding CreatedAtText}" />
+                          <Run Text="{Binding CreatedAtText, Mode=OneWay}" />
                         </TextBlock>
                         <WrapPanel Margin="0,5,0,0">
                           <TextBlock Margin="0,0,14,0"
@@ -1705,7 +1715,7 @@
                       <StackPanel>
                         <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
                         <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}">
-                          <Run Text="{Binding Version}" /><Run Text=" · " /><Run Text="{Binding License}" />
+                          <Run Text="{Binding Version, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding License, Mode=OneWay}" />
                         </TextBlock>
                       </StackPanel>
                     </Expander.Header>

@@ -3,7 +3,7 @@ setlocal
 
 set "REPO_ROOT=%~dp0"
 set "LAUNCHER_PROJECT=%REPO_ROOT%src\STFCCommunityMod.Launcher\STFCCommunityMod.Launcher.csproj"
-set "LAUNCHER_DIRECTORY=%REPO_ROOT%src\STFCCommunityMod.Launcher\bin\Release\net8.0-windows\win-x64"
+set "LAUNCHER_DIRECTORY=%REPO_ROOT%src\STFCCommunityMod.Launcher\bin\Release\net8.0-windows10.0.19041.0\win-x64"
 set "LAUNCHER_EXE=%LAUNCHER_DIRECTORY%\STFCModBridge.exe"
 
 if not defined WINDIR (
@@ -14,6 +14,10 @@ if not defined WINDIR (
   set "WINDIR=%SystemRoot%"
 )
 
+echo LOCAL DOGFOOD BUILD - unsigned and unpackaged
+echo Close any installed Mod Bridge window before continuing.
+echo This build shares your normal Mod Bridge state and global operation lock.
+echo.
 echo Building the latest launcher from this checkout...
 dotnet build "%LAUNCHER_PROJECT%" -c Release -r win-x64 --self-contained true --nologo
 if errorlevel 1 goto :failure

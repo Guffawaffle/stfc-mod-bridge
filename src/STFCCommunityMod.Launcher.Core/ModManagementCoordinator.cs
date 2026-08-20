@@ -25,6 +25,15 @@ public enum ModOperationPreparationState
     MutationBlocked,
 }
 
+public enum ModOperationRecoveryAction
+{
+    None,
+    StopManagingThenInstall,
+    StopManagingThenInstallPreservingRuntimeManifest,
+    StopManagingThenUpdate,
+    StopManagingThenSelectSource,
+}
+
 public sealed record ModOperationPreparation(
     ModOperationPreparationState State,
     string Message,
@@ -34,7 +43,8 @@ public sealed record ModOperationPreparation(
     ExistingArtifactPolicy ExistingArtifactPolicy,
     ModManagementActionKind ActionKind,
     string ProviderId,
-    bool IsAdoptionOnly = false);
+    bool IsAdoptionOnly = false,
+    ModOperationRecoveryAction RecoveryAction = ModOperationRecoveryAction.None);
 
 public interface IModManagementCoordinator
 {
@@ -160,6 +170,10 @@ public sealed class ModManagementCoordinator(
                     StringComparison.Ordinal)
                 || !deploymentService.MatchesRecordedRelease(receipt, discovery.ModArtifact))
             {
+                var recoveryAction = ResolveUnavailableRepairRecoveryAction(
+                    gameDirectory,
+                    health,
+                    discovery.ModArtifact);
                 return new(
                     ModOperationPreparationState.MutationBlocked,
                     "The exact release recorded by this installation is not available from the selected release source. "
@@ -169,7 +183,8 @@ public sealed class ModManagementCoordinator(
                     discovery.ModArtifact,
                     ExistingArtifactPolicy.Reject,
                     presentation.ActionKind,
-                    healthService.ProviderId);
+                    healthService.ProviderId,
+                    RecoveryAction: recoveryAction);
             }
         }
         if (presentation.ActionKind == ModManagementActionKind.CheckForUpdate)
@@ -233,14 +248,23 @@ public sealed class ModManagementCoordinator(
                 isAdoptionOnly);
         }
 
+        var preservesLooseRuntimeManifest =
+            presentation.ActionKind == ModManagementActionKind.Install
+            && discovery.ModArtifact.RuntimeManifest is not null
+            && File.Exists(Path.Combine(
+                Path.GetFullPath(gameDirectory),
+                ArtifactBoundRuntimeManifestParser.ManagedFileName));
         var policy = presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
+            || preservesLooseRuntimeManifest
             ? ExistingArtifactPolicy.AdoptAndPreserve
             : ExistingArtifactPolicy.Reject;
         var message = isAdoptionOnly
             ? $"Community mod {discovery.Manifest.ReleaseVersion} is already installed. "
                 + "Let Mod Bridge manage it and preserve the current file for removal or recovery."
             : presentation.ActionKind == ModManagementActionKind.Install
-                ? $"Install community mod {discovery.Manifest.ReleaseVersion} in the selected game folder."
+                ? preservesLooseRuntimeManifest
+                    ? $"Install community mod {discovery.Manifest.ReleaseVersion} and preserve the existing runtime manifest for removal or recovery."
+                    : $"Install community mod {discovery.Manifest.ReleaseVersion} in the selected game folder."
                 : presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
                     ? $"Update the existing installation to community mod "
                         + $"{discovery.Manifest.ReleaseVersion} in the selected game folder."
@@ -257,6 +281,40 @@ public sealed class ModManagementCoordinator(
             presentation.ActionKind,
             healthService.ProviderId,
             isAdoptionOnly);
+    }
+
+    private ModOperationRecoveryAction ResolveUnavailableRepairRecoveryAction(
+        string gameDirectory,
+        LauncherHealthSnapshot health,
+        ModReleaseArtifact discoveredArtifact)
+    {
+        var installation = health.Installation;
+        var hasSurvivingRuntimeManifest =
+            installation.State == ModInstallationEvidenceState.ManagedMissing
+            && discoveredArtifact.RuntimeManifest is not null
+            && File.Exists(Path.Combine(
+                Path.GetFullPath(gameDirectory),
+                ArtifactBoundRuntimeManifestParser.ManagedFileName));
+        var detachedInstallation = installation.State == ModInstallationEvidenceState.ManagedMissing
+            ? new ModInstallationEvidence(
+                ModInstallationEvidenceState.NotInstalled,
+                installation.IsGameRunning)
+            : new ModInstallationEvidence(
+                ModInstallationEvidenceState.ManualInstallation,
+                installation.IsGameRunning,
+                installation.BinaryProvenance?.FileVersion,
+                InstalledSha256: installation.InstalledSha256,
+                BinaryProvenance: installation.BinaryProvenance);
+        var detachedPresentation = healthService.Resolve(detachedInstallation).ModManagement;
+        return detachedPresentation.ActionKind switch
+        {
+            ModManagementActionKind.Install when hasSurvivingRuntimeManifest =>
+                ModOperationRecoveryAction.StopManagingThenInstallPreservingRuntimeManifest,
+            ModManagementActionKind.Install => ModOperationRecoveryAction.StopManagingThenInstall,
+            ModManagementActionKind.UpdateManualInstallation =>
+                ModOperationRecoveryAction.StopManagingThenUpdate,
+            _ => ModOperationRecoveryAction.StopManagingThenSelectSource,
+        };
     }
 
     public Task<ModDeploymentResult> ExecuteAsync(

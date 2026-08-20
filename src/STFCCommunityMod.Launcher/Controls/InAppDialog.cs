@@ -20,6 +20,18 @@ public sealed class InAppDialog : ContentControl
         typeof(InAppDialog),
         new FrameworkPropertyMetadata(string.Empty));
 
+    public static readonly DependencyProperty DialogWidthProperty = DependencyProperty.Register(
+        nameof(DialogWidth),
+        typeof(double),
+        typeof(InAppDialog),
+        new FrameworkPropertyMetadata(440d));
+
+    public static readonly DependencyProperty DialogMaxHeightProperty = DependencyProperty.Register(
+        nameof(DialogMaxHeight),
+        typeof(double),
+        typeof(InAppDialog),
+        new FrameworkPropertyMetadata(720d));
+
     private ButtonBase? closeButton;
     private IInputElement? previousFocus;
 
@@ -35,6 +47,18 @@ public sealed class InAppDialog : ContentControl
     {
         get => (string)GetValue(DialogTitleProperty);
         set => SetValue(DialogTitleProperty, value);
+    }
+
+    public double DialogWidth
+    {
+        get => (double)GetValue(DialogWidthProperty);
+        set => SetValue(DialogWidthProperty, value);
+    }
+
+    public double DialogMaxHeight
+    {
+        get => (double)GetValue(DialogMaxHeightProperty);
+        set => SetValue(DialogMaxHeightProperty, value);
     }
 
     public override void OnApplyTemplate()

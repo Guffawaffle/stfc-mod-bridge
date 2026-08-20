@@ -286,6 +286,47 @@ public sealed class ObservableActionStateTests
     }
 
     [TestMethod]
+    public void HomeFeedbackDismissesOnlyCompletedTransientMessages()
+    {
+        var channels = new LauncherActionFeedbackChannels();
+        var arbiter = new HomeActionFeedbackArbiter(channels.Mod, channels.Launch);
+        var dismissibilityChanged = 0;
+        arbiter.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(HomeActionFeedbackArbiter.CanDismiss))
+            {
+                dismissibilityChanged++;
+            }
+        };
+
+        channels.Mod.CompleteTransient(true, "The community mod is now managed.");
+
+        Assert.IsTrue(arbiter.HasFeedback);
+        Assert.IsTrue(arbiter.CanDismiss);
+        Assert.IsTrue(arbiter.Dismiss());
+        Assert.IsFalse(arbiter.HasFeedback);
+        Assert.IsFalse(arbiter.CanDismiss);
+
+        channels.Mod.Complete(false, "The community mod is already current.");
+
+        Assert.IsTrue(arbiter.CanDismiss);
+        Assert.IsTrue(arbiter.Dismiss());
+
+        channels.Mod.Cancel("The mod update was canceled.");
+
+        Assert.IsTrue(arbiter.CanDismiss);
+        Assert.IsTrue(arbiter.Dismiss());
+
+        channels.Mod.Fail("Recovery is required.");
+
+        Assert.IsTrue(arbiter.HasFeedback);
+        Assert.IsFalse(arbiter.CanDismiss);
+        Assert.IsFalse(arbiter.Dismiss());
+        Assert.AreEqual("Recovery is required.", arbiter.Text);
+        Assert.IsTrue(dismissibilityChanged >= 2);
+    }
+
+    [TestMethod]
     public void LaunchProjectionPreservesChangedAndNoChangeSemantics()
     {
         var presentation = new GameLaunchPresentation(

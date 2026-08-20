@@ -106,6 +106,17 @@ public sealed class LaunchTargetSplitButtonTests
             feedback.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "LiveRegionBehavior.Announcement"
                 && attribute.Value == "{Binding HomeOperationFeedback}"));
+
+        var dismiss = document.Descendants(Presentation + "Button")
+            .Single(element => element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "AutomationProperties.AutomationId"
+                && attribute.Value == "DismissHomeOperationFeedback"));
+        Assert.AreEqual(
+            "{Binding CanDismissHomeOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}",
+            (string?)dismiss.Attribute("Visibility"));
+        Assert.AreEqual(
+            "DismissHomeFeedbackButton_Click",
+            (string?)dismiss.Attribute("Click"));
     }
 
     [TestMethod]

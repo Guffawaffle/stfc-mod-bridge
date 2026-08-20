@@ -248,11 +248,15 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="{x:Type controls:InAppDialog}">
-            <Grid Background="{DynamicResource DialogBackdropBrush}">
-              <Border Width="440"
-                      MaxWidth="440"
+            <Grid Background="{DynamicResource DialogBackdropBrush}"
+                  KeyboardNavigation.ControlTabNavigation="Cycle"
+                  KeyboardNavigation.DirectionalNavigation="Contained"
+                  KeyboardNavigation.TabNavigation="Cycle">
+              <Border MaxWidth="{TemplateBinding DialogWidth}"
+                      MaxHeight="{TemplateBinding DialogMaxHeight}"
+                      Margin="20"
                       Padding="26"
-                      HorizontalAlignment="Center"
+                      HorizontalAlignment="Stretch"
                       VerticalAlignment="Center"
                       Background="{DynamicResource SurfaceBrush}"
                       BorderBrush="{DynamicResource BorderBrush}"
@@ -262,15 +266,16 @@
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
                   <TextBlock FontSize="21"
                              FontWeight="SemiBold"
                              Text="{TemplateBinding DialogTitle}" />
                   <ContentPresenter Grid.Row="1"
-                                    Margin="0,18,0,0"
-                                    Content="{TemplateBinding Content}"
+                                     Margin="0,18,0,0"
+                                     VerticalAlignment="Stretch"
+                                     Content="{TemplateBinding Content}"
                                     ContentTemplate="{TemplateBinding ContentTemplate}" />
                   <Button x:Name="PART_CloseButton"
                           Grid.Row="2"

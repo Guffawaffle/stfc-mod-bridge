@@ -15,6 +15,103 @@ public sealed class SettingsShellAccessibilityTests
         "clr-namespace:System.Windows.Automation;assembly=PresentationCore";
 
     [TestMethod]
+    public void CleanupAuthorityReloadsPersistedFolderAndProviderSelections()
+    {
+        var stateDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"stfc-cleanup-authority-{Guid.NewGuid():N}");
+        var gameA = Path.Combine(stateDirectory, "game-a");
+        var gameB = Path.Combine(stateDirectory, "game-b");
+        Directory.CreateDirectory(gameA);
+        Directory.CreateDirectory(gameB);
+        File.WriteAllBytes(Path.Combine(gameA, "prime.exe"), [0]);
+        File.WriteAllBytes(Path.Combine(gameB, "prime.exe"), [0]);
+        try
+        {
+            var catalog = BundledLauncherProviderCatalog.Load();
+            var firstGameStore = new JsonGameInstallSelectionStore(stateDirectory);
+            var secondGameStore = new JsonGameInstallSelectionStore(stateDirectory);
+            var firstProviderStore = new JsonLauncherProviderSelectionStore(stateDirectory);
+            var secondProviderStore = new JsonLauncherProviderSelectionStore(stateDirectory);
+            firstGameStore.Save(gameA);
+            firstProviderStore.Save(new("guffawaffle", "stable"));
+
+            var reviewed = MainWindow.CapturePersistedConfigurationMigrationAuthority(
+                stateDirectory,
+                catalog,
+                firstProviderStore);
+
+            secondGameStore.Save(gameB);
+            secondProviderStore.Save(new("netniv", "stable"));
+            var current = MainWindow.CapturePersistedConfigurationMigrationAuthority(
+                stateDirectory,
+                catalog,
+                firstProviderStore);
+
+            Assert.IsTrue(PathsEqual(
+                Path.Combine(gameA, "community_patch_settings.toml"),
+                reviewed.ConfigurationPath));
+            Assert.AreEqual("guffawaffle", reviewed.DiagnosisEvidence.ProviderId);
+            Assert.IsTrue(PathsEqual(
+                Path.Combine(gameB, "community_patch_settings.toml"),
+                current.ConfigurationPath));
+            Assert.AreEqual("netniv", current.DiagnosisEvidence.ProviderId);
+        }
+        finally
+        {
+            Directory.Delete(stateDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void CommittedCleanupRemainsTruthfulWhenDiagnosticsRefreshFails()
+    {
+        var contents = new byte[] { 1, 2, 3 };
+        var snapshot = new ConfigurationDocumentSnapshot(
+            Path.Combine(Path.GetTempPath(), "community_patch_settings.toml"),
+            contents);
+        var diagnosis = new ConfigurationDiagnosisReport(
+            new(
+                snapshot.Revision,
+                "guffawaffle",
+                "stable",
+                "guffawaffle",
+                "1.0.0",
+                DateTimeOffset.UnixEpoch,
+                "test"),
+            []);
+        var result = new ConfigurationMigrationApplyResult(
+            AtomicTomlWriteState.Succeeded,
+            snapshot,
+            ResultingDiagnosis: diagnosis);
+
+        var message = MainWindow.CompleteConfigurationCleanupProjection(
+            result,
+            () => throw new InvalidDataException("simulated refresh failure"));
+
+        StringAssert.StartsWith(message, "Configuration cleanup applied successfully.");
+        StringAssert.Contains(message, "Diagnostics could not refresh afterward");
+        Assert.IsFalse(message.Contains("could not be applied", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void CancelingMaintenanceConfirmationCannotDispatchItsPreparedAction()
+    {
+        var gate = new MaintenanceConfirmationGate();
+        gate.Open(MaintenanceAction.StopManaging);
+
+        gate.Cancel();
+
+        Assert.IsFalse(gate.TryConfirm(out var action));
+        Assert.AreEqual(MaintenanceAction.None, action);
+
+        gate.Open(MaintenanceAction.StopManaging);
+        Assert.IsTrue(gate.TryConfirm(out action));
+        Assert.AreEqual(MaintenanceAction.StopManaging, action);
+        Assert.IsFalse(gate.TryConfirm(out _), "A confirmed maintenance action must be one-shot.");
+    }
+
+    [TestMethod]
     public void SearchClearAndClosePublishDistinctUiAutomationContracts()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
@@ -298,12 +395,16 @@ public sealed class SettingsShellAccessibilityTests
             "private void DiagnosticsButton_Click");
         var folderHandler = Slice(
             source,
-            "private void ChooseGameFolderButton_Click",
+            "private async void ChooseGameFolderButton_Click",
             "private async void ModActionButton_Click");
         var executeHandler = Slice(
             source,
             "private async void ConfirmModOperationButton_Click",
             "private void ReleaseSourceButton_Click");
+        var recoveryCopy = Slice(
+            source,
+            "private static string DescribeUnavailableRepairRecovery",
+            "private void DismissHomeFeedbackButton_Click");
 
         Assert.AreEqual("{Binding ModActionLabel}", (string?)modAction.Attribute("Content"));
         Assert.AreEqual(
@@ -329,6 +430,15 @@ public sealed class SettingsShellAccessibilityTests
         StringAssert.Contains(prepareHandler, "ShowMaintenanceConfirmation(MaintenanceAction.Recover");
         Assert.IsFalse(folderHandler.Contains("MaintenanceAction.Recover", StringComparison.Ordinal));
         StringAssert.Contains(prepareHandler, "PrepareModOperationAsync");
+        StringAssert.Contains(prepareHandler, "RecoveryAction: not ModOperationRecoveryAction.None");
+        StringAssert.Contains(prepareHandler, "MaintenanceAction.StopManaging");
+        StringAssert.Contains(recoveryCopy, "ModOperationRecoveryAction.StopManagingThenInstall");
+        StringAssert.Contains(recoveryCopy, "ModOperationRecoveryAction.StopManagingThenUpdate");
+        StringAssert.Contains(recoveryCopy, "ModOperationRecoveryAction.StopManagingThenSelectSource");
+        StringAssert.Contains(recoveryCopy, "Home will offer Install");
+        StringAssert.Contains(recoveryCopy, "Home will offer Update mod");
+        StringAssert.Contains(recoveryCopy, "select its matching source before updating");
+        StringAssert.Contains(recoveryCopy, "the current DLL and TOML stay unchanged");
         StringAssert.Contains(prepareHandler, "ModOperationPreparationState.Ready");
         StringAssert.Contains(prepareHandler, "ModOperationSource.Text = viewModel.SelectedModReleaseSource");
         StringAssert.Contains(prepareHandler, "pendingModOperation.IsAdoptionOnly");
@@ -438,6 +548,15 @@ public sealed class SettingsShellAccessibilityTests
         Assert.IsFalse(accepted.Contains("Installing", StringComparison.Ordinal));
         StringAssert.Contains(completed, "now manages");
         StringAssert.Contains(completed, "previously installed file was preserved");
+
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/ViewModels/MainWindowViewModel.cs"));
+        var execution = Slice(
+            source,
+            "public async Task<ModDeploymentResult?> ExecuteModOperationAsync",
+            "internal static string ModOperationAcceptedMessage");
+        StringAssert.Contains(execution, "actionFeedback.Mod.CompleteTransient(");
     }
 
     [TestMethod]
@@ -500,6 +619,10 @@ public sealed class SettingsShellAccessibilityTests
         var source = File.ReadAllText(Path.Combine(
             RepositoryRoot(),
             "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var feedback = Slice(
+            source,
+            "private void ReportConfigurationCleanupAction",
+            "private void ClearConfigurationCleanupFeedback");
 
         StringAssert.Contains(source, "unknown content and values remain untouched");
         StringAssert.Contains(cleanupText, "creates and verifies a protected provider-scoped backup");
@@ -510,6 +633,14 @@ public sealed class SettingsShellAccessibilityTests
             (string?)button.Attribute("Click") == "CancelConfigurationCleanupButton_Click"));
         Assert.IsTrue(cleanup.Descendants(Presentation + "Button").Any(button =>
             (string?)button.Attribute("Click") == "ConfirmConfigurationCleanupButton_Click"));
+        Assert.IsFalse(
+            feedback.Contains("ReportDiagnosticAction", StringComparison.Ordinal),
+            "Cleanup feedback must have one owning live region instead of duplicating Support actions status.");
+        var cleanupStatus = document.Descendants(Presentation + "TextBlock")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ConfigurationCleanupStatus");
+        Assert.AreEqual(
+            "Polite",
+            (string?)cleanupStatus.Attribute(Automation + "AutomationProperties.LiveSetting"));
     }
 
     [TestMethod]
@@ -664,4 +795,12 @@ public sealed class SettingsShellAccessibilityTests
         return directory?.FullName
             ?? throw new InvalidOperationException("Could not locate the launcher repository root.");
     }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
 }
