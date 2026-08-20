@@ -702,10 +702,13 @@ try {
     [System.Windows.Automation.TreeScope]::Descendants,
     $buttonCondition)
   $modAction = $homeButtons | Where-Object {
-    $_.Current.Name -match '(?i)^(install the community mod|the installed artifact|the managed runtime compatibility file|check the selected release source|check for community mod|community mod transaction recovery)'
+    $_.Current.AutomationId -eq 'CommunityModPrimaryAction'
   } | Select-Object -First 1
   if ($null -eq $modAction) {
     throw "Mod Bridge Home did not expose an accessible community-mod action."
+  }
+  if ($modAction.Current.Name -notmatch '(?i)^(install|update mod|repair|recover)\b') {
+    throw "The community-mod action accessible name does not begin with its visible action label."
   }
   Write-Host "PASS: Mod Bridge Home exposes community-mod state and action '$($modAction.Current.Name)'."
   if (-not $communityModPresent) {

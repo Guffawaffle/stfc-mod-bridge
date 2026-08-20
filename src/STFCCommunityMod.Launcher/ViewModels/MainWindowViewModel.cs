@@ -42,13 +42,24 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private LauncherLaunchTarget selectedLaunchTarget;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private string diagnosticActionStatus = string.Empty;
+    private bool isRecoveryWorkspaceTransitionPending;
     private Func<LauncherActivationPlan>? currentActivationPlan;
     private Func<LauncherBattleFeatureSnapshot>? currentBattleFeatures;
     private readonly DispatcherTimer refreshActionStatusTimer;
     private readonly DispatcherTimer modActionStatusTimer;
     private bool isDisposed;
 
-    internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator { get; private set; }
+    private LauncherProviderAtomicSwitchCoordinator? providerSwitchCoordinator;
+
+    internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator
+    {
+        get => providerSwitchCoordinator;
+        private set
+        {
+            providerSwitchCoordinator = value;
+            NotifyModPresentationChanged();
+        }
+    }
 
     internal LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator { get; private set; }
 
@@ -163,6 +174,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string GameFolderActionAutomationName => presentation.GameFolderActionAutomationName;
 
+    public bool CanChangeGameFolder => ResolveModContextChangeAvailability(
+        ModActionKind == ModManagementActionKind.Recover,
+        actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
+        actionFeedback.Launch.IsWorking);
+
+    public bool CanChangeReleaseSource => ResolveModContextChangeAvailability(
+        ModActionKind == ModManagementActionKind.Recover,
+        actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
+        actionFeedback.Launch.IsWorking);
+
+    public bool CanOpenSettingsWorkspace =>
+        !actionFeedback.Mod.IsWorking
+        && !isRecoveryWorkspaceTransitionPending;
+
     public string GameClientStatus => presentation.GameClientStatus;
 
     public string GameClientIcon => presentation.GameClientIcon;
@@ -212,6 +237,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         distributionProviderCatalog,
         selectedModSourceMetadata);
 
+    public string SelectedModReleaseSource => selectedModSourceMetadata;
+
     public LauncherHomeTone ModTone => HasIncompleteProviderSwitch
         ? LauncherHomeTone.Error
         : modPresentation.Tone;
@@ -223,9 +250,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             : modPresentation.ActionLabel;
 
     public string ModActionAutomationName => actionFeedback.Mod.IsWorking
+        ? $"{ModActionLabel}. {actionFeedback.Mod.AutomationAnnouncement}"
+        : HasIncompleteProviderSwitch
+            ? "Recover. Recover the incomplete provider switch."
+            : $"{ModActionLabel}. {modPresentation.AutomationName}";
+
+    public string ModActionHelpText => actionFeedback.Mod.IsWorking
         ? actionFeedback.Mod.AutomationAnnouncement
         : HasIncompleteProviderSwitch
-            ? "Recover the incomplete provider switch"
+            ? "Recover the incomplete provider switch before changing the mod or its release source."
             : modPresentation.AutomationName;
 
     public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable
@@ -259,13 +292,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             externallyAvailable: true,
             actionFeedback.Launch.IsWorking);
 
-    public string DiagnosticRecoveryAvailability => CanRecoverMod
-        ? HasIncompleteProviderSwitch
-            ? "Recovery is available for the incomplete provider switch. DLL, provider selection, and TOML state will be restored together."
-            : "Recovery is available for the detected incomplete transaction."
-        : ModActionKind == ModManagementActionKind.Recover
-            ? modPresentation.AutomationName
-            : "No incomplete deployment transaction is available to recover.";
+    public string DiagnosticRecoveryAvailability
+    {
+        get
+        {
+            if (HasIncompleteProviderSwitch)
+            {
+                return DescribeProviderSwitchRecoveryAvailability(
+                    IsGameRunning,
+                    IncompleteProviderSwitchIncludesArtifact);
+            }
+            return CanRecoverMod
+                ? "Recovery is available for the detected incomplete transaction."
+                : ModActionKind == ModManagementActionKind.Recover
+                    ? modPresentation.AutomationName
+                    : "No incomplete deployment transaction is available to recover.";
+        }
+    }
 
     public string DiagnosticRemovalAvailability => CanUninstallMod
         ? "Removal is available after confirmation."
@@ -359,9 +402,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ? "Checking for Mod Bridge update…"
         : "Check Mod Bridge _update";
 
-    public string LauncherUpdateActionAutomationName => actionFeedback.LauncherUpdate.IsWorking
-        ? actionFeedback.LauncherUpdate.AutomationAnnouncement
-        : "Check for a Mod Bridge self-update";
+    public string LauncherUpdateActionAutomationName => DescribeLauncherUpdateActionAutomationName(
+        actionFeedback.LauncherUpdate.IsWorking,
+        actionFeedback.LauncherUpdate.AutomationAnnouncement);
 
     public string LauncherUpdateFeedback => actionFeedback.LauncherUpdate.StatusText;
 
@@ -783,9 +826,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             }
             else
             {
+                var action = preparation.IsAdoptionOnly
+                    ? "ready for Mod Bridge management"
+                    : preparation.ActionKind switch
+                    {
+                        ModManagementActionKind.Install => "ready to install",
+                        ModManagementActionKind.Repair => "ready to repair",
+                        _ => "ready to update",
+                    };
                 actionFeedback.Mod.Complete(
                     true,
-                    $"Community mod {preparation.ReleaseVersion} is ready to update.");
+                    $"Community mod {preparation.ReleaseVersion} is {action}.");
             }
             return preparation;
         }
@@ -811,7 +862,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preparation);
-        if (!actionFeedback.Mod.TryBegin("Installation accepted. Installing the verified community mod…"))
+        if (!actionFeedback.Mod.TryBegin(ModOperationAcceptedMessage(preparation)))
         {
             return null;
         }
@@ -819,7 +870,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var result = await modManagementCoordinator.ExecuteAsync(preparation, cancellationToken);
-            actionFeedback.CompleteModDeployment(result);
+            if (preparation.IsAdoptionOnly && result.IsSuccess)
+            {
+                actionFeedback.Mod.Complete(
+                    result.Changed,
+                    ModOperationSucceededMessage(preparation));
+            }
+            else
+            {
+                actionFeedback.CompleteModDeployment(result);
+            }
             return result;
         }
         catch (OperationCanceledException)
@@ -841,6 +901,63 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             Refresh();
         }
+    }
+
+    internal static string ModOperationAcceptedMessage(ModOperationPreparation preparation)
+    {
+        ArgumentNullException.ThrowIfNull(preparation);
+        if (preparation.IsAdoptionOnly)
+        {
+            return "Management accepted. Recording the current community mod with Mod Bridge…";
+        }
+        return preparation.ActionKind switch
+        {
+            ModManagementActionKind.Install => "Installation accepted. Installing the verified community mod…",
+            ModManagementActionKind.Repair => "Repair accepted. Restoring the verified community mod…",
+            _ => "Update accepted. Installing the verified community mod update…",
+        };
+    }
+
+    internal static string ModOperationSucceededMessage(ModOperationPreparation preparation)
+    {
+        ArgumentNullException.ThrowIfNull(preparation);
+        return preparation.IsAdoptionOnly
+            ? $"Mod Bridge now manages community mod {preparation.ReleaseVersion}. "
+                + "The previously installed file was preserved for removal or recovery."
+            : $"Community mod {preparation.ReleaseVersion} completed successfully.";
+    }
+
+    internal void ReportRecoveryCompletion(bool changed, string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        actionFeedback.Mod.Complete(changed, $"Recovery completed. {message}");
+    }
+
+    internal void BeginRecoveryWorkspaceTransition()
+    {
+        if (isRecoveryWorkspaceTransitionPending)
+        {
+            return;
+        }
+        isRecoveryWorkspaceTransitionPending = true;
+        NotifyModContextChangeAvailability();
+    }
+
+    internal void EndRecoveryWorkspaceTransition()
+    {
+        if (!isRecoveryWorkspaceTransitionPending)
+        {
+            return;
+        }
+        isRecoveryWorkspaceTransitionPending = false;
+        NotifyModContextChangeAvailability();
+    }
+
+    private void NotifyModContextChangeAvailability()
+    {
+        OnPropertyChanged(nameof(CanChangeGameFolder));
+        OnPropertyChanged(nameof(CanChangeReleaseSource));
+        OnPropertyChanged(nameof(CanOpenSettingsWorkspace));
     }
 
     private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
@@ -1017,8 +1134,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             packagedLauncherUpdateService.OpenUpdateSource(check.AppInstallerUri);
             actionFeedback.LauncherUpdate.Complete(
                 true,
-                "The official App Installer file opened in your default browser. "
-                    + "Open the downloaded STFCModBridge.appinstaller file to continue; Windows will handle the update.");
+                "Windows was asked to open the official App Installer file in your default browser. "
+                    + "Open the downloaded STFCModBridge.appinstaller file to continue; "
+                    + "if no browser window appeared, choose Check Mod Bridge update again.");
             return true;
         }
         catch (Exception exception) when (
@@ -1178,6 +1296,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             actionFeedback.Mod.Cancel("The maintenance operation was canceled.");
             return null;
         }
+        catch (LauncherProviderSwitchJournalException)
+        {
+            actionFeedback.Mod.Fail(
+                "The saved recovery details are damaged, so Mod Bridge did not change any files. "
+                    + "Do not retry recovery until those details are repaired. Open Verification & recovery guidance, "
+                    + "export a diagnostic report, and share it when asking for help.");
+            return null;
+        }
         catch (Exception exception) when (
             exception is InvalidDataException
                 or InvalidOperationException
@@ -1199,7 +1325,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(ModTone));
         OnPropertyChanged(nameof(ModActionLabel));
         OnPropertyChanged(nameof(ModActionAutomationName));
+        OnPropertyChanged(nameof(ModActionHelpText));
         OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(CanChangeGameFolder));
+        OnPropertyChanged(nameof(CanChangeReleaseSource));
+        OnPropertyChanged(nameof(CanOpenSettingsWorkspace));
         OnPropertyChanged(nameof(ModActionKind));
         OnPropertyChanged(nameof(CanRecoverMod));
         OnPropertyChanged(nameof(CanUninstallMod));
@@ -1212,8 +1342,137 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         UpdateModActionAvailability();
     }
 
-    private void UpdateModActionAvailability() =>
-        actionFeedback.Mod.SetAvailability(modPresentation.CanExecute, modPresentation.AutomationName);
+    internal static bool ResolveModActionAvailability(
+        bool hasIncompleteProviderSwitch,
+        bool isGameRunning,
+        bool ordinaryActionCanExecute) =>
+        hasIncompleteProviderSwitch
+            ? !isGameRunning
+            : ordinaryActionCanExecute;
+
+    internal static bool ResolveModContextChangeAvailability(
+        bool recoveryRequired,
+        bool isModOperationInProgress,
+        bool isLaunchInProgress) =>
+        !recoveryRequired
+        && !isModOperationInProgress
+        && !isLaunchInProgress;
+
+    internal static string DescribeProviderSwitchRecoveryAvailability(
+        bool isGameRunning,
+        bool? includesArtifact)
+    {
+        if (isGameRunning)
+        {
+            return "Close Star Trek Fleet Command before recovering the incomplete provider switch.";
+        }
+        return includesArtifact switch
+        {
+            true => "Recovery is available for the incomplete provider switch. "
+                + "version.dll, provider selection, and exact TOML bytes will be restored together.",
+            false => "Recovery is available for the incomplete provider switch. "
+                + "Provider selection and exact TOML bytes will be restored; no DLL change was part of this switch.",
+            null => "Recovery is required for the incomplete provider switch. "
+                + "Review its persisted transaction details before continuing.",
+        };
+    }
+
+    internal static string DescribeLauncherUpdateActionAutomationName(
+        bool isWorking,
+        string automationAnnouncement) =>
+        isWorking
+            ? $"Checking for Mod Bridge update… {automationAnnouncement}"
+            : "Check Mod Bridge update. Check for a Mod Bridge self-update.";
+
+    internal bool? IncompleteProviderSwitchIncludesArtifact
+    {
+        get
+        {
+            try
+            {
+                var journal = ProviderSwitchCoordinator?.ReadJournal();
+                return journal is not null
+                    && journal.Phase is not (LauncherProviderAtomicSwitchPhase.Completed
+                        or LauncherProviderAtomicSwitchPhase.RolledBack)
+                    ? journal.TargetArtifact is not null
+                    : null;
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or JsonException)
+            {
+                return null;
+            }
+        }
+    }
+
+    internal LauncherProviderSelection? IncompleteProviderSwitchSourceSelection
+    {
+        get
+        {
+            try
+            {
+                var journal = ProviderSwitchCoordinator?.ReadJournal();
+                return journal is not null
+                    && journal.Phase is not (LauncherProviderAtomicSwitchPhase.Completed
+                        or LauncherProviderAtomicSwitchPhase.RolledBack)
+                    ? journal.Preview.Source
+                    : null;
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or JsonException)
+            {
+                return null;
+            }
+        }
+    }
+
+    internal string? IncompleteProviderSwitchGameDirectory
+    {
+        get
+        {
+            try
+            {
+                var journal = ProviderSwitchCoordinator?.ReadJournal();
+                if (journal is null
+                    || journal.Phase is LauncherProviderAtomicSwitchPhase.Completed
+                        or LauncherProviderAtomicSwitchPhase.RolledBack
+                    || string.IsNullOrWhiteSpace(journal.Preview.ConfigurationPath))
+                {
+                    return null;
+                }
+                return Path.GetDirectoryName(Path.GetFullPath(journal.Preview.ConfigurationPath));
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or InvalidDataException
+                    or JsonException
+                    or ArgumentException
+                    or NotSupportedException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private void UpdateModActionAvailability()
+    {
+        var hasIncompleteProviderSwitch = HasIncompleteProviderSwitch;
+        actionFeedback.Mod.SetAvailability(
+            ResolveModActionAvailability(
+                hasIncompleteProviderSwitch,
+                IsGameRunning,
+                modPresentation.CanExecute),
+            hasIncompleteProviderSwitch
+                ? "Close Star Trek Fleet Command before recovering the incomplete provider switch."
+                : modPresentation.AutomationName);
+    }
 
     private void UpdateLaunchActionAvailability() =>
         actionFeedback.Launch.SetAvailability(
@@ -1357,14 +1616,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             case nameof(ObservableActionState.IsWorking):
                 OnPropertyChanged(nameof(IsModOperationInProgress));
                 OnPropertyChanged(nameof(ModActionLabel));
+                OnPropertyChanged(nameof(ModActionAutomationName));
+                OnPropertyChanged(nameof(ModActionHelpText));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
                 OnPropertyChanged(nameof(CanStopManagingMod));
                 OnPropertyChanged(nameof(CanLaunchGame));
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
+                OnPropertyChanged(nameof(CanChangeGameFolder));
+                OnPropertyChanged(nameof(CanChangeReleaseSource));
+                OnPropertyChanged(nameof(CanOpenSettingsWorkspace));
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(ModActionAutomationName));
+                OnPropertyChanged(nameof(ModActionHelpText));
                 break;
             case nameof(ObservableActionState.StatusText):
                 OnPropertyChanged(nameof(ModOperationFeedback));
@@ -1378,6 +1643,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanUninstallMod));
                 OnPropertyChanged(nameof(CanStopManagingMod));
                 OnPropertyChanged(nameof(CanRetryCandidateRecovery));
+                OnPropertyChanged(nameof(CanChangeGameFolder));
+                OnPropertyChanged(nameof(CanChangeReleaseSource));
+                OnPropertyChanged(nameof(CanOpenSettingsWorkspace));
                 break;
         }
     }
@@ -1415,6 +1683,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             case nameof(ObservableActionState.IsWorking):
                 OnPropertyChanged(nameof(LauncherUpdateActionLabel));
+                OnPropertyChanged(nameof(LauncherUpdateActionAutomationName));
                 break;
             case nameof(ObservableActionState.AutomationAnnouncement):
                 OnPropertyChanged(nameof(LauncherUpdateActionAutomationName));
@@ -1437,6 +1706,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(IsLaunchInProgress));
                 OnPropertyChanged(nameof(LaunchActionLabel));
                 OnPropertyChanged(nameof(CanManageMod));
+                OnPropertyChanged(nameof(CanChangeGameFolder));
+                OnPropertyChanged(nameof(CanChangeReleaseSource));
                 OnPropertyChanged(nameof(CanRecoverMod));
                 OnPropertyChanged(nameof(CanUninstallMod));
                 OnPropertyChanged(nameof(CanStopManagingMod));

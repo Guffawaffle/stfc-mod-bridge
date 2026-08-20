@@ -68,6 +68,7 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(ExistingArtifactPolicy.AdoptAndPreserve, preparation.ExistingArtifactPolicy);
         Assert.AreEqual(Path.GetFullPath(gameDirectory), preparation.GameDirectory);
         Assert.AreEqual("2.1.0-guffa.8", preparation.ReleaseVersion);
+        Assert.IsFalse(preparation.IsAdoptionOnly);
         StringAssert.StartsWith(preparation.Message, "Update the existing installation to");
     }
 
@@ -90,7 +91,9 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(
             ExistingArtifactPolicy.AdoptAndPreserve,
             preparation.ExistingArtifactPolicy);
-        StringAssert.Contains(preparation.Message, "Update the existing installation");
+        Assert.IsTrue(preparation.IsAdoptionOnly);
+        StringAssert.Contains(preparation.Message, "already installed");
+        StringAssert.Contains(preparation.Message, "Let Mod Bridge manage it");
     }
 
     [TestMethod]

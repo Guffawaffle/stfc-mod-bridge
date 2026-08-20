@@ -69,6 +69,42 @@ public sealed class ProviderSwitchReviewPresentationTests
     }
 
     [TestMethod]
+    public void IgnoredInvalidValueIsAdvisoryAndDoesNotRequireASecondConfirmation()
+    {
+        var presentation = ProviderSwitchReviewPresentation.From(
+            Preview(
+                LauncherProviderCompatibilityKind.Compatible,
+                "Supported mod runtimes ignore invalid overrides; exact bytes are preserved."),
+            "Stable",
+            introductoryReviewAcknowledged: true);
+
+        Assert.IsFalse(presentation.RequiresReview);
+        Assert.IsFalse(presentation.IsIntroductoryReview);
+        Assert.IsFalse(presentation.HasFocusedWarning);
+        Assert.IsFalse(presentation.Summary.Contains("Warning:", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ManualDllSourceChangeExplainsThatTheDllWillRemainUnchanged()
+    {
+        var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with
+        {
+            SourceInstallation = new(
+                ModInstallationEvidenceState.ManualInstallation,
+                IsGameRunning: false),
+        };
+
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview,
+            "Stable",
+            introductoryReviewAcknowledged: true);
+
+        Assert.IsFalse(presentation.RequiresReview);
+        StringAssert.Contains(presentation.Summary, "manual DLL will remain unchanged");
+        StringAssert.Contains(presentation.Summary, "preferred source");
+    }
+
+    [TestMethod]
     public void ManagedDllReviewStatesReleaseAndGameClosedBoundary()
     {
         var preview = Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with

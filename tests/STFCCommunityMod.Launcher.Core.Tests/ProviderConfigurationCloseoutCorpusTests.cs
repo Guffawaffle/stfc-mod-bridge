@@ -104,7 +104,7 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
     }
 
     [TestMethod]
-    public async Task PublicSwitchBoundaryWarnsAndPreservesCatalogInvalidConfiguration()
+    public async Task PublicSwitchBoundaryTreatsIgnoredInvalidConfigurationAsAdvisory()
     {
         var original = "[graphics]\nfree_resize = \"not-a-boolean\"\n"u8.ToArray();
         using var context = await CreateSwitchContextAsync(original);
@@ -118,7 +118,7 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
         var result = await context.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
 
         Assert.IsTrue(preview.Configuration.Concerns.Any(concern =>
-            concern.Kind == LauncherProviderCompatibilityKind.Warning
+            concern.Kind == LauncherProviderCompatibilityKind.Compatible
             && concern.Message.Contains("ignore invalid overrides", StringComparison.Ordinal)));
         Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), result.Selection);
         CollectionAssert.AreEqual(original, await File.ReadAllBytesAsync(context.ConfigurationPath));

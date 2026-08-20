@@ -790,6 +790,97 @@ public sealed class LauncherProviderSourceSwitchService
         RestoreSelection(preview.SourceResolutionState, preview.Source);
     }
 
+    internal void ValidateRecoveryDependencies(
+        LauncherProviderSwitchPreview preview,
+        ConfigurationBackupReceipt? sourceBackup)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        if (string.IsNullOrWhiteSpace(preview.ConfigurationPath))
+        {
+            throw new InvalidDataException(
+                "Provider-switch recovery is missing its exact configuration path.");
+        }
+        var gameDirectory = Path.GetDirectoryName(preview.ConfigurationPath)
+            ?? throw new InvalidDataException("The configuration path has no game directory.");
+        var validation = GameInstallValidator.Validate(gameDirectory);
+        if (!validation.IsValid
+            || !string.Equals(
+                preview.ConfigurationPath,
+                Path.Combine(validation.GameDirectory, "community_patch_settings.toml"),
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Provider-switch recovery is not bound to a validated STFC installation.");
+        }
+
+        if (EffectiveConfigurationExisted(preview))
+        {
+            if (sourceBackup is null)
+            {
+                throw new InvalidDataException(
+                    "Provider-switch recovery is missing its exact source configuration receipt.");
+            }
+            var persistedSource = backupStore.List(
+                    validation.GameDirectory,
+                    preview.Source.ProviderId)
+                .SingleOrDefault(receipt => string.Equals(
+                    receipt.BackupId,
+                    sourceBackup.BackupId,
+                    StringComparison.Ordinal));
+            if (persistedSource != sourceBackup)
+            {
+                throw new InvalidDataException(
+                    "The source configuration recovery receipt no longer matches protected storage.");
+            }
+            var sourceContents = backupStore.Read(
+                validation.GameDirectory,
+                sourceBackup.ProviderId,
+                sourceBackup.BackupId);
+            if (!string.Equals(
+                    ConfigurationDocumentRevision.FromContents(sourceContents).Sha256,
+                    preview.ConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The protected source configuration no longer matches the recovery journal.");
+            }
+        }
+
+        if (preview.ConfigurationKind == LauncherProviderSwitchConfigurationKind.RestoreProviderHistory)
+        {
+            var targetBackup = backupStore.List(
+                    validation.GameDirectory,
+                    preview.Target.ProviderId)
+                .SingleOrDefault(receipt => string.Equals(
+                    receipt.BackupId,
+                    preview.TargetConfigurationBackupId,
+                    StringComparison.Ordinal));
+            if (targetBackup is null
+                || !string.Equals(
+                    targetBackup.ContentSha256,
+                    preview.TargetConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The target configuration history no longer matches protected storage.");
+            }
+            var targetContents = backupStore.Read(
+                validation.GameDirectory,
+                preview.Target.ProviderId,
+                targetBackup.BackupId);
+            if (!string.Equals(
+                    ConfigurationDocumentRevision.FromContents(targetContents).Sha256,
+                    preview.TargetConfigurationSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The protected target configuration no longer matches the recovery journal.");
+            }
+        }
+    }
+
     private AtomicTomlStore CreateConfigurationStore() =>
         atomicTomlMutationAdmission is null
             ? new AtomicTomlStore(retainAdjacentBackup: false)
@@ -937,7 +1028,7 @@ public sealed class LauncherProviderSourceSwitchService
             concerns.Add(
                 new(
                     LauncherProviderCapabilityIds.ConfigurationMigration,
-                    LauncherProviderCompatibilityKind.Warning,
+                    LauncherProviderCompatibilityKind.Compatible,
                     $"The target catalog reports {invalidValueCount} configured value(s) outside its accepted "
                     + "type or constraints. Supported mod runtimes ignore invalid overrides, so switching remains "
                     + "available and Mod Bridge will preserve their exact bytes."));

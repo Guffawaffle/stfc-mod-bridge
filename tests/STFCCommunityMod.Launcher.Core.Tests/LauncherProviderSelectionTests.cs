@@ -119,7 +119,7 @@ public sealed class LauncherProviderSelectionTests
     }
 
     [TestMethod]
-    public async Task CatalogInvalidTargetValueWarnsAndSwitchesWithoutChangingToml()
+    public async Task CatalogInvalidTargetValueIsAdvisoryAndSwitchesWithoutChangingToml()
     {
         using var directory = new TemporaryDirectory();
         TemporaryDirectory.CreateFile(directory.Path, "prime.exe");
@@ -141,7 +141,7 @@ public sealed class LauncherProviderSelectionTests
 
         Assert.IsTrue(preview.TargetConfigurationAnalysis!.BlockingFindingCodes.Count == 0);
         Assert.IsTrue(preview.Concerns.Any(concern =>
-            concern.Kind == LauncherProviderCompatibilityKind.Warning
+            concern.Kind == LauncherProviderCompatibilityKind.Compatible
             && concern.Message.Contains("ignore invalid overrides", StringComparison.Ordinal)));
         Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), result.Selection);
         Assert.AreEqual(result.Selection, store.Load());
