@@ -1,10 +1,16 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.ExceptionServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Xml.Linq;
 using STFCCommunityMod.Launcher.Core;
 using STFCCommunityMod.Launcher.ViewModels;
+using STFCCommunityMod.Launcher.Views;
 
 namespace STFCCommunityMod.Launcher.Tests;
 
@@ -202,6 +208,76 @@ public sealed class ProviderConfigurationHistoryViewModelTests
                 StringComparison.Ordinal) == true));
     }
 
+    [TestMethod]
+    public void HistoryTemplateMaterializesReadOnlyMetadataWithoutABindingException()
+    {
+        RunInSta(
+            () =>
+            {
+                using var directory = new TestDirectory();
+                var context = CreateContextAsync(directory).GetAwaiter().GetResult();
+                var command = new TestCommand();
+                var layout = new PrincipalCatalogSettingsLayoutProvider();
+                var settings = new SettingsViewModel(
+                    context.ConfigurationCatalog,
+                    command,
+                    command,
+                    () => context.ConfigurationPath,
+                    layout,
+                    new("Guffawaffle test", "Active", "Test fixture", layout.DisplayName),
+                    configurationHistoryCoordinator: context.Coordinator);
+                settings.ConfigurationHistory!.RefreshAsync().GetAwaiter().GetResult();
+                settings.Sections.Single(section =>
+                        section.Id == LauncherSettingsSection.ConfigurationHistory)
+                    .SelectCommand.Execute(null);
+                settings.ConfigurationHistory.RefreshAsync().GetAwaiter().GetResult();
+
+                var application = Application.Current ?? new App();
+                if (application is App app && !application.Resources.Contains("SurfaceMutedBrush"))
+                {
+                    app.InitializeComponent();
+                }
+
+                var view = new SettingsView { DataContext = settings };
+                view.Measure(new Size(960, 620));
+                view.Arrange(new Rect(0, 0, 960, 620));
+                view.UpdateLayout();
+
+                var entries = (ItemsControl)view.FindName("ConfigurationHistoryEntries");
+                Assert.AreEqual(1, entries.Items.Count);
+                var renderedText = Descendants<TextBlock>(entries)
+                    .Select(text => text.Inlines.Count > 0
+                        ? string.Concat(text.Inlines.OfType<Run>().Select(run => run.Text))
+                        : text.Text)
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .ToArray();
+                var entry = settings.ConfigurationHistory.Entries.Single();
+                Assert.IsTrue(renderedText.Any(text =>
+                    text.Contains(entry.ProviderDisplayName, StringComparison.Ordinal)
+                    && text.Contains(entry.CreatedAtText, StringComparison.Ordinal)),
+                    $"Rendered History text: {string.Join(" | ", renderedText)}");
+            });
+    }
+
+    [TestMethod]
+    public void EveryDataBoundRunUsesOneWayPresentation()
+    {
+        var document = XDocument.Load(FindRepositoryFile(
+            "src",
+            "STFCCommunityMod.Launcher",
+            "Views",
+            "SettingsView.xaml"));
+        var bindings = document.Descendants(Presentation + "Run")
+            .Select(run => (string?)run.Attribute("Text"))
+            .Where(text => text?.StartsWith("{Binding ", StringComparison.Ordinal) == true)
+            .Cast<string>()
+            .ToArray();
+
+        Assert.IsTrue(bindings.Length >= 4);
+        Assert.IsTrue(bindings.All(binding =>
+            binding.Contains("Mode=OneWay", StringComparison.Ordinal)));
+    }
+
     private static async Task<HistoryContext> CreateContextAsync(TestDirectory directory)
     {
         var stateDirectory = directory.CreateDirectory("state");
@@ -275,6 +351,67 @@ public sealed class ProviderConfigurationHistoryViewModelTests
         }
         throw new FileNotFoundException(
             $"Could not find repository file '{System.IO.Path.Combine(relativeParts)}'.");
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match)
+            {
+                yield return match;
+            }
+            foreach (var descendant in Descendants<T>(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static void RunInSta(Action action)
+    {
+        var originalWindir = Environment.GetEnvironmentVariable("WINDIR", EnvironmentVariableTarget.Process);
+        if (string.IsNullOrWhiteSpace(originalWindir))
+        {
+            Environment.SetEnvironmentVariable(
+                "WINDIR",
+                Environment.GetEnvironmentVariable("SystemRoot", EnvironmentVariableTarget.Process),
+                EnvironmentVariableTarget.Process);
+        }
+
+        Exception? failure = null;
+        try
+        {
+            var thread = new Thread(
+                () =>
+                {
+                    try
+                    {
+                        action();
+                    }
+                    catch (Exception exception)
+                    {
+                        failure = exception;
+                    }
+                });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(15)), "The History template test timed out.");
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+        }
+        finally
+        {
+            if (string.IsNullOrWhiteSpace(originalWindir))
+            {
+                Environment.SetEnvironmentVariable("WINDIR", null, EnvironmentVariableTarget.Process);
+            }
+        }
     }
 
     private sealed record HistoryContext(

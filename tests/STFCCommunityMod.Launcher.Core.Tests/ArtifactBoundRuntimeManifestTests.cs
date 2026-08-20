@@ -194,6 +194,80 @@ public sealed class ArtifactBoundRuntimeManifestTests
     }
 
     [TestMethod]
+    public async Task MissingManagedDllPreservesSurvivingRuntimeManifestThroughLatestInstall()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var prior = PairFixture.Create();
+        var priorService = CreateService(temporaryDirectory, prior);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await priorService.DeployAsync(
+                gameDirectory,
+                prior.Dll,
+                ExistingArtifactPolicy.Reject)).State);
+        File.Delete(Path.Combine(gameDirectory, "version.dll"));
+        var priorRuntimePath = Path.Combine(
+            gameDirectory,
+            ArtifactBoundRuntimeManifestParser.ManagedFileName);
+        CollectionAssert.AreEqual(prior.ManifestBytes, File.ReadAllBytes(priorRuntimePath));
+
+        var target = PairFixture.Create(
+            payloadBytes: [0x4c, 0x41, 0x54, 0x45, 0x53, 0x54],
+            runtimeVersion: "2.1.0.9");
+        var targetService = CreateService(temporaryDirectory, target);
+        var healthService = new LauncherHealthService(
+            new ModInstallationInspector(
+                targetService,
+                new SystemModInstallationFileSystem(),
+                reviewedCertification: target.Certification),
+            new("guffawaffle", "stable", DistributionId, true, string.Empty));
+        var coordinator = new ModManagementCoordinator(
+            targetService,
+            new StaticReleaseDiscoveryClient(
+                new(ReleaseManifest(target), target.Dll)),
+            new Version(0, 1, 0),
+            healthService: healthService);
+
+        var unavailableRepair = await coordinator.PrepareLatestAsync(
+            gameDirectory,
+            isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.MutationBlocked, unavailableRepair.State);
+        Assert.AreEqual(
+            ModOperationRecoveryAction.StopManagingThenInstallPreservingRuntimeManifest,
+            unavailableRepair.RecoveryAction);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await coordinator.StopManagingAsync(gameDirectory)).State);
+        CollectionAssert.AreEqual(prior.ManifestBytes, File.ReadAllBytes(priorRuntimePath));
+
+        var install = await coordinator.PrepareLatestAsync(gameDirectory, isGameRunning: false);
+
+        Assert.AreEqual(ModOperationPreparationState.Ready, install.State);
+        Assert.AreEqual(ModManagementActionKind.Install, install.ActionKind);
+        Assert.AreEqual(ExistingArtifactPolicy.AdoptAndPreserve, install.ExistingArtifactPolicy);
+        StringAssert.Contains(install.Message, "preserve the existing runtime manifest");
+        var installed = await coordinator.ExecuteAsync(install);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, installed.State, installed.Message);
+        var receipt = targetService.ReadInstalledState(gameDirectory);
+        Assert.IsNotNull(receipt);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(receipt.PreviousRuntimeManifestBackupPath));
+        CollectionAssert.AreEqual(
+            prior.ManifestBytes,
+            File.ReadAllBytes(receipt.PreviousRuntimeManifestBackupPath));
+        CollectionAssert.AreEqual(target.PayloadBytes, File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(target.ManifestBytes, File.ReadAllBytes(priorRuntimePath));
+
+        var removed = await coordinator.UninstallAsync(gameDirectory);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, removed.State, removed.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
+        CollectionAssert.AreEqual(prior.ManifestBytes, File.ReadAllBytes(priorRuntimePath));
+        Assert.IsNull(targetService.ReadInstalledState(gameDirectory));
+    }
+
+    [TestMethod]
     public async Task ReviewedPairReportsBothExactCommittedRevisionsFromLockedHandles()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -2047,6 +2121,21 @@ public sealed class ArtifactBoundRuntimeManifestTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(downloads[uri]);
+        }
+    }
+
+    private sealed class StaticReleaseDiscoveryClient(WindowsReleaseDiscovery discovery)
+        : IWindowsReleaseDiscoveryClient
+    {
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(
+            string channel,
+            Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            _ = channel;
+            _ = currentLauncherVersion;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(discovery);
         }
     }
 

@@ -378,6 +378,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasHomeOperationFeedback => homeFeedback.HasFeedback;
 
+    public bool CanDismissHomeOperationFeedback => homeFeedback.CanDismiss;
+
+    public void DismissHomeOperationFeedback() => homeFeedback.Dismiss();
+
     public string? SelectedGameDirectory => snapshot.SelectedGameDirectory;
 
     public string SelectionFeedback => selectionFeedback;
@@ -872,7 +876,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var result = await modManagementCoordinator.ExecuteAsync(preparation, cancellationToken);
             if (preparation.IsAdoptionOnly && result.IsSuccess)
             {
-                actionFeedback.Mod.Complete(
+                actionFeedback.Mod.CompleteTransient(
                     result.Changed,
                     ModOperationSucceededMessage(preparation));
             }
@@ -1732,6 +1736,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         else if (e.PropertyName == nameof(HomeActionFeedbackArbiter.HasFeedback))
         {
             OnPropertyChanged(nameof(HasHomeOperationFeedback));
+        }
+        else if (e.PropertyName == nameof(HomeActionFeedbackArbiter.CanDismiss))
+        {
+            OnPropertyChanged(nameof(CanDismissHomeOperationFeedback));
         }
     }
 

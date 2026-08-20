@@ -5,12 +5,16 @@ public sealed class ConfigurationMigrationApplyRequest
     public ConfigurationMigrationApplyRequest(
         ConfigurationDocumentSnapshot baseline,
         ConfigurationMigrationPlanResult plan,
-        LauncherConfigurationDiagnosisEvidence diagnosisEvidence)
+        LauncherConfigurationDiagnosisEvidence diagnosisEvidence,
+        LauncherConfigurationDiagnosisEvidence? currentDiagnosisEvidence = null,
+        string? currentConfigurationPath = null)
     {
         Baseline = baseline ?? throw new ArgumentNullException(nameof(baseline));
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));
         DiagnosisEvidence = diagnosisEvidence
             ?? throw new ArgumentNullException(nameof(diagnosisEvidence));
+        CurrentDiagnosisEvidence = currentDiagnosisEvidence ?? DiagnosisEvidence;
+        CurrentConfigurationPath = Path.GetFullPath(currentConfigurationPath ?? baseline.Path);
     }
 
     public ConfigurationDocumentSnapshot Baseline { get; }
@@ -18,6 +22,10 @@ public sealed class ConfigurationMigrationApplyRequest
     public ConfigurationMigrationPlanResult Plan { get; }
 
     public LauncherConfigurationDiagnosisEvidence DiagnosisEvidence { get; }
+
+    public LauncherConfigurationDiagnosisEvidence CurrentDiagnosisEvidence { get; }
+
+    public string CurrentConfigurationPath { get; }
 }
 
 public sealed record ConfigurationMigrationApplyResult(
@@ -34,6 +42,10 @@ public sealed record ConfigurationMigrationApplyResult(
         && ResultingDiagnosis is not null;
 }
 
+public sealed record ConfigurationMigrationApplyAuthority(
+    string ConfigurationPath,
+    LauncherConfigurationDiagnosisEvidence DiagnosisEvidence);
+
 public sealed class ConfigurationMigrationApplyCoordinator(
     IConfigurationRepository repository,
     ConfigurationHealthAnalyzer? analyzer = null)
@@ -41,6 +53,36 @@ public sealed class ConfigurationMigrationApplyCoordinator(
     private readonly IConfigurationRepository repository =
         repository ?? throw new ArgumentNullException(nameof(repository));
     private readonly ConfigurationHealthAnalyzer analyzer = analyzer ?? new();
+
+    public async Task<ConfigurationMigrationApplyResult> ApplyUnderOperationLockAsync(
+        LauncherOperationLock operationLock,
+        ConfigurationMigrationApplyRequest reviewedRequest,
+        Func<ConfigurationMigrationApplyAuthority> captureCurrentAuthority,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationLock);
+        ArgumentNullException.ThrowIfNull(reviewedRequest);
+        ArgumentNullException.ThrowIfNull(captureCurrentAuthority);
+
+        await using var lease = await operationLock.TryAcquireAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (lease is null)
+        {
+            return new(
+                AtomicTomlWriteState.Busy,
+                Error: "Another Mod Bridge operation is active. Nothing was written.");
+        }
+
+        var currentAuthority = captureCurrentAuthority();
+        return await ApplyAsync(
+            new(
+                reviewedRequest.Baseline,
+                reviewedRequest.Plan,
+                reviewedRequest.DiagnosisEvidence,
+                currentAuthority.DiagnosisEvidence,
+                currentAuthority.ConfigurationPath),
+            cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ConfigurationMigrationApplyResult> ApplyAsync(
         ConfigurationMigrationApplyRequest request,
@@ -74,11 +116,15 @@ public sealed class ConfigurationMigrationApplyCoordinator(
                 Error: "The configuration migration plan is not bound to its baseline and desired document revisions.");
         }
 
-        if (!EvidenceMatches(binding, request.DiagnosisEvidence))
+        if (!EvidenceMatches(binding, request.DiagnosisEvidence)
+            || !EvidenceMatches(binding, request.CurrentDiagnosisEvidence)
+            || !PathsEqual(baseline.Path, request.CurrentConfigurationPath))
         {
             return new(
-                AtomicTomlWriteState.Invalid,
-                Error: "The selected provider, channel, or catalog no longer matches the migration plan.");
+                AtomicTomlWriteState.Conflict,
+                Error:
+                    "The selected game folder, provider, channel, or catalog changed after the cleanup review opened; "
+                    + "no backup was created and the configuration was preserved.");
         }
 
         if (plan.State == ConfigurationMigrationPlanState.Ready
@@ -181,6 +227,12 @@ public sealed class ConfigurationMigrationApplyCoordinator(
                 catalog.Identity.CatalogVersion.ToString(),
                 StringComparison.Ordinal);
     }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static ConfigurationMigrationApplyResult ReadFailure(
         ConfigurationRepositoryReadResult read) =>
