@@ -32,6 +32,8 @@ public sealed class WindowsReleaseManifestTests
 
     [DataTestMethod]
     [DataRow("2.1.0", "2.1.0.0")]
+    [DataRow("1.1.6.0", "1.1.6.0")]
+    [DataRow("1.1.6.1", "1.1.6.1")]
     [DataRow("2.1.0-guffa.8", "2.1.0.0")]
     [DataRow("2.1.0-guffa.rc9", "2.1.0.0")]
     [DataRow("2.1.0-rc.9", "2.1.0.9")]
@@ -56,6 +58,38 @@ public sealed class WindowsReleaseManifestTests
                 "v2.1.0-guffa.9",
                 "v2.1.0-guffa.rc9") > 0,
             "A final Guffawaffle iteration must order above its release candidate.");
+    }
+
+    [TestMethod]
+    public void FourComponentFinalReleaseOrdersAboveAnOlderThreeComponentRelease()
+    {
+        Assert.IsTrue(
+            WindowsReleaseSelectionPolicy.CompareProductReleaseOrderingVersions(
+                "v1.1.6.0",
+                "v1.1.4") > 0);
+        Assert.AreEqual(
+            new Version(1, 1, 6, 0),
+            WindowsReleaseSelectionPolicy.ParseProductReleaseOrderingVersion("v1.1.6.0"));
+    }
+
+    [TestMethod]
+    public void FourComponentFinalReleaseSelectsItsExactEmbeddedFileVersion()
+    {
+        using var stream = JsonStream(Manifest());
+        var manifest = WindowsReleaseManifestParser.Parse(stream) with
+        {
+            ReleaseVersion = "1.1.6.1",
+            Tag = "v1.1.6.1",
+        };
+
+        var artifact = WindowsReleaseSelectionPolicy.SelectModArtifact(
+            manifest,
+            "stable",
+            new Version(0, 1, 0),
+            Repository);
+
+        Assert.AreEqual("1.1.6.1", artifact.ExpectedVersion);
+        Assert.AreEqual("v1.1.6.1", artifact.ExpectedProductVersion);
     }
 
     [DataTestMethod]
@@ -111,6 +145,8 @@ public sealed class WindowsReleaseManifestTests
     [DataRow("02.1.0")]
     [DataRow("2.01.0")]
     [DataRow("2.1.00")]
+    [DataRow("1.1.6.00")]
+    [DataRow("1.1.6.0.1")]
     [DataRow("2.1.0-guffa.010")]
     [DataRow("2.1.0.beta.01")]
     public void ZeroPaddedReleaseAliasesFailClosed(string releaseVersion)

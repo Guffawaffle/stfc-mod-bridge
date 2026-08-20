@@ -3469,6 +3469,27 @@
       ]
     },
     {
+      "catalogId": "netniv.configuration.stable-1.1.6.0",
+      "catalogVersion": "1.1.6.3",
+      "trackId": "stable",
+      "releaseVersion": "1.1.6.0",
+      "sourceCommit": "e80a303a9949c89100b6e59b8a5e5cc2271e7144",
+      "removeSettings": [
+        "graphics.show_all_resolutions",
+        "patches.resolutionlistfix"
+      ],
+      "presentationSettingRemovals": [
+        "graphics.show_all_resolutions"
+      ],
+      "settingOverrides": [
+        {
+          "path": "ui.extend_donation_max",
+          "description": "Windows-only; values above zero override the cap, while values at or below zero remove the ordinary donation cap and allow unlimited donation.",
+          "presentationHelp": "Set a donation cap override; zero or less removes the ordinary cap and allows unlimited donation."
+        }
+      ]
+    },
+    {
       "catalogId": "netniv.configuration.dev-1.1.5.1",
       "catalogVersion": "1.1.5.3",
       "trackId": "dev",

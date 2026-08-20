@@ -36,8 +36,11 @@ public sealed record ReviewedRuntimeManifestCertification(
 public sealed class ReviewedReleaseCertificationCatalog
 {
     private readonly Dictionary<(string ProviderId, string ChannelId), ReviewedReleaseCertification> certifications;
+    private readonly IReadOnlyList<ReviewedReleaseCertification> releaseEvidence;
 
-    public ReviewedReleaseCertificationCatalog(IEnumerable<ReviewedReleaseCertification> certifications)
+    public ReviewedReleaseCertificationCatalog(
+        IEnumerable<ReviewedReleaseCertification> certifications,
+        IEnumerable<ReviewedReleaseCertification>? historicalCertifications = null)
     {
         ArgumentNullException.ThrowIfNull(certifications);
         this.certifications = new();
@@ -50,6 +53,22 @@ public sealed class ReviewedReleaseCertificationCatalog
                     $"Reviewed release certification is duplicated for '{certification.ProviderId}/{certification.ChannelId}'.");
             }
         }
+        var evidence = this.certifications.Values
+            .Concat(historicalCertifications ?? [])
+            .ToArray();
+        if (evidence.Any(certification => certification is null)
+            || evidence
+                .GroupBy(certification => (
+                    certification.ProviderId,
+                    certification.ChannelId,
+                    certification.RuntimeDistributionId,
+                    certification.Tag),
+                    EqualityComparer<(string, string, string, string)>.Default)
+                .Any(group => group.Count() != 1))
+        {
+            throw new InvalidDataException("Reviewed release evidence contains a duplicate release identity.");
+        }
+        releaseEvidence = evidence;
     }
 
     public static ReviewedReleaseCertificationCatalog Empty { get; } = new([]);
@@ -59,6 +78,8 @@ public sealed class ReviewedReleaseCertificationCatalog
     public IReadOnlyCollection<ReviewedReleaseCertification> Certifications =>
         certifications.Values;
 
+    public IReadOnlyList<ReviewedReleaseCertification> ReleaseEvidence => releaseEvidence;
+
     public ReviewedReleaseCertification? Find(string providerId, string channelId) =>
         certifications.GetValueOrDefault((providerId, channelId));
 }
@@ -67,8 +88,10 @@ public static class ReviewedReleaseCertificationCatalogLoader
 {
     private const int SupportedSchemaVersion = 1;
     private const int MaximumCertifications = 16;
+    private const int MaximumHistoricalCertifications = 32;
     private const long MaximumArtifactSize = 128L * 1024L * 1024L;
-    private static readonly HashSet<string> RootProperties = ["schemaVersion", "certifications"];
+    private static readonly HashSet<string> RootProperties =
+        ["schemaVersion", "certifications", "historicalCertifications"];
     private static readonly HashSet<string> CertificationProperties =
     [
         "providerId", "channelId", "runtimeDistributionId", "repository", "tag", "releaseVersion",
@@ -106,7 +129,23 @@ public static class ReviewedReleaseCertificationCatalogLoader
                 throw new InvalidDataException(
                     $"Reviewed release catalog must contain at most {MaximumCertifications} certifications.");
             }
-            return new(values.EnumerateArray().Select(value => Read(value, providerCatalog)));
+            var historical = Array.Empty<ReviewedReleaseCertification>();
+            if (root.TryGetProperty("historicalCertifications", out var historicalValues))
+            {
+                if (historicalValues.ValueKind != JsonValueKind.Array
+                    || historicalValues.GetArrayLength() > MaximumHistoricalCertifications)
+                {
+                    throw new InvalidDataException(
+                        $"Reviewed release catalog must contain at most {MaximumHistoricalCertifications} historical certifications.");
+                }
+                historical = historicalValues
+                    .EnumerateArray()
+                    .Select(value => Read(value, providerCatalog))
+                    .ToArray();
+            }
+            return new(
+                values.EnumerateArray().Select(value => Read(value, providerCatalog)),
+                historical);
         }
         catch (JsonException exception)
         {

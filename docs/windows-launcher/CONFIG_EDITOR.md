@@ -13,11 +13,11 @@ The selected release source chooses the matching schema and capabilities.
 Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV
 uses a provider-owned versioned schema set that resolves only an exact reviewed
 provider, track, release version, and full source commit. The current stable
-binding is NetniV `1.1.4` at `d912611fa1eca49fc54f363bdf8377dfebf8def0`;
-the captured dev `1.1.5.1` catalog remains unavailable unless a selected release
-matches its exact reviewed identity. Unreviewed releases fail closed instead of
-reusing Guffawaffle or adjacent NetniV metadata. TOML remains the compatibility
-boundary. Runtime facts, capabilities, feature policy, and startup activation
+binding is NetniV `1.1.6.0` at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`;
+the older stable `1.1.4` and captured dev `1.1.5.1` catalogs remain unavailable
+unless a selected release matches their exact reviewed identities. Unreviewed
+releases fail closed instead of reusing Guffawaffle or adjacent NetniV metadata.
+TOML remains the compatibility boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
 
@@ -160,14 +160,16 @@ counts and opening time before physical assembly separation.
 ## Implemented foundation
 
 - The packaged launcher embeds and fail-closed loads schema version `1.0.0`.
-- The packaged NetniV schema set materializes stable `1.1.4` and dev `1.1.5.1`
-  catalogs from shared metadata plus reviewed deltas. Runtime status, feature
-  gates, release identity, and full source SHA remain catalog data rather than
+- The packaged NetniV schema set materializes stable `1.1.4`, stable `1.1.6.0`,
+  and dev `1.1.5.1` catalogs from shared metadata plus reviewed deltas. Runtime
+  status, feature gates, release identity, and full source SHA remain catalog data rather than
   WPF inference.
 - The same exact NetniV catalog owns its semantic Settings layout, labels,
   consequence-oriented help, upstream subgroup classifications, units,
-  hotkey families, search terms, and accessibility projection. Stable `1.1.4`
-  exposes 155 directly editable settings. Missing, duplicate, unknown, or
+  hotkey families, search terms, and accessibility projection. Stable `1.1.6.0`
+  exposes 155 previously reviewed directly editable settings. Its new
+  1.1.6.0-only settings remain unknown and byte-preserved pending issue #217.
+  Missing, duplicate, unknown, or
   incomplete presentation paths fail loading; no WPF provider branch fills
   the gap.
 - Startup and game-process events refresh Home only. A narrow lifecycle
@@ -297,7 +299,7 @@ shared bindings in `ConflictGroup::None` remain valid. Invalid configured
 bindings show the runtime default rather than presenting an unusable shortcut
 as active.
 
-NetniV provider selection and its exact stable `1.1.4` reviewed configuration
+NetniV provider selection and its exact stable `1.1.6.0` reviewed configuration
 catalog are packaged. That catalog includes a reviewed semantic presentation;
 NetniV's separate runtime-manifest capability remains unknown. Source-preserving
 tests prove provider switching and unrelated edits retain legacy/unknown TOML

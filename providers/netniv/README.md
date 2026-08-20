@@ -33,7 +33,12 @@ When reviewing a new NetniV release:
 6. Preserve the exact-applicability, semantic-layout, placeholder-copy,
    accessibility, family, projection, and packaged UI Automation tests.
 
-Stable `1.1.4` at `d912611fa1eca49fc54f363bdf8377dfebf8def0`
-currently materializes 203 catalog settings and 155 directly editable rows.
-The retained dev review is `1.1.5.1` at
-`238004460c4bb93aa717e47c41089fe8b71c4cf9`.
+Stable `1.1.6.0` at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`
+currently materializes 204 previously reviewed catalog settings and 155
+directly editable rows. Its newly introduced ship-scale, upgrade-confirmation,
+instant-warp, and HUD-mode settings remain unknown and byte-preserved until
+their typed presentation review lands in issue #217. The older stable `1.1.4`
+and retained dev `1.1.5.1` reviews remain available only for their exact release
+identities. The historical stable `1.1.4` certification is normalization-only:
+it can classify an older exact ownership receipt for a safe update, but it is
+not selected as the current installable release.

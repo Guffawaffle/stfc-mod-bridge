@@ -333,7 +333,7 @@ public static partial class WindowsReleaseSelectionPolicy
     private const string RuntimeManifestArtifactId = "windows-mod-runtime-manifest-x64";
 
     [GeneratedRegex(
-        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?<guffa>-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
+        "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<revision>\\d+)(?:(?:\\.(?<patch>\\d+))|(?<guffa>-guffa\\.(?:rc)?(?<patch>\\d+))|(?:\\.(?:alpha|beta)\\.(?<patch>\\d+))|(?:-rc\\.(?<patch>\\d+)))?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReleaseVersionPattern();
 
@@ -587,7 +587,8 @@ public static partial class WindowsReleaseSelectionPolicy
     public static string DeriveEmbeddedFileVersion(string releaseVersion)
     {
         var identity = ParseReleaseOrderingIdentity(releaseVersion);
-        var patch = identity.Family is ReleaseFamily.Alpha
+        var patch = identity.Family is ReleaseFamily.Final
+            or ReleaseFamily.Alpha
             or ReleaseFamily.Beta
             or ReleaseFamily.ReleaseCandidate
                 ? identity.Iteration

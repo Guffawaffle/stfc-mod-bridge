@@ -322,6 +322,7 @@ public sealed class ModDeploymentServiceTests
             new ModArtifactDownload(HttpStatusCode.OK, netnivBytes, netnivBytes.LongLength),
             versionReader: new FakeVersionReader(netniv.ExpectedVersion),
             installationAttribution: new("netniv", "stable", "netniv.stfc-community-mod"),
+            reviewedCertification: netnivCertification,
             reviewedCertifications: [netnivCertification]);
         Assert.AreEqual(
             ModDeploymentResultState.Succeeded,
@@ -445,6 +446,256 @@ public sealed class ModDeploymentServiceTests
         Assert.AreEqual(ModDeploymentResultState.VerificationFailed, result.State, result.Message);
         Assert.AreEqual(0, downloader.CallCount);
         CollectionAssert.AreEqual(persisted, File.ReadAllBytes(service.InstalledStatePath));
+    }
+
+    [TestMethod]
+    public async Task FreshReviewedFourComponentReleaseRecordsProductVersionFloor()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var releaseBytes = new byte[] { 1, 1, 6, 0 };
+        var artifact = ReleaseArtifact(releaseBytes, "1.1.6.0");
+        var certification = ReviewedCertification(attribution, "v1.1.6.0", artifact);
+        var service = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, releaseBytes, releaseBytes.LongLength),
+            versionReader: new FakeVersionReader(artifact.ExpectedVersion),
+            installationAttribution: attribution,
+            reviewedCertification: certification,
+            reviewedCertifications: [certification]);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            artifact,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(
+            "v1.1.6.0",
+            service.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+        Assert.AreEqual("v1.1.6.0", service.ReadReleaseProductVersionFloor(gameDirectory));
+    }
+
+    [TestMethod]
+    public async Task ReviewedFourComponentReleaseCanBeAdoptedAndRepaired()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var releaseBytes = new byte[] { 1, 1, 6, 0 };
+        var artifact = ReleaseArtifact(releaseBytes, "1.1.6.0");
+        var certification = ReviewedCertification(attribution, "v1.1.6.0", artifact);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), releaseBytes);
+        var service = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, releaseBytes, releaseBytes.LongLength),
+            versionReader: new FakeVersionReader(artifact.ExpectedVersion),
+            installationAttribution: attribution,
+            reviewedCertification: certification,
+            reviewedCertifications: [certification]);
+
+        var adopted = await service.DeployAsync(
+            gameDirectory,
+            artifact,
+            ExistingArtifactPolicy.AdoptAndPreserve);
+        File.WriteAllBytes(Path.Combine(gameDirectory, "version.dll"), [9, 9, 9]);
+        var repaired = await service.RepairAsync(gameDirectory, artifact);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, adopted.State, adopted.Message);
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, repaired.State, repaired.Message);
+        CollectionAssert.AreEqual(
+            releaseBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual(
+            "v1.1.6.0",
+            service.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+    }
+
+    [TestMethod]
+    public async Task HistoricalReviewedNetnivReceiptUpdatesToFourComponentReleaseAndAdvancesFloor()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var oldBytes = new byte[] { 1, 1, 4 };
+        var oldArtifact = ReleaseArtifact(oldBytes, "1.1.4.0");
+        var legacyService = CreateService(
+            temporaryDirectory,
+            new ModArtifactDownload(HttpStatusCode.OK, oldBytes, oldBytes.LongLength),
+            versionReader: new FakeVersionReader(oldArtifact.ExpectedVersion),
+            installationAttribution: attribution);
+        Assert.AreEqual(
+            ModDeploymentResultState.Succeeded,
+            (await legacyService.DeployAsync(
+                gameDirectory,
+                oldArtifact,
+                ExistingArtifactPolicy.Reject)).State);
+        Assert.IsNull(legacyService.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+
+        var newBytes = new byte[] { 1, 1, 6, 0 };
+        var newArtifact = ReleaseArtifact(newBytes, "1.1.6.0");
+        var historical = ReviewedCertification(attribution, "v1.1.4", oldArtifact);
+        var current = ReviewedCertification(attribution, "v1.1.6.0", newArtifact);
+        var downloader = new FakeDownloader(
+            new ModArtifactDownload(HttpStatusCode.OK, newBytes, newBytes.LongLength));
+        var updateService = CreateService(
+            temporaryDirectory,
+            downloader,
+            versionReader: new FakeVersionReader(newArtifact.ExpectedVersion),
+            installationAttribution: attribution,
+            reviewedCertification: current,
+            reviewedCertifications: [current, historical]);
+
+        Assert.AreEqual("v1.1.4", updateService.ReadReleaseProductVersionFloor(gameDirectory));
+        var result = await updateService.DeployAsync(
+            gameDirectory,
+            newArtifact,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, result.State, result.Message);
+        Assert.AreEqual(1, downloader.CallCount);
+        CollectionAssert.AreEqual(
+            newBytes,
+            File.ReadAllBytes(Path.Combine(gameDirectory, "version.dll")));
+        Assert.AreEqual(
+            "v1.1.6.0",
+            updateService.ReadInstalledState(gameDirectory)?.ReleaseProductVersion);
+
+        var downgradeDownloader = new FakeDownloader(
+            new ModArtifactDownload(HttpStatusCode.OK, oldBytes, oldBytes.LongLength));
+        var downgradeService = CreateService(
+            temporaryDirectory,
+            downgradeDownloader,
+            versionReader: new FakeVersionReader(oldArtifact.ExpectedVersion),
+            installationAttribution: attribution,
+            reviewedCertification: current,
+            reviewedCertifications: [current, historical]);
+        var downgrade = await downgradeService.DeployAsync(
+            gameDirectory,
+            oldArtifact,
+            ExistingArtifactPolicy.Reject);
+        Assert.AreEqual(ModDeploymentResultState.VerificationFailed, downgrade.State, downgrade.Message);
+        Assert.AreEqual(0, downgradeDownloader.CallCount);
+
+        var replayBytes = new byte[] { 1, 1, 6, 1 };
+        var replayArtifact = ReleaseArtifact(replayBytes, "1.1.6.0") with
+        {
+            ExpectedProductVersion = "v1.1.6.0",
+        };
+        var replayDownloader = new FakeDownloader(
+            new ModArtifactDownload(HttpStatusCode.OK, replayBytes, replayBytes.LongLength));
+        var replayService = CreateService(
+            temporaryDirectory,
+            replayDownloader,
+            versionReader: new FakeProductVersionReader(
+                replayArtifact.ExpectedVersion,
+                replayArtifact.ExpectedProductVersion),
+            installationAttribution: attribution,
+            reviewedCertification: current,
+            reviewedCertifications: [current, historical]);
+        var replay = await replayService.DeployAsync(
+            gameDirectory,
+            replayArtifact,
+            ExistingArtifactPolicy.Reject);
+        Assert.AreEqual(ModDeploymentResultState.VerificationFailed, replay.State, replay.Message);
+        Assert.AreEqual(0, replayDownloader.CallCount);
+    }
+
+    [TestMethod]
+    public void BundledHistoricalNetnivEvidenceClassifiesAnExactLegacyReceipt()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var stateDirectory = temporaryDirectory.CreateDirectory("state");
+        using var stream = File.OpenRead(Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "Providers",
+            "reviewed-windows-releases.v1.json"));
+        var reviewed = ReviewedReleaseCertificationCatalogLoader.Load(
+            stream,
+            LauncherDistributionProviderTests.LoadFixtureCatalog());
+        var historical = reviewed.ReleaseEvidence.Single(certification =>
+            certification.ProviderId == "netniv" && certification.Tag == "v1.1.4");
+        var state = new ModInstalledArtifactState(
+            1,
+            Path.GetFullPath(gameDirectory),
+            historical.PayloadFileName,
+            historical.PayloadVersion,
+            historical.PayloadSize,
+            historical.PayloadSha256,
+            DateTimeOffset.UtcNow,
+            PreviousArtifactBackupPath: null,
+            historical.ProviderId,
+            historical.ChannelId,
+            historical.RuntimeDistributionId);
+        var persisted = JsonSerializer.SerializeToUtf8Bytes(
+            new ModInstalledArtifactRegistry(2, [state], []),
+            JournalJsonOptions);
+        File.WriteAllBytes(Path.Combine(stateDirectory, "installed-mod.json"), persisted);
+        var service = new ModDeploymentService(
+            stateDirectory,
+            new FakeDownloader(SuccessfulDownload()),
+            new FakeVersionReader(historical.PayloadVersion),
+            new FakeAuthenticityVerifier(true),
+            _ => false,
+            new(
+                historical.ProviderId,
+                historical.ChannelId,
+                historical.RuntimeDistributionId),
+            reviewedCertifications: reviewed.ReleaseEvidence);
+
+        Assert.AreEqual("v1.1.4", service.ReadReleaseProductVersionFloor(gameDirectory));
+        CollectionAssert.AreEqual(persisted, File.ReadAllBytes(service.InstalledStatePath));
+    }
+
+    [TestMethod]
+    public async Task HistoricalReceiptEvidenceCannotAuthorizeAFreshCandidate()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var gameDirectory = CreateGameDirectory(temporaryDirectory);
+        var attribution = new ModInstallationAttribution(
+            "netniv",
+            "stable",
+            "netniv.stfc-community-mod");
+        var historicalBytes = new byte[] { 1, 1, 4 };
+        var historicalArtifact = ReleaseArtifact(historicalBytes, "1.1.4.0");
+        var currentBytes = new byte[] { 1, 1, 6, 0 };
+        var currentArtifact = ReleaseArtifact(currentBytes, "1.1.6.0");
+        var historical = ReviewedCertification(attribution, "v1.1.4", historicalArtifact);
+        var current = ReviewedCertification(attribution, "v1.1.6.0", currentArtifact);
+        var downloader = new FakeDownloader(
+            new ModArtifactDownload(
+                HttpStatusCode.OK,
+                historicalBytes,
+                historicalBytes.LongLength));
+        var service = CreateService(
+            temporaryDirectory,
+            downloader,
+            versionReader: new FakeVersionReader(historicalArtifact.ExpectedVersion),
+            installationAttribution: attribution,
+            reviewedCertification: current,
+            reviewedCertifications: [current, historical]);
+
+        var result = await service.DeployAsync(
+            gameDirectory,
+            historicalArtifact,
+            ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.VerificationFailed, result.State, result.Message);
+        StringAssert.Contains(result.Message, "current launcher-reviewed release identity");
+        Assert.AreEqual(0, downloader.CallCount);
+        Assert.IsFalse(File.Exists(Path.Combine(gameDirectory, "version.dll")));
     }
 
     [TestMethod]
@@ -2477,6 +2728,7 @@ public sealed class ModDeploymentServiceTests
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
         ModInstallationAttribution? installationAttribution = null,
+        ReviewedReleaseCertification? reviewedCertification = null,
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
@@ -2490,6 +2742,7 @@ public sealed class ModDeploymentServiceTests
             authenticityVerifier,
             afterPhasePersisted,
             installationAttribution,
+            reviewedCertification,
             reviewedCertifications,
             afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten,
@@ -2504,6 +2757,7 @@ public sealed class ModDeploymentServiceTests
         IModArtifactAuthenticityVerifier? authenticityVerifier = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? afterPhasePersisted = null,
         ModInstallationAttribution? installationAttribution = null,
+        ReviewedReleaseCertification? reviewedCertification = null,
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
@@ -2518,7 +2772,7 @@ public sealed class ModDeploymentServiceTests
             installationAttribution ?? DefaultAttribution(),
             timeProvider: null,
             afterPhasePersisted,
-            reviewedCertification: null,
+            reviewedCertification,
             afterFileCheckpoint,
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,

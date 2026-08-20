@@ -1095,7 +1095,7 @@ public sealed partial class LiveProviderInstallIntegrationTests
                 campaign.TryRecordCommittedGameFileRevision(Path.GetFileName(path), revision),
             afterRuntimeManifestCommitted: (path, revision) =>
                 campaign.TryRecordCommittedGameFileRevision(Path.GetFileName(path), revision),
-            reviewedCertifications: reviewed.Certifications);
+            reviewedCertifications: reviewed.ReleaseEvidence);
         var health = new LauncherHealthService(
             new ModInstallationInspector(
                 deployment,
