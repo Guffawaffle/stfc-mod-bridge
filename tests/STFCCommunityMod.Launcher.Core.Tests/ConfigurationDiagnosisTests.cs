@@ -143,7 +143,7 @@ public sealed class ConfigurationDiagnosisTests
 
         Assert.AreEqual(4, report.Findings.Count(item => item.Code == "CONFIG_VALUE_INVALID"));
         Assert.IsTrue(report.Findings.Where(item => item.Code == "CONFIG_VALUE_INVALID")
-            .All(item => item.Severity == ConfigurationDiagnosisSeverity.Error
+            .All(item => item.Severity == ConfigurationDiagnosisSeverity.Attention
                 && item.Confidence == ConfigurationDiagnosisConfidence.Established
                 && item.RemediationId == "review-invalid-configuration-value"));
     }

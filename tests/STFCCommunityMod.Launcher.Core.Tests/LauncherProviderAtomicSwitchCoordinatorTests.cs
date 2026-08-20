@@ -4,12 +4,281 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
 public sealed class LauncherProviderAtomicSwitchCoordinatorTests
 {
+    [TestMethod]
+    public async Task MalformedProviderSwitchJournalsUseTheDedicatedReadFailure()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory);
+        var journalPath = Path.Combine(fixture.StateDirectory, "provider-switch-journal.json");
+        var malformedDocuments = new (string Name, string Json)[]
+        {
+            ("invalid JSON", "{"),
+            ("null document", "null"),
+            ("missing document members", "{}"),
+            ("unsupported schema", "{\"schemaVersion\":999,\"transactionId\":\"transaction\"}"),
+            ("invalid identity", "{\"schemaVersion\":2,\"transactionId\":\"\"}"),
+        };
+
+        foreach (var malformed in malformedDocuments)
+        {
+            File.WriteAllText(journalPath, malformed.Json);
+            _ = Assert.ThrowsException<LauncherProviderSwitchJournalException>(
+                () => fixture.Coordinator.ReadJournal(),
+                malformed.Name);
+        }
+    }
+
+    [TestMethod]
+    public async Task StructurallyInvalidProviderSwitchRecoveryCannotMutateState()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var sourceBackup = await fixture.BackupStore.CreateAsync(new(
+            fixture.GameDirectory,
+            "guffawaffle",
+            fixture.ConfigurationPath,
+            fixture.GuffawaffleConfiguration,
+            "provider-switch",
+            "netniv",
+            "guffawaffle/stable"));
+        var valid = new LauncherProviderAtomicSwitchJournal(
+            2,
+            preview.Configuration.TransactionId,
+            LauncherProviderAtomicSwitchPhase.Prepared,
+            preview.Configuration,
+            sourceBackup,
+            TargetArtifact: null,
+            DateTimeOffset.UtcNow);
+        var invalidJournals = new (string Name, LauncherProviderAtomicSwitchJournal Journal)[]
+        {
+            ("missing nested provider identity", valid with
+            {
+                Preview = valid.Preview with
+                {
+                    Source = valid.Preview.Source with { ProviderId = string.Empty },
+                },
+            }),
+            ("mismatched transaction identity", valid with
+            {
+                TransactionId = Guid.NewGuid().ToString("N"),
+            }),
+            ("undefined phase", valid with
+            {
+                Phase = (LauncherProviderAtomicSwitchPhase)int.MaxValue,
+            }),
+            ("missing source backup", valid with
+            {
+                ConfigurationBackup = null,
+            }),
+            ("invalid artifact identity", valid with
+            {
+                TargetArtifact = fixture.TargetArtifact with { FileName = "not-version.dll" },
+            }),
+            ("incoherent target history", valid with
+            {
+                Preview = valid.Preview with
+                {
+                    ConfigurationKind = LauncherProviderSwitchConfigurationKind.RestoreProviderHistory,
+                    TargetConfigurationBackupId = null,
+                    TargetConfigurationSha256 = null,
+                },
+            }),
+        };
+        var journalPath = Path.Combine(fixture.StateDirectory, "provider-switch-journal.json");
+        var originalSelection = fixture.SelectionStore.Load();
+        var originalConfiguration = File.ReadAllBytes(fixture.ConfigurationPath);
+
+        foreach (var invalid in invalidJournals)
+        {
+            WriteJson(journalPath, invalid.Journal);
+            var originalJournal = File.ReadAllBytes(journalPath);
+
+            _ = await Assert.ThrowsExceptionAsync<LauncherProviderSwitchJournalException>(
+                () => fixture.Coordinator.RecoverAsync(),
+                invalid.Name);
+
+            CollectionAssert.AreEqual(originalJournal, File.ReadAllBytes(journalPath), invalid.Name);
+            Assert.AreEqual(originalSelection, fixture.SelectionStore.Load(), invalid.Name);
+            CollectionAssert.AreEqual(
+                originalConfiguration,
+                File.ReadAllBytes(fixture.ConfigurationPath),
+                invalid.Name);
+            Assert.IsFalse(
+                File.Exists(Path.Combine(fixture.GameDirectory, "version.dll")),
+                invalid.Name);
+        }
+    }
+
+    [TestMethod]
+    public async Task RecoveryDependencyPreflightRejectsPathBackupAndArtifactMismatchWithoutMutation()
+    {
+        await AssertOutOfScopeConfigurationRecoveryIsRejectedAsync();
+        await AssertMissingSourceBackupRecoveryIsRejectedAsync();
+        await AssertMismatchedArtifactRecoveryIsRejectedAsync();
+    }
+
+    private static async Task AssertOutOfScopeConfigurationRecoveryIsRejectedAsync()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var otherGameDirectory = Path.Combine(directory.Path, "other-game");
+        Directory.CreateDirectory(otherGameDirectory);
+        TemporaryDirectory.CreateFile(otherGameDirectory, "prime.exe");
+        var otherConfigurationPath = Path.Combine(
+            otherGameDirectory,
+            "community_patch_settings.toml");
+        File.WriteAllBytes(otherConfigurationPath, fixture.NetnivConfiguration);
+        var targetSha256 = ConfigurationDocumentRevision
+            .FromContents(fixture.NetnivConfiguration)
+            .Sha256;
+        var escapedPreview = preview.Configuration with
+        {
+            ConfigurationPath = otherConfigurationPath,
+            ConfigurationExisted = false,
+            ConfigurationSha256 = null,
+            ConfigurationKind = LauncherProviderSwitchConfigurationKind.RestoreProviderHistory,
+            TargetConfigurationBackupId = Guid.NewGuid().ToString("N"),
+            TargetConfigurationSha256 = targetSha256,
+        };
+        var journal = new LauncherProviderAtomicSwitchJournal(
+            2,
+            escapedPreview.TransactionId,
+            LauncherProviderAtomicSwitchPhase.Prepared,
+            escapedPreview,
+            ConfigurationBackup: null,
+            TargetArtifact: null,
+            DateTimeOffset.UtcNow);
+
+        await AssertRecoveryPreflightPreservesTreeAsync(
+            fixture,
+            journal,
+            directory.Path,
+            "out-of-scope configuration path");
+    }
+
+    private static async Task AssertMissingSourceBackupRecoveryIsRejectedAsync()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var sourceBackup = await fixture.BackupStore.CreateAsync(new(
+            fixture.GameDirectory,
+            "guffawaffle",
+            fixture.ConfigurationPath,
+            fixture.GuffawaffleConfiguration,
+            "provider-switch",
+            "netniv",
+            "guffawaffle/stable"));
+        var sourceManifestPath = Path.Combine(
+            fixture.StateDirectory,
+            "configuration-backups",
+            sourceBackup.InstallationId,
+            sourceBackup.ProviderId,
+            sourceBackup.BackupId,
+            "manifest.json");
+        File.Delete(sourceManifestPath);
+        var journal = new LauncherProviderAtomicSwitchJournal(
+            2,
+            preview.Configuration.TransactionId,
+            LauncherProviderAtomicSwitchPhase.Prepared,
+            preview.Configuration,
+            sourceBackup,
+            TargetArtifact: null,
+            DateTimeOffset.UtcNow);
+
+        await AssertRecoveryPreflightPreservesTreeAsync(
+            fixture,
+            journal,
+            directory.Path,
+            "missing protected source receipt");
+    }
+
+    private static async Task AssertMismatchedArtifactRecoveryIsRejectedAsync()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: false,
+            fixture.ConfigurationPath);
+        var sourceBackup = await fixture.BackupStore.CreateAsync(new(
+            fixture.GameDirectory,
+            "guffawaffle",
+            fixture.ConfigurationPath,
+            fixture.GuffawaffleConfiguration,
+            "provider-switch",
+            "netniv",
+            "guffawaffle/stable"));
+        var journal = new LauncherProviderAtomicSwitchJournal(
+            2,
+            preview.Configuration.TransactionId,
+            LauncherProviderAtomicSwitchPhase.ArtifactCommitting,
+            preview.Configuration,
+            sourceBackup,
+            preview.Artifact!.Artifact,
+            DateTimeOffset.UtcNow);
+
+        await AssertRecoveryPreflightPreservesTreeAsync(
+            fixture,
+            journal,
+            directory.Path,
+            "mismatched artifact participant");
+    }
+
+    private static async Task AssertRecoveryPreflightPreservesTreeAsync(
+        Fixture fixture,
+        LauncherProviderAtomicSwitchJournal journal,
+        string root,
+        string scenario)
+    {
+        var journalPath = Path.Combine(fixture.StateDirectory, "provider-switch-journal.json");
+        WriteJson(journalPath, journal);
+        await using (var providerLease = await new LauncherOperationLock(
+                         Path.Combine(fixture.StateDirectory, "provider-switch"))
+                     .TryAcquireAsync())
+        {
+            Assert.IsNotNull(providerLease, scenario);
+        }
+        await using (var rootLease = await new LauncherOperationLock(fixture.StateDirectory)
+                         .TryAcquireAsync())
+        {
+            Assert.IsNotNull(rootLease, scenario);
+        }
+        var before = CaptureFiles(root);
+
+        _ = await Assert.ThrowsExceptionAsync<LauncherProviderSwitchJournalException>(
+            () => fixture.Coordinator.RecoverAsync(),
+            scenario);
+
+        AssertFilesEqual(before, CaptureFiles(root));
+    }
+
     private const string CrashModeEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_MODE";
     private const string CrashStageEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_STAGE";
     private const string CrashRootEnvironment = "STFC_BRIDGE_PROVIDER_SWITCH_CRASH_ROOT";
@@ -325,6 +594,38 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ManualDllDoesNotBlockPreferenceAndConfigurationSourceChangeWhileGameIsRunning()
+    {
+        using var directory = new TemporaryDirectory();
+        var fixture = await CreateFixtureAsync(directory, installSource: false);
+        var manualDll = GuffawaffleArtifact.ToArray();
+        var dllPath = Path.Combine(fixture.GameDirectory, "version.dll");
+        File.WriteAllBytes(dllPath, manualDll);
+
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv",
+            "stable",
+            fixture.GameDirectory,
+            isGameRunning: true,
+            fixture.ConfigurationPath);
+        var result = await fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(
+            ModInstallationEvidenceState.ManualInstallation,
+            preview.SourceInstallation.State);
+        Assert.IsTrue(preview.SourceInstallation.IsGameRunning);
+        Assert.IsNull(preview.Artifact);
+        Assert.IsNull(result.InstalledArtifact);
+        CollectionAssert.AreEqual(manualDll, File.ReadAllBytes(dllPath));
+        Assert.IsNull(fixture.TargetDeployment.ReadInstalledState());
+        Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), fixture.SelectionStore.Load());
+        CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(
+            LauncherProviderAtomicSwitchPhase.Completed,
+            fixture.Coordinator.ReadJournal()!.Phase);
+    }
+
+    [TestMethod]
     public async Task ExactCatalogAnalysisRoundTripsThroughConfigurationOnlyJournal()
     {
         using var directory = new TemporaryDirectory();
@@ -625,6 +926,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             fixture.GameDirectory,
             isGameRunning: false,
             fixture.ConfigurationPath);
+        var sourceBackup = await fixture.BackupStore.CreateAsync(new(
+            fixture.GameDirectory,
+            "guffawaffle",
+            fixture.ConfigurationPath,
+            fixture.GuffawaffleConfiguration,
+            "provider-switch",
+            "netniv",
+            "guffawaffle/stable"));
         WriteJson(
             Path.Combine(fixture.StateDirectory, "provider-switch-journal.json"),
             new LauncherProviderAtomicSwitchJournal(
@@ -632,7 +941,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 preview.Configuration.TransactionId,
                 LauncherProviderAtomicSwitchPhase.Prepared,
                 preview.Configuration,
-                ConfigurationBackup: null,
+                ConfigurationBackup: sourceBackup,
                 TargetArtifact: preview.Artifact!.Artifact,
                 UpdatedAtUtc: DateTimeOffset.UtcNow));
 
@@ -716,6 +1025,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             HadExistingArtifact: true,
             sourceState,
             DateTimeOffset.UtcNow,
+            HasCommitParticipant: true,
+            TargetInstallationAttribution: fixture.TargetAttribution,
             TargetArtifactFileIdentity: targetFileIdentity);
         WriteJson(fixture.TargetDeployment.InstalledStatePath, targetState);
         WriteJson(fixture.TargetDeployment.JournalPath, deploymentJournal);
@@ -745,6 +1056,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
 
     [DataTestMethod]
     [DataRow("artifact", "Prepared")]
+    [DataRow("artifact-inner-planned", "Prepared")]
+    [DataRow("artifact-inner-planned-legacy", "Prepared")]
+    [DataRow("artifact-inner-planned-legacy-upgraded", "Prepared")]
     [DataRow("artifact", "ArtifactCommitting")]
     [DataRow("artifact-partial", "ArtifactCommitting")]
     [DataRow("artifact", "ConfigurationCommitted")]
@@ -848,6 +1162,27 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                     await ReadAllBytesSharedAsync(liveDllPath));
             }
             await TerminateCrashProbeAsync(child, stateDirectory);
+            if (crashMode.StartsWith(
+                    "artifact-inner-planned-legacy",
+                    StringComparison.Ordinal))
+            {
+                var outerJournalPath = Path.Combine(
+                    stateDirectory,
+                    "provider-switch-journal.json");
+                var outerJournal = JsonSerializer.Deserialize<LauncherProviderAtomicSwitchJournal>(
+                    File.ReadAllText(outerJournalPath),
+                    JsonOptions)
+                    ?? throw new AssertFailedException(
+                        "The interrupted provider-switch journal was absent.");
+                WriteJson(outerJournalPath, outerJournal with { SchemaVersion = 1 });
+                var innerJournalPath = Path.Combine(stateDirectory, "deployment-journal.json");
+                var innerJournal = JsonNode.Parse(File.ReadAllText(innerJournalPath))!.AsObject();
+                innerJournal["schemaVersion"] = 1;
+                innerJournal.Remove("hasCommitParticipant");
+                innerJournal.Remove("commitParticipantCompleted");
+                innerJournal.Remove("targetInstallationAttribution");
+                File.WriteAllText(innerJournalPath, innerJournal.ToJsonString(JsonOptions));
+            }
 
             var crashLeftFiles = CaptureFiles(directory.Path);
             var fixture = await CreateFixtureAsync(
@@ -858,6 +1193,26 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             Assert.AreEqual(
                 Enum.Parse<LauncherProviderAtomicSwitchPhase>(crashStage),
                 fixture.Coordinator.ReadJournal()!.Phase);
+            if (crashMode == "artifact-inner-planned-legacy-upgraded")
+            {
+                Assert.AreEqual(
+                    CoordinatedRecoveryDependencyDisposition.RollBackParticipant,
+                    fixture.TargetDeployment.PrepareCoordinatedRecoveryDependency(
+                        fixture.Coordinator.ReadJournal()!.TransactionId,
+                        fixture.GameDirectory,
+                        fixture.TargetArtifact,
+                        outerSchemaVersion: 1,
+                        outerPrepared: true));
+                Assert.AreEqual(
+                    LauncherProviderAtomicSwitchPhase.Prepared,
+                    fixture.Coordinator.ReadJournal()!.Phase);
+                var upgradedFiles = CaptureFiles(directory.Path);
+                fixture = await CreateFixtureAsync(
+                    directory.Path,
+                    installSource: true,
+                    initializeFixture: false);
+                AssertFilesEqual(upgradedFiles, CaptureFiles(directory.Path));
+            }
 
             var recovery = await fixture.Coordinator.RecoverAsync();
             var completed = crashStage == "Completed";
@@ -917,6 +1272,24 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 {
                     Assert.IsFalse(
                         Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+                    if (crashMode.StartsWith("artifact-inner-planned", StringComparison.Ordinal))
+                    {
+                        var targetJournal = fixture.TargetDeployment.ReadJournal()!;
+                        Assert.AreEqual(
+                            ModDeploymentPhase.RolledBack,
+                            targetJournal.Phase);
+                        if (crashMode.Contains("legacy", StringComparison.Ordinal))
+                        {
+                            Assert.AreEqual(2, targetJournal.SchemaVersion);
+                            Assert.IsTrue(targetJournal.HasCommitParticipant);
+                            Assert.AreEqual(
+                                fixture.TargetAttribution,
+                                targetJournal.TargetInstallationAttribution);
+                        }
+                        var secondRecovery = await fixture.TargetDeployment.RecoverAsync();
+                        Assert.IsTrue(secondRecovery.IsSuccess, secondRecovery.Message);
+                        Assert.IsFalse(secondRecovery.Changed, secondRecovery.Message);
+                    }
                 }
             }
         }
@@ -947,7 +1320,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             LauncherProviderAtomicSwitchPhase current,
             CancellationToken cancellationToken)
         {
-            if (configuredMode.EndsWith("-partial", StringComparison.Ordinal)
+            if (configuredMode.StartsWith("artifact-inner-planned", StringComparison.Ordinal)
+                || configuredMode.EndsWith("-partial", StringComparison.Ordinal)
                 || current != crashStage)
             {
                 return;
@@ -969,6 +1343,21 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 throw new IOException("Injected artifact finalization failure after configuration commit.");
             }
             return ValueTask.CompletedTask;
+        }
+        async ValueTask HoldAfterInnerPlanned(
+            ModDeploymentPhase current,
+            CancellationToken cancellationToken)
+        {
+            if (!configuredMode.StartsWith("artifact-inner-planned", StringComparison.Ordinal)
+                || current != ModDeploymentPhase.Planned)
+            {
+                return;
+            }
+            await File.WriteAllTextAsync(
+                readyPath,
+                $"{configuredMode}/{crashStage}",
+                cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
         async ValueTask HoldAfterTargetDllInstall(
             ModDeploymentFileCheckpoint current,
@@ -1008,10 +1397,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             selectionStore,
             installSource: !configuredMode.StartsWith("configuration", StringComparison.Ordinal),
             checkpoint: Checkpoint,
-            targetPhaseCheckpoint: configuredMode.StartsWith("rollback", StringComparison.Ordinal)
-                || configuredMode == "recovery-required"
-                ? FailAfterConfigurationCommit
-                : null,
+            targetPhaseCheckpoint: configuredMode.StartsWith("artifact-inner-planned", StringComparison.Ordinal)
+                ? HoldAfterInnerPlanned
+                : configuredMode.StartsWith("rollback", StringComparison.Ordinal)
+                    || configuredMode == "recovery-required"
+                    ? FailAfterConfigurationCommit
+                    : null,
             targetFileCheckpoint: configuredMode == "artifact-partial"
                 ? HoldAfterTargetDllInstall
                 : null);

@@ -33,7 +33,8 @@ public sealed record ModOperationPreparation(
     ModReleaseArtifact Artifact,
     ExistingArtifactPolicy ExistingArtifactPolicy,
     ModManagementActionKind ActionKind,
-    string ProviderId);
+    string ProviderId,
+    bool IsAdoptionOnly = false);
 
 public interface IModManagementCoordinator
 {
@@ -190,6 +191,12 @@ public sealed class ModManagementCoordinator(
             }
         }
         healthService.RecordUpdateObservation(health.Installation, discovery);
+        var isAdoptionOnly =
+            presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
+            && string.Equals(
+                health.Installation.InstalledSha256,
+                discovery.ModArtifact.Sha256,
+                StringComparison.OrdinalIgnoreCase);
         if (presentation.ActionKind is not (
                 ModManagementActionKind.Repair or ModManagementActionKind.UpdateManualInstallation)
             && string.Equals(
@@ -212,34 +219,44 @@ public sealed class ModManagementCoordinator(
         {
             return new(
                 ModOperationPreparationState.MutationBlocked,
-                $"Community mod {discovery.Manifest.ReleaseVersion} is available. Close Star Trek Fleet Command before updating.",
+                isAdoptionOnly
+                    ? $"Community mod {discovery.Manifest.ReleaseVersion} is already present. "
+                        + "Close Star Trek Fleet Command before asking Mod Bridge to manage it."
+                    : $"Community mod {discovery.Manifest.ReleaseVersion} is available. "
+                        + "Close Star Trek Fleet Command before updating.",
                 Path.GetFullPath(gameDirectory),
                 discovery.Manifest.ReleaseVersion,
                 discovery.ModArtifact,
                 ExistingArtifactPolicy.Reject,
                 presentation.ActionKind,
-                healthService.ProviderId);
+                healthService.ProviderId,
+                isAdoptionOnly);
         }
 
         var policy = presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
             ? ExistingArtifactPolicy.AdoptAndPreserve
             : ExistingArtifactPolicy.Reject;
-        var action = presentation.ActionKind == ModManagementActionKind.Install
-            ? "Install"
-            : presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
-                ? "Update the existing installation to"
-                : presentation.ActionKind == ModManagementActionKind.Repair
-                    ? "Repair with"
-                : "Update to";
+        var message = isAdoptionOnly
+            ? $"Community mod {discovery.Manifest.ReleaseVersion} is already installed. "
+                + "Let Mod Bridge manage it and preserve the current file for removal or recovery."
+            : presentation.ActionKind == ModManagementActionKind.Install
+                ? $"Install community mod {discovery.Manifest.ReleaseVersion} in the selected game folder."
+                : presentation.ActionKind == ModManagementActionKind.UpdateManualInstallation
+                    ? $"Update the existing installation to community mod "
+                        + $"{discovery.Manifest.ReleaseVersion} in the selected game folder."
+                    : presentation.ActionKind == ModManagementActionKind.Repair
+                        ? $"Repair with community mod {discovery.Manifest.ReleaseVersion} in the selected game folder."
+                        : $"Update to community mod {discovery.Manifest.ReleaseVersion} in the selected game folder.";
         return new(
             ModOperationPreparationState.Ready,
-            $"{action} community mod {discovery.Manifest.ReleaseVersion} in the selected game folder.",
+            message,
             Path.GetFullPath(gameDirectory),
             discovery.Manifest.ReleaseVersion,
             discovery.ModArtifact,
             policy,
             presentation.ActionKind,
-            healthService.ProviderId);
+            healthService.ProviderId,
+            isAdoptionOnly);
     }
 
     public Task<ModDeploymentResult> ExecuteAsync(
@@ -425,6 +442,19 @@ public sealed class ModManagementCoordinator(
             transactionId,
             operationLease,
             cancellationToken);
+
+    internal CoordinatedRecoveryDependencyDisposition PrepareCoordinatedRecoveryDependency(
+        string transactionId,
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        int outerSchemaVersion,
+        bool outerPrepared) =>
+        deploymentService.PrepareCoordinatedRecoveryDependency(
+            transactionId,
+            gameDirectory,
+            artifact,
+            outerSchemaVersion,
+            outerPrepared);
 
     public Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default) =>
         deploymentService.RecoverAsync(cancellationToken);

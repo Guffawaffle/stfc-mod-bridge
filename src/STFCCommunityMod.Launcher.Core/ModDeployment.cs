@@ -31,6 +31,12 @@ internal enum ModDeploymentFileCheckpoint
     RollbackRuntimeManifestRestored,
 }
 
+internal enum CoordinatedRecoveryDependencyDisposition
+{
+    NoParticipant,
+    RollBackParticipant,
+}
+
 internal sealed class SimulatedProcessTerminationException(ModDeploymentFileCheckpoint checkpoint)
     : Exception($"Simulated process termination after {checkpoint}.");
 
@@ -1600,6 +1606,82 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 : "The provider-switch DLL requires manual recovery.",
             ReadInstalledState(journal.GameDirectory),
             Changed: rolledBack);
+    }
+
+    internal CoordinatedRecoveryDependencyDisposition PrepareCoordinatedRecoveryDependency(
+        string transactionId,
+        string gameDirectory,
+        ModReleaseArtifact artifact,
+        int outerSchemaVersion,
+        bool outerPrepared)
+    {
+        transactionId = ValidateTransactionId(transactionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
+        ArgumentNullException.ThrowIfNull(artifact);
+        var normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
+        var expectedArtifact = artifact with
+        {
+            Sha256 = NormalizeSha256(artifact.Sha256),
+            RuntimeManifest = artifact.RuntimeManifest is null
+                ? null
+                : artifact.RuntimeManifest with
+                {
+                    Sha256 = NormalizeSha256(artifact.RuntimeManifest.Sha256),
+                },
+        };
+        var journal = ReadJournal();
+        if (journal is null)
+        {
+            return outerPrepared
+                ? CoordinatedRecoveryDependencyDisposition.NoParticipant
+                : throw new InvalidDataException(
+                    "The provider-switch deployment transaction is missing.");
+        }
+        if (!string.Equals(journal.TransactionId, transactionId, StringComparison.Ordinal))
+        {
+            if (outerPrepared
+                && journal.Phase is ModDeploymentPhase.Committed
+                    or ModDeploymentPhase.RolledBack
+                    or ModDeploymentPhase.Failed)
+            {
+                return CoordinatedRecoveryDependencyDisposition.NoParticipant;
+            }
+            throw new InvalidDataException(
+                "The provider-switch deployment transaction does not match its recovery journal.");
+        }
+        var legacyPreparedParticipant = outerPrepared
+            && outerSchemaVersion == 1
+            && journal.SchemaVersion == 1
+            && journal.Phase == ModDeploymentPhase.Planned;
+        if (journal.Operation != ModDeploymentOperation.Deploy
+            || !PathEquals(journal.GameDirectory, normalizedGameDirectory)
+            || journal.Artifact != expectedArtifact
+            || !legacyPreparedParticipant
+                && (!journal.HasCommitParticipant
+                    || journal.TargetInstallationAttribution != installationAttribution))
+        {
+            throw new InvalidDataException(
+                "The provider-switch deployment transaction does not match its recovery journal.");
+        }
+        if (outerPrepared && journal.Phase != ModDeploymentPhase.Planned)
+        {
+            throw new InvalidDataException(
+                "The provider-switch deployment advanced beyond its outer recovery journal.");
+        }
+        if (legacyPreparedParticipant)
+        {
+            WriteJsonAtomically(
+                JournalPath,
+                journal with
+                {
+                    SchemaVersion = DeploymentJournalSchemaVersion,
+                    HasCommitParticipant = true,
+                    CommitParticipantCompleted = false,
+                    TargetInstallationAttribution = installationAttribution,
+                    UpdatedAtUtc = timeProvider.GetUtcNow(),
+                });
+        }
+        return CoordinatedRecoveryDependencyDisposition.RollBackParticipant;
     }
 
     public async Task<ModDeploymentResult> RecoverAsync(CancellationToken cancellationToken = default)

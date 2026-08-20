@@ -1,4 +1,6 @@
 using System.Xml.Linq;
+using STFCCommunityMod.Launcher.Core;
+using STFCCommunityMod.Launcher.ViewModels;
 
 namespace STFCCommunityMod.Launcher.Tests;
 
@@ -191,6 +193,9 @@ public sealed class SettingsShellAccessibilityTests
         CollectionAssert.Contains(names, "Review local unredacted effective configuration export");
         CollectionAssert.Contains(names, "Confirm unredacted effective configuration export");
         CollectionAssert.Contains(names, "Show raw redacted diagnostic JSON");
+        CollectionAssert.Contains(
+            names,
+            "Recover transaction. Recover the incomplete journaled community mod transaction.");
         CollectionAssert.Contains(names, "Retry exact reviewed candidate recovery");
         CollectionAssert.Contains(names, "Review removal of the Mod Bridge-managed community mod");
         CollectionAssert.Contains(
@@ -224,7 +229,8 @@ public sealed class SettingsShellAccessibilityTests
         StringAssert.Contains(handler, "Save or discard");
         StringAssert.Contains(confirmation, "MaintenanceAction.StopManaging");
         StringAssert.Contains(confirmation, "ownership receipt for this exact installation");
-        StringAssert.Contains(confirmation, "MaintenanceTarget.Text = viewModel.SelectedGameDirectory");
+        StringAssert.Contains(confirmation, "viewModel.IncompleteProviderSwitchGameDirectory");
+        StringAssert.Contains(confirmation, "?? viewModel.SelectedGameDirectory");
         var dispatch = Slice(
             source,
             "private async void ConfirmMaintenanceButton_Click",
@@ -235,6 +241,250 @@ public sealed class SettingsShellAccessibilityTests
         StringAssert.Contains(dispatch, "return;");
         Assert.IsTrue(dialog.Descendants(Presentation + "TextBlock").Any(element =>
             (string?)element.Attribute(Xaml + "Name") == "MaintenanceTarget"));
+    }
+
+    [TestMethod]
+    public void PackagedUpdateHandoffKeepsBridgeOpenForDownloadGuidance()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var handler = Slice(
+            source,
+            "private async void CheckLauncherUpdateButton_Click",
+            "private void ConfirmLauncherUpdateButton_Click");
+
+        StringAssert.Contains(handler, "TryOpenPackagedLauncherUpdateSource");
+        var feedback = document.Descendants(Presentation + "TextBlock")
+            .Single(element => (string?)element.Attribute("Text") == "{Binding LauncherUpdateFeedback}");
+        Assert.AreEqual(
+            "Mod Bridge update status",
+            (string?)feedback.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual(
+            "Polite",
+            (string?)feedback.Attribute(Automation + "AutomationProperties.LiveSetting"));
+        Assert.AreEqual(
+            "{Binding LauncherUpdateFeedback}",
+            feedback.Attributes().Single(attribute => attribute.Name.LocalName == "LiveRegionBehavior.Announcement").Value);
+        Assert.IsFalse(
+            handler.Contains("Application.Current.Shutdown()", StringComparison.Ordinal),
+            "Opening the supported packaged-update source must not close Bridge before the user opens the downloaded descriptor.");
+
+        StringAssert.StartsWith(
+            MainWindowViewModel.DescribeLauncherUpdateActionAutomationName(false, string.Empty),
+            "Check Mod Bridge update");
+        StringAssert.StartsWith(
+            MainWindowViewModel.DescribeLauncherUpdateActionAutomationName(true, "Checking"),
+            "Checking for Mod Bridge update…");
+    }
+
+    [TestMethod]
+    public void CommunityModUpdateIsOneGuidedHomeActionSeparateFromBridgeUpdate()
+    {
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var modAction = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ModActionButton");
+        var releaseSource = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ReleaseSourceButton");
+        var confirmation = document.Descendants()
+            .Single(element => (string?)element.Attribute(Xaml + "Name") == "ModOperationDialog");
+        var prepareHandler = Slice(
+            source,
+            "private async void ModActionButton_Click",
+            "private void DiagnosticsButton_Click");
+        var folderHandler = Slice(
+            source,
+            "private void ChooseGameFolderButton_Click",
+            "private async void ModActionButton_Click");
+        var executeHandler = Slice(
+            source,
+            "private async void ConfirmModOperationButton_Click",
+            "private void ReleaseSourceButton_Click");
+
+        Assert.AreEqual("{Binding ModActionLabel}", (string?)modAction.Attribute("Content"));
+        Assert.AreEqual(
+            "{StaticResource UtilityActionButtonStyle}",
+            (string?)modAction.Attribute("Style"));
+        Assert.AreEqual(
+            "CommunityModPrimaryAction",
+            (string?)modAction.Attribute(Automation + "AutomationProperties.AutomationId"));
+        Assert.AreEqual(
+            "{Binding ModActionAutomationName}",
+            (string?)modAction.Attribute(Automation + "AutomationProperties.Name"));
+        Assert.AreEqual(
+            "{Binding ModActionHelpText}",
+            (string?)modAction.Attribute(Automation + "AutomationProperties.HelpText"));
+        StringAssert.Contains(
+            (string?)releaseSource.Attribute(Automation + "AutomationProperties.HelpText"),
+            "community mod release source");
+        Assert.IsFalse(
+            ((string?)releaseSource.Attribute(Automation + "AutomationProperties.HelpText"))!
+                .Contains("Mod Bridge update source", StringComparison.Ordinal));
+
+        StringAssert.Contains(prepareHandler, "ModManagementActionKind.Recover");
+        StringAssert.Contains(prepareHandler, "ShowMaintenanceConfirmation(MaintenanceAction.Recover");
+        Assert.IsFalse(folderHandler.Contains("MaintenanceAction.Recover", StringComparison.Ordinal));
+        StringAssert.Contains(prepareHandler, "PrepareModOperationAsync");
+        StringAssert.Contains(prepareHandler, "ModOperationPreparationState.Ready");
+        StringAssert.Contains(prepareHandler, "ModOperationSource.Text = viewModel.SelectedModReleaseSource");
+        StringAssert.Contains(prepareHandler, "pendingModOperation.IsAdoptionOnly");
+        StringAssert.Contains(prepareHandler, "Manage mod with Mod Bridge");
+        StringAssert.Contains(prepareHandler, "AutomationProperties.SetName");
+        StringAssert.Contains(prepareHandler, "ModOperationDialog.IsOpen = true");
+        StringAssert.Contains(executeHandler, "ExecuteModOperationAsync");
+
+        Assert.IsTrue(confirmation.Descendants(Presentation + "TextBlock").Any(element =>
+            (string?)element.Attribute(Xaml + "Name") == "ModOperationSource"));
+        var confirmationText = string.Join(
+            " ",
+            confirmation.Descendants(Presentation + "TextBlock")
+                .Select(element => (string?)element.Attribute("Text"))
+                .Where(text => !string.IsNullOrWhiteSpace(text)));
+        StringAssert.Contains(confirmationText, "your settings stay unchanged");
+        StringAssert.Contains(confirmationText, "preserves its recovery information");
+        StringAssert.Contains(confirmationText, "shows the available recovery action");
+        Assert.IsFalse(confirmationText.Contains("failed operation restores", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void IncompleteProviderSwitchRecoveryOverridesAnUnavailableOrdinaryProviderAction()
+    {
+        Assert.IsTrue(MainWindowViewModel.ResolveModActionAvailability(
+            hasIncompleteProviderSwitch: true,
+            isGameRunning: false,
+            ordinaryActionCanExecute: false));
+        Assert.IsFalse(MainWindowViewModel.ResolveModActionAvailability(
+            hasIncompleteProviderSwitch: true,
+            isGameRunning: true,
+            ordinaryActionCanExecute: true));
+        Assert.IsFalse(MainWindowViewModel.ResolveModActionAvailability(
+            hasIncompleteProviderSwitch: false,
+            isGameRunning: false,
+            ordinaryActionCanExecute: false));
+        Assert.IsFalse(MainWindowViewModel.ResolveModContextChangeAvailability(
+            recoveryRequired: true,
+            isModOperationInProgress: false,
+            isLaunchInProgress: false));
+        Assert.IsFalse(MainWindowViewModel.ResolveModContextChangeAvailability(
+            recoveryRequired: false,
+            isModOperationInProgress: true,
+            isLaunchInProgress: false));
+        Assert.IsTrue(MainWindowViewModel.ResolveModContextChangeAvailability(
+            recoveryRequired: false,
+            isModOperationInProgress: false,
+            isLaunchInProgress: false));
+
+        StringAssert.StartsWith(
+            MainWindowViewModel.DescribeProviderSwitchRecoveryAvailability(true, true),
+            "Close Star Trek Fleet Command");
+        var artifactRecovery = MainWindowViewModel.DescribeProviderSwitchRecoveryAvailability(false, true);
+        StringAssert.Contains(artifactRecovery, "version.dll");
+        StringAssert.Contains(artifactRecovery, "provider selection");
+        StringAssert.Contains(artifactRecovery, "exact TOML bytes");
+        var configurationRecovery = MainWindowViewModel.DescribeProviderSwitchRecoveryAvailability(false, false);
+        StringAssert.Contains(configurationRecovery, "no DLL change");
+
+        var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
+        var gameFolderAction = document.Descendants(Presentation + "Button")
+            .Single(element => (string?)element.Attribute("Click") == "ChooseGameFolderButton_Click");
+        Assert.AreEqual(
+            "{Binding CanChangeGameFolder}",
+            (string?)gameFolderAction.Attribute("IsEnabled"));
+
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/ViewModels/MainWindowViewModel.cs"));
+        var attachment = Slice(
+            source,
+            "internal LauncherProviderAtomicSwitchCoordinator? ProviderSwitchCoordinator",
+            "internal LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator");
+        var update = Slice(
+            source,
+            "private void UpdateModActionAvailability()",
+            "private void UpdateLaunchActionAvailability()");
+
+        StringAssert.Contains(attachment, "NotifyModPresentationChanged()");
+        StringAssert.Contains(update, "ResolveModActionAvailability");
+        StringAssert.Contains(update, "HasIncompleteProviderSwitch");
+    }
+
+    [TestMethod]
+    public void AdoptionOnlyFeedbackKeepsTheManageModLanguageAfterConfirmation()
+    {
+        var preparation = new ModOperationPreparation(
+            ModOperationPreparationState.Ready,
+            "Ready",
+            "game",
+            "2.1.0-guffa.10",
+            new(
+                new Uri("https://example.invalid/version.dll"),
+                "version.dll",
+                42,
+                new('A', 64),
+                "2.1.0.0"),
+            ExistingArtifactPolicy.AdoptAndPreserve,
+            ModManagementActionKind.UpdateManualInstallation,
+            "guffawaffle",
+            IsAdoptionOnly: true);
+
+        var accepted = MainWindowViewModel.ModOperationAcceptedMessage(preparation);
+        var completed = MainWindowViewModel.ModOperationSucceededMessage(preparation);
+
+        StringAssert.StartsWith(accepted, "Management accepted");
+        Assert.IsFalse(accepted.Contains("Installing", StringComparison.Ordinal));
+        StringAssert.Contains(completed, "now manages");
+        StringAssert.Contains(completed, "previously installed file was preserved");
+    }
+
+    [TestMethod]
+    public void RecoveryConfirmationAndCompletionStayStateSpecificAndReloadTheProviderWorkspace()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot(),
+            "src/STFCCommunityMod.Launcher/ViewModels/MainWindowViewModel.cs"));
+        var confirmation = Slice(
+            source,
+            "private void ShowMaintenanceConfirmation",
+            "private async void ConfirmMaintenanceButton_Click");
+        var execution = Slice(
+            source,
+            "private async void ConfirmMaintenanceButton_Click",
+            "private async void ConfirmModOperationButton_Click");
+
+        StringAssert.Contains(confirmation, "no DLL change was part of this switch");
+        StringAssert.Contains(confirmation, "IncompleteProviderSwitchGameDirectory");
+        StringAssert.Contains(confirmation, "Recover community mod transaction");
+        StringAssert.Contains(confirmation, "Remove mod managed by Mod Bridge");
+        StringAssert.Contains(confirmation, "Stop managing this installation");
+        StringAssert.Contains(execution, "SharedSettings.HasPendingChanges");
+        StringAssert.Contains(execution, "IncompleteProviderSwitchSourceSelection");
+        StringAssert.Contains(execution, "BeginRecoveryWorkspaceTransition()");
+        StringAssert.Contains(execution, "SetSettingsWorkspaceOpen(false)");
+        StringAssert.Contains(execution, "EndRecoveryWorkspaceTransition()");
+        StringAssert.Contains(execution, "restoredProviderSelection is not null");
+        StringAssert.Contains(execution, "RecomposeAfterSuccessfulRecovery(");
+        Assert.IsTrue(
+            execution.IndexOf("BeginRecoveryWorkspaceTransition()", StringComparison.Ordinal)
+                < execution.IndexOf("await viewModel.RecoverModAsync", StringComparison.Ordinal));
+        var recomposition = Slice(
+            source,
+            "private void RecomposeAfterSuccessfulRecovery",
+            "private async void ConfirmModOperationButton_Click");
+        StringAssert.Contains(recomposition, "providerSessions.Recompose(restoredProviderSelection)");
+        StringAssert.Contains(recomposition, "ApplyProviderSession(session)");
+        StringAssert.Contains(recomposition, "ReportRecoveryCompletion(changed, recoveryMessage)");
+        StringAssert.Contains(viewModelSource, "catch (LauncherProviderSwitchJournalException)");
+        StringAssert.Contains(viewModelSource, "saved recovery details are damaged");
+        StringAssert.Contains(viewModelSource, "Do not retry recovery until those details are repaired");
+        StringAssert.Contains(viewModelSource, "export a diagnostic report");
+        StringAssert.Contains(viewModelSource, "share it when asking for help");
     }
 
     [TestMethod]

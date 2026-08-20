@@ -10,9 +10,14 @@ launch performs no update request, the descriptor does not register an
 on-launch check or background task, and the effective repository settings are
 `CheckForUpdatesOnLaunch=False`, `HoursBetweenUpdateChecks=24`, and
 `AutomaticBackgroundTaskUpdatesEnabled=False`. When the explicit check finds
-an available update, Windows owns its review, download, version ordering,
-replacement, rollback, and package uninstall. The remainder of this document
-applies only to a copy launched from the standalone ZIP.
+an available update, Bridge opens the package-associated HTTPS
+`STFCModBridge.appinstaller` source in the default browser and remains open.
+The player opens the downloaded descriptor, after which Windows App Installer
+owns review, download, version ordering, replacement, rollback, and package
+uninstall. Bridge does not use the consumer-default-disabled `ms-appinstaller:`
+protocol, add package-management capability, or download package files itself.
+The remainder of this document applies only to a copy launched from the
+standalone ZIP.
 
 Launcher updates use the standalone repository's canonical stable release
 manifest and immutable GitHub asset URL. Provider packs cannot alter this

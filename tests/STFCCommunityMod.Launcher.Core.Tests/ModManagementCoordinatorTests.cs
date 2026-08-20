@@ -49,7 +49,7 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual(ModManagementActionKind.UpdateManualInstallation, presentation.ActionKind);
         Assert.AreEqual("Manual installation detected", presentation.Status);
-        Assert.AreEqual("Check for updates", presentation.ActionLabel);
+        Assert.AreEqual("Update mod", presentation.ActionLabel);
     }
 
     [TestMethod]
@@ -68,6 +68,7 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(ExistingArtifactPolicy.AdoptAndPreserve, preparation.ExistingArtifactPolicy);
         Assert.AreEqual(Path.GetFullPath(gameDirectory), preparation.GameDirectory);
         Assert.AreEqual("2.1.0-guffa.8", preparation.ReleaseVersion);
+        Assert.IsFalse(preparation.IsAdoptionOnly);
         StringAssert.StartsWith(preparation.Message, "Update the existing installation to");
     }
 
@@ -90,7 +91,9 @@ public sealed class ModManagementCoordinatorTests
         Assert.AreEqual(
             ExistingArtifactPolicy.AdoptAndPreserve,
             preparation.ExistingArtifactPolicy);
-        StringAssert.Contains(preparation.Message, "Update the existing installation");
+        Assert.IsTrue(preparation.IsAdoptionOnly);
+        StringAssert.Contains(preparation.Message, "already installed");
+        StringAssert.Contains(preparation.Message, "Let Mod Bridge manage it");
     }
 
     [TestMethod]
@@ -516,7 +519,7 @@ public sealed class ModManagementCoordinatorTests
 
         Assert.AreEqual(LauncherHomeTone.Success, presentation.Tone);
         Assert.AreEqual("Installed 2.1.0.8", presentation.Status);
-        Assert.AreEqual("Check for updates", presentation.ActionLabel);
+        Assert.AreEqual("Update mod", presentation.ActionLabel);
         Assert.IsTrue(presentation.CanExecute);
         Assert.AreEqual(ModOperationPreparationState.MutationBlocked, preparation.State);
         StringAssert.Contains(preparation.Message, "Close Star Trek Fleet Command");

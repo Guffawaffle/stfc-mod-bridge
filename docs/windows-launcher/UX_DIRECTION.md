@@ -248,6 +248,13 @@ and requires **Launch anyway** for that attempt. Active/incomplete deployment,
 an invalid game target, a running or unattributable game process, and a busy
 operation lease remain hard launch blocks.
 
+For an installed community mod, the visible Home action is **Update mod**. One
+activation checks the selected provider's latest trusted upstream release. If a
+newer release is available, the same flow shows its source and exact game target
+and asks for installation confirmation; it does not send the player through a
+separate update workspace. **Check Mod Bridge update** remains a separately named
+application-maintenance action in Diagnostics.
+
 Changing the selected game folder immediately reprojects Home and Diagnostics
 from that folder's live files and independent ownership receipt. It does not
 transfer the previous folder's status or force repair before a clean selected

@@ -264,10 +264,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         isProviderSwitchOperationPending = false;
         ProviderSwitchActionButton.IsEnabled = false;
         ProviderSourceSelector.IsEnabled = true;
-        ReleaseSourceButton.IsEnabled = true;
         RetryProviderRecompositionButton.Visibility = Visibility.Collapsed;
         ProviderRecoveryBanner.Visibility = Visibility.Collapsed;
-        HomeSettingsTitleBarButton.IsEnabled = session.ShellAccess.CanEditProviderSettings;
+        UpdateProviderContextActionAvailability(session.ViewModel);
         HomeSettingsTitleBarButton.ToolTip = session.ShellAccess.CanEditProviderSettings
             ? null
             : session.ShellAccess.RestrictionReason;
@@ -277,9 +276,17 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private async void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation)
-            || sender is not MainWindowViewModel viewModel
+        if (sender is not MainWindowViewModel viewModel
             || !ReferenceEquals(viewModel, ProviderSession.ViewModel))
+        {
+            return;
+        }
+        if (e.PropertyName is nameof(MainWindowViewModel.CanChangeReleaseSource)
+            or nameof(MainWindowViewModel.CanOpenSettingsWorkspace))
+        {
+            UpdateProviderContextActionAvailability(viewModel);
+        }
+        if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation))
         {
             return;
         }
@@ -296,6 +303,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             ShowProviderRecompositionFailure(exception);
         }
+    }
+
+    private void UpdateProviderContextActionAvailability(MainWindowViewModel viewModel)
+    {
+        HomeSettingsTitleBarButton.IsEnabled =
+            providerShellAccess.CanEditProviderSettings
+            && viewModel.CanOpenSettingsWorkspace;
+        ReleaseSourceButton.IsEnabled = viewModel.CanChangeReleaseSource;
     }
 
     private async Task RefreshRuntimeCompositionConsumersAsync()
@@ -335,7 +350,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         ModActionButton.IsHitTestVisible = false;
         ModActionButton.Focusable = false;
         ProviderRecoveryMessage.Text =
-            "The provider switch committed, but its workspace could not be refreshed. "
+            "The provider state changed, but its workspace could not be refreshed. "
             + $"Retry inside Mod Bridge before further mod management. {exception.Message}";
         RetryProviderRecompositionButton.Visibility = Visibility.Visible;
         ProviderRecoveryBanner.Visibility = Visibility.Visible;
@@ -432,6 +447,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void SettingsNavigationButton_Click(object sender, RoutedEventArgs e)
     {
+        if (DataContext is not MainWindowViewModel viewModel
+            || !viewModel.CanOpenSettingsWorkspace)
+        {
+            SettingsUnavailableMessage.Text =
+                "Wait for the current community mod recovery or maintenance operation to finish before opening Settings.";
+            SettingsUnavailableDialog.IsOpen = true;
+            return;
+        }
         if (!isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized())
         {
             return;
@@ -446,10 +469,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-
-        if (viewModel.ModActionKind == ModManagementActionKind.Recover)
+        if (!viewModel.CanChangeGameFolder)
         {
-            ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
+            SettingsUnavailableMessage.Text = viewModel.ModActionKind == ModManagementActionKind.Recover
+                ? "Recover the incomplete transaction before choosing a different game folder."
+                : "Wait for the current Mod Bridge operation to finish before choosing a different game folder.";
+            SettingsUnavailableDialog.IsOpen = true;
             return;
         }
 
@@ -478,6 +503,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        if (viewModel.ModActionKind == ModManagementActionKind.Recover)
+        {
+            ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
+            return;
+        }
         if (SharedSettings.HasPendingChanges)
         {
             SettingsUnavailableMessage.Text =
@@ -499,20 +529,35 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
         ModOperationDialog.DialogTitle = pendingModOperation.ActionKind switch
         {
+            ModManagementActionKind.UpdateManualInstallation when pendingModOperation.IsAdoptionOnly =>
+                "Let Mod Bridge manage this mod?",
             ModManagementActionKind.UpdateManualInstallation => "Update community mod?",
             ModManagementActionKind.Repair => "Repair community mod?",
             ModManagementActionKind.CheckForUpdate => "Update community mod?",
             _ => "Install community mod?",
         };
         ModOperationSummary.Text = pendingModOperation.Message;
+        ModOperationSource.Text = viewModel.SelectedModReleaseSource;
         ModOperationTarget.Text = pendingModOperation.GameDirectory;
         ConfirmModOperationButton.Content = pendingModOperation.ActionKind switch
         {
+            ModManagementActionKind.UpdateManualInstallation when pendingModOperation.IsAdoptionOnly => "_Manage mod",
             ModManagementActionKind.UpdateManualInstallation => "_Update",
             ModManagementActionKind.Repair => "_Repair",
             ModManagementActionKind.CheckForUpdate => "_Update",
             _ => "_Install",
         };
+        AutomationProperties.SetName(
+            ConfirmModOperationButton,
+            pendingModOperation.ActionKind switch
+            {
+                ModManagementActionKind.UpdateManualInstallation when pendingModOperation.IsAdoptionOnly =>
+                    "Manage mod with Mod Bridge",
+                ModManagementActionKind.UpdateManualInstallation => "Update community mod",
+                ModManagementActionKind.Repair => "Repair community mod",
+                ModManagementActionKind.CheckForUpdate => "Update community mod",
+                _ => "Install community mod",
+            });
         ModOperationDialog.IsOpen = true;
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Input,
@@ -971,6 +1016,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         _ = e;
         if (DataContext is MainWindowViewModel viewModel && viewModel.CanRecoverMod)
         {
+            if (SharedSettings.HasPendingChanges)
+            {
+                SettingsUnavailableMessage.Text =
+                    "Save or discard your pending Settings and Data Sync changes before recovering the community mod.";
+                SettingsUnavailableDialog.IsOpen = true;
+                return;
+            }
             SetDiagnosticsWorkspaceOpen(false);
             ShowMaintenanceConfirmation(MaintenanceAction.Recover, viewModel);
         }
@@ -1034,9 +1086,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         if (MainWindowViewModel.IsPackagedInstallation)
         {
             var packagedCheck = await viewModel.CheckPackagedLauncherUpdateAsync(lifetimeCancellation.Token);
-            if (packagedCheck is not null && viewModel.TryOpenPackagedLauncherUpdate(packagedCheck))
+            if (packagedCheck is not null)
             {
-                Application.Current.Shutdown();
+                viewModel.TryOpenPackagedLauncherUpdateSource(packagedCheck);
             }
             return;
         }
@@ -1095,6 +1147,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
+        if (SharedSettings.HasPendingChanges)
+        {
+            SettingsUnavailableMessage.Text =
+                "Save or discard your pending Settings and Data Sync changes before starting maintenance.";
+            SettingsUnavailableDialog.IsOpen = true;
+            return;
+        }
         pendingMaintenanceAction = action;
         MaintenanceDialog.DialogTitle = action switch
         {
@@ -1103,14 +1162,25 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             MaintenanceAction.StopManaging => "Stop managing this installation?",
             _ => throw new ArgumentOutOfRangeException(nameof(action)),
         };
+        var providerSwitchIncludesArtifact = viewModel.IncompleteProviderSwitchIncludesArtifact;
         MaintenanceSummary.Text = action switch
         {
-            MaintenanceAction.Recover => "Roll back the incomplete transaction using its persisted journal. A provider switch restores version.dll, provider selection, and exact TOML bytes together.",
+            MaintenanceAction.Recover when providerSwitchIncludesArtifact is true =>
+                "Roll back the incomplete provider switch using its persisted journal. "
+                    + "Mod Bridge restores version.dll, provider selection, and exact TOML bytes together.",
+            MaintenanceAction.Recover when providerSwitchIncludesArtifact is false =>
+                "Roll back the incomplete provider switch using its persisted journal. "
+                    + "Mod Bridge restores provider selection and exact TOML bytes together; no DLL change was part of this switch.",
+            MaintenanceAction.Recover =>
+                "Resume or roll back the incomplete transaction using its persisted journal. "
+                    + "Mod Bridge changes only state recorded by that transaction.",
             MaintenanceAction.Uninstall => "Remove Mod Bridge-managed version.dll. If you explicitly adopted a previous manual DLL, its preserved bytes will be restored. Configuration and unrelated files remain untouched.",
             MaintenanceAction.StopManaging => "Remove only Mod Bridge's ownership receipt for this exact installation. No game file, TOML, provider selection, log, or preserved adopted backup will be changed or deleted.",
             _ => throw new ArgumentOutOfRangeException(nameof(action)),
         };
-        MaintenanceTarget.Text = viewModel.SelectedGameDirectory;
+        MaintenanceTarget.Text = action == MaintenanceAction.Recover
+            ? viewModel.IncompleteProviderSwitchGameDirectory ?? viewModel.SelectedGameDirectory
+            : viewModel.SelectedGameDirectory;
         ConfirmMaintenanceButton.Content = action switch
         {
             MaintenanceAction.Recover => "_Recover",
@@ -1118,6 +1188,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             MaintenanceAction.StopManaging => "_Stop managing",
             _ => throw new ArgumentOutOfRangeException(nameof(action)),
         };
+        AutomationProperties.SetName(
+            ConfirmMaintenanceButton,
+            action switch
+            {
+                MaintenanceAction.Recover => "Recover community mod transaction",
+                MaintenanceAction.Uninstall => "Remove mod managed by Mod Bridge",
+                MaintenanceAction.StopManaging => "Stop managing this installation",
+                _ => throw new ArgumentOutOfRangeException(nameof(action)),
+            });
         MaintenanceDialog.IsOpen = true;
     }
 
@@ -1133,10 +1212,38 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var action = pendingMaintenanceAction;
         pendingMaintenanceAction = MaintenanceAction.None;
         MaintenanceDialog.IsOpen = false;
+        if (SharedSettings.HasPendingChanges)
+        {
+            SettingsUnavailableMessage.Text =
+                "Save or discard your pending Settings and Data Sync changes before starting maintenance.";
+            SettingsUnavailableDialog.IsOpen = true;
+            return;
+        }
         switch (action)
         {
             case MaintenanceAction.Recover:
-                await viewModel.RecoverModAsync(lifetimeCancellation.Token);
+                var restoredProviderSelection = viewModel.IncompleteProviderSwitchSourceSelection;
+                viewModel.BeginRecoveryWorkspaceTransition();
+                SetSettingsWorkspaceOpen(false);
+                try
+                {
+                    var recovery = await viewModel.RecoverModAsync(lifetimeCancellation.Token);
+                    if (recovery?.IsSuccess == true && restoredProviderSelection is not null)
+                    {
+                        viewModel.EndRecoveryWorkspaceTransition();
+                        RecomposeAfterSuccessfulRecovery(
+                            restoredProviderSelection,
+                            recovery.Changed,
+                            recovery.Message);
+                    }
+                }
+                finally
+                {
+                    if (ReferenceEquals(DataContext, viewModel))
+                    {
+                        viewModel.EndRecoveryWorkspaceTransition();
+                    }
+                }
                 break;
             case MaintenanceAction.Uninstall:
                 await viewModel.UninstallModAsync(lifetimeCancellation.Token);
@@ -1146,6 +1253,45 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 break;
             default:
                 return;
+        }
+    }
+
+    private void RecomposeAfterSuccessfulRecovery(
+        LauncherProviderSelection restoredProviderSelection,
+        bool changed,
+        string recoveryMessage)
+    {
+        try
+        {
+            var session = providerSessions.Recompose(restoredProviderSelection);
+            ApplyProviderSession(session);
+            session.ViewModel.ReportRecoveryCompletion(changed, recoveryMessage);
+            ProviderSourceSelector.ItemsSource = distributionProviderCatalog.Providers.Values
+                .OrderBy(provider => provider.DisplayName, StringComparer.Ordinal)
+                .ToArray();
+            ProviderSourceSelector.SelectedValue = session.Provider.Id;
+            ProviderSwitchPreviewText.Text =
+                $"Recovery completed. The {session.Provider.DisplayName} workspace is active.";
+            UpdateProviderCapabilityText();
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException
+                or KeyNotFoundException
+                or System.Text.Json.JsonException)
+        {
+            if (providerSessions.HasPendingRecomposition)
+            {
+                ShowProviderRecompositionFailure(exception);
+                return;
+            }
+            SettingsUnavailableMessage.Text =
+                "Recovery completed, but the restored provider workspace could not be loaded. "
+                    + "Review Verification & recovery guidance and export a diagnostic report "
+                    + $"before further mod management. {exception.Message}";
+            SettingsUnavailableDialog.IsOpen = true;
         }
     }
 
@@ -1169,6 +1315,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         _ = sender;
         _ = e;
+        if (DataContext is not MainWindowViewModel viewModel
+            || !viewModel.CanChangeReleaseSource)
+        {
+            SettingsUnavailableMessage.Text =
+                "Recover the incomplete transaction or wait for the current operation before changing the release source.";
+            SettingsUnavailableDialog.IsOpen = true;
+            return;
+        }
         pendingProviderSwitch = null;
         isProviderSwitchOperationPending = false;
         ProviderSourceSelector.IsEnabled = true;

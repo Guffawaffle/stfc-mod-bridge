@@ -38,7 +38,9 @@ internal sealed record ProviderSwitchReviewPresentation(
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var artifact = preview.Artifact is null
-            ? "No managed DLL is installed; only the preferred source and TOML profile will change."
+            ? preview.SourceInstallation.State == ModInstallationEvidenceState.ManualInstallation
+                ? "The existing manual DLL will remain unchanged; only the preferred source and TOML profile will change."
+                : "No managed DLL is installed; only the preferred source and TOML profile will change."
             : $"The managed DLL will change to release {preview.Artifact.ReleaseVersion}. STFC must remain closed until the switch completes.";
         var configurationSummary = configuration.ConfigurationPath is null
             ? "No TOML file is selected."

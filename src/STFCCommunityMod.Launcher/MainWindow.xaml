@@ -866,6 +866,7 @@
                       Style="{StaticResource QuietButtonStyle}"
                       Click="ChooseGameFolderButton_Click"
                       Content="{Binding GameFolderActionLabel}"
+                      IsEnabled="{Binding CanChangeGameFolder}"
                       automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
               <controls:LaunchTargetSplitButton Grid.Row="1"
                                                 Margin="0,6,0,0"
@@ -953,19 +954,20 @@
                       Content="{Binding ModSourceMetadata}"
                       Foreground="{DynamicResource TextSecondaryBrush}"
                       automation:AutomationProperties.Name="{Binding ModSourceMetadata, StringFormat=Community mod release source: {0}}"
-                      automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the Mod Bridge update source." />
+                      automation:AutomationProperties.HelpText="Detected installed lineage is shown when established; otherwise the selected release source. Activate to review provider capabilities or safely change the community mod release source." />
             </StackPanel>
             <Button x:Name="ModActionButton"
                     Grid.Column="2"
                     MinHeight="44"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Style="{StaticResource QuietButtonStyle}"
+                    Style="{StaticResource UtilityActionButtonStyle}"
                     Click="ModActionButton_Click"
                     Content="{Binding ModActionLabel}"
                     IsEnabled="{Binding CanManageMod}"
+                    automation:AutomationProperties.AutomationId="CommunityModPrimaryAction"
                     automation:AutomationProperties.Name="{Binding ModActionAutomationName}"
-                    automation:AutomationProperties.HelpText="Downloads and verifies the selected community mod release before asking for confirmation." />
+                    automation:AutomationProperties.HelpText="{Binding ModActionHelpText}" />
           </Grid>
         </Grid>
       </Border>
@@ -1207,7 +1209,9 @@
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="{Binding LauncherUpdateFeedback}"
                    TextWrapping="Wrap"
-                   automation:AutomationProperties.LiveSetting="Polite" />
+                   automation:AutomationProperties.Name="Mod Bridge update status"
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding LauncherUpdateFeedback}" />
 
         <Expander Margin="0,26,0,0"
                   Header="Technical report"
@@ -1247,7 +1251,7 @@
                   Content="_Recover transaction"
                   IsEnabled="{Binding CanRecoverMod}"
                   ToolTip="Available only when an incomplete deployment transaction is detected and the game is closed."
-                  automation:AutomationProperties.Name="Recover incomplete journaled mod transaction" />
+                  automation:AutomationProperties.Name="Recover transaction. Recover the incomplete journaled community mod transaction." />
           <Button Margin="0,0,10,10"
                   Style="{StaticResource UtilityActionButtonStyle}"
                   Click="DiagnosticsCandidateRecoveryButton_Click"
@@ -1303,6 +1307,14 @@
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,0"
                    FontWeight="SemiBold"
+                   Text="Release source" />
+        <TextBlock x:Name="ModOperationSource"
+                   Margin="0,4,0,0"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,0"
+                   FontWeight="SemiBold"
                    Text="Exact game target" />
         <TextBlock x:Name="ModOperationTarget"
                    Margin="0,4,0,0"
@@ -1313,7 +1325,7 @@
         <TextBlock Margin="0,12,0,0"
                    FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
-                   Text="The download must match the release size and SHA-256, pass Authenticode for Joseph Gustavson, and report the expected embedded version. The game must remain closed."
+                   Text="Mod Bridge verifies the download before changing version.dll, and your settings stay unchanged. If a file-changing transaction is interrupted, Mod Bridge preserves its recovery information and shows the available recovery action. Keep Star Trek Fleet Command closed."
                    TextWrapping="Wrap" />
         <Button x:Name="ConfirmModOperationButton"
                 Margin="0,20,0,0"
@@ -1321,7 +1333,7 @@
                 Style="{StaticResource UtilityActionButtonStyle}"
                 Click="ConfirmModOperationButton_Click"
                 Content="_Install"
-                automation:AutomationProperties.Name="Confirm community mod installation" />
+                automation:AutomationProperties.Name="Install community mod" />
       </StackPanel>
     </controls:InAppDialog>
 

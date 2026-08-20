@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 
 namespace STFCCommunityMod.Launcher.Core;
 
@@ -57,6 +58,19 @@ public sealed record LauncherProviderAtomicSwitchJournal(
     ModReleaseArtifact? TargetArtifact,
     DateTimeOffset UpdatedAtUtc,
     string? Error = null);
+
+public sealed class LauncherProviderSwitchJournalException : IOException
+{
+    public LauncherProviderSwitchJournalException(string message)
+        : base(message)
+    {
+    }
+
+    public LauncherProviderSwitchJournalException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 /// <summary>
 /// Coordinates a provider artifact replacement with the provider-selection and
@@ -137,20 +151,167 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return null;
         }
-        using var stream = File.OpenRead(journalPath);
-        var journal = JsonSerializer.Deserialize<LauncherProviderAtomicSwitchJournal>(
-            stream,
-            SerializerOptions)
-            ?? throw new InvalidDataException("Provider-switch journal is empty.");
-        if (journal.SchemaVersion is not (LegacySchemaVersion or SchemaVersion)
-            || string.IsNullOrWhiteSpace(journal.TransactionId)
-            || (journal.TargetArtifact is not null
-                && !endpoints.ContainsKey(journal.Preview.Target)))
+        LauncherProviderAtomicSwitchJournal? journal;
+        try
         {
-            throw new InvalidDataException("Provider-switch journal identity is invalid.");
+            using var stream = File.OpenRead(journalPath);
+            journal = JsonSerializer.Deserialize<LauncherProviderAtomicSwitchJournal>(
+                stream,
+                SerializerOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new LauncherProviderSwitchJournalException(
+                "Provider-switch recovery details are not valid JSON.",
+                exception);
+        }
+        if (journal is null)
+        {
+            throw new LauncherProviderSwitchJournalException(
+                "Provider-switch recovery details are empty.");
+        }
+        try
+        {
+            ValidateJournal(journal);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException)
+        {
+            throw new LauncherProviderSwitchJournalException(
+                "Provider-switch recovery details contain an invalid path or identity.",
+                exception);
         }
         return journal;
     }
+
+    private void ValidateJournal(LauncherProviderAtomicSwitchJournal journal)
+    {
+        var preview = journal.Preview;
+        if (journal.SchemaVersion is not (LegacySchemaVersion or SchemaVersion)
+            || !Guid.TryParseExact(journal.TransactionId, "N", out _)
+            || !Enum.IsDefined(journal.Phase)
+            || preview is null
+            || !string.Equals(
+                journal.TransactionId,
+                preview.TransactionId,
+                StringComparison.Ordinal)
+            || preview.Source is null
+            || preview.Target is null
+            || preview.Source == preview.Target
+            || !endpoints.ContainsKey(preview.Source)
+            || !endpoints.ContainsKey(preview.Target)
+            || preview.SourceResolutionState is not (
+                LauncherProviderSelectionResolutionState.Defaulted
+                    or LauncherProviderSelectionResolutionState.Selected)
+            || !Enum.IsDefined(preview.ConfigurationKind))
+        {
+            ThrowInvalidJournalIdentity();
+        }
+
+        var configurationPath = Path.GetFullPath(preview.ConfigurationPath!);
+        var pathComparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (string.IsNullOrWhiteSpace(preview.ConfigurationPath)
+            || !Path.IsPathFullyQualified(preview.ConfigurationPath)
+            || !string.Equals(preview.ConfigurationPath, configurationPath, pathComparison)
+            || !string.Equals(
+                Path.GetFileName(configurationPath),
+                "community_patch_settings.toml",
+                pathComparison))
+        {
+            ThrowInvalidJournalIdentity();
+        }
+        var gameDirectory = Path.GetDirectoryName(configurationPath);
+        if (string.IsNullOrWhiteSpace(gameDirectory))
+        {
+            ThrowInvalidJournalIdentity();
+        }
+
+        var configurationExisted = preview.ConfigurationExisted
+            ?? true;
+        if (configurationExisted)
+        {
+            if (!IsSha256(preview.ConfigurationSha256)
+                || journal.ConfigurationBackup is null
+                || !ValidBackupReceipt(
+                    journal.ConfigurationBackup,
+                    preview,
+                    gameDirectory!,
+                    preview.ConfigurationSha256!))
+            {
+                ThrowInvalidJournalIdentity();
+            }
+        }
+        else if (preview.ConfigurationSha256 is not null
+                 || journal.ConfigurationBackup is not null)
+        {
+            ThrowInvalidJournalIdentity();
+        }
+
+        switch (preview.ConfigurationKind)
+        {
+            case LauncherProviderSwitchConfigurationKind.None
+                when configurationExisted
+                     || preview.TargetConfigurationBackupId is not null
+                     || preview.TargetConfigurationSha256 is not null:
+            case LauncherProviderSwitchConfigurationKind.PreserveCurrent
+                when !configurationExisted
+                     || preview.TargetConfigurationBackupId is not null
+                     || preview.TargetConfigurationSha256 is not null:
+            case LauncherProviderSwitchConfigurationKind.RestoreProviderHistory
+                when !Guid.TryParseExact(preview.TargetConfigurationBackupId, "N", out _)
+                     || !IsSha256(preview.TargetConfigurationSha256):
+                ThrowInvalidJournalIdentity();
+                break;
+        }
+
+        if (journal.TargetArtifact is null)
+        {
+            if (journal.Phase == LauncherProviderAtomicSwitchPhase.ArtifactCommitting)
+            {
+                ThrowInvalidJournalIdentity();
+            }
+        }
+        else if (!ValidTargetArtifact(journal.TargetArtifact)
+                 || journal.Phase == LauncherProviderAtomicSwitchPhase.ConfigurationCommitting)
+        {
+            ThrowInvalidJournalIdentity();
+        }
+    }
+
+    private static bool ValidBackupReceipt(
+        ConfigurationBackupReceipt receipt,
+        LauncherProviderSwitchPreview preview,
+        string gameDirectory,
+        string sourceSha256) =>
+        Guid.TryParseExact(receipt.BackupId, "N", out _)
+        && string.Equals(
+            receipt.InstallationId,
+            ProviderScopedConfigurationBackupStore.ComputeInstallationId(gameDirectory),
+            StringComparison.Ordinal)
+        && string.Equals(receipt.ProviderId, preview.Source.ProviderId, StringComparison.Ordinal)
+        && string.Equals(receipt.TargetProviderId, preview.Target.ProviderId, StringComparison.Ordinal)
+        && string.Equals(receipt.ContentSha256, sourceSha256, StringComparison.Ordinal)
+        && string.Equals(receipt.Reason, "provider-switch", StringComparison.Ordinal);
+
+    private static bool ValidTargetArtifact(ModReleaseArtifact artifact) =>
+        artifact.DownloadUri is not null
+        && artifact.DownloadUri.IsAbsoluteUri
+        && string.Equals(artifact.DownloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(artifact.FileName, "version.dll", StringComparison.OrdinalIgnoreCase)
+        && artifact.Size is > 0 and <= 128L * 1024L * 1024L
+        && IsSha256(artifact.Sha256)
+        && !string.IsNullOrWhiteSpace(artifact.ExpectedVersion);
+
+    private static bool IsSha256(string? value) =>
+        value is { Length: 64 }
+        && value.All(Uri.IsHexDigit);
+
+    [DoesNotReturn]
+    private static void ThrowInvalidJournalIdentity() =>
+        throw new LauncherProviderSwitchJournalException(
+            "Provider-switch recovery details have an invalid identity or unsupported schema.");
 
     public async Task<LauncherProviderAtomicSwitchPreview> PreviewAsync(
         string targetProviderId,
@@ -203,7 +364,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
 
         var sourceHealth = sourceEndpoint.CaptureHealth(gameValidation.GameDirectory, isGameRunning);
         var sourceInstallation = sourceHealth.Installation;
-        if (sourceInstallation.State == ModInstallationEvidenceState.NotInstalled)
+        if (sourceInstallation.State is (
+                ModInstallationEvidenceState.NotInstalled
+                or ModInstallationEvidenceState.ManualInstallation))
         {
             return new(configuration, Artifact: null, sourceInstallation, gameValidation.GameDirectory);
         }
@@ -512,6 +675,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return new(true, false, "No incomplete provider-switch transaction was found.");
         }
+        var rollBackArtifactParticipant = ValidateRecoveryDependencies(journal);
         ModManagementCoordinator? targetEndpoint = null;
         if (journal.TargetArtifact is not null
             && !endpoints.TryGetValue(journal.Preview.Target, out targetEndpoint))
@@ -534,8 +698,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             UpdatedAtUtc = timeProvider.GetUtcNow(),
         };
         await PersistAndObserveAsync(journal, cancellationToken).ConfigureAwait(false);
-        if (journal.TargetArtifact is not null
-            && interruptedPhase != LauncherProviderAtomicSwitchPhase.Prepared)
+        if (rollBackArtifactParticipant)
         {
             var artifactRollback = await targetEndpoint!.RollBackCoordinatedCoreAsync(
                 journal.TransactionId,
@@ -585,6 +748,44 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 },
                 cancellationToken).ConfigureAwait(false);
             return new(false, false, $"Provider-switch recovery failed: {exception.Message}");
+        }
+    }
+
+    private bool ValidateRecoveryDependencies(LauncherProviderAtomicSwitchJournal journal)
+    {
+        try
+        {
+            configurationSwitch.ValidateRecoveryDependencies(
+                journal.Preview,
+                journal.ConfigurationBackup);
+            if (journal.TargetArtifact is null)
+            {
+                return false;
+            }
+            var gameDirectory = Path.GetDirectoryName(journal.Preview.ConfigurationPath!)
+                ?? throw new InvalidDataException(
+                    "The provider-switch recovery path has no game installation.");
+            return endpoints[journal.Preview.Target].PrepareCoordinatedRecoveryDependency(
+                journal.TransactionId,
+                gameDirectory,
+                journal.TargetArtifact,
+                journal.SchemaVersion,
+                outerPrepared: journal.Phase == LauncherProviderAtomicSwitchPhase.Prepared)
+                == CoordinatedRecoveryDependencyDisposition.RollBackParticipant;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or InvalidOperationException
+                or ArgumentException
+                or NotSupportedException
+                or JsonException
+                or System.Security.Cryptography.CryptographicException)
+        {
+            throw new LauncherProviderSwitchJournalException(
+                "Provider-switch recovery dependencies are missing, damaged, or bound to another installation.",
+                exception);
         }
     }
 
