@@ -47,6 +47,12 @@ the signed MSIX, owns update and uninstall, and installs the read-only program
 payload under WindowsApps. The ZIP, manifest, SBOMs, and attestation bundles are
 machine-consumed release inputs or a clearly labeled standalone fallback.
 
+App Installer describes the current package as a full-trust desktop app. That
+means Bridge runs with the signed-in user's ordinary desktop authority; it does
+not request administrator elevation. Read the
+[permission explanation and least-authority plan](docs/windows-launcher/APP_INSTALLER_PERMISSIONS.md)
+before installing if that Windows warning is unfamiliar or concerning.
+
 Skeptical users can follow the
 [independent verification guide](docs/windows-launcher/INDEPENDENT_VERIFICATION.md)
 without trusting Bridge's own UI. The application also carries an offline copy
@@ -108,6 +114,7 @@ fallback.
 ## Architecture and provenance
 
 - [Current documentation authority and historical planning index](docs/windows-launcher/CURRENT_AUTHORITY.md)
+- [App Installer permission explanation and least-authority plan](docs/windows-launcher/APP_INSTALLER_PERMISSIONS.md)
 - [Repository extraction provenance](docs/EXTRACTION_PROVENANCE.md)
 - [Provider-pack boundary](docs/PROVIDER_PACKS.md)
 - [Product contract](docs/windows-launcher/CONTRACT.md)

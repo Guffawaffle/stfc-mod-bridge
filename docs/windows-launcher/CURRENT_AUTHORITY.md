@@ -15,6 +15,7 @@ signed artifacts, or candidate-specific qualification receipts.
 | Public name, package identity, state paths, and repository coordinate | [`PRODUCT_IDENTITY.md`](PRODUCT_IDENTITY.md) |
 | Player-facing layout and interaction direction | [`UX_DIRECTION.md`](UX_DIRECTION.md) |
 | Provider versus Bridge ownership and trust | [`PROVIDER_PACKS.md`](../PROVIDER_PACKS.md), [`MOD_DEPLOYMENT.md`](MOD_DEPLOYMENT.md), and [`SELF_UPDATE.md`](SELF_UPDATE.md) |
+| Pre-v1 App Installer permission and least-authority plan | [`APP_INSTALLER_PERMISSIONS.md`](APP_INSTALLER_PERMISSIONS.md) and [GitHub issue #219](https://github.com/Guffawaffle/stfc-mod-bridge/issues/219) |
 | Current v1 release decision and evidence checklist | [GitHub issue #30](https://github.com/Guffawaffle/stfc-mod-bridge/issues/30) |
 | Battle feature activation and dormancy | [`BATTLE_BRIDGE_ACTIVATION_ADR.md`](BATTLE_BRIDGE_ACTIVATION_ADR.md) and [`BATTLE_BRIDGE_LOCAL_IPC.md`](BATTLE_BRIDGE_LOCAL_IPC.md) |
 
