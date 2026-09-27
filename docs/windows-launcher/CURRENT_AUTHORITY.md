@@ -12,6 +12,8 @@ signed artifacts, or candidate-specific qualification receipts.
 |---|---|
 | Repository scope, branch policy, verification, and safety boundaries | [`AGENTS.md`](../../AGENTS.md) |
 | Windows product behavior and ownership boundaries | [`CONTRACT.md`](CONTRACT.md) |
+| Observed Windows multi-install game-update route and proposed recovery requirements | [`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md) |
+| Proposed per-install profile marker and fail-closed enrollment contract | [`PROFILE_MARKER_DESIGN.md`](PROFILE_MARKER_DESIGN.md) |
 | Public name, package identity, state paths, and repository coordinate | [`PRODUCT_IDENTITY.md`](PRODUCT_IDENTITY.md) |
 | Player-facing layout and interaction direction | [`UX_DIRECTION.md`](UX_DIRECTION.md) |
 | Provider versus Bridge ownership and trust | [`PROVIDER_PACKS.md`](../PROVIDER_PACKS.md), [`MOD_DEPLOYMENT.md`](MOD_DEPLOYMENT.md), and [`SELF_UPDATE.md`](SELF_UPDATE.md) |

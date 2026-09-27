@@ -123,6 +123,11 @@ remains authoritative: base-game update and authentication use the supported
 official path even when the player elects to launch an already healthy client
 directly.
 
+The observed multi-install Windows route through the official updater and its
+remaining safety requirements are recorded in
+[`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md). This is a proposed Bridge
+handoff, not a replacement Xsolla updater.
+
 ## Supported environment
 
 - Windows 10 and Windows 11, x64.

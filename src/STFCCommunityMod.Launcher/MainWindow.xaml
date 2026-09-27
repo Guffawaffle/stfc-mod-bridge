@@ -862,12 +862,19 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Margin="0,0,8,0"
+                        Style="{StaticResource QuietButtonStyle}"
+                        Click="OpenProfilesButton_Click"
+                        Content="_Profiles"
+                        automation:AutomationProperties.Name="Manage launch profiles" />
               <Button HorizontalAlignment="Right"
                       Style="{StaticResource QuietButtonStyle}"
                       Click="ChooseGameFolderButton_Click"
                       Content="{Binding GameFolderActionLabel}"
                       IsEnabled="{Binding CanChangeGameFolder}"
                       automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
+              </StackPanel>
               <controls:LaunchTargetSplitButton Grid.Row="1"
                                                 Margin="0,6,0,0"
                                                 HorizontalAlignment="Right"
@@ -1331,6 +1338,110 @@
                    automation:AutomationProperties.Name="{Binding DiagnosticStopManagingAvailability}" />
       </StackPanel>
     </ScrollViewer>
+
+    <controls:InAppDialog x:Name="ProfilesDialog"
+                          Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Launch profiles"
+                          DialogWidth="540"
+                          automation:AutomationProperties.Name="Launch profiles dialog">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer.Resources>
+          <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
+        </ScrollViewer.Resources>
+        <StackPanel Margin="0,0,4,0">
+        <TextBlock Text="Named launches need a profile-capable community mod. Default launch remains available."
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   TextWrapping="Wrap" />
+        <ListBox x:Name="ProfilesList"
+                 Height="108"
+                 Margin="0,12,0,0"
+                 Padding="4"
+                 Background="{DynamicResource SurfaceMutedBrush}"
+                 Foreground="{DynamicResource TextPrimaryBrush}"
+                 BorderBrush="{DynamicResource ControlBorderBrush}"
+                 BorderThickness="1"
+                 DisplayMemberPath="Name"
+                 SelectionChanged="ProfilesList_SelectionChanged"
+                 automation:AutomationProperties.Name="Saved launch profiles">
+          <ListBox.ItemContainerStyle>
+            <Style TargetType="ListBoxItem">
+              <Setter Property="MinHeight" Value="30" />
+              <Setter Property="Padding" Value="8,5" />
+              <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="ProfileRow" Background="Transparent" CornerRadius="4">
+                      <ContentPresenter Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="ProfileRow" Property="Background" Value="{DynamicResource QuietHoverBrush}" />
+                      </Trigger>
+                      <Trigger Property="IsSelected" Value="True">
+                        <Setter TargetName="ProfileRow" Property="Background" Value="{DynamicResource QuietHoverBrush}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+          </ListBox.ItemContainerStyle>
+        </ListBox>
+        <WrapPanel Margin="0,8,0,0">
+          <Button Style="{StaticResource QuietButtonStyle}"
+                  Click="NewProfileButton_Click"
+                  Content="_New"
+                  automation:AutomationProperties.Name="Create new launch profile" />
+          <Button Margin="8,0,0,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="AdoptProfileButton_Click"
+                  Content="_Adopt existing"
+                  automation:AutomationProperties.Name="Adopt existing launch profile" />
+          <Button x:Name="RemoveProfileButton"
+                  Margin="8,0,0,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="RemoveProfileButton_Click"
+                  Content="_Remove"
+                  automation:AutomationProperties.Name="Remove selected launch profile" />
+        </WrapPanel>
+        <TextBlock x:Name="ProfileFormTitle" Margin="0,16,0,6" FontWeight="SemiBold" Text="New profile" />
+        <TextBlock x:Name="ProfileIdentity" Margin="0,0,0,10"
+                   FontFamily="Consolas" FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Visibility="Collapsed" TextWrapping="Wrap" />
+        <TextBlock Text="Name" />
+        <TextBox x:Name="ProfileNameBox" Margin="0,4,0,10" MaxLength="48"
+                 Style="{StaticResource ProviderConfirmationTextBoxStyle}"
+                 automation:AutomationProperties.Name="Profile name" />
+        <StackPanel x:Name="ProfileKeyPanel" Margin="0,0,0,10" Visibility="Collapsed">
+          <TextBlock Text="Existing profile key" />
+          <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32"
+                   Style="{StaticResource ProviderConfirmationTextBoxStyle}"
+                   automation:AutomationProperties.Name="Existing profile key" />
+        </StackPanel>
+        <TextBlock Text="Game folder" />
+        <DockPanel Margin="0,4,0,0">
+          <Button DockPanel.Dock="Right" Margin="8,0,0,0"
+                  Style="{StaticResource QuietButtonStyle}"
+                  Click="BrowseProfileFolderButton_Click"
+                  Content="_Browse"
+                  automation:AutomationProperties.Name="Browse for profile game folder" />
+          <TextBox x:Name="ProfileFolderBox"
+                   Style="{StaticResource ProviderConfirmationTextBoxStyle}"
+                   VerticalContentAlignment="Center"
+                   automation:AutomationProperties.Name="Profile game folder" />
+        </DockPanel>
+        <TextBlock x:Name="ProfileError" Margin="0,8,0,0"
+                   Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" />
+        <Button x:Name="SaveProfileButton" Margin="0,14,0,0" HorizontalAlignment="Right"
+                Style="{StaticResource UtilityActionButtonStyle}"
+                Click="SaveProfileButton_Click" Content="_Save profile"
+                automation:AutomationProperties.Name="Save launch profile" />
+        </StackPanel>
+      </ScrollViewer>
+    </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="ModOperationDialog"
                           Grid.RowSpan="2"

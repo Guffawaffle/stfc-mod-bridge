@@ -497,6 +497,21 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             try
             {
+                var storedProfiles = ProfilesStore.Load();
+                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null)
+                {
+                    SettingsUnavailableMessage.Text = storedProfiles.Error ?? "The launch profile registry is unavailable.";
+                    SettingsUnavailableDialog.IsOpen = true;
+                    return;
+                }
+                var normalizedDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dialog.FolderName));
+                if (storedProfiles.Snapshot.Profiles.Any(profile =>
+                    string.Equals(profile.GameDirectory, normalizedDirectory, StringComparison.OrdinalIgnoreCase)))
+                {
+                    SettingsUnavailableMessage.Text = "That game folder belongs to a launch profile. Choose a different folder for Default.";
+                    SettingsUnavailableDialog.IsOpen = true;
+                    return;
+                }
                 await using var lease = await new LauncherOperationLock(stateDirectory)
                     .TryAcquireAsync(lifetimeCancellation.Token);
                 if (lease is null)
