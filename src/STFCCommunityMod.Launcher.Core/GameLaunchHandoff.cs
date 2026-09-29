@@ -410,8 +410,11 @@ public sealed class GameLaunchHandoffCoordinator(
                 Changed: false);
         }
 
+        var officialLauncherWithoutSelectedGame = target == LauncherLaunchTarget.ScopelyLauncher
+            && requiredProfile is null && gameDirectory is null;
         var savedDefault = installSelectionStore.Load();
-        if (savedDefault.State == GameInstallSelectionState.Invalid)
+        if (savedDefault.State == GameInstallSelectionState.Invalid
+            && !officialLauncherWithoutSelectedGame)
         {
             return new(GameLaunchHandoffState.Blocked,
                 savedDefault.Error ?? "The Default game selection could not be read.",
@@ -421,8 +424,6 @@ public sealed class GameLaunchHandoffCoordinator(
         var currentDefault = savedDefault.State == GameInstallSelectionState.Loaded
             ? savedDefault.Selection!.GameDirectory
             : displayedDefault;
-        var officialLauncherWithoutSelectedGame = target == LauncherLaunchTarget.ScopelyLauncher
-            && requiredProfile is null && gameDirectory is null;
         if (savedDefault.State == GameInstallSelectionState.Loaded
             && !officialLauncherWithoutSelectedGame
             && (displayedDefault is null
