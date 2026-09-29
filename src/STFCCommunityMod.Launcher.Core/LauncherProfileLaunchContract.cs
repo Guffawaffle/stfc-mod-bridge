@@ -36,10 +36,10 @@ public static class LauncherProfileLaunchContract
                 return Invalid("The profile marker no longer matches this saved profile key.");
             }
 
-            var dllPath = Path.Combine(game.GameDirectory, "version.dll");
-            if (!File.Exists(dllPath) || !HasContractExport(dllPath))
+            var capability = InspectCapableDll(game.GameDirectory);
+            if (!capability.IsValid)
             {
-                return Invalid("This game folder needs a profile-capable community mod version.dll.");
+                return capability;
             }
             return new(true, id, "Profile marker and mod contract verified.");
         }
@@ -48,6 +48,28 @@ public static class LauncherProfileLaunchContract
             or InvalidOperationException or OverflowException)
         {
             return Invalid($"The profile launch files could not be verified: {exception.Message}");
+        }
+    }
+
+    public static LauncherProfileContractResult InspectCapableDll(string gameDirectory)
+    {
+        try
+        {
+            var game = GameInstallValidator.Validate(gameDirectory);
+            if (!game.IsValid || game.GameDirectory is null)
+            {
+                return Invalid(game.Message);
+            }
+            var dllPath = Path.Combine(game.GameDirectory, "version.dll");
+            return File.Exists(dllPath) && HasContractExport(dllPath)
+                ? new(true, null, "Profile-capable community mod DLL verified.")
+                : Invalid("This game folder needs a profile-capable community mod version.dll.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException or BadImageFormatException
+            or InvalidOperationException or OverflowException)
+        {
+            return Invalid($"The profile-capable DLL could not be verified: {exception.Message}");
         }
     }
 

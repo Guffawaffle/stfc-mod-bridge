@@ -20,7 +20,7 @@ public sealed class LauncherProfilesTests
     }
 
     [TestMethod]
-    public void NewProfileGetsStableKeyAcrossEditAndRoundTrip()
+    public async Task NewProfileGetsStableKeyAcrossEditAndRoundTrip()
     {
         using var root = new TemporaryDirectory();
         var first = MakeGame(root, "first");
@@ -31,7 +31,7 @@ public sealed class LauncherProfilesTests
         Assert.AreEqual(32, profileId.Length);
 
         var updated = LauncherProfiles.Select(LauncherProfiles.Edit(added, profileId, "Renamed", second, null), profileId);
-        store.Save(updated);
+        await store.SaveAsync(updated, store.Load().Revision!);
         var loaded = store.Load();
 
         Assert.AreEqual(LauncherProfilesLoadState.Loaded, loaded.State);
@@ -55,6 +55,120 @@ public sealed class LauncherProfilesTests
     }
 
     [TestMethod]
+    public async Task StaleProfileRegistryRevisionCannotOverwriteAnotherWindow()
+    {
+        using var root = new TemporaryDirectory();
+        var state = root.CreateDirectory("state");
+        var first = MakeGame(root, "first");
+        var second = MakeGame(root, "second");
+        var store = new JsonLauncherProfilesStore(state);
+        var windowA = store.Load();
+        var windowB = store.Load();
+
+        var savedA = LauncherProfiles.Add(windowA.Snapshot!, "First", first, null);
+        await store.SaveAsync(savedA, windowA.Revision!);
+        var savedB = LauncherProfiles.Add(windowB.Snapshot!, "Second", second, null);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SaveAsync(savedB, windowB.Revision!));
+
+        Assert.AreEqual("First", store.Load().Snapshot!.Profiles.Single().Name);
+    }
+
+    [TestMethod]
+    public async Task NewProfileCreatesAStableMarkerBeforeItCanBeSelected()
+    {
+        using var root = new TemporaryDirectory();
+        var game = MakeGame(root, "new-game");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var inspector = new FakeGameProcessInspector(GameProcessInspectionState.NotRunning);
+        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"), inspector);
+
+        var created = await store.CreateNewAsync("Secondary", game, null, store.Load().Revision!);
+        var profile = created.Snapshot.Profiles.Single();
+
+        Assert.AreEqual(game, inspector.InspectedGameDirectory);
+        Assert.AreEqual($"v1:{profile.Id}\n", File.ReadAllText(Path.Combine(game, "stfc_community_mod.profile")));
+        Assert.IsTrue(LauncherProfileLaunchContract.Inspect(game, profile.Id).IsValid);
+        var selected = await store.SelectAsync(profile.Id, null, created.Revision);
+        Assert.AreEqual(profile.Id, selected.Snapshot.SelectedProfileId);
+    }
+
+    [TestMethod]
+    public async Task StaleCreationDoesNotWriteAMarker()
+    {
+        using var root = new TemporaryDirectory();
+        var first = MakeGame(root, "first");
+        var second = MakeGame(root, "second");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(first, "version.dll"));
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(second, "version.dll"));
+        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"),
+            new FakeGameProcessInspector(GameProcessInspectionState.NotRunning));
+        var staleRevision = store.Load().Revision!;
+        await store.CreateNewAsync("First", first, null, staleRevision);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.CreateNewAsync("Second", second, null, staleRevision));
+        Assert.IsFalse(File.Exists(Path.Combine(second, "stfc_community_mod.profile")));
+    }
+
+    [DataTestMethod]
+    [DataRow(GameProcessInspectionState.RunningTarget)]
+    [DataRow(GameProcessInspectionState.Unattributable)]
+    public async Task RunningOrUnattributableGameCannotCreateProfileMarker(GameProcessInspectionState processState)
+    {
+        using var root = new TemporaryDirectory();
+        var game = MakeGame(root, "new-game");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var inspector = new FakeGameProcessInspector(processState);
+        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"), inspector);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.CreateNewAsync("Secondary", game, null, store.Load().Revision!));
+
+        Assert.AreEqual(game, inspector.InspectedGameDirectory);
+        Assert.IsFalse(File.Exists(Path.Combine(game, "stfc_community_mod.profile")));
+        Assert.AreEqual(0, Directory.GetFiles(game, ".stfc-profile.*.tmp").Length);
+        Assert.AreEqual(LauncherProfilesLoadState.Missing, store.Load().State);
+    }
+
+    [TestMethod]
+    public void JunctionAliasCannotRegisterTheDefaultInstallAsNamed()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var root = new TemporaryDirectory();
+        var game = MakeGame(root, "game");
+        var alias = Path.Combine(root.Path, "alias");
+        try
+        {
+            Directory.CreateSymbolicLink(alias, game);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Assert.Inconclusive($"Windows could not create a directory alias for this test: {exception.Message}");
+        }
+        Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, alias));
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Alias", alias, game));
+    }
+
+    [TestMethod]
+    public void ExtendedPathAliasHasTheSamePhysicalIdentity()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var root = new TemporaryDirectory();
+        var game = MakeGame(root, "game");
+        var extended = @"\\?\" + game;
+
+        Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, extended));
+    }
+
+    [TestMethod]
     public void UppercaseAdoptedKeyIsRejected()
     {
         using var root = new TemporaryDirectory();
@@ -67,7 +181,7 @@ public sealed class LauncherProfilesTests
     }
 
     [TestMethod]
-    public void InvalidRegistryDoesNotGetReplacedBySaveAttempt()
+    public async Task InvalidRegistryDoesNotGetReplacedBySaveAttempt()
     {
         using var root = new TemporaryDirectory();
         var state = root.CreateDirectory("state");
@@ -76,7 +190,8 @@ public sealed class LauncherProfilesTests
         var store = new JsonLauncherProfilesStore(state);
 
         Assert.AreEqual(LauncherProfilesLoadState.Invalid, store.Load().State);
-        Assert.ThrowsException<InvalidOperationException>(() => store.Save(LauncherProfilesSnapshot.Empty));
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SaveAsync(LauncherProfilesSnapshot.Empty, "missing"));
         Assert.AreEqual("{ broken json", File.ReadAllText(path));
     }
 
@@ -103,5 +218,16 @@ public sealed class LauncherProfilesTests
         var directory = root.CreateDirectory(name);
         TemporaryDirectory.CreateFile(directory, "prime.exe");
         return directory;
+    }
+
+    private sealed class FakeGameProcessInspector(GameProcessInspectionState state) : IGameProcessInspector
+    {
+        public string? InspectedGameDirectory { get; private set; }
+
+        public GameProcessInspectionState Inspect(string gameDirectory)
+        {
+            InspectedGameDirectory = gameDirectory;
+            return state;
+        }
     }
 }

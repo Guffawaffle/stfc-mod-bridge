@@ -506,7 +506,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 }
                 var normalizedDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dialog.FolderName));
                 if (storedProfiles.Snapshot.Profiles.Any(profile =>
-                    string.Equals(profile.GameDirectory, normalizedDirectory, StringComparison.OrdinalIgnoreCase)))
+                    GameDirectoryIdentity.SameLocation(profile.GameDirectory, normalizedDirectory)))
                 {
                     SettingsUnavailableMessage.Text = "That game folder belongs to a launch profile. Choose a different folder for Default.";
                     SettingsUnavailableDialog.IsOpen = true;
@@ -518,6 +518,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 {
                     SettingsUnavailableMessage.Text =
                         "Another Mod Bridge operation is active. The game folder was not changed; try again when it finishes.";
+                    SettingsUnavailableDialog.IsOpen = true;
+                    return;
+                }
+
+                storedProfiles = ProfilesStore.Load();
+                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null
+                    || storedProfiles.Snapshot.Profiles.Any(profile =>
+                        GameDirectoryIdentity.SameLocation(profile.GameDirectory, normalizedDirectory)))
+                {
+                    SettingsUnavailableMessage.Text = "The profile registry changed or this folder belongs to a named profile. Review it before changing Default.";
                     SettingsUnavailableDialog.IsOpen = true;
                     return;
                 }

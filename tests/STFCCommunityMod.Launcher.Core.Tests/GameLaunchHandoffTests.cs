@@ -21,16 +21,63 @@ public sealed class GameLaunchHandoffTests
         LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
         var profile = new LauncherProfile("dev", "Secondary", profileGame);
         var fixture = CreateFixture(temporaryDirectory);
+        var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
+        var selected = LauncherProfiles.Select(
+            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, profileGame, defaultGame, profile.Id),
+            profile.Id);
+        await store.SaveAsync(selected, store.Load().Revision!);
 
-        var launched = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        var launched = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
+            defaultGameDirectory: defaultGame);
         Assert.AreEqual(GameLaunchHandoffState.Completed, launched.State);
         Assert.AreEqual(profileGame, fixture.GameService.LastGameDirectory);
         Assert.AreNotEqual(defaultGame, fixture.GameService.LastGameDirectory);
+        CollectionAssert.AreEqual(new[]
+        {
+            "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile",
+            LauncherProfiles.UnityLogPath(profile, temporaryDirectory.Path),
+        }, fixture.GameService.LastArguments!.ToArray());
 
         File.WriteAllText(marker, "v1:other\n");
-        var blocked = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        var blocked = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
+            defaultGameDirectory: defaultGame);
         Assert.AreEqual(GameLaunchHandoffState.Blocked, blocked.State);
         Assert.AreEqual(1, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task DefaultLaunchRejectsAMarkedInstall()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporaryDirectory);
+        File.WriteAllText(Path.Combine(game, "stfc_community_mod.profile"), "v1:dev\n");
+        var fixture = CreateFixture(temporaryDirectory);
+
+        var result = await fixture.Coordinator.LaunchAsync(game, LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task NamedLaunchRejectsAChangedRegistrySelection()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporaryDirectory);
+        File.WriteAllText(Path.Combine(game, "stfc_community_mod.profile"), "v1:dev\n");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var fixture = CreateFixture(temporaryDirectory);
+        var profile = new LauncherProfile("dev", "Secondary", game);
+        var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
+        var selected = LauncherProfiles.Select(
+            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, game, null, profile.Id), profile.Id);
+        var revision = await store.SaveAsync(selected, store.Load().Revision!);
+        await store.SaveAsync(LauncherProfiles.Select(selected, null), revision);
+
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
     }
 
     [TestMethod]
@@ -518,7 +565,8 @@ public sealed class GameLaunchHandoffTests
                 gameProcessState
                     ?? (isGameRunning
                         ? GameProcessInspectionState.RunningTarget
-                        : GameProcessInspectionState.NotRunning)));
+                        : GameProcessInspectionState.NotRunning)),
+            temporaryDirectory.Path);
         return new(coordinator, deploymentService, gameService, scopelyService);
     }
 
@@ -561,15 +609,18 @@ public sealed class GameLaunchHandoffTests
 
         public string? LastGameDirectory { get; private set; }
 
+        public IReadOnlyList<string>? LastArguments { get; private set; }
+
         public Action? OnStart { get; set; }
 
         public bool IsAvailable(string gameDirectory) => isAvailable;
 
-        public Task StartAsync(string gameDirectory, CancellationToken cancellationToken)
+        public Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
             LastGameDirectory = gameDirectory;
+            LastArguments = arguments;
             OnStart?.Invoke();
             return Task.CompletedTask;
         }

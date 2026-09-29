@@ -1,8 +1,8 @@
 # Per-install profile marker design
 
-Status: design proposal for enrollment and recovery. A Windows mod science
-branch now reads and enrolls markers; Bridge can adopt and launch an already
-marked install, but does not create markers or receipts.
+Status: Windows implementation candidate. The mod science branch reads the
+marker and owns enrollment; Bridge can create a marker for a new profile or
+adopt an already marked install. Runtime qualification is still in progress.
 
 The goal is for an opted-in Windows game installation to select its account
 when `prime.exe` is launched directly, without requiring a per-launch batch
@@ -46,62 +46,65 @@ canonical game-install path and expected profile ID. Its filename is derived
 from a stable hash of that path. This is a small runtime contract, separate
 from Bridge's UI profile registry; a bad receipt affects only its install.
 
+The mod returns to the ordinary unmarked path before taking the per-install
+launch lock when both marker and receipt are absent. If either exists, it takes
+that lock and re-reads both files before enrollment or isolation. A new
+enrollment writes a pending receipt, commits an encrypted per-ID
+`player_prefs.bin`, then writes the completed receipt. A pending enrollment
+can resume after an interrupted first launch. A completed receipt requires
+an existing valid bin; a missing bin stops launch rather than creating an
+empty account state.
+
 | Marker | Receipt for this install | Behavior with a loaded profile-capable DLL |
 |---|---|---|
 | Absent | Absent | Existing default or batch behavior; no new interruption. |
-| Valid | Absent | Atomically enroll this hand-created marker before login, then isolate. Fail if enrollment cannot be saved. |
+| Valid | Absent | Start enrollment and create the pending receipt before preference writes. |
+| Valid | Pending | Resume enrollment under the same ID and install path. |
 | Valid | Matching | Isolate under that profile ID. |
 | Absent or invalid | Present | Stop before login; do not fall back to Default. |
 | Valid | Mismatched or invalid | Stop before login. |
 
-The future Bridge enrollment flow must write and verify both files before a
-new profile is offered for launch. The mod can enroll a valid hand-created
-marker on its first launch.
-Both writers need the same path canonicalization, file contract, and
-cross-process lock; interrupted writes must leave a state that stops rather
-than routes to Default. No marker and no receipt remains the ordinary mod
-path, including the existing `STFC_MOD_ISOLATED_PROFILE` environment selector.
+Bridge provisions a new marker only while the target game is stopped, after
+checking the profile-capable DLL and rechecking process state under its shared
+operation lock. It does not change a marker while that game is running. The mod
+writes pending and completed receipts and the encrypted preference bin on first
+launch. Bridge reads, but does not rewrite, a hand-created marker when adopting
+an install. If Bridge writes a marker but cannot save its UI entry, the marker
+remains safe to adopt on a retry. No marker and no receipt remains the ordinary
+mod path.
 Complete loss of *both* marker and receipt cannot be distinguished from an
 ordinary install; this is a practical accidental-loss guard, not a guarantee
 against deletion of all state.
 
-The same profile ID may be deliberately bound to more than one install, such
-as a copied game folder. Both installations then use the same account state
-and browser profile; simultaneous login can trigger the game's normal
-single-session Retry behavior. Bridge should make this reuse visible, not
-silently claim a new account was created. A new account requires a new ID.
+The current mod candidate rejects another install claiming the same profile
+ID. A copied or moved install needs a deliberate future rebind flow; copying
+its marker alone does not create a new account. A new account requires a new
+ID.
 Removing a Bridge UI profile does not silently delete game files, marker, or
 receipt; disenrollment is a separate explicit operation.
 
-## Selector precedence and effects
+## Selector and file effects
 
-- An enrolled install uses the receipt and marker ID. If a launch-time
-  `STFC_MOD_ISOLATED_PROFILE` value is also present, it must match exactly or
-  launch stops. The environment variable is useful for existing batch users
-  and for installations that intentionally share game files.
-- A non-enrolled, unmarked install preserves today's behavior. A present but
-  malformed marker never falls back to Default. If the mod DLL is absent,
-  a bare `prime.exe` uses ordinary unmodded behavior; the marker is inert by
-  player choice. A DLL that is present but fails to load may instead prevent
-  startup. Neither case proves profile isolation. Bridge must verify the DLL
-  before a Bridge-managed profile launch and report startup failures clearly.
-- A valid selected ID namespaces the current `PlayerPrefs` login state and
-  selects the isolated sign-in browser profile. It should also select the
-  profile's mod TOML, native log, vars, and other mod-owned per-profile files
-  without relying on `-ccm`. A newly created ID starts as a fresh device and
-  requires sign-in; adding a marker to the existing Default install is not an
-  implicit migration of its login. Leave Default unmarked unless a deliberate
-  conversion is designed.
-- The marker/environment mismatch rule is firm. `-ccm` is a mod-file path,
-  not an identity selector, but an enrolled launch must not silently load
-  another profile's TOML or sync settings. Whether marker plus `-ccm` accepts
-  only the derived profile path or permits validated custom paths remains an
-  explicit compatibility decision. Without a marker, legacy `-ccm` behavior
-  remains unchanged.
-- Unity's `Player.log` is separate from the mod's native log. Its path may be
-  fixed before the DLL can read the marker. Bridge can supply `-logFile` when
-  it starts the game. Bare marker launches may still share Unity's default
-  `Player.log`; separate Unity logs are parked, not part of the marker gate.
+- A valid marker is the sole profile selector. The earlier science
+  `STFC_MOD_ISOLATED_PROFILE` environment selector was removed. A malformed
+  marker or mismatched completed receipt stops before login.
+- An unmarked, unenrolled install retains its ordinary launch path. A marker
+  without a profile-capable DLL cannot prove isolation. Bridge checks the
+  marker and the DLL's contract export before launch and checks again under
+  its launch lease. That static check is a gate, not proof that runtime hooks
+  succeeded.
+- A selected ID namespaces the mod's encrypted Unity `PlayerPrefs` store and
+  isolated sign-in browser, and chooses the per-ID mod TOML, log, vars, and
+  battle files. A new ID starts as a fresh local preference state and needs
+  account sign-in. Default remains unmarked.
+- `-ccm` is a config-file path, not an identity selector. For a marked game,
+  the mod accepts only the derived `stfc-mod/<id>/<id>.toml` path. Bridge
+  passes that path explicitly for a named launch. Unmarked legacy `-ccm`
+  behavior remains unchanged.
+- Bridge passes `-logFile` to place a named launch's Unity `Player.log` under
+  `%LOCALAPPDATA%\STFC Community Mod\Profiles\<id>\`. A direct bare launch
+  may still use Unity's ordinary log path. The game's native `Screenmanager`
+  display settings remain outside profile isolation by user decision.
 
 Bridge-generated and adopted IDs now follow the mod's lowercase ID rules.
 Names may change; IDs do not.
@@ -111,10 +114,14 @@ Names may change; IDs do not.
 - Default, new child, and adopted child launches; bare `prime.exe`, Bridge,
   and existing batch routes; guest and linked-account restarts.
 - Missing marker, malformed marker, missing or corrupted receipt, path
-  mismatch, environment mismatch, and unavailable profile hook
+  mismatch, missing established preference bin, and unavailable profile hook
   must fail before shared login state is touched.
-- A hand-created marker must enroll durably on first launch; copied installs
-  with the same ID must be identified as the same account, not a new one.
+- A hand-created or Bridge-created marker must enroll durably on first
+  launch. A copied install claiming the same ID must stop until a deliberate
+  rebind or new-profile operation is designed.
+- Bridge must block marker provisioning while the target game is running or
+  process attribution is uncertain; adoption and metadata changes must not
+  rewrite an existing marker.
 - Update a child through the official launcher, then verify both profile
   bindings and mod/client compatibility before allowing the next launch.
 - Confirm path identity under case differences, junctions, and moved installs;
@@ -122,3 +129,5 @@ Names may change; IDs do not.
 
 This marker is an accidental-cross-account safety contract, not a defense
 against someone who can deliberately edit the local mod and enrollment files.
+The current runtime is Windows-only; macOS requires its own hook and storage
+implementation and client-specific validation.

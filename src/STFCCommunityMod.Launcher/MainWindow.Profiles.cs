@@ -9,6 +9,7 @@ namespace STFCCommunityMod.Launcher;
 public partial class MainWindow
 {
     private LauncherProfilesSnapshot profiles = LauncherProfilesSnapshot.Empty;
+    private string profilesRevision = "missing";
     private bool isAdoptingProfile;
     private bool isRemovingProfile;
 
@@ -25,6 +26,7 @@ public partial class MainWindow
         }
 
         profiles = loaded.Snapshot;
+        profilesRevision = loaded.Revision ?? "missing";
         RefreshProfilesList(profiles.SelectedProfileId);
         if (profiles.SelectedProfile is null)
         {
@@ -116,26 +118,37 @@ public partial class MainWindow
         }
     }
 
-    private void SaveProfileButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveProfileButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             var defaultDirectory = (DataContext as ViewModels.MainWindowViewModel)?.SelectedGameDirectory;
             var selected = ProfilesList.SelectedItem as LauncherProfile;
-            LauncherProfileContractResult? contract = isAdoptingProfile && selected is null
-                ? LauncherProfileLaunchContract.Inspect(ProfileFolderBox.Text)
-                : null;
-            if (contract is { IsValid: false })
+            LauncherProfilesSnapshot updated;
+            string revision;
+            if (selected is null && !isAdoptingProfile)
             {
-                throw new InvalidOperationException(contract.Message);
+                var created = await ProfilesStore.CreateNewAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
+                    defaultDirectory, profilesRevision);
+                updated = created.Snapshot;
+                revision = created.Revision;
             }
-            var updated = selected is not null
-                ? LauncherProfiles.Edit(profiles, selected.Id, ProfileNameBox.Text, ProfileFolderBox.Text, defaultDirectory)
-                : LauncherProfiles.Add(profiles, ProfileNameBox.Text, ProfileFolderBox.Text, defaultDirectory,
-                    isAdoptingProfile ? contract!.ProfileId : null);
+            else if (selected is null)
+            {
+                var adopted = await ProfilesStore.AdoptExistingAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
+                    defaultDirectory, profilesRevision);
+                updated = adopted.Snapshot;
+                revision = adopted.Revision;
+            }
+            else
+            {
+                updated = LauncherProfiles.Edit(profiles, selected.Id, ProfileNameBox.Text, ProfileFolderBox.Text,
+                    defaultDirectory);
+                revision = await ProfilesStore.SaveAsync(updated, profilesRevision);
+            }
             var id = selected?.Id ?? updated.Profiles[^1].Id;
-            ProfilesStore.Save(updated);
             profiles = updated;
+            profilesRevision = revision;
             RefreshProfilesList(id);
             UpdateProfileLaunchSelection();
             (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
@@ -148,7 +161,7 @@ public partial class MainWindow
         }
     }
 
-    private void RemoveProfileButton_Click(object sender, RoutedEventArgs e)
+    private async void RemoveProfileButton_Click(object sender, RoutedEventArgs e)
     {
         if (ProfilesList.SelectedItem is not LauncherProfile profile)
         {
@@ -165,8 +178,9 @@ public partial class MainWindow
         try
         {
             var updated = LauncherProfiles.Remove(profiles, profile.Id);
-            ProfilesStore.Save(updated);
+            var revision = await ProfilesStore.SaveAsync(updated, profilesRevision);
             profiles = updated;
+            profilesRevision = revision;
             RefreshProfilesList(null);
             NewProfileButton_Click(sender, e);
             UpdateProfileLaunchSelection();
@@ -178,7 +192,7 @@ public partial class MainWindow
         }
     }
 
-    private void UseSelectedProfileButton_Click(object sender, RoutedEventArgs e)
+    private async void UseSelectedProfileButton_Click(object sender, RoutedEventArgs e)
     {
         if (ProfilesList.SelectedItem is not LauncherProfile profile)
         {
@@ -191,18 +205,20 @@ public partial class MainWindow
             ProfileError.Text = contract.Message;
             return;
         }
-        SaveLaunchSelection(profile.Id);
+        await SaveLaunchSelectionAsync(profile.Id);
     }
 
-    private void UseDefaultProfileButton_Click(object sender, RoutedEventArgs e) => SaveLaunchSelection(null);
+    private async void UseDefaultProfileButton_Click(object sender, RoutedEventArgs e) =>
+        await SaveLaunchSelectionAsync(null);
 
-    private void SaveLaunchSelection(string? profileId)
+    private async Task SaveLaunchSelectionAsync(string? profileId)
     {
         try
         {
-            var updated = LauncherProfiles.Select(profiles, profileId);
-            ProfilesStore.Save(updated);
-            profiles = updated;
+            var defaultDirectory = (DataContext as ViewModels.MainWindowViewModel)?.SelectedGameDirectory;
+            var saved = await ProfilesStore.SelectAsync(profileId, defaultDirectory, profilesRevision);
+            profiles = saved.Snapshot;
+            profilesRevision = saved.Revision;
             UpdateProfileLaunchSelection();
             (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
             ProfileError.Text = string.Empty;

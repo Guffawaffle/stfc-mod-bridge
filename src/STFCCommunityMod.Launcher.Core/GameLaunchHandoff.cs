@@ -91,7 +91,7 @@ public interface IGameExecutableLaunchService
 {
     bool IsAvailable(string gameDirectory);
 
-    Task StartAsync(string gameDirectory, CancellationToken cancellationToken);
+    Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken);
 }
 
 public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
@@ -230,19 +230,25 @@ public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchSe
     public bool IsAvailable(string gameDirectory) =>
         TryResolvePrimePath(gameDirectory, out var primePath) && File.Exists(primePath);
 
-    public Task StartAsync(string gameDirectory, CancellationToken cancellationToken)
+    public Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(arguments);
         if (!TryResolvePrimePath(gameDirectory, out var primePath) || !File.Exists(primePath))
         {
             throw new FileNotFoundException("The selected game folder does not contain prime.exe.", primePath);
         }
 
-        using var process = Process.Start(new ProcessStartInfo(primePath)
+        var startInfo = new ProcessStartInfo(primePath)
         {
-            UseShellExecute = true,
+            UseShellExecute = arguments.Count == 0,
             WorkingDirectory = Path.GetDirectoryName(primePath),
-        });
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        using var process = Process.Start(startInfo);
         if (process is null)
         {
             throw new InvalidOperationException("Windows did not start prime.exe.");
@@ -270,9 +276,13 @@ public sealed class GameLaunchHandoffCoordinator(
     ModDeploymentService deploymentService,
     IGameExecutableLaunchService gameExecutableLaunchService,
     IOfficialLauncherService officialLauncherService,
-    IGameProcessInspector gameProcessInspector)
+    IGameProcessInspector gameProcessInspector,
+    string? profileLogDataRoot = null)
 {
     private readonly LauncherOperationLock operationLock = new(stateDirectory);
+    private readonly JsonLauncherProfilesStore profilesStore = new(stateDirectory);
+    private readonly string profileLocalData = profileLogDataRoot
+        ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     public GameLaunchPresentation CapturePresentation(
         string? gameDirectory,
@@ -350,6 +360,7 @@ public sealed class GameLaunchHandoffCoordinator(
         LauncherLaunchTarget target,
         bool allowUnverifiedProxy = false,
         LauncherProfile? requiredProfile = null,
+        string? defaultGameDirectory = null,
         CancellationToken cancellationToken = default)
     {
         var initial = CapturePresentation(gameDirectory, target);
@@ -398,13 +409,49 @@ public sealed class GameLaunchHandoffCoordinator(
                 Changed: false);
         }
 
-        if (requiredProfile is not null)
+        var registry = profilesStore.Load();
+        if (registry.State == LauncherProfilesLoadState.Invalid || registry.Snapshot is null)
         {
-            if (target != LauncherLaunchTarget.PrimeExecutable
-                || !PathEquals(gameDirectory ?? string.Empty, requiredProfile.GameDirectory))
+            return new(GameLaunchHandoffState.Blocked,
+                registry.Error ?? "The profile registry is unavailable.", revalidated, Changed: false);
+        }
+        if (requiredProfile is null)
+        {
+            if (registry.Snapshot.SelectedProfileId is not null)
             {
                 return new(GameLaunchHandoffState.Blocked,
-                    "The named profile launch target changed.", revalidated, Changed: false);
+                    "The selected launch profile changed. Review the launch button and try again.",
+                    revalidated, Changed: false);
+            }
+            if (gameDirectory is not null &&
+                (File.Exists(Path.Combine(gameDirectory, "stfc_community_mod.profile"))
+                || registry.Snapshot.Profiles.Any(profile =>
+                    GameDirectoryIdentity.SameLocation(profile.GameDirectory, gameDirectory))))
+            {
+                return new(GameLaunchHandoffState.Blocked,
+                    "Default points to a marked or named game folder. Select a distinct Default install.",
+                    revalidated, Changed: false);
+            }
+        }
+
+        if (requiredProfile is not null)
+        {
+            var selected = registry.Snapshot.SelectedProfile;
+            if (selected?.Id != requiredProfile.Id
+                || !string.Equals(selected.GameDirectory, requiredProfile.GameDirectory,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return new(GameLaunchHandoffState.Blocked,
+                    "The named launch selection changed. Review it and try again.", revalidated, Changed: false);
+            }
+            if (target != LauncherLaunchTarget.PrimeExecutable
+                || !GameDirectoryIdentity.SameLocation(gameDirectory ?? string.Empty, requiredProfile.GameDirectory)
+                || (defaultGameDirectory is not null
+                    && GameDirectoryIdentity.SameLocation(defaultGameDirectory, requiredProfile.GameDirectory)))
+            {
+                return new(GameLaunchHandoffState.Blocked,
+                    "The named profile must use its own game folder, separate from Default.",
+                    revalidated, Changed: false);
             }
             var contract = LauncherProfileLaunchContract.Inspect(requiredProfile.GameDirectory, requiredProfile.Id);
             if (!contract.IsValid)
@@ -418,17 +465,19 @@ public sealed class GameLaunchHandoffCoordinator(
             : await LaunchPrimeAsync(
                 gameDirectory
                     ?? throw new InvalidOperationException("The revalidated prime.exe target has no game directory."),
+                requiredProfile,
                 cancellationToken);
     }
 
     public Task<GameLaunchHandoffResult> LaunchProfileAsync(
         LauncherProfile profile,
         bool allowUnverifiedProxy = false,
+        string? defaultGameDirectory = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
         return LaunchAsync(profile.GameDirectory, LauncherLaunchTarget.PrimeExecutable,
-            allowUnverifiedProxy, profile, cancellationToken);
+            allowUnverifiedProxy, profile, defaultGameDirectory, cancellationToken);
     }
 
     private async Task<GameLaunchHandoffResult> LaunchScopelyAsync(
@@ -470,12 +519,24 @@ public sealed class GameLaunchHandoffCoordinator(
 
     private async Task<GameLaunchHandoffResult> LaunchPrimeAsync(
         string gameDirectory,
+        LauncherProfile? profile,
         CancellationToken cancellationToken)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await gameExecutableLaunchService.StartAsync(gameDirectory, cancellationToken);
+            IReadOnlyList<string> arguments = [];
+            if (profile is not null)
+            {
+                if (string.IsNullOrWhiteSpace(profileLocalData))
+                {
+                    throw new InvalidOperationException("Windows did not provide a per-user log directory.");
+                }
+                var logPath = LauncherProfiles.UnityLogPath(profile, profileLocalData);
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                arguments = ["-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile", logPath];
+            }
+            await gameExecutableLaunchService.StartAsync(gameDirectory, arguments, cancellationToken);
             return new(
                 GameLaunchHandoffState.Completed,
                 "prime.exe started.",

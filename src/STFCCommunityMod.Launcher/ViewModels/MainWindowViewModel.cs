@@ -996,12 +996,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
     {
+        var displayedProfile = ActiveLaunchProfile;
+        var displayedDefaultDirectory = snapshot.SelectedGameDirectory;
+        var displayedTarget = EffectiveLaunchTarget;
         ReloadLaunchProfile();
-        if (!launchPresentation.CanExecute)
+        if (!launchPresentation.CanExecute || !SameDisplayedLaunch())
         {
-            return ObservableActionResult.Failed(launchPresentation.Reason);
+            return ObservableActionResult.Failed("The launch selection changed. Review the button and try again.");
         }
-        var selectedProfile = ActiveLaunchProfile;
         var allowUnverifiedProxy = false;
         if (launchPresentation.RequiresUserOverride)
         {
@@ -1015,9 +1017,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
 
         ReloadLaunchProfile();
-        if (!launchPresentation.CanExecute || ActiveLaunchProfile?.Id != selectedProfile?.Id
-            || !string.Equals(ActiveLaunchProfile?.GameDirectory, selectedProfile?.GameDirectory,
-                StringComparison.OrdinalIgnoreCase))
+        if (!launchPresentation.CanExecute || !SameDisplayedLaunch())
         {
             return ObservableActionResult.Failed("The launch profile changed or became unavailable. Review the selection and try again.");
         }
@@ -1034,9 +1034,18 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var result = profile is null
             ? await gameLaunchCoordinator.LaunchAsync(
                 snapshot.SelectedGameDirectory, EffectiveLaunchTarget, allowUnverifiedProxy)
-            : await gameLaunchCoordinator.LaunchProfileAsync(profile, allowUnverifiedProxy);
+            : await gameLaunchCoordinator.LaunchProfileAsync(profile, allowUnverifiedProxy,
+                snapshot.SelectedGameDirectory);
         RefreshCore();
         return ProjectLaunchResult(result);
+
+        bool SameDisplayedLaunch() =>
+            ActiveLaunchProfile?.Id == displayedProfile?.Id
+            && string.Equals(ActiveLaunchProfile?.GameDirectory, displayedProfile?.GameDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(snapshot.SelectedGameDirectory, displayedDefaultDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && EffectiveLaunchTarget == displayedTarget;
     }
 
     internal static ObservableActionResult ProjectLaunchResult(GameLaunchHandoffResult result)
@@ -1613,6 +1622,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             var reason = profilesLoad.Error ?? "The launch profile registry could not be read.";
             primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
             scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
+        }
+        else if (profile is null && snapshot.SelectedGameDirectory is { } defaultDirectory)
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(defaultDirectory, "stfc_community_mod.profile"))
+                    || profilesLoad.Snapshot!.Profiles.Any(saved =>
+                        GameDirectoryIdentity.SameLocation(saved.GameDirectory, defaultDirectory)))
+                {
+                    const string reason = "Default points to a marked or named game folder. Choose a separate install.";
+                    primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
+                    scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
+                }
+            }
+            catch (IOException)
+            {
+                const string reason = "The Default game folder could not be identified safely.";
+                primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
+                scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
+            }
         }
         else if (profile is not null)
         {
