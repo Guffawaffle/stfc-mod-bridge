@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "dependencyInventorySha256": "9b2b7ebe009a31852a627b39294063e6419060ef96d3bc45055b3b890344e667",
+  "dependencyInventorySha256": "6d35509b15ad57cf8eaa0f2f7f63a520a29950225e0e7e9ddc1feef877120810",
   "classifications": [
     {
       "spdxExpression": "Apache-2.0",
