@@ -1627,9 +1627,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         {
             try
             {
-                if (File.Exists(Path.Combine(defaultDirectory, "stfc_community_mod.profile"))
-                    || profilesLoad.Snapshot!.Profiles.Any(saved =>
-                        GameDirectoryIdentity.SameLocation(saved.GameDirectory, defaultDirectory)))
+                if (LauncherProfiles.IsNamedProfileFolder(defaultDirectory, profilesLoad.Snapshot!))
                 {
                     const string reason = "Default points to a marked or named game folder. Choose a separate install.";
                     primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);

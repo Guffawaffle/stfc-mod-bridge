@@ -281,6 +281,7 @@ public sealed class GameLaunchHandoffCoordinator(
 {
     private readonly LauncherOperationLock operationLock = new(stateDirectory);
     private readonly JsonLauncherProfilesStore profilesStore = new(stateDirectory);
+    private readonly JsonGameInstallSelectionStore installSelectionStore = new(stateDirectory);
     private readonly string profileLocalData = profileLogDataRoot
         ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
@@ -409,6 +410,26 @@ public sealed class GameLaunchHandoffCoordinator(
                 Changed: false);
         }
 
+        var savedDefault = installSelectionStore.Load();
+        if (savedDefault.State == GameInstallSelectionState.Invalid)
+        {
+            return new(GameLaunchHandoffState.Blocked,
+                savedDefault.Error ?? "The Default game selection could not be read.",
+                revalidated, Changed: false);
+        }
+        var displayedDefault = requiredProfile is null ? gameDirectory : defaultGameDirectory;
+        var currentDefault = savedDefault.State == GameInstallSelectionState.Loaded
+            ? savedDefault.Selection!.GameDirectory
+            : displayedDefault;
+        if (savedDefault.State == GameInstallSelectionState.Loaded
+            && (displayedDefault is null
+                || !GameDirectoryIdentity.SameLocation(displayedDefault, currentDefault!)))
+        {
+            return new(GameLaunchHandoffState.Blocked,
+                "The Default game folder changed in another window. Review the launch button and try again.",
+                revalidated, Changed: false);
+        }
+
         var registry = profilesStore.Load();
         if (registry.State == LauncherProfilesLoadState.Invalid || registry.Snapshot is null)
         {
@@ -423,10 +444,8 @@ public sealed class GameLaunchHandoffCoordinator(
                     "The selected launch profile changed. Review the launch button and try again.",
                     revalidated, Changed: false);
             }
-            if (gameDirectory is not null &&
-                (File.Exists(Path.Combine(gameDirectory, "stfc_community_mod.profile"))
-                || registry.Snapshot.Profiles.Any(profile =>
-                    GameDirectoryIdentity.SameLocation(profile.GameDirectory, gameDirectory))))
+            if (gameDirectory is not null
+                && LauncherProfiles.IsNamedProfileFolder(gameDirectory, registry.Snapshot))
             {
                 return new(GameLaunchHandoffState.Blocked,
                     "Default points to a marked or named game folder. Select a distinct Default install.",
@@ -446,8 +465,8 @@ public sealed class GameLaunchHandoffCoordinator(
             }
             if (target != LauncherLaunchTarget.PrimeExecutable
                 || !GameDirectoryIdentity.SameLocation(gameDirectory ?? string.Empty, requiredProfile.GameDirectory)
-                || (defaultGameDirectory is not null
-                    && GameDirectoryIdentity.SameLocation(defaultGameDirectory, requiredProfile.GameDirectory)))
+                || (currentDefault is not null
+                    && GameDirectoryIdentity.SameLocation(currentDefault, requiredProfile.GameDirectory)))
             {
                 return new(GameLaunchHandoffState.Blocked,
                     "The named profile must use its own game folder, separate from Default.",

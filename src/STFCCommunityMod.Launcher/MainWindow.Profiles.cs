@@ -67,6 +67,8 @@ public partial class MainWindow
         ProfileIdentity.Visibility = Visibility.Visible;
         ProfileNameBox.Text = profile.Name;
         ProfileFolderBox.Text = profile.GameDirectory;
+        ProfileFolderBox.IsReadOnly = true;
+        BrowseProfileFolderButton.IsEnabled = false;
         ProfileKeyPanel.Visibility = Visibility.Collapsed;
         RemoveProfileButton.IsEnabled = true;
     }
@@ -80,6 +82,8 @@ public partial class MainWindow
         ProfileIdentity.Visibility = Visibility.Collapsed;
         ProfileNameBox.Text = string.Empty;
         ProfileFolderBox.Text = string.Empty;
+        ProfileFolderBox.IsReadOnly = false;
+        BrowseProfileFolderButton.IsEnabled = true;
         ProfileKeyBox.Text = string.Empty;
         ProfileKeyPanel.Visibility = Visibility.Collapsed;
         ProfileError.Text = string.Empty;

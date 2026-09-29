@@ -32,8 +32,18 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
                 // A prime.exe process that cannot be attributed safely blocks mutation.
                 return GameProcessInspectionState.Unattributable;
             }
-            if (!string.IsNullOrWhiteSpace(process.ExecutablePath)
-                && PathEquals(targetExecutable, process.ExecutablePath))
+            bool sameInstall;
+            try
+            {
+                sameInstall = !string.IsNullOrWhiteSpace(process.ExecutablePath)
+                    && PathEquals(targetExecutable, process.ExecutablePath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or ArgumentException or NotSupportedException)
+            {
+                return GameProcessInspectionState.Unattributable;
+            }
+            if (sameInstall)
             {
                 targetIsRunning = true;
             }
@@ -77,13 +87,17 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
         }
     }
 
-    internal static bool PathEquals(string left, string right) =>
-        string.Equals(
-            Path.GetFullPath(left),
-            Path.GetFullPath(right),
-            OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal);
+    internal static bool PathEquals(string left, string right)
+    {
+        var first = Path.GetFullPath(left);
+        var second = Path.GetFullPath(right);
+        if (!string.Equals(Path.GetFileName(first), Path.GetFileName(second),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            return false;
+        }
+        return GameDirectoryIdentity.SameLocation(Path.GetDirectoryName(first)!, Path.GetDirectoryName(second)!);
+    }
 
     internal sealed record GameProcessObservation(
         string? ExecutablePath,

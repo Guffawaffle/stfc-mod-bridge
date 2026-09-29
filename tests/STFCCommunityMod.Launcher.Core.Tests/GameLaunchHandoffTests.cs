@@ -46,6 +46,31 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task NamedLaunchRejectsDefaultFolderChangedInAnotherWindow()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var previousDefault = CreateGameDirectory(temporaryDirectory, "previous-default");
+        var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
+        File.WriteAllText(Path.Combine(profileGame, "stfc_community_mod.profile"), "v1:dev\n");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
+        var profile = new LauncherProfile("dev", "Secondary", profileGame);
+        var fixture = CreateFixture(temporaryDirectory);
+        var state = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
+        var profiles = new JsonLauncherProfilesStore(state);
+        var selected = LauncherProfiles.Select(
+            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, profileGame,
+                previousDefault, profile.Id), profile.Id);
+        await profiles.SaveAsync(selected, profiles.Load().Revision!);
+        new JsonGameInstallSelectionStore(state).Save(profileGame);
+
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
+            defaultGameDirectory: previousDefault);
+
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
     public async Task DefaultLaunchRejectsAMarkedInstall()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -54,6 +79,22 @@ public sealed class GameLaunchHandoffTests
         var fixture = CreateFixture(temporaryDirectory);
 
         var result = await fixture.Coordinator.LaunchAsync(game, LauncherLaunchTarget.PrimeExecutable);
+
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
+    public async Task DefaultLaunchRejectsASelectionChangedInAnotherWindow()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var displayed = CreateGameDirectory(temporaryDirectory, "displayed-default");
+        var current = CreateGameDirectory(temporaryDirectory, "current-default");
+        var fixture = CreateFixture(temporaryDirectory);
+        var state = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
+        new JsonGameInstallSelectionStore(state).Save(current);
+
+        var result = await fixture.Coordinator.LaunchAsync(displayed, LauncherLaunchTarget.PrimeExecutable);
 
         Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
         Assert.AreEqual(0, fixture.GameService.StartCount);

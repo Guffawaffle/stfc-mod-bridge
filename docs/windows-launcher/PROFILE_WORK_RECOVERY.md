@@ -18,15 +18,24 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
   metadata.
 - Profile registry saves compare a file revision under the shared operation
   lock, so a stale Bridge window cannot replace another window's changes.
-  Launch compares the account shown on the button to the refreshed registry,
-  then rechecks selection and files under the launch lock. Physical directory
-  identity keeps junction aliases from crossing Default and named installs.
+  Profile changes and launch also compare the displayed Default folder with
+  the persisted installation selection under that lock. Launch compares the
+  account shown on the button to the refreshed registry, then rechecks
+  selection and files under the launch lock. Physical directory identity
+  keeps junction aliases from crossing Default and named installs or hiding a
+  running game from marker provisioning.
+- Editing an enrolled profile changes its display name only. Its stable ID and
+  game folder stay bound; moving that folder needs a separate rebind flow.
+  A folder remains reserved for named use after its Bridge entry is removed
+  while its marker remains.
 - Named launches use their own `prime.exe`, pass the derived `-ccm` path and
   a per-ID Unity `-logFile` path as separate arguments, and never route through
   the official launcher. Default launch rejects a marked or named install.
 - Bridge now accepts only the mod's lowercase, non-device-name profile IDs.
-- An earlier focused test run and Release solution build passed locally with
-  .NET SDK 8.0.425; the current corrections need an exact-head test run.
+- The corrected branch builds with zero warnings and errors on .NET SDK
+  8.0.425. Focused profile, launch, and process-inspector tests passed (46
+  passed, 1 skipped), as did all 263 WPF UI tests. The exact-head review and
+  pinned-SDK full suite remain qualification gates.
 - `PROFILE_MARKER_DESIGN.md` and `GAME_CLIENT_UPDATE.md` capture the proposed
   bootstrap contract and the observed official-launcher update probe.
 
@@ -76,7 +85,8 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 1. Read `PROFILE_MARKER_DESIGN.md`, `GAME_CLIENT_UPDATE.md`, and this note;
    inspect the branch diff against `main` before modifying it.
 2. Complete the independent Bridge correction review and run the repository
-   test gate on the exact head. The local SDK pin is still unresolved.
+   test gate on the exact head. CI installs the pinned SDK; the local pin is
+   still unresolved.
 3. Smoke-test Bridge's Default, new-marker, and adopted-child launch routes on
    exact game artifacts with the human confirming the reached account. Do not
    claim isolation from a successful build or static export check alone.
@@ -86,11 +96,10 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 
 ## Validation caveat
 
-An earlier checkpoint passed six `LauncherProfilesTests` and a Release solution
-build. Those results predate the current marker and launch corrections; the
-exact-head test gate is pending. The full solution test attempt was not green:
-this machine has SDK 8.0.425 but `global.json` pins unavailable 8.0.424, so
+The focused profile/launch/process tests and the WPF UI suite passed on the
+correction candidate. The full solution test attempt was not green: this
+machine has SDK 8.0.425 but `global.json` pins unavailable 8.0.424, so
 child-process tests that invoke `dotnet` failed; an unrelated publish-catalog
-expectation also differs under 8.0.425. Re-run the full suite with the pinned
-SDK before PR handoff. The WPF analyzer issue found during that attempt was
-fixed, and the subsequent full build passed with zero warnings and errors.
+expectation also differs under 8.0.425. Automatic approval review blocked a
+temporary local `global.json` edit with only “blocked by policy,” so it was
+not changed. Run the full suite in CI with the pinned SDK before promotion.

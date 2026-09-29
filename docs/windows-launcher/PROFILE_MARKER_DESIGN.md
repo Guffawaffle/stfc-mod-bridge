@@ -107,7 +107,9 @@ receipt; disenrollment is a separate explicit operation.
   display settings remain outside profile isolation by user decision.
 
 Bridge-generated and adopted IDs now follow the mod's lowercase ID rules.
-Names may change; IDs do not.
+Names may change; IDs and enrolled game folders do not. Moving an enrolled
+install needs a separate rebind flow because the mod receipt includes the
+canonical installation path.
 
 ## Required validation before use
 
@@ -120,8 +122,10 @@ Names may change; IDs do not.
   launch. A copied install claiming the same ID must stop until a deliberate
   rebind or new-profile operation is designed.
 - Bridge must block marker provisioning while the target game is running or
-  process attribution is uncertain; adoption and metadata changes must not
-  rewrite an existing marker.
+  process attribution is uncertain, including when the game was started through
+  an alias of that folder. Adoption and metadata changes must not rewrite an
+  existing marker. A marked folder remains ineligible for Default after its
+  Bridge metadata is removed.
 - Update a child through the official launcher, then verify both profile
   bindings and mod/client compatibility before allowing the next launch.
 - Confirm path identity under case differences, junctions, and moved installs;

@@ -1443,7 +1443,7 @@
         </StackPanel>
         <TextBlock Text="Game folder" />
         <DockPanel Margin="0,4,0,0">
-          <Button DockPanel.Dock="Right" Margin="8,0,0,0"
+          <Button x:Name="BrowseProfileFolderButton" DockPanel.Dock="Right" Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="BrowseProfileFolderButton_Click"
                   Content="_Browse"

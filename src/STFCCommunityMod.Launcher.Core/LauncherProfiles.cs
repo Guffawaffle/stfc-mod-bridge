@@ -64,10 +64,16 @@ public static class LauncherProfiles
         ArgumentNullException.ThrowIfNull(snapshot);
         var existing = snapshot.Profiles.FirstOrDefault(profile => profile.Id == profileId)
             ?? throw new InvalidOperationException("The profile no longer exists.");
+        var validatedDirectory = ValidateGameDirectory(gameDirectory);
+        if (!GameDirectoryIdentity.SameLocation(existing.GameDirectory, validatedDirectory))
+        {
+            throw new InvalidOperationException(
+                "An enrolled profile keeps its game folder. Add or adopt a profile for another installation.");
+        }
         var updated = existing with
         {
             Name = NormalizeName(name),
-            GameDirectory = ValidateGameDirectory(gameDirectory),
+            GameDirectory = validatedDirectory,
         };
         ValidateDistinct(snapshot.Profiles.Where(profile => profile.Id != profileId), updated, defaultGameDirectory);
         return snapshot with
@@ -103,6 +109,15 @@ public static class LauncherProfiles
 
     public static string UnityLogPath(LauncherProfile profile, string localApplicationData) =>
         Path.Combine(Path.GetFullPath(localApplicationData), "STFC Community Mod", "Profiles", profile.Id, "Player.log");
+
+    public static bool IsNamedProfileFolder(string gameDirectory, LauncherProfilesSnapshot snapshot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return File.Exists(Path.Combine(gameDirectory, "stfc_community_mod.profile"))
+            || snapshot.Profiles.Any(profile =>
+                GameDirectoryIdentity.SameLocation(profile.GameDirectory, gameDirectory));
+    }
 
     internal static void ValidateStored(LauncherProfilesSnapshot snapshot)
     {
@@ -215,6 +230,7 @@ public sealed class JsonLauncherProfilesStore(
     private readonly string path = Path.Combine(Path.GetFullPath(stateDirectory), "launch-profiles.json");
     private readonly LauncherOperationLock operationLock = new(stateDirectory);
     private readonly IGameProcessInspector gameProcessInspector = gameProcessInspector ?? new SystemGameProcessInspector();
+    private readonly JsonGameInstallSelectionStore installSelectionStore = new(stateDirectory);
 
     public LauncherProfilesLoadResult Load()
     {
@@ -268,7 +284,8 @@ public sealed class JsonLauncherProfilesStore(
             throw new InvalidOperationException("Another Mod Bridge operation is active. Try the profile change again.");
         }
         var current = RequireRevision(expectedRevision);
-        var updated = LauncherProfiles.Add(current, name, gameDirectory, defaultGameDirectory);
+        var currentDefault = RequireCurrentDefault(defaultGameDirectory);
+        var updated = LauncherProfiles.Add(current, name, gameDirectory, currentDefault);
         var profile = updated.Profiles[^1];
         var capability = LauncherProfileLaunchContract.InspectCapableDll(profile.GameDirectory);
         if (!capability.IsValid)
@@ -333,12 +350,13 @@ public sealed class JsonLauncherProfilesStore(
             throw new InvalidOperationException("Another Mod Bridge operation is active. Try the profile change again.");
         }
         var current = RequireRevision(expectedRevision);
+        var currentDefault = RequireCurrentDefault(defaultGameDirectory);
         var contract = LauncherProfileLaunchContract.Inspect(gameDirectory);
         if (!contract.IsValid || contract.ProfileId is null)
         {
             throw new InvalidOperationException(contract.Message);
         }
-        var updated = LauncherProfiles.Add(current, name, gameDirectory, defaultGameDirectory, contract.ProfileId);
+        var updated = LauncherProfiles.Add(current, name, gameDirectory, currentDefault, contract.ProfileId);
         return (updated, SaveCore(updated));
     }
 
@@ -353,6 +371,7 @@ public sealed class JsonLauncherProfilesStore(
             throw new InvalidOperationException("Another Mod Bridge operation is active. Try the profile change again.");
         }
         var current = RequireRevision(expectedRevision);
+        var currentDefault = RequireCurrentDefault(defaultGameDirectory);
         var updated = LauncherProfiles.Select(current, profileId);
         if (updated.SelectedProfile is { } profile)
         {
@@ -361,16 +380,14 @@ public sealed class JsonLauncherProfilesStore(
             {
                 throw new InvalidOperationException(contract.Message);
             }
-            if (defaultGameDirectory is not null
-                && GameDirectoryIdentity.SameLocation(defaultGameDirectory, profile.GameDirectory))
+            if (currentDefault is not null
+                && GameDirectoryIdentity.SameLocation(currentDefault, profile.GameDirectory))
             {
                 throw new InvalidOperationException("The named profile must use a separate game folder from Default.");
             }
         }
-        else if (defaultGameDirectory is not null
-            && (File.Exists(Path.Combine(defaultGameDirectory, "stfc_community_mod.profile"))
-                || current.Profiles.Any(profile =>
-                    GameDirectoryIdentity.SameLocation(profile.GameDirectory, defaultGameDirectory))))
+        else if (currentDefault is not null
+            && LauncherProfiles.IsNamedProfileFolder(currentDefault, current))
         {
             throw new InvalidOperationException("Default must use an unmarked game folder distinct from named profiles.");
         }
@@ -389,6 +406,27 @@ public sealed class JsonLauncherProfilesStore(
             throw new InvalidOperationException("The profile registry changed in another window. Reopen Profiles before saving.");
         }
         return current.Snapshot!;
+    }
+
+    private string? RequireCurrentDefault(string? displayedDirectory)
+    {
+        var selection = installSelectionStore.Load();
+        if (selection.State == GameInstallSelectionState.Invalid)
+        {
+            throw new InvalidOperationException(selection.Error ?? "The Default game selection could not be read.");
+        }
+        if (selection.State == GameInstallSelectionState.Missing)
+        {
+            return displayedDirectory;
+        }
+        var currentDirectory = selection.Selection!.GameDirectory;
+        if (displayedDirectory is null
+            || !GameDirectoryIdentity.SameLocation(displayedDirectory, currentDirectory))
+        {
+            throw new InvalidOperationException(
+                "The Default game folder changed in another window. Refresh Bridge before saving profiles.");
+        }
+        return currentDirectory;
     }
 
     private string SaveCore(LauncherProfilesSnapshot snapshot)

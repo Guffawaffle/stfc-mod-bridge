@@ -24,13 +24,12 @@ public sealed class LauncherProfilesTests
     {
         using var root = new TemporaryDirectory();
         var first = MakeGame(root, "first");
-        var second = MakeGame(root, "second");
         var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"));
         var added = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Second", first, null);
         var profileId = added.Profiles.Single().Id;
         Assert.AreEqual(32, profileId.Length);
 
-        var updated = LauncherProfiles.Select(LauncherProfiles.Edit(added, profileId, "Renamed", second, null), profileId);
+        var updated = LauncherProfiles.Select(LauncherProfiles.Edit(added, profileId, "Renamed", first, null), profileId);
         await store.SaveAsync(updated, store.Load().Revision!);
         var loaded = store.Load();
 
@@ -38,7 +37,20 @@ public sealed class LauncherProfilesTests
         Assert.IsNotNull(loaded.Snapshot);
         Assert.AreEqual(profileId, loaded.Snapshot.SelectedProfileId);
         Assert.AreEqual("Renamed", loaded.Snapshot.SelectedProfile!.Name);
-        Assert.AreEqual(second, loaded.Snapshot.SelectedProfile.GameDirectory);
+        Assert.AreEqual(first, loaded.Snapshot.SelectedProfile.GameDirectory);
+    }
+
+    [TestMethod]
+    public void EnrolledProfileCannotMoveToAnotherGameFolderByEditingMetadata()
+    {
+        using var root = new TemporaryDirectory();
+        var first = MakeGame(root, "first");
+        var second = MakeGame(root, "second");
+        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Secondary", first, null);
+
+        Assert.ThrowsException<InvalidOperationException>(() =>
+            LauncherProfiles.Edit(snapshot, snapshot.Profiles.Single().Id, "Renamed", second, null));
+        Assert.AreEqual(first, snapshot.Profiles.Single().GameDirectory);
     }
 
     [TestMethod]
@@ -109,6 +121,47 @@ public sealed class LauncherProfilesTests
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             store.CreateNewAsync("Second", second, null, staleRevision));
         Assert.IsFalse(File.Exists(Path.Combine(second, "stfc_community_mod.profile")));
+    }
+
+    [TestMethod]
+    public async Task ChangedDefaultSelectionCannotBecomeANewNamedProfile()
+    {
+        using var root = new TemporaryDirectory();
+        var state = root.CreateDirectory("state");
+        var previousDefault = MakeGame(root, "previous-default");
+        var newDefault = MakeGame(root, "new-default");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(newDefault, "version.dll"));
+        var store = new JsonLauncherProfilesStore(state,
+            new FakeGameProcessInspector(GameProcessInspectionState.NotRunning));
+        var defaultStore = new JsonGameInstallSelectionStore(state);
+        defaultStore.Save(previousDefault);
+        var capturedRevision = store.Load().Revision!;
+        defaultStore.Save(newDefault);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.CreateNewAsync("Secondary", newDefault, previousDefault, capturedRevision));
+        Assert.IsFalse(File.Exists(Path.Combine(newDefault, "stfc_community_mod.profile")));
+        Assert.AreEqual(LauncherProfilesLoadState.Missing, store.Load().State);
+    }
+
+    [TestMethod]
+    public async Task ChangedDefaultSelectionCannotSelectOverlappingNamedProfile()
+    {
+        using var root = new TemporaryDirectory();
+        var state = root.CreateDirectory("state");
+        var previousDefault = MakeGame(root, "previous-default");
+        var newDefault = MakeGame(root, "new-default");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(newDefault, "version.dll"));
+        var store = new JsonLauncherProfilesStore(state,
+            new FakeGameProcessInspector(GameProcessInspectionState.NotRunning));
+        var defaultStore = new JsonGameInstallSelectionStore(state);
+        defaultStore.Save(previousDefault);
+        var created = await store.CreateNewAsync("Secondary", newDefault, previousDefault, store.Load().Revision!);
+        defaultStore.Save(newDefault);
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+            store.SelectAsync(created.Snapshot.Profiles.Single().Id, previousDefault, created.Revision));
+        Assert.IsNull(store.Load().Snapshot!.SelectedProfileId);
     }
 
     [DataTestMethod]
@@ -211,6 +264,19 @@ public sealed class LauncherProfilesTests
         Assert.IsNull(removed.SelectedProfileId);
         Assert.AreEqual(0, removed.Profiles.Count);
         Assert.IsTrue(File.Exists(config));
+    }
+
+    [TestMethod]
+    public void MarkerStillReservesDefaultFolderAfterBridgeMetadataRemoval()
+    {
+        using var root = new TemporaryDirectory();
+        var game = MakeGame(root, "marked-game");
+        File.WriteAllText(Path.Combine(game, "stfc_community_mod.profile"), "v1:dev\n");
+        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Secondary", game, null, "dev");
+
+        var removed = LauncherProfiles.Remove(snapshot, "dev");
+
+        Assert.IsTrue(LauncherProfiles.IsNamedProfileFolder(game, removed));
     }
 
     private static string MakeGame(TemporaryDirectory root, string name)
