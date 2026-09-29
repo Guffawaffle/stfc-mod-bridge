@@ -1,7 +1,8 @@
 # Named launch profiles: recovery checkpoint
 
-Status: local work-in-progress checkpoint on `feature/named-launch-profiles-225`.
-Do not treat the current Bridge UI as a working multi-account launcher.
+Status: draft PR #227 on `feature/named-launch-profiles-225`. The saved Dev
+profile launched the secondary account on the exact PR build and stayed
+responsive through a screen change. This is not yet a shipped feature.
 Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 
 ## What is implemented
@@ -36,8 +37,12 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 - Bridge now accepts only the mod's lowercase, non-device-name profile IDs.
 - The corrected branch builds with zero warnings and errors on .NET SDK
   8.0.425. Focused profile, launch, and process-inspector tests passed (48
-  passed, 1 skipped), as did all 263 WPF UI tests. The exact-head review and
-  pinned-SDK full suite remain qualification gates.
+  passed, 1 skipped), as did all 263 WPF UI tests. Independent general and
+  hostile reviews of code head `c178704` found no actionable defect. A live
+  launch from Bridge's saved Dev selection reached the secondary account and stayed
+  responsive through a screen change. The derived per-profile TOML and Unity
+  log paths were verified. The pinned-SDK full suite remains a qualification
+  gate.
 - `PROFILE_MARKER_DESIGN.md` and `GAME_CLIENT_UPDATE.md` capture the proposed
   bootstrap contract and the observed official-launcher update probe.
 
@@ -46,11 +51,10 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 - The selected Bridge profile does not affect deployment, TOML editing, or
   updater behavior. Bridge creates a marker for New, but only the mod creates
   or repairs the pending/completed enrollment receipt and encrypted bin.
-- The Windows mod science branch now reads markers and enrolls an install after
-  its profile hooks are installed; this Bridge branch has not had a live named
-  launch smoke. Neither branch is a shipped multi-account launcher.
-- The profile dialog is not a sign-in or login test. A successful `Process.Start`
-  does not prove the game reached the selected account.
+- The Windows mod draft PR #335 reads markers and enrolls an install after
+  its profile hooks are installed. Neither draft PR is a shipped multi-account
+  launcher. The live Bridge smoke covered a saved Dev profile; it did not
+  exercise every New, Adopt, or Default UI path against a game account.
 - The official-launcher path switch was a supervised local probe, not Bridge
   updater code. Updating a child while another install stays in game remains
   untested.
@@ -86,12 +90,13 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 
 1. Read `PROFILE_MARKER_DESIGN.md`, `GAME_CLIENT_UPDATE.md`, and this note;
    inspect the branch diff against `main` before modifying it.
-2. Complete the independent Bridge correction review and run the repository
-   test gate on the exact head. CI installs the pinned SDK; the local pin is
-   still unresolved.
-3. Smoke-test Bridge's Default, new-marker, and adopted-child launch routes on
-   exact game artifacts with the human confirming the reached account. Do not
-   claim isolation from a successful build or static export check alone.
+2. Land the separate release-verifier dependency repair in PR #229, update
+   this branch onto `main`, then run the full repository CI gate. The local
+   .NET SDK pin is still unresolved.
+3. Preserve the exact-build Dev launch receipt. If further manual UI smoke is
+   needed, use a disposable game install for New or Adopt and leave the main
+   account's install untouched. Do not infer account selection from
+   `Process.Start` alone.
 4. Treat official-launcher update coordination as the separate #226 slice.
    Preserve a known-old client fixture for its concurrency and recovery tests;
    do not mutate the original older install.
@@ -104,4 +109,7 @@ machine has SDK 8.0.425 but `global.json` pins unavailable 8.0.424, so
 child-process tests that invoke `dotnet` failed; an unrelated publish-catalog
 expectation also differs under 8.0.425. Automatic approval review blocked a
 temporary local `global.json` edit with only “blocked by policy,” so it was
-not changed. Run the full suite in CI with the pinned SDK before promotion.
+not changed. PR #227's first CI attempt stopped before the .NET suite because
+the release verifier's indirect grpc-go v1.82.1 dependency triggered the
+reachable GO-2026-6348 audit. PR #229 proposes a separate dependency repair.
+Run the full suite in CI with the pinned SDK before promotion.
