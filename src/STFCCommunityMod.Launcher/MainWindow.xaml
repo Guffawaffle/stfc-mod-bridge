@@ -858,11 +858,15 @@
                          automation:AutomationProperties.Name="{Binding GameSectionStatus}" />
             </StackPanel>
             <Grid Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
-              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <StackPanel Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Margin="0,0,8,0"
                         Style="{StaticResource QuietButtonStyle}"
                         Click="OpenProfilesButton_Click"
@@ -875,7 +879,11 @@
                       IsEnabled="{Binding CanChangeGameFolder}"
                       automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
               </StackPanel>
-              <controls:LaunchTargetSplitButton Grid.Row="1"
+              <TextBlock Grid.Row="1" Grid.Column="0" MaxWidth="220" Margin="0,6,12,0" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding LaunchProfileStatus}" TextWrapping="Wrap"
+                         automation:AutomationProperties.Name="{Binding LaunchProfileStatus}" />
+              <controls:LaunchTargetSplitButton Grid.Row="1" Grid.Column="1"
                                                 Margin="0,6,0,0"
                                                 HorizontalAlignment="Right"
                                                 PrimaryLabel="{Binding LaunchActionLabel}"
@@ -1350,9 +1358,11 @@
           <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
         </ScrollViewer.Resources>
         <StackPanel Margin="0,0,4,0">
-        <TextBlock Text="Named launches need a profile-capable community mod. Default launch remains available."
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   TextWrapping="Wrap" />
+         <TextBlock Text="Profiles change Launch only. Mod installation and settings still use the game folder shown on Home. Named launches need a marked install and profile-capable community mod."
+                    Foreground="{DynamicResource TextSecondaryBrush}"
+                    TextWrapping="Wrap" />
+         <TextBlock x:Name="ProfileLaunchSelection" Margin="0,8,0,0"
+                    FontWeight="SemiBold" Text="Selected for launch: Default" />
         <ListBox x:Name="ProfilesList"
                  Height="108"
                  Margin="0,12,0,0"
@@ -1388,8 +1398,18 @@
               </Setter>
             </Style>
           </ListBox.ItemContainerStyle>
-        </ListBox>
-        <WrapPanel Margin="0,8,0,0">
+         </ListBox>
+         <WrapPanel Margin="0,8,0,0">
+           <Button Style="{StaticResource QuietButtonStyle}"
+                   Click="UseSelectedProfileButton_Click"
+                   Content="_Use selected for launch"
+                   automation:AutomationProperties.Name="Use selected profile for launch" />
+           <Button Margin="8,0,0,0" Style="{StaticResource QuietButtonStyle}"
+                   Click="UseDefaultProfileButton_Click"
+                   Content="Use _Default"
+                   automation:AutomationProperties.Name="Use Default for launch" />
+         </WrapPanel>
+         <WrapPanel Margin="0,8,0,0">
           <Button Style="{StaticResource QuietButtonStyle}"
                   Click="NewProfileButton_Click"
                   Content="_New"
@@ -1416,8 +1436,8 @@
                  Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                  automation:AutomationProperties.Name="Profile name" />
         <StackPanel x:Name="ProfileKeyPanel" Margin="0,0,0,10" Visibility="Collapsed">
-          <TextBlock Text="Existing profile key" />
-          <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32"
+           <TextBlock Text="Marker key (read from game folder)" />
+           <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32" IsReadOnly="True"
                    Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                    automation:AutomationProperties.Name="Existing profile key" />
         </StackPanel>

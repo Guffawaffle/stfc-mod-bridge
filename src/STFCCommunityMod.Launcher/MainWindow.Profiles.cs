@@ -25,9 +25,20 @@ public partial class MainWindow
         }
 
         profiles = loaded.Snapshot;
-        RefreshProfilesList(null);
-        NewProfileButton_Click(sender, e);
+        RefreshProfilesList(profiles.SelectedProfileId);
+        if (profiles.SelectedProfile is null)
+        {
+            NewProfileButton_Click(sender, e);
+        }
+        UpdateProfileLaunchSelection();
         ProfilesDialog.IsOpen = true;
+    }
+
+    private void UpdateProfileLaunchSelection()
+    {
+        ProfileLaunchSelection.Text = profiles.SelectedProfile is { } selected
+            ? $"Selected for launch: {selected.Name} ({selected.Id})"
+            : "Selected for launch: Default";
     }
 
     private void RefreshProfilesList(string? selectedId)
@@ -96,6 +107,12 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) == true)
         {
             ProfileFolderBox.Text = dialog.FolderName;
+            if (isAdoptingProfile)
+            {
+                var contract = LauncherProfileLaunchContract.Inspect(dialog.FolderName);
+                ProfileKeyBox.Text = contract.ProfileId ?? string.Empty;
+                ProfileError.Text = contract.IsValid ? string.Empty : contract.Message;
+            }
         }
     }
 
@@ -105,14 +122,23 @@ public partial class MainWindow
         {
             var defaultDirectory = (DataContext as ViewModels.MainWindowViewModel)?.SelectedGameDirectory;
             var selected = ProfilesList.SelectedItem as LauncherProfile;
+            LauncherProfileContractResult? contract = isAdoptingProfile && selected is null
+                ? LauncherProfileLaunchContract.Inspect(ProfileFolderBox.Text)
+                : null;
+            if (contract is { IsValid: false })
+            {
+                throw new InvalidOperationException(contract.Message);
+            }
             var updated = selected is not null
                 ? LauncherProfiles.Edit(profiles, selected.Id, ProfileNameBox.Text, ProfileFolderBox.Text, defaultDirectory)
                 : LauncherProfiles.Add(profiles, ProfileNameBox.Text, ProfileFolderBox.Text, defaultDirectory,
-                    isAdoptingProfile ? ProfileKeyBox.Text.Trim() : null);
+                    isAdoptingProfile ? contract!.ProfileId : null);
             var id = selected?.Id ?? updated.Profiles[^1].Id;
             ProfilesStore.Save(updated);
             profiles = updated;
             RefreshProfilesList(id);
+            UpdateProfileLaunchSelection();
+            (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
             ProfileError.Text = string.Empty;
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
@@ -143,6 +169,43 @@ public partial class MainWindow
             profiles = updated;
             RefreshProfilesList(null);
             NewProfileButton_Click(sender, e);
+            UpdateProfileLaunchSelection();
+            (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            ProfileError.Text = exception.Message;
+        }
+    }
+
+    private void UseSelectedProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ProfilesList.SelectedItem is not LauncherProfile profile)
+        {
+            ProfileError.Text = "Choose a saved profile first.";
+            return;
+        }
+        var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);
+        if (!contract.IsValid)
+        {
+            ProfileError.Text = contract.Message;
+            return;
+        }
+        SaveLaunchSelection(profile.Id);
+    }
+
+    private void UseDefaultProfileButton_Click(object sender, RoutedEventArgs e) => SaveLaunchSelection(null);
+
+    private void SaveLaunchSelection(string? profileId)
+    {
+        try
+        {
+            var updated = LauncherProfiles.Select(profiles, profileId);
+            ProfilesStore.Save(updated);
+            profiles = updated;
+            UpdateProfileLaunchSelection();
+            (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
+            ProfileError.Text = string.Empty;
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
         {

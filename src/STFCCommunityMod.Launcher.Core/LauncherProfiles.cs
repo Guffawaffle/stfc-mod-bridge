@@ -166,7 +166,7 @@ public static class LauncherProfiles
     {
         if (!ValidId(candidate.Id))
         {
-            throw new ArgumentException("Profile keys must be 1 to 32 ASCII letters, digits, '-' or '_'.");
+            throw new ArgumentException("Profile keys must be 1 to 32 lowercase ASCII letters, digits, '-' or '_', excluding Windows device names.");
         }
         if (profiles.Any(profile => string.Equals(profile.Id, candidate.Id, StringComparison.OrdinalIgnoreCase)))
         {
@@ -184,9 +184,17 @@ public static class LauncherProfiles
         }
     }
 
-    private static bool ValidId(string? id) =>
-        id is { Length: >= 1 and <= 32 }
-        && id.All(ch => ch is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_');
+    public static bool ValidId(string? id)
+    {
+        if (id is not { Length: >= 1 and <= 32 }
+            || !id.All(ch => ch is >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_')
+            || id is "con" or "prn" or "aux" or "nul")
+        {
+            return false;
+        }
+        return id.Length != 4 || id[3] is < '1' or > '9'
+            || (id[..3] is not ("com" or "lpt"));
+    }
 
     private static bool PathEquals(string left, string right) =>
         string.Equals(NormalizeDirectory(left), NormalizeDirectory(right), StringComparison.OrdinalIgnoreCase);

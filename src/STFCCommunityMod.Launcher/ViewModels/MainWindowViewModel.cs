@@ -24,6 +24,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly IPackagedLauncherUpdateService packagedLauncherUpdateService;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
+    private readonly JsonLauncherProfilesStore profilesStore;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
     private readonly LauncherFeatureRemediationCandidates? featureRemediationCandidates;
     private readonly string selectedModSourceMetadata;
@@ -40,6 +41,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
     private readonly HomeActionFeedbackArbiter homeFeedback;
     private LauncherLaunchTarget selectedLaunchTarget;
+    private LauncherProfilesLoadResult profilesLoad;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private string diagnosticActionStatus = string.Empty;
     private bool isRecoveryWorkspaceTransitionPending;
@@ -74,6 +76,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
         IPackagedLauncherUpdateService packagedLauncherUpdateService,
         ILauncherUiPreferencesStore uiPreferencesStore,
+        JsonLauncherProfilesStore profilesStore,
         LauncherDistributionProviderCatalog distributionProviderCatalog,
         LauncherFeatureRemediationCandidates? featureRemediationCandidates,
         string modSourceMetadata,
@@ -87,11 +90,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.packagedLauncherUpdateService = packagedLauncherUpdateService;
         this.uiPreferencesStore = uiPreferencesStore;
+        this.profilesStore = profilesStore;
         this.distributionProviderCatalog = distributionProviderCatalog;
         this.featureRemediationCandidates = featureRemediationCandidates;
         selectedModSourceMetadata = modSourceMetadata;
         this.diagnosticFolderService = diagnosticFolderService;
         selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
+        profilesLoad = profilesStore.Load();
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
         refreshActionStatusTimer = new(DispatcherPriority.Background)
@@ -332,19 +337,36 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ? "Candidate recovery is unavailable because no reviewed release source is configured."
             : "Use Retry candidate recovery only after an interrupted reviewed download. It removes only exact launcher-owned candidate residue and does not change the game installation.";
 
-    public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
+    public string LaunchActionLabel => actionFeedback.Launch.IsWorking
+        ? "Opening…"
+        : ActiveLaunchProfile is { } profile ? $"Launch {profile.Name}" : launchPresentation.ActionLabel;
 
     public string LaunchActionAutomationName => actionFeedback.Launch.IsWorking
         ? actionFeedback.Launch.AutomationAnnouncement
-        : launchPresentation.AutomationName;
+        : ActiveLaunchProfile is { } profile
+            ? $"Launch profile {profile.Name}: {launchPresentation.AutomationName}"
+            : launchPresentation.AutomationName;
+
+    public string LaunchProfileStatus => profilesLoad.State == LauncherProfilesLoadState.Invalid
+        ? "Launch profile registry needs attention"
+        : ActiveLaunchProfile is { } profile
+            ? launchPresentation.CanExecute
+                ? $"Launch profile: {profile.Name} ({profile.Id})"
+                : $"Launch profile: {profile.Name} — {launchPresentation.Reason}"
+            : "Launch profile: Default";
+
+    private LauncherProfile? ActiveLaunchProfile => profilesLoad.Snapshot?.SelectedProfile;
+
+    private LauncherLaunchTarget EffectiveLaunchTarget => ActiveLaunchProfile is null
+        ? selectedLaunchTarget : LauncherLaunchTarget.PrimeExecutable;
 
     public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable && !actionFeedback.Mod.IsWorking;
 
-    public LauncherLaunchTarget SelectedLaunchTarget => selectedLaunchTarget;
+    public LauncherLaunchTarget SelectedLaunchTarget => EffectiveLaunchTarget;
 
-    public bool IsPrimeExecutableSelected => selectedLaunchTarget == LauncherLaunchTarget.PrimeExecutable;
+    public bool IsPrimeExecutableSelected => EffectiveLaunchTarget == LauncherLaunchTarget.PrimeExecutable;
 
-    public bool IsScopelyLauncherSelected => selectedLaunchTarget == LauncherLaunchTarget.ScopelyLauncher;
+    public bool IsScopelyLauncherSelected => EffectiveLaunchTarget == LauncherLaunchTarget.ScopelyLauncher;
 
     public string PrimeExecutableChoiceAutomationName => BuildChoiceAutomationName(
         LauncherLaunchTarget.PrimeExecutable,
@@ -358,7 +380,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string ScopelyLauncherChoiceStatus => BuildChoiceStatus(LauncherLaunchTarget.ScopelyLauncher);
 
-    public bool CanOpenLaunchTargetMenu => Enum.IsDefined(selectedLaunchTarget);
+    public bool CanOpenLaunchTargetMenu => Enum.IsDefined(selectedLaunchTarget)
+        && ActiveLaunchProfile is null && profilesLoad.State != LauncherProfilesLoadState.Invalid;
 
     public ICommand LaunchPrimaryCommand { get; }
 
@@ -682,6 +705,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             launcherReleaseClient,
             new WindowsPackagedLauncherUpdateService(),
             uiPreferencesStore,
+            new JsonLauncherProfilesStore(installLayout.StateDirectory),
             distributionProviderCatalog,
             featureRemediationCandidates,
             string.IsNullOrWhiteSpace(providerResolutionFailure)
@@ -762,6 +786,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshCore()
     {
+        profilesLoad = profilesStore.Load();
         snapshot = environmentProbe.Capture();
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
@@ -770,6 +795,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
         modPresentation = localHealth.ModManagement;
         RefreshLaunchPresentations();
+        OnPropertyChanged(nameof(LaunchProfileStatus));
+        OnPropertyChanged(nameof(SelectedLaunchTarget));
+        OnPropertyChanged(nameof(IsPrimeExecutableSelected));
+        OnPropertyChanged(nameof(IsScopelyLauncherSelected));
+        OnPropertyChanged(nameof(CanOpenLaunchTargetMenu));
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameSectionStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
@@ -966,6 +996,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
     {
+        ReloadLaunchProfile();
+        if (!launchPresentation.CanExecute)
+        {
+            return ObservableActionResult.Failed(launchPresentation.Reason);
+        }
+        var selectedProfile = ActiveLaunchProfile;
         var allowUnverifiedProxy = false;
         if (launchPresentation.RequiresUserOverride)
         {
@@ -978,10 +1014,27 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             allowUnverifiedProxy = true;
         }
 
-        var result = await gameLaunchCoordinator.LaunchAsync(
-            snapshot.SelectedGameDirectory,
-            selectedLaunchTarget,
-            allowUnverifiedProxy);
+        ReloadLaunchProfile();
+        if (!launchPresentation.CanExecute || ActiveLaunchProfile?.Id != selectedProfile?.Id
+            || !string.Equals(ActiveLaunchProfile?.GameDirectory, selectedProfile?.GameDirectory,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return ObservableActionResult.Failed("The launch profile changed or became unavailable. Review the selection and try again.");
+        }
+        var profile = ActiveLaunchProfile;
+        if (profile is not null)
+        {
+            var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);
+            if (!contract.IsValid)
+            {
+                return ObservableActionResult.Failed(contract.Message);
+            }
+        }
+
+        var result = profile is null
+            ? await gameLaunchCoordinator.LaunchAsync(
+                snapshot.SelectedGameDirectory, EffectiveLaunchTarget, allowUnverifiedProxy)
+            : await gameLaunchCoordinator.LaunchProfileAsync(profile, allowUnverifiedProxy);
         RefreshCore();
         return ProjectLaunchResult(result);
     }
@@ -1485,6 +1538,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void SelectLaunchTarget(LauncherLaunchTarget target)
     {
+        if (ActiveLaunchProfile is not null || profilesLoad.State == LauncherProfilesLoadState.Invalid)
+        {
+            return;
+        }
         if (selectedLaunchTarget == target)
         {
             return;
@@ -1517,7 +1574,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string BuildChoiceAutomationName(LauncherLaunchTarget target, string label)
     {
         var choice = GetLaunchChoice(target);
-        var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
+        var selected = EffectiveLaunchTarget == target ? ", selected" : string.Empty;
         var availability = choice.RequiresUserOverride
             ? $", available after confirmation, {choice.Reason}"
             : choice.CanExecute
@@ -1538,16 +1595,60 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshLaunchPresentations()
     {
-        primeLaunchChoice = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            LauncherLaunchTarget.PrimeExecutable,
-            localHealth.Installation);
+        var profile = ActiveLaunchProfile;
+        primeLaunchChoice = profile is null
+            ? gameLaunchCoordinator.CapturePresentation(
+                snapshot.SelectedGameDirectory,
+                LauncherLaunchTarget.PrimeExecutable,
+                localHealth.Installation)
+            : gameLaunchCoordinator.CapturePresentation(
+                profile.GameDirectory,
+                LauncherLaunchTarget.PrimeExecutable);
         scopelyLaunchChoice = gameLaunchCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             LauncherLaunchTarget.ScopelyLauncher,
             localHealth.Installation);
-        launchPresentation = GetLaunchChoice(selectedLaunchTarget);
+        if (profilesLoad.State == LauncherProfilesLoadState.Invalid)
+        {
+            var reason = profilesLoad.Error ?? "The launch profile registry could not be read.";
+            primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
+            scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
+        }
+        else if (profile is not null)
+        {
+            var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);
+            if (!contract.IsValid)
+            {
+                primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, contract.Message);
+            }
+        }
+        launchPresentation = GetLaunchChoice(EffectiveLaunchTarget);
     }
+
+    internal void ReloadLaunchProfile()
+    {
+        profilesLoad = profilesStore.Load();
+        RefreshLaunchPresentations();
+        OnPropertyChanged(nameof(LaunchProfileStatus));
+        OnPropertyChanged(nameof(SelectedLaunchTarget));
+        OnPropertyChanged(nameof(IsPrimeExecutableSelected));
+        OnPropertyChanged(nameof(IsScopelyLauncherSelected));
+        OnPropertyChanged(nameof(CanOpenLaunchTargetMenu));
+        NotifyLaunchPresentationChanged();
+        UpdateLaunchActionAvailability();
+    }
+
+    private static GameLaunchPresentation BlockProfileLaunch(GameLaunchPresentation choice, string reason) =>
+        choice with
+        {
+            Status = "Profile needs attention",
+            Tone = LauncherHomeTone.Warning,
+            CanExecute = false,
+            AutomationName = $"Launch unavailable: {reason}",
+            Reason = reason,
+            NextAction = LauncherLaunchRecoveryAction.OpenDiagnostics,
+            RequiresUserOverride = false,
+        };
 
     private GameLaunchPresentation GetLaunchChoice(LauncherLaunchTarget target) =>
         target == LauncherLaunchTarget.PrimeExecutable

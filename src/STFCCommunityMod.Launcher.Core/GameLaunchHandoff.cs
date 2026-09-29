@@ -349,6 +349,7 @@ public sealed class GameLaunchHandoffCoordinator(
         string? gameDirectory,
         LauncherLaunchTarget target,
         bool allowUnverifiedProxy = false,
+        LauncherProfile? requiredProfile = null,
         CancellationToken cancellationToken = default)
     {
         var initial = CapturePresentation(gameDirectory, target);
@@ -397,12 +398,37 @@ public sealed class GameLaunchHandoffCoordinator(
                 Changed: false);
         }
 
+        if (requiredProfile is not null)
+        {
+            if (target != LauncherLaunchTarget.PrimeExecutable
+                || !PathEquals(gameDirectory ?? string.Empty, requiredProfile.GameDirectory))
+            {
+                return new(GameLaunchHandoffState.Blocked,
+                    "The named profile launch target changed.", revalidated, Changed: false);
+            }
+            var contract = LauncherProfileLaunchContract.Inspect(requiredProfile.GameDirectory, requiredProfile.Id);
+            if (!contract.IsValid)
+            {
+                return new(GameLaunchHandoffState.Blocked, contract.Message, revalidated, Changed: false);
+            }
+        }
+
         return target == LauncherLaunchTarget.ScopelyLauncher
             ? await LaunchScopelyAsync(gameDirectory, cancellationToken)
             : await LaunchPrimeAsync(
                 gameDirectory
                     ?? throw new InvalidOperationException("The revalidated prime.exe target has no game directory."),
                 cancellationToken);
+    }
+
+    public Task<GameLaunchHandoffResult> LaunchProfileAsync(
+        LauncherProfile profile,
+        bool allowUnverifiedProxy = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return LaunchAsync(profile.GameDirectory, LauncherLaunchTarget.PrimeExecutable,
+            allowUnverifiedProxy, profile, cancellationToken);
     }
 
     private async Task<GameLaunchHandoffResult> LaunchScopelyAsync(

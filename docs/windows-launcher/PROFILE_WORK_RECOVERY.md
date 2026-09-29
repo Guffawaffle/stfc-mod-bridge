@@ -10,20 +10,27 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
   remove/select operations, folder and name validation, and derived mod config
   and Unity log paths. It stores UI metadata, not game login credentials.
 - `MainWindow.Profiles.cs` and `MainWindow.xaml` expose new/adopt/edit/remove
-  profile controls. Removal only removes the Bridge registry entry. The default
-  game folder cannot also be assigned to a named profile.
-- `LauncherProfilesTests.cs` has six focused passing tests for this model.
-  The Release solution build passes using local .NET SDK 8.0.425.
+  controls plus an explicit Default/named launch selection. Adopt reads an
+  existing marker and the profile-capable DLL export without loading the DLL.
+  Launch rechecks both and routes a named selection to its own `prime.exe`
+  folder. Removal only removes the Bridge registry entry. The default game
+  folder cannot also be assigned to a named profile.
+- Bridge now accepts only the mod's lowercase, non-device-name profile IDs.
+- Focused marker, selection, and launch tests pass locally. The Release solution
+  build passes using local .NET SDK 8.0.425 with unrelated analyzer diagnostics
+  from that SDK suppressed at the command line.
 - `PROFILE_MARKER_DESIGN.md` and `GAME_CLIENT_UPDATE.md` capture the proposed
   bootstrap contract and the observed official-launcher update probe.
 
 ## What is not implemented
 
-- The selected Bridge profile does not affect Launch, deployment, TOML, or
-  updater behavior. No `stfc_community_mod.profile` marker or enrollment
-  receipt is read or written by Bridge or the mod yet.
-- No early runtime marker selection, fail-closed hook installation, or
-  per-profile mod-file routing exists for a bare `prime.exe` launch.
+- The selected Bridge profile does not affect deployment, TOML editing, or
+  updater behavior. Bridge reads but does not create or repair a marker or
+  enrollment receipt. New profile entries are metadata until their install is
+  explicitly marked and has a profile-capable mod DLL.
+- The Windows mod science branch now reads markers and enrolls an install after
+  its profile hooks are installed; this Bridge branch has not had a live named
+  launch smoke. Neither branch is a shipped multi-account launcher.
 - Bridge does not yet set `STFC_MOD_ISOLATED_PROFILE`, `-ccm`, or `-logFile` for
   named-profile launches. The profile dialog is not a sign-in or login test.
 - The official-launcher path switch was a supervised local probe, not Bridge
@@ -43,10 +50,8 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
   account; it must not be presented as a new account. Unity `Player.log` for
   bare launches is parked; Bridge-managed launches can pass `-logFile`.
 - The marker and `STFC_MOD_ISOLATED_PROFILE` must agree when both are present.
-  Define the `-ccm` conflict rule before enabling marker launches; never load
-  another profile's TOML silently. Bridge's adopted-ID validator currently
-  accepts uppercase while the proposed marker and mod selector require
-  lowercase; reconcile them before enrollment.
+  The current mod requires `-ccm` to resolve to the derived profile TOML for a
+  marked install. Bridge and mod IDs now follow the same lowercase validator.
 - The updater probe showed that routing two official-launcher INI paths can
   update a child client and restore the original INI byte for byte. Production
   code still needs a lease, durable recovery journal, process attribution,
@@ -57,13 +62,12 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
 
 1. Read `PROFILE_MARKER_DESIGN.md`, `GAME_CLIENT_UPDATE.md`, and this note;
    inspect the branch diff against `main` before modifying it.
-2. Finalize the shared lowercase ID, canonical install-path, marker/receipt,
-   and `-ccm` precedence contracts. Keep the runtime and Bridge validators in
-   agreement. Resolve selectors before mod files or login state are accessed.
-3. Implement and test the mod bootstrap and failure paths, then Bridge marker
-   enrollment and launch wiring. Smoke-test Default, the existing linked child
-   profile, and a fresh child without copying account tokens. Do not claim
-   isolation from a successful build alone.
+2. Review the current Windows mod marker/receipt implementation against the
+   Bridge ID and export checks. Resolve any canonical path differences before
+   Bridge creates enrollment files.
+3. Smoke-test Bridge's Default and adopted-child launch routes on their exact
+   game artifacts. Then design Bridge marker creation for a fresh child without
+   copying account tokens. Do not claim isolation from a successful build alone.
 4. Treat official-launcher update coordination as the separate #226 slice.
    Preserve a known-old client fixture for its concurrency and recovery tests;
    do not mutate the original older install.

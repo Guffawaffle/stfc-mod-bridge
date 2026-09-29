@@ -55,14 +55,14 @@ public sealed class LauncherProfilesTests
     }
 
     [TestMethod]
-    public void DuplicateProfileKeyIsRejectedIgnoringWindowsCase()
+    public void UppercaseAdoptedKeyIsRejected()
     {
         using var root = new TemporaryDirectory();
         var first = MakeGame(root, "first");
         var second = MakeGame(root, "second");
         var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Josep", first, null, "josep");
 
-        Assert.ThrowsException<InvalidOperationException>(() =>
+        Assert.ThrowsException<ArgumentException>(() =>
             LauncherProfiles.Add(snapshot, "Another", second, null, "JOSEP"));
     }
 

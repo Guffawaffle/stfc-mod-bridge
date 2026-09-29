@@ -11,6 +11,29 @@ public sealed class GameLaunchHandoffTests
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
     [TestMethod]
+    public async Task NamedProfileLaunchesItsMarkedInstallAndStopsAfterMarkerDrift()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var defaultGame = CreateGameDirectory(temporaryDirectory, "default-game");
+        var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
+        var marker = Path.Combine(profileGame, "stfc_community_mod.profile");
+        File.WriteAllText(marker, "v1:dev\n");
+        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
+        var profile = new LauncherProfile("dev", "Secondary", profileGame);
+        var fixture = CreateFixture(temporaryDirectory);
+
+        var launched = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, launched.State);
+        Assert.AreEqual(profileGame, fixture.GameService.LastGameDirectory);
+        Assert.AreNotEqual(defaultGame, fixture.GameService.LastGameDirectory);
+
+        File.WriteAllText(marker, "v1:other\n");
+        var blocked = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, blocked.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
     public async Task HealthyManagedInstallLaunchesPrimeDirectly()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -536,6 +559,8 @@ public sealed class GameLaunchHandoffTests
     {
         public int StartCount { get; private set; }
 
+        public string? LastGameDirectory { get; private set; }
+
         public Action? OnStart { get; set; }
 
         public bool IsAvailable(string gameDirectory) => isAvailable;
@@ -544,6 +569,7 @@ public sealed class GameLaunchHandoffTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
+            LastGameDirectory = gameDirectory;
             OnStart?.Invoke();
             return Task.CompletedTask;
         }

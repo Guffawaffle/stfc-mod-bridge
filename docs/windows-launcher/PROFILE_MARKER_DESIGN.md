@@ -1,6 +1,8 @@
 # Per-install profile marker design
 
-Status: design proposal; no marker reader, enrollment writer, or launch wiring is implemented.
+Status: design proposal for enrollment and recovery. A Windows mod science
+branch now reads and enrolls markers; Bridge can adopt and launch an already
+marked install, but does not create markers or receipts.
 
 The goal is for an opted-in Windows game installation to select its account
 when `prime.exe` is launched directly, without requiring a per-launch batch
@@ -39,7 +41,7 @@ from `DllMain` under the Windows loader lock.
 
 The marker alone cannot distinguish an ordinary unmarked install from a child
 whose marker was lost. A separate, versioned per-install enrollment receipt
-under `%LOCALAPPDATA%\STFC Community Mod\ProfileBindings\` records the
+under `%LOCALAPPDATA%\STFC Community Mod\ProfileBindingsV2\` records the
 canonical game-install path and expected profile ID. Its filename is derived
 from a stable hash of that path. This is a small runtime contract, separate
 from Bridge's UI profile registry; a bad receipt affects only its install.
@@ -52,8 +54,9 @@ from Bridge's UI profile registry; a bad receipt affects only its install.
 | Absent or invalid | Present | Stop before login; do not fall back to Default. |
 | Valid | Mismatched or invalid | Stop before login. |
 
-Bridge-created profiles write and verify both files before being offered for
-launch. The mod can enroll a valid hand-created marker on its first launch.
+The future Bridge enrollment flow must write and verify both files before a
+new profile is offered for launch. The mod can enroll a valid hand-created
+marker on its first launch.
 Both writers need the same path canonicalization, file contract, and
 cross-process lock; interrupted writes must leave a state that stops rather
 than routes to Default. No marker and no receipt remains the ordinary mod
@@ -100,10 +103,8 @@ receipt; disenrollment is a separate explicit operation.
   it starts the game. Bare marker launches may still share Unity's default
   `Player.log`; separate Unity logs are parked, not part of the marker gate.
 
-The present Bridge profile model generates lowercase 32-character IDs, but
-its adopted-ID validator currently permits uppercase while the mod's runtime
-validator does not. The implementations must share one normalized ID contract
-before marker enrollment is enabled. Names may change; IDs do not.
+Bridge-generated and adopted IDs now follow the mod's lowercase ID rules.
+Names may change; IDs do not.
 
 ## Required validation before use
 
