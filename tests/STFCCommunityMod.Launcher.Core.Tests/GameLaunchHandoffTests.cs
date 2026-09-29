@@ -289,6 +289,27 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task ScopelyLauncherStillOpensWhenPersistedGameFolderIsUnavailable()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var fixture = CreateFixture(temporaryDirectory);
+        var state = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
+        var unavailableGame = Path.Combine(temporaryDirectory.Path, "moved-game");
+        new JsonGameInstallSelectionStore(state).Save(unavailableGame);
+
+        var presentation = fixture.Coordinator.CapturePresentation(null, LauncherLaunchTarget.ScopelyLauncher);
+        var launchTask = fixture.Coordinator.LaunchAsync(null, LauncherLaunchTarget.ScopelyLauncher);
+        await fixture.ScopelyService.WaitUntilStartedAsync();
+        fixture.ScopelyService.CompleteExit();
+        var result = await launchTask;
+
+        Assert.IsTrue(presentation.CanExecute);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.ScopelyService.StartCount);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
     public void IncompleteDeploymentBlocksScopelyWhenGameTargetIsKnown()
     {
         using var temporaryDirectory = new TemporaryDirectory();

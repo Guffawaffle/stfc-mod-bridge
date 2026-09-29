@@ -30,10 +30,12 @@ Issue #225 covers named profiles; issue #226 covers routing game-client updates.
   while its marker remains.
 - Named launches use their own `prime.exe`, pass the derived `-ccm` path and
   a per-ID Unity `-logFile` path as separate arguments, and never route through
-  the official launcher. Default launch rejects a marked or named install.
+  the official launcher. Default direct launch rejects a marked or named
+  install. The official launcher remains available when a saved game folder
+  has moved or is unavailable.
 - Bridge now accepts only the mod's lowercase, non-device-name profile IDs.
 - The corrected branch builds with zero warnings and errors on .NET SDK
-  8.0.425. Focused profile, launch, and process-inspector tests passed (46
+  8.0.425. Focused profile, launch, and process-inspector tests passed (47
   passed, 1 skipped), as did all 263 WPF UI tests. The exact-head review and
   pinned-SDK full suite remain qualification gates.
 - `PROFILE_MARKER_DESIGN.md` and `GAME_CLIENT_UPDATE.md` capture the proposed

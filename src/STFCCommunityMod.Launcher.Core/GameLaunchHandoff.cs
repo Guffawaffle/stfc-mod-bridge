@@ -421,7 +421,10 @@ public sealed class GameLaunchHandoffCoordinator(
         var currentDefault = savedDefault.State == GameInstallSelectionState.Loaded
             ? savedDefault.Selection!.GameDirectory
             : displayedDefault;
+        var officialLauncherWithoutSelectedGame = target == LauncherLaunchTarget.ScopelyLauncher
+            && requiredProfile is null && gameDirectory is null;
         if (savedDefault.State == GameInstallSelectionState.Loaded
+            && !officialLauncherWithoutSelectedGame
             && (displayedDefault is null
                 || !GameDirectoryIdentity.SameLocation(displayedDefault, currentDefault!)))
         {
