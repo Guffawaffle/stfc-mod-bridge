@@ -23,7 +23,10 @@ Fleet Command community-mod distributions.
 Mod Bridge is a .NET 8 WPF application for Windows x64. It discovers and
 validates an STFC installation, opens the Scopely launcher, manages verified
 mod artifacts transactionally, edits configuration through staged Save/Discard
-sessions, and provides a destination-oriented Data Sync workspace.
+sessions, and provides a destination-oriented Data Sync workspace. The Profiles
+MVP consumes the shared native catalog for named accounts, profile-owned settings,
+archive/restore and direct game client update/recovery. Its live qualification
+is still in progress.
 
 ## Repository boundary
 
@@ -94,7 +97,11 @@ dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
 
 Double-click `run-launcher.cmd` to build and start the exact Release executable
 from this checkout. A failed build remains visible and never launches stale
-output.
+output. The entrypoint builds the native component from the immutable source
+pin with XMake 3.0.8, embeds its exact SHA-256 and copies it beside the launcher.
+For an explicit development source override, run
+`./scripts/run-launcher.ps1 -ProfilesSourceDirectory D:\dev\stfc-profiles`;
+the native build receipt records its revision and dirty state.
 
 `scripts/smoke-settings.ps1` is an interactive UI Automation gate: it launches
 and focuses Mod Bridge to exercise keyboard behavior. Local runs must opt in
@@ -110,6 +117,14 @@ profile only for an explicitly supplied game directory. See the broader
 ```powershell
 ./scripts/publish.ps1
 ```
+
+Packaging requires XMake 3.0.8 and builds the shared native component from
+`dependencies/stfc-profiles-source-pin.json`. `-ProfilesSourceDirectory` is an
+explicit local development override; `-ProfilesNativePath` accepts an already
+built or signed canonical DLL for the paired release build. Missing or mismatched
+native bytes fail explicitly. ZIP and MSIX inspection checks the exact native
+hash embedded in the Bridge build. Both payload forms include the full
+`LICENSE.txt` and generated `THIRD-PARTY-NOTICES.md`.
 
 Package output is written under `artifacts/win-x64`. The `.appinstaller`
 descriptor is the user-facing install artifact. Its signed MSIX is hosted at an

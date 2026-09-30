@@ -5,7 +5,12 @@
     <AssemblyName>STFCCommunityMod.Launcher.Core</AssemblyName>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <ProfilesNativeSha256 Condition="'$(ProfilesNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ProfilesNativeSha256>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="ProfilesNativeSha256" Value="$(ProfilesNativeSha256)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.29" />

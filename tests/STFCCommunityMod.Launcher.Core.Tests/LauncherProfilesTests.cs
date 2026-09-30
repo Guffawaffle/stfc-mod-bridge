@@ -1,241 +1,175 @@
-using STFCCommunityMod.Launcher.Core;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
 public sealed class LauncherProfilesTests
 {
-    [TestMethod]
-    public void AdoptExistingProfilePreservesKeyAndDerivesSeparatePaths()
-    {
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "josep");
-        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Josep", game, null, "josep");
-        var profile = snapshot.Profiles.Single();
+    private static readonly string[] SelectionOperations = ["paths", "list"];
+    private const string ProfileId = "0123456789abcdef0123456789abcdef";
 
-        Assert.AreEqual("josep", profile.Id);
-        Assert.AreEqual(Path.Combine(game, "stfc-mod", "josep", "josep.toml"), LauncherProfiles.GameConfigPath(profile));
-        Assert.AreEqual(Path.Combine(root.Path, "STFC Community Mod", "Profiles", "josep", "Player.log"),
-            LauncherProfiles.UnityLogPath(profile, root.Path));
+    [TestMethod]
+    public async Task SelectionStoresOnlyUiIdentityAndNeverCopiesCatalogMetadata()
+    {
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await store.SelectAsync(ProfileId);
+        var snapshot = store.Load().Snapshot!;
+        Assert.AreEqual(ProfileId, snapshot.SelectedProfileId);
+        Assert.AreEqual("Science", snapshot.SelectedProfile!.Name);
+        var files = System.IO.Directory.GetFiles(temporary.Path);
+        Assert.AreEqual(1, files.Count(path => path.EndsWith(".json", StringComparison.Ordinal)));
+        var selection = File.ReadAllText(Path.Combine(temporary.Path, "profile-ui-selection.json"));
+        StringAssert.Contains(selection, ProfileId);
+        Assert.IsFalse(selection.Contains("Science", StringComparison.Ordinal));
+        Assert.IsFalse(selection.Contains("gameDirectory", StringComparison.Ordinal));
+        CollectionAssert.AreEqual(SelectionOperations, transport.Requests.Select(request => request.Operation).ToArray());
     }
 
     [TestMethod]
-    public async Task NewProfileGetsStableKeyAcrossEditAndRoundTrip()
+    public async Task CatalogRenameIsImmediatelyVisibleThroughImmutableSelection()
     {
-        using var root = new TemporaryDirectory();
-        var first = MakeGame(root, "first");
-        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"));
-        var added = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Second", first, null);
-        var profileId = added.Profiles.Single().Id;
-        Assert.AreEqual(32, profileId.Length);
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await store.SelectAsync(ProfileId);
+        transport.Profile = transport.Profile with { Name = "Renamed", Revision = "second" };
+        Assert.AreEqual("Renamed", store.Load().Snapshot!.SelectedProfile!.Name);
+        Assert.AreEqual(ProfileId, store.LoadSelectedId());
+    }
 
-        var updated = LauncherProfiles.Select(LauncherProfiles.Edit(added, profileId, "Renamed", first, null), profileId);
-        await store.SaveAsync(updated, store.Load().Revision!);
-        var loaded = store.Load();
+    [TestMethod]
+    public async Task ArchivedSelectionNeverBecomesDefaultWithoutExplicitSelection()
+    {
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await store.SelectAsync(ProfileId);
+        transport.Profile = transport.Profile with { State = "archived" };
+        var active = store.Load();
+        Assert.AreEqual(ProfileId, active.Snapshot!.SelectedProfileId);
+        Assert.IsNull(active.Snapshot.SelectedProfile);
+        StringAssert.Contains(active.Error!, "Restore");
+        Assert.AreEqual(ProfileId, store.Load(archived: true).Snapshot!.Profiles.Single().Id);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => store.SelectAsync(ProfileId));
+        await store.SelectAsync(null);
+        Assert.IsNull(store.LoadSelectedId());
+    }
 
+    [TestMethod]
+    public void CatalogReportsInvalidDirectoriesAlongsideValidProfiles()
+    {
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile())
+        {
+            Issues = [new("invalid", "profiles/invalid", "invalid_metadata", "Unsupported metadata")],
+        };
+        var loaded = new NativeLauncherProfilesStore(temporary.Path, transport).Load();
         Assert.AreEqual(LauncherProfilesLoadState.Loaded, loaded.State);
-        Assert.IsNotNull(loaded.Snapshot);
-        Assert.AreEqual(profileId, loaded.Snapshot.SelectedProfileId);
-        Assert.AreEqual("Renamed", loaded.Snapshot.SelectedProfile!.Name);
-        Assert.AreEqual(first, loaded.Snapshot.SelectedProfile.GameDirectory);
+        Assert.AreEqual(1, loaded.Snapshot!.Profiles.Count);
+        Assert.AreEqual("invalid_metadata", loaded.Snapshot.Issues!.Single().Code);
     }
 
     [TestMethod]
-    public void ProfileIdIsStableWhenItsGameFolderChanges()
+    public async Task ArchiveAndRestoreUseSharedOperationsWithExpectedRevision()
     {
-        using var root = new TemporaryDirectory();
-        var first = MakeGame(root, "first");
-        var second = MakeGame(root, "second");
-        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Secondary", first, null);
-
-        var updated = LauncherProfiles.Edit(snapshot, snapshot.Profiles.Single().Id, "Renamed", second, null);
-        Assert.AreEqual(snapshot.Profiles.Single().Id, updated.Profiles.Single().Id);
-        Assert.AreEqual(second, updated.Profiles.Single().GameDirectory);
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport, temporary.Path);
+        await store.ArchiveAsync(transport.Profile);
+        var request = transport.Requests.Single();
+        Assert.AreEqual("archive", request.Operation);
+        Assert.AreEqual(ProfileId, request.Id);
+        Assert.AreEqual("first", request.ExpectedRevision);
+        Assert.AreEqual(temporary.Path, request.Root);
+        await store.RestoreAsync(transport.Profile);
+        Assert.AreEqual("restore", transport.Requests.Last().Operation);
+        Assert.IsFalse(System.IO.Directory.Exists(Path.Combine(temporary.Path, "profiles")));
     }
 
     [TestMethod]
-    public void DifferentProfilesCanRecordTheSameGameFolder()
+    public async Task ClearingThePreferredInstallationIsAnExplicitEmptyNativeField()
     {
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "game");
-        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "One", game, null);
-
-        var shared = LauncherProfiles.Add(snapshot, "Two", game, game);
-        Assert.AreEqual(2, shared.Profiles.Count);
-        Assert.AreNotEqual(shared.Profiles[0].Id, shared.Profiles[1].Id);
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await store.EditAsync(transport.Profile, "Science", "");
+        Assert.AreEqual(string.Empty, transport.Requests.Single().GameDirectory);
     }
 
     [TestMethod]
-    public async Task StaleProfileRegistryRevisionCannotOverwriteAnotherWindow()
+    public async Task StaleSharedMutationFailsAndDoesNotWriteBridgeMetadata()
     {
-        using var root = new TemporaryDirectory();
-        var state = root.CreateDirectory("state");
-        var first = MakeGame(root, "first");
-        var second = MakeGame(root, "second");
-        var store = new JsonLauncherProfilesStore(state);
-        var windowA = store.Load();
-        var windowB = store.Load();
-
-        var savedA = LauncherProfiles.Add(windowA.Snapshot!, "First", first, null);
-        await store.SaveAsync(savedA, windowA.Revision!);
-        var savedB = LauncherProfiles.Add(windowB.Snapshot!, "Second", second, null);
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            store.SaveAsync(savedB, windowB.Revision!));
-
-        Assert.AreEqual("First", store.Load().Snapshot!.Profiles.Single().Name);
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile()) { Failure = new("stale_revision", "Profile changed") };
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        var exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => store.EditAsync(transport.Profile, "New name", ""));
+        StringAssert.Contains(exception.Message, "stale_revision");
+        Assert.AreEqual(0, System.IO.Directory.GetFiles(temporary.Path).Length);
     }
 
     [TestMethod]
-    public async Task NewProfileGetsARegistryKeyBeforeItCanBeSelected()
+    public async Task CatalogFailurePreservesNamedSelectionWhileDefaultSelectionNeedsNoNativeComponent()
     {
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "new-game");
-        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"));
-
-        var created = await store.CreateNewAsync("Secondary", game, null, store.Load().Revision!);
-        var profile = created.Snapshot.Profiles.Single();
-
-        var selected = await store.SelectAsync(profile.Id, null, created.Revision);
-        Assert.AreEqual(profile.Id, selected.Snapshot.SelectedProfileId);
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await store.SelectAsync(ProfileId);
+        transport.Failure = new("unavailable", "Catalog is unavailable");
+        var loaded = store.Load();
+        Assert.AreEqual(LauncherProfilesLoadState.Invalid, loaded.State);
+        Assert.AreEqual(ProfileId, loaded.Snapshot!.SelectedProfileId);
+        await store.SelectAsync(null);
+        Assert.IsNull(store.LoadSelectedId());
     }
 
     [TestMethod]
-    public async Task StaleCreationDoesNotReplaceTheRegistry()
+    public void CorruptUiSelectionIsNotInterpretedAsDefault()
     {
-        using var root = new TemporaryDirectory();
-        var first = MakeGame(root, "first");
-        var second = MakeGame(root, "second");
-        var store = new JsonLauncherProfilesStore(root.CreateDirectory("state"));
-        var staleRevision = store.Load().Revision!;
-        await store.CreateNewAsync("First", first, null, staleRevision);
-
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            store.CreateNewAsync("Second", second, null, staleRevision));
+        using var temporary = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(temporary.Path, "profile-ui-selection.json"), "{broken");
+        var loaded = new NativeLauncherProfilesStore(temporary.Path, new RecordingCatalog(Profile())).Load();
+        Assert.AreEqual(LauncherProfilesLoadState.Invalid, loaded.State);
+        Assert.IsNull(loaded.Snapshot);
+        var repair = new NativeLauncherProfilesStore(temporary.Path, new RecordingCatalog(Profile()))
+            .Load(allowSelectionRepair: true);
+        Assert.AreEqual(LauncherProfilesLoadState.Loaded, repair.State);
+        Assert.AreEqual(1, repair.Snapshot!.Profiles.Count);
+        StringAssert.Contains(repair.Error!, "needs repair");
+        Assert.AreEqual("{broken", File.ReadAllText(Path.Combine(temporary.Path, "profile-ui-selection.json")));
     }
 
     [TestMethod]
-    public async Task ChangedDefaultSelectionCannotBecomeANewNamedProfile()
+    public void NativeComponentRequiresExactCompiledBytePairingBeforeLoading()
     {
-        using var root = new TemporaryDirectory();
-        var state = root.CreateDirectory("state");
-        var previousDefault = MakeGame(root, "previous-default");
-        var newDefault = MakeGame(root, "new-default");
-        var store = new JsonLauncherProfilesStore(state);
-        var defaultStore = new JsonGameInstallSelectionStore(state);
-        defaultStore.Save(previousDefault);
-        var capturedRevision = store.Load().Revision!;
-        defaultStore.Save(newDefault);
-
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            store.CreateNewAsync("Secondary", newDefault, previousDefault, capturedRevision));
-        Assert.AreEqual(LauncherProfilesLoadState.Missing, store.Load().State);
+        if (!OperatingSystem.IsWindows()) return;
+        using var temporary = new TemporaryDirectory();
+        var path = Path.Combine(temporary.Path, NativeProfileCatalogTransport.LibraryName);
+        File.WriteAllBytes(path, [1, 2, 3]);
+        var transport = new NativeProfileCatalogTransport(path, new string('a', 64));
+        Assert.ThrowsException<InvalidDataException>(() => transport.Request(new("list")));
+        var unqualified = new NativeProfileCatalogTransport(path, new string('0', 64));
+        Assert.ThrowsException<InvalidOperationException>(() => unqualified.Request(new("list")));
     }
 
-    [TestMethod]
-    public async Task ChangedDefaultSelectionCannotSelectOverlappingNamedProfile()
-    {
-        using var root = new TemporaryDirectory();
-        var state = root.CreateDirectory("state");
-        var previousDefault = MakeGame(root, "previous-default");
-        var newDefault = MakeGame(root, "new-default");
-        var store = new JsonLauncherProfilesStore(state);
-        var defaultStore = new JsonGameInstallSelectionStore(state);
-        defaultStore.Save(previousDefault);
-        var created = await store.CreateNewAsync("Secondary", newDefault, previousDefault, store.Load().Revision!);
-        defaultStore.Save(newDefault);
+    private static LauncherProfile Profile() => new(ProfileId, "Science", "", "catalog/profiles/" + ProfileId,
+        "catalog/profiles/" + ProfileId + "/config.toml", "catalog/profiles/" + ProfileId + "/logs/Player.log", "first");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            store.SelectAsync(created.Snapshot.Profiles.Single().Id, previousDefault, created.Revision));
-        Assert.IsNull(store.Load().Snapshot!.SelectedProfileId);
-    }
-
-    [TestMethod]
-    public void JunctionAliasCanBeRecordedWithoutChangingProfileIdentity()
+    private sealed class RecordingCatalog(LauncherProfile profile) : IProfileCatalogTransport
     {
-        if (!OperatingSystem.IsWindows())
+        public LauncherProfile Profile { get; set; } = profile;
+        public ProfileCatalogError? Failure { get; set; }
+        public IReadOnlyList<ProfileCatalogIssue> Issues { get; set; } = [];
+        public List<ProfileCatalogRequest> Requests { get; } = [];
+        public ProfileCatalogResponse Request(ProfileCatalogRequest request)
         {
-            return;
+            Requests.Add(request);
+            if (Failure is not null) return new(false, Error: Failure);
+            return new(true, Profiles: request.Archived == (Profile.State == "archived") ? [Profile] : [],
+                Profile: Profile, Issues: Issues, Revision: "catalog-first");
         }
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "game");
-        var alias = Path.Combine(root.Path, "alias");
-        try
-        {
-            Directory.CreateSymbolicLink(alias, game);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            Assert.Inconclusive($"Windows could not create a directory alias for this test: {exception.Message}");
-        }
-        Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, alias));
-        var tracked = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Alias", alias, game, "dev");
-        Assert.AreEqual("dev", tracked.Profiles.Single().Id);
     }
-
-    [TestMethod]
-    public void ExtendedPathAliasHasTheSamePhysicalIdentity()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "game");
-        var extended = @"\\?\" + game;
-
-        Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, extended));
-    }
-
-    [TestMethod]
-    public void UppercaseAdoptedKeyIsRejected()
-    {
-        using var root = new TemporaryDirectory();
-        var first = MakeGame(root, "first");
-        var second = MakeGame(root, "second");
-        var snapshot = LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Josep", first, null, "josep");
-
-        Assert.ThrowsException<ArgumentException>(() =>
-            LauncherProfiles.Add(snapshot, "Another", second, null, "JOSEP"));
-    }
-
-    [TestMethod]
-    public async Task InvalidRegistryDoesNotGetReplacedBySaveAttempt()
-    {
-        using var root = new TemporaryDirectory();
-        var state = root.CreateDirectory("state");
-        var path = Path.Combine(state, "launch-profiles.json");
-        File.WriteAllText(path, "{ broken json");
-        var store = new JsonLauncherProfilesStore(state);
-
-        Assert.AreEqual(LauncherProfilesLoadState.Invalid, store.Load().State);
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
-            store.SaveAsync(LauncherProfilesSnapshot.Empty, "missing"));
-        Assert.AreEqual("{ broken json", File.ReadAllText(path));
-    }
-
-    [TestMethod]
-    public void RemovingProfileOnlyRemovesRegistryEntry()
-    {
-        using var root = new TemporaryDirectory();
-        var game = MakeGame(root, "game");
-        var config = Path.Combine(game, "stfc-mod", "josep", "josep.toml");
-        Directory.CreateDirectory(Path.GetDirectoryName(config)!);
-        File.WriteAllText(config, "kept = true");
-        var snapshot = LauncherProfiles.Select(
-            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, "Josep", game, null, "josep"), "josep");
-
-        var removed = LauncherProfiles.Remove(snapshot, "josep");
-
-        Assert.IsNull(removed.SelectedProfileId);
-        Assert.AreEqual(0, removed.Profiles.Count);
-        Assert.IsTrue(File.Exists(config));
-    }
-
-    private static string MakeGame(TemporaryDirectory root, string name)
-    {
-        var directory = root.CreateDirectory(name);
-        TemporaryDirectory.CreateFile(directory, "prime.exe");
-        return directory;
-    }
-
 }

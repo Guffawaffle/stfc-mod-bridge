@@ -38,6 +38,7 @@ try {
   & dotnet tool run sbom-tool -- generate `
     -b $artifactRoot `
     -bc $repositoryRoot `
+    -cd "--DirectoryExclusionList **/artifacts/** --DirectoryExclusionList **/.smartergpt/** --DirectoryExclusionList **/.git/** --DirectoryExclusionList **/bin/**" `
     -m $manifestRoot `
     -pn "STFC Mod Bridge" `
     -pv $Version `
@@ -59,10 +60,20 @@ try {
   if ($sbom.spdxVersion -ne "SPDX-2.2" -or $sbom.name -ne "STFC Mod Bridge $Version") {
     throw "Generated SBOM did not satisfy the reviewed SPDX package identity."
   }
+  # Component discovery must not add historical SBOMs as out-of-payload file subjects.
+  $expectedFiles = @(Get-ChildItem -LiteralPath $artifactRoot -Recurse -File | ForEach-Object {
+      "./" + [IO.Path]::GetRelativePath($artifactRoot, $_.FullName).Replace('\', '/')
+    } | Sort-Object)
+  $observedFiles = @($sbom.files | ForEach-Object { $_.fileName } | Sort-Object)
+  if ($observedFiles.Count -ne ($observedFiles | Sort-Object -Unique).Count `
+      -or [string]::Join("`n", $observedFiles) -cne [string]::Join("`n", $expectedFiles)) {
+    throw "Payload SBOM file subjects do not exactly match the published artifact directory."
+  }
   foreach ($name in @(
       "STFCModBridge.exe",
       "STFCModBridge.ReleaseVerifier.exe",
-      "STFCModBridge.Updater.exe")) {
+      "STFCModBridge.Updater.exe",
+      "stfc-profiles-native.dll")) {
     $path = Join-Path $artifactRoot $name
     $entry = @($sbom.files | Where-Object { $_.fileName -eq "./$name" })
     $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -73,6 +84,9 @@ try {
       throw "Payload SBOM is not bound to the exact $name bytes."
     }
   }
+  & (Join-Path $PSScriptRoot "add-profiles-native-sbom-inventory.ps1") `
+    -SbomPath $outputFile `
+    -ProfilesBuildReceiptPath (Join-Path (Split-Path -Parent $artifactRoot) "profiles-native/build-receipt.json")
 } finally {
   if (Test-Path -LiteralPath $manifestRoot) {
     Remove-Item -LiteralPath $manifestRoot -Recurse -Force

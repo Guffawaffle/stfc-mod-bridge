@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "repository": "Guffawaffle/stfc-profiles",
+  "revision": "6b15a352c445efb817634e8ef6be3de4d40818f8",
+  "xmakeVersion": "3.0.8",
+  "nativeDependencies": [
+    {
+      "id": "nlohmann_json",
+      "version": "3.12.0",
+      "license": "MIT"
+    },
+    {
+      "id": "libarchive",
+      "version": "3.8.9",
+      "license": "BSD-2-Clause AND BSD-3-Clause AND CC0-1.0"
+    },
+    {
+      "id": "xz",
+      "version": "5.8.3",
+      "license": "0BSD"
+    },
+    {
+      "id": "zlib",
+      "version": "1.3.2",
+      "license": "Zlib"
+    }
+  ],
+  "sourceArchiveSha256": "7ac8a6d6494f766b287c1ff031ce4348290a619b34ca353caf52b50a7c4488c4"
+}

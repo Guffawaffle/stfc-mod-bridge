@@ -267,7 +267,8 @@ $manifest = [ordered]@{
       -SignedFiles @(
         "STFCModBridge.exe",
         "STFCModBridge.ReleaseVerifier.exe",
-        "STFCModBridge.Updater.exe")
+        "STFCModBridge.Updater.exe",
+        "stfc-profiles-native.dll")
     New-Artifact `
       -Id "windows-mod-bridge-msix-x64" `
       -Kind "windows-mod-bridge-package" `

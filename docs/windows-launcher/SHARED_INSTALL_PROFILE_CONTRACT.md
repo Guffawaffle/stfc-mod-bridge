@@ -29,10 +29,22 @@ session and exclusion shared with launch admission whose identity survives the
 move. Permanent deletion is a separate explicit operation. macOS uses its native
 Application Support root under the same shared contract.
 
-Bridge's current `launch-profiles.json`, earlier configuration/log paths and
-process-wide direct-launch exclusion remain implementation checkpoints. They
-do not implement the accepted catalog or concurrent named-session admission.
-The shared catalog, CLI and Bridge consumption remain open work.
+Bridge consumes the packaged `stfc-profiles-native.dll` through its versioned
+UTF-8 JSON C ABI. The shared native catalog owns enumeration, create/edit,
+archive/restore, live sessions and named launch. Bridge stores only an immutable
+selected ID in `profile-ui-selection.json`; invalid or archived selection stays
+explicitly unavailable until the user restores it or chooses Default. Duplicate
+display names remain distinguishable by their IDs. There is no private Bridge
+catalog, marker reader, adoption path or migration.
+
+Settings and Data Sync bind to the selected profile's `config.toml`, with its
+configuration target visibly labeled. A missing configuration starts an empty
+staged draft and is created only on Save. Native profile data leases keep the
+active directory stable through each read/save. Verified DPAPI configuration
+backups live inside that same profile's `backups/configuration` directory and
+move with archive/restore. Account credentials are never copied from Default.
+The Home installation target remains independent of a profile's preferred
+installation.
 
 The profile library accepts explicit ID and store lifecycle inputs from its host.
 `New`, `Resume` and `Existing` remain explicit modes; missing established stores
@@ -41,12 +53,24 @@ by the runtime, independent of whether Bridge stays open.
 
 ## Launch forms
 
-Bridge named launches use `prime.exe -stfc-profile <id>` with separate argv tokens
-for the ID, config path and Unity log path. The CLI/shortcut coordinator should
-bind immutable IDs; display names are presentation. Missing/invalid/duplicate IDs
-and conflicting lifecycle requests reject. Isolation-ready and logged-in are
-separate observations. A launched process is not evidence of account correctness.
-Runtime integration of these arguments is still being implemented.
+Bridge invokes the shared native launch operation with the immutable ID and
+exact installation after its existing provider/artifact preflight. The native
+coordinator owns reservation, spawn and isolation-readiness observation. Bridge
+reports a successful named launch only when the native response includes a
+process ID and `readiness: ready`. A spawned process whose readiness fails is
+reported explicitly and is not silently terminated or retried.
+
+The CLI and shortcuts bind immutable IDs; names are presentation. Missing,
+invalid or duplicate active IDs and conflicting lifecycle requests reject.
+Isolation-ready and logged-in remain separate observations. A launched process
+alone is not evidence of account correctness.
+
+Ordinary Bridge launches keep ordinary account preferences and direct
+`Process.Start` behavior. They acquire shared native installation access before
+spawn and retain it through the exact child lifetime. Both runtime distributions
+also hold installation access for their entire game lifetime. Updating requires
+exclusive access; an unfinished game-update journal blocks launch admission.
+Mod install/update/removal retain their existing global stopped-game checks.
 
 ## Repository and distribution
 
@@ -67,17 +91,47 @@ GPL version 3 text and source provenance are retained. The initial marker
 extraction at `271fb770bd2fea61bd8e258ce545efb2f2991ddc` is historical; consume the
 subsequent marker-free revision, not that initial snapshot.
 
+## Game client integration
+
+The shared native installation operations own status, official update checks,
+full-image update application and recovery. Bridge's Game client dialog shows
+its exact Home installation target, installed/available versions and actual
+native phase/byte progress. The checked target version is bound into Update.
+A profile's preferred installation never silently changes this Home target.
+Readiness to update and mod compatibility are separate evidence.
+
+All sessions using the target must stop. Bridge holds its operation lease
+through a running native mutation, preserves staged Save/Discard boundaries,
+and retains the game update journal/recovery evidence through the shared engine.
+The [shared installation/update contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/GAME_INSTALLATION_CONTRACT.md)
+is canonical for payload validation, commit, recovery and retained evidence.
+
 ## Remaining qualification
 
-1. Implement the shared catalog, neutral paths, metadata, archive/restore and CLI.
-   Replace Bridge's private catalog and use common lifecycle operations.
-2. Integrate the explicit host API and startup ordering in the mod and standalone
-   bootstrap. Validate the exact client hooks on each platform.
-3. Prove two correct accounts from the same canonical executable, reverse restart
-   order, per-profile writer exclusion, archive/restore exclusion and sign-in callbacks.
-4. Define readiness and atomic installation/session admission, then coordinate
-   install/update/removal across ordinary and named sessions.
-5. Qualify macOS protected storage, loading and architecture coverage separately.
+The adapters and shared operations are implemented in the current development
+worktree. Required full managed tests, all three real native ABI cases in the
+ordinary desktop namespace, publish, unsigned package pairing inspection and
+pre-signing audit/scan/SBOM checks pass. The dependency uses signed immutable
+Profiles source `6b15a352c445efb817634e8ef6be3de4d40818f8`; exact archive/native
+hashes and command receipts are recorded in `PROFILE_WORK_RECOVERY.md` and
+`artifacts/`. Independent Bridge review remains bound to the committed candidate;
+these development artifacts are unsigned and use the base commit as build
+metadata, so they are not an exact-head signed release candidate.
 
-There are no player deployments of this feature. Live game files, accounts and
-stores have not been changed by the source removal.
+A Known Folder string and package identity query alone cannot establish shared
+physical storage. The synthetic package gate must verify opened metadata/config
+handles resolve to the neutral OS-user catalog, then prove visibility and
+profile/installation exclusion between standalone and MSIX processes. Windows
+10 uses the documented disabled filesystem-virtualization fallback; Windows 11
+uses only the exact `STFC Profiles` exclusion. Private Bridge UI state keeps its
+existing path and ownership, without copying or migration. Actual packaged
+cross-host execution remains unverified until the clean-host gate passes.
+
+The shared producer reports two healthy standalone sessions from one dev
+executable with unique encrypted stores, stopped-session exclusion and a
+verified 221-to-267 update receipt. Live qualification still must prove account
+identity, reverse restart persistence, archive/restore retention and browser
+callbacks, including the Bridge path. Native Windows and both macOS architecture
+CI lanes pass the pinned source; macOS live protected storage/loading/updater
+behavior needs separate runtime evidence. No complete shared-install player
+workflow is qualified by Bridge's unit tests or package inspection.

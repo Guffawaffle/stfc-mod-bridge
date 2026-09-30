@@ -856,6 +856,10 @@
                          Text="{Binding GameSectionStatus}"
                          TextWrapping="Wrap"
                          automation:AutomationProperties.Name="{Binding GameSectionStatus}" />
+              <TextBlock Margin="0,5,0,0" FontSize="12"
+                         Foreground="{DynamicResource TextSecondaryBrush}"
+                         Text="{Binding GameClient.Status}" TextWrapping="Wrap"
+                         automation:AutomationProperties.Name="{Binding GameClient.Status}" />
             </StackPanel>
             <Grid Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
               <Grid.ColumnDefinitions>
@@ -863,6 +867,7 @@
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
               <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
@@ -899,6 +904,10 @@
                                                 ScopelyChoiceStatus="{Binding ScopelyLauncherChoiceStatus}"
                                                 SelectPrimeCommand="{Binding SelectPrimeExecutableCommand}"
                                                 SelectScopelyCommand="{Binding SelectScopelyLauncherCommand}" />
+              <Button Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" HorizontalAlignment="Right"
+                      Style="{StaticResource QuietButtonStyle}"
+                      Click="OpenGameClientButton_Click" Content="_Game client"
+                      automation:AutomationProperties.Name="Check, update or recover the selected game client" />
             </Grid>
           </Grid>
 
@@ -1358,11 +1367,16 @@
           <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
         </ScrollViewer.Resources>
         <StackPanel Margin="0,0,4,0">
-         <TextBlock Text="Profiles change Launch only. Mod installation and settings still use the game folder shown on Home. Named launches require a runtime supporting explicit profile requests. Saving a profile changes only Bridge metadata."
+         <TextBlock Text="Profiles are shared with the STFC Profiles CLI. A named launch uses its own account preferences, configuration and logs. Archive retains the entire profile; restore makes it available again. Mod installation still uses the game folder shown on Home."
                     Foreground="{DynamicResource TextSecondaryBrush}"
                     TextWrapping="Wrap" />
          <TextBlock x:Name="ProfileLaunchSelection" Margin="0,8,0,0"
                     FontWeight="SemiBold" Text="Selected for launch: Default" />
+        <CheckBox x:Name="ShowArchivedProfilesBox" Margin="0,10,0,0" Content="Show archived profiles"
+                  Checked="ShowArchivedProfilesBox_Changed" Unchecked="ShowArchivedProfilesBox_Changed"
+                  automation:AutomationProperties.Name="Show archived profiles" />
+        <TextBlock x:Name="ProfileCatalogIssues" Margin="0,8,0,0" TextWrapping="Wrap"
+                   Foreground="{DynamicResource ErrorBrush}" />
         <ListBox x:Name="ProfilesList"
                  Height="108"
                  Margin="0,12,0,0"
@@ -1371,12 +1385,11 @@
                  Foreground="{DynamicResource TextPrimaryBrush}"
                  BorderBrush="{DynamicResource ControlBorderBrush}"
                  BorderThickness="1"
-                 DisplayMemberPath="Name"
                  SelectionChanged="ProfilesList_SelectionChanged"
                  automation:AutomationProperties.Name="Saved launch profiles">
           <ListBox.ItemContainerStyle>
             <Style TargetType="ListBoxItem">
-              <Setter Property="MinHeight" Value="30" />
+              <Setter Property="MinHeight" Value="40" />
               <Setter Property="Padding" Value="8,5" />
               <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
               <Setter Property="Template">
@@ -1398,6 +1411,15 @@
               </Setter>
             </Style>
           </ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel>
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Id}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
          </ListBox>
          <WrapPanel Margin="0,8,0,0">
            <Button Style="{StaticResource QuietButtonStyle}"
@@ -1414,17 +1436,12 @@
                   Click="NewProfileButton_Click"
                   Content="_New"
                   automation:AutomationProperties.Name="Create new launch profile" />
-          <Button Margin="8,0,0,0"
-                  Style="{StaticResource QuietButtonStyle}"
-                  Click="TrackExistingProfileButton_Click"
-                  Content="_Track existing"
-                  automation:AutomationProperties.Name="Track existing launch profile" />
-          <Button x:Name="RemoveProfileButton"
+          <Button x:Name="ArchiveProfileButton"
                   Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
-                  Click="RemoveProfileButton_Click"
-                  Content="_Remove"
-                  automation:AutomationProperties.Name="Remove selected launch profile" />
+                  Click="ArchiveProfileButton_Click"
+                  Content="_Archive"
+                  automation:AutomationProperties.Name="Archive or restore selected launch profile" />
         </WrapPanel>
         <TextBlock x:Name="ProfileFormTitle" Margin="0,16,0,6" FontWeight="SemiBold" Text="New profile" />
         <TextBlock x:Name="ProfileIdentity" Margin="0,0,0,10"
@@ -1435,13 +1452,7 @@
         <TextBox x:Name="ProfileNameBox" Margin="0,4,0,10" MaxLength="48"
                  Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                  automation:AutomationProperties.Name="Profile name" />
-        <StackPanel x:Name="ProfileKeyPanel" Margin="0,0,0,10" Visibility="Collapsed">
-           <TextBlock Text="Existing profile ID" />
-           <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32"
-                   Style="{StaticResource ProviderConfirmationTextBoxStyle}"
-                   automation:AutomationProperties.Name="Existing profile key" />
-        </StackPanel>
-        <TextBlock Text="Game folder" />
+        <TextBlock Text="Preferred game folder (optional)" />
         <DockPanel Margin="0,4,0,0">
           <Button x:Name="BrowseProfileFolderButton" DockPanel.Dock="Right" Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
@@ -1461,6 +1472,44 @@
                 automation:AutomationProperties.Name="Save launch profile" />
         </StackPanel>
       </ScrollViewer>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="GameClientDialog" Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Game client"
+                          automation:AutomationProperties.Name="Selected game client update and recovery">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="Exact installation target" />
+        <TextBlock Margin="0,5,0,0" FontFamily="Consolas" FontSize="12"
+                   Text="{Binding GameClient.Target}" TextWrapping="Wrap"
+                   automation:AutomationProperties.Name="{Binding GameClient.Target}" />
+        <TextBlock Margin="0,14,0,0" FontWeight="SemiBold"
+                   Text="{Binding GameClient.Status}" TextWrapping="Wrap" />
+        <TextBlock Margin="0,8,0,0" Text="{Binding GameClient.Feedback}" TextWrapping="Wrap"
+                   automation:AutomationProperties.LiveSetting="Polite" />
+        <TextBlock Margin="0,8,0,0" FontSize="12" Text="{Binding GameClient.ProgressText}" TextWrapping="Wrap" />
+        <ProgressBar Margin="0,8,0,0" Height="6" Minimum="0" Maximum="100"
+                     Value="{Binding GameClient.ProgressPercent}"
+                     Visibility="{Binding GameClient.HasProgress, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <TextBlock Margin="0,16,0,0" FontSize="12"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="Updating this installation updates the game for every profile that uses it. Stop those sessions first. Bridge downloads the official image, verifies it, and preserves the profile data and installed mod. Keep Bridge open until the transaction finishes; you can minimize it. Mod compatibility is checked separately after updating."
+                   TextWrapping="Wrap" />
+        <WrapPanel Margin="0,18,0,0" HorizontalAlignment="Right">
+          <Button Margin="0,0,8,0" Style="{StaticResource QuietButtonStyle}"
+                  Content="_Check update" Click="CheckGameClientButton_Click"
+                  IsEnabled="{Binding GameClient.CanCheck}"
+                  automation:AutomationProperties.Name="Check the official game client update service for this installation" />
+          <Button Margin="0,0,8,0" Style="{StaticResource QuietButtonStyle}"
+                  Content="_Recover game" Click="RecoverGameClientButton_Click"
+                  IsEnabled="{Binding GameClient.CanRecover}"
+                  automation:AutomationProperties.Name="Recover the selected game installation update transaction" />
+          <Button Style="{StaticResource UtilityActionButtonStyle}"
+                  Content="_Update game" Click="UpdateGameClientButton_Click"
+                  IsEnabled="{Binding GameClient.CanUpdate}"
+                  automation:AutomationProperties.Name="Update only the displayed game installation to the checked client version" />
+        </WrapPanel>
+      </StackPanel>
     </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="ModOperationDialog"

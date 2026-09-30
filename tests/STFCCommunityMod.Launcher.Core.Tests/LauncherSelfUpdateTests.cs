@@ -25,7 +25,8 @@ public sealed class LauncherSelfUpdateTests
         var archive = CreateArchive(
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
-            ("STFCModBridge.Updater.exe", [4, 5, 6]));
+            ("STFCModBridge.Updater.exe", [4, 5, 6]),
+            ("stfc-profiles-native.dll", [10, 11, 12]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
@@ -204,7 +205,8 @@ public sealed class LauncherSelfUpdateTests
         var archive = CreateArchive(
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
-            ("STFCModBridge.Updater.exe", [4, 5, 6]));
+            ("STFCModBridge.Updater.exe", [4, 5, 6]),
+            ("stfc-profiles-native.dll", [10, 11, 12]));
         var service = CreateService(temporaryDirectory, archive);
 
         using var preparation = await service.PrepareAsync(
@@ -306,7 +308,8 @@ public sealed class LauncherSelfUpdateTests
         var archive = CreateArchive(
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
-            ("STFCModBridge.Updater.exe", [4, 5, 6]));
+            ("STFCModBridge.Updater.exe", [4, 5, 6]),
+            ("stfc-profiles-native.dll", [10, 11, 12]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
         using var preparation = await service.PrepareAsync(
@@ -863,6 +866,7 @@ public sealed class LauncherSelfUpdateTests
                             "STFCModBridge.exe",
                             "STFCModBridge.ReleaseVerifier.exe",
                             "STFCModBridge.Updater.exe",
+                            "stfc-profiles-native.dll",
                         ])),
                 new(
                     "windows-mod-bridge-msix-x64",
@@ -1205,7 +1209,11 @@ public sealed class LauncherSelfUpdateTests
                 ModBridgeProductIdentity.ReleaseVerifierExecutableName);
             return new(
                 TargetCommit,
-                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(verifierPath))).ToLowerInvariant());
+                Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(verifierPath))).ToLowerInvariant(),
+                File.Exists(Path.Combine(Path.GetDirectoryName(executablePath)!, NativeProfileCatalogTransport.LibraryName))
+                    ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(
+                        Path.GetDirectoryName(executablePath)!, NativeProfileCatalogTransport.LibraryName)))).ToLowerInvariant()
+                    : null);
         }
     }
 }

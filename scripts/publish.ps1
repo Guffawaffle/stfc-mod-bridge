@@ -3,7 +3,9 @@ param(
   [string]$OutputDirectory = "artifacts/win-x64",
   [string]$Version = "",
   [string]$SourceRevisionId = "",
-  [string]$ReleaseVerifierPath = ""
+  [string]$ReleaseVerifierPath = "",
+  [string]$ProfilesNativePath = "",
+  [string]$ProfilesSourceDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,24 @@ $verifierSha256 = (Get-FileHash -LiteralPath $verifier -Algorithm SHA256).Hash.T
 if ($verifierSha256 -cnotmatch '^[0-9a-f]{64}$') {
   throw "The release verifier SHA-256 is invalid."
 }
+$native = $ProfilesNativePath
+if (-not $native) {
+  $nativeBuild = & (Join-Path $PSScriptRoot "build-profiles-native.ps1") `
+    -OutputDirectory (Join-Path $outputRoot "profiles-native") -SourceDirectory $ProfilesSourceDirectory
+  $native = @($nativeBuild)[-1].NativePath
+}
+$native = [IO.Path]::GetFullPath($native)
+if (-not (Test-Path -LiteralPath $native -PathType Leaf) `
+    -or [IO.Path]::GetFileName($native) -cne "stfc-profiles-native.dll") {
+  throw "The reviewed shared profiles native component is missing from its canonical path."
+}
+# Snapshot the supplied component before managed compilation; a development producer may rebuild concurrently.
+$nativeInput = Join-Path $outputRoot ("native-input-" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $nativeInput -Force | Out-Null
+$nativeSnapshot = Join-Path $nativeInput "stfc-profiles-native.dll"
+Copy-Item -LiteralPath $native -Destination $nativeSnapshot
+$native = $nativeSnapshot
+$profilesNativeSha256 = (Get-FileHash -LiteralPath $native -Algorithm SHA256).Hash.ToLowerInvariant()
 $buildProperties = @()
 if ($Version) {
   $buildProperties += "-p:Version=$Version"
@@ -46,6 +66,7 @@ if ($SourceRevisionId) {
   $buildProperties += "-p:SourceRevisionId=$SourceRevisionId"
 }
 $buildProperties += "-p:ReleaseVerifierSha256=$verifierSha256"
+$buildProperties += "-p:ProfilesNativeSha256=$profilesNativeSha256"
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if (Test-Path -LiteralPath $payload) {
@@ -74,6 +95,9 @@ Copy-Item `
   -Destination $payload `
   -Force
 Copy-Item -LiteralPath $verifier -Destination $payload -Force
+Copy-Item -LiteralPath $native -Destination $payload -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $payload "LICENSE.txt") -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD-PARTY-NOTICES.md") -Destination $payload -Force
 Remove-Item -LiteralPath $updaterPublish -Recurse -Force
 
 $launcher = Join-Path $payload "STFCModBridge.exe"
@@ -94,3 +118,4 @@ if ($SourceRevisionId) {
 
 Write-Host "Published Mod Bridge payload: $payload"
 Write-Host "Paired release verifier SHA-256: $verifierSha256"
+Write-Host "Paired shared profiles SHA-256: $profilesNativeSha256"

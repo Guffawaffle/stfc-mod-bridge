@@ -1,11 +1,20 @@
 # Windows game-client update handoff
 
-Status: observed local probe and proposed Bridge requirements; not an implemented updater.
+Status: historical official-launcher routing probe, superseded for the MVP on
+2026-09-29 by the shared Profiles installation/update contract.
 
-This document concerns updates to an installed Windows STFC game client. It does
-not change Bridge self-update or community-mod deployment. The official Scopely
-launcher remains the updater; Bridge must not implement the Xsolla patch protocol
-as part of this handoff.
+The accepted implementation routes Bridge status/check/update/recover operations
+through STFC Profiles. That library downloads and validates a complete official
+HTTPS image, owns installation exclusion and commit/recovery, and reports actual
+progress. Bridge does not implement a separate updater. The canonical
+[shared installation/update contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/GAME_INSTALLATION_CONTRACT.md)
+and current [Bridge integration](SHARED_INSTALL_PROFILE_CONTRACT.md) supersede
+the proposed handoff below. A managed official-launcher route remains a possible
+fallback requiring its own qualification; this probe is historical evidence for
+that route and does not make editing its settings an MVP prerequisite.
+
+Game client updating remains separate from Bridge self-update and community-mod
+deployment. Preserving a mod DLL never proves compatibility with a newer game.
 
 ## Observed on September 27, 2026
 
@@ -38,7 +47,7 @@ installation rather than every process named `prime.exe`. The exact detection
 mechanism was not inspected. In particular, the update probe did **not** test
 updating one installation while a different installation stayed in game.
 
-## Proposed handoff requirements
+## Historical proposed handoff requirements
 
 1. Resolve and validate the exact official launcher executable, selected game
    directory, and update directory. Attribute running `prime.exe` processes by

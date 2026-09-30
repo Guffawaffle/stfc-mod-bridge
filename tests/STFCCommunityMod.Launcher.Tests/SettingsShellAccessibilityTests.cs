@@ -721,7 +721,7 @@ public sealed class SettingsShellAccessibilityTests
             "private SettingsViewModel CreateSettingsViewModel");
 
         StringAssert.Contains(method, "HasUnsafeModDeploymentTransaction");
-        StringAssert.Contains(method, "Path.Combine(viewModel.SelectedGameDirectory, \"version.dll\")");
+        StringAssert.Contains(method, "Path.Combine(viewModel.ConfigurationGameDirectory, \"version.dll\")");
         StringAssert.Contains(method, "Community Mod is not installed");
         Assert.IsTrue(
             method.IndexOf("version.dll", StringComparison.Ordinal)

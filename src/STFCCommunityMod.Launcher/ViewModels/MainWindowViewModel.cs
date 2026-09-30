@@ -24,7 +24,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly IPackagedLauncherUpdateService packagedLauncherUpdateService;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
-    private readonly JsonLauncherProfilesStore profilesStore;
+    private readonly NativeLauncherProfilesStore profilesStore;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
     private readonly LauncherFeatureRemediationCandidates? featureRemediationCandidates;
     private readonly string selectedModSourceMetadata;
@@ -76,7 +76,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
         IPackagedLauncherUpdateService packagedLauncherUpdateService,
         ILauncherUiPreferencesStore uiPreferencesStore,
-        JsonLauncherProfilesStore profilesStore,
+        NativeLauncherProfilesStore profilesStore,
+        GameInstallationCoordinator gameInstallationCoordinator,
         LauncherDistributionProviderCatalog distributionProviderCatalog,
         LauncherFeatureRemediationCandidates? featureRemediationCandidates,
         string modSourceMetadata,
@@ -110,6 +111,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
         modActionStatusTimer.Tick += ModActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
+        GameClient = new(gameInstallationCoordinator, () => snapshot.SelectedGameDirectory,
+            () => !actionFeedback.Mod.IsWorking && !actionFeedback.Launch.IsWorking && !isRecoveryWorkspaceTransitionPending,
+            RefreshCore);
+        GameClient.SetTarget(snapshot.SelectedGameDirectory);
+        GameClient.PropertyChanged += GameClient_PropertyChanged;
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
             snapshot.SelectedGameDirectory,
@@ -158,12 +164,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         actionFeedback.Launch.PropertyChanged -= LaunchActionState_PropertyChanged;
         actionFeedback.LauncherUpdate.PropertyChanged -= LauncherUpdateActionState_PropertyChanged;
         homeFeedback.PropertyChanged -= HomeFeedback_PropertyChanged;
+        GameClient.PropertyChanged -= GameClient_PropertyChanged;
         if (featureRemediationCandidates is not null)
         {
             ObserveDisposal(featureRemediationCandidates.DisposeAsync().AsTask());
         }
         GC.SuppressFinalize(this);
     }
+
+    public GameInstallationViewModel GameClient { get; }
 
     public string GameSectionStatus => presentation.GameSectionStatus;
 
@@ -179,18 +188,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string GameFolderActionAutomationName => presentation.GameFolderActionAutomationName;
 
-    public bool CanChangeGameFolder => ResolveModContextChangeAvailability(
+    public bool CanChangeGameFolder => !GameClient.IsWorking && ResolveModContextChangeAvailability(
         ModActionKind == ModManagementActionKind.Recover,
         actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
         actionFeedback.Launch.IsWorking);
 
-    public bool CanChangeReleaseSource => ResolveModContextChangeAvailability(
+    public bool CanChangeReleaseSource => !GameClient.IsWorking && ResolveModContextChangeAvailability(
         ModActionKind == ModManagementActionKind.Recover,
         actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
         actionFeedback.Launch.IsWorking);
 
     public bool CanOpenSettingsWorkspace =>
         !actionFeedback.Mod.IsWorking
+        && !GameClient.IsWorking
         && !isRecoveryWorkspaceTransitionPending;
 
     public string GameClientStatus => presentation.GameClientStatus;
@@ -266,7 +276,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ? "Recover the incomplete provider switch before changing the mod or its release source."
             : modPresentation.AutomationName;
 
-    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable
+    public bool CanManageMod => !GameClient.IsWorking && actionFeedback.Mod.IsCommandAvailable
         && !actionFeedback.Launch.IsWorking
         && (!HasIncompleteProviderSwitch || !IsGameRunning);
 
@@ -275,19 +285,19 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         : modPresentation.ActionKind;
 
     public bool CanRecoverMod =>
-        ModActionKind == ModManagementActionKind.Recover
+        !GameClient.IsWorking && ModActionKind == ModManagementActionKind.Recover
         && actionFeedback.CanStartModMaintenance(
             HasIncompleteProviderSwitch ? !IsGameRunning : modPresentation.CanExecute,
             actionFeedback.Launch.IsWorking);
 
     public bool CanUninstallMod =>
-        !HasIncompleteProviderSwitch
+        !GameClient.IsWorking && !HasIncompleteProviderSwitch
         && !IsGameRunning
         && modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
         && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
 
     public bool CanStopManagingMod =>
-        !HasIncompleteProviderSwitch
+        !GameClient.IsWorking && !HasIncompleteProviderSwitch
         && SelectedGameDirectory is not null
         && localHealth.Installation.State is (
             ModInstallationEvidenceState.ManagedVerified
@@ -348,19 +358,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             : launchPresentation.AutomationName;
 
     public string LaunchProfileStatus => profilesLoad.State == LauncherProfilesLoadState.Invalid
-        ? "Launch profile registry needs attention"
+        ? "Shared profile catalog needs attention"
         : ActiveLaunchProfile is { } profile
             ? launchPresentation.CanExecute
                 ? $"Launch profile: {profile.Name} ({profile.Id})"
                 : $"Launch profile: {profile.Name} — {launchPresentation.Reason}"
-            : "Launch profile: Default";
+            : profilesLoad.Snapshot?.SelectedProfileId is not null
+                ? $"Selected profile needs attention: {profilesLoad.Error}"
+                : "Launch profile: Default";
 
     private LauncherProfile? ActiveLaunchProfile => profilesLoad.Snapshot?.SelectedProfile;
 
     private LauncherLaunchTarget EffectiveLaunchTarget => ActiveLaunchProfile is null
         ? selectedLaunchTarget : LauncherLaunchTarget.PrimeExecutable;
 
-    public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable && !actionFeedback.Mod.IsWorking;
+    public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable && !actionFeedback.Mod.IsWorking && !GameClient.IsWorking;
 
     public LauncherLaunchTarget SelectedLaunchTarget => EffectiveLaunchTarget;
 
@@ -381,7 +393,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public string ScopelyLauncherChoiceStatus => BuildChoiceStatus(LauncherLaunchTarget.ScopelyLauncher);
 
     public bool CanOpenLaunchTargetMenu => Enum.IsDefined(selectedLaunchTarget)
-        && ActiveLaunchProfile is null && profilesLoad.State != LauncherProfilesLoadState.Invalid;
+        && ActiveLaunchProfile is null && profilesLoad.Snapshot?.SelectedProfileId is null;
 
     public ICommand LaunchPrimaryCommand { get; }
 
@@ -464,10 +476,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public string? ConfigurationFilePath =>
-        snapshot.SelectedGameDirectory is null
-            ? null
-            : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
+    public LauncherProfile? SelectedConfigurationProfile => ActiveLaunchProfile;
+    public string? ConfigurationGameDirectory => ActiveLaunchProfile?.GameDirectory ?? snapshot.SelectedGameDirectory;
+    public string ConfigurationTargetLabel => ActiveLaunchProfile is { } profile
+        ? $"Profile: {profile.Name} ({profile.Id})"
+        : profilesLoad.Snapshot?.SelectedProfileId is not null ? "Selected profile is unavailable" : "Default installation";
+    public string? ConfigurationFilePath => profilesLoad.Snapshot is null
+        || (profilesLoad.Snapshot.SelectedProfileId is not null && ActiveLaunchProfile is null)
+        ? null : ActiveLaunchProfile?.ConfigPath
+            ?? (snapshot.SelectedGameDirectory is null ? null
+                : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml"));
 
     public static MainWindowViewModel CreateDefault(
         HttpClient httpClient,
@@ -705,7 +723,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             launcherReleaseClient,
             new WindowsPackagedLauncherUpdateService(),
             uiPreferencesStore,
-            new JsonLauncherProfilesStore(installLayout.StateDirectory),
+            new NativeLauncherProfilesStore(installLayout.StateDirectory),
+            new GameInstallationCoordinator(installLayout.StateDirectory),
             distributionProviderCatalog,
             featureRemediationCandidates,
             string.IsNullOrWhiteSpace(providerResolutionFailure)
@@ -778,6 +797,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var before = CaptureHomeState();
         await Task.Yield();
         RefreshCore();
+        await GameClient.RefreshStatusAsync();
         var changed = before != CaptureHomeState();
         return changed
             ? ObservableActionResult.Changed("Mod Bridge status refreshed. The displayed status changed.")
@@ -788,6 +808,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         profilesLoad = profilesStore.Load();
         snapshot = environmentProbe.Capture();
+        GameClient.SetTarget(snapshot.SelectedGameDirectory);
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
             snapshot.SelectedGameDirectory,
@@ -796,6 +817,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         modPresentation = localHealth.ModManagement;
         RefreshLaunchPresentations();
         OnPropertyChanged(nameof(LaunchProfileStatus));
+        OnPropertyChanged(nameof(ConfigurationFilePath));
+        OnPropertyChanged(nameof(ConfigurationTargetLabel));
+        OnPropertyChanged(nameof(SelectedConfigurationProfile));
         OnPropertyChanged(nameof(SelectedLaunchTarget));
         OnPropertyChanged(nameof(IsPrimeExecutableSelected));
         OnPropertyChanged(nameof(IsScopelyLauncherSelected));
@@ -1547,7 +1571,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void SelectLaunchTarget(LauncherLaunchTarget target)
     {
-        if (ActiveLaunchProfile is not null || profilesLoad.State == LauncherProfilesLoadState.Invalid)
+        if (ActiveLaunchProfile is not null || profilesLoad.Snapshot?.SelectedProfileId is not null
+            || profilesLoad.Snapshot is null)
         {
             return;
         }
@@ -1612,14 +1637,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 localHealth.Installation)
             : gameLaunchCoordinator.CapturePresentation(
                 profile.GameDirectory,
-                LauncherLaunchTarget.PrimeExecutable);
+                LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile);
         scopelyLaunchChoice = gameLaunchCoordinator.CapturePresentation(
             snapshot.SelectedGameDirectory,
             LauncherLaunchTarget.ScopelyLauncher,
             localHealth.Installation);
-        if (profilesLoad.State == LauncherProfilesLoadState.Invalid)
+        if (profilesLoad.Snapshot is null
+            || (profilesLoad.Snapshot.SelectedProfileId is not null && profile is null))
         {
-            var reason = profilesLoad.Error ?? "The launch profile registry could not be read.";
+            var reason = profilesLoad.Error ?? "The shared profile catalog could not be read.";
             primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
             scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
         }
@@ -1721,6 +1747,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void ModActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         _ = sender;
+        if (e.PropertyName == nameof(ObservableActionState.IsWorking)) GameClient.NotifyAvailability();
         switch (e.PropertyName)
         {
             case nameof(ObservableActionState.Status):
@@ -1814,6 +1841,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void LaunchActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         _ = sender;
+        if (e.PropertyName == nameof(ObservableActionState.IsWorking)) GameClient.NotifyAvailability();
         switch (e.PropertyName)
         {
             case nameof(ObservableActionState.IsWorking):
@@ -1834,6 +1862,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanLaunchGame));
                 break;
         }
+    }
+
+    private void GameClient_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(GameInstallationViewModel.IsWorking)) return;
+        NotifyModContextChangeAvailability();
+        OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(CanRecoverMod));
+        OnPropertyChanged(nameof(CanUninstallMod));
+        OnPropertyChanged(nameof(CanStopManagingMod));
+        OnPropertyChanged(nameof(CanLaunchGame));
     }
 
     private void HomeFeedback_PropertyChanged(object? sender, PropertyChangedEventArgs e)

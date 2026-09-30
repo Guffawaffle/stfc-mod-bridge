@@ -41,7 +41,9 @@ foreach ($item in $catalog.dependencyInventory) {
       "targeting-pack",
       "go-build-toolchain",
       "go-build-module",
-      "go-build-graph")) {
+      "go-build-graph",
+      "native-source-pin",
+      "native-build-module")) {
     throw "Dependency inventory item '$($item.id)' has unsupported evidence kind '$($item.evidenceKind)'."
   }
 }
@@ -53,6 +55,20 @@ foreach ($item in $catalog.assetInventory) {
 
 function Normalize-ProjectPath([string]$path) {
   return $path.Replace("\", "/")
+}
+
+$profilesPin = Get-Content -LiteralPath (Join-Path $repositoryRoot "dependencies/stfc-profiles-source-pin.json") -Raw | ConvertFrom-Json
+if ($profilesPin.schemaVersion -ne 1 -or $profilesPin.repository -cne "Guffawaffle/stfc-profiles" `
+    -or $profilesPin.revision -cnotmatch '^[0-9a-f]{40}$' `
+    -or $profilesPin.sourceArchiveSha256 -cnotmatch '^[0-9a-f]{64}$') { throw "The shared native source pin is invalid." }
+$nativeSourceItems = @($catalog.dependencyInventory | Where-Object { $_.evidenceKind -eq "native-source-pin" })
+if ($nativeSourceItems.Count -ne 1 -or $nativeSourceItems[0].id -cne "STFC Profiles") { throw "The pinned shared native component is missing from the notice inventory." }
+$nativeModules = @($catalog.dependencyInventory | Where-Object { $_.evidenceKind -eq "native-build-module" })
+if ($nativeModules.Count -ne @($profilesPin.nativeDependencies).Count) { throw "The shared native module notice closure differs from its pinned dependency inventory." }
+foreach ($dependency in $profilesPin.nativeDependencies) {
+  if (@($nativeModules | Where-Object { $_.id -ceq $dependency.id -and $_.version -ceq $dependency.version }).Count -ne 1) {
+    throw "Pinned native module $($dependency.id)/$($dependency.version) is absent from the exact notice inventory."
+  }
 }
 
 $productionProjects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "src") -Recurse -Filter "*.csproj")

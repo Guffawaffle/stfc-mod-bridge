@@ -11,56 +11,76 @@ public sealed class GameLaunchHandoffTests
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
     [TestMethod]
-    public async Task NamedProfileLaunchPassesItsExplicitId()
+    public async Task NamedProfileLaunchUsesSharedCoordinatorAndWaitsForReadiness()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var defaultGame = CreateGameDirectory(temporaryDirectory, "default-game");
-        var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
-        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
-        var profile = new LauncherProfile("dev", "Secondary", profileGame);
-        var fixture = CreateFixture(temporaryDirectory);
-        var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
-        var selected = LauncherProfiles.Select(
-            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, profileGame, defaultGame, profile.Id),
-            profile.Id);
-        await store.SaveAsync(selected, store.Load().Revision!);
-
-        var launched = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
-            defaultGameDirectory: defaultGame);
-        Assert.AreEqual(GameLaunchHandoffState.Completed, launched.State);
-        Assert.AreEqual(profileGame, fixture.GameService.LastGameDirectory);
-        Assert.AreNotEqual(defaultGame, fixture.GameService.LastGameDirectory);
-        CollectionAssert.AreEqual(new[]
-        {
-            "-stfc-profile", profile.Id, "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile",
-            LauncherProfiles.UnityLogPath(profile, temporaryDirectory.Path),
-        }, fixture.GameService.LastArguments!.ToArray());
-
-
+        var game = CreateGameDirectory(temporaryDirectory);
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var profile = NamedProfile(game);
+        var transport = new NamedCatalog(profile);
+        var store = new NativeLauncherProfilesStore(temporaryDirectory.CreateDirectory("state"), transport);
+        await store.SelectAsync(profile.Id);
+        var fixture = CreateFixture(temporaryDirectory, profileStore: store);
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+        var request = transport.Requests.Single(request => request.Operation == "launch");
+        Assert.AreEqual(profile.Id, request.Id);
+        Assert.AreEqual(game, request.GameDirectory);
+        Assert.AreEqual(profile.Revision, request.ExpectedRevision);
+        StringAssert.Contains(result.Message, "isolated preferences");
     }
 
     [TestMethod]
-    public async Task NamedLaunchRejectsDefaultFolderChangedInAnotherWindow()
+    public async Task DifferentNamedProfileMayLaunchFromAnAlreadyRunningExecutable()
     {
         using var temporaryDirectory = new TemporaryDirectory();
-        var previousDefault = CreateGameDirectory(temporaryDirectory, "previous-default");
-        var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
-        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
-        var profile = new LauncherProfile("dev", "Secondary", profileGame);
-        var fixture = CreateFixture(temporaryDirectory);
-        var state = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
-        var profiles = new JsonLauncherProfilesStore(state);
-        var selected = LauncherProfiles.Select(
-            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, profileGame,
-                previousDefault, profile.Id), profile.Id);
-        await profiles.SaveAsync(selected, profiles.Load().Revision!);
-        new JsonGameInstallSelectionStore(state).Save(profileGame);
+        var game = CreateGameDirectory(temporaryDirectory);
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var profile = NamedProfile(game);
+        var transport = new NamedCatalog(profile);
+        var store = new NativeLauncherProfilesStore(temporaryDirectory.CreateDirectory("state"), transport);
+        await store.SelectAsync(profile.Id);
+        var fixture = CreateFixture(temporaryDirectory, isGameRunning: true, profileStore: store);
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, transport.Requests.Count(request => request.Operation == "launch"));
+    }
 
-        var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
-            defaultGameDirectory: previousDefault);
+    [TestMethod]
+    public async Task SharedCoordinatorRefusalNeverClaimsReadinessOrStartsThroughDefaultService()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporaryDirectory);
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var profile = NamedProfile(game);
+        var transport = new NamedCatalog(profile) { LaunchResult = new(false,
+            Error: new("profile_in_use", "Profile is already running")) };
+        var store = new NativeLauncherProfilesStore(temporaryDirectory.CreateDirectory("state"), transport);
+        await store.SelectAsync(profile.Id);
+        var result = await CreateFixture(temporaryDirectory, profileStore: store).Coordinator
+            .LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Failed, result.State);
+        Assert.IsFalse(result.Changed);
+        StringAssert.Contains(result.Message, "already running");
+    }
 
-        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
-        Assert.AreEqual(0, fixture.GameService.StartCount);
+    [TestMethod]
+    public async Task SpawnedButUnreadyGameIsReportedWithoutSilentKillOrRetry()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporaryDirectory);
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
+        var profile = NamedProfile(game);
+        var transport = new NamedCatalog(profile) { LaunchResult = new(false,
+            Error: new("readiness_timeout", "Isolation was not confirmed"), ProcessId: 123) };
+        var store = new NativeLauncherProfilesStore(temporaryDirectory.CreateDirectory("state"), transport);
+        await store.SelectAsync(profile.Id);
+        var result = await CreateFixture(temporaryDirectory, profileStore: store).Coordinator
+            .LaunchProfileAsync(profile, allowUnverifiedProxy: true);
+        Assert.AreEqual(GameLaunchHandoffState.Failed, result.State);
+        Assert.IsTrue(result.Changed);
+        StringAssert.Contains(result.Message, "123 may still be running");
     }
 
     [TestMethod]
@@ -80,23 +100,21 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
-    public async Task NamedLaunchRejectsAChangedRegistrySelection()
+    public async Task NamedLaunchRejectsChangedUiSelection()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var game = CreateGameDirectory(temporaryDirectory);
         ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
-        var fixture = CreateFixture(temporaryDirectory);
-        var profile = new LauncherProfile("dev", "Secondary", game);
-        var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
-        var selected = LauncherProfiles.Select(
-            LauncherProfiles.Add(LauncherProfilesSnapshot.Empty, profile.Name, game, null, profile.Id), profile.Id);
-        var revision = await store.SaveAsync(selected, store.Load().Revision!);
-        await store.SaveAsync(LauncherProfiles.Select(selected, null), revision);
-
+        var profile = NamedProfile(game);
+        var transport = new NamedCatalog(profile);
+        var store = new NativeLauncherProfilesStore(temporaryDirectory.CreateDirectory("state"), transport);
+        await store.SelectAsync(profile.Id);
+        await store.SelectAsync(null);
+        var fixture = CreateFixture(temporaryDirectory, profileStore: store);
         var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true);
-
         Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
         Assert.AreEqual(0, fixture.GameService.StartCount);
+        Assert.AreEqual(0, transport.Requests.Count(request => request.Operation == "launch"));
     }
 
     [TestMethod]
@@ -600,7 +618,8 @@ public sealed class GameLaunchHandoffTests
         Exception? scopelyFailure = null,
         OfficialLauncherStartKind scopelyStartKind = OfficialLauncherStartKind.StartedNew,
         int? scopelyAvailabilityReadsBeforeMissing = null,
-        GameProcessInspectionState? gameProcessState = null)
+        GameProcessInspectionState? gameProcessState = null,
+        NativeLauncherProfilesStore? profileStore = null)
     {
         var stateDirectory = temporaryDirectory.CreateDirectory("state");
         var deploymentService = new ModDeploymentService(
@@ -626,7 +645,7 @@ public sealed class GameLaunchHandoffTests
                     ?? (isGameRunning
                         ? GameProcessInspectionState.RunningTarget
                         : GameProcessInspectionState.NotRunning)),
-            temporaryDirectory.Path);
+            profileStore ?? new NativeLauncherProfilesStore(stateDirectory, new NamedCatalog(NamedProfile(string.Empty))));
         return new(coordinator, deploymentService, gameService, scopelyService);
     }
 
@@ -652,6 +671,24 @@ public sealed class GameLaunchHandoffTests
         Convert.ToHexString(SHA256.HashData(ArtifactContents)),
         "2.1.0.8");
 
+    private static LauncherProfile NamedProfile(string game) => new(
+        "0123456789abcdef0123456789abcdef", "Science", game, Revision: "current-profile");
+
+    private sealed class NamedCatalog(LauncherProfile profile) : IProfileCatalogTransport, IProfileInstallationLeaseTransport
+    {
+        public List<ProfileCatalogRequest> Requests { get; } = [];
+        public ProfileCatalogResponse LaunchResult { get; set; } = new(true, Profile: profile,
+            ProcessId: 123, Readiness: "ready");
+        public IDisposable AcquireInstallationLease(ProfileCatalogRequest request) => new NoopLease();
+        private sealed class NoopLease : IDisposable { public void Dispose() { } }
+        public ProfileCatalogResponse Request(ProfileCatalogRequest request)
+        {
+            Requests.Add(request);
+            return request.Operation == "launch" ? LaunchResult
+                : new(true, Profile: profile, Profiles: [profile], Revision: "current-catalog");
+        }
+    }
+
     private sealed record Fixture(
         GameLaunchHandoffCoordinator Coordinator,
         ModDeploymentService DeploymentService,
@@ -675,14 +712,19 @@ public sealed class GameLaunchHandoffTests
 
         public bool IsAvailable(string gameDirectory) => isAvailable;
 
-        public Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+        public Task<IGameExecutableProcess> StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
             LastGameDirectory = gameDirectory;
             LastArguments = arguments;
             OnStart?.Invoke();
-            return Task.CompletedTask;
+            return Task.FromResult<IGameExecutableProcess>(new CompletedGameProcess());
+        }
+        private sealed class CompletedGameProcess : IGameExecutableProcess
+        {
+            public Task WaitForExitAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 

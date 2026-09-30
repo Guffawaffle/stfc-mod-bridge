@@ -1,53 +1,84 @@
-# Named launch profiles: current return point
+# Named profiles: current return point
 
-Status: 2026-09-29 documentation checkpoint. The
-[canonical STFC Profiles catalog contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md) and the local
-[Bridge launch contract](SHARED_INSTALL_PROFILE_CONTRACT.md) supersede the earlier
-Bridge-owned registry design. Historical commits and verification receipts remain
-evidence of their exact implementation checkpoints.
+Status: 2026-09-30 development implementation checkpoint. The
+[canonical Profiles catalog contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md),
+[shared game installation contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/GAME_INSTALLATION_CONTRACT.md)
+and [Bridge integration contract](SHARED_INSTALL_PROFILE_CONTRACT.md) own the
+accepted direction. Earlier Bridge-owned registry and per-installation selector
+notes are superseded. Their historical commit receipts do not authorize restoring
+those designs.
 
-## Accepted target
+## Implemented in the development worktree
 
-STFC Profiles owns a shared per-user directory catalog. Active profiles live in
-`profiles/<immutable-id>`; archived profiles live in sibling `archives/<same-id>`.
-Each directory holds editable `metadata.json`, encrypted preferences and owned
-logs/data. There is no central registry. Bridge and the standalone CLI use common
-operations; Bridge's saved UI selection cannot redirect ordinary launches.
+Bridge uses the shared native catalog, with only its selected immutable ID kept
+privately. Create/edit, active/archive listing, whole-directory archive/restore,
+profile configuration/data leases and isolation-ready named launch all route to
+STFC Profiles. Selected profile Settings and Data Sync target its own staged
+`config.toml`; encrypted verified backups travel inside that profile directory.
+Ordinary launches retain ordinary preferences, with shared native installation
+access held through the exact spawned game process lifetime.
 
-Archive/restore preserve the whole directory and ID, require a stopped session,
-and coordinate with launch admission through stable lifecycle exclusion.
-Permanent deletion is separate and explicit. Several profiles may share one
-game executable. Names and installation associations never change the ID.
+Game client status/check/update/recover use the same native transport. The dialog
+shows the exact Home target, checked target version and real native phase/byte
+progress. Updating requires stopped installation access and Bridge operation
+exclusion. The engine owns payload validation, commit journals and recovery;
+Bridge does not contain a separate downloader or patcher.
 
-Ordinary launches retain ordinary OS-user state. Explicit named launches must
-isolate the requested ID or stop. The retired installation selector, adoption,
-compatibility, fallback and migration have no implementation or test work items.
+The source dogfood entrypoint and ZIP/MSIX release paths include the exact
+hash-paired native DLL. Default dependency builds use an immutable source pin;
+an explicit local source override records revision/dirty state. The reviewed
+signed Profiles source is `6b15a352c445efb817634e8ef6be3de4d40818f8`, with
+immutable archive SHA-256
+`7ac8a6d6494f766b287c1ff031ce4348290a619b34ca353caf52b50a7c4488c4`.
+The default archive build records no development override or dirty input.
 
-## Current implementation evidence
+## Evidence and next work
 
-Bridge branch `feature/named-launch-profiles-225` at
-`3b43f44550230be5b2aca4744a2e983014d59a9e` tracks draft PR #227, based on
-`aad5fda716d9cb402965c294d7bc33b061ab1d8c` for the completed review checkpoint.
-At that source checkpoint, Bridge persists `launch-profiles.json`, has stable IDs,
-revision/operation locking, and passes `-stfc-profile <id>` with config/log argv.
-Those are existing mechanics to replace or integrate, not authority to keep a
-private catalog. The current running-process gate still blocks a second game.
+The active Bridge checkout remains `feature/named-launch-profiles-225`, based on
+signed checkpoint `0c707a0836ec7e8e5be31075d708f93efe56875d`. Implementation above
+is subsequent uncommitted development work until its own exact-head review.
+SDK alignment and Go vulnerability repair were completed at the base checkpoint.
 
-The profile library at `f8fe406cbc69e86db3a6c47e839ae1c67be2baf4` contains ID
-validation, Windows DPAPI storage and an explicit-input adapter. Its old
-`STFC Community Mod\Profiles` path and directory-local lock do not implement
-the accepted storage/lifecycle contract. The active mod at
-`0c34f249b1ea7bf00dd5221e9834983af7c5883a` removed the obsolete capability export;
-the new explicit-launch runtime is not integrated.
+The required full managed solution passes on this development worktree:
+Core 1,221 passed / 8 skipped, WPF 281 passed, and local integration 53 passed /
+8 opt-in skipped. All three real native ABI cases then executed and passed in
+the ordinary Explorer desktop namespace against the exact immutable build.
+The new DLL SHA-256 is
+`779f3e53cb96567ed4e6047456d8c14c87be6cd6b3a56ad30cf7472f842c7b04`.
 
-SDK alignment and Go vulnerability repair are complete at the Bridge checkpoint.
-Full local validation and exact-head CI passed; that evidence does not qualify
-profile runtime behavior or apply automatically to a later candidate.
+Required publish and unsigned ZIP/MSIX/App Installer inspection pass with that
+exact paired DLL, full GPL text and notices. Locked NuGet audit, Defender scan
+with remediation disabled, and payload-only SBOM checks pass. The SBOM retains
+all 71 exact Go modules and the explicitly labeled native source/recipe
+inventory; it does not claim independently discovered native object provenance.
+The production signature gate correctly refuses these unsigned development
+artifacts. Gate project discovery uses the reviewed solution, and component
+scan excludes historical worktrees/artifacts so they cannot become release
+subjects. Bounded command receipts and the complete dirty ownership list are
+under `artifacts/`. The Bridge review gate still applies to the exact committed
+candidate; these dirty-worktree results do not establish that gate.
 
-## Next work
+Windows package context requires separate physical storage qualification. The
+OS-user Known Folder string and absence of package identity do not prove that
+an opened file is in the ordinary desktop namespace: Codex descendants were
+observed opening that path inside private LocalCache storage. The shared core
+now rejects redirected physical default roots and checks the actual opened
+shared lifecycle-lock handle before native acquisition succeeds.
+Bridge declares the Windows 10 filesystem-virtualization fallback and the
+Windows 11 exact `STFC Profiles` exclusion. Its synthetic package gate verifies
+metadata/config bytes through opened handles and proves shared leases between
+standalone and MSIX processes. Fake transport/interop tests pass; actual
+packaged cross-host execution remains a clean-host CI gate. The existing local
+Bridge installation remains untouched.
 
-Implement the shared catalog/lifecycle operations, CLI and Bridge consumption;
-then integrate both runtime hosts, readiness/admission and macOS protection and
-loading. Qualify ordinary launch, two correct accounts from one executable,
-reverse restart persistence, duplicate-profile refusal, browser callbacks and
-stopped-session archive/restore. No shared-install player runtime is qualified.
+The producer repaired the standalone stack-overflow crash and namespace issue.
+Its exact signed source passes Windows and both macOS native CI lanes. Parent
+qualification reports two healthy standalone profiles from the same dev
+executable, unique encrypted preference stores, and busy refusal for duplicate
+launch/archive/update/recovery while those sessions run. The authorized dev
+client update from 221 to 267 has a verified retained receipt. These producer
+observations do not establish live Bridge account sign-in or callback behavior.
+
+Complete account identity, reverse restart persistence, browser callback and
+packaged cross-host qualification before claiming the full shared-install
+player workflow is qualified.

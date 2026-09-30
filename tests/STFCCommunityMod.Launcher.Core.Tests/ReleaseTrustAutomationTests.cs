@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
 public sealed partial class ReleaseTrustAutomationTests
 {
+    private static readonly string[] ProfilesPackageCapabilities = ["runFullTrust", "unvirtualizedResources"];
     [TestMethod]
     public void PublishScriptBuildsTheReleaseVerifierWithoutCapturingItsInformationalOutput()
     {
@@ -253,7 +255,7 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsTrue(finalPayloadSbom > pairedSigning);
         StringAssert.Contains(
             workflow,
-            "files: ${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
+            "${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
         StringAssert.Contains(workflow, "-ReleaseVerifierPath $retained");
         StringAssert.Contains(workflow, "generate-release-verifier-sbom.ps1");
         StringAssert.Contains(workflow, "generate-payload-sbom.ps1");
@@ -371,8 +373,8 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "SelectSingleNode(\"/ai:AppInstaller/ai:MainPackage\"");
         StringAssert.Contains(script, "serve-appinstaller.py");
         StringAssert.Contains(script, "!App");
-        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
-        Assert.AreEqual(4, Regex.Matches(script, Regex.Escape("WaitForExit(10000)")).Count);
+        Assert.AreEqual(4, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
+        Assert.AreEqual(6, Regex.Matches(script, Regex.Escape("WaitForExit(10000)")).Count);
         StringAssert.Contains(
             script,
             "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
@@ -787,6 +789,32 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsFalse(File.Exists(Path.Combine(root, "scripts", "uninstall-launcher.ps1")));
         StringAssert.Contains(readme, "%LOCALAPPDATA%\\STFC Mod Bridge");
         StringAssert.Contains(readme, "external local data");
+    }
+
+    [TestMethod]
+    public void MsixProfilesFilesystemPolicyPreservesWindows10AndLimitsWindows11Scope()
+    {
+        var manifest = XDocument.Load(Path.Combine(RepositoryRoot(), "packaging", "windows", "AppxManifest.xml.in"));
+        XNamespace foundation = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
+        XNamespace desktop6 = "http://schemas.microsoft.com/appx/manifest/desktop/windows10/6";
+        XNamespace virtualization = "http://schemas.microsoft.com/appx/manifest/virtualization/windows10";
+        var properties = manifest.Root!.Element(foundation + "Properties")!;
+        Assert.AreEqual(2, manifest.Descendants().Count(element => element.Name.LocalName == "FileSystemWriteVirtualization"));
+        Assert.AreEqual("disabled", properties.Elements(desktop6 + "FileSystemWriteVirtualization").Single().Value);
+        var selective = properties.Elements(virtualization + "FileSystemWriteVirtualization").Single();
+        var directories = selective.Elements().Single();
+        Assert.AreEqual(virtualization + "ExcludedDirectories", directories.Name);
+        var excluded = directories.Elements().Single();
+        Assert.AreEqual(virtualization + "ExcludedDirectory", excluded.Name);
+        Assert.AreEqual("$(KnownFolder:LocalAppData)\\STFC Profiles", excluded.Value);
+        Assert.IsFalse(manifest.Descendants().Any(element => element.Name.LocalName == "RegistryWriteVirtualization"));
+        var deviceFamily = manifest.Descendants(foundation + "TargetDeviceFamily").Single();
+        Assert.AreEqual("Windows.Desktop", (string?)deviceFamily.Attribute("Name"));
+        Assert.AreEqual("10.0.19041.0", (string?)deviceFamily.Attribute("MinVersion"));
+        XNamespace rescap = "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities";
+        CollectionAssert.AreEquivalent(ProfilesPackageCapabilities,
+            manifest.Descendants(rescap + "Capability").Select(element => (string)element.Attribute("Name")!).ToArray());
+
     }
 
     [TestMethod]

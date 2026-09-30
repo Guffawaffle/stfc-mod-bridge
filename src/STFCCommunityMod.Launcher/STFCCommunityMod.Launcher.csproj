@@ -18,9 +18,10 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <Version>0.1.0</Version>
     <ReleaseVerifierSha256 Condition="'$(ReleaseVerifierSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ReleaseVerifierSha256>
+    <ProfilesNativeSha256 Condition="'$(ProfilesNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ProfilesNativeSha256>
     <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-    <InformationalVersion>$(Version)+commit.$(SourceRevisionId).verifier.$(ReleaseVerifierSha256)</InformationalVersion>
+    <InformationalVersion>$(Version)+commit.$(SourceRevisionId).verifier.$(ReleaseVerifierSha256).profiles.$(ProfilesNativeSha256)</InformationalVersion>
   </PropertyGroup>
 
   <Target Name="ValidateReleaseVerifierIdentity" BeforeTargets="CoreCompile">

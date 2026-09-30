@@ -91,7 +91,12 @@ public interface IGameExecutableLaunchService
 {
     bool IsAvailable(string gameDirectory);
 
-    Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken);
+    Task<IGameExecutableProcess> StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken);
+}
+
+public interface IGameExecutableProcess : IAsyncDisposable
+{
+    Task WaitForExitAsync(CancellationToken cancellationToken);
 }
 
 public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
@@ -230,7 +235,7 @@ public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchSe
     public bool IsAvailable(string gameDirectory) =>
         TryResolvePrimePath(gameDirectory, out var primePath) && File.Exists(primePath);
 
-    public Task StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    public Task<IGameExecutableProcess> StartAsync(string gameDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(arguments);
@@ -241,19 +246,25 @@ public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchSe
 
         var startInfo = new ProcessStartInfo(primePath)
         {
-            UseShellExecute = arguments.Count == 0,
+            UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(primePath),
         };
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
         }
-        using var process = Process.Start(startInfo);
+        var process = Process.Start(startInfo);
         if (process is null)
         {
             throw new InvalidOperationException("Windows did not start prime.exe.");
         }
-        return Task.CompletedTask;
+        return Task.FromResult<IGameExecutableProcess>(new TrackedGameProcess(process));
+    }
+
+    private sealed class TrackedGameProcess(Process process) : IGameExecutableProcess
+    {
+        public Task WaitForExitAsync(CancellationToken cancellationToken) => process.WaitForExitAsync(cancellationToken);
+        public ValueTask DisposeAsync() { process.Dispose(); return ValueTask.CompletedTask; }
     }
 
     private static bool TryResolvePrimePath(string gameDirectory, out string primePath)
@@ -277,18 +288,17 @@ public sealed class GameLaunchHandoffCoordinator(
     IGameExecutableLaunchService gameExecutableLaunchService,
     IOfficialLauncherService officialLauncherService,
     IGameProcessInspector gameProcessInspector,
-    string? profileLogDataRoot = null)
+    NativeLauncherProfilesStore? profileStore = null)
 {
     private readonly LauncherOperationLock operationLock = new(stateDirectory);
-    private readonly JsonLauncherProfilesStore profilesStore = new(stateDirectory);
+    private readonly NativeLauncherProfilesStore profilesStore = profileStore ?? new(stateDirectory);
     private readonly JsonGameInstallSelectionStore installSelectionStore = new(stateDirectory);
-    private readonly string profileLocalData = profileLogDataRoot
-        ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     public GameLaunchPresentation CapturePresentation(
         string? gameDirectory,
         LauncherLaunchTarget target,
-        ModInstallationEvidence? capturedInstallation = null)
+        ModInstallationEvidence? capturedInstallation = null,
+        LauncherProfile? requiredProfile = null)
     {
         if (HasIncompleteDeployment())
         {
@@ -322,7 +332,7 @@ public sealed class GameLaunchHandoffCoordinator(
                     LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher);
         }
 
-        var health = CapturePrimeHealth(gameDirectory, target, capturedInstallation);
+        var health = CapturePrimeHealth(gameDirectory, target, capturedInstallation, requiredProfile);
         return health ?? new(
             "Ready to play",
             LauncherHomeTone.Success,
@@ -364,7 +374,7 @@ public sealed class GameLaunchHandoffCoordinator(
         string? defaultGameDirectory = null,
         CancellationToken cancellationToken = default)
     {
-        var initial = CapturePresentation(gameDirectory, target);
+        var initial = CapturePresentation(gameDirectory, target, requiredProfile: requiredProfile);
         if (!initial.CanExecute)
         {
             return new(GameLaunchHandoffState.Blocked, initial.AutomationName, initial, Changed: false);
@@ -396,7 +406,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 Changed: false);
         }
 
-        var revalidated = CapturePresentation(gameDirectory, target);
+        var revalidated = CapturePresentation(gameDirectory, target, requiredProfile: requiredProfile);
         if (!revalidated.CanExecute)
         {
             return new(GameLaunchHandoffState.Blocked, revalidated.AutomationName, revalidated, Changed: false);
@@ -414,7 +424,7 @@ public sealed class GameLaunchHandoffCoordinator(
             && requiredProfile is null && gameDirectory is null;
         var savedDefault = installSelectionStore.Load();
         if (savedDefault.State == GameInstallSelectionState.Invalid
-            && !officialLauncherWithoutSelectedGame)
+            && !officialLauncherWithoutSelectedGame && requiredProfile is null)
         {
             return new(GameLaunchHandoffState.Blocked,
                 savedDefault.Error ?? "The Default game selection could not be read.",
@@ -425,7 +435,7 @@ public sealed class GameLaunchHandoffCoordinator(
             ? savedDefault.Selection!.GameDirectory
             : displayedDefault;
         if (savedDefault.State == GameInstallSelectionState.Loaded
-            && !officialLauncherWithoutSelectedGame
+            && !officialLauncherWithoutSelectedGame && requiredProfile is null
             && (displayedDefault is null
                 || !GameDirectoryIdentity.SameLocation(displayedDefault, currentDefault!)))
         {
@@ -434,27 +444,27 @@ public sealed class GameLaunchHandoffCoordinator(
                 revalidated, Changed: false);
         }
 
-        var registry = profilesStore.Load();
-        if (registry.State == LauncherProfilesLoadState.Invalid || registry.Snapshot is null)
+        string? selectedProfileId;
+        try { selectedProfileId = profilesStore.LoadSelectedId(); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or System.Text.Json.JsonException or InvalidDataException)
         {
+            return new(GameLaunchHandoffState.Blocked, exception.Message, revalidated, Changed: false);
+        }
+        if (selectedProfileId != requiredProfile?.Id)
             return new(GameLaunchHandoffState.Blocked,
-                registry.Error ?? "The profile registry is unavailable.", revalidated, Changed: false);
-        }
-        if (requiredProfile is null)
-        {
-            if (registry.Snapshot.SelectedProfileId is not null)
-            {
-                return new(GameLaunchHandoffState.Blocked,
-                    "The selected launch profile changed. Review the launch button and try again.",
-                    revalidated, Changed: false);
-            }
-
-        }
+                "The selected launch profile changed. Review the launch button and try again.",
+                revalidated, Changed: false);
 
         if (requiredProfile is not null)
         {
-            var selected = registry.Snapshot.SelectedProfile;
+            var catalog = profilesStore.Load();
+            if (catalog.State == LauncherProfilesLoadState.Invalid || catalog.Snapshot is null)
+                return new(GameLaunchHandoffState.Blocked,
+                    catalog.Error ?? "The shared profile catalog is unavailable.", revalidated, Changed: false);
+            var selected = catalog.Snapshot.SelectedProfile;
             if (selected?.Id != requiredProfile.Id
+                || selected.Revision != requiredProfile.Revision
                 || !string.Equals(selected.GameDirectory, requiredProfile.GameDirectory,
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -523,7 +533,8 @@ public sealed class GameLaunchHandoffCoordinator(
             exception is IOException
                 or UnauthorizedAccessException
                 or InvalidOperationException
-                or System.ComponentModel.Win32Exception)
+                or System.ComponentModel.Win32Exception
+                or TypeLoadException or BadImageFormatException)
         {
             return new(
                 GameLaunchHandoffState.Failed,
@@ -541,18 +552,29 @@ public sealed class GameLaunchHandoffCoordinator(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            IReadOnlyList<string> arguments = [];
             if (profile is not null)
             {
-                if (string.IsNullOrWhiteSpace(profileLocalData))
+                var launched = await profilesStore.LaunchAsync(profile, cancellationToken);
+                if (!launched.Ok || launched.Readiness != "ready" || launched.ProcessId is not > 0)
                 {
-                    throw new InvalidOperationException("Windows did not provide a per-user log directory.");
+                    var started = launched.ProcessId is > 0;
+                    var explanation = launched.Error?.Message ?? "The runtime did not confirm profile isolation readiness.";
+                    if (started) explanation += $" Game process {launched.ProcessId} may still be running; inspect it before retrying.";
+                    return new(GameLaunchHandoffState.Failed, explanation,
+                        CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile), started);
                 }
-                var logPath = LauncherProfiles.UnityLogPath(profile, profileLocalData);
-                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
-                arguments = ["-stfc-profile", profile.Id, "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile", logPath];
+                return new(GameLaunchHandoffState.Completed,
+                    $"{profile.Name} started with isolated preferences (process {launched.ProcessId}).",
+                    CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile), Changed: true);
             }
-            await gameExecutableLaunchService.StartAsync(gameDirectory, arguments, cancellationToken);
+            IDisposable? installationLease = profilesStore.AcquireInstallationLease(gameDirectory);
+            try
+            {
+                var child = await gameExecutableLaunchService.StartAsync(gameDirectory, [], cancellationToken);
+                GameInstallationLaunchCustody.Retain(child, installationLease);
+                installationLease = null;
+            }
+            finally { installationLease?.Dispose(); }
             return new(
                 GameLaunchHandoffState.Completed,
                 "prime.exe started.",
@@ -567,7 +589,9 @@ public sealed class GameLaunchHandoffCoordinator(
             exception is IOException
                 or UnauthorizedAccessException
                 or InvalidOperationException
-                or System.ComponentModel.Win32Exception)
+                or System.ComponentModel.Win32Exception
+                or NotSupportedException or TypeLoadException or BadImageFormatException
+                or System.Text.Json.JsonException)
         {
             return new(
                 GameLaunchHandoffState.Failed,
@@ -580,7 +604,8 @@ public sealed class GameLaunchHandoffCoordinator(
     private GameLaunchPresentation? CapturePrimeHealth(
         string? gameDirectory,
         LauncherLaunchTarget target,
-        ModInstallationEvidence? capturedInstallation = null)
+        ModInstallationEvidence? capturedInstallation = null,
+        LauncherProfile? requiredProfile = null)
     {
         if (string.IsNullOrWhiteSpace(gameDirectory))
         {
@@ -628,7 +653,9 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherLaunchRecoveryAction.CloseRunningGame,
                 LauncherHomeTone.Warning);
         }
-        if (processState == GameProcessInspectionState.RunningTarget)
+        if (processState == GameProcessInspectionState.RunningTarget
+            && (requiredProfile is null || !LauncherProfileLaunchContract.Inspect(
+                validation.GameDirectory!, requiredProfile.Id).IsValid))
         {
             return Blocked(
                 "Running",

@@ -132,15 +132,30 @@ function Assert-LauncherVerifierPairing {
   $launcherPath = Join-Path $Root "STFCModBridge.exe"
   $verifierPath = Join-Path $Root "STFCModBridge.ReleaseVerifier.exe"
   $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($launcherPath).ProductVersion
-  if ($productVersion -cnotmatch '\+commit\.(?<commit>unknown|[0-9a-f]{40})\.verifier\.(?<digest>[0-9a-f]{64})$') {
+  if ($productVersion -cnotmatch '\+commit\.(?<commit>unknown|[0-9a-f]{40})\.verifier\.(?<digest>[0-9a-f]{64})\.profiles\.(?<profiles>[0-9a-f]{64})$') {
     throw "The $Context launcher does not carry the closed release-verifier identity."
   }
   if ($ExpectedSourceRevisionId -and $Matches.commit -cne $ExpectedSourceRevisionId) {
     throw "The $Context launcher source identity does not match the expected release commit."
   }
+  $expectedNative = $Matches.profiles
+  $actualNative = (Get-FileHash -LiteralPath (Join-Path $Root "stfc-profiles-native.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($expectedNative -cne $actualNative) { throw "The $Context launcher is not paired to the exact native profiles component." }
   $actualDigest = (Get-FileHash -LiteralPath $verifierPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($actualDigest -cne $Matches.digest) {
     throw "The $Context launcher is not paired to the exact packaged release verifier."
+  }
+}
+
+function Assert-LicenseAndNotices {
+  param([string]$Root, [string]$Context)
+  foreach ($pair in @(@("LICENSE.txt", "LICENSE"), @("THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"))) {
+    $bundled = Join-Path $Root $pair[0]
+    $source = Join-Path $repoRoot $pair[1]
+    if (-not (Test-Path -LiteralPath $bundled -PathType Leaf) `
+        -or (Get-FileHash -LiteralPath $bundled -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash) {
+      throw "The $Context must contain the exact full repository license and generated third-party notices."
+    }
   }
 }
 
@@ -177,7 +192,8 @@ try {
   $expectedArchiveExecutables = @(
     "STFCModBridge.exe",
     "STFCModBridge.ReleaseVerifier.exe",
-    "STFCModBridge.Updater.exe")
+    "STFCModBridge.Updater.exe",
+    "stfc-profiles-native.dll")
   if ($archiveExecutableNames.Count -ne $expectedArchiveExecutables.Count `
       -or @($archiveExecutableNames | Where-Object { $expectedArchiveExecutables -cnotcontains $_ }).Count -ne 0) {
     throw "Fallback archive contains a portable executable outside the reviewed signing allowlist: $($archiveExecutableNames -join ', ')"
@@ -185,6 +201,7 @@ try {
   foreach ($executable in $archiveExecutables) {
     Assert-PortableExecutable $executable.FullName
   }
+  Assert-LicenseAndNotices $archiveInspectionRoot "Fallback archive"
   Assert-NoPackagedBattleStorageState $archiveInspectionRoot "Fallback archive"
   Assert-LauncherVerifierPairing $archiveInspectionRoot "fallback archive"
 } finally {
@@ -213,7 +230,7 @@ try {
   $packageExecutableNames = @($portableExecutables | ForEach-Object {
     [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
   })
-  $expectedPackageExecutables = @("STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe")
+  $expectedPackageExecutables = @("STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe", "stfc-profiles-native.dll")
   if ($packageExecutableNames.Count -ne $expectedPackageExecutables.Count `
       -or @($packageExecutableNames | Where-Object { $expectedPackageExecutables -cnotcontains $_ }).Count -ne 0) {
     $relative = @($portableExecutables | ForEach-Object {
@@ -224,6 +241,7 @@ try {
   foreach ($executable in $portableExecutables) {
     Assert-PortableExecutable $executable.FullName
   }
+  Assert-LicenseAndNotices $inspectionRoot "MSIX"
   Assert-NoPackagedBattleStorageState $inspectionRoot "MSIX"
   Assert-LauncherVerifierPairing $inspectionRoot "MSIX"
 
@@ -232,6 +250,8 @@ try {
   $namespaces.AddNamespace("f", "http://schemas.microsoft.com/appx/manifest/foundation/windows10")
   $namespaces.AddNamespace("uap10", "http://schemas.microsoft.com/appx/manifest/uap/windows10/10")
   $namespaces.AddNamespace("rescap", "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities")
+  $namespaces.AddNamespace("desktop6", "http://schemas.microsoft.com/appx/manifest/desktop/windows10/6")
+  $namespaces.AddNamespace("virtualization", "http://schemas.microsoft.com/appx/manifest/virtualization/windows10")
   $identity = $manifest.SelectSingleNode("/f:Package/f:Identity", $namespaces)
   if ($identity.Name -cne $expectedPackageIdentity `
       -or $identity.Publisher -cne $ExpectedPublisherSubject `
@@ -251,6 +271,24 @@ try {
   if ($null -eq $integrity -or $integrity.Enforcement -cne "on") {
     throw "The MSIX must enforce package-content integrity at runtime."
   }
+  $filesystemDescriptors = @($manifest.SelectNodes("//*[local-name()='FileSystemWriteVirtualization']"))
+  $windows10Filesystem = @($manifest.SelectNodes("/f:Package/f:Properties/desktop6:FileSystemWriteVirtualization", $namespaces))
+  $windows11Filesystem = @($manifest.SelectNodes("/f:Package/f:Properties/virtualization:FileSystemWriteVirtualization", $namespaces))
+  $excludedDirectories = @($manifest.SelectNodes("/f:Package/f:Properties/virtualization:FileSystemWriteVirtualization/virtualization:ExcludedDirectories", $namespaces))
+  $exclusions = @($manifest.SelectNodes("/f:Package/f:Properties/virtualization:FileSystemWriteVirtualization/virtualization:ExcludedDirectories/virtualization:ExcludedDirectory", $namespaces))
+  $registryDescriptors = @($manifest.SelectNodes("//*[local-name()='RegistryWriteVirtualization']"))
+  $deviceFamily = @($manifest.SelectNodes("/f:Package/f:Dependencies/f:TargetDeviceFamily", $namespaces))
+  if ($filesystemDescriptors.Count -ne 2 -or $windows10Filesystem.Count -ne 1 `
+      -or $windows10Filesystem[0].InnerText -cne "disabled" `
+      -or $windows11Filesystem.Count -ne 1 -or $windows11Filesystem[0].ChildNodes.Count -ne 1 `
+      -or $excludedDirectories.Count -ne 1 -or $excludedDirectories[0].ChildNodes.Count -ne 1 `
+      -or $exclusions.Count -ne 1 -or $exclusions[0].InnerText -cne '$(KnownFolder:LocalAppData)\STFC Profiles' `
+      -or $exclusions[0].ChildNodes.Count -ne 1 -or $exclusions[0].FirstChild.NodeType -ne [Xml.XmlNodeType]::Text `
+      -or $registryDescriptors.Count -ne 0 -or $deviceFamily.Count -ne 1 `
+      -or $deviceFamily[0].Name -cne "Windows.Desktop" -or $deviceFamily[0].MinVersion -cne "10.0.19041.0") {
+    throw "The MSIX must retain Windows 10 support, use its documented filesystem fallback and exclude exactly the shared STFC Profiles directory on Windows 11, with no registry virtualization change."
+  }
+
   $capabilities = @($manifest.SelectNodes("/f:Package/f:Capabilities/*", $namespaces))
   $expectedCapabilities = @("runFullTrust", "unvirtualizedResources")
   $capabilityNames = @($capabilities | ForEach-Object { $_.Name })

@@ -671,6 +671,9 @@
                      FontSize="11"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="Release source" />
+          <TextBlock Text="{Binding ConfigurationTargetLabel}" TextWrapping="Wrap" MaxWidth="240"
+                     HorizontalAlignment="Right" FontWeight="SemiBold"
+                     automation:AutomationProperties.Name="{Binding ConfigurationTargetLabel}" />
           <TextBlock x:Name="ReleaseSourceIdentityText"
                      Margin="0,2,0,0"
                      MaxWidth="240"

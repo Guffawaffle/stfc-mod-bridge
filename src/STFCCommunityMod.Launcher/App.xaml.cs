@@ -18,6 +18,11 @@ public partial class App : Application
             Shutdown(qualificationExitCode);
             return;
         }
+        if (ProfileCatalogPackageQualification.TryRun(e.Args, out var profilesQualificationExitCode))
+        {
+            Shutdown(profilesQualificationExitCode);
+            return;
+        }
         if (!IsBoundSelfUpdateChild(e.Args))
         {
             var layout = PerUserInstallLayout.FromLocalApplicationData(

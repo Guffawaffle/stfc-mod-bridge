@@ -10,6 +10,12 @@ WL-001 through WL-010 delivery sequence are preserved as historical evidence
 and classified in [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md). They are not
 current repository, branch, or execution instructions.
 
+The accepted Profiles MVP adds shared profile selection and game installation
+status/update/recovery. Its [Bridge integration contract](SHARED_INSTALL_PROFILE_CONTRACT.md)
+and canonical shared contracts own those additions; live and release
+qualification remain open. Earlier game-update delegation and multi-account
+non-goal statements are superseded for this MVP.
+
 ## Product statement
 
 STFC Mod Bridge is a Windows desktop application that makes the supported STFC Community Mod
@@ -22,7 +28,7 @@ adapting them to the Windows proxy-DLL deployment model:
 | Outcome | macOS today | Windows parity+ |
 |---|---|---|
 | Detect STFC | Xsolla launcher INI | deterministic discovery plus user override |
-| Update STFC | launcher-owned Xsolla client | delegate to official launcher and re-check afterward |
+| Update STFC | launcher-owned Xsolla client | shared Profiles full-image updater with exact target, exclusion and recovery; qualification in progress |
 | Install/update mod | bundled dylib only | verified release download and transactional `version.dll` deployment |
 | Launch modded game | DYLD helper | launch through the supported Windows game/launcher path; proxy loads naturally |
 | Configure mod | open raw TOML | schema-driven editor plus raw-file escape hatch |
@@ -538,11 +544,11 @@ and non-ASCII paths.
 
 ## Explicit non-goals for the first production release
 
-- Reimplementing Xsolla game patching.
-- Modifying game files other than allowlisted community-mod artifacts.
+- Implementing the Xsolla delta patch protocol. The accepted Profiles MVP uses
+  the shared full-image update engine under its separate integrity/recovery
+  contract.
 - Runtime hook configuration reload.
 - Wine/Linux launcher support.
-- Multi-account orchestration.
 - Automatic diagnostic upload.
 - Silent elevation.
 - Background Windows service.

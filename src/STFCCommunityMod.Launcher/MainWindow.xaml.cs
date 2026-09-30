@@ -497,27 +497,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             try
             {
-                var storedProfiles = ProfilesStore.Load();
-                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null)
-                {
-                    SettingsUnavailableMessage.Text = storedProfiles.Error ?? "The launch profile registry is unavailable.";
-                    SettingsUnavailableDialog.IsOpen = true;
-                    return;
-                }
                 await using var lease = await new LauncherOperationLock(stateDirectory)
                     .TryAcquireAsync(lifetimeCancellation.Token);
                 if (lease is null)
                 {
                     SettingsUnavailableMessage.Text =
                         "Another Mod Bridge operation is active. The game folder was not changed; try again when it finishes.";
-                    SettingsUnavailableDialog.IsOpen = true;
-                    return;
-                }
-
-                storedProfiles = ProfilesStore.Load();
-                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null)
-                {
-                    SettingsUnavailableMessage.Text = "The profile registry could not be read. Review it before changing Default.";
                     SettingsUnavailableDialog.IsOpen = true;
                     return;
                 }
@@ -884,6 +869,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             ReportConfigurationCleanupAction(
                 false,
                 "Select a valid game folder before reviewing configuration cleanup.");
+            return;
+        }
+        if (viewModel.SelectedConfigurationProfile is not null)
+        {
+            ReportConfigurationCleanupAction(false,
+                "Installation configuration cleanup is available for Default. Profile Settings and Data Sync save to their own configuration.");
             return;
         }
         if (SharedSettings.HasPendingChanges)
@@ -2080,8 +2071,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 throw new LauncherConfigurationSchemaException(
                     "Settings are disabled until the unsafe mod deployment transaction is recovered.");
             }
-            if (string.IsNullOrWhiteSpace(viewModel.SelectedGameDirectory)
-                || !File.Exists(Path.Combine(viewModel.SelectedGameDirectory, "version.dll")))
+            if (string.IsNullOrWhiteSpace(viewModel.ConfigurationGameDirectory)
+                || string.IsNullOrWhiteSpace(viewModel.ConfigurationFilePath)
+                || !File.Exists(Path.Combine(viewModel.ConfigurationGameDirectory, "version.dll")))
             {
                 throw new LauncherConfigurationSchemaException(
                     "Community Mod is not installed in the selected game folder. Install it before editing mod settings.");
@@ -2120,7 +2112,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             distributionProviderCatalog,
             BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
             activeSelection);
-        var configurationHistoryCoordinator = new ProviderConfigurationRestoreCoordinator(
+        var configurationProfile = (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile;
+        var configurationHistoryCoordinator = configurationProfile is not null ? null : new ProviderConfigurationRestoreCoordinator(
             backupStore,
             distributionProviderCatalog,
             providerSelectionStore,
@@ -2136,15 +2129,20 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             configurationPathProvider,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
-            repository: new TomlConfigurationRepository(
-                mutationBackup: mutationBackup,
-                mutationAdmission: new LauncherOperationLock(stateDirectory)),
+            repository: configurationProfile is null
+                ? new TomlConfigurationRepository(mutationBackup: mutationBackup,
+                    mutationAdmission: new LauncherOperationLock(stateDirectory))
+                : new ProfileConfigurationRepository(configurationProfile, ProfilesStore,
+                    () => (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id,
+                    new TomlConfigurationRepository(mutationBackup: new ProfileConfigurationMutationBackup(
+                        configurationProfile, provider.Id), mutationAdmission: new LauncherOperationLock(stateDirectory))),
             uiPreferencesStore: uiPreferencesStore,
             openExternalUri: OpenExternalUri,
             openDataFolder: OpenApplicationDataFolder,
             manageApplication: OpenWindowsInstalledApps,
             openReleaseSecurityGuidance: OpenReleaseSecurityGuidance,
-            configurationHistoryCoordinator: configurationHistoryCoordinator);
+            configurationHistoryCoordinator: configurationHistoryCoordinator,
+            configurationTargetLabel: (DataContext as MainWindowViewModel)?.ConfigurationTargetLabel);
     }
 
     private bool CanOpenRawConfiguration()

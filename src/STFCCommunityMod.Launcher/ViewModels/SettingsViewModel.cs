@@ -62,7 +62,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         Action? openDataFolder = null,
         Action? manageApplication = null,
         Action? openReleaseSecurityGuidance = null,
-        ProviderConfigurationRestoreCoordinator? configurationHistoryCoordinator = null)
+        ProviderConfigurationRestoreCoordinator? configurationHistoryCoordinator = null,
+        string? configurationTargetLabel = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -77,6 +78,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         this.uiPreferencesStore = uiPreferencesStore;
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
+        ConfigurationTargetLabel = configurationTargetLabel ?? "Default installation";
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
         About = new(
             BundledLauncherAboutCatalog.Load(),
@@ -138,6 +140,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string ConfigurationTargetLabel { get; }
 
     public string SourceIdentity { get; }
 
@@ -958,7 +962,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OperationStatus = result.State switch
         {
             AtomicTomlWriteState.Succeeded when result.BackupReceipt is not null =>
-                $"Changes saved. Protected provider backup {result.BackupReceipt.BackupId} was verified.",
+                $"Changes saved. Protected configuration backup {result.BackupReceipt.BackupId} was verified.",
             AtomicTomlWriteState.Succeeded => "Changes saved.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>

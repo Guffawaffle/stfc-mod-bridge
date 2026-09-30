@@ -11,6 +11,7 @@ public static class LauncherArchiveExtractor
         ModBridgeProductIdentity.ExecutableName,
         ModBridgeProductIdentity.UpdaterExecutableName,
         ModBridgeProductIdentity.ReleaseVerifierExecutableName,
+        NativeProfileCatalogTransport.LibraryName,
     };
 
     public static void Extract(byte[] contents, string destination)

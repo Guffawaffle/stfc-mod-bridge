@@ -55,6 +55,7 @@ internal sealed class LauncherWorkspaceServices(
 internal enum LauncherSettingsInvalidationReason
 {
     RuntimeActivationChanged,
+    ConfigurationTargetChanged,
     ProviderSessionEnded,
 }
 
