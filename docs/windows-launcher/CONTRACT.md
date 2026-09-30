@@ -377,7 +377,7 @@ backup/restore, retention, privacy, and transaction rules are in the
 [mod source-selection lifecycle](MOD_DEPLOYMENT.md#mod-source-selection-lifecycle).
 
 TOML remains the runtime and interchange boundary for NetniV compatibility and
-safe source switching. A future Guffawaffle-only profile store may be richer,
+safe source switching. A future Guffawaffle-only configuration store may be richer,
 but it must compile/export deterministic sparse TOML while the C++ runtime
 consumes TOML.
 

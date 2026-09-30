@@ -2,6 +2,11 @@
 
 Status: selected-target split launch is implemented; installed-client dogfood and screenshots remain pending.
 
+The running-process exclusions below describe the current implementation.
+Concurrent named-session admission under the accepted
+[shared profile contract](SHARED_INSTALL_PROFILE_CONTRACT.md) remains open;
+this handoff is not evidence that a second profile can already launch.
+
 ## Player-facing targets
 
 Home exposes one compound split button with two ordinary launcher-owned targets:

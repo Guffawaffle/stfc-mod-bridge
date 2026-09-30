@@ -1,27 +1,53 @@
-# Named launch profiles: recovery checkpoint
+# Named launch profiles: current return point
 
-Guff's 2026-09-29 direction removes installation-marker selection completely.
-There is no marker-file adoption, compatibility selector, fallback, migration
-path or retained marker-specific test suite. This supersedes the previous
-per-install proposal and its unshipped experiment.
+Status: 2026-09-29 documentation checkpoint. The
+[canonical STFC Profiles catalog contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md) and the local
+[Bridge launch contract](SHARED_INSTALL_PROFILE_CONTRACT.md) supersede the earlier
+Bridge-owned registry design. Historical commits and verification receipts remain
+evidence of their exact implementation checkpoints.
 
-Bridge continues to own `launch-profiles.json`, stable profile IDs, display names,
-game-folder metadata and explicit launch selection. Create and track-existing
-operations write only that registry. Existing IDs are supplied by the user.
-Profiles may record the same game folder as each other and Default. Editing folder
-metadata does not change the profile ID. Registry revision/operation locking and
-stale-window checks remain.
+## Accepted target
 
-Named launch passes `-stfc-profile <id>` alongside the derived config and log
-arguments. Runtime qualification concerns that explicit request only; the old
-capability export and marker design are removed from the active contract.
-Ordinary launch does not derive its account from saved profile folder metadata.
+STFC Profiles owns a shared per-user directory catalog. Active profiles live in
+`profiles/<immutable-id>`; archived profiles live in sibling `archives/<same-id>`.
+Each directory holds editable `metadata.json`, encrypted preferences and owned
+logs/data. There is no central registry. Bridge and the standalone CLI use common
+operations; Bridge's saved UI selection cannot redirect ordinary launches.
 
-The [profile repository](https://github.com/Guffawaffle/stfc-profiles) owns the
-shared ID/store library and explicit-input game adapter. Host integration,
-standalone bootstrap, readiness and live shared-install qualification remain
-open. Bridge keeps its independent tracking implementation.
+Archive/restore preserve the whole directory and ID, require a stopped session,
+and coordinate with launch admission through stable lifecycle exclusion.
+Permanent deletion is separate and explicit. Several profiles may share one
+game executable. Names and installation associations never change the ID.
 
-Local removal work is on `feature/named-launch-profiles-225`, based on
-`b52c2d46f6b4245afa6f191b16ccfac9cc481e10`, updating draft PR #227.
-See [the current contract](SHARED_INSTALL_PROFILE_CONTRACT.md).
+Ordinary launches retain ordinary OS-user state. Explicit named launches must
+isolate the requested ID or stop. The retired installation selector, adoption,
+compatibility, fallback and migration have no implementation or test work items.
+
+## Current implementation evidence
+
+Bridge branch `feature/named-launch-profiles-225` at
+`3b43f44550230be5b2aca4744a2e983014d59a9e` tracks draft PR #227, based on
+`aad5fda716d9cb402965c294d7bc33b061ab1d8c` for the completed review checkpoint.
+At that source checkpoint, Bridge persists `launch-profiles.json`, has stable IDs,
+revision/operation locking, and passes `-stfc-profile <id>` with config/log argv.
+Those are existing mechanics to replace or integrate, not authority to keep a
+private catalog. The current running-process gate still blocks a second game.
+
+The profile library at `f8fe406cbc69e86db3a6c47e839ae1c67be2baf4` contains ID
+validation, Windows DPAPI storage and an explicit-input adapter. Its old
+`STFC Community Mod\Profiles` path and directory-local lock do not implement
+the accepted storage/lifecycle contract. The active mod at
+`0c34f249b1ea7bf00dd5221e9834983af7c5883a` removed the obsolete capability export;
+the new explicit-launch runtime is not integrated.
+
+SDK alignment and Go vulnerability repair are complete at the Bridge checkpoint.
+Full local validation and exact-head CI passed; that evidence does not qualify
+profile runtime behavior or apply automatically to a later candidate.
+
+## Next work
+
+Implement the shared catalog/lifecycle operations, CLI and Bridge consumption;
+then integrate both runtime hosts, readiness/admission and macOS protection and
+loading. Qualify ordinary launch, two correct accounts from one executable,
+reverse restart persistence, duplicate-profile refusal, browser callbacks and
+stopped-session archive/restore. No shared-install player runtime is qualified.

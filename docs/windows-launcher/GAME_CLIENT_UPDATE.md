@@ -93,4 +93,5 @@ Those probe files are evidence for these requirements, not production code.
 
 Routine game launches may use `prime.exe` directly. Named launches supply an
 explicit process profile ID under the [shared-install contract](SHARED_INSTALL_PROFILE_CONTRACT.md).
-The runtime selects that ID before login state is read.
+The required runtime behavior is to select that ID before login state is read;
+host integration and shared-install runtime qualification remain open.

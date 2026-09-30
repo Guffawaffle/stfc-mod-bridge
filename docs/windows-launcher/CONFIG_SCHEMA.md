@@ -128,7 +128,7 @@ backup, and rollback.
 
 TOML remains the current runtime and interchange boundary. Launcher writes are
 sparse and must preserve unknown keys and comments. A future richer
-Guffawaffle-only profile store may compile to this model, but it must retain
+Guffawaffle-only configuration store may compile to this model, but it must retain
 deterministic TOML import/export while the C++ runtime consumes TOML and while
 NetniV compatibility is supported.
 

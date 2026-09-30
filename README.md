@@ -123,6 +123,7 @@ fallback.
 - [Repository extraction provenance](docs/EXTRACTION_PROVENANCE.md)
 - [Provider-pack boundary](docs/PROVIDER_PACKS.md)
 - [Product contract](docs/windows-launcher/CONTRACT.md)
+- [Shared profile catalog and explicit-launch contract](docs/windows-launcher/SHARED_INSTALL_PROFILE_CONTRACT.md)
 - [UX direction](docs/windows-launcher/UX_DIRECTION.md)
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)
