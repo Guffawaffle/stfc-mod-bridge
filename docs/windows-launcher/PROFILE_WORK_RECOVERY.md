@@ -25,8 +25,11 @@ exclusion. The engine owns payload validation, commit journals and recovery;
 Bridge does not contain a separate downloader or patcher. A missing executable
 does not erase the confirmed status/recovery target; launch validity stays
 separate. Physical path aliases use the existing directory-identity boundary.
-Settings repositories retain their construction target across external profile
-changes, preserve drafts and admitted saves, and recompose after those finish.
+Settings retain their construction target across external profile and reviewed
+runtime changes, preserve drafts and admitted saves, and recompose after
+discard/completion. Raw TOML uses that same binding and resolves it again before
+opening. Restoring a profile does not revive a draft against an older runtime
+revision; unchanged later runtime evidence still reconciles deferred work.
 
 The source dogfood entrypoint and ZIP/MSIX release paths include the exact
 hash-paired native DLL. Default dependency builds use an immutable source pin;
@@ -38,18 +41,19 @@ The default archive build records no development override or dirty input.
 
 ## Evidence and next work
 
-The active Bridge checkout remains `feature/named-launch-profiles-225`, based on
-signed implementation checkpoint `6915fc91820439e45918b4a6f09caf7ef8dd2350`.
-Its independent general, hostile and package readings found recovery-target,
-physical-alias, cached Settings and package evidence issues. Corrections and
-focused regressions are applied; final committed correction review and CI remain
-required. SDK alignment and reachable Go vulnerability repair were completed at
-the earlier `0c707a0836ec7e8e5be31075d708f93efe56875d` checkpoint.
+The active Bridge checkout remains `feature/named-launch-profiles-225` on draft
+[PR227](https://github.com/Guffawaffle/stfc-mod-bridge/pull/227). Reviewed signed
+implementation is recorded at `649856786b8976ad0b5ee990e465a4dfeed3b437`.
+Independent general, hostile and package reviews and correction deltas have no
+unresolved actionable findings. Read the current Git/PR head before resuming;
+this recorded checkpoint is evidence, not permission to restore an older tree.
+SDK alignment and reachable Go vulnerability repair were completed earlier.
 
-The required full managed solution passes on this development worktree:
-Core 1,221 passed / 8 skipped, WPF 281 passed, and local integration 53 passed /
-8 opt-in skipped. All three real native ABI cases then executed and passed in
-the ordinary Explorer desktop namespace against the exact immutable build.
+The required full managed solution passes at that exact implementation:
+Core 1,226 passed / 8 skipped, WPF 290 passed, and local integration 53 passed /
+8 skipped. Three real native ABI cases passed in the ordinary Explorer desktop
+namespace at unchanged product implementation `d008b2de` against the same
+immutable native build.
 The new DLL SHA-256 is
 `779f3e53cb96567ed4e6047456d8c14c87be6cd6b3a56ad30cf7472f842c7b04`.
 
@@ -62,8 +66,19 @@ The production signature gate correctly refuses these unsigned development
 artifacts. Gate project discovery uses the reviewed solution, and component
 scan excludes historical worktrees/artifacts so they cannot become release
 subjects. Bounded command receipts and historical dirty ownership are under
-`artifacts/`. Exact-head publish/inspection also passed at the signed implementation
-checkpoint; corrections require renewed validation and independent review.
+`artifacts/`. Exact-head publish/inspection also passed at the signed implementation.
+Later changes require appropriate validation and independent review. Documentation
+does not qualify a different artifact or manufacture current-head CI success.
+
+The first clean-host package run passed readiness and standalone physical
+catalog/config/native lease verification, then failed when its PID-associated
+Process could not read ExitCode without an owned handle. The signed correction
+retains SafeHandle through waiting and uses an explicit exit-code getter. Exact
+nonzero rejection, nonce/package/profile binding and release-marker/cleanup gates
+remain mandatory; real external-child exit0/7 regressions pass. That partial run
+did not qualify packaged release, synthetic cleanup or UI smoke. Read the executed
+steps and receipts in [implementation CI36699877347](https://github.com/Guffawaffle/stfc-mod-bridge/actions/runs/36699877347)
+and current PR checks for the latest outcome.
 
 Windows package context requires separate physical storage qualification. The
 OS-user Known Folder string and absence of package identity do not prove that
