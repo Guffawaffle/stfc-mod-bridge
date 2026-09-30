@@ -36,14 +36,16 @@ internal sealed class ModBridgeHomeWorkspace(LauncherWorkspaceServices sharedSer
 
 internal sealed class LauncherWorkspaceServices(
     MainWindowViewModel foundation,
-    Func<SettingsViewModel> settingsFactory)
+    Func<SettingsViewModel> settingsFactory,
+    Func<long>? settingsRuntimeRevisionProvider = null)
     : IDisposable
 {
     public MainWindowViewModel Foundation { get; } =
         foundation ?? throw new ArgumentNullException(nameof(foundation));
 
     public LauncherSettingsWorkspace Settings { get; } = new(settingsFactory,
-        () => LauncherConfigurationTarget.Capture(foundation.SelectedConfigurationProfile?.Id, foundation.ConfigurationFilePath));
+        () => LauncherConfigurationTarget.Capture(foundation.SelectedConfigurationProfile?.Id,
+            foundation.ConfigurationFilePath, settingsRuntimeRevisionProvider?.Invoke() ?? 0));
 
     public LauncherDiagnosticsWorkspace Diagnostics { get; } = new(foundation);
 
@@ -65,15 +67,28 @@ internal sealed record LauncherSettingsInvalidatedEventArgs(
     SettingsViewModel Workspace,
     LauncherSettingsInvalidationReason Reason);
 
-internal sealed record LauncherConfigurationTarget(string? ProfileId, string? ConfigurationPath)
+internal sealed record LauncherConfigurationTarget(string? ProfileId, string? ConfigurationPath, long RuntimeRevision = 0)
 {
-    public static LauncherConfigurationTarget Capture(string? profileId, string? path) =>
-        new(profileId, string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path));
+    public static LauncherConfigurationTarget Capture(string? profileId, string? path, long runtimeRevision = 0) =>
+        new(profileId, string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path), runtimeRevision);
 
     public bool Matches(LauncherConfigurationTarget other) => ProfileId == other.ProfileId
-        && string.Equals(ConfigurationPath, other.ConfigurationPath, StringComparison.OrdinalIgnoreCase);
+        && string.Equals(ConfigurationPath, other.ConfigurationPath, StringComparison.OrdinalIgnoreCase)
+        && RuntimeRevision == other.RuntimeRevision;
 
     public string? Resolve(LauncherConfigurationTarget current) => Matches(current) ? ConfigurationPath : null;
+}
+
+internal static class LauncherRawConfigurationCommand
+{
+    public static RelayCommand Create(Func<string?> boundPathProvider, Action<string> openPath) => new(
+        () =>
+        {
+            // Resolve again on execution; retained commands must never follow a different target.
+            var path = boundPathProvider();
+            if (path is not null && File.Exists(path)) openPath(path);
+        },
+        () => boundPathProvider() is { } path && File.Exists(path));
 }
 
 internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory,
@@ -106,7 +121,9 @@ internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory,
         if (constructedTarget.Matches(target)) return false;
         if (workspace.HasPendingChanges || workspace.SyncWorkspace.HasPendingChanges
             || workspace.IsSaveInProgress || workspace.SyncWorkspace.IsSaveInProgress) return false;
-        await InvalidateAsync(LauncherSettingsInvalidationReason.ConfigurationTargetChanged);
+        await InvalidateAsync(constructedTarget.RuntimeRevision != target.RuntimeRevision
+            ? LauncherSettingsInvalidationReason.RuntimeActivationChanged
+            : LauncherSettingsInvalidationReason.ConfigurationTargetChanged);
         return true;
     }
 

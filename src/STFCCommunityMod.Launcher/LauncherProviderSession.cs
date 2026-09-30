@@ -41,7 +41,7 @@ internal sealed class LauncherProviderSession : IDisposable
             () => runtimeComposition.Current.ActivationPlan,
             GetBattleFeatures);
         ApplicationComposition = new(
-            new(viewModel, () => settingsFactory(runtimeComposition.Current)),
+            new(viewModel, () => settingsFactory(runtimeComposition.Current), () => runtimeComposition.SettingsRevision),
             () => runtimeComposition.Current.ActivationPlan);
     }
 
@@ -56,6 +56,8 @@ internal sealed class LauncherProviderSession : IDisposable
     public LauncherProviderReleaseChannel ReleaseChannel { get; }
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
+
+    public long SettingsRuntimeRevision => runtimeComposition.SettingsRevision;
 
     public LauncherBattleFeatureSnapshot BattleFeatures => GetBattleFeatures();
 
@@ -97,6 +99,8 @@ internal sealed class LauncherRuntimeCompositionSlot(
 
     public LauncherStartupComposition Current { get; private set; } = initial;
 
+    public long SettingsRevision { get; private set; }
+
     public bool Refresh(
         ReviewedRuntimeActivation? activation,
         LauncherBattlePreferences nextBattlePreferences)
@@ -114,6 +118,7 @@ internal sealed class LauncherRuntimeCompositionSlot(
             activation,
             nextBattlePreferences,
             configurationCatalog);
+        SettingsRevision++;
         evidenceSha256 = nextEvidence;
         battlePreferences = nextBattlePreferences;
         return true;

@@ -239,8 +239,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
                 WorkspaceSaveStateKind.Blocked,
                 WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
                 includesSettings
-                    ? "You selected a different game installation while Settings and Data Sync changes were staged. Save is paused so they are not applied to the wrong installation."
-                    : "You selected a different game installation while Data Sync changes were staged. Save is paused so they are not applied to the wrong installation.",
+                    ? "The selected configuration or reviewed runtime changed while Settings and Data Sync changes were staged. Discard the drafts to reload the current Settings."
+                    : "The selected configuration or reviewed runtime changed while Data Sync changes were staged. Discard the drafts to reload the current Settings.",
                 WorkspaceSaveRecoveryKind.DiscardAndReload,
                 includesSettings ? "Discard all changes and reload" : "Discard my changes and reload");
         }

@@ -131,21 +131,6 @@ public sealed class ProviderSourceDialogTests
     }
 
     [TestMethod]
-    public void RuntimeEvidenceRefreshCopyDoesNotClaimAnInFlightSaveLeftTheFileUnchanged()
-    {
-        var source = File.ReadAllText(
-            Path.Combine(RepositoryRoot(), "src/STFCCommunityMod.Launcher/MainWindow.xaml.cs"));
-        var refresh = Slice(
-            source,
-            "private async Task RefreshRuntimeCompositionConsumersAsync",
-            "private void ShowProviderRecompositionFailure");
-
-        StringAssert.Contains(refresh, "waited for any active save to finish");
-        StringAssert.Contains(refresh, "Review the saved Settings before continuing");
-        Assert.IsFalse(refresh.Contains("the saved TOML file was not changed", StringComparison.Ordinal));
-    }
-
-    [TestMethod]
     public void RuntimeRevalidationAndAsyncRefreshShareTheBoundedRecoveryBoundary()
     {
         var source = File.ReadAllText(

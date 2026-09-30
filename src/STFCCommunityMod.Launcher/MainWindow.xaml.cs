@@ -301,13 +301,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             return;
         }
-        if (!ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation))
-        {
-            return;
-        }
+        var runtimeChanged = ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation);
         try
         {
-            ProviderSession.ApplicationComposition.RevalidateHomes();
+            if (runtimeChanged) ProviderSession.ApplicationComposition.RevalidateHomes();
             await RefreshRuntimeCompositionConsumersAsync();
         }
         catch (Exception exception)
@@ -327,45 +324,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private async Task RefreshRuntimeCompositionConsumersAsync()
     {
         diagnosticPreview = null;
-        var sharedSettings = SharedSettings;
-        var currentSettings = sharedSettings.Current;
-        if (currentSettings is null)
-        {
-            return;
-        }
-        if (await sharedSettings.ReconcileTargetAsync())
-        {
-            ObserveSettings(null);
-            SettingsWorkspace.DataContext = null;
-            isSettingsWorkspaceInitialized = false;
-            if (isSettingsWorkspaceOpen) EnsureSettingsWorkspaceInitialized();
-            return;
-        }
-        if (sharedSettings.HasTargetMismatch && (sharedSettings.HasPendingChanges
-            || currentSettings.IsSaveInProgress || currentSettings.SyncWorkspace.IsSaveInProgress))
-        {
-            QueueSettingsTargetRefresh();
-            return;
-        }
-        var wasOpen = isSettingsWorkspaceOpen;
-        var discardedDrafts = currentSettings.HasPendingChanges
-            || currentSettings.SyncWorkspace.HasPendingChanges;
-        SettingsWorkspace.DataContext = null;
-        openRawTomlCommand = null;
-        isSettingsWorkspaceInitialized = false;
-        await sharedSettings.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
-        if (wasOpen && !EnsureSettingsWorkspaceInitialized())
-        {
-            SetSettingsWorkspaceOpen(false);
-        }
-        if (discardedDrafts)
-        {
-            SettingsUnavailableMessage.Text =
-                "Runtime compatibility changed while Settings had unsaved drafts. "
-                + "Mod Bridge waited for any active save to finish, reloaded the reviewed settings contract, "
-                + "and discarded any remaining unsaved drafts. Review the saved Settings before continuing.";
-            SettingsUnavailableDialog.IsOpen = true;
-        }
+        // The constructed target retains its runtime revision even after the composition slot advances.
+        // Reconcile unchanged evidence too, so deferred draft/save work cannot lose that refresh.
+        await ReconcileSettingsTargetAsync();
     }
 
     private void ShowProviderRecompositionFailure(Exception exception)
@@ -2136,9 +2097,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
             activeSelection);
         var configurationProfile = (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile;
-        var binding = LauncherConfigurationTarget.Capture(configurationProfile?.Id, configurationPathProvider());
-        Func<string?> boundConfigurationPath = () => binding.Resolve(LauncherConfigurationTarget.Capture(
-            (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id, configurationPathProvider()));
+        var settingsSession = ProviderSession;
+        var binding = LauncherConfigurationTarget.Capture(configurationProfile?.Id, configurationPathProvider(),
+            ProviderSession.SettingsRuntimeRevision);
+        Func<string?> boundConfigurationPath = () => !ReferenceEquals(settingsSession, ProviderSession) ? null
+            : binding.Resolve(LauncherConfigurationTarget.Capture(
+            (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id, configurationPathProvider(),
+            ProviderSession.SettingsRuntimeRevision));
         var configurationHistoryCoordinator = configurationProfile is not null ? null : new ProviderConfigurationRestoreCoordinator(
             backupStore,
             distributionProviderCatalog,
@@ -2147,7 +2112,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             configurationEvidence,
             stateDirectory,
             boundConfigurationPath);
-        openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
+        openRawTomlCommand = LauncherRawConfigurationCommand.Create(boundConfigurationPath, OpenRawConfiguration);
         return new(
             catalog,
             new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
@@ -2216,7 +2181,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         try
         {
             var owner = SharedSettings;
-            if (!await owner.ReconcileTargetAsync() || !ReferenceEquals(owner, SharedSettings)) return;
+            var invalidated = await owner.ReconcileTargetAsync();
+            openRawTomlCommand?.NotifyCanExecuteChanged();
+            if (!invalidated || !ReferenceEquals(owner, SharedSettings)) return;
             ObserveSettings(null);
             SettingsWorkspace.DataContext = null;
             openRawTomlCommand = null;
@@ -2224,11 +2191,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             if (isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized()) SetSettingsWorkspaceOpen(false);
         }
         finally { isSettingsTargetRefreshRunning = false; }
-    }
-
-    private bool CanOpenRawConfiguration()
-    {
-        return TryGetConfigurationFilePath(out var path) && File.Exists(path);
     }
 
     private void OpenExternalUri(Uri uri)
@@ -2304,16 +2266,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         OpenReleaseSecurityGuidance();
     }
 
-    private void OpenRawConfiguration()
+    private void OpenRawConfiguration(string path)
     {
-        if (!TryGetConfigurationFilePath(out var path) || !File.Exists(path))
-        {
-            SettingsUnavailableMessage.Text =
-                "Select a valid game folder with an existing community_patch_settings.toml first.";
-            SettingsUnavailableDialog.IsOpen = true;
-            return;
-        }
-
         try
         {
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
