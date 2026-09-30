@@ -48,12 +48,20 @@ requires the exact Go version, proves `go.mod`/`go.sum` are tidy, compares the
 compiled dependency closure to the reviewed inventory, runs tests, and emits a
 trimmed Windows x64 executable plus a matching 71-module SPDX inventory under
 `artifacts/release-verifier`.
-CI also runs `govulncheck` v1.6.0. The 2026-08-13 Go 1.26.6 audit found no
-reachable symbol or imported-package vulnerability. It reported module-only
-advisories GO-2026-6179 and GO-2026-6180 for transitive, uncalled
-`golang.org/x/mod` sumdb packages, plus GO-2026-5932 for the transitive,
-uncalled `golang.org/x/crypto/openpgp` package. These residuals are recorded
-rather than mislabeled as reachable code.
+CI also runs `govulncheck` v1.6.0. The 2026-09-29 Go 1.26.6 audit found no
+reachable symbol or imported-package vulnerability after updating gRPC to
+`v1.83.2`, protobuf to `v1.36.12`, `golang.org/x/crypto` to `v0.57.0`,
+`golang.org/x/mod` to `v0.41.0`, and their required dependencies. The stable
+gRPC `v1.83.2` patch fixes the [server-panic advisory GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443);
+the newer `v1.84.0` release remains in an affected range for that advisory.
+The compiled module set remains 71 entries, and the updated modules retain
+identical license text. The inventory and license digest are refreshed together.
+
+The audit reports only module-level advisory
+[GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932) for the unmaintained
+`golang.org/x/crypto/openpgp` package, which this helper does not import or call.
+It has no patched version. Other packages from that module remain dependencies;
+the module-only report does not establish a reachable vulnerability here.
 
 The captured rc.4 fixture is intentionally a negative production fixture: it
 is valid public GitHub/Sigstore evidence under the closed identity policy, but
