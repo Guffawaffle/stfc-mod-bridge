@@ -43,13 +43,13 @@ The default archive build records no development override or dirty input.
 
 The active Bridge checkout remains `feature/named-launch-profiles-225` on draft
 [PR227](https://github.com/Guffawaffle/stfc-mod-bridge/pull/227). Reviewed signed
-implementation is recorded at `649856786b8976ad0b5ee990e465a4dfeed3b437`.
+implementation checkpoint is recorded at `649856786b8976ad0b5ee990e465a4dfeed3b437`. Later correction heads are listed in the PR.
 Independent general, hostile and package reviews and correction deltas have no
 unresolved actionable findings. Read the current Git/PR head before resuming;
 this recorded checkpoint is evidence, not permission to restore an older tree.
 SDK alignment and reachable Go vulnerability repair were completed earlier.
 
-The required full managed solution passes at that exact implementation:
+The required full managed solution passed at that recorded implementation:
 Core 1,226 passed / 8 skipped, WPF 290 passed, and local integration 53 passed /
 8 skipped. Three real native ABI cases passed in the ordinary Explorer desktop
 namespace at unchanged product implementation `d008b2de` against the same
@@ -76,7 +76,7 @@ Process could not read ExitCode without an owned handle. The signed correction
 retains SafeHandle through waiting and uses an explicit exit-code getter. Exact
 nonzero rejection, nonce/package/profile binding and release-marker/cleanup gates
 remain mandatory; real external-child exit0/7 regressions pass. That partial run
-did not qualify packaged release, synthetic cleanup or UI smoke. Read the executed
+did not qualify packaged release, synthetic cleanup or UI smoke. The corrected run qualified installed MSIX catalog/config/native leases, release and synthetic cleanup, then caught a normal-window startup crash: ProgressBar.Value defaults to two-way binding but updater ProgressPercent is read-only. The corrected visual explicitly binds one-way. A real WPF control loaded from the production XAML reproduces the original exception and, with the correction, reads telemetry and clears it when the target changes. The installed-package protocol returns before normal window creation, so it does not substitute for UI smoke. Read the executed
 steps and receipts in [implementation CI36699877347](https://github.com/Guffawaffle/stfc-mod-bridge/actions/runs/36699877347)
 and current PR checks for the latest outcome.
 
@@ -90,7 +90,7 @@ Bridge declares the Windows 10 filesystem-virtualization fallback and the
 Windows 11 exact `STFC Profiles` exclusion. Its synthetic package gate verifies
 metadata/config bytes through opened handles and proves shared leases between
 standalone and MSIX processes. Fake transport/interop tests pass; actual
-packaged cross-host execution remains a clean-host CI gate. The existing local
+packaged cross-host catalog/lease execution passed in CI36699877347 at the recorded implementation. Current-head package and UI smoke remain separate checks. The existing local
 Bridge installation remains untouched. The Windows 11 policy also preserves the
 existing external `STFC Mod Bridge` state directory for standalone recovery,
 Battle state sharing and uninstall retention. Bridge-owned UI selection is not

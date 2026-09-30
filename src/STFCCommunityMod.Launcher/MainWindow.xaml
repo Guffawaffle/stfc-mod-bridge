@@ -1489,7 +1489,7 @@
                    automation:AutomationProperties.LiveSetting="Polite" />
         <TextBlock Margin="0,8,0,0" FontSize="12" Text="{Binding GameClient.ProgressText}" TextWrapping="Wrap" />
         <ProgressBar Margin="0,8,0,0" Height="6" Minimum="0" Maximum="100"
-                     Value="{Binding GameClient.ProgressPercent}"
+                     Value="{Binding GameClient.ProgressPercent, Mode=OneWay}"
                      Visibility="{Binding GameClient.HasProgress, Converter={StaticResource BooleanToVisibilityConverter}}" />
         <TextBlock Margin="0,16,0,0" FontSize="12"
                    Foreground="{DynamicResource TextSecondaryBrush}"
