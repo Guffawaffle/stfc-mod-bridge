@@ -20,6 +20,7 @@
     <virtualization:FileSystemWriteVirtualization>
       <virtualization:ExcludedDirectories>
         <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\STFC Profiles</virtualization:ExcludedDirectory>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\STFC Mod Bridge</virtualization:ExcludedDirectory>
       </virtualization:ExcludedDirectories>
     </virtualization:FileSystemWriteVirtualization>
     <uap10:PackageIntegrity>

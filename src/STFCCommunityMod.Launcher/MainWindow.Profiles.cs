@@ -182,12 +182,10 @@ public partial class MainWindow
         try
         {
             await ProfilesStore.SelectAsync(profileId);
-            SettingsWorkspace.DataContext = null;
-            isSettingsWorkspaceInitialized = false;
-            await SharedSettings.InvalidateAsync(LauncherSettingsInvalidationReason.ConfigurationTargetChanged);
             if (!ReloadProfiles()) return;
             UpdateProfileLaunchSelection();
             (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
+            await ReconcileSettingsTargetAsync();
             ProfileError.Text = string.Empty;
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)

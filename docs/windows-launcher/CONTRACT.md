@@ -82,23 +82,26 @@ signing, and update evidence remains owned by issue #30.
 - Runtime configuration parsing and defaults.
 - Runtime logs, state snapshots, and feature behavior.
 
-### Official STFC launcher owns
+### Official STFC launcher and shared Profiles ownership
 
 - Authentication.
-- Base-game installation and updates.
-- Xsolla protocol and game-file repair.
+- Official first-time installation and its update/repair flow.
+- Profiles owns the accepted direct complete-image game update/recovery engine;
+  Bridge consumes its status, checks and transaction results.
 
-The Windows launcher must not reproduce Xsolla’s Windows updater in the first
-production release. Its default launch target starts or safely reuses the exact
+Bridge does not contain a second downloader or patcher. The Profiles engine
+owns the MVP update protocol, validation, installation exclusion and recovery.
+Its successful dev update is technical evidence; final player qualification
+remains open. The default launch target starts or safely reuses the exact
 official launcher, waits for that tracked process to exit, and then re-evaluates
 local state. A separately selected direct `prime.exe` target does not inherit
-official authentication, update, or repair responsibilities.
+official authentication responsibilities. Game updating is a separate explicit action.
 
-### Future-state integrated game client
+### Historical post-v1 direction, now the accepted Profiles MVP
 
-The post-v1 product direction is to replace the official launcher for routine
-play on an established installation. The Windows launcher should eventually
-own both of these player-facing actions:
+The earlier post-v1 direction below is superseded by the accepted shared
+[Profiles installation/update contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/GAME_INSTALLATION_CONTRACT.md).
+The MVP implements both actions through the shared component:
 
 - launch the installed STFC client with the selected community-mod release;
 - detect and apply an available base-game update without requiring the player
@@ -116,23 +119,21 @@ and launch actions, while [`XsollaLib`](../../macos-launcher/src/XsollaLib.swift
 checks installed/latest versions and executes the Xsolla download, extract,
 patch, delete, and version plan.
 
-That implementation is evidence, not a Windows port contract. Before Windows
-adopts direct game updating, a dedicated design must validate the current
+That earlier implementation is reference evidence. The shared contract and
+development implementation address the current
 Windows Xsolla protocol, artifact integrity, interruption recovery,
 installation locking, required-update policy, game/mod compatibility, repair,
 and rollback behavior. Authentication and credential storage remain outside
 the community launcher; first-time sign-in or expired-session recovery may
 still hand off to the official launcher.
 
-Until those gates are satisfied, the first-production-release boundary above
-remains authoritative: base-game update and authentication use the supported
-official path even when the player elects to launch an already healthy client
-directly.
+Development source and live dev updating are implemented. Release qualification
+remains separate; authentication still uses the supported official path.
 
 The observed multi-install Windows route through the official updater and its
 remaining safety requirements are recorded in
-[`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md). This is a proposed Bridge
-handoff, not a replacement Xsolla updater.
+[`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md) as a historical probe. It is no
+longer an MVP prerequisite or the current game-updater ownership contract.
 
 ## Supported environment
 

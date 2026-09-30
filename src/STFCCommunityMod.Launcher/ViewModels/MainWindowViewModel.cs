@@ -111,10 +111,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
         modActionStatusTimer.Tick += ModActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
-        GameClient = new(gameInstallationCoordinator, () => snapshot.SelectedGameDirectory,
+        GameClient = new(gameInstallationCoordinator, () => snapshot.ConfirmedGameInstallationDirectory,
             () => !actionFeedback.Mod.IsWorking && !actionFeedback.Launch.IsWorking && !isRecoveryWorkspaceTransitionPending,
             RefreshCore);
-        GameClient.SetTarget(snapshot.SelectedGameDirectory);
+        GameClient.SetTarget(snapshot.ConfirmedGameInstallationDirectory);
         GameClient.PropertyChanged += GameClient_PropertyChanged;
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
@@ -808,7 +808,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         profilesLoad = profilesStore.Load();
         snapshot = environmentProbe.Capture();
-        GameClient.SetTarget(snapshot.SelectedGameDirectory);
+        GameClient.SetTarget(snapshot.ConfirmedGameInstallationDirectory);
         presentation = LauncherHomePresentation.FromSnapshot(snapshot);
         localHealth = modManagementCoordinator.CaptureHealth(
             snapshot.SelectedGameDirectory,
@@ -817,9 +817,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         modPresentation = localHealth.ModManagement;
         RefreshLaunchPresentations();
         OnPropertyChanged(nameof(LaunchProfileStatus));
-        OnPropertyChanged(nameof(ConfigurationFilePath));
-        OnPropertyChanged(nameof(ConfigurationTargetLabel));
-        OnPropertyChanged(nameof(SelectedConfigurationProfile));
+        NotifyConfigurationTargetChanged();
         OnPropertyChanged(nameof(SelectedLaunchTarget));
         OnPropertyChanged(nameof(IsPrimeExecutableSelected));
         OnPropertyChanged(nameof(IsScopelyLauncherSelected));
@@ -1665,6 +1663,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         profilesLoad = profilesStore.Load();
         RefreshLaunchPresentations();
         OnPropertyChanged(nameof(LaunchProfileStatus));
+        NotifyConfigurationTargetChanged();
         OnPropertyChanged(nameof(SelectedLaunchTarget));
         OnPropertyChanged(nameof(IsPrimeExecutableSelected));
         OnPropertyChanged(nameof(IsScopelyLauncherSelected));
@@ -1684,6 +1683,14 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             NextAction = LauncherLaunchRecoveryAction.OpenDiagnostics,
             RequiresUserOverride = false,
         };
+
+    private void NotifyConfigurationTargetChanged()
+    {
+        OnPropertyChanged(nameof(ConfigurationFilePath));
+        OnPropertyChanged(nameof(ConfigurationGameDirectory));
+        OnPropertyChanged(nameof(ConfigurationTargetLabel));
+        OnPropertyChanged(nameof(SelectedConfigurationProfile));
+    }
 
     private GameLaunchPresentation GetLaunchChoice(LauncherLaunchTarget target) =>
         target == LauncherLaunchTarget.PrimeExecutable

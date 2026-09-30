@@ -281,12 +281,14 @@ try {
   if ($filesystemDescriptors.Count -ne 2 -or $windows10Filesystem.Count -ne 1 `
       -or $windows10Filesystem[0].InnerText -cne "disabled" `
       -or $windows11Filesystem.Count -ne 1 -or $windows11Filesystem[0].ChildNodes.Count -ne 1 `
-      -or $excludedDirectories.Count -ne 1 -or $excludedDirectories[0].ChildNodes.Count -ne 1 `
-      -or $exclusions.Count -ne 1 -or $exclusions[0].InnerText -cne '$(KnownFolder:LocalAppData)\STFC Profiles' `
+      -or $excludedDirectories.Count -ne 1 -or $excludedDirectories[0].ChildNodes.Count -ne 2 `
+      -or $exclusions.Count -ne 2 -or $exclusions[0].InnerText -cne '$(KnownFolder:LocalAppData)\STFC Profiles' `
       -or $exclusions[0].ChildNodes.Count -ne 1 -or $exclusions[0].FirstChild.NodeType -ne [Xml.XmlNodeType]::Text `
+      -or $exclusions[1].InnerText -cne '$(KnownFolder:LocalAppData)\STFC Mod Bridge' `
+      -or $exclusions[1].ChildNodes.Count -ne 1 -or $exclusions[1].FirstChild.NodeType -ne [Xml.XmlNodeType]::Text `
       -or $registryDescriptors.Count -ne 0 -or $deviceFamily.Count -ne 1 `
       -or $deviceFamily[0].Name -cne "Windows.Desktop" -or $deviceFamily[0].MinVersion -cne "10.0.19041.0") {
-    throw "The MSIX must retain Windows 10 support, use its documented filesystem fallback and exclude exactly the shared STFC Profiles directory on Windows 11, with no registry virtualization change."
+    throw "The MSIX must retain Windows 10 support, use its documented filesystem fallback and exclude exactly STFC Profiles and the existing external STFC Mod Bridge state on Windows 11, with no registry virtualization change."
   }
 
   $capabilities = @($manifest.SelectNodes("/f:Package/f:Capabilities/*", $namespaces))

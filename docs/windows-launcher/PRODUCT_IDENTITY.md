@@ -57,8 +57,10 @@ migration path to maintain or test.
 `%LOCALAPPDATA%\STFC Mod Bridge` remains Bridge's private state root. The accepted
 shared account-profile root is `%LOCALAPPDATA%\STFC Profiles`, owned by the
 [STFC Profiles catalog contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md). Bridge and the CLI consume
-that catalog; Bridge's UI selection stays private. The neutral layout remains
-implementation work and does not claim existing data was moved.
+that catalog; Bridge's UI selection stays private. Neutral physical catalog and
+acquired-lock checks are implemented. Windows 10 fallback and Windows 11 scoped
+exclusion behavior still require actual clean-host packaged evidence; source
+and ordinary-desktop tests do not qualify that package boundary.
 
 ## Repository coordinate
 

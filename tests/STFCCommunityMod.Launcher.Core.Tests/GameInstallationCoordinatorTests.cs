@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
@@ -84,6 +86,43 @@ public sealed class GameInstallationCoordinatorTests
         await Assert.ThrowsExceptionAsync<InvalidDataException>(() => coordinator.CheckAsync(requested));
         Assert.IsTrue((await coordinator.RecoverAsync(requested)).Ok);
         Assert.AreEqual(requested, transport.Requests.Last().GameDirectory);
+    }
+
+    [TestMethod]
+    public async Task NativeCanonicalEvidenceAcceptsAnAncestorJunctionForStatusCheckUpdateAndRecovery()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Windows physical directory identity qualification.");
+        using var directory = new TemporaryDirectory();
+        var parent = Path.Combine(directory.Path, "physical");
+        var game = Path.Combine(parent, "game");
+        Directory.CreateDirectory(game);
+        var alias = Path.Combine(directory.Path, "alias");
+        var start = new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false, RedirectStandardOutput = true,
+            RedirectStandardError = true, CreateNoWindow = true,
+        };
+        foreach (var argument in new[] { "/d", "/c", "mklink", "/J", alias, parent }) start.ArgumentList.Add(argument);
+        using var junction = Process.Start(start) ?? throw new AssertFailedException("Cannot create the junction fixture.");
+        await junction.WaitForExitAsync();
+        Assert.AreEqual(0, junction.ExitCode, await junction.StandardError.ReadToEndAsync());
+        try
+        {
+            var selected = Path.Combine(alias, "game");
+            var transport = new RecordingTransport(_ => new(true,
+                Installation: new(game, 267, "ready", "idle", AvailableVersion: 267)));
+            var coordinator = new GameInstallationCoordinator(directory.Path, transport);
+            Assert.IsTrue((await coordinator.ReadStatusAsync(selected)).Ok);
+            Assert.IsTrue((await coordinator.CheckAsync(selected)).Ok);
+            Assert.IsTrue((await coordinator.UpdateAsync(selected, 267)).Ok);
+            Assert.IsTrue((await coordinator.RecoverAsync(selected)).Ok);
+            Assert.IsTrue(transport.Requests.All(request => request.GameDirectory == selected));
+            var other = Path.Combine(directory.Path, "other-game");
+            Directory.CreateDirectory(other);
+            Assert.IsFalse(GameInstallationCoordinator.SameDirectory(selected, other));
+            Assert.IsFalse(GameInstallationCoordinator.SameDirectory(selected, Path.Combine(directory.Path, "missing")));
+        }
+        finally { Directory.Delete(alias, recursive: false); }
     }
 
     private sealed class RecordingTransport(Func<ProfileCatalogRequest, ProfileCatalogResponse> request) : IProfileCatalogTransport

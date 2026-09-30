@@ -8,7 +8,7 @@ accepted direction. Earlier Bridge-owned registry and per-installation selector
 notes are superseded. Their historical commit receipts do not authorize restoring
 those designs.
 
-## Implemented in the development worktree
+## Implemented development source
 
 Bridge uses the shared native catalog, with only its selected immutable ID kept
 privately. Create/edit, active/archive listing, whole-directory archive/restore,
@@ -19,10 +19,14 @@ Ordinary launches retain ordinary preferences, with shared native installation
 access held through the exact spawned game process lifetime.
 
 Game client status/check/update/recover use the same native transport. The dialog
-shows the exact Home target, checked target version and real native phase/byte
+shows the exact confirmed installation, checked target version and real native phase/byte
 progress. Updating requires stopped installation access and Bridge operation
 exclusion. The engine owns payload validation, commit journals and recovery;
-Bridge does not contain a separate downloader or patcher.
+Bridge does not contain a separate downloader or patcher. A missing executable
+does not erase the confirmed status/recovery target; launch validity stays
+separate. Physical path aliases use the existing directory-identity boundary.
+Settings repositories retain their construction target across external profile
+changes, preserve drafts and admitted saves, and recompose after those finish.
 
 The source dogfood entrypoint and ZIP/MSIX release paths include the exact
 hash-paired native DLL. Default dependency builds use an immutable source pin;
@@ -35,9 +39,12 @@ The default archive build records no development override or dirty input.
 ## Evidence and next work
 
 The active Bridge checkout remains `feature/named-launch-profiles-225`, based on
-signed checkpoint `0c707a0836ec7e8e5be31075d708f93efe56875d`. Implementation above
-is subsequent uncommitted development work until its own exact-head review.
-SDK alignment and Go vulnerability repair were completed at the base checkpoint.
+signed implementation checkpoint `6915fc91820439e45918b4a6f09caf7ef8dd2350`.
+Its independent general, hostile and package readings found recovery-target,
+physical-alias, cached Settings and package evidence issues. Corrections and
+focused regressions are applied; final committed correction review and CI remain
+required. SDK alignment and reachable Go vulnerability repair were completed at
+the earlier `0c707a0836ec7e8e5be31075d708f93efe56875d` checkpoint.
 
 The required full managed solution passes on this development worktree:
 Core 1,221 passed / 8 skipped, WPF 281 passed, and local integration 53 passed /
@@ -54,9 +61,9 @@ inventory; it does not claim independently discovered native object provenance.
 The production signature gate correctly refuses these unsigned development
 artifacts. Gate project discovery uses the reviewed solution, and component
 scan excludes historical worktrees/artifacts so they cannot become release
-subjects. Bounded command receipts and the complete dirty ownership list are
-under `artifacts/`. The Bridge review gate still applies to the exact committed
-candidate; these dirty-worktree results do not establish that gate.
+subjects. Bounded command receipts and historical dirty ownership are under
+`artifacts/`. Exact-head publish/inspection also passed at the signed implementation
+checkpoint; corrections require renewed validation and independent review.
 
 Windows package context requires separate physical storage qualification. The
 OS-user Known Folder string and absence of package identity do not prove that
@@ -69,14 +76,20 @@ Windows 11 exact `STFC Profiles` exclusion. Its synthetic package gate verifies
 metadata/config bytes through opened handles and proves shared leases between
 standalone and MSIX processes. Fake transport/interop tests pass; actual
 packaged cross-host execution remains a clean-host CI gate. The existing local
-Bridge installation remains untouched.
+Bridge installation remains untouched. The Windows 11 policy also preserves the
+existing external `STFC Mod Bridge` state directory for standalone recovery,
+Battle state sharing and uninstall retention. Bridge-owned UI selection is not
+shared catalog ownership; it does not require package-private filesystem storage.
+The existing Battle gate retains its unpackaged observation of a fresh nonce
+marker in neutral Bridge state.
 
 The producer repaired the standalone stack-overflow crash and namespace issue.
 Its exact signed source passes Windows and both macOS native CI lanes. Parent
 qualification reports two healthy standalone profiles from the same dev
 executable, unique encrypted preference stores, and busy refusal for duplicate
 launch/archive/update/recovery while those sessions run. The authorized dev
-client update from 221 to 267 has a verified retained receipt. These producer
+client update from 221 to 267 has a verified retained receipt. Full-mod sessions
+pass those same guards using the original IDs and encrypted stores. These producer
 observations do not establish live Bridge account sign-in or callback behavior.
 
 Complete account identity, reverse restart persistence, browser callback and

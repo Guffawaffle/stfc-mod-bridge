@@ -10,6 +10,24 @@ public sealed record LauncherEnvironmentSnapshot(
     GameInstallDiscoverySnapshot Discovery,
     IReadOnlyList<LauncherHealthDimension> HealthDimensions)
 {
+    /// <summary>Saved user confirmation retained for updater status/recovery even when prime.exe is temporarily absent.</summary>
+    public string? ConfirmedGameInstallationDirectory
+    {
+        get
+        {
+            var directory = Discovery.PersistedSelection is
+                { State: GameInstallSelectionState.Loaded, Selection: { } selection }
+                ? selection.GameDirectory : null;
+            try
+            {
+                return !string.IsNullOrWhiteSpace(directory) && Path.IsPathFullyQualified(directory)
+                    ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) : null;
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+            { return null; }
+        }
+    }
+
     public GameProcessInspectionState GameProcessState { get; init; } = IsGameRunning
         ? GameProcessInspectionState.RunningTarget
         : GameProcessInspectionState.NotRunning;

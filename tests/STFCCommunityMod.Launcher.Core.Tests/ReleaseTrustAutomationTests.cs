@@ -9,6 +9,8 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed partial class ReleaseTrustAutomationTests
 {
+    private static readonly string[] SharedStateExclusions =
+        ["$(KnownFolder:LocalAppData)\\STFC Profiles", "$(KnownFolder:LocalAppData)\\STFC Mod Bridge"];
     private static readonly string[] ProfilesPackageCapabilities = ["runFullTrust", "unvirtualizedResources"];
     [TestMethod]
     public void PublishScriptBuildsTheReleaseVerifierWithoutCapturingItsInformationalOutput()
@@ -804,9 +806,11 @@ public sealed partial class ReleaseTrustAutomationTests
         var selective = properties.Elements(virtualization + "FileSystemWriteVirtualization").Single();
         var directories = selective.Elements().Single();
         Assert.AreEqual(virtualization + "ExcludedDirectories", directories.Name);
-        var excluded = directories.Elements().Single();
-        Assert.AreEqual(virtualization + "ExcludedDirectory", excluded.Name);
-        Assert.AreEqual("$(KnownFolder:LocalAppData)\\STFC Profiles", excluded.Value);
+        var excluded = directories.Elements().ToArray();
+        Assert.AreEqual(2, excluded.Length);
+        Assert.IsTrue(excluded.All(element => element.Name == virtualization + "ExcludedDirectory"));
+        CollectionAssert.AreEqual(SharedStateExclusions,
+            excluded.Select(element => element.Value).ToArray());
         Assert.IsFalse(manifest.Descendants().Any(element => element.Name.LocalName == "RegistryWriteVirtualization"));
         var deviceFamily = manifest.Descendants(foundation + "TargetDeviceFamily").Single();
         Assert.AreEqual("Windows.Desktop", (string?)deviceFamily.Attribute("Name"));

@@ -82,8 +82,8 @@ public sealed class GameInstallationCoordinator(string stateDirectory, IProfileC
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(gameDirectory));
     }
 
-    public static bool SameDirectory(string left, string right) => string.Equals(Normalize(left), Normalize(right),
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    public static bool SameDirectory(string left, string right) =>
+        GameDirectoryIdentity.SameLocation(Normalize(left), Normalize(right));
 
     private static bool IsTransportFailure(Exception exception) => exception is IOException
         or UnauthorizedAccessException or InvalidOperationException or ArgumentException or NotSupportedException

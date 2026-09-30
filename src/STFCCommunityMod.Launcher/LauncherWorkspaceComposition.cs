@@ -1,3 +1,4 @@
+using System.IO;
 using STFCCommunityMod.Launcher.Core;
 using STFCCommunityMod.Launcher.ViewModels;
 
@@ -41,7 +42,8 @@ internal sealed class LauncherWorkspaceServices(
     public MainWindowViewModel Foundation { get; } =
         foundation ?? throw new ArgumentNullException(nameof(foundation));
 
-    public LauncherSettingsWorkspace Settings { get; } = new(settingsFactory);
+    public LauncherSettingsWorkspace Settings { get; } = new(settingsFactory,
+        () => LauncherConfigurationTarget.Capture(foundation.SelectedConfigurationProfile?.Id, foundation.ConfigurationFilePath));
 
     public LauncherDiagnosticsWorkspace Diagnostics { get; } = new(foundation);
 
@@ -63,7 +65,19 @@ internal sealed record LauncherSettingsInvalidatedEventArgs(
     SettingsViewModel Workspace,
     LauncherSettingsInvalidationReason Reason);
 
-internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory)
+internal sealed record LauncherConfigurationTarget(string? ProfileId, string? ConfigurationPath)
+{
+    public static LauncherConfigurationTarget Capture(string? profileId, string? path) =>
+        new(profileId, string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path));
+
+    public bool Matches(LauncherConfigurationTarget other) => ProfileId == other.ProfileId
+        && string.Equals(ConfigurationPath, other.ConfigurationPath, StringComparison.OrdinalIgnoreCase);
+
+    public string? Resolve(LauncherConfigurationTarget current) => Matches(current) ? ConfigurationPath : null;
+}
+
+internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory,
+    Func<LauncherConfigurationTarget>? targetProvider = null)
 {
     private readonly object sync = new();
     private readonly Func<SettingsViewModel> factory =
@@ -72,6 +86,29 @@ internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory)
     private bool isConstructing;
     private bool isSessionEnded;
     private Task? invalidationTask;
+    private LauncherConfigurationTarget? constructedTarget;
+    private LauncherConfigurationTarget? lastObservedTarget;
+
+    public bool HasTargetMismatch => Current is not null && targetProvider is not null
+        && constructedTarget is not null && !constructedTarget.Matches(targetProvider());
+
+    public async Task<bool> ReconcileTargetAsync()
+    {
+        var workspace = Current;
+        if (workspace is null || targetProvider is null || constructedTarget is null) return false;
+        var target = targetProvider();
+        if (lastObservedTarget is null || !lastObservedTarget.Matches(target))
+        {
+            lastObservedTarget = target;
+            // Update save/edit availability without reloading through the previous repository or losing drafts.
+            workspace.NotifyConfigurationTargetChanged();
+        }
+        if (constructedTarget.Matches(target)) return false;
+        if (workspace.HasPendingChanges || workspace.SyncWorkspace.HasPendingChanges
+            || workspace.IsSaveInProgress || workspace.SyncWorkspace.IsSaveInProgress) return false;
+        await InvalidateAsync(LauncherSettingsInvalidationReason.ConfigurationTargetChanged);
+        return true;
+    }
 
     public event EventHandler<LauncherSettingsInvalidatedEventArgs>? Invalidated;
 
@@ -125,6 +162,8 @@ internal sealed class LauncherSettingsWorkspace(Func<SettingsViewModel> factory)
             isConstructing = true;
             try
             {
+                constructedTarget = targetProvider?.Invoke();
+                lastObservedTarget = constructedTarget;
                 return current = factory()
                     ?? throw new InvalidOperationException("The Settings factory returned null.");
             }

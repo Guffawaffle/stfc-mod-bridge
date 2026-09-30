@@ -1202,6 +1202,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             : null;
     }
 
+    internal void NotifyConfigurationTargetChanged() => NotifySessionChanged();
+
     private void NotifySessionChanged()
     {
         OnPropertyChanged(nameof(IsConfigurationReady));

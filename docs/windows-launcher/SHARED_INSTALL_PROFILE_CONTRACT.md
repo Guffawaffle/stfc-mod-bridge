@@ -123,8 +123,9 @@ physical storage. The synthetic package gate must verify opened metadata/config
 handles resolve to the neutral OS-user catalog, then prove visibility and
 profile/installation exclusion between standalone and MSIX processes. Windows
 10 uses the documented disabled filesystem-virtualization fallback; Windows 11
-uses only the exact `STFC Profiles` exclusion. Private Bridge UI state keeps its
-existing path and ownership, without copying or migration. Actual packaged
+uses exact `STFC Profiles` and `STFC Mod Bridge` exclusions. Bridge-owned UI state
+keeps its existing external path and ownership for standalone recovery, Battle
+sharing and uninstall retention, without copying or migration. Actual packaged
 cross-host execution remains unverified until the clean-host gate passes.
 
 The shared producer reports two healthy standalone sessions from one dev

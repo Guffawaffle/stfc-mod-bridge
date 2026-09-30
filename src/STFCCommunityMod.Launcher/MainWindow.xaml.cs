@@ -51,6 +51,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isDisposed;
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
+    private SettingsViewModel? observedSettings;
+    private bool isSettingsTargetRefreshQueued;
+    private bool isSettingsTargetRefreshRunning;
     private bool isColorModeSelectorReady;
     private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
@@ -263,6 +266,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         pendingProviderSwitch = null;
         pendingModOperation = null;
         diagnosticPreview = null;
+        ObserveSettings(null);
         SettingsWorkspace.DataContext = null;
         openRawTomlCommand = null;
         isSettingsWorkspaceInitialized = false;
@@ -291,6 +295,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             UpdateProviderContextActionAvailability(viewModel);
         }
+        if (e.PropertyName is nameof(MainWindowViewModel.ConfigurationFilePath)
+            or nameof(MainWindowViewModel.SelectedConfigurationProfile)) QueueSettingsTargetRefresh();
         if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation))
         {
             return;
@@ -325,6 +331,20 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var currentSettings = sharedSettings.Current;
         if (currentSettings is null)
         {
+            return;
+        }
+        if (await sharedSettings.ReconcileTargetAsync())
+        {
+            ObserveSettings(null);
+            SettingsWorkspace.DataContext = null;
+            isSettingsWorkspaceInitialized = false;
+            if (isSettingsWorkspaceOpen) EnsureSettingsWorkspaceInitialized();
+            return;
+        }
+        if (sharedSettings.HasTargetMismatch && (sharedSettings.HasPendingChanges
+            || currentSettings.IsSaveInProgress || currentSettings.SyncWorkspace.IsSaveInProgress))
+        {
+            QueueSettingsTargetRefresh();
             return;
         }
         var wasOpen = isSettingsWorkspaceOpen;
@@ -432,6 +452,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         isDisposed = true;
+        ObserveSettings(null);
         CompleteLaunchOverrideConfirmation(confirmed: false);
         lifetimeCancellation.Cancel();
         pendingLauncherUpdate?.Dispose();
@@ -2082,7 +2103,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             {
                 return true;
             }
-            SettingsWorkspace.DataContext = SharedSettings.GetOrCreate();
+            var settings = SharedSettings.GetOrCreate();
+            ObserveSettings(settings);
+            SettingsWorkspace.DataContext = settings;
             isSettingsWorkspaceInitialized = true;
             return true;
         }
@@ -2113,6 +2136,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
             activeSelection);
         var configurationProfile = (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile;
+        var binding = LauncherConfigurationTarget.Capture(configurationProfile?.Id, configurationPathProvider());
+        Func<string?> boundConfigurationPath = () => binding.Resolve(LauncherConfigurationTarget.Capture(
+            (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id, configurationPathProvider()));
         var configurationHistoryCoordinator = configurationProfile is not null ? null : new ProviderConfigurationRestoreCoordinator(
             backupStore,
             distributionProviderCatalog,
@@ -2120,13 +2146,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             activeSelection,
             configurationEvidence,
             stateDirectory,
-            configurationPathProvider);
+            boundConfigurationPath);
         openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
         return new(
             catalog,
             new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
             openRawTomlCommand,
-            configurationPathProvider,
+            boundConfigurationPath,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
             repository: configurationProfile is null
@@ -2143,6 +2169,61 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             openReleaseSecurityGuidance: OpenReleaseSecurityGuidance,
             configurationHistoryCoordinator: configurationHistoryCoordinator,
             configurationTargetLabel: (DataContext as MainWindowViewModel)?.ConfigurationTargetLabel);
+    }
+
+    private void ObserveSettings(SettingsViewModel? settings)
+    {
+        if (ReferenceEquals(observedSettings, settings)) return;
+        if (observedSettings is not null)
+        {
+            observedSettings.PropertyChanged -= SettingsTargetStateChanged;
+            observedSettings.SyncWorkspace.PropertyChanged -= SettingsTargetStateChanged;
+        }
+        observedSettings = settings;
+        if (settings is not null)
+        {
+            settings.PropertyChanged += SettingsTargetStateChanged;
+            settings.SyncWorkspace.PropertyChanged += SettingsTargetStateChanged;
+        }
+    }
+
+    private void SettingsTargetStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SettingsViewModel.HasPendingChanges) or nameof(SettingsViewModel.IsSaveInProgress))
+            QueueSettingsTargetRefresh();
+    }
+
+    private void QueueSettingsTargetRefresh()
+    {
+        if (isDisposed || isSettingsTargetRefreshQueued) return;
+        isSettingsTargetRefreshQueued = true;
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, async () =>
+        {
+            isSettingsTargetRefreshQueued = false;
+            try { await ReconcileSettingsTargetAsync(); }
+            catch (Exception exception)
+            {
+                SettingsUnavailableMessage.Text = $"Settings target could not be refreshed: {exception.Message}";
+                SettingsUnavailableDialog.IsOpen = true;
+            }
+        });
+    }
+
+    private async Task ReconcileSettingsTargetAsync()
+    {
+        if (isDisposed || isSettingsTargetRefreshRunning) return;
+        isSettingsTargetRefreshRunning = true;
+        try
+        {
+            var owner = SharedSettings;
+            if (!await owner.ReconcileTargetAsync() || !ReferenceEquals(owner, SharedSettings)) return;
+            ObserveSettings(null);
+            SettingsWorkspace.DataContext = null;
+            openRawTomlCommand = null;
+            isSettingsWorkspaceInitialized = false;
+            if (isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized()) SetSettingsWorkspaceOpen(false);
+        }
+        finally { isSettingsTargetRefreshRunning = false; }
     }
 
     private bool CanOpenRawConfiguration()

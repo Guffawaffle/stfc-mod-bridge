@@ -1494,6 +1494,104 @@ public sealed class SettingsProjectionTests
         StringAssert.Contains(persisted, "[custom]\nkeep = \"verbatim\"");
     }
 
+    [DataTestMethod]
+    [DataRow(null, "profile-b")]
+    [DataRow("profile-a", "profile-b")]
+    [DataRow("profile-a", null)]
+    public async Task ExternalTargetChangePreservesDraftsAndCannotReloadOrSaveThroughTheOldRepository(string? firstId, string? nextId)
+    {
+        using var first = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        using var second = SettingsFixture.Create("[graphics]\nfree_resize = false\n");
+        var target = LauncherConfigurationTarget.Capture(firstId, first.ConfigurationPath);
+        var factoryTargets = new List<LauncherConfigurationTarget>();
+        var owner = new LauncherSettingsWorkspace(() =>
+        {
+            var binding = target;
+            factoryTargets.Add(binding);
+            return first.CreateAdditionalViewModel(() => binding.Resolve(target));
+        }, () => target);
+        var retained = owner.GetOrCreate();
+        SettingsFixture.Select(retained, LauncherSettingsSection.Graphics);
+        var row = retained.FilteredSettings.OfType<SettingsRowViewModel>().Single(value => value.Path == "graphics.free_resize");
+        row.BooleanValue = false;
+        Assert.IsFalse(await owner.ReconcileTargetAsync());
+        Assert.AreSame(retained, owner.GetOrCreate());
+        target = LauncherConfigurationTarget.Capture(nextId, second.ConfigurationPath);
+        Assert.IsFalse(await owner.ReconcileTargetAsync());
+        Assert.IsTrue(retained.HasPendingChanges);
+        Assert.IsFalse(row.BooleanValue);
+        Assert.IsFalse(retained.CanEdit);
+        Assert.IsFalse(retained.CanSave);
+        retained.ReloadConfiguration();
+        retained.SaveCommand.Execute(null);
+        Assert.IsTrue(retained.HasPendingChanges);
+        Assert.AreEqual("[graphics]\nfree_resize = true\n", File.ReadAllText(first.ConfigurationPath));
+        Assert.AreEqual("[graphics]\nfree_resize = false\n", File.ReadAllText(second.ConfigurationPath));
+        retained.SaveRecoveryCommand.Execute(null);
+        Assert.IsTrue(await owner.ReconcileTargetAsync());
+        var replacement = owner.GetOrCreate();
+        Assert.AreNotSame(retained, replacement);
+        Assert.IsTrue(replacement.IsConfigurationReady);
+        Assert.IsTrue(factoryTargets.Last().Matches(target));
+    }
+
+    [TestMethod]
+    public async Task RestoringTheOriginalTargetReenablesThePreservedDraftWithoutRecomposition()
+    {
+        using var fixture = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        var original = LauncherConfigurationTarget.Capture("profile-a", fixture.ConfigurationPath);
+        var target = original;
+        var owner = new LauncherSettingsWorkspace(() => fixture.CreateAdditionalViewModel(() => original.Resolve(target)), () => target);
+        var retained = owner.GetOrCreate();
+        SettingsFixture.Select(retained, LauncherSettingsSection.Graphics);
+        retained.FilteredSettings.OfType<SettingsRowViewModel>().Single(value => value.Path == "graphics.free_resize").BooleanValue = false;
+        target = LauncherConfigurationTarget.Capture("profile-b", fixture.ConfigurationPath);
+        Assert.IsFalse(await owner.ReconcileTargetAsync());
+        Assert.IsFalse(retained.CanSave);
+        target = original;
+        Assert.IsFalse(await owner.ReconcileTargetAsync());
+        Assert.AreSame(retained, owner.GetOrCreate());
+        Assert.IsTrue(retained.HasPendingChanges);
+        Assert.IsTrue(retained.CanSave);
+    }
+
+    [TestMethod]
+    public async Task ExternalTargetChangeWaitsForTheAdmittedSaveAndComposesOnlyTheLatestSelection()
+    {
+        using var first = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        using var second = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        using var third = SettingsFixture.Create("[graphics]\nfree_resize = true\n");
+        var pause = new PausedAtomicSave();
+        var repository = new TomlConfigurationRepository(new AtomicTomlStore(pause.BeforeReplaceAsync));
+        var target = LauncherConfigurationTarget.Capture(null, first.ConfigurationPath);
+        var owner = new LauncherSettingsWorkspace(() =>
+        {
+            var binding = target;
+            return first.CreateAdditionalViewModel(() => binding.Resolve(target), repository);
+        }, () => target);
+        var retained = owner.GetOrCreate();
+        SettingsFixture.Select(retained, LauncherSettingsSection.Graphics);
+        retained.FilteredSettings.OfType<SettingsRowViewModel>().Single(value => value.Path == "graphics.free_resize").BooleanValue = false;
+        var activeSave = retained.SaveAsync();
+        try
+        {
+            await pause.Started.WaitAsync(TimeSpan.FromSeconds(5));
+            target = LauncherConfigurationTarget.Capture("profile-b", second.ConfigurationPath);
+            Assert.IsFalse(await owner.ReconcileTargetAsync());
+            Assert.AreSame(retained, owner.GetOrCreate());
+            Assert.IsFalse(activeSave.IsCompleted);
+            target = LauncherConfigurationTarget.Capture("profile-c", third.ConfigurationPath);
+        }
+        finally { pause.Release(); }
+        await activeSave.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsTrue(await owner.ReconcileTargetAsync());
+        Assert.AreNotSame(retained, owner.GetOrCreate());
+        Assert.AreEqual(1, pause.SaveCount);
+        StringAssert.Contains(File.ReadAllText(first.ConfigurationPath), "free_resize = false");
+        Assert.AreEqual("[graphics]\nfree_resize = true\n", File.ReadAllText(second.ConfigurationPath));
+        Assert.AreEqual("[graphics]\nfree_resize = true\n", File.ReadAllText(third.ConfigurationPath));
+    }
+
     [TestMethod]
     public async Task SharedSettingsInvalidationDiscardsAndMakesRetainedWorkspaceInert()
     {

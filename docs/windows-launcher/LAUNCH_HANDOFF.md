@@ -2,10 +2,11 @@
 
 Status: selected-target split launch is implemented; installed-client dogfood and screenshots remain pending.
 
-The running-process exclusions below describe the current implementation.
-Concurrent named-session admission under the accepted
-[shared profile contract](SHARED_INSTALL_PROFILE_CONTRACT.md) remains open;
-this handoff is not evidence that a second profile can already launch.
+The ordinary running-process exclusions below describe Default launch.
+Concurrent named admission is implemented through the native
+[shared profile contract](SHARED_INSTALL_PROFILE_CONTRACT.md), with per-profile
+custody and shared installation leases. Standalone/full-mod dev sessions pass
+technical runtime guards; Bridge account/callback and packaged qualification remain open.
 
 ## Player-facing targets
 
@@ -19,8 +20,9 @@ The selected target is persisted in `ui-preferences.json`, never mod TOML. New, 
 preference documents default to `Open Scopely launcher`, preserving the pre-split behavior. Selecting an unavailable target
 does not rewrite the preference; its structured reason and next action remain visible.
 
-The Scopely path owns authentication, base-game update, repair, and first-time sign-in. Direct launch does not add any of
-those responsibilities to the community launcher. Direct launch is a base-game action: it may start a healthy managed mod,
+The Scopely path owns authentication and first-time sign-in. Bridge's separate
+Game client action consumes the shared Profiles full-image updater and recovery
+contract; direct launch itself performs no update. Direct launch is a base-game action: it may start a healthy managed mod,
 start without the mod when no `version.dll` exists, or require an explicit per-attempt warning override when a proxy exists
 but Mod Bridge cannot verify it.
 
@@ -70,8 +72,10 @@ for a safely inspectable running process whose executable path exactly matches t
 - a process that cannot be inspected or does not match is never adopted as the lifetime boundary.
 
 For direct launch, the lease is held through final validation and successful `prime.exe` process creation, then released.
-The game-process monitor owns subsequent running-state transitions. A concurrent launcher mutation receives a busy result
-instead of racing either handoff boundary.
+The game-process monitor owns subsequent running-state transitions. A separate
+native shared installation lease remains held through the exact spawned game's
+lifetime; updater/recovery access requires exclusive installation custody.
+A concurrent launcher mutation receives a busy result instead of racing either handoff boundary.
 
 ## Feedback and failure behavior
 

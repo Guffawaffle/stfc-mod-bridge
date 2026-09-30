@@ -53,6 +53,38 @@ public sealed class GameInstallationViewModelTests
         Assert.AreEqual(fixture.Directory, fixture.LastMutation.GameDirectory);
     }
 
+    [TestMethod]
+    public async Task RestartAfterExecutableBackupStillOffersRecoveryAtTheSavedConfirmedInstallation()
+    {
+        using var fixture = new Fixture();
+        var game = Path.Combine(fixture.Directory, "chosen-game");
+        System.IO.Directory.CreateDirectory(game);
+        File.WriteAllText(Path.Combine(game, "prime.exe"), "synthetic executable");
+        var state = Path.Combine(fixture.Directory, "selection");
+        new GameInstallDiscovery(new JsonGameInstallSelectionStore(state), []).ConfirmManualSelection(game);
+        File.Move(Path.Combine(game, "prime.exe"), Path.Combine(game, "backup.exe"));
+        var captured = new LauncherEnvironmentProbe(new StoppedInspector(),
+            PerUserInstallLayout.FromLocalApplicationData(fixture.Directory),
+            new GameInstallDiscovery(new JsonGameInstallSelectionStore(state), [])).Capture();
+        Assert.IsNull(captured.SelectedGameDirectory);
+        fixture.SelectedDirectory = captured.ConfirmedGameInstallationDirectory!;
+        fixture.State = "recovery-required";
+        fixture.RequiresRecovery = true;
+        await fixture.ViewModel.RefreshStatusAsync();
+        Assert.IsTrue(fixture.ViewModel.CanRecover);
+        Assert.IsFalse(fixture.ViewModel.CanUpdate);
+        await fixture.ViewModel.RecoverAsync();
+        Assert.AreEqual(game, fixture.LastMutation!.GameDirectory);
+        Assert.AreEqual("recover-game-update", fixture.LastMutation.Operation);
+        Assert.AreEqual(1, fixture.Completed);
+        Assert.IsFalse(File.Exists(Path.Combine(game, "prime.exe")), "The transport seam proves Bridge routing, not native journal rollback.");
+    }
+
+    private sealed class StoppedInspector : IGameProcessInspector
+    {
+        public GameProcessInspectionState Inspect(string gameDirectory) => GameProcessInspectionState.NotRunning;
+    }
+
     private sealed class Fixture : IDisposable, IProfileCatalogTransport
     {
         public string Directory { get; } = Path.Combine(Path.GetTempPath(), "bridge-game-ui-" + Guid.NewGuid().ToString("N"));

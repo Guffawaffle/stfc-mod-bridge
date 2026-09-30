@@ -125,10 +125,14 @@ that this broad mechanism can exceed an application's needs. See
 The Profiles MVP manifest now uses the documented dual filesystem policy:
 `desktop6:FileSystemWriteVirtualization` is `disabled` on Windows 10, while
 Windows 11 overrides it with exactly
-`$(KnownFolder:LocalAppData)\STFC Profiles` as its excluded directory. The
+`$(KnownFolder:LocalAppData)\STFC Profiles` and
+`$(KnownFolder:LocalAppData)\STFC Mod Bridge` as its excluded directories. The
 Windows 10 fallback disables AppData filesystem write virtualization broadly;
 it preserves the existing minimum Windows version. Windows 11 keeps the
-exception limited to the shared Profiles catalog and installation locks.
+exceptions limited to the shared Profiles catalog/installation locks and the
+existing external Bridge state. The latter preserves standalone recovery,
+Battle sharing and uninstall retention; Bridge-owned UI state does not mean
+package-private filesystem state.
 There is no Registry virtualization change and no additional capability.
 
 Native Profiles resolves OS-user LocalAppData with
