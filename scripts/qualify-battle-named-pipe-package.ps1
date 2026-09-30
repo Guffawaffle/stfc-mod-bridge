@@ -237,6 +237,23 @@ function Assert-ProfilesEvidence {
   }
 }
 
+function Open-ActivatedQualificationProcess {
+  param([Parameter(Mandatory)][int]$ProcessId)
+  $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
+  try {
+    # GetProcessById/WaitForExit alone do not retain a handle for ExitCode.
+    # Open it while the activated fixture is alive and keep it through release verification.
+    $handle = $process.get_SafeHandle()
+    if ($null -eq $handle -or $handle.IsInvalid -or $handle.IsClosed) {
+      throw "The activated qualification process has no usable retained handle."
+    }
+    return $process
+  } catch {
+    $process.Dispose()
+    throw
+  }
+}
+
 function Invoke-PackagedProfilesQualification {
   param(
     [Parameter(Mandatory)][string]$AppUserModelId,
@@ -245,7 +262,7 @@ function Invoke-PackagedProfilesQualification {
   $started = [DateTimeOffset]::UtcNow
   $arguments = "$profilesQualificationArgument msix $profilesNonce `"$profilesFixture`""
   $processId = [BattlePackageActivation.ApplicationActivation]::Activate($AppUserModelId, $arguments)
-  $process = [System.Diagnostics.Process]::GetProcessById([int]$processId)
+  $process = Open-ActivatedQualificationProcess -ProcessId ([int]$processId)
   try {
     $readyPath = Join-Path $profilesFixture "msix-ready.json"
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
@@ -263,7 +280,9 @@ function Invoke-PackagedProfilesQualification {
     if (-not $process.WaitForExit(30000)) {
       throw "Packaged Profiles did not exit after standalone verification."
     }
-    if ($process.ExitCode -ne 0) { throw "Packaged Profiles exited with code $($process.ExitCode)." }
+    # Explicit getter calls propagate errors that PowerShell property access can hide as null.
+    $exitCode = $process.get_ExitCode()
+    if ($exitCode -ne 0) { throw "Packaged Profiles exited with code $exitCode." }
     Assert-ProfilesEvidence -FileName "msix-released.json" -Status "passed" -PackageFullName $PackageFullName
     Write-Host "Profiles msix exit=0 duration=$([math]::Round(([DateTimeOffset]::UtcNow - $started).TotalSeconds, 2))s source=$ExpectedSourceRevisionId package=$PackageFullName"
   } finally {

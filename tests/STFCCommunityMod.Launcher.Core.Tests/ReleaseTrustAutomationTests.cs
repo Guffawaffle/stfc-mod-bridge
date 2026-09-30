@@ -12,6 +12,67 @@ public sealed partial class ReleaseTrustAutomationTests
     private static readonly string[] SharedStateExclusions =
         ["$(KnownFolder:LocalAppData)\\STFC Profiles", "$(KnownFolder:LocalAppData)\\STFC Mod Bridge"];
     private static readonly string[] ProfilesPackageCapabilities = ["runFullTrust", "unvirtualizedResources"];
+
+    [DataTestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task ActivatedQualificationMonitorRetainsExactExternalProcessExitStatus(int expectedExitCode)
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Windows activated process monitoring qualification.");
+        // Load only the real monitor function; never execute package installation or trust setup.
+        const string script = """
+            $ErrorActionPreference = 'Stop'
+            $tokens = $null; $parseErrors = $null
+            $ast = [Management.Automation.Language.Parser]::ParseFile($env:STFC_MONITOR_SCRIPT, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw 'Qualification script parse failed.' }
+            $function = $ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Open-ActivatedQualificationProcess'}, $true)
+            if ($null -eq $function) { throw 'Activated process monitor is absent.' }
+            . ([ScriptBlock]::Create($function.Extent.Text))
+            $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+            $start.UseShellExecute = $false; $start.CreateNoWindow = $true
+            foreach ($argument in @('-NoLogo', '-NoProfile', '-Command', ('Start-Sleep -Milliseconds 600; exit ' + $env:STFC_MONITOR_EXIT))) { $start.ArgumentList.Add($argument) }
+            $creator = [Diagnostics.Process]::Start($start)
+            $childId = $creator.Id
+            $creator.Dispose()
+            $monitor = Open-ActivatedQualificationProcess -ProcessId $childId
+            try {
+                $wasAlive = -not $monitor.HasExited
+                if (-not $monitor.WaitForExit(10000)) { throw 'Fixture child timed out.' }
+                $exitCode = $monitor.ExitCode
+                if ($null -eq $exitCode) { throw 'Activated child exit status was lost.' }
+                @{wasAlive=$wasAlive;exitCode=$exitCode} | ConvertTo-Json -Compress
+            } finally {
+                try { if (-not $monitor.HasExited) { $monitor.Kill(); [void]$monitor.WaitForExit(5000) } }
+                finally { $monitor.Dispose() }
+            }
+            """;
+        var start = new ProcessStartInfo("pwsh")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add("-NoLogo");
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-EncodedCommand");
+        start.ArgumentList.Add(Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)));
+        start.Environment["STFC_MONITOR_SCRIPT"] = Path.Combine(RepositoryRoot(), "scripts", "qualify-battle-named-pipe-package.ps1");
+        start.Environment["STFC_MONITOR_EXIT"] = expectedExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20)); }
+        finally
+        {
+            if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); }
+        }
+        Assert.AreEqual(0, process.ExitCode, await error);
+        using var result = JsonDocument.Parse(await output);
+        Assert.IsTrue(result.RootElement.GetProperty("wasAlive").GetBoolean());
+        Assert.AreEqual(expectedExitCode, result.RootElement.GetProperty("exitCode").GetInt32());
+    }
+
     [TestMethod]
     public void PublishScriptBuildsTheReleaseVerifierWithoutCapturingItsInformationalOutput()
     {
