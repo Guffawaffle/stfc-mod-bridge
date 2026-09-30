@@ -1623,24 +1623,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
             scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
         }
-        else if (profile is null && snapshot.SelectedGameDirectory is { } defaultDirectory)
-        {
-            try
-            {
-                if (LauncherProfiles.IsNamedProfileFolder(defaultDirectory, profilesLoad.Snapshot!))
-                {
-                    const string reason = "Default points to a marked or named game folder. Choose a separate install.";
-                    primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
-                    scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
-                }
-            }
-            catch (IOException)
-            {
-                const string reason = "The Default game folder could not be identified safely.";
-                primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
-                scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
-            }
-        }
         else if (profile is not null)
         {
             var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);

@@ -10,7 +10,7 @@ public partial class MainWindow
 {
     private LauncherProfilesSnapshot profiles = LauncherProfilesSnapshot.Empty;
     private string profilesRevision = "missing";
-    private bool isAdoptingProfile;
+    private bool isRegisteringProfile;
     private bool isRemovingProfile;
 
     private JsonLauncherProfilesStore ProfilesStore => new(stateDirectory);
@@ -61,14 +61,14 @@ public partial class MainWindow
             return;
         }
 
-        isAdoptingProfile = false;
+        isRegisteringProfile = false;
         ProfileFormTitle.Text = "Edit profile";
         ProfileIdentity.Text = $"Profile key: {profile.Id}";
         ProfileIdentity.Visibility = Visibility.Visible;
         ProfileNameBox.Text = profile.Name;
         ProfileFolderBox.Text = profile.GameDirectory;
-        ProfileFolderBox.IsReadOnly = true;
-        BrowseProfileFolderButton.IsEnabled = false;
+        ProfileFolderBox.IsReadOnly = false;
+        BrowseProfileFolderButton.IsEnabled = true;
         ProfileKeyPanel.Visibility = Visibility.Collapsed;
         RemoveProfileButton.IsEnabled = true;
     }
@@ -76,7 +76,7 @@ public partial class MainWindow
     private void NewProfileButton_Click(object sender, RoutedEventArgs e)
     {
         ProfilesList.SelectedItem = null;
-        isAdoptingProfile = false;
+        isRegisteringProfile = false;
         isRemovingProfile = false;
         ProfileFormTitle.Text = "New profile";
         ProfileIdentity.Visibility = Visibility.Collapsed;
@@ -91,11 +91,11 @@ public partial class MainWindow
         RemoveProfileButton.IsEnabled = false;
     }
 
-    private void AdoptProfileButton_Click(object sender, RoutedEventArgs e)
+    private void TrackExistingProfileButton_Click(object sender, RoutedEventArgs e)
     {
         NewProfileButton_Click(sender, e);
-        isAdoptingProfile = true;
-        ProfileFormTitle.Text = "Adopt existing profile";
+        isRegisteringProfile = true;
+        ProfileFormTitle.Text = "Track existing profile";
         ProfileKeyPanel.Visibility = Visibility.Visible;
     }
 
@@ -113,12 +113,7 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) == true)
         {
             ProfileFolderBox.Text = dialog.FolderName;
-            if (isAdoptingProfile)
-            {
-                var contract = LauncherProfileLaunchContract.Inspect(dialog.FolderName);
-                ProfileKeyBox.Text = contract.ProfileId ?? string.Empty;
-                ProfileError.Text = contract.IsValid ? string.Empty : contract.Message;
-            }
+
         }
     }
 
@@ -130,7 +125,7 @@ public partial class MainWindow
             var selected = ProfilesList.SelectedItem as LauncherProfile;
             LauncherProfilesSnapshot updated;
             string revision;
-            if (selected is null && !isAdoptingProfile)
+            if (selected is null && !isRegisteringProfile)
             {
                 var created = await ProfilesStore.CreateNewAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
                     defaultDirectory, profilesRevision);
@@ -139,7 +134,7 @@ public partial class MainWindow
             }
             else if (selected is null)
             {
-                var adopted = await ProfilesStore.AdoptExistingAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
+                var adopted = await ProfilesStore.RegisterExistingAsync(ProfileNameBox.Text, ProfileKeyBox.Text, ProfileFolderBox.Text,
                     defaultDirectory, profilesRevision);
                 updated = adopted.Snapshot;
                 revision = adopted.Revision;
@@ -201,12 +196,6 @@ public partial class MainWindow
         if (ProfilesList.SelectedItem is not LauncherProfile profile)
         {
             ProfileError.Text = "Choose a saved profile first.";
-            return;
-        }
-        var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);
-        if (!contract.IsValid)
-        {
-            ProfileError.Text = contract.Message;
             return;
         }
         await SaveLaunchSelectionAsync(profile.Id);

@@ -1358,7 +1358,7 @@
           <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
         </ScrollViewer.Resources>
         <StackPanel Margin="0,0,4,0">
-         <TextBlock Text="Profiles change Launch only. Mod installation and settings still use the game folder shown on Home. Named launches need a marked install and profile-capable community mod."
+         <TextBlock Text="Profiles change Launch only. Mod installation and settings still use the game folder shown on Home. Named launches require a runtime supporting explicit profile requests. Saving a profile changes only Bridge metadata."
                     Foreground="{DynamicResource TextSecondaryBrush}"
                     TextWrapping="Wrap" />
          <TextBlock x:Name="ProfileLaunchSelection" Margin="0,8,0,0"
@@ -1416,9 +1416,9 @@
                   automation:AutomationProperties.Name="Create new launch profile" />
           <Button Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
-                  Click="AdoptProfileButton_Click"
-                  Content="_Adopt existing"
-                  automation:AutomationProperties.Name="Adopt existing launch profile" />
+                  Click="TrackExistingProfileButton_Click"
+                  Content="_Track existing"
+                  automation:AutomationProperties.Name="Track existing launch profile" />
           <Button x:Name="RemoveProfileButton"
                   Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
@@ -1436,8 +1436,8 @@
                  Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                  automation:AutomationProperties.Name="Profile name" />
         <StackPanel x:Name="ProfileKeyPanel" Margin="0,0,0,10" Visibility="Collapsed">
-           <TextBlock Text="Marker key (read from game folder)" />
-           <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32" IsReadOnly="True"
+           <TextBlock Text="Existing profile ID" />
+           <TextBox x:Name="ProfileKeyBox" Margin="0,4,0,0" MaxLength="32"
                    Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                    automation:AutomationProperties.Name="Existing profile key" />
         </StackPanel>

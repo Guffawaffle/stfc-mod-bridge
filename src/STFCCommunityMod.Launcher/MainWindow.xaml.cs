@@ -504,13 +504,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     SettingsUnavailableDialog.IsOpen = true;
                     return;
                 }
-                var normalizedDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dialog.FolderName));
-                if (LauncherProfiles.IsNamedProfileFolder(normalizedDirectory, storedProfiles.Snapshot))
-                {
-                    SettingsUnavailableMessage.Text = "That game folder has a profile marker or belongs to a launch profile. Choose a different folder for Default.";
-                    SettingsUnavailableDialog.IsOpen = true;
-                    return;
-                }
                 await using var lease = await new LauncherOperationLock(stateDirectory)
                     .TryAcquireAsync(lifetimeCancellation.Token);
                 if (lease is null)
@@ -522,10 +515,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 }
 
                 storedProfiles = ProfilesStore.Load();
-                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null
-                    || LauncherProfiles.IsNamedProfileFolder(normalizedDirectory, storedProfiles.Snapshot))
+                if (storedProfiles.State == LauncherProfilesLoadState.Invalid || storedProfiles.Snapshot is null)
                 {
-                    SettingsUnavailableMessage.Text = "The profile registry changed or this folder is marked for a named profile. Review it before changing Default.";
+                    SettingsUnavailableMessage.Text = "The profile registry could not be read. Review it before changing Default.";
                     SettingsUnavailableDialog.IsOpen = true;
                     return;
                 }

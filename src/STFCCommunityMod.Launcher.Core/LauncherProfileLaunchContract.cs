@@ -6,49 +6,18 @@ public sealed record LauncherProfileContractResult(bool IsValid, string? Profile
 
 public static class LauncherProfileLaunchContract
 {
-    private const string MarkerFileName = "stfc_community_mod.profile";
-    private const string ContractExport = "STFCModProfileIsolationContractV1";
+    private const string ContractExport = "STFCProfilesExplicitLaunchContractV1";
 
-    public static LauncherProfileContractResult Inspect(string gameDirectory, string? expectedId = null)
+    public static LauncherProfileContractResult Inspect(string gameDirectory, string profileId)
     {
-        try
+        if (!LauncherProfiles.ValidId(profileId))
         {
-            var game = GameInstallValidator.Validate(gameDirectory);
-            if (!game.IsValid || game.GameDirectory is null)
-            {
-                return Invalid(game.Message);
-            }
-
-            var markerPath = Path.Combine(game.GameDirectory, MarkerFileName);
-            if (!File.Exists(markerPath))
-            {
-                return Invalid("This game folder has no profile marker.");
-            }
-            using var marker = File.OpenRead(markerPath);
-            Span<byte> bytes = stackalloc byte[65];
-            var count = marker.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false);
-            if (count > 64 || !TryParseMarker(bytes[..count], out var id))
-            {
-                return Invalid("The profile marker is invalid. Expected one v1:<lowercase-id> line.");
-            }
-            if (expectedId is not null && !string.Equals(id, expectedId, StringComparison.Ordinal))
-            {
-                return Invalid("The profile marker no longer matches this saved profile key.");
-            }
-
-            var capability = InspectCapableDll(game.GameDirectory);
-            if (!capability.IsValid)
-            {
-                return capability;
-            }
-            return new(true, id, "Profile marker and mod contract verified.");
+            return Invalid("The requested profile ID is invalid.");
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or ArgumentException or NotSupportedException or BadImageFormatException
-            or InvalidOperationException or OverflowException)
-        {
-            return Invalid($"The profile launch files could not be verified: {exception.Message}");
-        }
+        var capability = InspectCapableDll(gameDirectory);
+        return capability.IsValid
+            ? new(true, profileId, "Explicit profile launch capability verified.")
+            : capability;
     }
 
     public static LauncherProfileContractResult InspectCapableDll(string gameDirectory)
@@ -62,46 +31,18 @@ public static class LauncherProfileLaunchContract
             }
             var dllPath = Path.Combine(game.GameDirectory, "version.dll");
             return File.Exists(dllPath) && HasContractExport(dllPath)
-                ? new(true, null, "Profile-capable community mod DLL verified.")
-                : Invalid("This game folder needs a profile-capable community mod version.dll.");
+                ? new(true, null, "Explicit profile launch DLL verified.")
+                : Invalid("This game folder needs a version.dll supporting explicit profile launches.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException or BadImageFormatException
             or InvalidOperationException or OverflowException)
         {
-            return Invalid($"The profile-capable DLL could not be verified: {exception.Message}");
+            return Invalid($"The explicit profile launch DLL could not be verified: {exception.Message}");
         }
     }
 
     private static LauncherProfileContractResult Invalid(string message) => new(false, null, message);
-
-    private static bool TryParseMarker(ReadOnlySpan<byte> bytes, out string id)
-    {
-        id = string.Empty;
-        if (bytes.EndsWith("\r\n"u8))
-        {
-            bytes = bytes[..^2];
-        }
-        else if (bytes.EndsWith("\n"u8))
-        {
-            bytes = bytes[..^1];
-        }
-        if (!bytes.StartsWith("v1:"u8))
-        {
-            return false;
-        }
-        bytes = bytes[3..];
-        foreach (var value in bytes)
-        {
-            if (value is not (>= (byte)'a' and <= (byte)'z'
-                or >= (byte)'0' and <= (byte)'9' or (byte)'-' or (byte)'_'))
-            {
-                return false;
-            }
-        }
-        id = System.Text.Encoding.ASCII.GetString(bytes);
-        return LauncherProfiles.ValidId(id);
-    }
 
     private static bool HasContractExport(string path)
     {

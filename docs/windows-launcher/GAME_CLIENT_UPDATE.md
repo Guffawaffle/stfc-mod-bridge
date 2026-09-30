@@ -88,10 +88,9 @@ Those probe files are evidence for these requirements, not production code.
 - Determine whether the official launcher can start a game automatically after
   an update and how Bridge should block or attribute that launch.
 - Check what the official updater preserves across subsequent client versions,
-  including `version.dll` and any future per-install profile marker. Recheck
+  including `version.dll` and profile-independent configuration. Recheck
   mod/client compatibility after every update.
 
-Routine game launches may use `prime.exe` directly. A per-install profile
-marker is a separate [bootstrap design](PROFILE_MARKER_DESIGN.md); it must
-select identity before login state is read and must not silently fall back to
-the default account when an enrolled child install loses its marker.
+Routine game launches may use `prime.exe` directly. Named launches supply an
+explicit process profile ID under the [shared-install contract](SHARED_INSTALL_PROFILE_CONTRACT.md).
+The runtime selects that ID before login state is read.

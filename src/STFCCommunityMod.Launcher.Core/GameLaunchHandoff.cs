@@ -448,13 +448,7 @@ public sealed class GameLaunchHandoffCoordinator(
                     "The selected launch profile changed. Review the launch button and try again.",
                     revalidated, Changed: false);
             }
-            if (gameDirectory is not null
-                && LauncherProfiles.IsNamedProfileFolder(gameDirectory, registry.Snapshot))
-            {
-                return new(GameLaunchHandoffState.Blocked,
-                    "Default points to a marked or named game folder. Select a distinct Default install.",
-                    revalidated, Changed: false);
-            }
+
         }
 
         if (requiredProfile is not null)
@@ -469,11 +463,10 @@ public sealed class GameLaunchHandoffCoordinator(
             }
             if (target != LauncherLaunchTarget.PrimeExecutable
                 || !GameDirectoryIdentity.SameLocation(gameDirectory ?? string.Empty, requiredProfile.GameDirectory)
-                || (currentDefault is not null
-                    && GameDirectoryIdentity.SameLocation(currentDefault, requiredProfile.GameDirectory)))
+)
             {
                 return new(GameLaunchHandoffState.Blocked,
-                    "The named profile must use its own game folder, separate from Default.",
+                    "The named profile must launch prime.exe from its recorded game folder.",
                     revalidated, Changed: false);
             }
             var contract = LauncherProfileLaunchContract.Inspect(requiredProfile.GameDirectory, requiredProfile.Id);
@@ -557,7 +550,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 }
                 var logPath = LauncherProfiles.UnityLogPath(profile, profileLocalData);
                 Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
-                arguments = ["-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile", logPath];
+                arguments = ["-stfc-profile", profile.Id, "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile", logPath];
             }
             await gameExecutableLaunchService.StartAsync(gameDirectory, arguments, cancellationToken);
             return new(

@@ -11,14 +11,12 @@ public sealed class GameLaunchHandoffTests
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
     [TestMethod]
-    public async Task NamedProfileLaunchesItsMarkedInstallAndStopsAfterMarkerDrift()
+    public async Task NamedProfileLaunchPassesItsExplicitId()
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var defaultGame = CreateGameDirectory(temporaryDirectory, "default-game");
         var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
-        var marker = Path.Combine(profileGame, "stfc_community_mod.profile");
-        File.WriteAllText(marker, "v1:dev\n");
-        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
         var profile = new LauncherProfile("dev", "Secondary", profileGame);
         var fixture = CreateFixture(temporaryDirectory);
         var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
@@ -34,15 +32,11 @@ public sealed class GameLaunchHandoffTests
         Assert.AreNotEqual(defaultGame, fixture.GameService.LastGameDirectory);
         CollectionAssert.AreEqual(new[]
         {
-            "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile",
+            "-stfc-profile", profile.Id, "-ccm", LauncherProfiles.GameConfigPath(profile), "-logFile",
             LauncherProfiles.UnityLogPath(profile, temporaryDirectory.Path),
         }, fixture.GameService.LastArguments!.ToArray());
 
-        File.WriteAllText(marker, "v1:other\n");
-        var blocked = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
-            defaultGameDirectory: defaultGame);
-        Assert.AreEqual(GameLaunchHandoffState.Blocked, blocked.State);
-        Assert.AreEqual(1, fixture.GameService.StartCount);
+
     }
 
     [TestMethod]
@@ -51,8 +45,7 @@ public sealed class GameLaunchHandoffTests
         using var temporaryDirectory = new TemporaryDirectory();
         var previousDefault = CreateGameDirectory(temporaryDirectory, "previous-default");
         var profileGame = CreateGameDirectory(temporaryDirectory, "profile-game");
-        File.WriteAllText(Path.Combine(profileGame, "stfc_community_mod.profile"), "v1:dev\n");
-        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(profileGame, "version.dll"));
         var profile = new LauncherProfile("dev", "Secondary", profileGame);
         var fixture = CreateFixture(temporaryDirectory);
         var state = Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!;
@@ -65,20 +58,6 @@ public sealed class GameLaunchHandoffTests
 
         var result = await fixture.Coordinator.LaunchProfileAsync(profile, allowUnverifiedProxy: true,
             defaultGameDirectory: previousDefault);
-
-        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
-        Assert.AreEqual(0, fixture.GameService.StartCount);
-    }
-
-    [TestMethod]
-    public async Task DefaultLaunchRejectsAMarkedInstall()
-    {
-        using var temporaryDirectory = new TemporaryDirectory();
-        var game = CreateGameDirectory(temporaryDirectory);
-        File.WriteAllText(Path.Combine(game, "stfc_community_mod.profile"), "v1:dev\n");
-        var fixture = CreateFixture(temporaryDirectory);
-
-        var result = await fixture.Coordinator.LaunchAsync(game, LauncherLaunchTarget.PrimeExecutable);
 
         Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
         Assert.AreEqual(0, fixture.GameService.StartCount);
@@ -105,8 +84,7 @@ public sealed class GameLaunchHandoffTests
     {
         using var temporaryDirectory = new TemporaryDirectory();
         var game = CreateGameDirectory(temporaryDirectory);
-        File.WriteAllText(Path.Combine(game, "stfc_community_mod.profile"), "v1:dev\n");
-        LauncherProfileLaunchContractTests.WriteProfileDll(Path.Combine(game, "version.dll"));
+        ProfileRuntimeFixture.WriteProfileDll(Path.Combine(game, "version.dll"));
         var fixture = CreateFixture(temporaryDirectory);
         var profile = new LauncherProfile("dev", "Secondary", game);
         var store = new JsonLauncherProfilesStore(Path.GetDirectoryName(fixture.DeploymentService.JournalPath)!);
