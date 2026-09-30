@@ -82,6 +82,11 @@ described in [SECURITY.md](SECURITY.md).
 
 ## Build and test
 
+Install the .NET SDK version pinned in `global.json` (currently `8.0.425`).
+Local commands and CI use this exact SDK, with roll-forward disabled, so the
+build tools and bundled runtime-pack inventory stay in sync. Run these commands
+from the repository root; `dotnet --version` should report `8.0.425`.
+
 ```powershell
 dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
 dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
