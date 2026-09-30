@@ -11,13 +11,13 @@ $licenseInventoryPath = Join-Path $moduleRoot "licenses.v1.json"
 $expectedGoVersion = "go1.26.6"
 $expectedSigstoreVersion = "v1.3.0"
 
-$actualGoVersion = (& go env GOVERSION).Trim()
-if ($LASTEXITCODE -ne 0 -or $actualGoVersion -ne $expectedGoVersion) {
-  throw "Release verifier requires Go $expectedGoVersion; found '$actualGoVersion'."
-}
-
 Push-Location $moduleRoot
 try {
+  $actualGoVersion = (& go env GOVERSION).Trim()
+  if ($LASTEXITCODE -ne 0 -or $actualGoVersion -ne $expectedGoVersion) {
+    throw "Release verifier requires Go $expectedGoVersion; found '$actualGoVersion'."
+  }
+
   & go mod tidy -diff
   if ($LASTEXITCODE -ne 0) {
     throw "Release verifier go.mod/go.sum are not tidy."

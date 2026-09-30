@@ -44,7 +44,8 @@ terminal LF for repository text hygiene; the helper requires that exact
 single-line shape and hashes the normalized JSON document without the LF.
 
 Run `scripts/verify-release-verifier.ps1` from the repository root. The script
-requires the exact Go version, proves `go.mod`/`go.sum` are tidy, compares the
+enters the Go module before checking the exact Go version, so Go's normal
+toolchain selection honors the module's pin. It proves `go.mod`/`go.sum` are tidy, compares the
 compiled dependency closure to the reviewed inventory, runs tests, and emits a
 trimmed Windows x64 executable plus a matching 71-module SPDX inventory under
 `artifacts/release-verifier`.
