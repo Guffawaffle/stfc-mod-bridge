@@ -267,7 +267,7 @@ public sealed class SettingsShellAccessibilityTests
         Assert.AreEqual(
             "{Binding SaveAvailability}",
             (string?)recovery.Attribute(Automation + "AutomationProperties.HelpText"));
-        Assert.AreEqual("{Binding CanEdit}", (string?)settingsList.Attribute("IsEnabled"));
+        Assert.IsNull(settingsList.Attribute("IsEnabled"), "Browsing must remain available while editing is blocked.");
     }
 
     [TestMethod]

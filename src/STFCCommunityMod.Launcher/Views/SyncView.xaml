@@ -226,7 +226,6 @@
     <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
     <ScrollViewer x:Name="PageScrollViewer" Grid.Row="0" VerticalScrollBarVisibility="Auto"
-                  IsEnabled="{Binding CanEdit}"
                   HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
                   automation:AutomationProperties.Name="Data Sync page content">
       <ScrollViewer.Resources><Style BasedOn="{StaticResource SyncScrollBarStyle}" TargetType="{x:Type ScrollBar}" /></ScrollViewer.Resources>
@@ -297,7 +296,7 @@
         </Grid>
         <Border Height="1" Background="{DynamicResource BorderBrush}" />
 
-        <StackPanel Visibility="{Binding IsGlobalTabSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <StackPanel IsEnabled="{Binding CanEdit}" Visibility="{Binding IsGlobalTabSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
           <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Connection and security defaults" />
           <Border Height="1" Background="{DynamicResource BorderBrush}" />
           <Grid Margin="0,14,0,0">
@@ -349,7 +348,7 @@
           </Border>
         </StackPanel>
 
-        <ContentControl Content="{Binding SelectedDestination}">
+        <ContentControl IsEnabled="{Binding CanEdit}" Content="{Binding SelectedDestination}">
           <ContentControl.Style>
             <Style TargetType="ContentControl"><Setter Property="Visibility" Value="Visible" />
               <Style.Triggers><DataTrigger Binding="{Binding IsGlobalTabSelected}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>

@@ -767,7 +767,7 @@ public sealed class SettingsProjectionTests
         fixture.ViewModel.SaveRecoveryCommand.Execute(null);
 
         Assert.IsFalse(fixture.ViewModel.IsConfigurationReady);
-        StringAssert.Contains(fixture.ViewModel.OperationStatus, "cannot edit safely");
+        StringAssert.Contains(fixture.ViewModel.OperationStatus, "cannot safely edit");
         Assert.IsFalse(fixture.ViewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
         Assert.IsTrue(fixture.ViewModel.IsSettingsFooterVisible);
         Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
@@ -1972,6 +1972,53 @@ public sealed class SettingsProjectionTests
 
         Assert.Fail($"Could not find repository file '{Path.Combine(relativeParts)}'.");
         return string.Empty;
+    }
+
+    [TestMethod]
+    public async Task SimpleQuotedModKeysUseTheNormalStagedAtomicSave()
+    {
+        const string source = "[graphics]\r\n\"free_resize\" = true # retain\r\n";
+        using var fixture = SettingsFixture.Create(source);
+        Assert.IsTrue(fixture.ViewModel.CanEdit);
+        fixture.Select(LauncherSettingsSection.Graphics);
+        fixture.Row("graphics.free_resize").BooleanValue = false;
+        Assert.AreEqual(source, File.ReadAllText(fixture.ConfigurationPath));
+        await fixture.ViewModel.SaveAsync();
+        Assert.AreEqual(source.Replace("true", "false", StringComparison.Ordinal), File.ReadAllText(fixture.ConfigurationPath));
+    }
+
+    [TestMethod]
+    public void UnsupportedSyntaxLabelsDefaultsAndSafeLineMetadataWithoutPrivateContent()
+    {
+        const string privateSentinel = "hidden-private-value";
+        using var fixture = SettingsFixture.Create("# comment\n\"key.with.dot\" = \"" + privateSentinel + "\"\n");
+        Assert.IsFalse(fixture.ViewModel.CanEdit);
+        StringAssert.Contains(fixture.ViewModel.ConfigurationStatus, "line 2");
+        StringAssert.Contains(fixture.ViewModel.ConfigurationStatus, "provider defaults");
+        Assert.IsFalse(fixture.ViewModel.ConfigurationStatus.Contains("Select a game folder", StringComparison.Ordinal));
+        Assert.IsFalse((fixture.ViewModel.ConfigurationStatus + fixture.ViewModel.OperationStatus).Contains(privateSentinel, StringComparison.Ordinal));
+        Assert.IsFalse((fixture.ViewModel.ConfigurationStatus + fixture.ViewModel.OperationStatus).Contains(fixture.ConfigurationPath, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void SelectionNotificationsDisableRetainedRowCommandsWithoutLosingInvalidDraft()
+    {
+        using var fixture = SettingsFixture.Create();
+        string? target = fixture.ConfigurationPath;
+        var viewModel = fixture.CreateAdditionalViewModel(() => target);
+        viewModel.Sections.Single(section => section.Id == LauncherSettingsSection.Graphics).SelectCommand.Execute(null);
+        var row = viewModel.FilteredSettings.OfType<SettingsRowViewModel>().First(item => item.IsNumericEditor);
+        row.NumericText = "invalid-draft-retained";
+        target = null;
+        viewModel.NotifyConfigurationTargetChanged();
+        Assert.IsFalse(row.CanEdit);
+        Assert.AreEqual("invalid-draft-retained", row.NumericText);
+        Assert.IsTrue(viewModel.HasPendingChanges);
+        Assert.IsFalse(row.RevertDraftCommand.CanExecute(null));
+        target = fixture.ConfigurationPath;
+        viewModel.NotifyConfigurationTargetChanged();
+        Assert.IsTrue(row.CanEdit);
+        Assert.AreEqual("invalid-draft-retained", row.NumericText);
     }
 
     private sealed class SettingsFixture : IDisposable

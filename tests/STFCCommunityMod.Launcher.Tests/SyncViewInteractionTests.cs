@@ -166,7 +166,7 @@ public sealed class SyncViewInteractionTests
         Assert.AreEqual(
             "Approve moving the older sync setup into a named destination",
             (string?)legacy.Attribute(Automation + "AutomationProperties.Name"));
-        Assert.AreEqual("{Binding CanEdit}", (string?)page.Attribute("IsEnabled"));
+        Assert.IsNull(page.Attribute("IsEnabled"), "Read-only Data Sync must remain scrollable.");
     }
 
     [TestMethod]

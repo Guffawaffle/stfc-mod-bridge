@@ -36,6 +36,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly SettingsActionCommand lockPatchEditingCommand;
     private readonly object lifecycleSync = new();
     private ConfigurationWorkspace? workspace;
+    private ConfigurationWorkspaceLoadResult? configurationLoadResult;
+
     private Task? activeSave;
     private Task? invalidationTask;
     private string searchText = string.Empty;
@@ -332,11 +334,31 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         settingsDiagnostics.SettingsLayoutName;
 
     public string ConfigurationStatus =>
-        IsConfigurationReady
+        isInvalidating || isInvalidated
+            ? "This Settings view has been replaced. Reopen Settings to review the current configuration."
+        : workspace is not null && !ConfigurationPathMatchesLoadedSession()
+            ? "The selected configuration or runtime changed. Use the recovery action to resolve retained edits."
+        : workspace?.IsStale == true || SyncWorkspace.IsStale
+            ? "The configuration changed outside Bridge. Review the recovery action before editing."
+        : IsConfigurationReady
             ? workspace!.DocumentExists
                 ? "Changes are staged until you save."
                 : "No TOML exists yet. Your first saved change will create it."
-            : "Select a game folder with a supported configuration to enable editing.";
+        : configurationLoadResult?.State is ConfigurationRepositoryReadState.Invalid or ConfigurationRepositoryReadState.IoFailure
+            ? DescribeConfigurationReadFailure(configurationLoadResult)
+            : "Showing provider defaults. Select a game folder to enable editing.";
+
+    private static string DescribeConfigurationReadFailure(ConfigurationWorkspaceLoadResult load)
+    {
+        var line = load.ValidationError?.LineNumber is > 0
+            ? $" at line {load.ValidationError.LineNumber}" : string.Empty;
+        var reason = load.State == ConfigurationRepositoryReadState.IoFailure
+            ? "Bridge could not read the selected configuration."
+            : load.ValidationError?.Code == SparseTomlErrorCode.InvalidUtf8
+                ? "The selected configuration is not valid UTF-8."
+                : $"Bridge cannot safely edit this TOML syntax{line}.";
+        return $"{reason} Showing provider defaults; scrolling and help remain available.";
+    }
 
     public int PendingChangeCount => catalog.VisibleSettings.Count(setting =>
         GetValueState(setting).IsDirty
@@ -765,6 +787,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             catalog,
             repository,
             out var loadedWorkspace);
+        configurationLoadResult = load;
         if (load.State == ConfigurationRepositoryReadState.NoConfigurationSelected)
         {
             OperationStatus = string.Empty;
@@ -774,9 +797,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         if (!load.IsSuccess || loadedWorkspace is null)
         {
-            OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
-                ? "Editing is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made."
-                : "Editing is unavailable because Mod Bridge could not read the selected configuration. Close other tools using it, check access, and try again.";
+            OperationStatus = DescribeConfigurationReadFailure(load) + " No changes were made.";
             RefreshPatchEditingAvailability();
             return;
         }
@@ -1206,6 +1227,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private void NotifySessionChanged()
     {
+        foreach (var row in projectedRowsByPath.Values) row.UpdateEditingAvailability(CanEdit);
         OnPropertyChanged(nameof(IsConfigurationReady));
         OnPropertyChanged(nameof(IsSaveInProgress));
         OnPropertyChanged(nameof(CanEdit));

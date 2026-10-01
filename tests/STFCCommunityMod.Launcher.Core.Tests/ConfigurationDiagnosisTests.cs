@@ -152,7 +152,7 @@ public sealed class ConfigurationDiagnosisTests
     [DataRow("value = true\nvalue = false\n", "CONFIG_DOCUMENT_DUPLICATE_ASSIGNMENT", false)]
     [DataRow("[same]\nvalue = true\n[same]\nother = false\n", "CONFIG_DOCUMENT_DUPLICATE_TABLE", false)]
     [DataRow("[[unsupported]]\nvalue = true\n", "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED", true)]
-    [DataRow("quoted.\"key\" = true\n", "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED", true)]
+    [DataRow("quoted.\"key.with.dot\" = true\n", "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED", true)]
     public void InvalidAndUnsupportedSyntaxCorpusFailsClosed(
         string text,
         string expectedCode,

@@ -110,6 +110,7 @@
           <Button x:Name="AddBindingAction"
                   Style="{StaticResource RowMenuActionStyle}"
                   Click="AddBinding_Click"
+                  IsEnabled="{Binding CanEdit}"
                   Visibility="{Binding IsKeybindingEditor, Converter={StaticResource BooleanToVisibilityConverter}}"
                   ToolTip="Capture another keyboard key or mouse button"
                   automation:AutomationProperties.Name="{Binding Title, StringFormat=Add a binding for {0}}"

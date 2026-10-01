@@ -447,7 +447,7 @@ public sealed partial class SparseTomlDocument
             }
 
             var left = line.Content[..equalsIndex].Trim();
-            if (!TryParseBareDottedPath(left, out var keyPath))
+            if (!TryParseSourceKeyPath(left, out var keyPath))
             {
                 if (targetPath is not null
                     && left.Contains(targetPath[^1], StringComparison.Ordinal))
@@ -819,6 +819,21 @@ public sealed partial class SparseTomlDocument
         return ConservativeScalarRegex().IsMatch(trimmed);
     }
 
+    private static bool TryParseSourceKeyPath(string value, out string[] segments)
+    {
+        // Only quote bare identifier segments: dots and escapes inside quotes remain unsupported.
+        // This preserves the canonical path model and existing duplicate/namespace checks.
+        if (!SimpleSourceKeyPathRegex().IsMatch(value))
+        {
+            segments = [];
+            return false;
+        }
+        segments = value.Split('.')
+            .Select(segment => segment.Trim(' ', '\t').Trim('"', '\''))
+            .ToArray();
+        return true;
+    }
+
     private static bool TryParseBareDottedPath(string value, out string[] segments)
     {
         segments = value.Split('.');
@@ -1071,6 +1086,11 @@ public sealed partial class SparseTomlDocument
         """^(?:(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*'))*)$""",
         RegexOptions.CultureInvariant)]
     private static partial Regex ConservativeKeyRegex();
+
+    [GeneratedRegex(
+        """^(?:[A-Za-z0-9_-]+|"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+')(?:[ \t]*\.[ \t]*(?:[A-Za-z0-9_-]+|"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+'))*$""",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex SimpleSourceKeyPathRegex();
 
     [GeneratedRegex(
         @"^(?:true|false|[+-]?(?:inf|nan)|[+-]?(?:0|[1-9](?:_?[0-9])*)|[+-]?0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|[+-]?0o[0-7](?:_?[0-7])*|[+-]?0b[01](?:_?[01])*|[+-]?(?:0|[1-9](?:_?[0-9])*)\.[0-9](?:_?[0-9])*(?:[eE][+-]?[0-9](?:_?[0-9])*)?|[+-]?(?:0|[1-9](?:_?[0-9])*)[eE][+-]?[0-9](?:_?[0-9])*|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})?)?|[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?)$",

@@ -377,6 +377,72 @@ public sealed class SparseTomlDocumentTests
             result.Contents!);
     }
 
+    [TestMethod]
+    [DataRow("\"enabled\"")]
+    [DataRow("'enabled'")]
+    [DataRow("nested . \"enabled\"")]
+    [DataRow("\"nested\".'enabled'")]
+    public void SimpleQuotedAssignmentPreservesBytesAndUsesBareCanonicalIdentity(string key)
+    {
+        var source = "[settings]\r\n  " + key + " = false # retain\r\nunknown = 12\r\n";
+        var contents = new byte[] { 0xef, 0xbb, 0xbf }.Concat(Encoding.UTF8.GetBytes(source)).ToArray();
+        var path = key.Contains('.') ? "settings.nested.enabled" : "settings.enabled";
+        var document = Load(contents);
+        Assert.IsTrue(document.ReadOverrides().Overrides!.ContainsKey(path));
+        var changed = document.SetOverride(path, "true");
+        Assert.IsTrue(changed.IsValid, changed.Error?.Message);
+        CollectionAssert.AreEqual(new byte[] { 0xef, 0xbb, 0xbf }
+            .Concat(Encoding.UTF8.GetBytes(source.Replace("false", "true", StringComparison.Ordinal))).ToArray(), changed.Contents!);
+        var removed = document.RemoveOverride(path);
+        Assert.IsTrue(removed.IsValid, removed.Error?.Message);
+        CollectionAssert.AreEqual(new byte[] { 0xef, 0xbb, 0xbf }
+            .Concat(Encoding.UTF8.GetBytes("[settings]\r\nunknown = 12\r\n")).ToArray(), removed.Contents!);
+    }
+
+    [TestMethod]
+    [DataRow("enabled = true\n\"enabled\" = false\n")]
+    [DataRow("\"enabled\" = true\n'enabled' = false\n")]
+    [DataRow("\"settings\".enabled = true\n[settings]\n'enabled' = false\n")]
+    public void QuotedAndBareDuplicateSpellingsFailClosed(string source)
+    {
+        var result = Load(source).ValidateForMutation();
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, result.Error?.Code);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("\"settings\" = true\n")]
+    [DataRow("\"settings\".enabled.child = true\n")]
+    public void QuotedKeysRetainScalarAndNamespaceExclusion(string source)
+    {
+        var result = Load(source).SetOverride("settings.enabled", "true");
+        Assert.IsFalse(result.IsValid);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("\"key.with.dot\"")]
+    [DataRow("\"key with space\"")]
+    [DataRow("\"\\u006bey\"")]
+    [DataRow("'clé'")]
+    [DataRow("\"\"")]
+    [DataRow("'key\"")]
+    public void ComplexQuotedAssignmentRemainsUnsupported(string key)
+    {
+        var result = Load(key + " = true\n").ValidateForMutation();
+        Assert.IsFalse(result.IsValid);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    public void QuotedHeadersAndCanonicalApiPathsRemainUnsupported()
+    {
+        Assert.IsFalse(Load("[\"settings\"]\nenabled = true\n").ValidateForMutation().IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidPath,
+            Load("# empty\n").SetOverride("\"settings\".enabled", "true").Error?.Code);
+    }
+
     private static SparseTomlDocument Load(string source) =>
         Load(Encoding.UTF8.GetBytes(source));
 

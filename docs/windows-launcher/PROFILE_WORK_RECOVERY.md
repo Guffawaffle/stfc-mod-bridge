@@ -110,3 +110,29 @@ observations do not establish live Bridge account sign-in or callback behavior.
 Complete account identity, reverse restart persistence, browser callback and
 packaged cross-host qualification before claiming the full shared-install
 player workflow is qualified.
+
+## Settings correction after MVP qualification
+
+The ProgressBar correction at `8de866ac5512a9df6acf72aa2e44547b322674b3`
+passed [CI36703488983](https://github.com/Guffawaffle/stfc-mod-bridge/actions/runs/36703488983),
+including installed MSIX catalog/lease qualification and both provider UI smoke
+stages. This supersedes the earlier current-head CI-pending statement above;
+Windows 11 scoped exclusions and real account/callback qualification remain open.
+
+A subsequent Settings report exposed two existing defects: an unsupported
+configuration disabled the entire list and scroller, allowing WPF to paint a
+white disabled surface; and the mod's own TOML writer emits simple quoted keys
+that Bridge previously rejected. Settings and Data Sync now retain scrolling
+and help while mutation controls stay gated. Disabled Settings text editors
+preserve the chosen palette, and unavailable configuration captions distinguish
+provider defaults from loaded values and report safe line metadata.
+
+The parser accepts assignment-only quoted ASCII bare identifier segments,
+normalizes their identity for duplicate and namespace checks, and preserves the
+original key spelling and file formatting during staged saves. Quoted table
+headers and more complex quoted keys remain unsupported. Retained Settings
+rows refresh editing availability on target/runtime changes without clearing
+drafts. The reported live configuration was accepted without a byte change;
+focused staged-save, canonical-alias, real WPF scrolling and dark/light palette
+regressions passed. Read the latest PR head and its exact validation/review
+receipts before qualifying a corrected package or restoring any checkpoint.
