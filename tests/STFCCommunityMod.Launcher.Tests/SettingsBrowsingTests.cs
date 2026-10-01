@@ -85,6 +85,33 @@ public sealed class SettingsBrowsingTests
         });
     }
 
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ProductionNumericEditorFitsShortValuesWhenEnabledOrDisabled(bool enabled)
+    {
+        RunSta(() =>
+        {
+            LauncherThemeManager.ApplyColorMode(LauncherColorMode.Dark);
+            var view = new SettingsView();
+            var editor = new TextBox
+            {
+                Style = (Style)view.Resources["SettingsNumericEditorStyle"],
+                Text = "1750.0",
+                IsEnabled = enabled,
+            };
+            editor.Measure(new Size(960, 620));
+            editor.Arrange(new Rect(new Point(), editor.DesiredSize));
+            editor.UpdateLayout();
+            var host = (ScrollViewer)editor.Template.FindName("PART_ContentHost", editor);
+            var glyphs = new FormattedText(editor.Text, System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, new Typeface(editor.FontFamily, editor.FontStyle, editor.FontWeight, editor.FontStretch),
+                editor.FontSize, editor.Foreground, VisualTreeHelper.GetDpi(editor).PixelsPerDip);
+            Assert.IsTrue(host.ViewportWidth >= glyphs.WidthIncludingTrailingWhitespace,
+                $"Numeric content viewport {host.ViewportWidth} must fit the short value's {glyphs.WidthIncludingTrailingWhitespace} pixels.");
+        });
+    }
+
     private static void Layout(FrameworkElement view)
     {
         view.Measure(new Size(960, 620));
