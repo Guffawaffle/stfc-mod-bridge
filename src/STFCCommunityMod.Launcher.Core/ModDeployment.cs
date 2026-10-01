@@ -1072,13 +1072,18 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             exactStagedArtifact?.Dispose();
             exactStagedRuntimeManifest?.Dispose();
-            await RollBackCoordinatedAsync(
+            var rolledBack = await RollBackCoordinatedAsync(
                 journal,
                 targetPath,
                 commitParticipant,
                 participantCommitStarted,
                 exactStagedArtifactRevision,
                 CancellationToken.None).ConfigureAwait(false);
+            if (!rolledBack)
+            {
+                return new(ModDeploymentResultState.RecoveryRequired,
+                    "The canceled mod transaction could not restore all prior state and requires recovery.");
+            }
             throw;
         }
         catch (Exception exception)

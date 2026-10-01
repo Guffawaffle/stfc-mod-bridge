@@ -39,15 +39,17 @@ internal sealed class LauncherInstalledConfigurationResolver(
             return Unavailable(provider, selection, "unknown", "unknown");
         }
 
+        if (receipt is not null && (receipt.ProviderId != selection.ProviderId
+            || receipt.ReleaseChannelId != selection.ReleaseChannelId
+            || receipt.RuntimeDistributionId != provider.RuntimeDistributionId))
+        {
+            return Unavailable(provider, selection,
+                receipt.RepositoryRelease?.Tag[1..] ?? "unknown",
+                receipt.RepositoryRelease?.SourceCommit ?? "unknown");
+        }
         if (receipt?.RepositoryRelease is { } observation)
         {
             var version = observation.Tag[1..];
-            if (receipt.ProviderId != selection.ProviderId
-                || receipt.ReleaseChannelId != selection.ReleaseChannelId
-                || receipt.RuntimeDistributionId != provider.RuntimeDistributionId)
-            {
-                return Unavailable(provider, selection, version, observation.SourceCommit);
-            }
             try
             {
                 return BundledLauncherProviderCatalog.LoadConfigurationCatalog(

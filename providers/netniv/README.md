@@ -23,8 +23,11 @@ Production reads the installed release observation before selecting this schema
 set. A new or mismatched identity gets an unqualified empty catalog with its actual
 release/commit retained; typed Settings, Data Sync and catalog-authorized operations
 stay unavailable, while bound raw TOML access remains available. Prospective source
-switch analysis stays Unknown until the target is installed. Installations without
-a repository observation keep the existing historical catalog behavior.
+switch analysis stays Unknown until the target is installed. Without a repository
+observation, historical fallback requires any managed receipt to match the requested
+provider/channel/runtime. A mismatched source receipt cannot grant typed authority
+during an interrupted transition; manual installations without a receipt retain
+the existing historical behavior.
 
 Runtime facts are reviewed from the matching NetniV `defaultconfig.h`,
 `config.cc`, key mapping, README, and example configuration. The compact shared

@@ -378,6 +378,10 @@ after preparation or during acquisition. A process can stop at
 `ConfigurationCommitted` with target files/preferences but the source registry;
 the incomplete exact inner journal then requires rollback of both sides. The
 real termination harness covers that interval and the completed target lineage.
+If registry publication or its compensating write is blocked, the outer journal
+remains recovery-required even after TOML/preference compensation succeeds. A
+canceled operation whose compensation is incomplete reports recovery-required;
+it cannot leave a terminal outer rollback marker over an incomplete inner journal.
 
 Implementation ownership is intentionally bounded:
 

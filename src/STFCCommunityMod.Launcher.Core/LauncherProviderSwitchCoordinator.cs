@@ -956,9 +956,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             try
             {
                 await configurationSwitch.RollBackAsync(prepared, cancellationToken).ConfigureAwait(false);
-                await PersistAsync(
-                    LauncherProviderAtomicSwitchPhase.RolledBack,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                // Deployment still owns artifact/receipt compensation. Its final
+                // result or successful cancellation publishes the outer terminal state.
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -992,8 +991,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             ModDeploymentResult result,
             CancellationToken cancellationToken)
         {
-            if (journal.Phase is LauncherProviderAtomicSwitchPhase.RolledBack
-                or LauncherProviderAtomicSwitchPhase.RecoveryRequired)
+            if (journal.Phase == LauncherProviderAtomicSwitchPhase.RecoveryRequired
+                || journal.Phase == LauncherProviderAtomicSwitchPhase.RolledBack
+                    && result.State != ModDeploymentResultState.RecoveryRequired)
             {
                 return;
             }

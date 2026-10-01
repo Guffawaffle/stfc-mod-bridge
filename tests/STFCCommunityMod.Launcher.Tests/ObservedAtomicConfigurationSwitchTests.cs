@@ -74,6 +74,67 @@ public sealed class ObservedAtomicConfigurationSwitchTests
     }
 
     [TestMethod]
+    public async Task ConfigurationCommittedBeforePublicationCannotBorrowTargetCatalogAndCompensates()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var guffawaffle = new LauncherProviderSelection("guffawaffle", "stable");
+        var netniv = new LauncherProviderSelection("netniv", "stable");
+        var registryBefore = File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath);
+        var boundaryObserved = false;
+        var coordinator = fixture.CreateCoordinator(guffawaffle, (phase, _) =>
+        {
+            if (phase != LauncherProviderAtomicSwitchPhase.ConfigurationCommitted)
+                return ValueTask.CompletedTask;
+
+            // Observe the mixed state before publication or compensation, rather
+            // than inferring it from the transaction's final rollback result.
+            Assert.AreEqual(netniv, fixture.SelectionStore.Load());
+            CollectionAssert.AreEqual(fixture.NetnivBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.Config));
+            var sourceReceipt = fixture.GuffawaffleDeployment.ReadInstalledState(fixture.Game);
+            Assert.IsNotNull(sourceReceipt);
+            Assert.AreEqual("guffawaffle", sourceReceipt.ProviderId);
+            Assert.IsNull(sourceReceipt.RepositoryRelease);
+            CollectionAssert.AreEqual(registryBefore,
+                File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath));
+            var resolver = fixture.CreateResolver();
+            Assert.IsTrue(resolver.ResolveCatalog(guffawaffle, fixture.Game).IsQualified,
+                "Fresh source analysis must retain its matching source catalog through commit.");
+            Assert.IsFalse(resolver.ResolveCatalog(netniv, fixture.Game).IsQualified);
+            var evidence = resolver.ResolveEvidence(netniv, fixture.Game);
+            Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, evidence.CapabilityStatus);
+            Assert.AreEqual(ConfigurationEffectiveExportState.Unavailable,
+                ConfigurationEffectiveExportService.Build(new ConfigurationDocumentSnapshot(
+                    fixture.Config, File.ReadAllBytes(fixture.Config)), evidence).State);
+            var cleanup = MainWindow.CapturePersistedConfigurationMigrationAuthority(
+                fixture.State, BundledLauncherProviderCatalog.Load(), fixture.SelectionStore);
+            Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+                cleanup.DiagnosisEvidence.CapabilityStatus);
+            boundaryObserved = true;
+            throw new IOException("Injected interruption before receipt publication.");
+        });
+        var preview = await coordinator.PreviewAsync(
+            "netniv", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+        Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+
+        var failure = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+        Assert.IsTrue(boundaryObserved,
+            "All publication-interval assertions must pass before injecting the failure.");
+        StringAssert.Contains(failure.Message, "Injected interruption before receipt publication.");
+        Assert.AreEqual(guffawaffle, fixture.SelectionStore.Load());
+        CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+        CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+        CollectionAssert.AreEqual(registryBefore,
+            File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath));
+        Assert.AreEqual(ModDeploymentPhase.RolledBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+        Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, coordinator.ReadJournal()!.Phase);
+        Assert.AreEqual(1, fixture.NetnivDownloader.CallCount);
+        Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+    }
+
+    [TestMethod]
     public async Task ChangedObservedSourceCommitRejectsStaleCatalogBeforeTargetAcquisition()
     {
         using var fixture = await Fixture.CreateAsync(initialNetniv: true, reviewedNetniv: true);
@@ -109,6 +170,165 @@ public sealed class ObservedAtomicConfigurationSwitchTests
         Assert.AreEqual(netniv, fixture.SelectionStore.Load());
         Assert.IsNull(coordinator.ReadJournal());
         Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+    }
+
+    [TestMethod]
+    public async Task ReceiptPublicationFailureKeepsCoordinatedRecoveryPendingUntilRegistryIsWritable()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var source = new LauncherProviderSelection("guffawaffle", "stable");
+        var registryBefore = File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath);
+        var receiptBefore = JsonSerializer.Serialize(
+            fixture.GuffawaffleDeployment.ReadInstalledState(fixture.Game), Fixture.JsonOptions);
+        FileStream? blockedRegistry = null;
+        var checkpointObserved = false;
+        ValueTask Checkpoint(LauncherProviderAtomicSwitchPhase phase, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (phase == LauncherProviderAtomicSwitchPhase.ConfigurationCommitted)
+            {
+                checkpointObserved = true;
+                // Reads remain possible, but Windows cannot replace the open registry.
+                // Retain this handle through both publication and compensation attempts.
+                blockedRegistry = new FileStream(fixture.NetnivDeployment.InstalledStatePath,
+                    FileMode.Open, FileAccess.Read, FileShare.Read);
+            }
+            return ValueTask.CompletedTask;
+        }
+
+        try
+        {
+            var coordinator = fixture.CreateCoordinator(source, checkpoint: Checkpoint);
+            var preview = await coordinator.PreviewAsync(
+                "netniv", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+            Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+
+            var failure = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+            Assert.IsTrue(checkpointObserved, "The test must reach configuration commit before blocking publication.");
+            StringAssert.Contains(failure.Message, "requires recovery");
+            Assert.AreEqual(ModDeploymentPhase.RollingBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RecoveryRequired, coordinator.ReadJournal()!.Phase);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+            Assert.AreEqual(1, fixture.NetnivDownloader.CallCount);
+
+            blockedRegistry!.Dispose();
+            blockedRegistry = null;
+            // Reconstruction must use the nonterminal outer and exact inner journals.
+            coordinator = fixture.CreateCoordinator(source);
+            var recovery = await coordinator.RecoverAsync();
+
+            Assert.IsTrue(recovery.IsSuccess, recovery.Message);
+            Assert.IsTrue(recovery.Changed, recovery.Message);
+            Assert.AreEqual(ModDeploymentPhase.RolledBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, coordinator.ReadJournal()!.Phase);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            Assert.AreEqual(receiptBefore, JsonSerializer.Serialize(
+                fixture.NetnivDeployment.ReadInstalledState(fixture.Game), Fixture.JsonOptions));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+            Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+
+            var registryRecovered = File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath);
+            var innerRecovered = File.ReadAllBytes(fixture.NetnivDeployment.JournalPath);
+            var outerRecovered = JsonSerializer.Serialize(coordinator.ReadJournal(), Fixture.JsonOptions);
+            var secondRecovery = await coordinator.RecoverAsync();
+            Assert.IsTrue(secondRecovery.IsSuccess, secondRecovery.Message);
+            Assert.IsFalse(secondRecovery.Changed, secondRecovery.Message);
+            CollectionAssert.AreEqual(registryRecovered, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(innerRecovered, File.ReadAllBytes(fixture.NetnivDeployment.JournalPath));
+            Assert.AreEqual(outerRecovered, JsonSerializer.Serialize(coordinator.ReadJournal(), Fixture.JsonOptions));
+        }
+        finally
+        {
+            blockedRegistry?.Dispose();
+        }
+    }
+
+    [TestMethod]
+    public async Task CancellationBeforeReceiptPublicationKeepsCoordinatedRecoveryPendingWhenRegistryIsBlocked()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        using var cancellation = new CancellationTokenSource();
+        var source = new LauncherProviderSelection("guffawaffle", "stable");
+        var registryBefore = File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath);
+        var receiptBefore = JsonSerializer.Serialize(
+            fixture.GuffawaffleDeployment.ReadInstalledState(fixture.Game), Fixture.JsonOptions);
+        FileStream? blockedRegistry = null;
+        var checkpointObserved = false;
+        ValueTask Checkpoint(LauncherProviderAtomicSwitchPhase phase, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (phase == LauncherProviderAtomicSwitchPhase.ConfigurationCommitted)
+            {
+                checkpointObserved = true;
+                // Cancellation interrupts before publication. The compensating registry
+                // rewrite must fail while source receipt reads still remain possible.
+                blockedRegistry = new FileStream(fixture.NetnivDeployment.InstalledStatePath,
+                    FileMode.Open, FileAccess.Read, FileShare.Read);
+                cancellation.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            return ValueTask.CompletedTask;
+        }
+
+        try
+        {
+            var coordinator = fixture.CreateCoordinator(source, checkpoint: Checkpoint);
+            var preview = await coordinator.PreviewAsync(
+                "netniv", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+            Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+
+            var failure = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => coordinator.ExecuteAsync(preview, preview.ConfirmationText, cancellation.Token));
+
+            Assert.IsTrue(checkpointObserved, "The test must cancel after configuration commit and before publication.");
+            Assert.IsTrue(cancellation.IsCancellationRequested);
+            StringAssert.Contains(failure.Message, "requires recovery");
+            Assert.AreEqual(ModDeploymentPhase.RollingBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RecoveryRequired, coordinator.ReadJournal()!.Phase);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+            Assert.AreEqual(1, fixture.NetnivDownloader.CallCount);
+
+            blockedRegistry!.Dispose();
+            blockedRegistry = null;
+            coordinator = fixture.CreateCoordinator(source);
+            var recovery = await coordinator.RecoverAsync();
+
+            Assert.IsTrue(recovery.IsSuccess, recovery.Message);
+            Assert.IsTrue(recovery.Changed, recovery.Message);
+            Assert.AreEqual(ModDeploymentPhase.RolledBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, coordinator.ReadJournal()!.Phase);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            Assert.AreEqual(receiptBefore, JsonSerializer.Serialize(
+                fixture.NetnivDeployment.ReadInstalledState(fixture.Game), Fixture.JsonOptions));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+            Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+
+            var registryRecovered = File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath);
+            var innerRecovered = File.ReadAllBytes(fixture.NetnivDeployment.JournalPath);
+            var outerRecovered = JsonSerializer.Serialize(coordinator.ReadJournal(), Fixture.JsonOptions);
+            var secondRecovery = await coordinator.RecoverAsync();
+            Assert.IsTrue(secondRecovery.IsSuccess, secondRecovery.Message);
+            Assert.IsFalse(secondRecovery.Changed, secondRecovery.Message);
+            CollectionAssert.AreEqual(registryRecovered, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(innerRecovered, File.ReadAllBytes(fixture.NetnivDeployment.JournalPath));
+            Assert.AreEqual(outerRecovered, JsonSerializer.Serialize(coordinator.ReadJournal(), Fixture.JsonOptions));
+        }
+        finally
+        {
+            blockedRegistry?.Dispose();
+        }
     }
 
     private sealed class Fixture : IDisposable
@@ -147,6 +367,7 @@ public sealed class ObservedAtomicConfigurationSwitchTests
             File.WriteAllBytes(Config, GuffawaffleConfiguration);
             reviewedReleases = BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providers);
             SelectionStore = new(State);
+            new JsonGameInstallSelectionStore(State).Save(Game);
             backupStore = new(State, new FixtureProtector(), new FixtureStorageSecurity());
             var netnivVersion = reviewedNetniv ? "1.1.6.0" : "1.1.8.0";
             NetnivBytes = Encoding.UTF8.GetBytes(netnivVersion);
@@ -164,7 +385,7 @@ public sealed class ObservedAtomicConfigurationSwitchTests
             // These exact-byte fixture dependencies do not assert real release authenticity.
             GuffawaffleDeployment = new(State, GuffawaffleDownloader,
                 new FixtureVersionReader("2.1.0.8", "v2.1.0-guffa.8"), new FixtureAuthenticityVerifier(),
-                _ => false, new("guffawaffle", "stable", "guffawaffle.windows"));
+                _ => false, new("guffawaffle", "stable", "guffawaffle.stfc-community-mod"));
             NetnivDeployment = new(State, NetnivDownloader,
                 new FixtureVersionReader(netnivVersion), new FixtureAuthenticityVerifier(),
                 _ => false, new("netniv", "stable", "netniv.stfc-community-mod"));
@@ -194,7 +415,9 @@ public sealed class ObservedAtomicConfigurationSwitchTests
         public LauncherInstalledConfigurationResolver CreateResolver() => new(providers, reviewedReleases,
             LauncherInstalledConfigurationResolver.CreateReadOnlyStateReader(State));
 
-        public LauncherProviderAtomicSwitchCoordinator CreateCoordinator(LauncherProviderSelection activeSelection)
+        public LauncherProviderAtomicSwitchCoordinator CreateCoordinator(
+            LauncherProviderSelection activeSelection,
+            Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint = null)
         {
             var resolver = CreateResolver();
             var configurationSwitch = new LauncherProviderSourceSwitchService(providers, SelectionStore,
@@ -202,8 +425,9 @@ public sealed class ObservedAtomicConfigurationSwitchTests
                 configurationEvidenceResolver: selection => resolver.ResolveSwitchEvidence(
                     selection, activeSelection, Game));
             return new(configurationSwitch,
-                [new("guffawaffle", Management(GuffawaffleDeployment, GuffawaffleArtifact, "guffawaffle", "guffawaffle.windows")),
-                 new("netniv", Management(NetnivDeployment, NetnivArtifact, "netniv", "netniv.stfc-community-mod"))], State);
+                [new("guffawaffle", Management(GuffawaffleDeployment, GuffawaffleArtifact, "guffawaffle", "guffawaffle.stfc-community-mod")),
+                 new("netniv", Management(NetnivDeployment, NetnivArtifact, "netniv", "netniv.stfc-community-mod"))],
+                State, timeProvider: null, checkpoint: checkpoint);
         }
 
         private static ModManagementCoordinator Management(ModDeploymentService deployment,

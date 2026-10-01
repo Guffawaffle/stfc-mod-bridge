@@ -114,6 +114,37 @@ public sealed class ObservedConfigurationBindingTests
         Assert.AreEqual("1.1.8.0", catalog.Identity.ReleaseVersion);
     }
 
+    [DataTestMethod]
+    [DataRow("guffawaffle", "stable", "guffawaffle.stfc-community-mod")]
+    [DataRow("netniv", "preview", "netniv.stfc-community-mod")]
+    [DataRow("netniv", "stable", "different.runtime")]
+    public void ReceiptWithoutRepositoryObservationCannotAuthorizeAnotherSelection(
+        string receiptProviderId, string receiptChannelId, string receiptRuntimeId)
+    {
+        using var fixture = new Fixture();
+        fixture.Record("2.1.0.8", observationCommit: null,
+            receiptProviderId, receiptChannelId, receiptRuntimeId);
+        var registry = Path.Combine(fixture.State, "installed-mod.json");
+        var registryBefore = File.ReadAllBytes(registry);
+        var selected = new LauncherProviderSelection("netniv", "stable");
+        var selectionStore = new JsonLauncherProviderSelectionStore(fixture.State);
+        selectionStore.Save(selected);
+        new JsonGameInstallSelectionStore(fixture.State).Save(fixture.Game);
+
+        Assert.IsFalse(fixture.Resolver.ResolveCatalog(selected, fixture.Game).IsQualified);
+        var evidence = fixture.Resolver.ResolveEvidence(selected, fixture.Game);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown, evidence.CapabilityStatus);
+        Assert.AreEqual(ConfigurationEffectiveExportState.Unavailable,
+            ConfigurationEffectiveExportService.Build(
+                new ConfigurationDocumentSnapshot(fixture.Config, fixture.Raw), evidence).State);
+        var cleanup = MainWindow.CapturePersistedConfigurationMigrationAuthority(
+            fixture.State, fixture.Providers, selectionStore);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+            cleanup.DiagnosisEvidence.CapabilityStatus);
+        CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(registry));
+        CollectionAssert.AreEqual(fixture.Raw, File.ReadAllBytes(fixture.Config));
+    }
+
     [TestMethod]
     public void NoRepositoryObservationKeepsExistingCustomReleaseFallback()
     {
@@ -204,7 +235,9 @@ public sealed class ObservedConfigurationBindingTests
         public LauncherConfigurationCatalog Resolve() =>
             Resolver.ResolveCatalog(new("netniv", "stable"), Game);
 
-        public void Record(string version, string? observationCommit)
+        public void Record(string version, string? observationCommit,
+            string providerId = "netniv", string channelId = "stable",
+            string runtimeDistributionId = "netniv.stfc-community-mod")
         {
             var observation = observationCommit is null ? null : new NetnivRepositoryReleaseObservation(
                 1, 2, "v" + version, observationCommit,
@@ -212,7 +245,7 @@ public sealed class ObservedConfigurationBindingTests
                 200, new string('c', 64), 100, new string('d', 64), version, DateTimeOffset.UtcNow);
             var receipt = new ModInstalledArtifactState(
                 1, Game, "version.dll", version, 100, new string('d', 64), DateTimeOffset.UtcNow,
-                null, "netniv", "stable", "netniv.stfc-community-mod",
+                null, providerId, channelId, runtimeDistributionId,
                 ReleaseProductVersion: observation?.Tag, RepositoryRelease: observation);
             File.WriteAllText(Path.Combine(State, "installed-mod.json"),
                 JsonSerializer.Serialize(new ModInstalledArtifactRegistry(2, [receipt]),
