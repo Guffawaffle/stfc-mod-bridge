@@ -179,7 +179,7 @@
         "Unknown keys and comments survive normal edits.",
         "Save uses backup, validation, and atomic replacement.",
         "Raw-file open and remove-override actions are available.",
-        "Invalid or unsupported TOML is never destructively rewritten."
+        "Malformed or duplicate TOML and unverified requested edits never produce saved changes; valid unusual syntax follows the shared source-preserving editor contract."
       ],
       "validation": [
         "dotnet test with golden TOML fixtures",

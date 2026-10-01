@@ -5,11 +5,13 @@
     <AssemblyName>STFCCommunityMod.Launcher.Core</AssemblyName>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <TomlNativeSha256 Condition="'$(TomlNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</TomlNativeSha256>
     <ProfilesNativeSha256 Condition="'$(ProfilesNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ProfilesNativeSha256>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyMetadata Include="ProfilesNativeSha256" Value="$(ProfilesNativeSha256)" />
+    <AssemblyMetadata Include="TomlNativeSha256" Value="$(TomlNativeSha256)" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,5 +25,9 @@
     <EmbeddedResource
       Include="..\STFCModBridge.ReleaseVerifier\trusted-root.public-good.v1.json"
       LogicalName="STFCCommunityMod.Launcher.Core.ReleaseSelectionTrustedRoot.v1.json" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TomlNativePath)' != ''">
+    <None Include="$(TomlNativePath)" Link="stfc-toml-native.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

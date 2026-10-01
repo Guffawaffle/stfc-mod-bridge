@@ -57,17 +57,34 @@ function Normalize-ProjectPath([string]$path) {
   return $path.Replace("\", "/")
 }
 
-$profilesPin = Get-Content -LiteralPath (Join-Path $repositoryRoot "dependencies/stfc-profiles-source-pin.json") -Raw | ConvertFrom-Json
-if ($profilesPin.schemaVersion -ne 1 -or $profilesPin.repository -cne "Guffawaffle/stfc-profiles" `
-    -or $profilesPin.revision -cnotmatch '^[0-9a-f]{40}$' `
-    -or $profilesPin.sourceArchiveSha256 -cnotmatch '^[0-9a-f]{64}$') { throw "The shared native source pin is invalid." }
+$nativePins = @(
+  [pscustomobject]@{ Id = "STFC Profiles"; Repository = "Guffawaffle/stfc-profiles"; Path = "dependencies/stfc-profiles-source-pin.json" },
+  [pscustomobject]@{ Id = "STFC TOML"; Repository = "Guffawaffle/stfc-mod"; Path = "dependencies/stfc-toml-source-pin.json" }
+)
 $nativeSourceItems = @($catalog.dependencyInventory | Where-Object { $_.evidenceKind -eq "native-source-pin" })
-if ($nativeSourceItems.Count -ne 1 -or $nativeSourceItems[0].id -cne "STFC Profiles") { throw "The pinned shared native component is missing from the notice inventory." }
+if ($nativeSourceItems.Count -ne $nativePins.Count) { throw "The independent native source components differ from the notice inventory." }
 $nativeModules = @($catalog.dependencyInventory | Where-Object { $_.evidenceKind -eq "native-build-module" })
-if ($nativeModules.Count -ne @($profilesPin.nativeDependencies).Count) { throw "The shared native module notice closure differs from its pinned dependency inventory." }
-foreach ($dependency in $profilesPin.nativeDependencies) {
-  if (@($nativeModules | Where-Object { $_.id -ceq $dependency.id -and $_.version -ceq $dependency.version }).Count -ne 1) {
-    throw "Pinned native module $($dependency.id)/$($dependency.version) is absent from the exact notice inventory."
+$expectedNative = @{}
+foreach ($component in $nativePins) {
+  $pin = Get-Content -LiteralPath (Join-Path $repositoryRoot $component.Path) -Raw | ConvertFrom-Json
+  if ($pin.schemaVersion -ne 1 -or $pin.repository -cne $component.Repository `
+      -or $pin.revision -cnotmatch '^[0-9a-f]{40}$' `
+      -or $pin.sourceArchiveSha256 -cnotmatch '^[0-9a-f]{64}$') { throw "The $($component.Id) native source pin is invalid." }
+  if (@($nativeSourceItems | Where-Object { $_.id -ceq $component.Id }).Count -ne 1) {
+    throw "The $($component.Id) source component is missing from the notice inventory."
+  }
+  foreach ($dependency in $pin.nativeDependencies) {
+    $key = "$($dependency.id)|$($dependency.version)"
+    if (-not $expectedNative.ContainsKey($key)) { $expectedNative[$key] = @() }
+    $expectedNative[$key] += $component.Id
+  }
+}
+if ($nativeModules.Count -ne $expectedNative.Count) { throw "The native module notice closure differs from the independently pinned recipe inventories." }
+foreach ($module in $nativeModules) {
+  $key = "$($module.id)|$($module.version)"
+  if (-not $expectedNative.ContainsKey($key) `
+      -or [string]::Join("|", @($module.nativeSources | Sort-Object)) -cne [string]::Join("|", @($expectedNative[$key] | Sort-Object))) {
+    throw "Native module $key does not identify its exact pinned source owners."
   }
 }
 

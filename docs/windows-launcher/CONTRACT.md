@@ -342,12 +342,14 @@ When an installed mod has no `community_patch_settings.toml`, Settings uses a
 virtual empty baseline: opening Settings and staging changes create nothing. The
 first explicit Save uses create-new semantics and fails with a conflict if
 another writer created the file first. No backup is produced when no prior file
-bytes exist. Existing invalid or unsupported TOML still fails closed.
+bytes exist. Malformed or duplicate TOML fails without mutation. Valid unusual syntax follows
+the [shared TOML editing contract](TOML_EDIT_ENGINE.md); refusal concerns an
+unverified requested operation rather than unrelated formatting.
 
 Save behavior:
 
 1. Parse the current file.
-2. Refuse destructive rewrite when unsupported syntax cannot be preserved.
+2. Refuse malformed or duplicate input and any requested edit whose intended whole-document meaning cannot be verified.
 3. Write a sibling temporary file.
 4. Parse and validate the temporary result.
 5. Back up the prior file.

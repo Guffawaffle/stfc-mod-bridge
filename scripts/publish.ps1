@@ -5,7 +5,9 @@ param(
   [string]$SourceRevisionId = "",
   [string]$ReleaseVerifierPath = "",
   [string]$ProfilesNativePath = "",
-  [string]$ProfilesSourceDirectory = ""
+  [string]$ProfilesSourceDirectory = "",
+  [string]$TomlNativePath = "",
+  [string]$TomlSourceDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +60,21 @@ $nativeSnapshot = Join-Path $nativeInput "stfc-profiles-native.dll"
 Copy-Item -LiteralPath $native -Destination $nativeSnapshot
 $native = $nativeSnapshot
 $profilesNativeSha256 = (Get-FileHash -LiteralPath $native -Algorithm SHA256).Hash.ToLowerInvariant()
+$tomlNative = $TomlNativePath
+if (-not $tomlNative) {
+  $tomlBuild = & (Join-Path $PSScriptRoot "build-toml-native.ps1") `
+    -OutputDirectory (Join-Path $outputRoot "toml-native") -SourceDirectory $TomlSourceDirectory
+  $tomlNative = @($tomlBuild)[-1].NativePath
+}
+$tomlNative = [IO.Path]::GetFullPath($tomlNative)
+if (-not (Test-Path -LiteralPath $tomlNative -PathType Leaf) `
+    -or [IO.Path]::GetFileName($tomlNative) -cne "stfc-toml-native.dll") {
+  throw "The reviewed shared TOML native component is missing from its canonical path."
+}
+$tomlSnapshot = Join-Path $nativeInput "stfc-toml-native.dll"
+Copy-Item -LiteralPath $tomlNative -Destination $tomlSnapshot
+$tomlNative = $tomlSnapshot
+$tomlNativeSha256 = (Get-FileHash -LiteralPath $tomlNative -Algorithm SHA256).Hash.ToLowerInvariant()
 $buildProperties = @()
 if ($Version) {
   $buildProperties += "-p:Version=$Version"
@@ -67,6 +84,8 @@ if ($SourceRevisionId) {
 }
 $buildProperties += "-p:ReleaseVerifierSha256=$verifierSha256"
 $buildProperties += "-p:ProfilesNativeSha256=$profilesNativeSha256"
+$buildProperties += "-p:TomlNativeSha256=$tomlNativeSha256"
+$buildProperties += "-p:TomlNativePath=$tomlNative"
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if (Test-Path -LiteralPath $payload) {
@@ -96,6 +115,7 @@ Copy-Item `
   -Force
 Copy-Item -LiteralPath $verifier -Destination $payload -Force
 Copy-Item -LiteralPath $native -Destination $payload -Force
+Copy-Item -LiteralPath $tomlNative -Destination $payload -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $payload "LICENSE.txt") -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD-PARTY-NOTICES.md") -Destination $payload -Force
 Remove-Item -LiteralPath $updaterPublish -Recurse -Force
@@ -119,3 +139,4 @@ if ($SourceRevisionId) {
 Write-Host "Published Mod Bridge payload: $payload"
 Write-Host "Paired release verifier SHA-256: $verifierSha256"
 Write-Host "Paired shared profiles SHA-256: $profilesNativeSha256"
+Write-Host "Paired shared TOML SHA-256: $tomlNativeSha256"

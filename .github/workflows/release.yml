@@ -76,11 +76,18 @@ jobs:
           }
           "release_sequence=$env:RELEASE_SEQUENCE" >> $env:GITHUB_OUTPUT
 
+      - name: Build offline TOML before managed tests
+        shell: pwsh
+        run: ./scripts/build-toml-native.ps1 -OutputDirectory ./artifacts/win-x64/toml-native
+
       - name: Restore, analyze, and test
         shell: pwsh
         run: |
           dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
-          dotnet build STFCCommunityMod.Launcher.sln -c Release --no-restore
+          $env:STFC_TOML_NATIVE_TEST_DLL = (Resolve-Path ./artifacts/win-x64/toml-native/stfc-toml-native.dll).Path
+          $env:STFC_TOML_NATIVE_TEST_SHA256 = (Get-FileHash $env:STFC_TOML_NATIVE_TEST_DLL -Algorithm SHA256).Hash.ToLowerInvariant()
+          dotnet build STFCCommunityMod.Launcher.sln -c Release --no-restore `
+            "-p:TomlNativePath=$env:STFC_TOML_NATIVE_TEST_DLL" "-p:TomlNativeSha256=$env:STFC_TOML_NATIVE_TEST_SHA256"
           dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore --no-build
 
       - name: Build unsigned Mod Bridge payload
@@ -92,12 +99,15 @@ jobs:
           ./scripts/publish.ps1
           -Version "$env:RELEASE_VERSION"
           -SourceRevisionId "$env:SOURCE_REVISION_ID"
+          -TomlNativePath ./artifacts/win-x64/toml-native/stfc-toml-native.dll
 
       - name: Exercise packaged shared native catalog ABI
         shell: pwsh
         run: |
           $env:STFC_PROFILES_NATIVE_TEST_DLL = (Resolve-Path ./artifacts/win-x64/app/stfc-profiles-native.dll).Path
-          dotnet test tests/STFCCommunityMod.Launcher.Core.Tests/STFCCommunityMod.Launcher.Core.Tests.csproj -c Release --no-restore --no-build --filter FullyQualifiedName~NativeProfileCatalogIntegrationTests
+          $env:STFC_TOML_NATIVE_TEST_DLL = (Resolve-Path ./artifacts/win-x64/app/stfc-toml-native.dll).Path
+          $env:STFC_TOML_NATIVE_TEST_SHA256 = (Get-FileHash $env:STFC_TOML_NATIVE_TEST_DLL -Algorithm SHA256).Hash.ToLowerInvariant()
+          dotnet test tests/STFCCommunityMod.Launcher.Core.Tests/STFCCommunityMod.Launcher.Core.Tests.csproj -c Release --no-restore --no-build --filter "FullyQualifiedName~NativeProfileCatalogIntegrationTests|FullyQualifiedName~NativeTomlIntegrationTests"
 
       - name: Upload unsigned Mod Bridge payload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -107,6 +117,7 @@ jobs:
             artifacts/win-x64/app
             artifacts/win-x64/release-verifier/STFCModBridge.ReleaseVerifier.spdx.json
             artifacts/win-x64/profiles-native/build-receipt.json
+            artifacts/win-x64/toml-native/build-receipt.json
           if-no-files-found: error
 
   sign:
@@ -180,6 +191,20 @@ jobs:
             throw "The native signing input does not match its immutable source archive build receipt."
           }
 
+      - name: Validate pinned TOML build receipt before signing
+        shell: pwsh
+        run: |
+          $pin = Get-Content ./dependencies/stfc-toml-source-pin.json -Raw | ConvertFrom-Json
+          $receipt = Get-Content ./artifacts/win-x64/toml-native/build-receipt.json -Raw | ConvertFrom-Json
+          $actual = (Get-FileHash ./artifacts/win-x64/app/stfc-toml-native.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($pin.qualificationState -cne "immutable" -or $receipt.sourceRevision -cne $pin.revision `
+              -or $receipt.repository -cne $pin.repository -or $receipt.sourceSubdirectory -cne "shared/toml" `
+              -or $receipt.developmentOverride -or @($receipt.dirtyFiles).Count -ne 0 `
+              -or $pin.sourceArchiveSha256 -cnotmatch '^[0-9a-f]{64}$' -or $pin.sourceArchiveSha256 -ceq ('0' * 64) `
+              -or $receipt.sourceArchiveSha256 -cne $pin.sourceArchiveSha256 -or $receipt.nativeSha256 -cne $actual) {
+            throw "The TOML signing input does not match its immutable source archive build receipt."
+          }
+
       - name: Sign release verifier first
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
@@ -189,6 +214,7 @@ jobs:
           files: |
             ${{ github.workspace }}\artifacts\win-x64\app\STFCModBridge.ReleaseVerifier.exe
             ${{ github.workspace }}\artifacts\win-x64\app\stfc-profiles-native.dll
+            ${{ github.workspace }}\artifacts\win-x64\app\stfc-toml-native.dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -210,11 +236,18 @@ jobs:
           New-Item -ItemType Directory -Path (Split-Path -Parent $nativeRetained) -Force | Out-Null
           Copy-Item -LiteralPath "artifacts/win-x64/app/stfc-profiles-native.dll" -Destination $nativeRetained -Force
           $nativeExpected = (Get-FileHash -LiteralPath $nativeRetained -Algorithm SHA256).Hash.ToLowerInvariant()
+          $tomlRetained = "artifacts/win-x64/signed-toml-native/stfc-toml-native.dll"
+          New-Item -ItemType Directory -Path (Split-Path -Parent $tomlRetained) -Force | Out-Null
+          Copy-Item -LiteralPath "artifacts/win-x64/app/stfc-toml-native.dll" -Destination $tomlRetained -Force
+          $tomlExpected = (Get-FileHash -LiteralPath $tomlRetained -Algorithm SHA256).Hash.ToLowerInvariant()
           ./scripts/publish.ps1 `
             -Version "$env:RELEASE_VERSION" `
             -SourceRevisionId "$env:SOURCE_REVISION_ID" `
             -ReleaseVerifierPath $retained `
-            -ProfilesNativePath $nativeRetained
+            -ProfilesNativePath $nativeRetained `
+            -TomlNativePath $tomlRetained
+          $tomlActual = (Get-FileHash -LiteralPath "artifacts/win-x64/app/stfc-toml-native.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($tomlActual -cne $tomlExpected) { throw "The signed native TOML component changed during paired rebuild." }
           $nativeActual = (Get-FileHash -LiteralPath "artifacts/win-x64/app/stfc-profiles-native.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($nativeActual -cne $nativeExpected) { throw "The signed native profiles component changed during paired rebuild." }
           $actual = (Get-FileHash `
@@ -361,6 +394,7 @@ jobs:
             artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
             artifacts/win-x64/app/stfc-profiles-native.dll
+            artifacts/win-x64/app/stfc-toml-native.dll
             artifacts/win-x64/package/STFCModBridge.msix
             artifacts/win-x64/package/STFCModBridge.appinstaller
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
@@ -406,6 +440,7 @@ jobs:
             artifacts/win-x64/app/STFCModBridge.ReleaseVerifier.exe
             artifacts/win-x64/app/STFCModBridge.Updater.exe
             artifacts/win-x64/app/stfc-profiles-native.dll
+            artifacts/win-x64/app/stfc-toml-native.dll
             artifacts/win-x64/package/STFCModBridge.msix
             artifacts/win-x64/package/STFCModBridge.appinstaller
             artifacts/win-x64/stfc-mod-bridge-win-x64.zip
@@ -451,6 +486,7 @@ jobs:
             "$root/app/STFCModBridge.ReleaseVerifier.exe",
             "$root/app/STFCModBridge.Updater.exe",
             "$root/app/stfc-profiles-native.dll",
+            "$root/app/stfc-toml-native.dll",
             "$root/stfc-mod-bridge-win-x64.zip",
             "$root/stfc-mod-bridge-release-manifest.json",
             "$root/stfc-mod-bridge-sbom.spdx.json",

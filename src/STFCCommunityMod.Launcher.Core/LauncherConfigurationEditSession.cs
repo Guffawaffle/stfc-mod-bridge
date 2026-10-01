@@ -80,7 +80,7 @@ public sealed class LauncherConfigurationEditSession
             return SparseTomlEditResult.Invalid(
                 read.Error
                 ?? new SparseTomlError(
-                    SparseTomlErrorCode.UnsupportedDocument,
+                    SparseTomlErrorCode.EditorUnavailable,
                     "The configuration overrides could not be read."));
         }
 
@@ -313,7 +313,7 @@ public sealed class LauncherConfigurationEditSession
                 load.Error
                 ?? read?.Error
                 ?? new SparseTomlError(
-                    SparseTomlErrorCode.UnsupportedDocument,
+                    SparseTomlErrorCode.EditorUnavailable,
                     "The committed configuration baseline could not be read."));
         }
 

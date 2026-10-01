@@ -483,7 +483,8 @@ public sealed class AuthenticatedReleaseManifestTests
                     "STFCModBridge.exe",
                     "STFCModBridge.ReleaseVerifier.exe",
                     "STFCModBridge.Updater.exe",
-                    "stfc-profiles-native.dll")),
+                    "stfc-profiles-native.dll",
+                    "stfc-toml-native.dll")),
             Artifact(
                 "windows-mod-bridge-msix-x64",
                 "windows-mod-bridge-package",

@@ -99,7 +99,7 @@ public sealed class ProviderConfigurationCloseoutCorpusTests
                 isGameRunning: false,
                 context.ConfigurationPath));
 
-        StringAssert.Contains(exception.Message, "conservative TOML parser");
+        StringAssert.Contains(exception.Message, "verified shared TOML editor");
         context.AssertUnchanged();
     }
 

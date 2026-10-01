@@ -1145,7 +1145,7 @@ public sealed class LauncherProviderSourceSwitchService
         if (!load.IsValid || document is null || read is null || !read.IsValid)
         {
             throw new InvalidDataException(
-                "The proposed target configuration cannot be read safely by the conservative TOML parser."
+                "The proposed target configuration cannot be read safely by the verified shared TOML editor."
                 + (isInitialPreview
                     ? " No provider-switch backup, download, or mutation was started."
                     : " The target configuration and provider selection were not committed; review the switch again."));

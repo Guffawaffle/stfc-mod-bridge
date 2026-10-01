@@ -561,6 +561,7 @@ public static partial class AuthenticatedReleaseManifestPolicy
                     ModBridgeProductIdentity.ReleaseVerifierExecutableName,
                     ModBridgeProductIdentity.UpdaterExecutableName,
                     NativeProfileCatalogTransport.LibraryName,
+                    TomlNativeTransport.LibraryName,
                 ],
                 StringComparer.Ordinal)
             || package is null

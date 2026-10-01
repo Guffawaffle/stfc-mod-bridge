@@ -489,7 +489,7 @@ public static class SyncTopologyPersistencePlanner
     private static string TargetRoot(SyncTargetDraft target) =>
         target.Kind == SyncTargetKind.LocalSidecar
             ? "sidecar.sync"
-            : $"sync.targets.{target.Name}";
+            : LauncherTomlPath.Render(["sync", "targets", target.Name]);
 
     private static string Mode(SyncTargetKind kind) =>
         kind == SyncTargetKind.MajelIngest ? "majel" : "legacy";

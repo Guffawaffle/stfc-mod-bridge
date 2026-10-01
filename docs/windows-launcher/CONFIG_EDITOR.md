@@ -222,10 +222,12 @@ counts and opening time before physical assembly separation.
   they never parse then reserialize. Explicit restore is a
   Diagnostics/recovery action and must close or reload an open workspace
   without changing preferred source or installed artifact provenance.
-- Duplicate targets, malformed statements, array tables, unsupported target
-  syntax, invalid UTF-8, and unsafe multiline target edits fail closed.
+- The replacement [shared TOML engine contract](TOML_EDIT_ENGINE.md) accepts
+  valid unusual source syntax and verifies the complete intended semantic edit.
+  Malformed/duplicate documents, invalid UTF-8 and unverified requested operations
+  fail without candidate bytes; unrelated valid syntax is not a whole-editor block.
 - The atomic store writes and flushes a sibling temporary file, rechecks the
-  transformed document against the conservative supported grammar, refreshes
+  transformed document through the shared full parser, refreshes
   a backup, serializes same-process writes per path, and performs a
   content-hash recheck immediately before replacement. Injected failures and
   concurrent edits detected by that optimistic check leave the destination

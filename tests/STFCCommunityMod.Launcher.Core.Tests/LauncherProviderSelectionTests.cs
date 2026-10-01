@@ -113,7 +113,7 @@ public sealed class LauncherProviderSelectionTests
         var exception = Assert.ThrowsException<InvalidDataException>(
             () => service.Preview("netniv", "stable", configurationPath));
 
-        StringAssert.Contains(exception.Message, "conservative TOML parser");
+        StringAssert.Contains(exception.Message, "verified shared TOML editor");
         Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), store.Load());
         Assert.AreEqual(0, backupStore.List(directory.Path, "guffawaffle").Count);
     }

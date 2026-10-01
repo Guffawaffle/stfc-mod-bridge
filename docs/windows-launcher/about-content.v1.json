@@ -154,6 +154,24 @@
       "sourceUrl": "https://github.com/madler/zlib/tree/v1.3.2",
       "licenseUrl": "https://github.com/madler/zlib/blob/v1.3.2/LICENSE",
       "noticeText": "Copyright notice:\n\n (C) 1995-2026 Jean-loup Gailly and Mark Adler\n\n  This software is provided 'as-is', without any express or implied\n  warranty.  In no event will the authors be held liable for any damages\n  arising from the use of this software.\n\n  Permission is granted to anyone to use this software for any purpose,\n  including commercial applications, and to alter it and redistribute it\n  freely, subject to the following restrictions:\n\n  1. The origin of this software must not be misrepresented; you must not\n     claim that you wrote the original software. If you use this software\n     in a product, an acknowledgment in the product documentation would be\n     appreciated but is not required.\n  2. Altered source versions must be plainly marked as such, and must not be\n     misrepresented as being the original software.\n  3. This notice may not be removed or altered from any source distribution.\n\n  Jean-loup Gailly        Mark Adler\n  jloup@gzip.org          madler@alumni.caltech.edu\n"
+    },
+    {
+      "id": "stfc-toml",
+      "name": "STFC TOML shared native component",
+      "version": "immutable source pin in dependencies/stfc-toml-source-pin.json",
+      "license": "GNU General Public License v3.0",
+      "sourceUrl": "https://github.com/Guffawaffle/stfc-mod",
+      "licenseUrl": "https://github.com/Guffawaffle/stfc-mod/blob/play/LICENSE",
+      "noticeText": "The offline STFC TOML editor is produced from the pinned shared/toml component of the STFC community mod source. Its exact source archive and dependency recipe are recorded with the build evidence. The complete GPLv3 license is included in this repository LICENSE, the ZIP/MSIX LICENSE.txt payload and with the native build evidence."
+    },
+    {
+      "id": "tomlplusplus",
+      "name": "toml++",
+      "version": "3.4.0",
+      "license": "MIT License",
+      "sourceUrl": "https://github.com/marzer/tomlplusplus/tree/v3.4.0",
+      "licenseUrl": "https://github.com/marzer/tomlplusplus/blob/v3.4.0/LICENSE",
+      "noticeText": "MIT License\n\nCopyright (c) Mark Gillard <mark.gillard@outlook.com.au>\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated\ndocumentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the\nrights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to\npermit persons to whom the Software is furnished to do so, subject to the following conditions:\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the\nSoftware.\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE\nWARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR\nCOPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR\nOTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
     }
   ],
   "dependencyInventory": [
@@ -295,28 +313,58 @@
       "version": "3.12.0",
       "noticeId": "nlohmann-json",
       "attributionStatus": "required",
-      "evidenceKind": "native-build-module"
+      "evidenceKind": "native-build-module",
+      "nativeSources": [
+        "STFC Profiles",
+        "STFC TOML"
+      ]
     },
     {
       "id": "libarchive",
       "version": "3.8.9",
       "noticeId": "libarchive",
       "attributionStatus": "required",
-      "evidenceKind": "native-build-module"
+      "evidenceKind": "native-build-module",
+      "nativeSources": [
+        "STFC Profiles"
+      ]
     },
     {
       "id": "xz",
       "version": "5.8.3",
       "noticeId": "xz-liblzma",
       "attributionStatus": "required",
-      "evidenceKind": "native-build-module"
+      "evidenceKind": "native-build-module",
+      "nativeSources": [
+        "STFC Profiles"
+      ]
     },
     {
       "id": "zlib",
       "version": "1.3.2",
       "noticeId": "zlib",
       "attributionStatus": "required",
-      "evidenceKind": "native-build-module"
+      "evidenceKind": "native-build-module",
+      "nativeSources": [
+        "STFC Profiles"
+      ]
+    },
+    {
+      "id": "STFC TOML",
+      "version": "immutable source pin in dependencies/stfc-toml-source-pin.json",
+      "noticeId": "stfc-toml",
+      "attributionStatus": "required",
+      "evidenceKind": "native-source-pin"
+    },
+    {
+      "id": "toml++",
+      "version": "3.4.0",
+      "noticeId": "tomlplusplus",
+      "attributionStatus": "required",
+      "evidenceKind": "native-build-module",
+      "nativeSources": [
+        "STFC TOML"
+      ]
     }
   ],
   "assetInventory": [
@@ -441,6 +489,6 @@
     }
   ],
   "gameAcknowledgement": "Star Trek Fleet Command is published by Scopely. The game's official site identifies STAR TREK and related marks and logos as trademarks of CBS Studios Inc. and also credits Paramount Pictures Corp. STFC Mod Bridge is independently developed and is not sponsored, endorsed, approved, or distributed by Scopely, CBS Studios, or Paramount. References identify compatibility only. Recognition or approval associated with any community-mod provider does not extend to this standalone application.",
-  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, all 71 checksum-locked release-verifier modules, and the shared native source pin plus exact JSON/libarchive/liblzma/zlib recipe and license inventory. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.",
+  "noticeCoverageStatus": "Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, all 71 checksum-locked release-verifier modules, and the independent Profiles and offline TOML native source pins plus exact JSON/libarchive/liblzma/zlib/toml++ recipe and license inventory. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.",
   "legalReviewStatus": "Attribution and non-endorsement copy is a factual compatibility statement, not a claim of legal clearance. Final wording and asset usage remain subject to the v1 release review tracked in issue #30."
 }

@@ -767,7 +767,7 @@ public sealed class SettingsProjectionTests
         fixture.ViewModel.SaveRecoveryCommand.Execute(null);
 
         Assert.IsFalse(fixture.ViewModel.IsConfigurationReady);
-        StringAssert.Contains(fixture.ViewModel.OperationStatus, "cannot safely edit");
+        StringAssert.Contains(fixture.ViewModel.OperationStatus, "malformed TOML");
         Assert.IsFalse(fixture.ViewModel.OperationStatus.Contains("reloaded", StringComparison.OrdinalIgnoreCase));
         Assert.IsTrue(fixture.ViewModel.IsSettingsFooterVisible);
         Assert.AreEqual(external, File.ReadAllText(fixture.ConfigurationPath));
@@ -1988,10 +1988,10 @@ public sealed class SettingsProjectionTests
     }
 
     [TestMethod]
-    public void UnsupportedSyntaxLabelsDefaultsAndSafeLineMetadataWithoutPrivateContent()
+    public void MalformedSyntaxLabelsDefaultsAndSafeLineMetadataWithoutPrivateContent()
     {
         const string privateSentinel = "hidden-private-value";
-        using var fixture = SettingsFixture.Create("# comment\n\"key.with.dot\" = \"" + privateSentinel + "\"\n");
+        using var fixture = SettingsFixture.Create("# comment\n\"key.with.dot\" = \"" + privateSentinel + "\n");
         Assert.IsFalse(fixture.ViewModel.CanEdit);
         StringAssert.Contains(fixture.ViewModel.ConfigurationStatus, "line 2");
         StringAssert.Contains(fixture.ViewModel.ConfigurationStatus, "provider defaults");

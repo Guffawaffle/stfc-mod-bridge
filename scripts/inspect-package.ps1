@@ -132,15 +132,18 @@ function Assert-LauncherVerifierPairing {
   $launcherPath = Join-Path $Root "STFCModBridge.exe"
   $verifierPath = Join-Path $Root "STFCModBridge.ReleaseVerifier.exe"
   $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($launcherPath).ProductVersion
-  if ($productVersion -cnotmatch '\+commit\.(?<commit>unknown|[0-9a-f]{40})\.verifier\.(?<digest>[0-9a-f]{64})\.profiles\.(?<profiles>[0-9a-f]{64})$') {
+  if ($productVersion -cnotmatch '\+commit\.(?<commit>unknown|[0-9a-f]{40})\.verifier\.(?<digest>[0-9a-f]{64})\.profiles\.(?<profiles>[0-9a-f]{64})\.toml\.(?<toml>[0-9a-f]{64})$') {
     throw "The $Context launcher does not carry the closed release-verifier identity."
   }
   if ($ExpectedSourceRevisionId -and $Matches.commit -cne $ExpectedSourceRevisionId) {
     throw "The $Context launcher source identity does not match the expected release commit."
   }
   $expectedNative = $Matches.profiles
+  $expectedToml = $Matches.toml
   $actualNative = (Get-FileHash -LiteralPath (Join-Path $Root "stfc-profiles-native.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($expectedNative -cne $actualNative) { throw "The $Context launcher is not paired to the exact native profiles component." }
+  $actualToml = (Get-FileHash -LiteralPath (Join-Path $Root "stfc-toml-native.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($expectedToml -cne $actualToml) { throw "The $Context launcher is not paired to the exact native TOML component." }
   $actualDigest = (Get-FileHash -LiteralPath $verifierPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($actualDigest -cne $Matches.digest) {
     throw "The $Context launcher is not paired to the exact packaged release verifier."
@@ -193,7 +196,8 @@ try {
     "STFCModBridge.exe",
     "STFCModBridge.ReleaseVerifier.exe",
     "STFCModBridge.Updater.exe",
-    "stfc-profiles-native.dll")
+    "stfc-profiles-native.dll",
+    "stfc-toml-native.dll")
   if ($archiveExecutableNames.Count -ne $expectedArchiveExecutables.Count `
       -or @($archiveExecutableNames | Where-Object { $expectedArchiveExecutables -cnotcontains $_ }).Count -ne 0) {
     throw "Fallback archive contains a portable executable outside the reviewed signing allowlist: $($archiveExecutableNames -join ', ')"
@@ -230,7 +234,7 @@ try {
   $packageExecutableNames = @($portableExecutables | ForEach-Object {
     [System.IO.Path]::GetRelativePath($inspectionRoot, $_.FullName).Replace('\', '/')
   })
-  $expectedPackageExecutables = @("STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe", "stfc-profiles-native.dll")
+  $expectedPackageExecutables = @("STFCModBridge.exe", "STFCModBridge.ReleaseVerifier.exe", "stfc-profiles-native.dll", "stfc-toml-native.dll")
   if ($packageExecutableNames.Count -ne $expectedPackageExecutables.Count `
       -or @($packageExecutableNames | Where-Object { $expectedPackageExecutables -cnotcontains $_ }).Count -ne 0) {
     $relative = @($portableExecutables | ForEach-Object {

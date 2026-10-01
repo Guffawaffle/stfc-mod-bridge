@@ -6,11 +6,11 @@ existing `AtomicTomlStore`.
 
 ## Pipeline
 
-1. `SyncTopologyTomlAdapter` reads conservative TOML assignments into the desired domain without modifying bytes.
+1. `SyncTopologyTomlAdapter` reads decoded assignments through the shared full-TOML engine into the desired domain without modifying bytes.
 2. `SyncTopologyPersistencePlanner` compares the baseline and desired topology and produces bounded semantic
    mutations. Mutation display text contains paths and secret-state markers, never rendered token values.
 3. `SyncTopologyPersistencePlan.Apply` re-loads the sparse document before every mutation and fails closed on the first
-   unsupported or conflicting construct.
+   unverified requested edit or conflicting baseline.
 4. `SyncTopologyPersistenceWorkspace` submits the transformed bytes and exact baseline bytes to `AtomicTomlStore`.
 5. The atomic store rechecks the destination, writes durably to a sibling temporary file, creates a backup, and replaces
    the destination. A stale or disappearing destination is a conflict and preserves the external file.
@@ -32,16 +32,19 @@ No sync change bypasses this boundary or writes one field at a time to the live 
 
 ## Structural operations
 
-The sparse editor supports whole-table removal and rename for bare-key tables. Rename includes descendant tables and
+The shared editor supports whole-table removal and rename using decoded TOML paths. Rename includes descendant tables and
 preserves body bytes, comments, whitespace, line endings, BOM, ordering, and unknown fields. Removal deletes the owned
 table and its descendants while retaining unrelated tables.
 
 Both operations reject:
 
 - a destination table or dotted-assignment collision;
-- a source represented only through dotted assignments;
-- duplicate tables or malformed source documents;
-- unsupported quoted table paths and array-of-table syntax.
+- duplicate definitions or malformed source documents;
+- indexed array-of-table traversal, which requires a separate operation;
+- a requested edit whose whole-document semantic result cannot be verified.
+
+Quoted, dotted and inline table representations and unrelated array-of-table declarations follow the
+[shared TOML contract](TOML_EDIT_ENGINE.md). They do not disable the document.
 
 Declared target tables are inventoried independently of their assignments. An empty target table is therefore surfaced
 as an invalid, incomplete target instead of disappearing from the launcher model.

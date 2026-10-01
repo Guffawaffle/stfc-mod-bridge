@@ -73,7 +73,8 @@ try {
       "STFCModBridge.exe",
       "STFCModBridge.ReleaseVerifier.exe",
       "STFCModBridge.Updater.exe",
-      "stfc-profiles-native.dll")) {
+      "stfc-profiles-native.dll",
+      "stfc-toml-native.dll")) {
     $path = Join-Path $artifactRoot $name
     $entry = @($sbom.files | Where-Object { $_.fileName -eq "./$name" })
     $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -87,6 +88,9 @@ try {
   & (Join-Path $PSScriptRoot "add-profiles-native-sbom-inventory.ps1") `
     -SbomPath $outputFile `
     -ProfilesBuildReceiptPath (Join-Path (Split-Path -Parent $artifactRoot) "profiles-native/build-receipt.json")
+  & (Join-Path $PSScriptRoot "add-toml-native-sbom-inventory.ps1") `
+    -SbomPath $outputFile `
+    -TomlBuildReceiptPath (Join-Path (Split-Path -Parent $artifactRoot) "toml-native/build-receipt.json")
 } finally {
   if (Test-Path -LiteralPath $manifestRoot) {
     Remove-Item -LiteralPath $manifestRoot -Recurse -Force

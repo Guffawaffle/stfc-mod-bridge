@@ -163,7 +163,7 @@ public sealed class SettingsBrowsingTests
     private sealed class Fixture : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bridge-readonly-" + Guid.NewGuid().ToString("N") + ".toml");
-        public byte[] OriginalBytes { get; } = Encoding.UTF8.GetBytes("# unsupported fixture\n\"key.with.dot\" = \"private-sentinel\"\n");
+        public byte[] OriginalBytes { get; } = Encoding.UTF8.GetBytes("# malformed fixture\n\"key.with.dot\" = \"private-sentinel\n");
         public SettingsViewModel ViewModel { get; }
         public Fixture()
         {

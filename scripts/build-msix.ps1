@@ -57,9 +57,11 @@ $payloadRoot = if ($PayloadDirectory) {
 $launcher = Join-Path $payloadRoot "STFCModBridge.exe"
 $releaseVerifier = Join-Path $payloadRoot "STFCModBridge.ReleaseVerifier.exe"
 $profilesNative = Join-Path $payloadRoot "stfc-profiles-native.dll"
+$tomlNative = Join-Path $payloadRoot "stfc-toml-native.dll"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) `
     -or -not (Test-Path -LiteralPath $releaseVerifier -PathType Leaf) `
-    -or -not (Test-Path -LiteralPath $profilesNative -PathType Leaf)) {
+    -or -not (Test-Path -LiteralPath $profilesNative -PathType Leaf) `
+    -or -not (Test-Path -LiteralPath $tomlNative -PathType Leaf)) {
   throw "The launcher or paired release-verifier payload was not found."
 }
 
@@ -99,6 +101,7 @@ try {
     -Destination (Join-Path $layout "STFCModBridge.ReleaseVerifier.exe") `
     -Force
   Copy-Item -LiteralPath $profilesNative -Destination (Join-Path $layout "stfc-profiles-native.dll") -Force
+  Copy-Item -LiteralPath $tomlNative -Destination (Join-Path $layout "stfc-toml-native.dll") -Force
   foreach ($notice in @("LICENSE.txt", "THIRD-PARTY-NOTICES.md")) {
     $noticePath = Join-Path $payloadRoot $notice
     if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf)) { throw "The full package license/notice input is missing: $notice" }

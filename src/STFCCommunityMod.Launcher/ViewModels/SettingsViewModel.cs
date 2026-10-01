@@ -354,9 +354,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ? $" at line {load.ValidationError.LineNumber}" : string.Empty;
         var reason = load.State == ConfigurationRepositoryReadState.IoFailure
             ? "Bridge could not read the selected configuration."
-            : load.ValidationError?.Code == SparseTomlErrorCode.InvalidUtf8
-                ? "The selected configuration is not valid UTF-8."
-                : $"Bridge cannot safely edit this TOML syntax{line}.";
+            : load.ValidationError?.Code switch
+            {
+                SparseTomlErrorCode.InvalidUtf8 => "The selected configuration is not valid UTF-8.",
+                SparseTomlErrorCode.EditorUnavailable => "The bundled TOML editor is unavailable. Restart Bridge or repair the installation.",
+                SparseTomlErrorCode.InvalidDocument => $"The selected configuration contains malformed TOML{line}.",
+                SparseTomlErrorCode.DuplicateTarget => $"The selected configuration contains duplicate TOML definitions{line}.",
+                _ => $"Bridge could not validate the selected configuration{line}.",
+            };
         return $"{reason} Showing provider defaults; scrolling and help remain available.";
     }
 

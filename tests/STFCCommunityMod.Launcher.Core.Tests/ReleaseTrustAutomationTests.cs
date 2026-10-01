@@ -320,6 +320,13 @@ public sealed partial class ReleaseTrustAutomationTests
             workflow,
             "${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
         StringAssert.Contains(workflow, "-ReleaseVerifierPath $retained");
+        StringAssert.Contains(workflow, "-TomlNativePath $tomlRetained");
+        StringAssert.Contains(workflow, "The signed native TOML component changed during paired rebuild.");
+        var tomlReceipt = workflow.IndexOf("- name: Validate pinned TOML build receipt before signing", StringComparison.Ordinal);
+        Assert.IsTrue(tomlReceipt > oidc && tomlReceipt < verifierSigning);
+        StringAssert.Contains(workflow, "${{ github.workspace }}\\artifacts\\win-x64\\app\\stfc-toml-native.dll");
+        Assert.IsTrue(Regex.Matches(workflow, "artifacts/win-x64/app/stfc-toml-native.dll", RegexOptions.CultureInvariant).Count >= 4,
+            "The native TOML DLL must cross signing validation, transfer, attestation and rebuild boundaries.");
         StringAssert.Contains(workflow, "generate-release-verifier-sbom.ps1");
         StringAssert.Contains(workflow, "generate-payload-sbom.ps1");
         StringAssert.Contains(workflow, "STFCModBridge.ReleaseVerifier.spdx.json");

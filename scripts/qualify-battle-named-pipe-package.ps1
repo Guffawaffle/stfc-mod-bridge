@@ -141,21 +141,26 @@ function Assert-CanonicalProfilesPairing {
   $archivePath = Join-Path $outputRoot "stfc-mod-bridge-win-x64.zip"
   $nativePath = Join-Path $outputRoot "app\stfc-profiles-native.dll"
   $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($launcher).ProductVersion
-  if ($productVersion -cnotmatch '\+commit\.(?<source>[0-9a-f]{40})\.verifier\.[0-9a-f]{64}\.profiles\.(?<native>[0-9a-f]{64})$' `
+  if ($productVersion -cnotmatch '\+commit\.(?<source>[0-9a-f]{40})\.verifier\.[0-9a-f]{64}\.profiles\.(?<native>[0-9a-f]{64})\.toml\.(?<toml>[0-9a-f]{64})$' `
       -or $Matches.source -cne $ExpectedSourceRevisionId) {
     throw "The standalone Profiles qualification host is not bound to the exact candidate source."
   }
+  $expectedToml = $Matches.toml
   $nativeSha256 = (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($nativeSha256 -cne $Matches.native) {
     throw "The standalone Profiles qualification host is not paired to its exact native DLL."
   }
+  $tomlPath = Join-Path $outputRoot "app\stfc-toml-native.dll"
+  $tomlSha256 = (Get-FileHash -LiteralPath $tomlPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($tomlSha256 -cne $expectedToml) { throw "The qualification host is not paired to its exact native TOML DLL." }
   $launcherSha256 = (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash.ToLowerInvariant()
   foreach ($artifactPath in @($archivePath, $canonicalPackage)) {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($artifactPath)
     try {
       foreach ($expected in @(
           [pscustomobject]@{ Name = "STFCModBridge.exe"; Sha256 = $launcherSha256 },
-          [pscustomobject]@{ Name = "stfc-profiles-native.dll"; Sha256 = $nativeSha256 })) {
+          [pscustomobject]@{ Name = "stfc-profiles-native.dll"; Sha256 = $nativeSha256 },
+          [pscustomobject]@{ Name = "stfc-toml-native.dll"; Sha256 = $tomlSha256 })) {
         $entries = @($zip.Entries | Where-Object { $_.FullName -ceq $expected.Name })
         if ($entries.Count -ne 1) {
           throw "The canonical archive/package does not contain exactly one $($expected.Name)."

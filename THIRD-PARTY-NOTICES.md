@@ -6,7 +6,7 @@ STFC Mod Bridge is distributed under the repository license. The components belo
 
 ## Coverage and open review
 
-Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, all 71 checksum-locked release-verifier modules, and the shared native source pin plus exact JSON/libarchive/liblzma/zlib recipe and license inventory. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
+Automated coverage classifies every resolved runtime-bearing NuGet package, including the managed-only SQLite provider closure, self-contained runtime-pack input, explicit project resource/content/embed/icon/manifest input, the locked Go toolchain, all 71 checksum-locked release-verifier modules, and the independent Profiles and offline TOML native source pins plus exact JSON/libarchive/liblzma/zlib/toml++ recipe and license inventory. licenses.v1.json is digest-bound to dependencies.v1.txt and CI rejects unclassified graph drift. Complete component-level notices for the self-contained .NET runtime and final artwork provenance remain review-pending under issue #30. This engineering inventory does not claim legal completeness.
 
 ## FluentIcons.Wpf and FluentIcons.Common
 
@@ -360,6 +360,41 @@ Copyright notice:
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
 
+```
+
+## STFC TOML shared native component
+
+- Version: immutable source pin in dependencies/stfc-toml-source-pin.json
+- License: GNU General Public License v3.0
+- Source: https://github.com/Guffawaffle/stfc-mod
+- Authoritative license information: https://github.com/Guffawaffle/stfc-mod/blob/play/LICENSE
+
+```text
+The offline STFC TOML editor is produced from the pinned shared/toml component of the STFC community mod source. Its exact source archive and dependency recipe are recorded with the build evidence. The complete GPLv3 license is included in this repository LICENSE, the ZIP/MSIX LICENSE.txt payload and with the native build evidence.
+```
+
+## toml++
+
+- Version: 3.4.0
+- License: MIT License
+- Source: https://github.com/marzer/tomlplusplus/tree/v3.4.0
+- Authoritative license information: https://github.com/marzer/tomlplusplus/blob/v3.4.0/LICENSE
+
+```text
+MIT License
+
+Copyright (c) Mark Gillard <mark.gillard@outlook.com.au>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 ## Attribution review boundary

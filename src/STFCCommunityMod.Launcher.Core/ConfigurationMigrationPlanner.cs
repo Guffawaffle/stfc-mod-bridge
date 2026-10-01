@@ -418,7 +418,7 @@ public sealed class ConfigurationMigrationPlanner(TimeProvider? timeProvider = n
         var desiredRead = load.IsValid && desiredDocument is not null
             ? desiredDocument.ReadOverrides()
             : SparseTomlReadResult.Invalid(
-                new(SparseTomlErrorCode.UnsupportedDocument, "The desired document could not be previewed."));
+                new(SparseTomlErrorCode.EditorUnavailable, "The desired document could not be previewed."));
         var lines = new List<ConfigurationMigrationPreviewLine>();
         foreach (var operation in operations.OrderBy(operation => operation.OriginalLineNumber))
         {

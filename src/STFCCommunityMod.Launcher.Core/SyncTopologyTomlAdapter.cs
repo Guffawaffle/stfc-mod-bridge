@@ -163,23 +163,17 @@ public static class SyncTopologyTomlAdapter
         Dictionary<string, SyncTargetDraft> targets,
         List<SyncTopologyDiagnostic> diagnostics)
     {
-        var names = overrides.Keys
-            .Where(path => path.StartsWith("sync.targets.", StringComparison.Ordinal))
-            .Select(path => path.Split('.'))
-            .Where(parts => parts.Length >= 4)
+        var names = overrides.Values.Select(item => item.PathSegments)
+            .Where(parts => parts.Count >= 3 && parts[0] == "sync" && parts[1] == "targets")
             .Select(parts => parts[2])
-            .Concat(
-                tables
-                    .Select(table => table.CanonicalPath.Split('.'))
-                    .Where(parts => parts.Length >= 3
-                        && parts[0] == "sync"
-                        && parts[1] == "targets")
-                    .Select(parts => parts[2]))
+            .Concat(tables.Select(table => table.PathSegments)
+                .Where(parts => parts.Count >= 3 && parts[0] == "sync" && parts[1] == "targets")
+                .Select(parts => parts[2]))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal);
         foreach (var name in names)
         {
-            var prefix = $"sync.targets.{name}.";
+            var prefix = LauncherTomlPath.Render(["sync", "targets", name]) + ".";
             var mode = ReadString(overrides, prefix + "mode", "legacy", diagnostics, name);
             var kind = mode switch
             {

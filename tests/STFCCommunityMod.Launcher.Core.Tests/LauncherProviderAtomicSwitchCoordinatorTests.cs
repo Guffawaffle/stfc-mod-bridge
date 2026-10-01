@@ -519,7 +519,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 isGameRunning: false,
                 fixture.ConfigurationPath));
 
-        StringAssert.Contains(exception.Message, "conservative TOML parser");
+        StringAssert.Contains(exception.Message, "verified shared TOML editor");
         Assert.AreEqual(0, discovery.CallCount);
         Assert.AreEqual(0, fixture.BackupStore.List(
             fixture.GameDirectory,

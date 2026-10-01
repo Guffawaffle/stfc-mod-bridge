@@ -127,12 +127,12 @@ and help while mutation controls stay gated. Disabled Settings text editors
 preserve the chosen palette, and unavailable configuration captions distinguish
 provider defaults from loaded values and report safe line metadata.
 
-The parser accepts assignment-only quoted ASCII bare identifier segments,
-normalizes their identity for duplicate and namespace checks, and preserves the
-original key spelling and file formatting during staged saves. Quoted table
-headers and more complex quoted keys remain unsupported. Retained Settings
-rows refresh editing availability on target/runtime changes without clearing
-drafts. The reported live configuration was accepted without a byte change;
+The initial correction accepted assignment-only quoted ASCII bare identifier
+segments. That restricted parser is superseded by the
+[shared source-preserving TOML engine](TOML_EDIT_ENGINE.md), which uses decoded
+paths and whole-document semantic verification for valid unusual syntax.
+Retained Settings rows refresh editing availability on target/runtime changes
+without clearing drafts. The reported live configuration was accepted without a byte change;
 focused staged-save, canonical-alias, real WPF scrolling and dark/light palette
 regressions passed. Read the latest PR head and its exact validation/review
 receipts before qualifying a corrected package or restoring any checkpoint.

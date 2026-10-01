@@ -264,7 +264,9 @@ public sealed class LauncherConfigurationEditSessionTests
         var draft = Encoding.UTF8.GetString(session.BuildDraft().Contents!);
         StringAssert.Contains(draft, "free_resize = true");
         StringAssert.Contains(draft, "original_frame_policy = \"mod\"");
-        StringAssert.Contains(draft, "ui_scale = 0.60");
+        SparseTomlDocument.Load(session.BuildDraft().Contents!, out var numericDraft);
+        Assert.IsTrue(LauncherTomlValue.TryReadNumber(numericDraft!.ReadOverrides().Overrides!["graphics.ui_scale"].RenderedValue, out var number));
+        Assert.AreEqual(0.6, number);
     }
 
     [TestMethod]
@@ -351,6 +353,29 @@ public sealed class LauncherConfigurationEditSessionTests
     }
 
     [TestMethod]
+    public void KnownMultilineStringsRetainRawSpellingAndCancelSemanticNoOps()
+    {
+        const string source = "\"config.settings_url\" = 'literal-dot unknown'\n[\"config\"]\nsettings_url = \"\"\"\\\nhttps://example.invalid/settings\\\n\"\"\" # keep\n";
+        var catalog = LoadCatalog();
+        var load = LauncherConfigurationEditSession.Load(Encoding.UTF8.GetBytes(source), catalog, out var session);
+        Assert.IsTrue(load.IsValid, load.Error?.Message);
+        var setting = catalog.Settings.Single(item => item.Path == "config.settings_url");
+        Assert.IsTrue(session!.GetState(setting).SavedHasOverride);
+        StringAssert.Contains(session.GetState(setting).SavedRenderedOverride!, "\"\"\"");
+        var noOp = session.StageSet(setting, "\"https://example.invalid/settings\"");
+        Assert.IsTrue(noOp.IsValid, noOp.Error?.Message);
+        Assert.AreEqual(0, session.PendingChangeCount);
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(source), session.BuildDraft().Contents!);
+        var change = session.StageSet(setting, "\"https://example.invalid/new\"");
+        Assert.IsTrue(change.IsValid, change.Error?.Message);
+        var updated = Encoding.UTF8.GetString(change.Contents!);
+        StringAssert.Contains(updated, "\"config.settings_url\" = 'literal-dot unknown'");
+        StringAssert.Contains(updated, "settings_url = \"https://example.invalid/new\" # keep");
+        session.Discard();
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(source), session.BuildDraft().Contents!);
+    }
+
+    [TestMethod]
     public void EmptyStringDefaultCanBeSavedAsAnExplicitOverride()
     {
         const string source = "# All public strings use their runtime defaults.\n";
@@ -377,7 +402,7 @@ public sealed class LauncherConfigurationEditSessionTests
         const string source =
             """
             [notifications]
-            fleet_arrived_in_system = { audio = true, sound = 'arrival', system = true }
+            fleet_arrived_in_system = { "audio" = true, sound = '''arrival''', "\u0073ystem" = true }
             """;
         var catalog = LoadCatalog();
         LauncherConfigurationEditSession.Load(

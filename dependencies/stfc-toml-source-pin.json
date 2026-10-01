@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "repository": "Guffawaffle/stfc-mod",
+  "revision": "f83c8d55b542cb4b8ac4a85ca5d69173c0cd58b0",
+  "sourceArchiveSha256": "0ce4b510eb6c6040c0974a6ce292596f33164ff46ae9b0314254eefc2dc3204c",
+  "qualificationState": "immutable",
+  "sourceSubdirectory": "shared/toml",
+  "xmakeVersion": "3.0.8",
+  "nativeDependencies": [
+    {
+      "id": "toml++",
+      "version": "3.4.0",
+      "license": "MIT"
+    },
+    {
+      "id": "nlohmann_json",
+      "version": "3.12.0",
+      "license": "MIT"
+    }
+  ]
+}

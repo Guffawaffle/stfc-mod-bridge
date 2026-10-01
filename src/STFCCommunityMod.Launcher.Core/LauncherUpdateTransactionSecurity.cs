@@ -184,6 +184,11 @@ public static class LauncherUpdateTransactionSecurity
             Path.Combine(plan.StageDirectory, NativeProfileCatalogTransport.LibraryName),
             candidateProfilesRecord.Size, candidateProfilesRecord.Sha256);
         VerifyBoundPortableExecutable(candidateProfiles, authenticityVerifier, "candidate shared profiles component");
+        var candidateTomlRecord = plan.Files.Single(file => file.RelativePath == TomlNativeTransport.LibraryName);
+        var candidateToml = new LauncherUpdateBoundFile(
+            Path.Combine(plan.StageDirectory, TomlNativeTransport.LibraryName),
+            candidateTomlRecord.Size, candidateTomlRecord.Sha256);
+        VerifyBoundPortableExecutable(candidateToml, authenticityVerifier, "candidate shared TOML component");
         VerifyBoundPortableExecutable(plan.RunnerUpdater, authenticityVerifier, "running updater");
         VerifyPayload(plan.TargetDirectory, plan.PreviousFiles);
         VerifyPayload(plan.StageDirectory, plan.Files);
@@ -202,6 +207,10 @@ public static class LauncherUpdateTransactionSecurity
             || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
                 candidateIdentity.ProfilesNativeSha256,
                 candidateProfiles.Sha256)
+            || candidateIdentity.TomlNativeSha256 is null
+            || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                candidateIdentity.TomlNativeSha256,
+                candidateToml.Sha256)
             || candidateIdentity.SourceCommit != runtimePlan.ExpectedReceipt.SourceCommit)
         {
             throw new InvalidDataException("The current or candidate launcher/helper pairing changed before commit.");
@@ -286,9 +295,10 @@ public static class LauncherUpdateTransactionSecurity
         if (plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.ExecutableName) != 1
             || plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.UpdaterExecutableName) != 1
             || plan.Files.Count(file => file.RelativePath == ModBridgeProductIdentity.ReleaseVerifierExecutableName) != 1
-            || plan.Files.Count(file => file.RelativePath == NativeProfileCatalogTransport.LibraryName) != 1)
+            || plan.Files.Count(file => file.RelativePath == NativeProfileCatalogTransport.LibraryName) != 1
+            || plan.Files.Count(file => file.RelativePath == TomlNativeTransport.LibraryName) != 1)
         {
-            throw new InvalidDataException("The staged update payload does not contain the four reviewed executable/component roles.");
+            throw new InvalidDataException("The staged update payload does not contain the five reviewed executable/component roles.");
         }
     }
 

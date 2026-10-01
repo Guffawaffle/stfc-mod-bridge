@@ -26,7 +26,8 @@ public sealed class LauncherSelfUpdateTests
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
             ("STFCModBridge.Updater.exe", [4, 5, 6]),
-            ("stfc-profiles-native.dll", [10, 11, 12]));
+            ("stfc-profiles-native.dll", [10, 11, 12]),
+            ("stfc-toml-native.dll", [13, 14, 15]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
 
@@ -181,6 +182,23 @@ public sealed class LauncherSelfUpdateTests
     }
 
     [TestMethod]
+    public void ArchiveAcceptsOnlyTheCanonicalRootTomlPortableExecutable()
+    {
+        var portableExecutable = new byte[68];
+        portableExecutable[0] = (byte)'M';
+        portableExecutable[1] = (byte)'Z';
+        portableExecutable[0x3c] = 64;
+        portableExecutable[64] = (byte)'P';
+        portableExecutable[65] = (byte)'E';
+        using var temporary = new TemporaryDirectory();
+        var approved = temporary.CreateDirectory("approved");
+        LauncherArchiveExtractor.Extract(CreateArchive(("stfc-toml-native.dll", portableExecutable)), approved);
+        CollectionAssert.AreEqual(portableExecutable, File.ReadAllBytes(Path.Combine(approved, "stfc-toml-native.dll")));
+        Assert.ThrowsException<InvalidDataException>(() => LauncherArchiveExtractor.Extract(
+            CreateArchive(("nested/stfc-toml-native.dll", portableExecutable)), temporary.CreateDirectory("nested")));
+    }
+
+    [TestMethod]
     public void LauncherSelectionRequiresSignedContentsContract()
     {
         var archive = new byte[] { 1, 2, 3 };
@@ -192,6 +210,18 @@ public sealed class LauncherSelfUpdateTests
 
         Assert.AreEqual(TargetCommit, selected.TargetCommit);
         Assert.AreEqual("stfc-mod-bridge-win-x64.zip", selected.FileName);
+        var manifest = Discovery(Artifact(archive)).Manifest;
+        var launcherArtifact = manifest.Artifacts[0];
+        var unsignedToml = launcherArtifact with
+        {
+            Authenticity = launcherArtifact.Authenticity with
+            {
+                SignedFiles = launcherArtifact.Authenticity.SignedFiles.Take(4).ToArray(),
+            },
+        };
+        var rejected = manifest with { Artifacts = [unsignedToml, manifest.Artifacts[1]] };
+        Assert.ThrowsException<InvalidDataException>(() => WindowsReleaseSelectionPolicy.SelectLauncherArtifact(
+            rejected, "stable", new Version(0, 1, 0), "Guffawaffle/stfc-mod-bridge"));
     }
 
     [TestMethod]
@@ -206,7 +236,8 @@ public sealed class LauncherSelfUpdateTests
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
             ("STFCModBridge.Updater.exe", [4, 5, 6]),
-            ("stfc-profiles-native.dll", [10, 11, 12]));
+            ("stfc-profiles-native.dll", [10, 11, 12]),
+            ("stfc-toml-native.dll", [13, 14, 15]));
         var service = CreateService(temporaryDirectory, archive);
 
         using var preparation = await service.PrepareAsync(
@@ -309,7 +340,8 @@ public sealed class LauncherSelfUpdateTests
             ("STFCModBridge.exe", [1, 2, 3]),
             ("STFCModBridge.ReleaseVerifier.exe", [7, 8, 9]),
             ("STFCModBridge.Updater.exe", [4, 5, 6]),
-            ("stfc-profiles-native.dll", [10, 11, 12]));
+            ("stfc-profiles-native.dll", [10, 11, 12]),
+            ("stfc-toml-native.dll", [13, 14, 15]));
         var artifact = Artifact(archive);
         var service = CreateService(temporaryDirectory, archive);
         using var preparation = await service.PrepareAsync(
@@ -867,6 +899,7 @@ public sealed class LauncherSelfUpdateTests
                             "STFCModBridge.ReleaseVerifier.exe",
                             "STFCModBridge.Updater.exe",
                             "stfc-profiles-native.dll",
+                            "stfc-toml-native.dll",
                         ])),
                 new(
                     "windows-mod-bridge-msix-x64",
@@ -1213,6 +1246,10 @@ public sealed class LauncherSelfUpdateTests
                 File.Exists(Path.Combine(Path.GetDirectoryName(executablePath)!, NativeProfileCatalogTransport.LibraryName))
                     ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(
                         Path.GetDirectoryName(executablePath)!, NativeProfileCatalogTransport.LibraryName)))).ToLowerInvariant()
+                    : null,
+                File.Exists(Path.Combine(Path.GetDirectoryName(executablePath)!, "stfc-toml-native.dll"))
+                    ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(
+                        Path.GetDirectoryName(executablePath)!, "stfc-toml-native.dll")))).ToLowerInvariant()
                     : null);
         }
     }

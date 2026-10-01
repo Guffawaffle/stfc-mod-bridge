@@ -795,6 +795,8 @@ public sealed class LauncherSelfUpdateService(
             VerifySignedExecutable(candidateVerifierPath);
             var candidateProfilesPath = Path.Combine(stageDirectory, NativeProfileCatalogTransport.LibraryName);
             VerifySignedExecutable(candidateProfilesPath);
+            var candidateTomlPath = Path.Combine(stageDirectory, TomlNativeTransport.LibraryName);
+            VerifySignedExecutable(candidateTomlPath);
             var candidateIdentity = identityReader.ReadIdentity(launcherPath);
             var candidateVerifier = BoundFile(candidateVerifierPath);
             if (!string.Equals(
@@ -808,7 +810,11 @@ public sealed class LauncherSelfUpdateService(
                 || candidateIdentity.ProfilesNativeSha256 is null
                 || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
                     candidateIdentity.ProfilesNativeSha256,
-                    BoundFile(candidateProfilesPath).Sha256))
+                    BoundFile(candidateProfilesPath).Sha256)
+                || candidateIdentity.TomlNativeSha256 is null
+                || !AuthenticatedReleaseManifestPolicy.FixedTimeDigestEquals(
+                    candidateIdentity.TomlNativeSha256,
+                    BoundFile(candidateTomlPath).Sha256))
             {
                 throw new InvalidDataException(
                     "The signed candidate launcher identity does not match its source or paired release verifier.");

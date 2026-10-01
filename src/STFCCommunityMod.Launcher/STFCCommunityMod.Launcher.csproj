@@ -18,11 +18,18 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <Version>0.1.0</Version>
     <ReleaseVerifierSha256 Condition="'$(ReleaseVerifierSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ReleaseVerifierSha256>
+    <TomlNativeSha256 Condition="'$(TomlNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</TomlNativeSha256>
     <ProfilesNativeSha256 Condition="'$(ProfilesNativeSha256)' == ''">0000000000000000000000000000000000000000000000000000000000000000</ProfilesNativeSha256>
     <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-    <InformationalVersion>$(Version)+commit.$(SourceRevisionId).verifier.$(ReleaseVerifierSha256).profiles.$(ProfilesNativeSha256)</InformationalVersion>
+    <InformationalVersion>$(Version)+commit.$(SourceRevisionId).verifier.$(ReleaseVerifierSha256).profiles.$(ProfilesNativeSha256).toml.$(TomlNativeSha256)</InformationalVersion>
   </PropertyGroup>
+
+  <Target Name="ValidateTomlNativeIdentity" BeforeTargets="CoreCompile">
+    <Error
+      Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(TomlNativeSha256)', '^[0-9a-f]{64}$')) != 'True'"
+      Text="TomlNativeSha256 must be exactly 64 lowercase hexadecimal characters." />
+  </Target>
 
   <Target Name="ValidateReleaseVerifierIdentity" BeforeTargets="CoreCompile">
     <Error
