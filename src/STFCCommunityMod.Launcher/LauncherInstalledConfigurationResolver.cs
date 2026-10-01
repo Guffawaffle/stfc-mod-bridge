@@ -34,7 +34,7 @@ internal sealed class LauncherInstalledConfigurationResolver(
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or InvalidDataException
-                or JsonException or NotSupportedException or InvalidOperationException)
+                or JsonException or NotSupportedException or InvalidOperationException or ArgumentException)
         {
             return Unavailable(provider, selection, "unknown", "unknown");
         }

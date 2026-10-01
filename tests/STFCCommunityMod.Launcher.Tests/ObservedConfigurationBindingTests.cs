@@ -55,6 +55,36 @@ public sealed class ObservedConfigurationBindingTests
     }
 
     [TestMethod]
+    public void CorruptPersistedPathReturnsUnknownWithoutPreventingSettingsOrRawAccess()
+    {
+        using var fixture = new Fixture();
+        fixture.Record("1.1.8.0", new string('a', 40));
+        var registry = Path.Combine(fixture.State, "installed-mod.json");
+        var contents = File.ReadAllText(registry);
+        var validPath = JsonSerializer.Serialize(fixture.Game);
+        Assert.IsTrue(contents.Contains(validPath, StringComparison.Ordinal));
+        File.WriteAllText(registry, contents.Replace(
+            validPath, JsonSerializer.Serialize(fixture.Game + "\0"), StringComparison.Ordinal));
+        var catalog = fixture.Resolve();
+        Assert.IsFalse(catalog.IsQualified);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+            fixture.Resolver.ResolveEvidence(new("netniv", "stable"), fixture.Game).CapabilityStatus);
+        var provider = fixture.Providers.GetProvider("netniv");
+        var composition = LauncherStartupComposition.Create(
+            provider, provider.DefaultReleaseChannel, configurationCatalog: catalog);
+        var rawOpened = false;
+        var rawCommand = LauncherRawConfigurationCommand.Create(() => fixture.Config, _ => rawOpened = true);
+        var settings = new SettingsViewModel(
+            catalog, rawCommand, rawCommand, () => fixture.Config,
+            composition.SettingsLayout, composition.SettingsDiagnostics);
+        Assert.IsFalse(settings.CanEdit);
+        Assert.IsTrue(settings.OpenRawTomlCommand.CanExecute(null));
+        settings.OpenRawTomlCommand.Execute(null);
+        Assert.IsTrue(rawOpened);
+        CollectionAssert.AreEqual(fixture.Raw, File.ReadAllBytes(fixture.Config));
+    }
+
+    [TestMethod]
     public void ExactObservedKnownReleaseRetainsCatalogButWrongCommitDoesNot()
     {
         using var fixture = new Fixture();
