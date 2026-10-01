@@ -154,7 +154,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var shellAccess = LauncherProviderShellAccess.From(resolution);
         var provider = resolution.Provider ?? distributionProviderCatalog.DefaultProvider;
         var releaseChannel = resolution.ReleaseChannel ?? provider.DefaultReleaseChannel;
-        var configurationCatalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
         var viewModel = MainWindowViewModel.CreateDefault(
             httpClient,
             distributionProviderCatalog,
@@ -164,8 +163,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 ? null
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
-            providerSelectionStore,
-            configurationCatalog);
+            providerSelectionStore);
+        var configurationCatalog = viewModel.ConfigurationCatalog;
         viewModel.ConfirmLaunchOverrideAsync = ConfirmLaunchOverrideAsync;
         var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
@@ -188,7 +187,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 provider,
                 releaseChannel,
                 runtimeComposition,
-                configurationCatalog,
+                viewModel.ConfigurationCatalog,
                 () => viewModel.ConfigurationFilePath));
     }
 
@@ -753,7 +752,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 return;
             }
 
-            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var catalog = viewModel.ConfigurationCatalog;
             var contents = File.Exists(path) ? File.ReadAllBytes(path) : [];
             var result = ConfigurationEffectiveExportService.Build(
                 new ConfigurationDocumentSnapshot(path, contents),
@@ -878,7 +877,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 return;
             }
 
-            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var catalog = viewModel.ConfigurationCatalog;
             var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
                 distributionProvider.Id,
                 distributionReleaseChannel.Id,
@@ -1085,14 +1084,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "The persisted release-source selection changed or no longer supports configuration cleanup.");
         }
 
-        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(
-            providerResolution.Provider);
+        var resolver = new LauncherInstalledConfigurationResolver(
+            providerCatalog,
+            BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providerCatalog),
+            LauncherInstalledConfigurationResolver.CreateReadOnlyStateReader(stateDirectory));
         return new(
             Path.Combine(gameValidation.GameDirectory, "community_patch_settings.toml"),
-            LauncherConfigurationDiagnosisEvidence.Supported(
-                providerResolution.Provider.Id,
-                providerResolution.ReleaseChannel.Id,
-                catalog));
+            resolver.ResolveEvidence(
+                providerResolution.Selection, gameValidation.GameDirectory));
     }
 
     internal static string CompleteConfigurationCleanupProjection(
@@ -2092,10 +2091,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             provider.Id,
             $"{provider.Id}/{releaseChannel.Id}");
         var activeSelection = new LauncherProviderSelection(provider.Id, releaseChannel.Id);
-        var configurationEvidence = BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
-            distributionProviderCatalog,
-            BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
-            activeSelection);
+        var configurationEvidence = LauncherConfigurationDiagnosisEvidence.Supported(
+            activeSelection.ProviderId, activeSelection.ReleaseChannelId, catalog);
         var configurationProfile = (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile;
         var settingsSession = ProviderSession;
         var binding = LauncherConfigurationTarget.Capture(configurationProfile?.Id, configurationPathProvider(),

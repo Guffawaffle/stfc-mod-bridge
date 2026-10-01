@@ -19,6 +19,13 @@ schema set still requires its exact reviewed provider/track/release/full-commit
 tuple, and the runtime-manifest capability remains unknown. A new stable
 artifact may be installable while its configuration catalog is unavailable.
 
+Production reads the installed release observation before selecting this schema
+set. A new or mismatched identity gets an unqualified empty catalog with its actual
+release/commit retained; typed Settings, Data Sync and catalog-authorized operations
+stay unavailable, while bound raw TOML access remains available. Prospective source
+switch analysis stays Unknown until the target is installed. Installations without
+a repository observation keep the existing historical catalog behavior.
+
 Runtime facts are reviewed from the matching NetniV `defaultconfig.h`,
 `config.cc`, key mapping, README, and example configuration. The compact shared
 settings and revision deltas own types, defaults, aliases, feature gates,

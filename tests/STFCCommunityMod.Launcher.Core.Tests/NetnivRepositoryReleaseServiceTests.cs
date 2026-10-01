@@ -10,6 +10,74 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class NetnivRepositoryReleaseServiceTests
 {
     [TestMethod]
+    public async Task RepositoryReleaseDeploysPersistsAndRepairsExactRecordedBytesAfterRestart()
+    {
+        using var directory = new TemporaryDirectory();
+        var game = directory.CreateDirectory("game");
+        TemporaryDirectory.CreateFile(game, "prime.exe");
+        var state = directory.CreateDirectory("bridge-state");
+        using var api = new Api();
+        using var http = new HttpClient(api);
+        var releases = Service(http);
+        var deployment = NewDeployment(releases);
+        var first = await releases.DiscoverLatestAsync("stable", new Version(0, 1, 0));
+        Assert.AreEqual("v1.1.9.0", first.Manifest.Tag);
+        Assert.IsNotNull(first.ModArtifact.RepositoryRelease);
+
+        var installed = await deployment.DeployAsync(game, first.ModArtifact, ExistingArtifactPolicy.Reject);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, installed.State, installed.Message);
+        var dll = Path.Combine(game, "version.dll");
+        CollectionAssert.AreEqual(api.Latest.Payload, File.ReadAllBytes(dll));
+        var persisted = deployment.ReadInstalledState(game);
+        Assert.IsNotNull(persisted);
+        Assert.AreEqual(first.ModArtifact.RepositoryRelease, persisted.RepositoryRelease);
+        Assert.AreEqual(first.Manifest.Tag, persisted.ReleaseProductVersion);
+        Assert.AreEqual(first.Manifest.Tag, deployment.ReadReleaseProductVersionFloor(game));
+        Assert.AreEqual("netniv", persisted.ProviderId);
+        Assert.AreEqual("stable", persisted.ReleaseChannelId);
+        Assert.AreEqual("netniv.stfc-community-mod", persisted.RuntimeDistributionId);
+        // The active receipt itself retains this provider's version/hash floor.
+        // Separate high-water rows retain other providers after source switches.
+        Assert.AreEqual(first.ModArtifact.Size, persisted.Size);
+        Assert.IsTrue(string.Equals(first.ModArtifact.Sha256, persisted.Sha256, StringComparison.OrdinalIgnoreCase));
+        Assert.IsNull(persisted.ReleaseHighWaterMarks);
+
+        // New instances must recover the observation from actual installed-state
+        // persistence rather than from the original discovery service's dictionary.
+        api.Latest = new Release("1.1.10.0");
+        api.Releases.Add(api.Latest.Tag, api.Latest);
+        var restartedReleases = Service(http);
+        var restartedDeployment = NewDeployment(restartedReleases);
+        var restartedReceipt = restartedDeployment.ReadInstalledState(game);
+        Assert.IsNotNull(restartedReceipt);
+        Assert.AreEqual(persisted.RepositoryRelease, restartedReceipt.RepositoryRelease);
+        Assert.AreEqual(persisted.ReleaseProductVersion, restartedReceipt.ReleaseProductVersion);
+        File.Delete(dll);
+        api.Requests.Clear();
+
+        var exact = await restartedReleases.DiscoverRecordedAsync(restartedReceipt, new Version(0, 1, 0), default);
+        var repaired = await restartedDeployment.RepairAsync(game, exact.ModArtifact);
+
+        Assert.AreEqual(ModDeploymentResultState.Succeeded, repaired.State, repaired.Message);
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes("1.1.9.0"), File.ReadAllBytes(dll));
+        Assert.IsFalse(api.Requests.Any(path => path.EndsWith("/latest", StringComparison.Ordinal)));
+        Assert.IsTrue(api.Requests.Any(path => path.EndsWith("/releases/tags/v1.1.9.0", StringComparison.Ordinal)));
+        var afterRepair = restartedDeployment.ReadInstalledState(game);
+        Assert.IsNotNull(afterRepair);
+        Assert.AreEqual(exact.ModArtifact.RepositoryRelease, afterRepair.RepositoryRelease);
+        Assert.AreEqual(first.Manifest.Tag, afterRepair.ReleaseProductVersion);
+        Assert.AreEqual(first.Manifest.Tag, restartedDeployment.ReadReleaseProductVersionFloor(game));
+        Assert.IsTrue(string.Equals(first.ModArtifact.Sha256, afterRepair.Sha256, StringComparison.OrdinalIgnoreCase));
+        Assert.IsNull(afterRepair.ReleaseHighWaterMarks);
+        Assert.AreEqual(ModDeploymentPhase.Committed, restartedDeployment.ReadJournal()!.Phase);
+
+        ModDeploymentService NewDeployment(NetnivRepositoryReleaseService source) => new(
+            state, source, new Reader(), source, _ => false,
+            new ModInstallationAttribution("netniv", "stable", "netniv.stfc-community-mod"));
+    }
+
+    [TestMethod]
     public async Task NewStableReleaseDoesNotNeedABundledHashCertification()
     {
         using var api = new Api();
@@ -137,7 +205,12 @@ public sealed class NetnivRepositoryReleaseServiceTests
     private static NetnivRepositoryReleaseService Service(HttpClient http) => new(http, new Reader());
     private sealed class Reader : IModArtifactVersionReader
     {
-        public string? ReadVersion(string path) => File.ReadAllText(path);
+        public string? ReadVersion(string path)
+        {
+            using var stream = new FileStream(CandidateFileNative.OpenSharedExactReadNoFollow(path), FileAccess.Read);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
     }
     private sealed class Release
     {

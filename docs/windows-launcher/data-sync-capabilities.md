@@ -3,6 +3,12 @@
 This maintainer document records the Data Sync vocabulary and the capabilities established by the resolved
 configuration catalog. It is not a runtime input; launcher behavior comes from `SyncTargetTypeCatalog`.
 
+A persisted repository-release observation requires an exact reviewed release
+and full source commit before typed Data Sync is enabled. This guard applies to
+both the shared Settings workspace and the independent topology loader. Unknown
+applicability leaves the bound raw TOML editor available and never stages a topology
+change during passive loading.
+
 ## Vocabulary and compatibility boundary
 
 - **Sync** is the ordinary, user-creatable remote synchronization mechanism. Its persisted compatibility identifier

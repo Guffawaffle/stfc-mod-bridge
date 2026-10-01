@@ -115,7 +115,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             NavigateToSettingsDraft,
             ReloadAfterSyncConflict,
             ConfigurationPathMatchesLoadedSession,
-            () => IsSaveInProgress);
+            () => IsSaveInProgress,
+            () => catalog.IsQualified);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
         SyncWorkspace.Committed += SyncWorkspace_Committed;
         ConfigurationHistory = configurationHistoryCoordinator is null
@@ -315,7 +316,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsSaveInProgress => activeSave is not null;
 
     public bool CanEdit =>
-        IsConfigurationReady
+        catalog.IsQualified
+        && IsConfigurationReady
         && !IsSaveInProgress
         && !SyncWorkspace.IsSaveInProgress
         && workspace?.IsStale != true
@@ -670,7 +672,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .Select(setting => layoutProvider.Place(setting).Section)
             .ToHashSet();
         var sections = layoutProvider.Sections
-            .Where(section => populatedSections.Contains(section.Id))
+            .Where(section => populatedSections.Contains(section.Id)
+                || !catalog.IsQualified && section.Id == LauncherSettingsSection.General)
             .Select(
                 section => new SettingsSectionViewModel(
                     section.Id,
@@ -808,7 +811,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         }
 
         workspace = loadedWorkspace;
-        OperationStatus = string.Empty;
+        OperationStatus = catalog.IsQualified
+            ? string.Empty
+            : "Typed Settings are unavailable because this installed release has no exact reviewed configuration catalog. Raw TOML remains available.";
         RefreshPatchEditingAvailability();
     }
 

@@ -71,7 +71,7 @@ internal sealed class LauncherProviderSession : IDisposable
         ViewModel.FeatureRemediationCoordinator;
 
     public bool RefreshRuntimeComposition(ReviewedRuntimeActivation? activation) =>
-        runtimeComposition.Refresh(activation, battlePreferencesProvider());
+        runtimeComposition.Refresh(activation, battlePreferencesProvider(), ViewModel.ConfigurationCatalog);
 
     public bool RefreshBattlePreferences() =>
         runtimeComposition.RefreshBattlePreferences(battlePreferencesProvider());
@@ -93,6 +93,7 @@ internal sealed class LauncherRuntimeCompositionSlot(
     LauncherConfigurationCatalog? configurationCatalog = null)
 {
     private string? evidenceSha256 = initialEvidenceSha256;
+    private LauncherConfigurationCatalog? currentConfigurationCatalog = configurationCatalog;
     private LauncherBattlePreferences battlePreferences = new(
         initial.BattleFeatures.BattleCollection.Preference,
         initial.BattleFeatures.FleetCollection.Preference);
@@ -103,12 +104,17 @@ internal sealed class LauncherRuntimeCompositionSlot(
 
     public bool Refresh(
         ReviewedRuntimeActivation? activation,
-        LauncherBattlePreferences nextBattlePreferences)
+        LauncherBattlePreferences nextBattlePreferences,
+        LauncherConfigurationCatalog? nextConfigurationCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(nextBattlePreferences);
         var nextEvidence = activation?.EvidenceSourceSha256;
+        nextConfigurationCatalog ??= currentConfigurationCatalog;
+        var sameCatalog = currentConfigurationCatalog?.Identity == nextConfigurationCatalog?.Identity
+            && currentConfigurationCatalog?.IsQualified == nextConfigurationCatalog?.IsQualified;
         if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase)
-            && battlePreferences == nextBattlePreferences)
+            && battlePreferences == nextBattlePreferences
+            && sameCatalog)
         {
             return false;
         }
@@ -117,7 +123,8 @@ internal sealed class LauncherRuntimeCompositionSlot(
             releaseChannel,
             activation,
             nextBattlePreferences,
-            configurationCatalog);
+            nextConfigurationCatalog);
+        currentConfigurationCatalog = nextConfigurationCatalog;
         SettingsRevision++;
         evidenceSha256 = nextEvidence;
         battlePreferences = nextBattlePreferences;

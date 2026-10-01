@@ -20,6 +20,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly IModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
     private readonly LauncherDiagnosticService diagnosticService;
+    private Func<string?, LauncherConfigurationCatalog>? configurationCatalogResolver;
+    private Func<string?, LauncherConfigurationDiagnosisEvidence>? configurationEvidenceProvider;
+
+    internal LauncherConfigurationCatalog ConfigurationCatalog =>
+        configurationCatalogResolver?.Invoke(ConfigurationGameDirectory)
+        ?? throw new InvalidOperationException("Installed configuration resolution is unavailable.");
+
+    internal LauncherConfigurationDiagnosisEvidence ConfigurationEvidence =>
+        configurationEvidenceProvider?.Invoke(ConfigurationGameDirectory)
+        ?? throw new InvalidOperationException("Installed configuration evidence is unavailable.");
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly IPackagedLauncherUpdateService packagedLauncherUpdateService;
@@ -658,52 +668,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             new WindowsGameExecutableLaunchService(),
             officialLauncherService,
             processInspector);
-        LauncherConfigurationDiagnosisEvidence configurationEvidence;
-        try
-        {
-            var configurationCapabilityStatus = distributionProvider.GetCapabilityStatus(
-                LauncherProviderCapabilityIds.ConfigurationCatalog);
-            if (configurationCapabilityStatus != LauncherProviderCapabilityStatus.Supported)
-            {
-                configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
-                    distributionProvider.Id,
-                    releaseChannel.Id,
-                    configurationCapabilityStatus);
-            }
-            else
-            {
-                var resolvedConfigurationCatalog = configurationCatalog
-                    ?? BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
-                var catalogMatchesChannel = string.Equals(
-                        resolvedConfigurationCatalog.Identity.TrackId,
-                        releaseChannel.Id,
-                        StringComparison.Ordinal)
-                    || (string.Equals(
-                            resolvedConfigurationCatalog.Identity.TrackId,
-                            "unversioned",
-                            StringComparison.Ordinal)
-                        && string.Equals(
-                            releaseChannel.Id,
-                            distributionProvider.DefaultReleaseChannelId,
-                            StringComparison.Ordinal));
-                configurationEvidence = catalogMatchesChannel
-                    ? LauncherConfigurationDiagnosisEvidence.Supported(
-                        distributionProvider.Id,
-                        releaseChannel.Id,
-                        resolvedConfigurationCatalog)
-                    : LauncherConfigurationDiagnosisEvidence.Unavailable(
-                        distributionProvider.Id,
-                        releaseChannel.Id,
-                        LauncherProviderCapabilityStatus.Unknown);
-            }
-        }
-        catch (LauncherConfigurationSchemaException)
-        {
-            configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
-                distributionProvider.Id,
-                releaseChannel.Id,
-                LauncherProviderCapabilityStatus.Unknown);
-        }
+        var activeConfigurationSelection = new LauncherProviderSelection(
+            distributionProvider.Id,
+            releaseChannel.Id);
+        var installedConfiguration = new LauncherInstalledConfigurationResolver(
+            distributionProviderCatalog, reviewedReleases, deploymentService);
+        LauncherConfigurationCatalog ResolveConfigurationCatalog(string? gameDirectory) =>
+            installedConfiguration.ResolveCatalog(
+                activeConfigurationSelection, gameDirectory, configurationCatalog);
+        LauncherConfigurationDiagnosisEvidence ResolveConfigurationEvidence(string? gameDirectory) =>
+            installedConfiguration.ResolveEvidence(
+                activeConfigurationSelection, gameDirectory, configurationCatalog);
 
         var viewModel = new MainWindowViewModel(
             new LauncherEnvironmentProbe(
@@ -717,8 +692,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 officialLauncherService,
                 processInspector,
                 currentLauncherVersion.ToString(3),
-                configurationEvidence: configurationEvidence,
-                runtimeDistributionId: distributionProvider.RuntimeDistributionId),
+                runtimeDistributionId: distributionProvider.RuntimeDistributionId,
+                configurationEvidenceProvider: ResolveConfigurationEvidence),
             new LauncherSelfUpdateService(
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
@@ -739,20 +714,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 : "Source needs attention",
             new WindowsDiagnosticFolderService());
         providerSelectionStore ??= new JsonLauncherProviderSelectionStore(installLayout.StateDirectory);
-        var activeConfigurationSelection = new LauncherProviderSelection(
-            distributionProvider.Id,
-            releaseChannel.Id);
+        viewModel.configurationCatalogResolver = ResolveConfigurationCatalog;
+        viewModel.configurationEvidenceProvider = ResolveConfigurationEvidence;
         viewModel.ProviderSwitchCoordinator = new(
             new LauncherProviderSourceSwitchService(
                 distributionProviderCatalog,
                 providerSelectionStore,
                 installLayout.StateDirectory,
-                selection => selection == activeConfigurationSelection
-                    ? configurationEvidence
-                    : BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
-                        distributionProviderCatalog,
-                        reviewedReleases,
-                        selection)),
+                selection => installedConfiguration.ResolveSwitchEvidence(
+                    selection, activeConfigurationSelection,
+                    viewModel.ConfigurationGameDirectory, configurationCatalog)),
             providerComponents.Select(component => component.SwitchEndpoint),
             installLayout.StateDirectory);
         return viewModel;

@@ -95,7 +95,9 @@ public sealed class LauncherConfigurationDiagnosisEvidence
                 nameof(catalog));
         }
 
-        return new(providerId, channelId, LauncherProviderCapabilityStatus.Supported, catalog);
+        return catalog.IsQualified
+            ? new(providerId, channelId, LauncherProviderCapabilityStatus.Supported, catalog)
+            : Unavailable(providerId, channelId, LauncherProviderCapabilityStatus.Unknown);
     }
 
     public static LauncherConfigurationDiagnosisEvidence Unavailable(

@@ -19,6 +19,19 @@ matches their exact reviewed identities. Unreviewed configuration identities
 leave the catalog unavailable rather than reusing Guffawaffle or adjacent
 NetniV metadata. Artifact install/update authority is independent and follows
 the repository-release provider policy.
+Production catalog resolution reads the selected installation's validated
+repository-release receipt on startup and refresh. An observed release/full commit
+cannot borrow the historical default or another preferred provider's catalog.
+Unknown applicability disables typed Settings and Data Sync, effective-default
+export and catalog-authorized cleanup, while keeping bound raw TOML access.
+Catalog changes advance the Settings session revision even without runtime evidence
+changes; existing draft and admitted-save reconciliation still applies.
+
+A prospective non-active NetniV source has Unknown configuration evidence until
+deployment commits. Source switching can preserve or restore protected raw TOML
+without claiming typed compatibility. The committed observation then selects its
+exact catalog, when reviewed.
+
 TOML remains the compatibility boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
