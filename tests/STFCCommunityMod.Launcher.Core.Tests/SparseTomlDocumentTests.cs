@@ -443,6 +443,43 @@ public sealed class SparseTomlDocumentTests
             Load("# empty\n").SetOverride("\"settings\".enabled", "true").Error?.Code);
     }
 
+    [TestMethod]
+    [DataRow("\"settings\"")]
+    [DataRow("settings")]
+    public void MultilineScalarIdentityBlocksChildInsertion(string key)
+    {
+        var document = Load(key + " = \"\"\"\nheld\n\"\"\"\n");
+        Assert.IsTrue(document.ValidateForMutation().IsValid);
+        var result = document.SetOverride("settings.enabled", "true");
+        Assert.IsFalse(result.IsValid);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("enabled = \"\"\"\nheld\n\"\"\"\n\"enabled\" = false\n")]
+    [DataRow("\"enabled\" = \"\"\"\nheld\n\"\"\"\nenabled = false\n")]
+    [DataRow("enabled = \"\"\"\nheld\n\"\"\"\nenabled = '''\nalso held\n'''\n")]
+    public void MultilineAliasesParticipateInDuplicateGuards(string source)
+    {
+        var document = Load(source);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, document.ReadOverrides().Error?.Code);
+        var result = document.SetOverride("other", "true");
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, result.Error?.Code);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    public void UnrelatedMultilineRemainsSourcePreservedWithoutAnEditableOverride()
+    {
+        const string source = "held = \"\"\"\r\nkeep everything\r\n\"\"\" # retain\r\n\"enabled\" = false\r\n";
+        var document = Load(source);
+        Assert.IsFalse(document.ReadOverrides().Overrides!.ContainsKey("held"));
+        var result = document.SetOverride("enabled", "true");
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(source.Replace("false", "true", StringComparison.Ordinal), Decode(result.Contents!));
+        Assert.AreEqual(SparseTomlErrorCode.UnsupportedTarget, document.RemoveOverride("held").Error?.Code);
+    }
+
     private static SparseTomlDocument Load(string source) =>
         Load(Encoding.UTF8.GetBytes(source));
 

@@ -72,7 +72,7 @@ public sealed partial class SparseTomlDocument
             return SparseTomlReadResult.Invalid(analysis.Error);
         }
 
-        var overrides = analysis.AllAssignments.ToDictionary(
+        var overrides = analysis.AllAssignments.Where(assignment => !assignment.IsMultiline).ToDictionary(
             assignment => string.Join('.', assignment.Path),
             assignment => new SparseTomlOverride(
                 string.Join('.', assignment.Path),
@@ -375,6 +375,7 @@ public sealed partial class SparseTomlDocument
         var continuation = ValueScanState.Start;
         var continuationActive = false;
         var continuationLine = 0;
+        Assignment? continuationAssignment = null;
 
         foreach (var line in lines)
         {
@@ -395,6 +396,8 @@ public sealed partial class SparseTomlDocument
                     continue;
                 }
 
+                allAssignments.Add(continuationAssignment! with { ValueEnd = line.Start + continuation.ValueEnd });
+                continuationAssignment = null;
                 continuationActive = false;
                 continue;
             }
@@ -512,6 +515,8 @@ public sealed partial class SparseTomlDocument
                 continuation = scan;
                 continuationActive = true;
                 continuationLine = line.Number;
+                // Multiline values remain uneditable, but their identities participate in all guards.
+                continuationAssignment = new(fullPath, line, line.Start + valueStart, 0, IsMultiline: true);
                 continue;
             }
 
@@ -1108,7 +1113,8 @@ public sealed partial class SparseTomlDocument
         string[] Path,
         PhysicalLine Line,
         int ValueStart,
-        int ValueEnd);
+        int ValueEnd,
+        bool IsMultiline = false);
 
     private sealed record TableHeaderReplacement(
         int Start,
