@@ -6,6 +6,7 @@ using STFCCommunityMod.Launcher.Core;
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class NativeTomlIntegrationTests
 {
     private static readonly string[] UnicodePath = ["future", "🚀.key"];
@@ -53,6 +54,35 @@ public sealed class NativeTomlIntegrationTests
             SparseTomlDocument.MapError(new() { Code = "NativeComponentUnavailable" }).Code);
         Assert.AreEqual(SparseTomlErrorCode.EditorUnavailable,
             SparseTomlDocument.MapError(new() { Code = "InternalError" }).Code);
+    }
+
+    [DataTestMethod]
+    [DataRow("")]
+    [DataRow("0000000000000000000000000000000000000000000000000000000000000000")]
+    [DataRow("1111111111111111111111111111111111111111111111111111111111111111")]
+    public void QualificationFailuresRemainUnavailableThroughDocumentApis(string expectedHash)
+    {
+        var (path, _) = Component();
+        var original = "enabled = false\n"u8.ToArray();
+        SparseTomlDocument.Load(original, out var document);
+        // This serial test replaces and restores the singleton without adding a production override.
+        var field = typeof(TomlNativeRuntime).GetField("transport", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var previous = field.GetValue(null);
+        using var rejected = new TomlNativeTransport(path, expectedHash);
+        try
+        {
+            field.SetValue(null, rejected);
+            var validation = document!.ValidateForMutation();
+            Assert.IsFalse(validation.IsValid);
+            Assert.AreEqual(SparseTomlErrorCode.EditorUnavailable, validation.Error?.Code);
+            Assert.IsNull(validation.Contents);
+            Assert.AreEqual(SparseTomlErrorCode.EditorUnavailable, document.ReadOverrides().Error?.Code);
+            var edit = document.SetOverride("enabled", "true");
+            Assert.AreEqual(SparseTomlErrorCode.EditorUnavailable, edit.Error?.Code);
+            Assert.IsNull(edit.Contents);
+        }
+        finally { field.SetValue(null, previous); }
+        CollectionAssert.AreEqual(original, document!.ValidateForMutation().Contents!);
     }
 
     [TestMethod]

@@ -122,7 +122,7 @@ internal static class TomlNativeRuntime
         TomlNativeTransport selected;
         lock (Gate) selected = transport ??= new();
         try { return selected.Request(request); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException
             or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
             or PlatformNotSupportedException or JsonException or ArgumentException)
         {

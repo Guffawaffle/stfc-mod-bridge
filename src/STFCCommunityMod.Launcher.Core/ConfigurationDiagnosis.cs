@@ -201,8 +201,9 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         HashSet<string> recognizedAssignments,
         List<ConfigurationDiagnosisFinding> findings)
     {
+        var settingSegments = setting.Path.Split('.');
         var canonical = overrides.Values
-            .Where(item => MatchesPath(setting.Path, item.CanonicalPath))
+            .Where(item => MatchesPath(settingSegments, item.PathSegments))
             .ToArray();
         foreach (var configured in canonical)
         {
@@ -396,8 +397,8 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         {
             if (recognizedParents.Any(parent => LauncherTomlPath.HasPrefix(table.PathSegments, parent))
                 || catalog.Settings.Any(
-                    setting => TableCanContain(table.CanonicalPath, setting.Path)
-                        || setting.Aliases.Any(alias => TableCanContain(table.CanonicalPath, alias.Path))))
+                    setting => TableCanContain(table.PathSegments, setting.Path)
+                        || setting.Aliases.Any(alias => TableCanContain(table.PathSegments, alias.Path))))
             {
                 continue;
             }
@@ -517,22 +518,19 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         string canonicalPath) =>
         $"configuration.alias.{operation}:{sourcePath}->{canonicalPath}";
 
-    private static bool MatchesPath(string pattern, string path)
+    private static bool MatchesPath(IReadOnlyList<string> patternSegments, IReadOnlyList<string> pathSegments)
     {
-        var patternSegments = pattern.Split('.');
-        if (!LauncherTomlPath.TryParse(path, out var pathSegments)) return false;
-        return patternSegments.Length == pathSegments.Length
+        return patternSegments.Count == pathSegments.Count
             && patternSegments.Zip(
                     pathSegments,
                     (expected, actual) => expected == "*" || expected == actual)
                 .All(matches => matches);
     }
 
-    private static bool TableCanContain(string tablePath, string settingPath)
+    private static bool TableCanContain(IReadOnlyList<string> tableSegments, string settingPath)
     {
-        if (!LauncherTomlPath.TryParse(tablePath, out var tableSegments)) return false;
         var settingSegments = settingPath.Split('.');
-        if (tableSegments.Length >= settingSegments.Length)
+        if (tableSegments.Count >= settingSegments.Length)
         {
             return false;
         }

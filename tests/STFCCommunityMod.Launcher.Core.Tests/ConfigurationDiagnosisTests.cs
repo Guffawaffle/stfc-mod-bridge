@@ -102,6 +102,31 @@ public sealed class ConfigurationDiagnosisTests
     }
 
     [TestMethod]
+    public void LargeUnknownDocumentUsesDecodedIdentityWithoutBlockingDiagnosis()
+    {
+        var builder = new StringBuilder("\"graphics.default_system_zoom\" = 5001\n"
+            + "[\"graphics.test\"]\nvalue = true\n"
+            + "[graphics]\ndefault_system_zoom = 1750\n[unknown]\n");
+        for (var index = 0; index < 3000; index++)
+        {
+            builder.Append("item").Append(index).Append(" = true\n");
+        }
+        var contents = Encoding.UTF8.GetBytes(builder.ToString());
+        var snapshot = Snapshot(contents);
+        var evidence = SupportedEvidence();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var report = Analyzer().Analyze(snapshot, evidence);
+        watch.Stop();
+
+        Assert.AreEqual(3002, report.Findings.Count(item => item.Code == "CONFIG_UNKNOWN_KEY"));
+        Assert.AreEqual(2, report.Findings.Count(item => item.Code == "CONFIG_UNKNOWN_TABLE"));
+        LacksCode(report, "CONFIG_VALUE_INVALID");
+        CollectionAssert.AreEqual(contents, snapshot.Contents);
+        Assert.IsTrue(watch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Diagnosis of a small valid document took {watch.Elapsed.TotalSeconds:F3}s.");
+    }
+
+    [TestMethod]
     public void AliasCorpusDistinguishesPresenceRedundancyAndConflicts()
     {
         var aliasOnly = Diagnose("shortcuts.set_hotkeys_disable = \"CTRL-ALT-MINUS\"\n");
