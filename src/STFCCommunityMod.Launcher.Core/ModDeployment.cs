@@ -552,6 +552,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         var existingRuntimeManifestIdentity = hadExistingRuntimeManifest
             ? CaptureIdentity(runtimeManifestPath)
             : null;
+        var replacement = (commitParticipant as IModSourceReplacementParticipant)?.ReplacementSource;
+        var adoptChangedManagedArtifact = replacement is not null;
+        if (adoptChangedManagedArtifact && (!MatchesReplacementSource(
+                replacement!, previousInstalledState, existingArtifactIdentity, existingRuntimeManifestIdentity)
+            || existingArtifactPolicy != ExistingArtifactPolicy.AdoptAndPreserve))
+        {
+            return new(ModDeploymentResultState.ManagedArtifactChanged,
+                "The current DLL, runtime manifest or managed receipt changed after review. Review the switch again.");
+        }
         var isManagedUpdate = false;
         if (previousInstalledState is not null)
         {
@@ -560,7 +569,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ComputeFileSha256(targetPath),
                     previousInstalledState.Sha256,
                     StringComparison.OrdinalIgnoreCase))
-                && !allowManagedRepair)
+                && !allowManagedRepair && !adoptChangedManagedArtifact)
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
@@ -572,13 +581,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         ComputeFileSha256(runtimeManifestPath),
                         previousInstalledState.RuntimeManifest.Sha256,
                         StringComparison.OrdinalIgnoreCase))
-                && !allowManagedRepair)
+                && !allowManagedRepair && !adoptChangedManagedArtifact)
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
                     "The managed runtime manifest no longer matches Mod Bridge state; repair is required.");
             }
-            isManagedUpdate = true;
+            isManagedUpdate = !adoptChangedManagedArtifact;
         }
 
         if (previousInstalledState is not null)
@@ -641,7 +650,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             CommitParticipantCompleted: commitParticipant is null,
             ExistingArtifactIdentity: existingArtifactIdentity,
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
-            TargetInstallationAttribution: installationAttribution);
+            TargetInstallationAttribution: installationAttribution,
+            AdoptChangedManagedArtifact: adoptChangedManagedArtifact);
         ExactFileRevision? exactStagedArtifactRevision = null;
         ExactFileMutation? exactStagedArtifact = null;
         ExactFileMutation? exactStagedRuntimeManifest = null;
@@ -657,7 +667,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         normalizedGameDirectory,
                         journal.Artifact,
                         previousInstalledState,
-                        hadExistingArtifact),
+                        hadExistingArtifact,
+                        existingArtifactIdentity),
                     cancellationToken).ConfigureAwait(false);
             }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Downloading, cancellationToken);
@@ -942,8 +953,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     previousInstalledState,
                     installationAttribution,
                     ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
-                    journal.Artifact));
-            UpsertInstalledState(installedState);
+                    journal.Artifact),
+                journal.Artifact.RepositoryRelease);
+            UpsertInstalledState(installedState,
+                adoptChangedManagedArtifact ? PriorAdoptionBackup(journal) : null);
 
             if (commitParticipant is not null)
             {
@@ -2157,7 +2170,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 RuntimeManifestDurableBackupPath(journal),
                 journal.ExistingRuntimeManifestIdentity,
                 "redundant durable runtime-manifest rollback");
-            RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState);
+            RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState,
+                journal.AdoptChangedManagedArtifact ? journal.TransactionId : null);
             await PersistPhaseAsync(
                 journal with { PreserveLiveArtifactDuringRecovery = false },
                 ModDeploymentPhase.RolledBack,
@@ -2873,8 +2887,14 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     private void RestoreInstalledState(
         string gameDirectory,
-        ModInstalledArtifactState? state)
+        ModInstalledArtifactState? state,
+        string? replacementDetachmentId = null)
     {
+        if (replacementDetachmentId is not null)
+        {
+            RestoreReplacementInstalledState(gameDirectory, state!, replacementDetachmentId);
+            return;
+        }
         if (state is null)
         {
             RemoveInstalledState(gameDirectory);
@@ -3394,6 +3414,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         state.RuntimeDistributionId,
                         targetAttribution.RuntimeDistributionId,
                         StringComparison.Ordinal)
+                    || state.RepositoryRelease != journal.Artifact.RepositoryRelease
                     || !RuntimeInstalledStateMatches(state.RuntimeManifest, journal.Artifact.RuntimeManifest))
                 {
                     return "Committed cleanup was blocked because installed-mod state does not match the live pair.";
@@ -3448,7 +3469,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModDeploymentJournal journal,
         ModInstalledArtifactState installed)
     {
-        var previous = journal.PreviousInstalledState;
+        var detachmentFailure = ValidatePriorAdoptionDetachment(journal);
+        if (detachmentFailure is not null) return detachmentFailure;
+        var previous = journal.AdoptChangedManagedArtifact ? null : journal.PreviousInstalledState;
         var expectedDllPath = previous is not null
             ? previous.PreviousArtifactBackupPath
             : journal.HadExistingArtifact ? journal.DurableBackupPath : null;
@@ -3823,7 +3846,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     floor.AcceptedArtifactSha256,
                     StringComparison.OrdinalIgnoreCase)))
         {
-            return $"The selected {candidateProductVersion} release does not exactly match the retained signed tag and artifact identity for this release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
+            return $"The selected {candidateProductVersion} release does not exactly match the retained release tag and artifact identity for this release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
         }
         return null;
     }
@@ -3845,6 +3868,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModReleaseArtifact artifact,
         ModInstallationAttribution attribution)
     {
+        if (artifact.RepositoryRelease is { } repositoryRelease)
+        {
+            NetnivRepositoryReleaseService.ValidateObservation(repositoryRelease);
+            if (attribution.ProviderId != "netniv" || attribution.ReleaseChannelId != "stable"
+                || attribution.RuntimeDistributionId != "netniv.stfc-community-mod"
+                || artifact.DownloadUri != repositoryRelease.DownloadUri || artifact.Size != repositoryRelease.PayloadSize
+                || !string.Equals(artifact.Sha256, repositoryRelease.PayloadSha256, StringComparison.OrdinalIgnoreCase)
+                || artifact.ExpectedVersion != repositoryRelease.FileVersion)
+                throw new InvalidDataException("The repository release does not match the target artifact attribution.");
+            return repositoryRelease.Tag;
+        }
         if (artifact.ExpectedProductVersion is not null)
         {
             return artifact.ExpectedProductVersion;

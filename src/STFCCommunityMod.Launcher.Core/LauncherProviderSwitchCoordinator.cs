@@ -19,6 +19,10 @@ public sealed record LauncherProviderAtomicSwitchPreview(
     ModInstallationEvidence SourceInstallation,
     string? GameDirectory = null)
 {
+    internal ModSourceReplacementReview? ReplacementSource { get; init; }
+
+    public bool ReplacesChangedManagedArtifact => ReplacementSource is not null;
+
     public string ConfirmationText => Configuration.ConfirmationText;
 
     public bool CanExecute => Artifact is null || Artifact.State == ModOperationPreparationState.Ready;
@@ -370,19 +374,22 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return new(configuration, Artifact: null, sourceInstallation, gameValidation.GameDirectory);
         }
-        if (sourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
-            || !string.Equals(
-                sourceInstallation.InstalledProviderId,
-                configuration.Source.ProviderId,
-                StringComparison.Ordinal)
-            || !string.Equals(
-                sourceInstallation.InstalledReleaseChannelId,
-                configuration.Source.ReleaseChannelId,
-                StringComparison.Ordinal))
+        if (sourceInstallation.State is not (
+                ModInstallationEvidenceState.ManagedVerified or ModInstallationEvidenceState.ManagedChanged)
+            || !sourceInstallation.HasCompleteAttribution)
         {
             throw new InvalidOperationException(
                 "The selected release source does not match the verified Mod Bridge-managed DLL. "
                 + "Use the separate install, adoption, or repair flow first.");
+        }
+        var replacement = sourceInstallation.State == ModInstallationEvidenceState.ManagedChanged
+            ? sourceEndpoint.CaptureSourceReplacementReview(gameValidation.GameDirectory)
+            : null;
+        if (replacement is not null && !string.Equals(
+                replacement.LiveArtifactIdentity.Sha256,
+                sourceInstallation.InstalledSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The current DLL changed during review. Review the switch again.");
         }
         var artifact = await targetEndpoint.PrepareProviderSwitchTargetAsync(
             gameValidation.GameDirectory,
@@ -397,7 +404,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             throw new InvalidOperationException(
                 "The target provider endpoint returned an artifact for a different provider.");
         }
-        return new(configuration, artifact, sourceInstallation, gameValidation.GameDirectory);
+        return new(configuration, artifact, sourceInstallation, gameValidation.GameDirectory)
+        {
+            ReplacementSource = replacement,
+        };
     }
 
     public async Task<LauncherProviderAtomicSwitchResult> ExecuteAsync(
@@ -593,6 +603,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             configurationSwitch,
             prepared,
             preview.SourceInstallation,
+            preview.ReplacementSource,
             journal);
         ModDeploymentResult deployment;
         try
@@ -877,9 +888,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         LauncherProviderSourceSwitchService configurationSwitch,
         PreparedLauncherProviderSwitch prepared,
         ModInstallationEvidence expectedSourceInstallation,
-        LauncherProviderAtomicSwitchJournal initialJournal) : IModDeploymentCommitParticipant
+        ModSourceReplacementReview? replacementSource,
+        LauncherProviderAtomicSwitchJournal initialJournal) : IModSourceReplacementParticipant
     {
         private LauncherProviderAtomicSwitchJournal journal = initialJournal;
+
+        public ModSourceReplacementReview? ReplacementSource => replacementSource;
 
         public LauncherProviderSwitchResult? ConfigurationResult { get; private set; }
 
@@ -888,7 +902,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             CancellationToken cancellationToken)
         {
             var previous = context.PreviousInstalledState;
-            if (expectedSourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
+            if (expectedSourceInstallation.State is not (
+                    ModInstallationEvidenceState.ManagedVerified or ModInstallationEvidenceState.ManagedChanged)
+                || expectedSourceInstallation.State == ModInstallationEvidenceState.ManagedChanged
+                    && replacementSource is null
                 || previous is null
                 || !string.Equals(
                     previous.ProviderId,
@@ -903,7 +920,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     expectedSourceInstallation.InstalledRuntimeDistributionId,
                     StringComparison.Ordinal)
                 || !string.Equals(
-                    previous.Sha256,
+                    context.LiveArtifactIdentity?.Sha256,
                     expectedSourceInstallation.InstalledSha256,
                     StringComparison.OrdinalIgnoreCase))
             {

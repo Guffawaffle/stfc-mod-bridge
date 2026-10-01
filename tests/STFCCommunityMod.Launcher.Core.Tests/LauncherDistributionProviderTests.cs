@@ -84,7 +84,7 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
-    public void NetnivBindingRequiresMatchingLauncherReviewedCertification()
+    public void NetnivRepositoryPolicyRetainsHistoricalCertificationWithoutRequiringIt()
     {
         var providerCatalog = LoadFixtureCatalog();
         var netniv = providerCatalog.GetProvider("netniv");
@@ -99,9 +99,9 @@ public sealed class LauncherDistributionProviderTests
 
         Assert.IsTrue(available.IsAvailable);
         Assert.IsNotNull(available.ReviewedCertification);
-        Assert.AreEqual(LauncherProviderArtifactTrustKind.ReviewedExactHash, available.TrustKind);
-        Assert.IsFalse(unavailable.IsAvailable);
-        StringAssert.Contains(unavailable.UnavailableReason, "no launcher-reviewed release certification");
+        Assert.AreEqual(LauncherProviderArtifactTrustKind.GitHubRepositoryRelease, available.TrustKind);
+        Assert.IsTrue(unavailable.IsAvailable);
+        Assert.IsNull(unavailable.ReviewedCertification);
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public sealed class LauncherDistributionProviderTests
     {
         var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
         using var stream = JsonStream(contents.Replace(
-            "\"trustKind\": \"reviewed-exact-hash\"",
+            "\"trustKind\": \"github-repository-release\"",
             "\"trustKind\": null",
             StringComparison.Ordinal));
 

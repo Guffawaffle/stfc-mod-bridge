@@ -22,6 +22,13 @@ signed artifacts, or candidate-specific qualification receipts.
 | Current v1 release decision and evidence checklist | [GitHub issue #30](https://github.com/Guffawaffle/stfc-mod-bridge/issues/30) |
 | Battle feature activation and dormancy | [`BATTLE_BRIDGE_ACTIVATION_ADR.md`](BATTLE_BRIDGE_ACTIVATION_ADR.md) and [`BATTLE_BRIDGE_LOCAL_IPC.md`](BATTLE_BRIDGE_LOCAL_IPC.md) |
 
+The current NetniV stable provider policy uses configured GitHub repository-release
+authority with exact retained artifact observations. Older notes describing a
+temporary installable reviewed-hash allowlist are superseded by the current
+[provider contract](../PROVIDER_PACKS.md). Historical certifications, provenance
+snapshots, signed artifacts, and qualification receipts remain evidence only for
+their exact recorded source and bytes.
+
 GitHub issue state changes over time. Read the live issue before starting a
 candidate-specific action; a copied checklist or old release comment is not the
 current release decision.

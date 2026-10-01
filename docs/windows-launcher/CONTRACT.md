@@ -247,8 +247,11 @@ v2 as defined in `RELEASE_MANIFEST.md`. Issue #96 removes the legacy
 unauthenticated standalone client and implements bounded verify-before-parse
 discovery. Issue #97 packages and digest-pairs the installed verifier with the
 launcher and external updater, but application composition remains explicitly
-unavailable pending issue #30 release qualification. Provider/mod discovery is
-unchanged; NetniV remains on its exact reviewed-hash contract.
+unavailable pending issue #30 release qualification. Provider/mod discovery remains a separate trust domain. Guffawaffle retains
+its provider manifest and publisher-signature policy. NetniV stable uses its
+configured GitHub repository-release policy and exact retained artifact
+observation as defined in `PROVIDER_PACKS.md`; optional attestations do not
+replace or extend the Mod Bridge self-update authority.
 
 Schema v1 shape:
 
@@ -374,8 +377,8 @@ artifact trust policy, update stream, migration guidance, and matching
 configuration schema/capability adapter for future explicit checks. It is not
 installed-artifact provenance and never attributes an unknown/custom DLL.
 
-Selecting a preference changes only launcher state and takes effect after a
-Mod Bridge restart. Switching the installed mod to another provider/runtime is
+Selecting a preference changes only launcher state and recomposes the
+provider-bound session in the current Mod Bridge process. Switching the installed mod to another provider/runtime is
 a separate, game-closed migration transaction. The launcher previews installed
 artifact and configuration compatibility, requires explicit confirmation and
 a protected exact-byte TOML backup when configuration exists, and retains
@@ -384,6 +387,12 @@ sources silently, and custom/developer DLLs remain runnable and untouched until
 the player explicitly chooses replacement. The authoritative state/action,
 backup/restore, retention, privacy, and transaction rules are in the
 [mod source-selection lifecycle](MOD_DEPLOYMENT.md#mod-source-selection-lifecycle).
+
+A reviewed replacement of changed managed bytes preserves the current custom
+DLL as the new uninstall backup and retains any older adoption backup under a
+separate non-owning receipt. The prior installed receipt, current file identities,
+protected TOML, and previous preference remain bound to one compensating
+transaction; changed bytes are not silently adopted or authenticated.
 
 TOML remains the runtime and interchange boundary for NetniV compatibility and
 safe source switching. A future Guffawaffle-only configuration store may be richer,

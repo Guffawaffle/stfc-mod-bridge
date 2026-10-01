@@ -41,7 +41,9 @@ internal sealed record ProviderSwitchReviewPresentation(
             ? preview.SourceInstallation.State == ModInstallationEvidenceState.ManualInstallation
                 ? "The existing manual DLL will remain unchanged; only the preferred source and TOML profile will change."
                 : "No managed DLL is installed; only the preferred source and TOML profile will change."
-            : $"The managed DLL will change to release {preview.Artifact.ReleaseVersion}. STFC must remain closed until the switch completes.";
+            : preview.ReplacesChangedManagedArtifact
+                ? $"The current custom DLL ({preview.SourceInstallation.BinaryProvenance?.FileVersion ?? "version unknown"}) will be replaced by release {preview.Artifact.ReleaseVersion}. Its exact bytes will be preserved for restoration. STFC must remain closed until the switch completes."
+                : $"The managed DLL will change to release {preview.Artifact.ReleaseVersion}. STFC must remain closed until the switch completes.";
         var configurationSummary = configuration.ConfigurationPath is null
             ? "No TOML file is selected."
             : configuration.ConfigurationExisted == false
@@ -65,6 +67,6 @@ internal sealed record ProviderSwitchReviewPresentation(
             + configurationSummary
             + warningSummary,
             IsIntroductoryReview: !introductoryReviewAcknowledged,
-            HasFocusedWarning: warnings.Length > 0);
+            HasFocusedWarning: warnings.Length > 0 || preview.ReplacesChangedManagedArtifact);
     }
 }

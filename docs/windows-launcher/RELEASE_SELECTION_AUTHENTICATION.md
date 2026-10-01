@@ -291,8 +291,12 @@ that online freshness, new withdrawal, and new trust-root/log-key evidence were
 not checked. Offline mode does not silently fall back to a reviewed hash for Mod
 Bridge itself.
 
-NetniV mod artifacts remain on their separately reviewed exact-hash provider
-contract until upstream publishes compatible authenticated evidence.
+NetniV mod artifacts use the separate configured GitHub repository-release
+provider policy in [Provider packs](../PROVIDER_PACKS.md). That route requires
+exact repository/release/asset/archive/DLL identity checks; attestations are
+optional additional provenance and are not its admission prerequisite. This
+does not change the authenticated manifest, attestation, freshness, withdrawal,
+or trust-root policy for Mod Bridge self-update.
 
 ## Implementation gates
 

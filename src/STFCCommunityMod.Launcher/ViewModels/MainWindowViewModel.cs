@@ -528,6 +528,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
                     ? providerResolutionFailure
                     : null);
+            var repositoryReleases = binding.IsAvailable
+                && binding.TrustKind == LauncherProviderArtifactTrustKind.GitHubRepositoryRelease
+                    ? new NetnivRepositoryReleaseService(httpClient) : null;
             IModArtifactAuthenticityVerifier artifactVerifier = binding.IsAvailable
                 ? binding.TrustKind switch
                 {
@@ -535,6 +538,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                         new WindowsAuthenticodeVerifier(
                             binding.WindowsPublisher!,
                             binding.WindowsArtifactSigningIdentityEku!),
+                    LauncherProviderArtifactTrustKind.GitHubRepositoryRelease => repositoryReleases!,
                     LauncherProviderArtifactTrustKind.ReviewedExactHash =>
                         new ReviewedExactHashAuthenticityVerifier(binding.ReviewedCertification!),
                     _ => new FailClosedModArtifactAuthenticityVerifier("Unsupported artifact trust kind."),
@@ -559,11 +563,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                                     binding.ReviewedCertification),
                                 binding.ReviewedCertification),
                     LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
-                        new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
+                        repositoryReleases is not null ? repositoryReleases
+                            : new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
                     _ => new UnavailableWindowsReleaseDiscoveryClient("Unsupported release discovery kind."),
                 }
                 : new UnavailableWindowsReleaseDiscoveryClient(binding.UnavailableReason);
-            IModArtifactDownloader artifactDownloader = binding.IsAvailable
+            IModArtifactDownloader artifactDownloader = repositoryReleases is not null ? repositoryReleases
+                : binding.IsAvailable
                 && binding.ReviewedCertification is not null
                     ? binding.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
                         ? new ManifestWithReviewedFallbackArtifactDownloader(
@@ -584,6 +590,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 reviewedCertification: binding.ReviewedCertification,
                 reviewedCertifications: reviewedReleases.ReleaseEvidence);
             var candidateAcquirer = binding.IsAvailable
+                && repositoryReleases is null
                 && binding.ReviewedCertification is not null
                     ? new ReviewedModArtifactCandidateAcquirer(
                         installLayout.StateDirectory,

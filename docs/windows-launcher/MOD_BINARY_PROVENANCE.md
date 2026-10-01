@@ -59,12 +59,15 @@ it contains:
 
 The bundled snapshot is not silently refreshed at runtime. New hashes require review and a Mod Bridge build before
 they gain exact-catalog recognition. This prevents a mutable GitHub release or Actions artifact from becoming a
-reviewed identity merely because it was newest when the launcher ran. Guffawaffle installation has an additional,
-separate path for new releases whose live DLL passes the exact Authenticode publisher, durable Artifact Signing
-identity, signed ProductVersion, monotonic release checks, and the retained exact digest at an equal release order;
-that does not add the hash to this snapshot or authorize
-an unsigned runtime manifest. NetniV Actions artifacts also require GitHub authentication and expire, so the dev entry
-records the source commit and observation time.
+reviewed identity merely because it was newest when the launcher ran. Guffawaffle installation has an additional, separate path for new releases
+whose live DLL passes the exact Authenticode publisher, durable Artifact Signing
+identity, signed ProductVersion, monotonic release checks, and the retained exact
+digest at an equal release order. NetniV stable has its separate configured
+GitHub repository-release authority and retains exact release/asset/archive/DLL
+observations. Neither route adds new hashes to this passive reviewed snapshot
+or authorizes an unsigned runtime manifest. NetniV Actions artifacts require
+GitHub authentication and expire, so the dev entry records the source commit
+and observation time.
 
 ## Update boundary
 
@@ -84,6 +87,11 @@ Guffawaffle release manifests plus the expected Authenticode publisher are the c
 release can install without a Bridge catalog refresh only when the downloaded DLL itself passes the exact publisher and
 durable Artifact Signing identity policy. Because schema v1 declares no manifest authenticity, its unsigned runtime
 manifest does not gain operational authority from that alone. The narrow missing-manifest fallback and runtime
-activation remain limited to the exact reviewed DLL/runtime-manifest pair. NetniV stable installation remains available
-only for the exact reviewed ZIP and inner-DLL bytes and fails closed when GitHub's latest release differs from its
-bundled certification.
+activation remain limited to the exact reviewed DLL/runtime-manifest pair. NetniV stable installation instead uses the configured `netniV/stfc-mod`
+repository-release policy described in [Provider packs](../PROVIDER_PACKS.md).
+It verifies the repository/owner identity, selected release and asset, required
+archive digest, exact root DLL identity, and embedded version, then retains
+that observation through execution. A newer stable release does not require
+an entry in the passive reviewed-hash catalog. It also does not become a
+reviewed-hash provenance match or gain runtime capability evidence by being
+installed.

@@ -41,6 +41,7 @@ public enum LauncherProviderArtifactTrustKind
 {
     AuthenticodePublisher,
     ReviewedExactHash,
+    GitHubRepositoryRelease,
 }
 
 public sealed record LauncherProviderReleaseChannel(
@@ -160,7 +161,8 @@ public sealed class LauncherDistributionProvider
         && (ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.AuthenticodePublisher
                 && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
                 && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku)
-            || ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.ReviewedExactHash
+            || ArtifactPolicy.TrustKind is (LauncherProviderArtifactTrustKind.ReviewedExactHash
+                    or LauncherProviderArtifactTrustKind.GitHubRepositoryRelease)
                 && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
                 && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku));
 

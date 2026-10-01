@@ -141,7 +141,7 @@ implicitly authorizes downloads, mutations, or process launch.
 |---|---|
 | Inspect | Implemented: read-only discovery, health, provenance, Diagnostics, and TOML parsing |
 | Mutate | Partially implemented: provider install/remove, manual adoption, provider switch, TOML backup, and restore |
-| Live providers | Implemented for current journeys: real Guffawaffle manifest/trust, NetniV reviewed-hash discovery/download, manual adoption, and final residue audit |
+| Live providers | Implemented services: real Guffawaffle manifest/trust, NetniV repository-release discovery/download, manual adoption, and final residue audit; journey qualification remains bound to its exact recorded artifacts and run |
 | Launch | Planned: direct `prime.exe` launch with exact owned-PID observation and cleanup |
 | Recovery lab | Partially implemented: representative post-TOML-commit interruption with production recovery proof |
 

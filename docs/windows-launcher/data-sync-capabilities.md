@@ -145,8 +145,9 @@ a second feed-capability map.
 
 The provider-pack v1 contract does **not** contain an independently portable Data Sync catalog resource. The typed
 catalog is projected from the selected provider's verified configuration catalog. Guffawaffle uses its generated
-runtime contract; NetniV uses the exact reviewed release catalog selected from its versioned schema set. NetniV stable
-`1.1.6.0` is currently established, while unreviewed versions and commits remain unknown and fail closed. Supporting any
+runtime contract; NetniV uses the exact reviewed release catalog selected from its versioned schema set. NetniV stable `1.1.6.0` is the newest bundled reviewed Data Sync/catalog identity;
+unreviewed versions and commits leave those configuration capabilities unknown,
+independently of whether the artifact passes repository-release admission. Supporting any
 later provider release still requires reviewed provider-specific configuration/sync evidence; the launcher must not
 infer compatibility from TOML shape, a nearby branch, or display names.
 

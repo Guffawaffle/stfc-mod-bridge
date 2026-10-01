@@ -77,8 +77,11 @@ feedback (#73), clean-machine verification and compromise-response rehearsal
 
 Signatures, exact hashes, and attestations establish publisher or build origin
 and byte integrity. They do not establish that the software or its dependencies
-are safe or free of malicious behavior. NetniV mod artifacts remain governed by
-their reviewed exact-hash policy until that upstream trust path changes.
+are safe or free of malicious behavior. NetniV stable mod artifacts use the
+configured repository-release authority and exact retained byte checks described
+in [Provider packs](docs/PROVIDER_PACKS.md). This route does not require or claim
+verified attestations; configuration and runtime capability evidence remain
+independently qualified.
 
 ## Report useful evidence
 

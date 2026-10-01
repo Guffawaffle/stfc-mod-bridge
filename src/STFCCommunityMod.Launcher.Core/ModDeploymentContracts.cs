@@ -49,7 +49,8 @@ public sealed record ModReleaseArtifact(
     string Sha256,
     string ExpectedVersion,
     ModRuntimeManifestArtifact? RuntimeManifest = null,
-    string? ExpectedProductVersion = null);
+    string? ExpectedProductVersion = null,
+    NetnivRepositoryReleaseObservation? RepositoryRelease = null);
 
 public sealed record ModRuntimeManifestArtifact(
     Uri DownloadUri,
@@ -82,7 +83,8 @@ public sealed record ModInstalledArtifactState(
     ModArtifactIdentityReceipt? PreviousArtifactBackupIdentity = null,
     ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null,
     string? ReleaseProductVersion = null,
-    IReadOnlyList<ModReleaseHighWaterState>? ReleaseHighWaterMarks = null);
+    IReadOnlyList<ModReleaseHighWaterState>? ReleaseHighWaterMarks = null,
+    NetnivRepositoryReleaseObservation? RepositoryRelease = null);
 
 public sealed record ModReleaseHighWaterState(
     string ProviderId,
@@ -156,7 +158,8 @@ public sealed record ModDeploymentJournal(
     ModFileIdentityReceipt? TargetArtifactFileIdentity = null,
     ModFileIdentityReceipt? TargetRuntimeManifestFileIdentity = null,
     ModFileIdentityReceipt? RestoredAdoptedArtifactFileIdentity = null,
-    ModFileIdentityReceipt? RestoredAdoptedRuntimeManifestFileIdentity = null);
+    ModFileIdentityReceipt? RestoredAdoptedRuntimeManifestFileIdentity = null,
+    bool AdoptChangedManagedArtifact = false);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,
@@ -227,7 +230,18 @@ public sealed record ModDeploymentCommitContext(
     string GameDirectory,
     ModReleaseArtifact TargetArtifact,
     ModInstalledArtifactState? PreviousInstalledState,
-    bool HadExistingArtifact);
+    bool HadExistingArtifact,
+    ModArtifactIdentityReceipt? LiveArtifactIdentity = null);
+
+internal sealed record ModSourceReplacementReview(
+    ModInstalledArtifactState PreviousInstalledState,
+    ModArtifactIdentityReceipt LiveArtifactIdentity,
+    ModArtifactIdentityReceipt? LiveRuntimeManifestIdentity);
+
+internal interface IModSourceReplacementParticipant : IModDeploymentCommitParticipant
+{
+    ModSourceReplacementReview? ReplacementSource { get; }
+}
 
 /// <summary>
 /// Participates in the commit boundary of a verified DLL deployment. The

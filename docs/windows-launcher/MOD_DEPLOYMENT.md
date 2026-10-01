@@ -26,26 +26,26 @@ migration, and write uses one Windows case-insensitive comparison routine and
 rejects duplicate canonical paths.
 
 The registry persists durable facts only: exact managed artifact identity,
-provider/channel/runtime attribution, installation time, the optional signed
-release ProductVersion verified during installation, optional reviewed
-runtime-manifest identity, compact historical release floors, and any
-adopted-backup receipts. Release floors are independent per stable
-`{ providerId, releaseChannelId, runtimeDistributionId }` tuple and survive a
-managed provider round trip; channels are not ordered against one another.
-The active tuple uses its signed ProductVersion plus managed size/SHA-256,
-while historical tuple floors retain the same exact tag-and-digest identity in
-separate entries. A final release outranks any prerelease of the same semantic
-core. An equal ordering value is accepted only when the canonical signed tag
-and artifact digest also match; a same-tag rebuild or incomparable same-core
-release families require an explicit recovery or replacement decision.
-Preparation and the leased deployment
-transaction both enforce the floor, so a stale prepared candidate or mutable
-repository metadata cannot replay an older publisher-signed DLL. Exact bundled
-certification may project the ProductVersion of a matching legacy receipt in
-memory without rewriting it during a passive read. These floors do not
-authorize an unsigned runtime manifest or silently permit a downgrade. The
-registry does not persist a health status. Bridge derives status from the
-selected folder's live files:
+provider/channel/runtime attribution, installation time, release-order identity,
+optional reviewed runtime-manifest identity, compact historical release floors,
+and adopted-backup receipts. Guffawaffle release order comes from the verified
+signed ProductVersion; NetniV repository releases retain the exact observed
+tag and release/asset/archive/DLL observation. These are different evidence
+sources and must not be presented as equivalent signatures. Release floors
+are independent per stable `{ providerId, releaseChannelId, runtimeDistributionId }`
+tuple and survive a managed provider round trip; channels are not ordered
+against one another. A final release outranks any prerelease of the same
+semantic core. Equal release order requires the same retained tag and DLL
+digest; a same-tag rebuild or incomparable same-core release families require
+an explicit recovery or replacement decision.
+
+Preparation and the leased deployment transaction both enforce the floor, so
+a stale prepared candidate or mutable repository metadata cannot replay an
+older accepted release. Exact bundled certification may project release-order
+identity for a matching legacy receipt in memory without rewriting it during a
+passive read. These floors do not authorize an unsigned runtime manifest or
+silently permit a downgrade. The registry does not persist a health status.
+Bridge derives status from the selected folder's live files:
 
 - no receipt and no DLL: not installed;
 - no receipt with a DLL: manual installation;
@@ -347,6 +347,24 @@ evidence/recovery material. A selection made while no DLL is installed uses the
 smaller preference/TOML transaction, performs no release discovery or download,
 and does not create the outer artifact journal.
 
+For a changed managed installation, switch review retains the complete prior
+ownership receipt and the current DLL's size, SHA-256, attributes, and last-write
+time, plus the optional current runtime-manifest identity. The locked deployment
+rechecks all of that evidence before downloading the target. A stale receipt,
+changed file or metadata, or changed runtime-manifest presence requires another
+review. Preserving those bytes does not authenticate them or transfer their
+provenance to the preferred source.
+
+The changed DLL is treated as a new explicit adoption, rather than as an ordinary
+managed update. Its exact current bytes become the durable backup referenced by
+the new active receipt and the restore target for later uninstall. If the old
+receipt already referenced an adopted DLL or runtime-manifest backup, the same
+atomic registry write preserves that older backup under a non-owning detachment
+receipt identified by the switch transaction. Failure or interrupted rollback
+restores the prior receipt and removes only that transaction's detachment;
+other installations and detached backups remain intact. Recovery must work
+both before and after the current custom backup moves to durable state.
+
 Implementation ownership is intentionally bounded:
 
 | Owner | Follow-up responsibility |
@@ -453,14 +471,19 @@ runtime snapshots, and unrelated game files are untouched. If the managed DLL
 changed outside Mod Bridge, uninstall refuses to guess ownership or delete
 it.
 
-Managed updates retain the original adopted artifact identity rather than
-turning the immediately previous managed release into the uninstall target.
+Ordinary managed updates retain the original adopted artifact identity rather
+than turning the immediately previous managed release into the uninstall
+target. A reviewed switch that explicitly replaces a changed managed DLL is a
+new adoption: its current custom bytes become the new uninstall restore target,
+and the earlier adoption backup is retained separately as described above.
+
 Explicit repair may replace a missing or changed Mod Bridge-managed DLL only
 after discovery reproduces the receipt's exact provider, channel, runtime,
-version, size, SHA-256, and optional runtime-manifest identity. Repair never
-silently substitutes `latest`; if the recorded release is unavailable, it
-fails closed. The changed bytes remain available for rollback until repair
-commits.
+version, size, SHA-256, and optional runtime-manifest identity. NetniV repair
+selects the recorded tag and must also reproduce the retained repository-release
+observation when one exists. Repair never silently substitutes `latest`; if
+the recorded release cannot satisfy the current provider policy, repair fails
+closed. The changed bytes remain available for rollback until repair commits.
 
 **Stop managing** is distinct from uninstall. It atomically removes only the
 selected installation's active ownership receipt and never changes a game

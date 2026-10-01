@@ -12,11 +12,13 @@ authority.
 The selected release source chooses the matching schema and capabilities.
 Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV
 uses a provider-owned versioned schema set that resolves only an exact reviewed
-provider, track, release version, and full source commit. The current stable
-binding is NetniV `1.1.6.0` at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`;
-the older stable `1.1.4` and captured dev `1.1.5.1` catalogs remain unavailable
-unless a selected release matches their exact reviewed identities. Unreviewed
-releases fail closed instead of reusing Guffawaffle or adjacent NetniV metadata.
+provider, track, release version, and full source commit. The newest bundled stable configuration-catalog binding is NetniV `1.1.6.0`
+at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`; the older stable `1.1.4` and
+captured dev `1.1.5.1` catalogs remain unavailable unless the selected release
+matches their exact reviewed identities. Unreviewed configuration identities
+leave the catalog unavailable rather than reusing Guffawaffle or adjacent
+NetniV metadata. Artifact install/update authority is independent and follows
+the repository-release provider policy.
 TOML remains the compatibility boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).

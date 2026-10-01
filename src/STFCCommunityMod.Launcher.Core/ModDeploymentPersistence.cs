@@ -64,6 +64,16 @@ public sealed partial class ModDeploymentService
             throw new InvalidDataException("The deployment journal contains an unsafe artifact or recovery path.");
         }
 
+        if (journal.Artifact.RepositoryRelease is { } repositoryRelease)
+        {
+            NetnivRepositoryReleaseService.ValidateObservation(repositoryRelease);
+            if (journal.TargetInstallationAttribution != new ModInstallationAttribution("netniv", "stable", "netniv.stfc-community-mod")
+                || journal.Artifact.DownloadUri != repositoryRelease.DownloadUri
+                || journal.Artifact.Size != repositoryRelease.PayloadSize
+                || !string.Equals(journal.Artifact.Sha256, repositoryRelease.PayloadSha256, StringComparison.OrdinalIgnoreCase)
+                || journal.Artifact.ExpectedVersion != repositoryRelease.FileVersion)
+                throw new InvalidDataException("The journal repository release and target artifact differ.");
+        }
         if (journal.PreviousInstalledState is not null)
         {
             ValidatePersistedInstalledState(journal.PreviousInstalledState);
@@ -73,6 +83,11 @@ public sealed partial class ModDeploymentService
                     "The deployment journal prior installed state belongs to another game directory.");
             }
         }
+        if (journal.AdoptChangedManagedArtifact && (journal.PreviousInstalledState is null
+                || !journal.HasCommitParticipant || !journal.HadExistingArtifact
+                || journal.ExistingArtifactIdentity is null
+                || journal.Operation != ModDeploymentOperation.Deploy))
+            throw new InvalidDataException("The changed-DLL replacement journal is incomplete.");
         if (journal.Artifact.RuntimeManifest is not null)
         {
             ValidateRuntimeManifestDiscovery(journal.Artifact.RuntimeManifest);
@@ -189,6 +204,16 @@ public sealed partial class ModDeploymentService
             throw new InvalidDataException("The installed-mod state is invalid or unsupported.");
         }
 
+        if (state.RepositoryRelease is { } repositoryRelease)
+        {
+            NetnivRepositoryReleaseService.ValidateObservation(repositoryRelease);
+            if (state.ProviderId != "netniv" || state.ReleaseChannelId != "stable"
+                || state.RuntimeDistributionId != "netniv.stfc-community-mod"
+                || state.Size != repositoryRelease.PayloadSize
+                || !string.Equals(state.Sha256, repositoryRelease.PayloadSha256, StringComparison.OrdinalIgnoreCase)
+                || state.Version != repositoryRelease.FileVersion || state.ReleaseProductVersion != repositoryRelease.Tag)
+                throw new InvalidDataException("The installed repository release and receipt differ.");
+        }
         if (!string.IsNullOrWhiteSpace(state.PreviousArtifactBackupPath)
             && (!Path.IsPathFullyQualified(state.PreviousArtifactBackupPath)
                 || !IsContainedBy(Path.Combine(stateDirectory, "rollback"), state.PreviousArtifactBackupPath)))
@@ -523,7 +548,8 @@ public sealed partial class ModDeploymentService
         WriteJsonAtomically(InstalledStatePath, normalized);
     }
 
-    private void UpsertInstalledState(ModInstalledArtifactState state)
+    private void UpsertInstalledState(
+        ModInstalledArtifactState state, ModDetachedAdoptionBackupState? retainedBackup = null)
     {
         ValidatePersistedInstalledState(state);
         var registry = ReadInstalledRegistry();
@@ -531,7 +557,18 @@ public sealed partial class ModDeploymentService
             .Where(existing => !PathEquals(existing.GameDirectory, state.GameDirectory))
             .Append(state with { GameDirectory = NormalizeGameDirectory(state.GameDirectory) })
             .ToArray();
-        WriteInstalledRegistry(registry with { Installations = installations });
+        var detached = (registry.DetachedAdoptionBackups ?? []).ToArray();
+        if (retainedBackup is not null)
+        {
+            if (detached.Any(backup => backup.DetachmentId == retainedBackup.DetachmentId))
+                throw new InvalidDataException("The replacement backup receipt already exists.");
+            detached = [.. detached, retainedBackup];
+        }
+        WriteInstalledRegistry(registry with
+        {
+            Installations = installations,
+            DetachedAdoptionBackups = detached,
+        });
     }
 
     private void RemoveInstalledState(string gameDirectory)

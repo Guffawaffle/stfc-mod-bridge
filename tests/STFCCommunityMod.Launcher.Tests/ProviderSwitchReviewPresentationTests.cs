@@ -7,6 +7,110 @@ namespace STFCCommunityMod.Launcher.Tests;
 public sealed class ProviderSwitchReviewPresentationTests
 {
     [TestMethod]
+    public void RememberedIntroductionCannotSuppressChangedManagedReplacementReview()
+    {
+        var preview = ChangedManagedPreview("2.1.0.42");
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview, "Stable", introductoryReviewAcknowledged: true);
+
+        Assert.IsTrue(presentation.RequiresReview);
+        Assert.IsTrue(presentation.HasFocusedWarning);
+        Assert.IsFalse(presentation.IsIntroductoryReview);
+        Assert.IsFalse(presentation.IsBlocked);
+        StringAssert.Contains(presentation.Summary, "current custom DLL (2.1.0.42)");
+        StringAssert.Contains(presentation.Summary, "release 1.1.4");
+        StringAssert.Contains(presentation.Summary, "exact bytes will be preserved for restoration");
+        StringAssert.Contains(presentation.Summary, "STFC must remain closed");
+        Assert.IsFalse(presentation.Summary.Contains("saved-receipt-version", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ChangedManagedReplacementWithUnavailableMetadataStillRequiresReview()
+    {
+        var presentation = ProviderSwitchReviewPresentation.From(
+            ChangedManagedPreview(liveVersion: null), "Stable", introductoryReviewAcknowledged: true);
+
+        Assert.IsTrue(presentation.RequiresReview);
+        Assert.IsTrue(presentation.HasFocusedWarning);
+        StringAssert.Contains(presentation.Summary, "current custom DLL (version unknown)");
+        StringAssert.Contains(presentation.Summary, "exact bytes will be preserved for restoration");
+    }
+
+    [TestMethod]
+    public void StalePreferenceDoesNotReplaceActualCustomVersionWithPreferenceOrReceiptEvidence()
+    {
+        var preview = ChangedManagedPreview("2.1.0.42");
+        // Preferred source is NetniV, while the installed receipt and current local
+        // DLL remain attributed to Guffawaffle. The target returns to Guffawaffle.
+        preview = preview with
+        {
+            Configuration = preview.Configuration with
+            {
+                Source = new("netniv", "stable"),
+                Target = new("guffawaffle", "stable"),
+                SourceDisplayName = "NetniV",
+                TargetDisplayName = "Guffawaffle",
+                ConfirmationText = "guffawaffle",
+            },
+            Artifact = preview.Artifact! with { ProviderId = "guffawaffle" },
+        };
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview, "Stable", introductoryReviewAcknowledged: true);
+
+        Assert.IsTrue(presentation.RequiresReview);
+        Assert.IsTrue(presentation.HasFocusedWarning);
+        StringAssert.Contains(presentation.Summary, "NetniV → Guffawaffle · Stable");
+        StringAssert.Contains(presentation.Summary, "current custom DLL (2.1.0.42)");
+        Assert.IsFalse(presentation.Summary.Contains("saved-receipt-version", StringComparison.Ordinal));
+        Assert.AreEqual("guffawaffle", preview.SourceInstallation.InstalledProviderId);
+    }
+
+    [TestMethod]
+    public void BlockedChangedManagedReplacementDoesNotInviteConfirmationOrClaimReplacement()
+    {
+        var preview = ChangedManagedPreview("2.1.0.42");
+        preview = preview with
+        {
+            Artifact = preview.Artifact! with
+            {
+                State = ModOperationPreparationState.MutationBlocked,
+                Message = "The target release is unavailable.",
+            },
+        };
+        var presentation = ProviderSwitchReviewPresentation.From(
+            preview, "Stable", introductoryReviewAcknowledged: true);
+
+        Assert.IsTrue(presentation.IsBlocked);
+        Assert.IsFalse(presentation.RequiresReview);
+        StringAssert.Contains(presentation.Summary, "target release is unavailable");
+        Assert.IsFalse(presentation.Summary.Contains("will be replaced", StringComparison.Ordinal));
+    }
+
+    private static LauncherProviderAtomicSwitchPreview ChangedManagedPreview(string? liveVersion)
+    {
+        var liveIdentity = new ModArtifactIdentityReceipt(64, new('B', 64));
+        var previous = new ModInstalledArtifactState(
+            1, "game", "version.dll", "saved-receipt-version", 64, new('A', 64),
+            DateTimeOffset.UnixEpoch, null, "guffawaffle", "stable", "guffawaffle.windows");
+        return Preview(LauncherProviderCompatibilityKind.Compatible, "compatible") with
+        {
+            SourceInstallation = new(
+                ModInstallationEvidenceState.ManagedChanged, IsGameRunning: false,
+                InstalledVersion: previous.Version, InstalledProviderId: previous.ProviderId,
+                InstalledReleaseChannelId: previous.ReleaseChannelId,
+                InstalledRuntimeDistributionId: previous.RuntimeDistributionId,
+                InstalledSha256: liveIdentity.Sha256,
+                BinaryProvenance: new(ModBinaryProvenanceState.SelfDeclaredLineage,
+                    liveIdentity.Sha256, liveIdentity.Size, liveVersion, ProductVersion: null)),
+            Artifact = new(ModOperationPreparationState.Ready, "Ready", "game", "1.1.4",
+                new(new Uri("https://example.invalid/version.dll"), "version.dll", 42,
+                    new('C', 64), "1.1.4.0"), ExistingArtifactPolicy.AdoptAndPreserve,
+                ModManagementActionKind.UpdateManualInstallation, "netniv"),
+            ReplacementSource = new(previous, liveIdentity, LiveRuntimeManifestIdentity: null),
+        };
+    }
+
+    [TestMethod]
     public void FirstRoutineSwitchShowsCompactIntroductionWithoutSpeculativeConcerns()
     {
         var presentation = ProviderSwitchReviewPresentation.From(
