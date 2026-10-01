@@ -331,6 +331,89 @@ public sealed class ObservedAtomicConfigurationSwitchTests
         }
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PreparedOuterJournalRecoversMatchingRollbackAfterPublicationIsBlocked(bool blockRegistry)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var source = new LauncherProviderSelection("guffawaffle", "stable");
+        var registryBefore = File.ReadAllBytes(fixture.GuffawaffleDeployment.InstalledStatePath);
+        FileStream? blockedOuterJournal = null;
+        FileStream? blockedRegistry = null;
+        var checkpointObserved = false;
+        ValueTask Checkpoint(LauncherProviderAtomicSwitchPhase phase, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (phase == LauncherProviderAtomicSwitchPhase.Prepared)
+            {
+                checkpointObserved = true;
+                blockedOuterJournal = new FileStream(Path.Combine(fixture.State, "provider-switch-journal.json"),
+                    FileMode.Open, FileAccess.Read, FileShare.Read);
+                if (blockRegistry)
+                    blockedRegistry = new FileStream(fixture.NetnivDeployment.InstalledStatePath,
+                        FileMode.Open, FileAccess.Read, FileShare.Read);
+            }
+            return ValueTask.CompletedTask;
+        }
+
+        try
+        {
+            var coordinator = fixture.CreateCoordinator(source, checkpoint: Checkpoint);
+            var preview = await coordinator.PreviewAsync(
+                "netniv", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+            Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+
+            await Assert.ThrowsExceptionAsync<IOException>(
+                () => coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+            Assert.IsTrue(checkpointObserved);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.Prepared, coordinator.ReadJournal()!.Phase);
+            Assert.AreEqual(blockRegistry ? ModDeploymentPhase.RollingBack : ModDeploymentPhase.RolledBack,
+                fixture.NetnivDeployment.ReadJournal()!.Phase);
+            Assert.AreEqual(coordinator.ReadJournal()!.TransactionId,
+                fixture.NetnivDeployment.ReadJournal()!.TransactionId);
+            Assert.AreEqual(0, fixture.NetnivDownloader.CallCount,
+                "Artifact acquisition cannot begin before its outer journal advances.");
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+
+            blockedRegistry?.Dispose();
+            blockedRegistry = null;
+            blockedOuterJournal!.Dispose();
+            blockedOuterJournal = null;
+            coordinator = fixture.CreateCoordinator(source);
+            var recovery = await coordinator.RecoverAsync();
+
+            Assert.IsTrue(recovery.IsSuccess, recovery.Message);
+            Assert.IsTrue(recovery.Changed, recovery.Message);
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, coordinator.ReadJournal()!.Phase);
+            Assert.AreEqual(ModDeploymentPhase.RolledBack, fixture.NetnivDeployment.ReadJournal()!.Phase);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+            Assert.AreEqual(source, fixture.SelectionStore.Load());
+            Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+
+            var recoveredRegistry = File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath);
+            var recoveredInner = File.ReadAllBytes(fixture.NetnivDeployment.JournalPath);
+            var recoveredOuter = File.ReadAllBytes(Path.Combine(fixture.State, "provider-switch-journal.json"));
+            var secondRecovery = await coordinator.RecoverAsync();
+            Assert.IsTrue(secondRecovery.IsSuccess, secondRecovery.Message);
+            Assert.IsFalse(secondRecovery.Changed, secondRecovery.Message);
+            CollectionAssert.AreEqual(recoveredRegistry, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+            CollectionAssert.AreEqual(recoveredInner, File.ReadAllBytes(fixture.NetnivDeployment.JournalPath));
+            CollectionAssert.AreEqual(recoveredOuter, File.ReadAllBytes(Path.Combine(fixture.State, "provider-switch-journal.json")));
+        }
+        finally
+        {
+            blockedRegistry?.Dispose();
+            blockedOuterJournal?.Dispose();
+        }
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

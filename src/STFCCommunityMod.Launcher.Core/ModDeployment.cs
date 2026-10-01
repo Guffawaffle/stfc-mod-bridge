@@ -1677,7 +1677,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             throw new InvalidDataException(
                 "The provider-switch deployment transaction does not match its recovery journal.");
         }
-        if (outerPrepared && journal.Phase != ModDeploymentPhase.Planned)
+        // A failed Begin publication can leave the outer journal Prepared
+        // while this exact participant compensates. Only rollback progress or
+        // its terminal states are admissible alongside the original Planned state.
+        if (outerPrepared && journal.Phase is not (ModDeploymentPhase.Planned
+            or ModDeploymentPhase.RollingBack
+            or ModDeploymentPhase.RolledBack
+            or ModDeploymentPhase.Failed))
         {
             throw new InvalidDataException(
                 "The provider-switch deployment advanced beyond its outer recovery journal.");

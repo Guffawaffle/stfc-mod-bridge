@@ -382,6 +382,12 @@ If registry publication or its compensating write is blocked, the outer journal
 remains recovery-required even after TOML/preference compensation succeeds. A
 canceled operation whose compensation is incomplete reports recovery-required;
 it cannot leave a terminal outer rollback marker over an incomplete inner journal.
+If the outer journal cannot advance from `Prepared`, the exact matching inner
+participant can still compensate. Recovery accepts its `Planned`, `RollingBack`,
+`RolledBack` or `Failed` state only after transaction, artifact, installation and
+participant attribution checks. Forward deployment progress remains rejected
+under an outer `Prepared` journal; legacy participant upgrade remains limited
+to its original `Planned` boundary.
 
 Implementation ownership is intentionally bounded:
 
