@@ -1813,6 +1813,20 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             Assert.IsNotNull(prior.PreviousArtifactBackupPath);
             CollectionAssert.AreEqual(OriginalAdoptedArtifact,
                 File.ReadAllBytes(prior.PreviousArtifactBackupPath));
+            if (crashStage == "ConfigurationCommitted")
+            {
+                // The selected preference/TOML committed, but receipt publication
+                // has not happened. Recovery must handle this exact interval.
+                Assert.AreEqual(JsonSerializer.Serialize(reviewedPrior, JsonOptions),
+                    JsonSerializer.Serialize(restarted.TargetDeployment.ReadInstalledState(restarted.GameDirectory), JsonOptions));
+                Assert.AreEqual(0, (ReplacementTestRegistry(restarted).DetachedAdoptionBackups ?? []).Count);
+                if (legacyAdoption)
+                {
+                    CollectionAssert.AreEqual(
+                        File.ReadAllBytes(Path.Combine(directory.Path, "legacy-reviewed-registry.json")),
+                        File.ReadAllBytes(restarted.TargetDeployment.InstalledStatePath));
+                }
+            }
             var completed = crashStage == "Completed";
             var dllPath = Path.Combine(restarted.GameDirectory, "version.dll");
             CollectionAssert.AreEqual(crashStage == "ArtifactCommitting" ? ChangedManagedArtifact : NetnivArtifact,

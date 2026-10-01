@@ -955,14 +955,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
                     journal.Artifact),
                 journal.Artifact.RepositoryRelease);
-            UpsertInstalledState(installedState,
-                adoptChangedManagedArtifact ? PriorAdoptionBackup(journal) : null);
-
             if (commitParticipant is not null)
             {
                 participantCommitStarted = true;
                 await commitParticipant.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
+
+            // Fresh source compatibility checks must still observe the source receipt.
+            // Recovery uses the exact journal if termination occurs before publication.
+            UpsertInstalledState(installedState,
+                adoptChangedManagedArtifact ? PriorAdoptionBackup(journal) : null);
 
             if (!isManagedUpdate && File.Exists(sameVolumeBackupPath))
             {

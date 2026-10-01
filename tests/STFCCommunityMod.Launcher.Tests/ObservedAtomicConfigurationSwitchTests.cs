@@ -1,0 +1,268 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using STFCCommunityMod.Launcher.Core;
+
+namespace STFCCommunityMod.Launcher.Tests;
+
+[TestClass]
+public sealed class ObservedAtomicConfigurationSwitchTests
+{
+    private const string ReviewedCommit = "e80a303a9949c89100b6e59b8a5e5cc2271e7144";
+
+    [TestMethod]
+    public async Task ActualAtomicSwitchKeepsSourceCatalogUntilCommitAndCanSwitchBackFromUnknownRelease()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var guffawaffle = new LauncherProviderSelection("guffawaffle", "stable");
+        var netniv = new LauncherProviderSelection("netniv", "stable");
+        var coordinator = fixture.CreateCoordinator(guffawaffle);
+        var preview = await coordinator.PreviewAsync(
+            "netniv", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+        Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported,
+            preview.Configuration.SourceConfigurationAnalysis!.CatalogStatus);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+            preview.Configuration.TargetConfigurationAnalysis!.CatalogStatus);
+
+        var forward = await coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+
+        Assert.AreEqual(netniv, forward.Selection);
+        Assert.AreEqual(netniv, fixture.SelectionStore.Load());
+        CollectionAssert.AreEqual(fixture.NetnivBytes, File.ReadAllBytes(fixture.Dll));
+        CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.Config));
+        var observed = fixture.NetnivDeployment.ReadInstalledState(fixture.Game);
+        Assert.IsNotNull(observed);
+        Assert.AreEqual(fixture.NetnivArtifact.RepositoryRelease, observed.RepositoryRelease);
+        Assert.AreEqual("netniv", observed.ProviderId);
+        Assert.AreEqual("v1.1.8.0", observed.ReleaseProductVersion);
+        Assert.AreEqual(ModDeploymentPhase.Committed, fixture.NetnivDeployment.ReadJournal()!.Phase);
+        Assert.AreEqual(LauncherProviderAtomicSwitchPhase.Completed, coordinator.ReadJournal()!.Phase);
+        Assert.AreEqual(1, fixture.NetnivDownloader.CallCount);
+
+        // A new resolver/session must read the actual persisted observation. The
+        // installed unknown release cannot borrow the historical typed catalog.
+        var restartedResolver = fixture.CreateResolver();
+        Assert.IsFalse(restartedResolver.ResolveCatalog(netniv, fixture.Game).IsQualified);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+            restartedResolver.ResolveEvidence(netniv, fixture.Game).CapabilityStatus);
+        coordinator = fixture.CreateCoordinator(netniv);
+        var reversePreview = await coordinator.PreviewAsync(
+            "guffawaffle", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+        Assert.IsTrue(reversePreview.CanExecute, reversePreview.BlockedMessage);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unknown,
+            reversePreview.Configuration.SourceConfigurationAnalysis!.CatalogStatus);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported,
+            reversePreview.Configuration.TargetConfigurationAnalysis!.CatalogStatus);
+
+        var reverse = await coordinator.ExecuteAsync(reversePreview, reversePreview.ConfirmationText);
+
+        Assert.AreEqual(guffawaffle, reverse.Selection);
+        Assert.AreEqual(guffawaffle, fixture.SelectionStore.Load());
+        CollectionAssert.AreEqual(fixture.GuffawaffleBytes, File.ReadAllBytes(fixture.Dll));
+        CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.Config));
+        var restored = fixture.GuffawaffleDeployment.ReadInstalledState(fixture.Game);
+        Assert.IsNotNull(restored);
+        Assert.AreEqual("guffawaffle", restored.ProviderId);
+        Assert.IsNull(restored.RepositoryRelease);
+        Assert.AreEqual(ModDeploymentPhase.Committed, fixture.GuffawaffleDeployment.ReadJournal()!.Phase);
+        Assert.AreEqual(LauncherProviderAtomicSwitchPhase.Completed, coordinator.ReadJournal()!.Phase);
+        Assert.AreEqual(2, fixture.GuffawaffleDownloader.CallCount,
+            "The initial deployment and reverse switch must each acquire the exact fixture artifact.");
+        Assert.IsTrue(fixture.CreateResolver().ResolveCatalog(guffawaffle, fixture.Game).IsQualified);
+    }
+
+    [TestMethod]
+    public async Task ChangedObservedSourceCommitRejectsStaleCatalogBeforeTargetAcquisition()
+    {
+        using var fixture = await Fixture.CreateAsync(initialNetniv: true, reviewedNetniv: true);
+        var netniv = new LauncherProviderSelection("netniv", "stable");
+        var coordinator = fixture.CreateCoordinator(netniv);
+        var preview = await coordinator.PreviewAsync(
+            "guffawaffle", "stable", fixture.Game, isGameRunning: false, fixture.Config);
+        Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported,
+            preview.Configuration.SourceConfigurationAnalysis!.CatalogStatus);
+        var source = fixture.NetnivDeployment.ReadInstalledState(fixture.Game)!;
+        var changed = source with
+        {
+            RepositoryRelease = source.RepositoryRelease! with { SourceCommit = new string('b', 40) },
+        };
+        File.WriteAllText(fixture.NetnivDeployment.InstalledStatePath,
+            JsonSerializer.Serialize(new ModInstalledArtifactRegistry(2, [changed]), Fixture.JsonOptions));
+        var registryBefore = File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath);
+        var deploymentJournalBefore = File.ReadAllBytes(fixture.NetnivDeployment.JournalPath);
+        var configBefore = File.ReadAllBytes(fixture.Config);
+        var dllBefore = File.ReadAllBytes(fixture.Dll);
+
+        var failure = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+        StringAssert.Contains(failure.Message, "source configuration catalog");
+        Assert.AreEqual(0, fixture.GuffawaffleDownloader.CallCount,
+            "Locked canonical preparation must reject a changed source catalog before artifact acquisition.");
+        CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(fixture.NetnivDeployment.InstalledStatePath));
+        CollectionAssert.AreEqual(deploymentJournalBefore, File.ReadAllBytes(fixture.NetnivDeployment.JournalPath));
+        CollectionAssert.AreEqual(configBefore, File.ReadAllBytes(fixture.Config));
+        CollectionAssert.AreEqual(dllBefore, File.ReadAllBytes(fixture.Dll));
+        Assert.AreEqual(netniv, fixture.SelectionStore.Load());
+        Assert.IsNull(coordinator.ReadJournal());
+        Assert.IsFalse(Directory.EnumerateFiles(fixture.Game, "*.rollback").Any());
+    }
+
+    private sealed class Fixture : IDisposable
+    {
+        internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private readonly string root = Path.Combine(Path.GetTempPath(), "observed-atomic-switch-" + Guid.NewGuid().ToString("N"));
+        private readonly ProviderScopedConfigurationBackupStore backupStore;
+        private readonly LauncherDistributionProviderCatalog providers = BundledLauncherProviderCatalog.Load();
+        private readonly ReviewedReleaseCertificationCatalog reviewedReleases;
+        public string State { get; }
+        public string Game { get; }
+        public string Config { get; }
+        public string Dll => Path.Combine(Game, "version.dll");
+        public byte[] GuffawaffleBytes { get; } = Encoding.UTF8.GetBytes("2.1.0.8");
+        public byte[] NetnivBytes { get; }
+        public byte[] GuffawaffleConfiguration { get; } = Encoding.UTF8.GetBytes(
+            "# Guffawaffle original\r\n[graphics]\r\nfree_resize = true\r\n");
+        public byte[] NetnivConfiguration { get; } = Encoding.UTF8.GetBytes(
+            "# NetniV protected history\n[graphics]\nfree_resize = false\n");
+        public JsonLauncherProviderSelectionStore SelectionStore { get; }
+        public ModReleaseArtifact GuffawaffleArtifact { get; }
+        public ModReleaseArtifact NetnivArtifact { get; }
+        public CountingDownloader GuffawaffleDownloader { get; }
+        public CountingDownloader NetnivDownloader { get; }
+        public ModDeploymentService GuffawaffleDeployment { get; }
+        public ModDeploymentService NetnivDeployment { get; }
+
+        private Fixture(bool reviewedNetniv)
+        {
+            State = Path.Combine(root, "state");
+            Game = Path.Combine(root, "game");
+            Config = Path.Combine(Game, "community_patch_settings.toml");
+            Directory.CreateDirectory(State);
+            Directory.CreateDirectory(Game);
+            File.WriteAllBytes(Path.Combine(Game, "prime.exe"), [1]);
+            File.WriteAllBytes(Config, GuffawaffleConfiguration);
+            reviewedReleases = BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providers);
+            SelectionStore = new(State);
+            backupStore = new(State, new FixtureProtector(), new FixtureStorageSecurity());
+            var netnivVersion = reviewedNetniv ? "1.1.6.0" : "1.1.8.0";
+            NetnivBytes = Encoding.UTF8.GetBytes(netnivVersion);
+            var observation = new NetnivRepositoryReleaseObservation(
+                1, 2, "v" + netnivVersion, reviewedNetniv ? ReviewedCommit : new string('a', 40),
+                new("https://github.com/netniV/stfc-mod/releases/download/v" + netnivVersion + "/stfc-community-mod.zip"),
+                200, new string('c', 64), NetnivBytes.LongLength, Hash(NetnivBytes), netnivVersion, DateTimeOffset.UtcNow);
+            GuffawaffleArtifact = new(new("https://example.invalid/guffawaffle/version.dll"),
+                "version.dll", GuffawaffleBytes.LongLength, Hash(GuffawaffleBytes), "2.1.0.8",
+                ExpectedProductVersion: "v2.1.0-guffa.8");
+            NetnivArtifact = new(observation.DownloadUri, "version.dll", NetnivBytes.LongLength,
+                observation.PayloadSha256, netnivVersion, RepositoryRelease: observation);
+            GuffawaffleDownloader = new(GuffawaffleBytes);
+            NetnivDownloader = new(NetnivBytes);
+            // These exact-byte fixture dependencies do not assert real release authenticity.
+            GuffawaffleDeployment = new(State, GuffawaffleDownloader,
+                new FixtureVersionReader("2.1.0.8", "v2.1.0-guffa.8"), new FixtureAuthenticityVerifier(),
+                _ => false, new("guffawaffle", "stable", "guffawaffle.windows"));
+            NetnivDeployment = new(State, NetnivDownloader,
+                new FixtureVersionReader(netnivVersion), new FixtureAuthenticityVerifier(),
+                _ => false, new("netniv", "stable", "netniv.stfc-community-mod"));
+        }
+
+        public static async Task<Fixture> CreateAsync(bool initialNetniv = false, bool reviewedNetniv = false)
+        {
+            var fixture = new Fixture(reviewedNetniv);
+            try
+            {
+                var initial = initialNetniv ? fixture.NetnivDeployment : fixture.GuffawaffleDeployment;
+                var artifact = initialNetniv ? fixture.NetnivArtifact : fixture.GuffawaffleArtifact;
+                var installed = await initial.DeployAsync(fixture.Game, artifact, ExistingArtifactPolicy.Reject);
+                Assert.AreEqual(ModDeploymentResultState.Succeeded, installed.State, installed.Message);
+                fixture.SelectionStore.Save(new(initialNetniv ? "netniv" : "guffawaffle", "stable"));
+                await fixture.backupStore.CreateAsync(new(fixture.Game, "netniv", fixture.Config,
+                    fixture.NetnivConfiguration, "test-seed"));
+                return fixture;
+            }
+            catch
+            {
+                fixture.Dispose();
+                throw;
+            }
+        }
+
+        public LauncherInstalledConfigurationResolver CreateResolver() => new(providers, reviewedReleases,
+            LauncherInstalledConfigurationResolver.CreateReadOnlyStateReader(State));
+
+        public LauncherProviderAtomicSwitchCoordinator CreateCoordinator(LauncherProviderSelection activeSelection)
+        {
+            var resolver = CreateResolver();
+            var configurationSwitch = new LauncherProviderSourceSwitchService(providers, SelectionStore,
+                backupStore, backupCompleted: null,
+                configurationEvidenceResolver: selection => resolver.ResolveSwitchEvidence(
+                    selection, activeSelection, Game));
+            return new(configurationSwitch,
+                [new("guffawaffle", Management(GuffawaffleDeployment, GuffawaffleArtifact, "guffawaffle", "guffawaffle.windows")),
+                 new("netniv", Management(NetnivDeployment, NetnivArtifact, "netniv", "netniv.stfc-community-mod"))], State);
+        }
+
+        private static ModManagementCoordinator Management(ModDeploymentService deployment,
+            ModReleaseArtifact artifact, string providerId, string runtimeDistributionId) => new(
+                deployment, new FixtureReleaseDiscovery(artifact), new Version(0, 1, 0),
+                healthService: new LauncherHealthService(new ModInstallationInspector(deployment,
+                    new SystemModInstallationFileSystem()), new(providerId, "stable", runtimeDistributionId,
+                        CanMutate: true, UnavailableReason: string.Empty)));
+
+        private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+
+        public void Dispose() => Directory.Delete(root, recursive: true);
+    }
+
+    private sealed class CountingDownloader(byte[] contents) : IModArtifactDownloader
+    {
+        public int CallCount { get; private set; }
+        public Task<ModArtifactDownload> DownloadAsync(Uri uri, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new ModArtifactDownload(HttpStatusCode.OK, contents, contents.LongLength));
+        }
+    }
+
+    private sealed class FixtureVersionReader(string version, string? productVersion = null) : IModArtifactProductVersionReader
+    {
+        public string? ReadVersion(string artifactPath) => version;
+        public string? ReadProductVersion(string artifactPath) => productVersion;
+    }
+
+    private sealed class FixtureAuthenticityVerifier : IModArtifactAuthenticityVerifier
+    {
+        public ModArtifactAuthenticityResult Verify(string artifactPath) => new(true, "Synthetic exact-byte fixture only.");
+    }
+
+    private sealed class FixtureReleaseDiscovery(ModReleaseArtifact artifact) : IWindowsReleaseDiscoveryClient
+    {
+        public Task<WindowsReleaseDiscovery> DiscoverLatestAsync(string channel, Version currentLauncherVersion,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var version = artifact.ExpectedProductVersion is { } productVersion
+                ? productVersion[1..] : artifact.ExpectedVersion;
+            return Task.FromResult(new WindowsReleaseDiscovery(new(1, version, "v" + version,
+                channel, "active", currentLauncherVersion, new("example/fixture", new string('0', 40)),
+                "fixture", []), artifact));
+        }
+    }
+
+    private sealed class FixtureProtector : IConfigurationBackupProtector
+    {
+        public string SchemeId => "fixture-reverse";
+        public byte[] Protect(byte[] contents) => contents.Reverse().ToArray();
+        public byte[] Unprotect(byte[] protectedContents) => protectedContents.Reverse().ToArray();
+    }
+
+    private sealed class FixtureStorageSecurity : IConfigurationBackupStorageSecurity
+    {
+        public void SecureDirectory(string directory) => Directory.CreateDirectory(directory);
+    }
+}
