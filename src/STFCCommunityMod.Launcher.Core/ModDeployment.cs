@@ -537,13 +537,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     "The verified candidate could not be cleaned safely; deployment did not start.");
             }
         }
-        var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState);
-        if (legacyUpgrade.Failure is not null)
-        {
-            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
-        }
-        previousInstalledState = legacyUpgrade.State;
-
         var targetPath = Path.Combine(normalizedGameDirectory, ManagedFileName);
         var runtimeManifestPath = RuntimeManifestTargetPath(normalizedGameDirectory);
         var hadExistingArtifact = File.Exists(targetPath);
@@ -561,6 +554,12 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             return new(ModDeploymentResultState.ManagedArtifactChanged,
                 "The current DLL, runtime manifest or managed receipt changed after review. Review the switch again.");
         }
+        var reviewedPreviousInstalledState = adoptChangedManagedArtifact ? previousInstalledState : null;
+        var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState,
+            persistUpgrade: !adoptChangedManagedArtifact);
+        if (legacyUpgrade.Failure is not null)
+            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
+        previousInstalledState = legacyUpgrade.State;
         var isManagedUpdate = false;
         if (previousInstalledState is not null)
         {
@@ -651,7 +650,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingArtifactIdentity: existingArtifactIdentity,
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
             TargetInstallationAttribution: installationAttribution,
-            AdoptChangedManagedArtifact: adoptChangedManagedArtifact);
+            AdoptChangedManagedArtifact: adoptChangedManagedArtifact,
+            ReviewedPreviousInstalledState: reviewedPreviousInstalledState);
         ExactFileRevision? exactStagedArtifactRevision = null;
         ExactFileMutation? exactStagedArtifact = null;
         ExactFileMutation? exactStagedRuntimeManifest = null;
@@ -2171,7 +2171,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 journal.ExistingRuntimeManifestIdentity,
                 "redundant durable runtime-manifest rollback");
             RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState,
-                journal.AdoptChangedManagedArtifact ? journal.TransactionId : null);
+                journal.AdoptChangedManagedArtifact ? journal.TransactionId : null,
+                journal.ReviewedPreviousInstalledState);
             await PersistPhaseAsync(
                 journal with { PreserveLiveArtifactDuringRecovery = false },
                 ModDeploymentPhase.RolledBack,
@@ -2888,11 +2889,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private void RestoreInstalledState(
         string gameDirectory,
         ModInstalledArtifactState? state,
-        string? replacementDetachmentId = null)
+        string? replacementDetachmentId = null,
+        ModInstalledArtifactState? reviewedPreviousInstalledState = null)
     {
         if (replacementDetachmentId is not null)
         {
-            RestoreReplacementInstalledState(gameDirectory, state!, replacementDetachmentId);
+            RestoreReplacementInstalledState(gameDirectory, state!, replacementDetachmentId,
+                reviewedPreviousInstalledState);
             return;
         }
         if (state is null)

@@ -353,7 +353,10 @@ time, plus the optional current runtime-manifest identity. The locked deployment
 rechecks all of that evidence before downloading the target. A stale receipt,
 changed file or metadata, or changed runtime-manifest presence requires another
 review. Preserving those bytes does not authenticate them or transfer their
-provenance to the preferred source.
+provenance to the preferred source. Missing backup identities in an older
+receipt are resolved in memory after that check. The journal retains both
+resolved recovery evidence and the unchanged reviewed receipt; rollback restores
+the original receipt. Rejected reviews do not migrate the registry.
 
 The changed DLL is treated as a new explicit adoption, rather than as an ordinary
 managed update. Its exact current bytes become the durable backup referenced by

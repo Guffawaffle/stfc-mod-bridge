@@ -14,6 +14,163 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     [DataTestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public async Task ChangedManagedLegacyReceiptCommitsOrRollsBackWithoutPrematureMigration(
+        bool failSelectionSave)
+    {
+        using var directory = new TemporaryDirectory();
+        var selectionStore = new FailingSelectionStore();
+        string? installedStatePath = null;
+        byte[] expectedRegistry = [];
+        var acquisitionCount = 0;
+        var downloader = new CallbackDownloader(NetnivArtifact, () =>
+        {
+            acquisitionCount++;
+            Assert.IsNotNull(installedStatePath);
+            CollectionAssert.AreEqual(expectedRegistry, File.ReadAllBytes(installedStatePath!),
+                "Backup receipt normalization must remain in memory before acquisition and commit.");
+        });
+        var fixture = await CreateFixtureAsync(directory, selectionStore,
+            installSource: false, targetDownloader: downloader);
+        var original = await SeedChangedManagedSourceAsync(fixture, hasOlderAdoptionBackup: true);
+        var olderIdentity = ReplacementTestIdentity(original.PreviousArtifactBackupPath!);
+        var legacy = WriteLegacyReplacementReceipt(fixture, original);
+        var unrelated = SeedUnrelatedReplacementTestBackup(fixture);
+        installedStatePath = fixture.SourceDeployment.InstalledStatePath;
+        expectedRegistry = File.ReadAllBytes(installedStatePath);
+        var dllPath = Path.Combine(fixture.GameDirectory, "version.dll");
+        var liveIdentity = ReplacementTestIdentity(dllPath);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv", "stable", fixture.GameDirectory, isGameRunning: false, fixture.ConfigurationPath);
+        Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+        Assert.IsTrue(preview.ReplacesChangedManagedArtifact);
+        CollectionAssert.AreEqual(expectedRegistry, File.ReadAllBytes(installedStatePath),
+            "Preview must not migrate the saved legacy receipt.");
+
+        if (failSelectionSave)
+        {
+            selectionStore.FailNextSave = true;
+            _ = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+            CollectionAssert.AreEqual(expectedRegistry, File.ReadAllBytes(installedStatePath),
+                "Compensation must restore the original raw receipt, including its null backup identity.");
+            var restored = fixture.SourceDeployment.ReadInstalledState(fixture.GameDirectory)!;
+            Assert.IsNull(restored.PreviousArtifactBackupIdentity);
+            Assert.AreEqual(JsonSerializer.Serialize(legacy, JsonOptions),
+                JsonSerializer.Serialize(restored, JsonOptions));
+            CollectionAssert.AreEqual(ChangedManagedArtifact, File.ReadAllBytes(dllPath));
+            Assert.AreEqual(liveIdentity, ReplacementTestIdentity(dllPath));
+            CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration,
+                File.ReadAllBytes(fixture.ConfigurationPath));
+            Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), selectionStore.Load());
+            Assert.AreEqual(unrelated, ReplacementTestRegistry(fixture).DetachedAdoptionBackups!.Single());
+            Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, fixture.Coordinator.ReadJournal()!.Phase);
+            Assert.AreEqual(ModDeploymentPhase.RolledBack, fixture.TargetDeployment.ReadJournal()!.Phase);
+            Assert.IsFalse(Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+        }
+        else
+        {
+            var result = await fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText);
+            AssertLegacyReplacementJournal(fixture.TargetDeployment.ReadJournal()!, legacy, olderIdentity);
+            var active = result.InstalledArtifact!;
+            Assert.AreEqual("netniv", active.ProviderId);
+            Assert.AreEqual(liveIdentity, active.PreviousArtifactBackupIdentity);
+            Assert.AreNotEqual(legacy.PreviousArtifactBackupPath, active.PreviousArtifactBackupPath);
+            CollectionAssert.AreEqual(ChangedManagedArtifact, File.ReadAllBytes(active.PreviousArtifactBackupPath!));
+            CollectionAssert.AreEqual(NetnivArtifact, File.ReadAllBytes(dllPath));
+            CollectionAssert.AreEqual(fixture.NetnivConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
+            Assert.AreEqual(new LauncherProviderSelection("netniv", "stable"), selectionStore.Load());
+            var detached = ReplacementTestRegistry(fixture).DetachedAdoptionBackups!;
+            Assert.AreEqual(2, detached.Count);
+            Assert.AreEqual(unrelated, detached.Single(backup => backup.DetachmentId == unrelated.DetachmentId));
+            var older = detached.Single(backup => backup.DetachmentId == preview.Configuration.TransactionId);
+            Assert.AreEqual(legacy.PreviousArtifactBackupPath, older.PreviousArtifactBackupPath);
+            Assert.AreEqual(olderIdentity, older.PreviousArtifactBackupIdentity,
+                "The non-owning detached receipt must carry the resolved identity of the older adoption.");
+            var uninstall = await fixture.TargetDeployment.UninstallAsync(fixture.GameDirectory);
+            Assert.AreEqual(ModDeploymentResultState.Succeeded, uninstall.State, uninstall.Message);
+            CollectionAssert.AreEqual(ChangedManagedArtifact, File.ReadAllBytes(dllPath));
+            Assert.AreEqual(liveIdentity, ReplacementTestIdentity(dllPath));
+            Assert.IsNull(fixture.TargetDeployment.ReadInstalledState(fixture.GameDirectory));
+            Assert.AreEqual(2, ReplacementTestRegistry(fixture).DetachedAdoptionBackups!.Count);
+        }
+
+        Assert.AreEqual(1, acquisitionCount);
+        if (failSelectionSave)
+            AssertLegacyReplacementJournal(fixture.TargetDeployment.ReadJournal()!, legacy, olderIdentity);
+        CollectionAssert.AreEqual(OriginalAdoptedArtifact, File.ReadAllBytes(legacy.PreviousArtifactBackupPath!));
+    }
+
+    [TestMethod]
+    public async Task ChangedManagedLegacyReceiptRejectsStaleReviewWithoutPersistingMigration()
+    {
+        using var directory = new TemporaryDirectory();
+        var downloader = new CountingDownloader(NetnivArtifact);
+        var fixture = await CreateFixtureAsync(directory, installSource: false, targetDownloader: downloader);
+        var source = await SeedChangedManagedSourceAsync(fixture, hasOlderAdoptionBackup: true);
+        var legacy = WriteLegacyReplacementReceipt(fixture, source);
+        var preview = await fixture.Coordinator.PreviewAsync(
+            "netniv", "stable", fixture.GameDirectory, isGameRunning: false, fixture.ConfigurationPath);
+        Assert.IsTrue(preview.CanExecute, preview.BlockedMessage);
+        var registry = ReplacementTestRegistry(fixture);
+        WriteJson(fixture.SourceDeployment.InstalledStatePath, registry with
+        {
+            Installations = [legacy with { InstalledAtUtc = legacy.InstalledAtUtc.AddMinutes(1) }],
+        });
+        var expectedRegistry = File.ReadAllBytes(fixture.SourceDeployment.InstalledStatePath);
+        var dllPath = Path.Combine(fixture.GameDirectory, "version.dll");
+        var liveIdentity = ReplacementTestIdentity(dllPath);
+
+        _ = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+
+        Assert.AreEqual(0, downloader.CallCount,
+            "A full-receipt mismatch must fail before any target artifact acquisition.");
+        CollectionAssert.AreEqual(expectedRegistry, File.ReadAllBytes(fixture.SourceDeployment.InstalledStatePath),
+            "Rejecting a stale legacy review must not fill backup identities or rewrite its registry.");
+        Assert.IsNull(fixture.SourceDeployment.ReadInstalledState(fixture.GameDirectory)!.PreviousArtifactBackupIdentity);
+        CollectionAssert.AreEqual(ChangedManagedArtifact, File.ReadAllBytes(dllPath));
+        Assert.AreEqual(liveIdentity, ReplacementTestIdentity(dllPath));
+        CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
+        Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), fixture.SelectionStore.Load());
+        Assert.AreEqual(0, (ReplacementTestRegistry(fixture).DetachedAdoptionBackups ?? []).Count);
+        CollectionAssert.AreEqual(OriginalAdoptedArtifact, File.ReadAllBytes(legacy.PreviousArtifactBackupPath!));
+        Assert.IsFalse(Directory.EnumerateFiles(fixture.GameDirectory, "*.rollback").Any());
+    }
+
+    private static ModInstalledArtifactState WriteLegacyReplacementReceipt(
+        Fixture fixture, ModInstalledArtifactState source)
+    {
+        Assert.IsNotNull(source.PreviousArtifactBackupPath);
+        var legacy = source with
+        {
+            PreviousArtifactBackupIdentity = null,
+            PreviousRuntimeManifestBackupIdentity = null,
+        };
+        var registry = ReplacementTestRegistry(fixture);
+        WriteJson(fixture.SourceDeployment.InstalledStatePath, registry with
+        {
+            Installations = registry.Installations.Select(state =>
+                state.GameDirectory == legacy.GameDirectory ? legacy : state).ToArray(),
+        });
+        return legacy;
+    }
+
+    private static void AssertLegacyReplacementJournal(
+        ModDeploymentJournal journal, ModInstalledArtifactState legacy,
+        ModArtifactIdentityReceipt olderIdentity)
+    {
+        Assert.IsTrue(journal.AdoptChangedManagedArtifact);
+        Assert.IsNotNull(journal.ReviewedPreviousInstalledState);
+        Assert.IsNull(journal.ReviewedPreviousInstalledState.PreviousArtifactBackupIdentity);
+        Assert.AreEqual(JsonSerializer.Serialize(legacy, JsonOptions),
+            JsonSerializer.Serialize(journal.ReviewedPreviousInstalledState, JsonOptions));
+        Assert.AreEqual(olderIdentity, journal.PreviousInstalledState!.PreviousArtifactBackupIdentity);
+    }
+
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public async Task StalePreferredSourceDoesNotBecomeInstalledArtifactAuthority(bool changedManaged)
     {
         using var directory = new TemporaryDirectory();
@@ -1610,20 +1767,24 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
     }
 
     [DataTestMethod]
-    [DataRow("ArtifactCommitting")]
-    [DataRow("ConfigurationCommitted")]
-    [DataRow("Completed")]
-    public async Task ChangedManagedSourceHardCrashPreservesBothBackupGenerations(string crashStage)
+    [DataRow("ArtifactCommitting", false)]
+    [DataRow("ConfigurationCommitted", false)]
+    [DataRow("Completed", false)]
+    [DataRow("ConfigurationCommitted", true)]
+    [DataRow("Completed", true)]
+    public async Task ChangedManagedSourceHardCrashPreservesBothBackupGenerations(
+        string crashStage, bool legacyAdoption)
     {
         if (!OperatingSystem.IsWindows())
             return;
         using var directory = new TemporaryDirectory();
         var readyPath = Path.Combine(directory.Path, "ready");
         var stateDirectory = Path.Combine(directory.Path, "state");
-        using var child = StartCrashProbe("changed-adopted", crashStage, directory.Path, readyPath);
+        var crashMode = legacyAdoption ? "changed-adopted-legacy" : "changed-adopted";
+        using var child = StartCrashProbe(crashMode, crashStage, directory.Path, readyPath);
         try
         {
-            await WaitForCrashProbeAsync(child, readyPath, stateDirectory, "changed-adopted", crashStage);
+            await WaitForCrashProbeAsync(child, readyPath, stateDirectory, crashMode, crashStage);
             await using (var competingProviderLease = await new LauncherOperationLock(
                 Path.Combine(stateDirectory, "provider-switch")).TryAcquireAsync())
             await using (var competingRootLease = await new LauncherOperationLock(stateDirectory).TryAcquireAsync())
@@ -1640,6 +1801,15 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             Assert.AreEqual(Enum.Parse<LauncherProviderAtomicSwitchPhase>(crashStage), outer.Phase);
             Assert.IsTrue(inner.AdoptChangedManagedArtifact);
             var prior = inner.PreviousInstalledState!;
+            var reviewedPrior = inner.ReviewedPreviousInstalledState ?? prior;
+            Assert.IsNotNull(prior.PreviousArtifactBackupIdentity);
+            if (legacyAdoption)
+            {
+                Assert.IsNotNull(inner.ReviewedPreviousInstalledState);
+                Assert.IsNull(reviewedPrior.PreviousArtifactBackupIdentity);
+                Assert.AreNotEqual(JsonSerializer.Serialize(prior, JsonOptions),
+                    JsonSerializer.Serialize(reviewedPrior, JsonOptions));
+            }
             Assert.IsNotNull(prior.PreviousArtifactBackupPath);
             CollectionAssert.AreEqual(OriginalAdoptedArtifact,
                 File.ReadAllBytes(prior.PreviousArtifactBackupPath));
@@ -1666,6 +1836,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 var detached = ReplacementTestRegistry(restarted).DetachedAdoptionBackups!.Single();
                 Assert.AreEqual(inner.TransactionId, detached.DetachmentId);
                 Assert.AreEqual(prior.PreviousArtifactBackupPath, detached.PreviousArtifactBackupPath);
+                Assert.AreEqual(prior.PreviousArtifactBackupIdentity, detached.PreviousArtifactBackupIdentity);
                 var uninstall = await restarted.TargetDeployment.UninstallAsync(restarted.GameDirectory);
                 Assert.AreEqual(ModDeploymentResultState.Succeeded, uninstall.State, uninstall.Message);
                 CollectionAssert.AreEqual(ChangedManagedArtifact, File.ReadAllBytes(dllPath));
@@ -1681,8 +1852,16 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
                 CollectionAssert.AreEqual(restarted.GuffawaffleConfiguration,
                     File.ReadAllBytes(restarted.ConfigurationPath));
                 Assert.AreEqual(new LauncherProviderSelection("guffawaffle", "stable"), restarted.SelectionStore.Load());
-                Assert.AreEqual(JsonSerializer.Serialize(prior, JsonOptions),
+                Assert.AreEqual(JsonSerializer.Serialize(reviewedPrior, JsonOptions),
                     JsonSerializer.Serialize(restarted.TargetDeployment.ReadInstalledState(restarted.GameDirectory), JsonOptions));
+                if (legacyAdoption)
+                {
+                    Assert.IsNull(restarted.TargetDeployment.ReadInstalledState(
+                        restarted.GameDirectory)!.PreviousArtifactBackupIdentity);
+                    CollectionAssert.AreEqual(
+                        File.ReadAllBytes(Path.Combine(directory.Path, "legacy-reviewed-registry.json")),
+                        File.ReadAllBytes(restarted.TargetDeployment.InstalledStatePath));
+                }
                 Assert.AreEqual(0, (ReplacementTestRegistry(restarted).DetachedAdoptionBackups ?? []).Count);
                 Assert.AreEqual(LauncherProviderAtomicSwitchPhase.RolledBack, restarted.Coordinator.ReadJournal()!.Phase);
                 Assert.IsFalse(Directory.EnumerateFiles(restarted.GameDirectory, "*.rollback").Any());
@@ -1794,7 +1973,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             root,
             selectionStore,
             installSource: !configuredMode.StartsWith("configuration", StringComparison.Ordinal)
-                && configuredMode != "changed-adopted",
+                && !configuredMode.StartsWith("changed-adopted", StringComparison.Ordinal),
             checkpoint: Checkpoint,
             targetPhaseCheckpoint: configuredMode.StartsWith("artifact-inner-planned", StringComparison.Ordinal)
                 ? HoldAfterInnerPlanned
@@ -1805,8 +1984,16 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             targetFileCheckpoint: configuredMode == "artifact-partial"
                 ? HoldAfterTargetDllInstall
                 : null);
-        if (configuredMode == "changed-adopted")
-            _ = await SeedChangedManagedSourceAsync(fixture, hasOlderAdoptionBackup: true);
+        if (configuredMode.StartsWith("changed-adopted", StringComparison.Ordinal))
+        {
+            var source = await SeedChangedManagedSourceAsync(fixture, hasOlderAdoptionBackup: true);
+            if (configuredMode == "changed-adopted-legacy")
+            {
+                _ = WriteLegacyReplacementReceipt(fixture, source);
+                File.WriteAllBytes(Path.Combine(root, "legacy-reviewed-registry.json"),
+                    File.ReadAllBytes(fixture.SourceDeployment.InstalledStatePath));
+            }
+        }
         var preview = await fixture.Coordinator.PreviewAsync(
             "netniv",
             "stable",

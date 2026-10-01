@@ -159,7 +159,8 @@ public sealed record ModDeploymentJournal(
     ModFileIdentityReceipt? TargetRuntimeManifestFileIdentity = null,
     ModFileIdentityReceipt? RestoredAdoptedArtifactFileIdentity = null,
     ModFileIdentityReceipt? RestoredAdoptedRuntimeManifestFileIdentity = null,
-    bool AdoptChangedManagedArtifact = false);
+    bool AdoptChangedManagedArtifact = false,
+    ModInstalledArtifactState? ReviewedPreviousInstalledState = null);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,

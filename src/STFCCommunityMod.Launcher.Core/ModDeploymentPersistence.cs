@@ -84,10 +84,18 @@ public sealed partial class ModDeploymentService
             }
         }
         if (journal.AdoptChangedManagedArtifact && (journal.PreviousInstalledState is null
+                || journal.ReviewedPreviousInstalledState is null
                 || !journal.HasCommitParticipant || !journal.HadExistingArtifact
                 || journal.ExistingArtifactIdentity is null
                 || journal.Operation != ModDeploymentOperation.Deploy))
             throw new InvalidDataException("The changed-DLL replacement journal is incomplete.");
+        if (journal.ReviewedPreviousInstalledState is { } reviewedPrevious)
+        {
+            ValidatePersistedInstalledState(reviewedPrevious);
+            if (!journal.AdoptChangedManagedArtifact || journal.PreviousInstalledState is null
+                || !MatchesBackupReceiptUpgrade(reviewedPrevious, journal.PreviousInstalledState))
+                throw new InvalidDataException("The original reviewed receipt differs from the resolved backup receipt.");
+        }
         if (journal.Artifact.RuntimeManifest is not null)
         {
             ValidateRuntimeManifestDiscovery(journal.Artifact.RuntimeManifest);

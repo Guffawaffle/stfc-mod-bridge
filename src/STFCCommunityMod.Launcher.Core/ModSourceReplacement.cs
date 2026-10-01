@@ -58,8 +58,18 @@ public sealed partial class ModDeploymentService
             previous.PreviousRuntimeManifestBackupIdentity, "older adopted runtime manifest");
     }
 
+    private static bool MatchesBackupReceiptUpgrade(ModInstalledArtifactState original, ModInstalledArtifactState resolved) =>
+        (original.PreviousArtifactBackupIdentity is null || original.PreviousArtifactBackupIdentity == resolved.PreviousArtifactBackupIdentity)
+        && (original.PreviousRuntimeManifestBackupIdentity is null || original.PreviousRuntimeManifestBackupIdentity == resolved.PreviousRuntimeManifestBackupIdentity)
+        && JsonSerializer.Serialize(original with
+        {
+            PreviousArtifactBackupIdentity = resolved.PreviousArtifactBackupIdentity,
+            PreviousRuntimeManifestBackupIdentity = resolved.PreviousRuntimeManifestBackupIdentity,
+        }, JsonOptions) == JsonSerializer.Serialize(resolved, JsonOptions);
+
     private void RestoreReplacementInstalledState(
-        string gameDirectory, ModInstalledArtifactState previous, string transactionId)
+        string gameDirectory, ModInstalledArtifactState previous, string transactionId,
+        ModInstalledArtifactState? reviewedPreviousInstalledState)
     {
         if (!PathEquals(gameDirectory, previous.GameDirectory))
             throw new InvalidDataException("The replacement rollback receipt belongs to another installation.");
@@ -75,7 +85,7 @@ public sealed partial class ModDeploymentService
         WriteInstalledRegistry(registry with
         {
             Installations = registry.Installations.Where(state => !PathEquals(state.GameDirectory, gameDirectory))
-                .Append(previous).ToArray(),
+                .Append(reviewedPreviousInstalledState ?? previous).ToArray(),
             DetachedAdoptionBackups = detached.Where(backup => backup.DetachmentId != transactionId).ToArray(),
         });
     }
