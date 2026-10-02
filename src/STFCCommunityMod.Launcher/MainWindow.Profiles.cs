@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using STFCCommunityMod.Launcher.Core;
@@ -96,6 +97,7 @@ public partial class MainWindow
         isImportingProfile = false;
         ProfileImportSourcePanel.Visibility = Visibility.Collapsed;
         SaveProfileButton.Content = "_Save profile";
+        AutomationProperties.SetName(SaveProfileButton, "Save launch profile");
     }
 
     private void NewProfileButton_Click(object sender, RoutedEventArgs e)
@@ -133,6 +135,7 @@ public partial class MainWindow
         ProfileImportSourcePanel.Visibility = Visibility.Visible;
         ProfileFormTitle.Text = "Import a Windows user’s STFC setup";
         SaveProfileButton.Content = "_Review import…";
+        AutomationProperties.SetName(SaveProfileButton, "Review Windows user import");
         SetProfileOperationPending(true);
         try
         {
