@@ -11,11 +11,14 @@ public partial class MainWindow
     private LauncherProfilesSnapshot profiles = LauncherProfilesSnapshot.Empty;
     private IReadOnlyList<LauncherProfile> archivedProfiles = [];
     private bool isArchivingProfile;
+    private bool isImportingProfile;
+    private bool isProfileOperationPending;
+    private TaskCompletionSource<bool>? importReviewCompletion;
     private NativeLauncherProfilesStore ProfilesStore => new(stateDirectory);
 
     private void OpenProfilesButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!ReloadProfiles()) return;
+        if (isProfileOperationPending || !ReloadProfiles()) return;
         ShowArchivedProfilesBox.IsChecked = false;
         RefreshProfilesList(profiles.SelectedProfileId);
         if (ProfilesList.SelectedItem is null) NewProfileButton_Click(sender, e);
@@ -66,6 +69,8 @@ public partial class MainWindow
     private void ProfilesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         isArchivingProfile = false;
+        ProfileImportFeedback.Text = string.Empty;
+        if (ProfilesList.SelectedItem is not null) ResetImportMode();
         ProfileError.Text = string.Empty;
         if (ProfilesList.SelectedItem is not LauncherProfile profile)
         {
@@ -86,8 +91,18 @@ public partial class MainWindow
         ArchiveProfileButton.IsEnabled = true;
     }
 
+    private void ResetImportMode()
+    {
+        isImportingProfile = false;
+        ProfileImportSourcePanel.Visibility = Visibility.Collapsed;
+        SaveProfileButton.Content = "_Save profile";
+    }
+
     private void NewProfileButton_Click(object sender, RoutedEventArgs e)
     {
+        if (isProfileOperationPending) return;
+        ResetImportMode();
+        ProfileImportFeedback.Text = string.Empty;
         ShowArchivedProfilesBox.IsChecked = false;
         ProfilesList.SelectedItem = null;
         isArchivingProfile = false;
@@ -104,6 +119,96 @@ public partial class MainWindow
         ArchiveProfileButton.IsEnabled = false;
     }
 
+    private void SetProfileOperationPending(bool pending)
+    {
+        isProfileOperationPending = pending;
+        ProfilesEditor.IsEnabled = !pending;
+    }
+
+    private async void ImportProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (isProfileOperationPending) return;
+        NewProfileButton_Click(sender, e);
+        isImportingProfile = true;
+        ProfileImportSourcePanel.Visibility = Visibility.Visible;
+        ProfileFormTitle.Text = "Import a Windows user’s STFC setup";
+        SaveProfileButton.Content = "_Review import…";
+        SetProfileOperationPending(true);
+        try
+        {
+            var sources = await ProfilesStore.ImportSourcesAsync();
+            var previousSid = (ProfileImportSourceBox.SelectedItem as ProfileImportUser)?.Sid;
+            ProfileImportSourceBox.ItemsSource = sources.Users;
+            ProfileImportSourceBox.SelectedItem = sources.Users.FirstOrDefault(user => user.Sid == previousSid)
+                ?? sources.Users.FirstOrDefault(user => user.CurrentUser);
+            ProfileError.Text = sources.Users.Count == 0 ? "No Windows users with an STFC setup were found." : string.Empty;
+        }
+        catch (Exception exception) when (IsProfileImportException(exception))
+        {
+            ProfileImportFeedback.Text = string.Empty;
+            ProfileError.Text = exception.Message;
+        }
+        finally { SetProfileOperationPending(false); }
+    }
+
+    private async Task ImportProfileAsync()
+    {
+        if (ProfileImportSourceBox.SelectedItem is not ProfileImportUser source)
+        {
+            ProfileError.Text = "Choose the Windows user whose STFC setup you want to copy.";
+            return;
+        }
+        ProfileError.Text = string.Empty;
+        ProfileImportFeedback.Text = string.Empty;
+        SetProfileOperationPending(true);
+        try
+        {
+            var plan = await ProfilesStore.PrepareUserImportAsync(source.Sid, ProfileNameBox.Text, ProfileFolderBox.Text);
+            if (!ProfilesDialog.IsOpen) return;
+            var presentation = ViewModels.ProfileImportPresentation.From(plan);
+            ProfileImportReviewDialog.DialogTitle = presentation.Title;
+            ProfileImportCopyExplanation.Text = presentation.CopyExplanation;
+            ProfileImportPermissionExplanation.Text = presentation.PermissionExplanation;
+            ProfileImportDetailExplanation.Text = presentation.Details;
+            ProfileImportDetails.IsExpanded = false;
+            importReviewCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            ProfileImportReviewDialog.IsOpen = true;
+            if (!await importReviewCompletion.Task) return;
+            ProfileImportFeedback.Text = "Importing the selected STFC setup…";
+            var imported = await ProfilesStore.ImportUserAsync(plan);
+            if (!ReloadProfiles()) return;
+            ShowArchivedProfilesBox.IsChecked = false;
+            RefreshProfilesList(imported.Id);
+            UpdateProfileLaunchSelection();
+            ProfileImportFeedback.Text = $"Imported {imported.Name}. Choose Use selected for launch when you’re ready.";
+        }
+        catch (Exception exception) when (IsProfileImportException(exception))
+        {
+            ProfileImportFeedback.Text = string.Empty;
+            ProfileError.Text = exception.Message;
+        }
+        finally
+        {
+            importReviewCompletion = null;
+            ProfileImportReviewDialog.IsOpen = false;
+            SetProfileOperationPending(false);
+        }
+    }
+
+    private static bool IsProfileImportException(Exception exception) => exception is ArgumentException
+        or InvalidOperationException or IOException or UnauthorizedAccessException or NotSupportedException
+        or System.Text.Json.JsonException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
+
+    private void ContinueProfileImportButton_Click(object sender, RoutedEventArgs e)
+    {
+        importReviewCompletion?.TrySetResult(true);
+        ProfileImportReviewDialog.IsOpen = false;
+    }
+
+    private void CancelProfileImportButton_Click(object sender, RoutedEventArgs e) => ProfileImportReviewDialog.IsOpen = false;
+
+    private void ProfileImportReviewDialog_Closed(object? sender, EventArgs e) => importReviewCompletion?.TrySetResult(false);
+
     private void BrowseProfileFolderButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Select the preferred game folder containing prime.exe", Multiselect = false };
@@ -113,6 +218,13 @@ public partial class MainWindow
 
     private async void SaveProfileButton_Click(object sender, RoutedEventArgs e)
     {
+        if (isProfileOperationPending) return;
+        if (isImportingProfile)
+        {
+            await ImportProfileAsync();
+            return;
+        }
+        SetProfileOperationPending(true);
         try
         {
             var selected = ProfilesList.SelectedItem as LauncherProfile;
@@ -128,11 +240,12 @@ public partial class MainWindow
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
             or IOException or UnauthorizedAccessException)
         { ProfileError.Text = exception.Message; }
+        finally { SetProfileOperationPending(false); }
     }
 
     private async void ArchiveProfileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (ProfilesList.SelectedItem is not LauncherProfile profile) return;
+        if (isProfileOperationPending || ProfilesList.SelectedItem is not LauncherProfile profile) return;
         if (profile.Id == profiles.SelectedProfileId && SharedSettings.HasPendingChanges)
         {
             ProfileError.Text = "Save or discard Settings and Data Sync drafts before archiving their profile.";
@@ -145,6 +258,7 @@ public partial class MainWindow
             ProfileError.Text = "Archiving retains this profile's account data, configuration and logs. Its session must be stopped.";
             return;
         }
+        SetProfileOperationPending(true);
         try
         {
             var updated = profile.State == "archived"
@@ -158,6 +272,7 @@ public partial class MainWindow
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
         { ProfileError.Text = exception.Message; }
+        finally { SetProfileOperationPending(false); }
     }
 
     private async void UseSelectedProfileButton_Click(object sender, RoutedEventArgs e)
@@ -174,11 +289,13 @@ public partial class MainWindow
 
     private async Task SaveLaunchSelectionAsync(string? profileId)
     {
+        if (isProfileOperationPending) return;
         if (SharedSettings.HasPendingChanges)
         {
             ProfileError.Text = "Save or discard Settings and Data Sync drafts before changing profiles.";
             return;
         }
+        SetProfileOperationPending(true);
         try
         {
             await ProfilesStore.SelectAsync(profileId);
@@ -190,5 +307,6 @@ public partial class MainWindow
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
         { ProfileError.Text = exception.Message; }
+        finally { SetProfileOperationPending(false); }
     }
 }

@@ -7,6 +7,27 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class NativeProfileCatalogIntegrationTests
 {
     [TestMethod]
+    public void BundledAbiRejectsUnavailableImportWithoutPublishingProfile()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("catalog");
+        var planned = transport.Request(new("prepare-user-import", Root: root,
+            SourceUserSid: "NOT-A-WINDOWS-SID", Name: "Synthetic import"));
+        Assert.IsFalse(planned.Ok);
+        Assert.AreEqual("source_user_missing", planned.Error!.Code);
+        var refused = transport.Request(new("import-user", Root: root,
+            SourceUserSid: "NOT-A-WINDOWS-SID", Name: "Synthetic import",
+            ExpectedDestinationSid: "NOT-A-WINDOWS-SID"));
+        Assert.IsFalse(refused.Ok);
+        Assert.AreEqual("source_user_missing", refused.Error!.Code);
+        var catalog = transport.Request(new("list", Root: root));
+        Assert.IsTrue(catalog.Ok, catalog.Error?.Message);
+        Assert.AreEqual(0, catalog.Profiles!.Count);
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(Path.Combine(root, "profiles")).Length);
+    }
+
+    [TestMethod]
     public void BundledInstallationAbiReportsNumericVersionAndReaderLeaseExcludesUpdater()
     {
         var transport = Transport();

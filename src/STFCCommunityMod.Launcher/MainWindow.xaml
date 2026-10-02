@@ -1366,7 +1366,7 @@
         <ScrollViewer.Resources>
           <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
         </ScrollViewer.Resources>
-        <StackPanel Margin="0,0,4,0">
+        <StackPanel x:Name="ProfilesEditor" Margin="0,0,4,0">
          <TextBlock Text="Profiles are shared with the STFC Profiles CLI. A named launch uses its own account preferences, configuration and logs. Archive retains the entire profile; restore makes it available again. Mod installation still uses the game folder shown on Home."
                     Foreground="{DynamicResource TextSecondaryBrush}"
                     TextWrapping="Wrap" />
@@ -1443,6 +1443,21 @@
                   Content="_Archive"
                   automation:AutomationProperties.Name="Archive or restore selected launch profile" />
         </WrapPanel>
+        <Button Margin="0,8,0,0" HorizontalAlignment="Left" Style="{StaticResource QuietButtonStyle}"
+                Click="ImportProfileButton_Click" Content="_Import from Windows user…"
+                automation:AutomationProperties.Name="Import STFC setup from a Windows user" />
+        <StackPanel x:Name="ProfileImportSourcePanel" Visibility="Collapsed" Margin="0,12,0,0">
+          <TextBlock Text="Copy saved login and game settings from" TextWrapping="Wrap" />
+          <ComboBox x:Name="ProfileImportSourceBox" Margin="0,4,0,4"
+                    Style="{StaticResource TitleBarColorModeComboBoxStyle}"
+                    automation:AutomationProperties.Name="Windows user to import STFC setup from">
+            <ComboBox.ItemTemplate>
+              <DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Text="This creates a separate profile. The original user’s setup stays as it is."
+                     TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </StackPanel>
         <TextBlock x:Name="ProfileFormTitle" Margin="0,16,0,6" FontWeight="SemiBold" Text="New profile" />
         <TextBlock x:Name="ProfileIdentity" Margin="0,0,0,10"
                    FontFamily="Consolas" FontSize="12"
@@ -1464,12 +1479,45 @@
                    VerticalContentAlignment="Center"
                    automation:AutomationProperties.Name="Profile game folder" />
         </DockPanel>
+        <TextBlock x:Name="ProfileImportFeedback" Margin="0,8,0,0" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   automation:AutomationProperties.LiveSetting="Polite" />
         <TextBlock x:Name="ProfileError" Margin="0,8,0,0"
                    Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" />
         <Button x:Name="SaveProfileButton" Margin="0,14,0,0" HorizontalAlignment="Right"
                 Style="{StaticResource UtilityActionButtonStyle}"
                 Click="SaveProfileButton_Click" Content="_Save profile"
                 automation:AutomationProperties.Name="Save launch profile" />
+        </StackPanel>
+      </ScrollViewer>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="ProfileImportReviewDialog" Grid.RowSpan="2"
+                          Style="{StaticResource InAppDialogStyle}" DialogWidth="540"
+                          DialogTitle="Import STFC setup" Closed="ProfileImportReviewDialog_Closed"
+                          automation:AutomationProperties.Name="Review one-time STFC profile import">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+          <TextBlock Text="About this import" FontWeight="SemiBold" />
+          <TextBlock x:Name="ProfileImportCopyExplanation" Margin="0,8,0,0" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextPrimaryBrush}" />
+          <TextBlock x:Name="ProfileImportPermissionExplanation" Margin="0,12,0,0" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     automation:AutomationProperties.LiveSetting="Polite" />
+          <Expander x:Name="ProfileImportDetails" Margin="0,12,0,0" Header="Why is this needed?"
+                    Foreground="{DynamicResource TextPrimaryBrush}"
+                    automation:AutomationProperties.Name="Why this import may need Windows permission">
+            <TextBlock x:Name="ProfileImportDetailExplanation" Margin="0,8,0,0" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+          </Expander>
+          <WrapPanel HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Margin="0,0,10,0" Style="{StaticResource QuietButtonStyle}"
+                    Click="CancelProfileImportButton_Click" Content="_Not now"
+                    automation:AutomationProperties.Name="Cancel profile import and keep selections" />
+            <Button Style="{StaticResource UtilityActionButtonStyle}"
+                    Click="ContinueProfileImportButton_Click" Content="_Continue"
+                    automation:AutomationProperties.Name="Continue the reviewed profile import" />
+          </WrapPanel>
         </StackPanel>
       </ScrollViewer>
     </controls:InAppDialog>

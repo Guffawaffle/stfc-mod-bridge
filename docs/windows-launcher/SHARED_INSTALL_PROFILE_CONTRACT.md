@@ -31,18 +31,20 @@ Application Support root under the same shared contract.
 
 Bridge consumes the packaged `stfc-profiles-native.dll` through its versioned
 UTF-8 JSON C ABI. The shared native catalog owns enumeration, create/edit,
-archive/restore, live sessions and named launch. Bridge stores only an immutable
+Windows-user import, archive/restore, live sessions and named launch. Bridge stores only an immutable
 selected ID in `profile-ui-selection.json`; invalid or archived selection stays
 explicitly unavailable until the user restores it or chooses Default. Duplicate
 display names remain distinguishable by their IDs. There is no private Bridge
-catalog, marker reader, adoption path or migration.
+catalog or installation-marker reader/adoption path.
 
 Settings and Data Sync bind to the selected profile's `config.toml`, with its
 configuration target visibly labeled. A missing configuration starts an empty
 staged draft and is created only on Save. Native profile data leases keep the
 active directory stable through each read/save. Verified DPAPI configuration
 backups live inside that same profile's `backups/configuration` directory and
-move with archive/restore. Account credentials are never copied from Default.
+move with archive/restore. Changing selection or editing configuration never
+copies account credentials. The explicit Windows-user import below creates a
+new profile from selected ordinary STFC preferences.
 The Home installation target remains independent of a profile's preferred
 installation.
 
@@ -50,6 +52,30 @@ The profile library accepts explicit ID and store lifecycle inputs from its host
 `New`, `Resume` and `Existing` remain explicit modes; missing established stores
 must not silently become empty accounts. Per-profile writer exclusion is owned
 by the runtime, independent of whether Bridge stays open.
+
+## Import from a Windows user
+
+Profiles offers **Import from Windows user** alongside New profile. Source users
+come from the shared library's `import-sources` operation and are selected by SID,
+not commander. Bridge supplies a new display name and preferred game folder to
+`prepare-user-import`, then shows the returned source, destination Windows user,
+copy scope and actual access explanation. Close the source user's game first so
+its preferences finish saving.
+
+Every import has a friendly **Continue / Not now** review. Required facts are
+visible; **Why is this needed?** contains optional detail. Keyboard, screen-reader
+labels and neutral status announcements use the existing dialog controls. If
+read access requires elevation, Continue permits the shared native owner to open
+Windows UAC. A standard user may enter administrator credentials into Windows;
+Bridge has no password form. The helper reads only source preferences and returns
+them through a private in-memory channel. The original destination user encrypts
+and publishes the new immutable-ID profile. No personal browser data is copied.
+
+Closing the review, Escape, declining UAC or any capture failure publishes no
+profile. The source, name and folder stay available to retry. Pending operations
+prevent duplicate submission. Imported profiles do not change the launch
+selection; **Use selected for launch** remains explicit. This is a one-time copy:
+ordinary game launches and source Windows-user data stay as they are.
 
 ## Launch forms
 

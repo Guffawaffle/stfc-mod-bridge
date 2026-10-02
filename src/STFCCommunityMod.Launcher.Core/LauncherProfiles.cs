@@ -37,7 +37,14 @@ public static class LauncherProfiles
 public sealed record ProfileCatalogRequest(
     string Operation, string? Root = null, string? Id = null, string? Name = null,
     string? GameDirectory = null, string? ExpectedRevision = null,
-    bool Archived = false, int ApiVersion = 1, int? ExpectedVersion = null, bool Permanent = false);
+    bool Archived = false, int ApiVersion = 1, int? ExpectedVersion = null, bool Permanent = false,
+    string? SourceUserSid = null, string? ExpectedDestinationSid = null, bool AllowElevation = false);
+public sealed record ProfileImportUser(string Sid, string Name, bool CurrentUser = false);
+public sealed record ProfileUserImportPlan(
+    string SourceUserSid, string SourceUserName, string DestinationUserSid, string DestinationUserName,
+    string Name, string GameDirectory, bool RequiresElevation, string Reason);
+public sealed record ProfileImportSources(IReadOnlyList<ProfileImportUser> Users, ProfileImportUser DestinationUser);
+
 public sealed record ProfileCatalogError(string Code, string Message);
 public sealed record ProfileCatalogResponse(
     bool Ok, ProfileCatalogError? Error = null,
@@ -47,7 +54,8 @@ public sealed record ProfileCatalogResponse(
     IReadOnlyList<ProfileSession>? Sessions = null,
     string? Revision = null, int? ProcessId = null, string? Readiness = null,
     string? Message = null, GameInstallationSnapshot? Installation = null,
-    string? CatalogRoot = null);
+    string? CatalogRoot = null, IReadOnlyList<ProfileImportUser>? Users = null,
+    ProfileImportUser? DestinationUser = null, ProfileUserImportPlan? ImportPlan = null);
 
 public interface IProfileCatalogTransport
 {
@@ -290,6 +298,44 @@ public sealed class NativeLauncherProfilesStore
     public Task<LauncherProfile> CreateNewAsync(string name, string gameDirectory,
         CancellationToken cancellationToken = default) => MutateAsync(new("create", Root: root,
             Name: name, GameDirectory: OptionalGameDirectory(gameDirectory)), cancellationToken);
+
+    public Task<ProfileImportSources> ImportSourcesAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            var response = RequireSuccess(new("import-sources", Root: root));
+            if (response.Users is null || response.DestinationUser is not { Sid.Length: > 0, Name.Length: > 0 } destination)
+                throw new InvalidDataException("The shared Profiles component omitted the Windows import sources.");
+            return new ProfileImportSources(response.Users, destination);
+        }, cancellationToken);
+
+    public Task<ProfileUserImportPlan> PrepareUserImportAsync(string sourceUserSid, string name, string gameDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceUserSid);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var game = OptionalGameDirectory(gameDirectory);
+        return Task.Run(() =>
+        {
+            var plan = RequireSuccess(new("prepare-user-import", Root: root, SourceUserSid: sourceUserSid,
+                Name: name, GameDirectory: game)).ImportPlan
+                ?? throw new InvalidDataException("The shared Profiles component omitted the import explanation.");
+            if (plan.SourceUserSid != sourceUserSid || string.IsNullOrWhiteSpace(plan.SourceUserName)
+                || string.IsNullOrWhiteSpace(plan.DestinationUserSid) || string.IsNullOrWhiteSpace(plan.DestinationUserName)
+                || string.IsNullOrWhiteSpace(plan.Name) || (plan.RequiresElevation && string.IsNullOrWhiteSpace(plan.Reason)))
+                throw new InvalidDataException("The shared Profiles component returned an incomplete import explanation.");
+            return plan;
+        }, cancellationToken);
+    }
+
+    // The caller presents this plan and confirms it before permitting the native Windows prompt.
+    public Task<LauncherProfile> ImportUserAsync(ProfileUserImportPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return MutateAsync(new("import-user", Root: root, SourceUserSid: plan.SourceUserSid,
+            Name: plan.Name, GameDirectory: plan.GameDirectory, ExpectedDestinationSid: plan.DestinationUserSid,
+            AllowElevation: plan.RequiresElevation), cancellationToken);
+    }
 
     public Task<LauncherProfile> EditAsync(LauncherProfile profile, string name, string gameDirectory,
         CancellationToken cancellationToken = default) => MutateAsync(new("edit", Root: root,
