@@ -10,12 +10,15 @@ internal sealed class GameInstallationViewModel(
     GameInstallationCoordinator coordinator,
     Func<string?> currentDirectory,
     Func<bool> mutationAvailable,
-    Action operationCompleted) : INotifyPropertyChanged
+    Action operationCompleted,
+    Func<string?>? currentInstallationId = null) : INotifyPropertyChanged
 {
     private GameInstallationSnapshot? snapshot;
     private string? target;
     private string? operationTarget;
     private string? requestedTarget;
+    private string? targetInstallationId;
+    private string? requestedInstallationId;
     private long operationGeneration;
     private int? checkedVersion;
     private bool checkedUpdateAvailable;
@@ -44,11 +47,14 @@ internal sealed class GameInstallationViewModel(
         && snapshot is { State: "ready", RequiresRecovery: false };
     public bool CanRecover => CanCheck && mutationAvailable() && snapshot?.RequiresRecovery == true;
 
-    public void SetTarget(string? directory)
+    public void SetTarget(string? directory, string? installationId = null)
     {
         requestedTarget = directory;
-        if (isWorking || string.Equals(target, directory, StringComparison.OrdinalIgnoreCase)) return;
+        requestedInstallationId = installationId;
+        if (isWorking || string.Equals(target, directory, StringComparison.OrdinalIgnoreCase)
+            && targetInstallationId == installationId) return;
         target = directory;
+        targetInstallationId = installationId;
         snapshot = null;
         checkedVersion = null;
         checkedUpdateAvailable = false;
@@ -70,10 +76,11 @@ internal sealed class GameInstallationViewModel(
 
     private async Task RunAsync(bool check, bool recover, bool mutate, CancellationToken cancellationToken)
     {
-        SetTarget(currentDirectory());
+        SetTarget(currentDirectory(), currentInstallationId?.Invoke());
         if (target is null || isWorking
             || mutate && (!mutationAvailable() || (recover ? !CanRecover : !CanUpdate))) return;
         var admittedTarget = target;
+        var admittedInstallationId = targetInstallationId;
         var admittedGeneration = ++operationGeneration;
         var expectedVersion = checkedVersion;
         isWorking = true;
@@ -95,10 +102,10 @@ internal sealed class GameInstallationViewModel(
                 Notify();
             });
             var response = mutate
-                ? recover ? await coordinator.RecoverAsync(admittedTarget, progress, cancellationToken)
-                    : await coordinator.UpdateAsync(admittedTarget, expectedVersion!.Value, progress, cancellationToken)
-                : check ? await coordinator.CheckAsync(admittedTarget, cancellationToken)
-                    : await coordinator.ReadStatusAsync(admittedTarget, cancellationToken);
+                ? recover ? await coordinator.RecoverAsync(admittedTarget, admittedInstallationId, progress, cancellationToken)
+                    : await coordinator.UpdateAsync(admittedTarget, expectedVersion!.Value, admittedInstallationId, progress, cancellationToken)
+                : check ? await coordinator.CheckAsync(admittedTarget, admittedInstallationId, cancellationToken)
+                    : await coordinator.ReadStatusAsync(admittedTarget, admittedInstallationId, cancellationToken);
             if (response.Installation is { } observed) snapshot = observed;
             if (response.Ok && check && snapshot is { } checkedSnapshot)
             {
@@ -134,7 +141,7 @@ internal sealed class GameInstallationViewModel(
             isWorking = false;
             isMutating = false;
             operationTarget = null;
-            SetTarget(requestedTarget);
+            SetTarget(requestedTarget, requestedInstallationId);
             Notify();
             if (mutate) operationCompleted();
         }

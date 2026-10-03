@@ -93,6 +93,24 @@ public sealed partial class GameLaunchHandoffCoordinator
         catch (Exception exception) when (IsProcessObservationFailure(exception)) { return null; }
     }
 
+    private bool AllRunningProcessesHaveKnownSessions(string gameDirectory)
+    {
+        if (gameProcessInspector is not IGameProcessIdentityInspector inspector) return false;
+        try
+        {
+            var running = inspector.CaptureTargetProcessIds(gameDirectory);
+            if (running is null || running.Count == 0) return false;
+            var known = ordinarySessions.Values.Concat(profilesStore.Sessions().Where(session => session.Readiness == "ready"))
+                .Select(ObserveSession).Where(session => session is not null
+                    && GameDirectoryIdentity.SameLocation(session.GameDirectory, gameDirectory))
+                .Select(session => session!.ProcessId).ToHashSet();
+            return running.All(known.Contains);
+        }
+        catch (Exception exception) when (IsProcessObservationFailure(exception)
+            || exception is UnauthorizedAccessException or TypeLoadException or BadImageFormatException
+            or System.Text.Json.JsonException or System.Runtime.InteropServices.ExternalException) { return false; }
+    }
+
     private static bool IsProcessObservationFailure(Exception exception) => exception is ArgumentException
         or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or IOException;
 

@@ -11,6 +11,20 @@ public sealed class ObservedConfigurationBindingTests
     private const string ReviewedCommit = "e80a303a9949c89100b6e59b8a5e5cc2271e7144";
 
     [TestMethod]
+    public void ProfilesOnlyComposesWithoutBorrowingACommunitySettingsCatalog()
+    {
+        using var fixture = new Fixture();
+        var provider = fixture.Providers.GetProvider("profiles");
+        var catalog = fixture.Resolver.ResolveCatalog(new("profiles", "development"), null);
+        Assert.AreEqual("profiles", catalog.Source.StableId);
+        Assert.IsFalse(catalog.IsQualified);
+        Assert.AreEqual(0, catalog.VisibleSettings.Count);
+        var composition = LauncherStartupComposition.Create(provider, provider.DefaultReleaseChannel,
+            configurationCatalog: catalog);
+        Assert.IsNotNull(composition);
+    }
+
+    [TestMethod]
     public void PersistedNewRepositoryReleaseCannotBorrowHistoricalTypedSettings()
     {
         using var fixture = new Fixture();

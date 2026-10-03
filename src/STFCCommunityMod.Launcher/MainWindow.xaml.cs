@@ -453,7 +453,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SettingsUnavailableDialog.IsOpen = true;
             return;
         }
-        if (!isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized())
+        if (!EnsureSettingsWorkspaceInitialized())
         {
             return;
         }

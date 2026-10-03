@@ -6,6 +6,7 @@ public enum LauncherConfigurationSourceId
 {
     Guffawaffle,
     Netniv,
+    Profiles,
 }
 
 public enum LauncherConfigurationControl
@@ -90,6 +91,7 @@ public sealed record LauncherConfigurationSource(
         {
             LauncherConfigurationSourceId.Guffawaffle => "guffawaffle",
             LauncherConfigurationSourceId.Netniv => "netniv",
+            LauncherConfigurationSourceId.Profiles => "profiles",
             _ => throw new InvalidOperationException($"Configuration source '{Id}' has no stable provider ID."),
         };
 
@@ -98,6 +100,7 @@ public sealed record LauncherConfigurationSource(
         {
             LauncherConfigurationSourceId.Guffawaffle => "Guffawaffle",
             LauncherConfigurationSourceId.Netniv => "NetniV",
+            LauncherConfigurationSourceId.Profiles => "Profiles only",
             _ => Id.ToString(),
         };
 }

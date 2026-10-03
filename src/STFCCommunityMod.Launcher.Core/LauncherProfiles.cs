@@ -403,7 +403,7 @@ public sealed class NativeLauncherProfilesStore
 
     public Task<LauncherProfile> EditAsync(LauncherProfile profile, string name, string gameDirectory,
         string preferredInstallationId, CancellationToken cancellationToken = default) => MutateAsync(new("edit", Root: root,
-            Id: profile.Id, Name: name, GameDirectory: OptionalGameDirectory(gameDirectory),
+            Id: profile.Id, Name: profile.IsDefault ? null : name, GameDirectory: OptionalGameDirectory(gameDirectory),
             ExpectedRevision: profile.Revision, PreferredInstallationId: preferredInstallationId), cancellationToken);
 
     public Task<LauncherProfile> AssignInstallationAsync(LauncherProfile profile, RegisteredGameInstallation installation,
@@ -413,7 +413,7 @@ public sealed class NativeLauncherProfilesStore
         ArgumentNullException.ThrowIfNull(installation);
         if (installation.State != "available" || !LauncherProfiles.ValidId(installation.Id))
             throw new InvalidOperationException("Select an available game installation before assigning it.");
-        return MutateAsync(new("edit", Root: root, Id: profile.Id, Name: profile.Name,
+        return MutateAsync(new("edit", Root: root, Id: profile.Id, Name: profile.IsDefault ? null : profile.Name,
             GameDirectory: installation.GameDirectory, ExpectedRevision: profile.Revision,
             PreferredInstallationId: installation.Id), cancellationToken);
     }

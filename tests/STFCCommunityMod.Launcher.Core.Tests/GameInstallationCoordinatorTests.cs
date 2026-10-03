@@ -6,6 +6,22 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class GameInstallationCoordinatorTests
 {
     [TestMethod]
+    public async Task RegisteredStatusCheckUpdateAndRecoveryRetainInstallationIdentity()
+    {
+        using var directory = new TemporaryDirectory();
+        var transport = new RecordingTransport(request => new(true,
+            Installation: new(request.GameDirectory!, 267, "ready", "idle")));
+        var coordinator = new GameInstallationCoordinator(directory.Path, transport);
+        const string installation = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        await coordinator.ReadStatusAsync(directory.Path, installation);
+        await coordinator.CheckAsync(directory.Path, installation);
+        await coordinator.UpdateAsync(directory.Path, 268, installation);
+        await coordinator.RecoverAsync(directory.Path, installation);
+        Assert.AreEqual(4, transport.Requests.Count);
+        Assert.IsTrue(transport.Requests.All(request => request.InstallationId == installation));
+    }
+
+    [TestMethod]
     public async Task CheckAndUpdateBindTheExactDisplayedInstallationAndCheckedVersion()
     {
         using var directory = new TemporaryDirectory();

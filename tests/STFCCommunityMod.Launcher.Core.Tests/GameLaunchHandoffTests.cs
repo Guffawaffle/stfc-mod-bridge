@@ -691,6 +691,20 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task DefaultCannotLaunchBesideAnUnattributedRunningTarget()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("state"), new NamedCatalog(NamedProfile(game)));
+        var profile = store.EnsureDefault();
+        await store.SelectAsync(profile.Id);
+        var fixture = CreateFixture(temporary, gameProcessState: GameProcessInspectionState.RunningTarget, profileStore: store);
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, defaultGameDirectory: game);
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+    }
+
+    [TestMethod]
     public void SessionFocusRejectsWrongExecutableAndDoesNotInferOrdinaryProfileFromCatalog()
     {
         using var temporary = new TemporaryDirectory();

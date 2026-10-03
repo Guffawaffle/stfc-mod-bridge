@@ -3,7 +3,7 @@ using System.ComponentModel;
 
 namespace STFCCommunityMod.Launcher.Core;
 
-public sealed class SystemGameProcessInspector : IGameProcessInspector
+public sealed class SystemGameProcessInspector : IGameProcessIdentityInspector
 {
     private const string PrimeProcessName = "prime";
     private readonly Func<IReadOnlyList<GameProcessObservation>> captureProcesses;
@@ -65,7 +65,7 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
                 try
                 {
                     var executablePath = process.MainModule?.FileName;
-                    observations.Add(new(executablePath, !string.IsNullOrWhiteSpace(executablePath)));
+                    observations.Add(new(executablePath, !string.IsNullOrWhiteSpace(executablePath), process.Id));
                 }
                 catch (Exception exception) when (
                     exception is Win32Exception
@@ -87,6 +87,20 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
         }
     }
 
+    public IReadOnlyList<int>? CaptureTargetProcessIds(string gameDirectory)
+    {
+        var target = Path.GetFullPath(Path.Combine(gameDirectory, "prime.exe"));
+        var ids = new List<int>();
+        foreach (var process in captureProcesses())
+        {
+            if (!process.IsInspectable || process.ProcessId <= 0 || string.IsNullOrWhiteSpace(process.ExecutablePath)) return null;
+            try { if (PathEquals(target, process.ExecutablePath)) ids.Add(process.ProcessId); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or ArgumentException or NotSupportedException) { return null; }
+        }
+        return ids;
+    }
+
     internal static bool PathEquals(string left, string right)
     {
         var first = Path.GetFullPath(left);
@@ -101,5 +115,6 @@ public sealed class SystemGameProcessInspector : IGameProcessInspector
 
     internal sealed record GameProcessObservation(
         string? ExecutablePath,
-        bool IsInspectable = true);
+        bool IsInspectable = true,
+        int ProcessId = 0);
 }

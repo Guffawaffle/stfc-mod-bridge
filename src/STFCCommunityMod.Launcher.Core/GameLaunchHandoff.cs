@@ -598,6 +598,12 @@ public sealed partial class GameLaunchHandoffCoordinator(
             IDisposable? installationLease = profilesStore.AcquireInstallationLease(gameDirectory);
             try
             {
+                if (profile is { PreferredInstallationId.Length: > 0 })
+                {
+                    var registered = profilesStore.InstallationPaths(profile.PreferredInstallationId);
+                    if (registered.State != "available" || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory))
+                        throw new InvalidOperationException("The selected installation changed before launch. Select the intended installation again.");
+                }
                 var child = await gameExecutableLaunchService.StartAsync(gameDirectory, [], cancellationToken);
                 RememberOrdinarySession(profile, gameDirectory, child);
                 GameInstallationLaunchCustody.Retain(child, installationLease);
@@ -697,7 +703,8 @@ public sealed partial class GameLaunchHandoffCoordinator(
                 LauncherHomeTone.Warning);
         }
         if (processState == GameProcessInspectionState.RunningTarget
-            && (requiredProfile is null || !requiredProfile.IsDefault && !LauncherProfileLaunchContract.Inspect(
+            && (requiredProfile is null || requiredProfile.IsDefault && !AllRunningProcessesHaveKnownSessions(validation.GameDirectory!)
+                || !requiredProfile.IsDefault && !LauncherProfileLaunchContract.Inspect(
                 validation.GameDirectory!, requiredProfile.Id).IsValid))
         {
             return Blocked(

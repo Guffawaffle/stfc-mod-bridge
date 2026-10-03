@@ -37,3 +37,19 @@ imports no preferences and deploys no game DLL as an incidental UI change.
 The design study in the Windows control workspace records the wider installation
 registration and producer integration contract; completed behavior and remaining
 work must be recorded separately at handoff.
+
+## Review corrections
+
+Default metadata edits omit a name field, since the native descriptor cannot be
+renamed. Game status, checking, updating, progress polling and recovery carry
+the captured registration ID. Changing that ID invalidates checked-version
+evidence even when the path is unchanged. A stale registration cannot authorize
+shared runtime or Default configuration targets. Prepared runtime work rechecks
+its original registration before execution; journal recovery still reaches an
+incomplete image through the registration-bound native recovery operation.
+
+Startup, refresh and launch decisions observe profile sessions. Default can
+coexist with verified isolated sessions, but an unknown running process cannot
+be claimed or authorize an extra ordinary launch. Settings navigation restores
+its workspace after provider recomposition. Profiles-only composition has an
+explicit empty community-settings catalog with its own source identity.

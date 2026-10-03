@@ -54,6 +54,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private LauncherLaunchTarget selectedLaunchTarget;
     private LauncherProfilesLoadResult profilesLoad;
     private IReadOnlyList<ProfileSession> profileSessions = [];
+    private sealed record PreparedInstallationBinding(string Id);
+    private readonly ConditionalWeakTable<ModOperationPreparation, PreparedInstallationBinding> preparedInstallationBindings = new();
     private IReadOnlyList<LauncherProfileCard> profileCards = [];
     private long profileGeneration;
     private LauncherWorkspaceMode workspaceMode;
@@ -133,10 +135,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
         modActionStatusTimer.Tick += ModActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
-        GameClient = new(gameInstallationCoordinator, () => SelectedGameDirectory,
+        RefreshSessionObservations();
+        GameClient = new(gameInstallationCoordinator, () => GameClientDirectory,
             () => !actionFeedback.Mod.IsWorking && !actionFeedback.Launch.IsWorking && !isRecoveryWorkspaceTransitionPending,
-            RefreshCore);
-        GameClient.SetTarget(SelectedGameDirectory);
+            RefreshCore, () => ActiveLaunchProfile?.PreferredInstallationId);
+        GameClient.SetTarget(GameClientDirectory, ActiveLaunchProfile?.PreferredInstallationId);
         GameClient.PropertyChanged += GameClient_PropertyChanged;
         presentation = CaptureSelectedInstallationPresentation();
         localHealth = modManagementCoordinator.CaptureHealth(
@@ -458,8 +461,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void DismissHomeOperationFeedback() => homeFeedback.Dismiss();
 
-    public string? SelectedGameDirectory => ResolveProfileGameDirectory(
-        profilesLoad, snapshot.SelectedGameDirectory, snapshot.ConfirmedGameInstallationDirectory);
+    public string? SelectedGameDirectory
+    {
+        get
+        {
+            var directory = ResolveProfileGameDirectory(profilesLoad, snapshot.SelectedGameDirectory,
+                snapshot.ConfirmedGameInstallationDirectory);
+            if (directory is null || ActiveLaunchProfile is not { PreferredInstallationId.Length: > 0 } profile)
+                return directory;
+            try
+            {
+                var registered = profilesStore.InstallationPaths(profile.PreferredInstallationId);
+                return registered.State == "available" && GameDirectoryIdentity.SameLocation(registered.GameDirectory, directory)
+                    ? directory : null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or InvalidOperationException or NotSupportedException or ArgumentException
+                or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+                or JsonException) { return null; }
+        }
+    }
 
     public string SelectionFeedback => selectionFeedback;
 
@@ -520,6 +541,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public LauncherProfile? SelectedConfigurationProfile => ActiveLaunchProfile;
     public string? ConfigurationGameDirectory => SelectedGameDirectory;
+    private string? GameClientDirectory => ActiveLaunchProfile is { PreferredInstallationId.Length: > 0 } profile
+        ? profile.GameDirectory : SelectedGameDirectory;
     public string ConfigurationTargetLabel => ActiveLaunchProfile is { } profile
         ? $"{(profile.IsDefault ? "Windows setup" : profile.Name)} · Settings for next launch on {NextLaunchInstallationLabel}"
         : "Selected profile is unavailable";
@@ -530,6 +553,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         string? detectedDirectory, string? confirmedDirectory)
     {
         if (load.State == LauncherProfilesLoadState.Invalid || load.Snapshot?.SelectedProfile is not { } profile)
+            return null;
+        if (!string.IsNullOrEmpty(profile.PreferredInstallationId) && profile.InstallationState != "available")
             return null;
         return !string.IsNullOrWhiteSpace(profile.GameDirectory) ? profile.GameDirectory
             : profile.IsDefault ? detectedDirectory ?? confirmedDirectory : null;
@@ -632,6 +657,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             NotifyLaunchPresentationChanged();
             UpdateLaunchActionAvailability();
         }
+    }
+
+    private void RefreshSessionObservations()
+    {
+        try { profileSessions = profilesStore.Sessions(); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException) { profileSessions = []; }
     }
 
     internal static string NamedProfileActionLabel(LauncherProfile profile, IReadOnlyList<ProfileSession> sessions) =>
@@ -965,7 +999,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         profilesLoad = profilesStore.Load();
         profileGeneration++;
         snapshot = environmentProbe.Capture();
-        GameClient.SetTarget(SelectedGameDirectory);
+        RefreshSessionObservations();
+        GameClient.SetTarget(GameClientDirectory, ActiveLaunchProfile?.PreferredInstallationId);
         presentation = CaptureSelectedInstallationPresentation();
         localHealth = modManagementCoordinator.CaptureHealth(
             SelectedGameDirectory,
@@ -1018,6 +1053,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CancellationToken cancellationToken = default)
     {
         var admittedDirectory = SelectedGameDirectory;
+        var admittedInstallationId = ActiveLaunchProfile?.PreferredInstallationId;
         if (!CanManageMod || admittedDirectory is null)
         {
             return null;
@@ -1033,6 +1069,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 admittedDirectory,
                 IsGameRunning,
                 cancellationToken);
+            if (!string.IsNullOrWhiteSpace(admittedInstallationId))
+                preparedInstallationBindings.Add(preparation, new(admittedInstallationId));
             if (preparation.State is ModOperationPreparationState.UpToDate
                 or ModOperationPreparationState.MutationBlocked)
             {
@@ -1076,6 +1114,27 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preparation);
+        if (preparedInstallationBindings.TryGetValue(preparation, out var binding))
+        {
+            try
+            {
+                var registered = profilesStore.InstallationPaths(binding.Id);
+                if (registered.State != "available"
+                    || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, preparation.GameDirectory))
+                {
+                    actionFeedback.Mod.Fail("The installation changed after this operation was prepared. Select the intended installation and prepare it again.");
+                    return null;
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or InvalidOperationException or NotSupportedException or ArgumentException
+                or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+                or JsonException)
+            {
+                actionFeedback.Mod.Fail("The prepared installation could not be revalidated. Select it again before continuing.");
+                return null;
+            }
+        }
         if (!actionFeedback.Mod.TryBegin(ModOperationAcceptedMessage(preparation)))
         {
             return null;
@@ -1209,6 +1268,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var profile = ActiveLaunchProfile;
         if (profile is null)
             return ObservableActionResult.Failed("The selected profile is unavailable.");
+        await RefreshProfileSessionsAsync();
+        if (!SameDisplayedLaunch())
+            return ObservableActionResult.Failed("The selected profile changed while its sessions were checked.");
         var sessions = gameLaunchCoordinator.CaptureSessions(profile, profileSessions);
         if (sessions.Count > 0)
         {

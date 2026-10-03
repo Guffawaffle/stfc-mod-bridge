@@ -48,12 +48,30 @@ public sealed class NativeProfileCatalogIntegrationTests
         Assert.AreEqual(first.Id, alias.Id);
         Assert.AreEqual("First", alias.Name);
         Assert.AreEqual(1, store.Installations().Count);
+        var windowsSetup = store.EnsureDefault();
+        windowsSetup = await store.AssignInstallationAsync(windowsSetup, first);
+        Assert.AreEqual(first.Id, windowsSetup.PreferredInstallationId);
+        windowsSetup = await store.EditAsync(windowsSetup, "Default", game, first.Id);
+        Assert.AreEqual(first.Id, windowsSetup.PreferredInstallationId);
+        var coordinator = new GameInstallationCoordinator(temporary.CreateDirectory("operations"), transport, root);
+        var status = await coordinator.ReadStatusAsync(game, first.Id);
+        Assert.IsTrue(status.Ok, status.Error?.Message);
         Directory.Move(game, game + "-original");
         Directory.CreateDirectory(game);
         File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
         File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
         Assert.AreEqual("unknown", store.InstallationPaths(first.Id).State);
         Assert.AreEqual(game, store.InstallationPaths(first.Id).GameDirectory);
+        foreach (var response in new[] {
+            await coordinator.CheckAsync(game, first.Id),
+            await coordinator.UpdateAsync(game, 267, first.Id),
+            await coordinator.RecoverAsync(game, first.Id) })
+        {
+            Assert.IsFalse(response.Ok);
+            Assert.AreEqual("installation_changed", response.Error!.Code);
+        }
+        Assert.AreEqual(2, Directory.GetFileSystemEntries(game).Length,
+            "Rejected maintenance must not write into a replacement installation.");
     }
     [TestMethod]
     public void BundledAbiRejectsUnavailableImportWithoutPublishingProfile()

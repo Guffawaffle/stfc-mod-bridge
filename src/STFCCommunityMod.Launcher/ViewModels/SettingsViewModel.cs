@@ -813,7 +813,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         workspace = loadedWorkspace;
         OperationStatus = catalog.IsQualified
             ? string.Empty
-            : "Typed Settings are unavailable because this installed release has no exact reviewed configuration catalog. Raw TOML remains available.";
+            : catalog.Source.Id == LauncherConfigurationSourceId.Profiles
+                ? "Profiles only has no community mod settings. Choose a community mod for this installation to use these settings."
+                : "Typed Settings are unavailable because this installed release has no exact reviewed configuration catalog. Raw TOML remains available.";
         RefreshPatchEditingAvailability();
     }
 

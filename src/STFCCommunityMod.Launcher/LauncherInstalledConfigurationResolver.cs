@@ -127,6 +127,7 @@ internal sealed class LauncherInstalledConfigurationResolver(
                 {
                     "netniv" => LauncherConfigurationSourceId.Netniv,
                     "guffawaffle" => LauncherConfigurationSourceId.Guffawaffle,
+                    "profiles" => LauncherConfigurationSourceId.Profiles,
                     _ => throw new InvalidDataException("No configuration source identity is registered."),
                 },
                 provider.ReleaseChannels.GetValueOrDefault(selection.ReleaseChannelId)?.Repository

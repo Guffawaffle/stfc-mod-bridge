@@ -49,6 +49,18 @@ public sealed class MainWindowProfileActionTests
     }
 
     [TestMethod]
+    public void UnknownRegistrationDoesNotBecomeAReplacementSoftwareOrDefaultConfigurationTarget()
+    {
+        var selected = DefaultProfile() with { GameDirectory = @"C:\replaced-game",
+            PreferredInstallationId = OtherId, InstallationState = "unknown" };
+        var target = MainWindowViewModel.ResolveProfileGameDirectory(Load(selected), @"C:\other-game", null);
+        Assert.IsNull(target);
+        Assert.IsNull(MainWindowViewModel.ResolveConfigurationFilePath(selected, target));
+        Assert.AreEqual(selected.GameDirectory,
+            MainWindowViewModel.ResolveProfileGameDirectory(Load(selected with { InstallationState = "available" }), null, null));
+    }
+
+    [TestMethod]
     public void DefaultSavedTargetRemainsAvailableForRecoveryWhenExecutableIsAbsent()
     {
         var ordinary = DefaultProfile();

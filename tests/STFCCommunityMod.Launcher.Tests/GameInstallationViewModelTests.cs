@@ -171,6 +171,22 @@ public sealed class GameInstallationViewModelTests
         Assert.AreEqual("Game client version not checked", fixture.ViewModel.Status);
     }
 
+    [TestMethod]
+    public async Task ChangingRegistrationAtTheSamePathInvalidatesCheckedUpdateEvidence()
+    {
+        using var fixture = new Fixture { SelectedInstallationId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
+        await fixture.ViewModel.CheckAsync();
+        Assert.AreEqual(fixture.SelectedInstallationId, fixture.LastCheck!.InstallationId);
+        Assert.IsTrue(fixture.ViewModel.CanUpdate);
+        fixture.SelectedInstallationId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        fixture.ViewModel.SetTarget(fixture.SelectedDirectory, fixture.SelectedInstallationId);
+        Assert.IsFalse(fixture.ViewModel.CanUpdate);
+        fixture.RequiresRecovery = true;
+        await fixture.ViewModel.RefreshStatusAsync();
+        await fixture.ViewModel.RecoverAsync();
+        Assert.AreEqual(fixture.SelectedInstallationId, fixture.LastMutation!.InstallationId);
+    }
+
     private sealed class StoppedInspector : IGameProcessInspector
     {
         public GameProcessInspectionState Inspect(string gameDirectory) => GameProcessInspectionState.NotRunning;
@@ -180,6 +196,7 @@ public sealed class GameInstallationViewModelTests
     {
         public string Directory { get; } = Path.Combine(Path.GetTempPath(), "bridge-game-ui-" + Guid.NewGuid().ToString("N"));
         public string SelectedDirectory { get; set; }
+        public string? SelectedInstallationId { get; set; }
         public string State { get; set; } = "ready";
         public bool MutationAvailable { get; set; } = true;
         public bool PauseCheck { get; set; }
@@ -194,7 +211,7 @@ public sealed class GameInstallationViewModelTests
         public Fixture()
         {
             SelectedDirectory = Directory;
-            ViewModel = new(new GameInstallationCoordinator(Directory, this), () => SelectedDirectory, () => MutationAvailable, () => Completed++);
+            ViewModel = new(new GameInstallationCoordinator(Directory, this), () => SelectedDirectory, () => MutationAvailable, () => Completed++, () => SelectedInstallationId);
             ViewModel.SetTarget(SelectedDirectory);
         }
         public ProfileCatalogResponse Request(ProfileCatalogRequest request)
