@@ -80,6 +80,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly Func<string, string, long, CancellationToken, ValueTask>?
         afterDurableCopyChunkWritten;
     private readonly Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted;
+    private readonly Action<ModInstalledArtifactState>? afterDetachReceiptCaptured;
 
     public ModDeploymentService(
         string stateDirectory,
@@ -132,7 +133,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
-        NativeLauncherProfilesStore? profilesStore = null)
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
@@ -157,6 +159,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.afterDurableCopyBytesFlushed = afterDurableCopyBytesFlushed;
         this.afterDurableCopyChunkWritten = afterDurableCopyChunkWritten;
         this.afterDurableCopyCompleted = afterDurableCopyCompleted;
+        this.afterDetachReceiptCaptured = afterDetachReceiptCaptured;
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -1217,7 +1220,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         try
         {
             journal = ReadJournal();
-            installedState = ReadInstalledState(normalizedGameDirectory);
+            installedState = ReadInstalledStates().SingleOrDefault(state =>
+                PathEquals(state.GameDirectory, normalizedGameDirectory)
+                || GameDirectoryIdentity.SameLocation(state.GameDirectory, normalizedGameDirectory));
         }
         catch (Exception exception) when (IsStateReadFailure(exception))
         {
@@ -1242,6 +1247,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 $"Mod Bridge is not managing the installation at '{normalizedGameDirectory}'.");
         }
 
+        var capturedReceipt = installedState;
+        afterDetachReceiptCaptured?.Invoke(capturedReceipt);
         var legacyUpgrade = UpgradeLegacyBackupReceipts(installedState, persistUpgrade: false);
         if (legacyUpgrade.Failure is not null)
         {
@@ -1268,7 +1275,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
         try
         {
-            DetachInstalledState(normalizedGameDirectory, retainedBackup);
+            DetachInstalledState(capturedReceipt, retainedBackup);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

@@ -800,7 +800,7 @@ public sealed partial class GameLaunchHandoffCoordinator(
                     "This game folder contains version.dll, but Mod Bridge did not install or record it. Windows may "
                     + "load it automatically, and Mod Bridge cannot vouch for its source or behavior.");
             }
-            else if (!PathEquals(state.GameDirectory, gameDirectory))
+            else if (!GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory))
             {
                 return RequiresOverride(
                     target,

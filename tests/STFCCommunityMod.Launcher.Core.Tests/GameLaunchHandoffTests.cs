@@ -619,7 +619,8 @@ public sealed class GameLaunchHandoffTests
         OfficialLauncherStartKind scopelyStartKind = OfficialLauncherStartKind.StartedNew,
         int? scopelyAvailabilityReadsBeforeMissing = null,
         GameProcessInspectionState? gameProcessState = null,
-        NativeLauncherProfilesStore? profileStore = null)
+        NativeLauncherProfilesStore? profileStore = null,
+        bool useStoreForDeployment = false)
     {
         var stateDirectory = temporaryDirectory.CreateDirectory("state");
         var deploymentService = new ModDeploymentService(
@@ -628,7 +629,8 @@ public sealed class GameLaunchHandoffTests
             new FakeVersionReader(),
             new FakeAuthenticityVerifier(),
             _ => false,
-            new("guffawaffle", "stable", "guffawaffle.windows"));
+            new("guffawaffle", "stable", "guffawaffle.windows"),
+            profilesStore: useStoreForDeployment ? profileStore : null);
         var gameService = new FakeGameExecutableLaunchService(gameAvailable);
         var scopelyService = new FakeOfficialLauncherService(
             scopelyAvailable,
@@ -713,9 +715,18 @@ public sealed class GameLaunchHandoffTests
             var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
                 NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
             var profile = store.EnsureDefault(); await store.SelectAsync(profile.Id);
-            var fixture = CreateFixture(temporary, profileStore: store);
+            var fixture = CreateFixture(temporary, profileStore: store, useStoreForDeployment: true);
+            await InstallManagedArtifactAsync(fixture.DeploymentService, game);
+            var canonicalReceipt = fixture.DeploymentService.ReadInstalledState(game)!;
+            Assert.IsNotNull(canonicalReceipt.InstallationBinding);
+            var aliasGame = Path.Combine(alias, "game");
+            var health = new ModInstallationInspector(fixture.DeploymentService, new SystemModInstallationFileSystem()).Capture(aliasGame, false);
+            Assert.AreEqual(ModInstallationEvidenceState.ManagedVerified, health.State);
+            var presentation = fixture.Coordinator.CapturePresentation(aliasGame, LauncherLaunchTarget.PrimeExecutable,
+                requiredProfile: profile with { GameDirectory = aliasGame });
+            Assert.IsTrue(presentation.CanExecute); Assert.IsFalse(presentation.RequiresUserOverride);
             var result = await fixture.Coordinator.LaunchProfileAsync(profile,
-                defaultGameDirectory: Path.Combine(alias, "game"));
+                defaultGameDirectory: aliasGame);
             Assert.AreEqual(GameLaunchHandoffState.Completed, result.State, result.Message);
             Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, fixture.GameService.LastGameDirectory!));
             Assert.AreEqual("", store.Load().Snapshot!.SelectedProfile!.PreferredInstallationId);

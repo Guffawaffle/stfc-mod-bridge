@@ -72,6 +72,10 @@ Metadata-only detach removes the uniquely matched persisted receipt in either
 alias direction and remains idempotent without changing game files. Default
 launch health is checked again against the final canonical target while custody
 is held; resolving a different target cannot skip its unverified-DLL warning.
+Health and diagnostics recognize a canonical ownership receipt through an alias
+without changing its physical binding. Detach captures the original raw receipt
+key and content, then checks that same row at removal; retargeting the alias cannot
+detach another installation or misattribute its retained backup history.
 
 Startup, refresh and launch decisions observe profile sessions. Default can
 coexist with verified isolated sessions, but an unknown running process cannot

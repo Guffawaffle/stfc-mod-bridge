@@ -2299,11 +2299,12 @@ public sealed class ModDeploymentServiceTests
     }
 
     [DataTestMethod]
-    [DataRow(false, false, true)]
-    [DataRow(true, false, true)]
-    [DataRow(false, true, true)]
-    [DataRow(false, true, false)]
-    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryAcrossMaintenance(bool repairFirst, bool detachOnly, bool savedThroughAlias)
+    [DataRow(false, false, true, false)]
+    [DataRow(true, false, true, false)]
+    [DataRow(false, true, true, false)]
+    [DataRow(false, true, false, false)]
+    [DataRow(false, true, false, true)]
+    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryAcrossMaintenance(bool repairFirst, bool detachOnly, bool savedThroughAlias, bool retargetDuringDetach)
     {
         var transport = NativeProfileCatalogIntegrationTests.Transport();
         using var temporary = new TemporaryDirectory();
@@ -2330,7 +2331,27 @@ public sealed class ModDeploymentServiceTests
             var original = oldService.ReadInstalledState(savedThroughAlias ? aliasGame : game)!;
             Assert.AreEqual(savedThroughAlias, original.InstallationBinding is null);
             var registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
-            var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+            string? otherGame = null;
+            ModInstalledArtifactState? otherReceipt = null;
+            if (retargetDuringDetach)
+            {
+                otherGame = CreateGameDirectory(temporary, "second-parent/game"); CompleteNativeImage(otherGame);
+                File.WriteAllBytes(Path.Combine(otherGame, "version.dll"), [7, 7, 7]);
+                Assert.IsTrue((await oldService.DeployAsync(otherGame, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
+                otherReceipt = oldService.ReadInstalledState(otherGame);
+                registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
+            }
+            var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+                afterDetachReceiptCaptured: retargetDuringDetach ? captured =>
+                {
+                    Assert.AreEqual(original.GameDirectory, captured.GameDirectory);
+                    Directory.Delete(alias);
+                    var retargetScript = $"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{alias.Replace("'", "''")}' -Target '{Path.GetDirectoryName(otherGame)!.Replace("'", "''")}' | Out-Null";
+                    var retargetStart = new System.Diagnostics.ProcessStartInfo(@"C:\Program Files\PowerShell\7\pwsh.exe") { UseShellExecute = false, CreateNoWindow = true };
+                    foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-EncodedCommand", Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(retargetScript)) }) retargetStart.ArgumentList.Add(argument);
+                    using var retargetHelper = System.Diagnostics.Process.Start(retargetStart)!;
+                    retargetHelper.WaitForExit(); Assert.AreEqual(0, retargetHelper.ExitCode);
+                } : null);
             var target = savedThroughAlias ? game : aliasGame;
             var observed = service.ReadInstalledState(target)!;
             Assert.AreEqual(Path.GetFullPath(game), observed.GameDirectory);
@@ -2342,14 +2363,20 @@ public sealed class ModDeploymentServiceTests
                 var installationCount = store.Installations().Count;
                 var detached = await service.StopManagingAsync(target);
                 Assert.IsTrue(detached.IsSuccess, detached.Message); Assert.IsTrue(detached.Changed);
-                Assert.AreEqual(0, service.ReadInstalledStates().Count);
+                Assert.AreEqual(retargetDuringDetach ? 1 : 0, service.ReadInstalledStates().Count);
                 Assert.AreEqual(installationCount, store.Installations().Count);
                 foreach (var pair in files) CollectionAssert.AreEqual(pair.Value, File.ReadAllBytes(pair.Key));
                 var registry = JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!;
                 Assert.AreEqual(1, registry.DetachedAdoptionBackups!.Count);
                 Assert.AreEqual(original.PreviousArtifactBackupPath, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupPath);
                 Assert.AreEqual(original.PreviousArtifactBackupIdentity, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupIdentity);
-                var again = await service.StopManagingAsync(target);
+                if (retargetDuringDetach)
+                {
+                    Assert.AreEqual(JsonSerializer.Serialize(otherReceipt, JournalJsonOptions),
+                        JsonSerializer.Serialize(service.ReadInstalledState(otherGame!), JournalJsonOptions));
+                    CollectionAssert.AreEqual(SuccessfulDownload().Contents, File.ReadAllBytes(Path.Combine(otherGame!, "version.dll")));
+                }
+                var again = await service.StopManagingAsync(game);
                 Assert.IsTrue(again.IsSuccess, again.Message); Assert.IsFalse(again.Changed);
                 Assert.AreEqual(1, JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!.DetachedAdoptionBackups!.Count);
                 return;
@@ -2889,7 +2916,8 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
-        NativeLauncherProfilesStore? profilesStore = null) =>
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null) =>
         CreateService(
             temporaryDirectory,
             new FakeDownloader(download),
@@ -2903,7 +2931,7 @@ public sealed class ModDeploymentServiceTests
             afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten,
             afterDurableCopyCompleted,
-            afterFileCheckpoint, profilesStore);
+            afterFileCheckpoint, profilesStore, afterDetachReceiptCaptured);
 
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
@@ -2919,7 +2947,8 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
         Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
-        NativeLauncherProfilesStore? profilesStore = null) =>
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null) =>
         new ModDeploymentService(
             temporaryDirectory.CreateDirectory("state"),
             downloader,
@@ -2934,7 +2963,8 @@ public sealed class ModDeploymentServiceTests
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
-            afterDurableCopyCompleted: afterDurableCopyCompleted, profilesStore: profilesStore);
+            afterDurableCopyCompleted: afterDurableCopyCompleted, profilesStore: profilesStore,
+            afterDetachReceiptCaptured: afterDetachReceiptCaptured);
 
     private static ModInstallationAttribution DefaultAttribution() =>
         new("guffawaffle", "stable", "guffawaffle.windows");

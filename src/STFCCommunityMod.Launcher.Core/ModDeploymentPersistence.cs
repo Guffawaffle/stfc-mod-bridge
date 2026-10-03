@@ -614,14 +614,15 @@ public sealed partial class ModDeploymentService
     }
 
     private void DetachInstalledState(
-        string gameDirectory,
+        ModInstalledArtifactState capturedReceipt,
         ModDetachedAdoptionBackupState? retainedBackup)
     {
         var registry = ReadInstalledRegistry();
         var matched = registry.Installations.SingleOrDefault(state =>
-            PathEquals(state.GameDirectory, gameDirectory)
-            || GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory));
-        if (matched is null) throw new IOException("The ownership receipt changed before it could be detached.");
+            PathEquals(state.GameDirectory, capturedReceipt.GameDirectory));
+        if (matched is null || JsonSerializer.Serialize(matched, JsonOptions)
+            != JsonSerializer.Serialize(capturedReceipt, JsonOptions))
+            throw new IOException("The ownership receipt changed before it could be detached.");
         var installations = registry.Installations
             .Where(state => !ReferenceEquals(state, matched))
             .ToArray();

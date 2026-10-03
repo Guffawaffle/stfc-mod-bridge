@@ -333,7 +333,7 @@ public sealed class LauncherDiagnosticService(
                 });
                 return;
             }
-            if (gameDirectory is null || !PathEquals(state.GameDirectory, gameDirectory))
+            if (gameDirectory is null || !GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory))
             {
                 health.Add(Attention(
                     "Managed artifact verification",
