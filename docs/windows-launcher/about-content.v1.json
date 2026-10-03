@@ -425,6 +425,13 @@
       "evidenceKind": "project-input"
     },
     {
+      "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/profiles/provider-pack.v1.json",
+      "version": null,
+      "noticeId": null,
+      "attributionStatus": "internal-build-input",
+      "evidenceKind": "project-input"
+    },
+    {
       "id": "STFCCommunityMod.Launcher|EmbeddedResource|../../providers/netniv/configuration-schema-set.v1.json",
       "version": null,
       "noticeId": null,

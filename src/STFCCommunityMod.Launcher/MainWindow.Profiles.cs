@@ -2,7 +2,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using STFCCommunityMod.Launcher.Core;
 
 namespace STFCCommunityMod.Launcher;
@@ -20,36 +19,29 @@ public partial class MainWindow
 
     private void OpenProfilesButton_Click(object sender, RoutedEventArgs e)
     {
-        if (isProfileOperationPending || !ReloadProfiles()) return;
-        ShowArchivedProfilesBox.IsChecked = false;
-        RefreshProfilesList(profiles.SelectedProfileId);
-        if (ProfilesList.SelectedItem is null) NewProfileButton_Click(sender, e);
+        if (isProfileOperationPending) return;
+        ReloadProfiles();
+        if (ProfilesList.ItemsSource is null) RefreshProfilesList(profiles.SelectedProfileId);
         UpdateProfileLaunchSelection();
-        ProfilesDialog.IsOpen = true;
+        OpenProfilesWorkspace();
     }
 
     private bool ReloadProfiles()
     {
         var active = ProfilesStore.Load(allowSelectionRepair: true);
         var archived = ProfilesStore.Load(archived: true, allowSelectionRepair: true);
-        if (active.State == LauncherProfilesLoadState.Invalid || active.Snapshot is null
-            || archived.State == LauncherProfilesLoadState.Invalid || archived.Snapshot is null)
-        {
-            SettingsUnavailableMessage.Text = active.Error ?? archived.Error ?? "The shared profile catalog is unavailable.";
-            SettingsUnavailableDialog.IsOpen = true;
-            return false;
-        }
-        profiles = active.Snapshot;
-        archivedProfiles = archived.Snapshot.Profiles;
-        var issues = (profiles.Issues ?? []).Concat(archived.Snapshot.Issues ?? []).ToArray();
+        profiles = active.Snapshot ?? LauncherProfilesSnapshot.Empty;
+        archivedProfiles = archived.Snapshot?.Profiles ?? [];
+        var issues = (profiles.Issues ?? []).Concat(archived.Snapshot?.Issues ?? []).ToArray();
         ProfileCatalogIssues.Text = string.Join(Environment.NewLine,
             issues.Select(issue => $"{issue.Id ?? issue.Path}: {issue.Message}")
-                .Prepend(active.Error ?? string.Empty).Where(message => message.Length > 0));
-        return true;
+                .Prepend(active.Error ?? string.Empty).Prepend(archived.Error ?? string.Empty)
+                .Where(message => message.Length > 0));
+        return active.State != LauncherProfilesLoadState.Invalid && active.Snapshot is not null;
     }
 
     private void UpdateProfileLaunchSelection() => ProfileLaunchSelection.Text = profiles.SelectedProfile is { } selected
-        ? $"Selected for launch: {selected.Name} ({selected.Id})"
+        ? $"{selected.Name} · {(selected.IsDefault ? "Windows setup" : "Isolated profile")}"
         : profiles.SelectedProfileId is { } missing
             ? $"Selected profile is unavailable: {missing}. Restore it or choose Default."
             : "Selected for launch: Default";
@@ -57,9 +49,15 @@ public partial class MainWindow
     private void RefreshProfilesList(string? selectedId)
     {
         var entries = ShowArchivedProfilesBox.IsChecked == true ? archivedProfiles : profiles.Profiles;
-        ProfilesList.ItemsSource = entries;
-        ProfilesList.SelectedItem = entries.FirstOrDefault(profile => profile.Id == selectedId);
-        ArchiveProfileButton.IsEnabled = ProfilesList.SelectedItem is not null;
+        isRestoringProfileSelection = true;
+        try
+        {
+            ProfilesList.ItemsSource = entries;
+            ProfilesList.SelectedItem = entries.FirstOrDefault(profile => profile.Id == selectedId);
+        }
+        finally { isRestoringProfileSelection = false; }
+        if (ProfilesList.SelectedItem is LauncherProfile profile) FillProfileForm(profile);
+        ArchiveProfileButton.IsEnabled = ProfilesList.SelectedItem is LauncherProfile { IsDefault: false };
     }
 
     private void ShowArchivedProfilesBox_Changed(object sender, RoutedEventArgs e)
@@ -68,29 +66,45 @@ public partial class MainWindow
         RefreshProfilesList(null);
     }
 
-    private void ProfilesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ProfilesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        isArchivingProfile = false;
-        ProfileImportFeedback.Text = string.Empty;
-        if (ProfilesList.SelectedItem is not null) ResetImportMode();
-        ProfileError.Text = string.Empty;
-        if (ProfilesList.SelectedItem is not LauncherProfile profile)
+        if (isRestoringProfileSelection) return;
+        if (ProfilesList.SelectedItem is not LauncherProfile profile) return;
+        if (profile.State == "archived") { FillProfileForm(profile); return; }
+        if (!await SelectVisibleProfileAsync(profile.Id))
         {
-            ArchiveProfileButton.IsEnabled = false;
+            RefreshProfilesList(profiles.SelectedProfileId);
             return;
         }
+        FillProfileForm(profile);
+    }
+
+    private void FillProfileForm(LauncherProfile profile)
+    {
+        profileFormInstallation = null;
+        if (!string.IsNullOrEmpty(profile.PreferredInstallationId))
+        {
+            try { profileFormInstallation = ProfilesStore.InstallationPaths(profile.PreferredInstallationId); }
+            catch (Exception exception) when (IsProfileImportException(exception))
+            { ProfileCatalogIssues.Text = exception.Message; }
+        }
+        isArchivingProfile = false;
+        ProfileImportFeedback.Text = string.Empty;
+        ResetImportMode();
+        ProfileError.Text = string.Empty;
         var archived = profile.State == "archived";
         ProfileFormTitle.Text = archived ? "Archived profile" : "Edit profile";
         ProfileIdentity.Text = $"Profile ID: {profile.Id}";
         ProfileIdentity.Visibility = Visibility.Visible;
         ProfileNameBox.Text = profile.Name;
         ProfileFolderBox.Text = profile.GameDirectory;
-        ProfileNameBox.IsReadOnly = archived;
+        ProfileNameBox.IsReadOnly = archived || profile.IsDefault;
         ProfileFolderBox.IsReadOnly = archived;
         BrowseProfileFolderButton.IsEnabled = !archived;
         SaveProfileButton.IsEnabled = !archived;
+        ProfileSettingsButton.IsEnabled = !archived;
         ArchiveProfileButton.Content = archived ? "_Restore" : "_Archive";
-        ArchiveProfileButton.IsEnabled = true;
+        ArchiveProfileButton.IsEnabled = !profile.IsDefault;
     }
 
     private void ResetImportMode()
@@ -105,11 +119,15 @@ public partial class MainWindow
     {
         if (isProfileOperationPending) return;
         ResetImportMode();
+        profileFormInstallation = null;
         ProfileImportFeedback.Text = string.Empty;
         ShowArchivedProfilesBox.IsChecked = false;
-        ProfilesList.SelectedItem = null;
+        isRestoringProfileSelection = true;
+        try { ProfilesList.SelectedItem = null; }
+        finally { isRestoringProfileSelection = false; }
         isArchivingProfile = false;
-        ProfileFormTitle.Text = "New profile";
+        ProfileFormTitle.Text = "Create an empty profile";
+        SaveProfileButton.Content = "_Create profile";
         ProfileIdentity.Visibility = Visibility.Collapsed;
         ProfileNameBox.Text = string.Empty;
         ProfileNameBox.IsReadOnly = false;
@@ -117,6 +135,7 @@ public partial class MainWindow
         ProfileFolderBox.IsReadOnly = false;
         BrowseProfileFolderButton.IsEnabled = true;
         SaveProfileButton.IsEnabled = true;
+        ProfileSettingsButton.IsEnabled = false;
         ProfileError.Text = string.Empty;
         ArchiveProfileButton.Content = "_Archive";
         ArchiveProfileButton.IsEnabled = false;
@@ -126,6 +145,7 @@ public partial class MainWindow
     {
         isProfileOperationPending = pending;
         ProfilesEditor.IsEnabled = !pending;
+        ProfilesList.IsEnabled = !pending;
     }
 
     private async void ImportProfileButton_Click(object sender, RoutedEventArgs e)
@@ -145,7 +165,7 @@ public partial class MainWindow
         try
         {
             var discovered = await ProfilesStore.ImportSourcesAsync();
-            if (ProfilesDialog.IsOpen) ApplyImportSources(discovered);
+            if (isImportingProfile) ApplyImportSources(discovered);
         }
         catch (Exception exception) when (IsProfileImportException(exception))
         {
@@ -172,7 +192,7 @@ public partial class MainWindow
 
     private async Task<bool> ReviewProfileImportAsync(ViewModels.ProfileImportPresentation presentation)
     {
-        if (!ProfilesDialog.IsOpen) return false;
+        if (!isImportingProfile) return false;
         ProfileImportReviewDialog.DialogTitle = presentation.Title;
         AutomationProperties.SetName(ProfileImportReviewDialog, presentation.Title);
         ProfileImportCopyExplanation.Text = presentation.CopyExplanation;
@@ -220,16 +240,21 @@ public partial class MainWindow
         SetProfileOperationPending(true);
         try
         {
-            var plan = await ProfilesStore.PrepareUserImportAsync(source.Sid, ProfileNameBox.Text, ProfileFolderBox.Text);
-            if (!ProfilesDialog.IsOpen) return;
+            var plan = await ProfilesStore.PrepareUserImportAsync(source.Sid, ProfileNameBox.Text, ProfileFolderBox.Text,
+                preferredInstallationId: SelectedFormInstallationId());
             if (!await ReviewProfileImportAsync(ViewModels.ProfileImportPresentation.From(plan))) return;
+            if (!await ResolveProfileDraftsAsync()) return;
             ProfileImportFeedback.Text = "Importing the selected STFC setup…";
             var imported = await ProfilesStore.ImportUserAsync(plan);
+            await ProfilesStore.SelectAsync(imported.Id);
             if (!ReloadProfiles()) return;
             ShowArchivedProfilesBox.IsChecked = false;
             RefreshProfilesList(imported.Id);
             UpdateProfileLaunchSelection();
-            ProfileImportFeedback.Text = $"Imported {imported.Name}. Choose Use selected for launch when you’re ready.";
+            (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
+            RecomposeSelectedProfileRuntime();
+            await ReconcileSettingsTargetAsync();
+            ProfileImportFeedback.Text = $"Created {imported.Name} from {source.Name}. It is selected; launch when you’re ready.";
         }
         catch (Exception exception) when (IsProfileImportException(exception))
         {
@@ -258,12 +283,17 @@ public partial class MainWindow
 
     private void ProfileImportReviewDialog_Closed(object? sender, EventArgs e) => importReviewCompletion?.TrySetResult(false);
 
-    private void BrowseProfileFolderButton_Click(object sender, RoutedEventArgs e)
+    private async void BrowseProfileFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Select the preferred game folder containing prime.exe", Multiselect = false };
-        if (Directory.Exists(ProfileFolderBox.Text)) dialog.InitialDirectory = ProfileFolderBox.Text;
-        if (dialog.ShowDialog(this) == true) ProfileFolderBox.Text = dialog.FolderName;
+        if (isProfileOperationPending) return;
+        var selected = await ChooseInstallationAsync(profileFormInstallation?.Id ?? "", ProfileFolderBox.Text);
+        if (selected is null) return;
+        profileFormInstallation = selected;
+        ProfileFolderBox.Text = selected.GameDirectory;
     }
+
+    private string SelectedFormInstallationId() => profileFormInstallation is { } installation
+        && GameDirectoryIdentity.SameLocation(installation.GameDirectory, ProfileFolderBox.Text) ? installation.Id : "";
 
     private async void SaveProfileButton_Click(object sender, RoutedEventArgs e)
     {
@@ -276,14 +306,20 @@ public partial class MainWindow
         SetProfileOperationPending(true);
         try
         {
+            if (!await ResolveProfileDraftsAsync()) return;
             var selected = ProfilesList.SelectedItem as LauncherProfile;
             var updated = selected is null
-                ? await ProfilesStore.CreateNewAsync(ProfileNameBox.Text, ProfileFolderBox.Text)
-                : await ProfilesStore.EditAsync(selected, ProfileNameBox.Text, ProfileFolderBox.Text);
+                ? await ProfilesStore.CreateNewAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
+                    preferredInstallationId: SelectedFormInstallationId())
+                : await ProfilesStore.EditAsync(selected, ProfileNameBox.Text, ProfileFolderBox.Text,
+                    preferredInstallationId: SelectedFormInstallationId());
+            await ProfilesStore.SelectAsync(updated.Id);
             if (!ReloadProfiles()) return;
             RefreshProfilesList(updated.Id);
             UpdateProfileLaunchSelection();
             (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
+            RecomposeSelectedProfileRuntime();
+            await ReconcileSettingsTargetAsync();
             ProfileError.Text = string.Empty;
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
@@ -294,7 +330,7 @@ public partial class MainWindow
 
     private async void ArchiveProfileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (isProfileOperationPending || ProfilesList.SelectedItem is not LauncherProfile profile) return;
+        if (isProfileOperationPending || ProfilesList.SelectedItem is not LauncherProfile { IsDefault: false } profile) return;
         if (profile.Id == profiles.SelectedProfileId && SharedSettings.HasPendingChanges)
         {
             ProfileError.Text = "Save or discard Settings and Data Sync drafts before archiving their profile.";
@@ -324,38 +360,4 @@ public partial class MainWindow
         finally { SetProfileOperationPending(false); }
     }
 
-    private async void UseSelectedProfileButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (ProfilesList.SelectedItem is not LauncherProfile { State: "active" } profile)
-        {
-            ProfileError.Text = "Choose an active profile first. Restore archived profiles before launching.";
-            return;
-        }
-        await SaveLaunchSelectionAsync(profile.Id);
-    }
-
-    private async void UseDefaultProfileButton_Click(object sender, RoutedEventArgs e) => await SaveLaunchSelectionAsync(null);
-
-    private async Task SaveLaunchSelectionAsync(string? profileId)
-    {
-        if (isProfileOperationPending) return;
-        if (SharedSettings.HasPendingChanges)
-        {
-            ProfileError.Text = "Save or discard Settings and Data Sync drafts before changing profiles.";
-            return;
-        }
-        SetProfileOperationPending(true);
-        try
-        {
-            await ProfilesStore.SelectAsync(profileId);
-            if (!ReloadProfiles()) return;
-            UpdateProfileLaunchSelection();
-            (DataContext as ViewModels.MainWindowViewModel)?.ReloadLaunchProfile();
-            await ReconcileSettingsTargetAsync();
-            ProfileError.Text = string.Empty;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
-        { ProfileError.Text = exception.Message; }
-        finally { SetProfileOperationPending(false); }
-    }
 }

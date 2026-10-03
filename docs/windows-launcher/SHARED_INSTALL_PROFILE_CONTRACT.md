@@ -9,8 +9,11 @@ There is no compatibility selector, marker adoption, fallback or migration work.
 ## Activation and ownership
 
 Installing either runtime provides capability. Ordinary prime/official-launcher
-launches retain ordinary OS-user state. Named launches supply a stable ID per
-process and must isolate that exact ID or stop. GUI selection and other active
+launches retain ordinary OS-user state. Isolated launches supply a stable ID per
+process and must isolate that exact ID or stop. Default has its own immutable
+catalog ID and `windows-user` kind, while launching in ordinary mode without
+isolated arguments, stores or readiness claims. Its descriptor contains metadata
+only and belongs to the current Windows user. GUI selection and other active
 sessions never redirect a bare launch.
 
 STFC Profiles owns the shared per-user directory catalog. Bridge and the CLI
@@ -22,7 +25,10 @@ No file beside the executable selects or binds its account.
 
 The accepted Windows root is `%LOCALAPPDATA%\STFC Profiles`, with sibling
 `profiles/<id>` and `archives/<id>` directories. Each profile contains plaintext
-`metadata.json`, protected `player_prefs.bin` and profile-owned logs/data.
+`metadata.json`; isolated profiles also own protected `player_prefs.bin` and
+profile-owned logs/data. Default owns no copy of the Windows-user setup and
+cannot be archived or deleted. Installation registrations live independently
+under `installations/<id>/metadata.json`, with physical directory identity.
 Directories are the catalog; there is no central registry file. Archive and
 restore move the whole directory while preserving its ID. They require a stopped
 session and exclusion shared with launch admission whose identity survives the
@@ -31,7 +37,9 @@ Application Support root under the same shared contract.
 
 Bridge consumes the packaged `stfc-profiles-native.dll` through its versioned
 UTF-8 JSON C ABI. The shared native catalog owns enumeration, create/edit,
-Windows-user import, archive/restore, live sessions and named launch. Bridge stores only an immutable
+Windows-user import, archive/restore, live sessions and explicit launch. The
+stable C symbols accept JSON API v2 for typed profiles and installations. API v1
+never exposes Default as an isolated entry. Bridge stores only an immutable
 selected ID in `profile-ui-selection.json`; invalid or archived selection stays
 explicitly unavailable until the user restores it or chooses Default. Duplicate
 display names remain distinguishable by their IDs. There is no private Bridge
@@ -45,8 +53,18 @@ backups live inside that same profile's `backups/configuration` directory and
 move with archive/restore. Changing selection or editing configuration never
 copies account credentials. The explicit Windows-user import below creates a
 new profile from selected ordinary STFC preferences.
-The Home installation target remains independent of a profile's preferred
-installation.
+Default settings bind to the selected installation's existing TOML and ordinary
+provider backup/history flow. Engineering's runtime and client management bind
+to the selected profile's next-launch installation. Running sessions retain
+their original installation/process snapshot. Selecting an installation changes
+that profile's preference only; it never relocates another registration or
+repoints an update/recovery journal.
+
+Shuttle Bay and Engineering share one visible profile selection. Shuttle Bay
+provides named Launch/Focus actions; Engineering provides profile lifecycle,
+settings and installation/runtime management. View-only switching preserves
+drafts. Changing profile/editor target offers Save, Discard or Stay. There is
+no second hidden launch-selection button.
 
 The profile library accepts explicit ID and store lifecycle inputs from its host.
 `New`, `Resume` and `Existing` remain explicit modes; missing established stores
@@ -79,8 +97,9 @@ and publishes the new immutable-ID profile. No personal browser data is copied.
 
 Closing the review, Escape, declining UAC or any capture failure publishes no
 profile. The source, name and folder stay available to retry. Pending operations
-prevent duplicate submission. Imported profiles do not change the launch
-selection; **Use selected for launch** remains explicit. This is a one-time copy:
+prevent duplicate submission. The native import operation does not change Bridge
+selection. After a reviewed import succeeds, Bridge explicitly selects the new
+profile and opens its detail without launching it. This is a one-time copy:
 ordinary game launches and source Windows-user data stay as they are.
 
 ## Launch forms
@@ -97,7 +116,7 @@ invalid or duplicate active IDs and conflicting lifecycle requests reject.
 Isolation-ready and logged-in remain separate observations. A launched process
 alone is not evidence of account correctness.
 
-Ordinary Bridge launches keep ordinary account preferences and direct
+Default Bridge launches keep ordinary account preferences and direct
 `Process.Start` behavior. They acquire shared native installation access before
 spawn and retain it through the exact child lifetime. Both runtime distributions
 also hold installation access for their entire game lifetime. Updating requires
@@ -127,9 +146,10 @@ subsequent marker-free revision, not that initial snapshot.
 
 The shared native installation operations own status, official update checks,
 full-image update application and recovery. Bridge's Game client dialog shows
-its exact Home installation target, installed/available versions and actual
+the selected profile's exact next-launch installation, installed/available versions and actual
 native phase/byte progress. The checked target version is bound into Update.
-A profile's preferred installation never silently changes this Home target.
+The visible target is captured for each operation. Changing selection cannot
+change an already-started operation or its checked update target.
 Readiness to update and mod compatibility are separate evidence.
 
 All sessions using the target must stop. Bridge holds its operation lease

@@ -6,12 +6,27 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherDistributionProviderTests
 {
     [TestMethod]
+    public void ProfilesOnlyOfferingHasNoCommunitySettingsOrUnqualifiedDownload()
+    {
+        var catalog = LoadFixtureCatalog();
+        var profiles = catalog.GetProvider("profiles");
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported, profiles.ConfigurationSchema.Status);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported,
+            profiles.GetCapabilityStatus(LauncherProviderCapabilityIds.CommunityFeatures));
+        Assert.IsFalse(profiles.CanUseReleaseDiscoveryFor(profiles.DefaultReleaseChannel));
+        Assert.IsFalse(LauncherProviderModBinding.Resolve(profiles, profiles.DefaultReleaseChannel).IsAvailable);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported,
+            catalog.GetProvider("netniv").GetCapabilityStatus(LauncherProviderCapabilityIds.ProfileIsolation));
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported,
+            catalog.GetProvider("guffawaffle").GetCapabilityStatus(LauncherProviderCapabilityIds.ProfileIsolation));
+    }
+    [TestMethod]
     public void NeutralFixturesResolveBothProvidersFromStableIds()
     {
         var catalog = LoadFixtureCatalog();
 
         Assert.AreEqual("netniv", catalog.DefaultProviderId);
-        Assert.AreEqual(2, catalog.Providers.Count);
+        Assert.AreEqual(3, catalog.Providers.Count);
         var guffawaffle = catalog.GetProvider("guffawaffle");
         var netniv = catalog.GetProvider("netniv");
         Assert.AreEqual("Guffawaffle/stfc-mod", guffawaffle.DefaultReleaseChannel.Repository);
@@ -213,6 +228,8 @@ public sealed class LauncherDistributionProviderTests
                     File.OpenRead(FixturePath("guffawaffle-provider-pack.v1.json")),
                 "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json" =>
                     File.OpenRead(FixturePath("netniv-provider-pack.v1.json")),
+                "STFCCommunityMod.Launcher.ProviderPacks.Profiles.v1.json" =>
+                    File.OpenRead(FixturePath("profiles-provider-pack.v1.json")),
                 _ => null,
             });
     }

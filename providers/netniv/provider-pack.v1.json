@@ -25,6 +25,8 @@
       "resourceName": null
     },
     "capabilities": [
+      { "id": "profiles.isolation", "status": "unsupported" },
+      { "id": "community.features", "status": "supported" },
       { "id": "settings.catalog", "status": "supported" },
       { "id": "runtime.manifest", "status": "unknown" },
       { "id": "mod.release-discovery", "status": "supported" },

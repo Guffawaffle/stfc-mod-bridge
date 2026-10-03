@@ -674,6 +674,37 @@ public sealed class GameLaunchHandoffTests
     private static LauncherProfile NamedProfile(string game) => new(
         "0123456789abcdef0123456789abcdef", "Science", game, Revision: "current-profile");
 
+    [TestMethod]
+    public async Task ExplicitDefaultLaunchUsesOrdinaryPreferencesWithoutIsolationProbe()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("state"), new NamedCatalog(NamedProfile(game)));
+        var profile = store.EnsureDefault();
+        await store.SelectAsync(profile.Id);
+        var fixture = CreateFixture(temporary, profileStore: store);
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, defaultGameDirectory: game);
+        Assert.AreEqual(GameLaunchHandoffState.Completed, result.State);
+        Assert.AreEqual(1, fixture.GameService.StartCount);
+        Assert.AreEqual(game, fixture.GameService.LastGameDirectory);
+        Assert.AreEqual(0, fixture.GameService.LastArguments!.Count);
+    }
+
+    [TestMethod]
+    public void SessionFocusRejectsWrongExecutableAndDoesNotInferOrdinaryProfileFromCatalog()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary);
+        var fixture = CreateFixture(temporary);
+        var profile = NamedProfile(game);
+        var incorrect = new ProfileSession(profile.Id, Environment.ProcessId, "ready", game,
+            ProcessStartUtcTicks: 1, ExecutablePath: Path.Combine(game, "prime.exe"));
+        Assert.AreEqual(0, fixture.Coordinator.CaptureSessions(profile, [incorrect]).Count);
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, fixture.Coordinator.FocusSession(profile, incorrect).State);
+        var builtIn = profile with { Kind = "windows-user", BuiltIn = true };
+        Assert.AreEqual(0, fixture.Coordinator.CaptureSessions(builtIn, [incorrect with { Readiness = "ordinary" }]).Count);
+    }
+
     private sealed class NamedCatalog(LauncherProfile profile) : IProfileCatalogTransport, IProfileInstallationLeaseTransport
     {
         public List<ProfileCatalogRequest> Requests { get; } = [];
@@ -684,8 +715,11 @@ public sealed class GameLaunchHandoffTests
         public ProfileCatalogResponse Request(ProfileCatalogRequest request)
         {
             Requests.Add(request);
+            var builtIn = new LauncherProfile("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Default", "", Revision: "default-revision",
+                Kind: "windows-user", OwnerUserId: "S-1-5-21-test", BuiltIn: true);
+            if (request.Operation is "ensure-default" or "resolve-default") return new(true, Profile: builtIn);
             return request.Operation == "launch" ? LaunchResult
-                : new(true, Profile: profile, Profiles: [profile], Revision: "current-catalog");
+                : new(true, Profile: profile, Profiles: [builtIn, profile], Revision: "current-catalog");
         }
     }
 

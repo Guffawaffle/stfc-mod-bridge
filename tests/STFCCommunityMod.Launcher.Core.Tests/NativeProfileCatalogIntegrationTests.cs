@@ -7,6 +7,55 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class NativeProfileCatalogIntegrationTests
 {
     [TestMethod]
+    public void TypedDefaultIsMetadataOnlyAndCannotEnterIsolatedLifecycle()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("typed-catalog");
+        var created = transport.Request(new("ensure-default", Root: root));
+        Assert.IsTrue(created.Ok, created.Error?.Message);
+        var profile = created.Profile!;
+        Assert.IsTrue(profile.IsDefault);
+        Assert.IsTrue(LauncherProfiles.ValidId(profile.Id));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(profile.OwnerUserId));
+        Assert.IsTrue(string.IsNullOrWhiteSpace(profile.ConfigPath));
+        Assert.IsFalse(File.Exists(Path.Combine(root, "profiles", profile.Id, "player_prefs.bin")));
+        var same = transport.Request(new("ensure-default", Root: root));
+        Assert.AreEqual(profile.Id, same.Profile!.Id);
+        var archived = transport.Request(new("archive", Root: root, Id: profile.Id, ExpectedRevision: profile.Revision));
+        Assert.IsFalse(archived.Ok);
+        Assert.AreEqual("profile_kind", archived.Error!.Code);
+        var oldProjection = transport.Request(new("list", Root: root, ApiVersion: 1));
+        Assert.IsTrue(oldProjection.Ok, oldProjection.Error?.Message);
+        Assert.AreEqual(0, oldProjection.Profiles!.Count);
+    }
+
+    [TestMethod]
+    public async Task RegistrationDeduplicatesPhysicalFolderAndDoesNotFollowReplacement()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("installation-catalog");
+        var game = temporary.CreateDirectory("game");
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        File.WriteAllBytes(Path.Combine(game, "GameAssembly.dll"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(game, "UnityPlayer.dll"), [1, 2, 3]);
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"), transport, root);
+        var first = await store.RegisterInstallationAsync("First", game);
+        var alias = await store.RegisterInstallationAsync("Another label", Path.Combine(game, "."));
+        Assert.AreEqual(first.Id, alias.Id);
+        Assert.AreEqual("First", alias.Name);
+        Assert.AreEqual(1, store.Installations().Count);
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        Assert.AreEqual("unknown", store.InstallationPaths(first.Id).State);
+        Assert.AreEqual(game, store.InstallationPaths(first.Id).GameDirectory);
+    }
+    [TestMethod]
     public void BundledAbiRejectsUnavailableImportWithoutPublishingProfile()
     {
         var transport = Transport();

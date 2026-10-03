@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "Guffawaffle/stfc-profiles",
-  "revision": "b627bc46a38e87483c35a471f3ae792e3e7eb1f2",
+  "revision": "bcaca2e0b246fc4751d93f156f62c992604f28a0",
   "xmakeVersion": "3.0.8",
   "nativeDependencies": [
     {
@@ -25,5 +25,5 @@
       "license": "Zlib"
     }
   ],
-  "sourceArchiveSha256": "e4eae08920bf3ab9a6b2a8d8696287775b9f5847e9c940e7fed44fef4aa3bc79"
+  "sourceArchiveSha256": "bd6a007743463a76106827971d644799807c7bd293017d17d2bf0c6a1ddd071e"
 }

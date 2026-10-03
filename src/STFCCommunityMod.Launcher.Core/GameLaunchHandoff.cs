@@ -20,6 +20,7 @@ public enum LauncherLaunchRecoveryAction
     InstallOrRepairScopelyLauncher,
     OpenDiagnostics,
     WaitForLauncherOperation,
+    SetUpProfileSupport,
 }
 
 public sealed record GameLaunchPresentation(
@@ -44,6 +45,7 @@ public sealed record GameLaunchPresentation(
         LauncherLaunchRecoveryAction.InstallOrRepairScopelyLauncher => "Install or repair the Scopely launcher",
         LauncherLaunchRecoveryAction.OpenDiagnostics => "Open Diagnostics",
         LauncherLaunchRecoveryAction.WaitForLauncherOperation => "Wait for the active Mod Bridge operation",
+        LauncherLaunchRecoveryAction.SetUpProfileSupport => "Set up profile support",
         _ => string.Empty,
     };
 }
@@ -97,6 +99,13 @@ public interface IGameExecutableLaunchService
 public interface IGameExecutableProcess : IAsyncDisposable
 {
     Task WaitForExitAsync(CancellationToken cancellationToken);
+}
+
+public interface IGameExecutableProcessIdentity
+{
+    int ProcessId { get; }
+    long ProcessStartUtcTicks { get; }
+    string ExecutablePath { get; }
 }
 
 public sealed class WindowsOfficialLauncherService : IOfficialLauncherService
@@ -261,8 +270,11 @@ public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchSe
         return Task.FromResult<IGameExecutableProcess>(new TrackedGameProcess(process));
     }
 
-    private sealed class TrackedGameProcess(Process process) : IGameExecutableProcess
+    private sealed class TrackedGameProcess(Process process) : IGameExecutableProcess, IGameExecutableProcessIdentity
     {
+        public int ProcessId => process.Id;
+        public long ProcessStartUtcTicks => process.StartTime.ToUniversalTime().Ticks;
+        public string ExecutablePath => process.MainModule?.FileName ?? string.Empty;
         public Task WaitForExitAsync(CancellationToken cancellationToken) => process.WaitForExitAsync(cancellationToken);
         public ValueTask DisposeAsync() { process.Dispose(); return ValueTask.CompletedTask; }
     }
@@ -282,7 +294,7 @@ public sealed class WindowsGameExecutableLaunchService : IGameExecutableLaunchSe
     }
 }
 
-public sealed class GameLaunchHandoffCoordinator(
+public sealed partial class GameLaunchHandoffCoordinator(
     string stateDirectory,
     ModDeploymentService deploymentService,
     IGameExecutableLaunchService gameExecutableLaunchService,
@@ -300,7 +312,7 @@ public sealed class GameLaunchHandoffCoordinator(
         ModInstallationEvidence? capturedInstallation = null,
         LauncherProfile? requiredProfile = null)
     {
-        if (HasIncompleteDeployment())
+        if (HasIncompleteDeployment(gameDirectory))
         {
             var action = target == LauncherLaunchTarget.ScopelyLauncher
                 ? "Open Scopely launcher"
@@ -344,12 +356,13 @@ public sealed class GameLaunchHandoffCoordinator(
             LauncherLaunchRecoveryAction.None);
     }
 
-    private bool HasIncompleteDeployment()
+    private bool HasIncompleteDeployment(string? gameDirectory)
     {
         try
         {
             var journal = deploymentService.ReadJournal();
             return journal is not null
+                && (gameDirectory is null || GameDirectoryIdentity.SameLocation(journal.GameDirectory, gameDirectory))
                 && journal.Phase is not (ModDeploymentPhase.Committed
                     or ModDeploymentPhase.RolledBack
                     or ModDeploymentPhase.Failed);
@@ -447,11 +460,12 @@ public sealed class GameLaunchHandoffCoordinator(
         string? selectedProfileId;
         try { selectedProfileId = profilesStore.LoadSelectedId(); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or System.Text.Json.JsonException or InvalidDataException)
+            or System.Text.Json.JsonException or InvalidOperationException or NotSupportedException
+            or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         {
             return new(GameLaunchHandoffState.Blocked, exception.Message, revalidated, Changed: false);
         }
-        if (selectedProfileId != requiredProfile?.Id)
+        if (selectedProfileId != (requiredProfile?.Id ?? profilesStore.ResolveDefault().Id))
             return new(GameLaunchHandoffState.Blocked,
                 "The selected launch profile changed. Review the launch button and try again.",
                 revalidated, Changed: false);
@@ -463,15 +477,18 @@ public sealed class GameLaunchHandoffCoordinator(
                 return new(GameLaunchHandoffState.Blocked,
                     catalog.Error ?? "The shared profile catalog is unavailable.", revalidated, Changed: false);
             var selected = catalog.Snapshot.SelectedProfile;
-            if (selected?.Id != requiredProfile.Id
+            if (selected?.Id != requiredProfile.Id || selected.Kind != requiredProfile.Kind
+                || selected.PreferredInstallationId != requiredProfile.PreferredInstallationId
                 || selected.Revision != requiredProfile.Revision
-                || !string.Equals(selected.GameDirectory, requiredProfile.GameDirectory,
-                    StringComparison.OrdinalIgnoreCase))
+                || !GameDirectoryIdentity.SameLocation(
+                    string.IsNullOrWhiteSpace(selected.GameDirectory) && selected.IsDefault
+                        ? defaultGameDirectory ?? gameDirectory ?? string.Empty : selected.GameDirectory,
+                    requiredProfile.GameDirectory))
             {
                 return new(GameLaunchHandoffState.Blocked,
                     "The named launch selection changed. Review it and try again.", revalidated, Changed: false);
             }
-            if (target != LauncherLaunchTarget.PrimeExecutable
+            if ((!requiredProfile.IsDefault && target != LauncherLaunchTarget.PrimeExecutable)
                 || !GameDirectoryIdentity.SameLocation(gameDirectory ?? string.Empty, requiredProfile.GameDirectory)
 )
             {
@@ -479,10 +496,19 @@ public sealed class GameLaunchHandoffCoordinator(
                     "The named profile must launch prime.exe from its recorded game folder.",
                     revalidated, Changed: false);
             }
-            var contract = LauncherProfileLaunchContract.Inspect(requiredProfile.GameDirectory, requiredProfile.Id);
-            if (!contract.IsValid)
+            if (!requiredProfile.IsDefault)
             {
-                return new(GameLaunchHandoffState.Blocked, contract.Message, revalidated, Changed: false);
+                var contract = LauncherProfileLaunchContract.Inspect(requiredProfile.GameDirectory, requiredProfile.Id);
+                if (!contract.IsValid)
+                    return new(GameLaunchHandoffState.Blocked, contract.Message, revalidated, Changed: false);
+            }
+            if (!string.IsNullOrWhiteSpace(requiredProfile.PreferredInstallationId))
+            {
+                var registered = profilesStore.InstallationPaths(requiredProfile.PreferredInstallationId);
+                if (registered.State != "available"
+                    || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, requiredProfile.GameDirectory))
+                    return new(GameLaunchHandoffState.Blocked,
+                        "The saved game installation is missing or has changed. Select an installation before launching.", revalidated, false);
             }
         }
 
@@ -502,6 +528,8 @@ public sealed class GameLaunchHandoffCoordinator(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
+        if (profile.IsDefault && string.IsNullOrWhiteSpace(profile.GameDirectory))
+            profile = profile with { GameDirectory = defaultGameDirectory ?? string.Empty };
         return LaunchAsync(profile.GameDirectory, LauncherLaunchTarget.PrimeExecutable,
             allowUnverifiedProxy, profile, defaultGameDirectory, cancellationToken);
     }
@@ -552,7 +580,7 @@ public sealed class GameLaunchHandoffCoordinator(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (profile is not null)
+            if (profile is { IsDefault: false })
             {
                 var launched = await profilesStore.LaunchAsync(profile, cancellationToken);
                 if (!launched.Ok || launched.Readiness != "ready" || launched.ProcessId is not > 0)
@@ -571,6 +599,7 @@ public sealed class GameLaunchHandoffCoordinator(
             try
             {
                 var child = await gameExecutableLaunchService.StartAsync(gameDirectory, [], cancellationToken);
+                RememberOrdinarySession(profile, gameDirectory, child);
                 GameInstallationLaunchCustody.Retain(child, installationLease);
                 installationLease = null;
             }
@@ -617,6 +646,12 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherLaunchRecoveryAction.SelectGameFolder);
         }
 
+        if (requiredProfile is { PreferredInstallationId.Length: > 0 } bound
+            && bound.InstallationState != "available")
+            return Blocked("Needs setup", "Launch prime.exe",
+                "The saved installation is missing or has changed. Select an installation for the next launch.",
+                target, LauncherLaunchRecoveryAction.SelectGameFolder);
+
         GameInstallValidation validation;
         try
         {
@@ -642,6 +677,14 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherLaunchRecoveryAction.SelectGameFolder);
         }
 
+        if (requiredProfile is { IsDefault: false })
+        {
+            var support = LauncherProfileLaunchContract.Inspect(validation.GameDirectory!, requiredProfile.Id);
+            if (!support.IsValid)
+                return Blocked("Needs setup", "Launch prime.exe", support.Message, target,
+                    LauncherLaunchRecoveryAction.SetUpProfileSupport);
+        }
+
         var processState = gameProcessInspector.Inspect(validation.GameDirectory);
         if (processState == GameProcessInspectionState.Unattributable)
         {
@@ -654,7 +697,7 @@ public sealed class GameLaunchHandoffCoordinator(
                 LauncherHomeTone.Warning);
         }
         if (processState == GameProcessInspectionState.RunningTarget
-            && (requiredProfile is null || !LauncherProfileLaunchContract.Inspect(
+            && (requiredProfile is null || !requiredProfile.IsDefault && !LauncherProfileLaunchContract.Inspect(
                 validation.GameDirectory!, requiredProfile.Id).IsValid))
         {
             return Blocked(
@@ -699,6 +742,7 @@ public sealed class GameLaunchHandoffCoordinator(
         {
             var journal = deploymentService.ReadJournal();
             if (journal is not null
+                && GameDirectoryIdentity.SameLocation(journal.GameDirectory, gameDirectory)
                 && journal.Phase is not (ModDeploymentPhase.Committed
                     or ModDeploymentPhase.RolledBack
                     or ModDeploymentPhase.Failed))

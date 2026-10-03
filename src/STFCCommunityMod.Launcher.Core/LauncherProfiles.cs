@@ -9,10 +9,18 @@ namespace STFCCommunityMod.Launcher.Core;
 public sealed record LauncherProfile(
     string Id, string Name, string GameDirectory,
     string Directory = "", string ConfigPath = "", string LogPath = "",
-    string Revision = "", string State = "active", bool PreferencesInitialized = false);
+    string Revision = "", string State = "active", bool PreferencesInitialized = false,
+    string Kind = "isolated", string OwnerUserId = "", bool BuiltIn = false,
+    string PreferredInstallationId = "", string InstallationState = "")
+{
+    public bool IsDefault => Kind == "windows-user" && BuiltIn;
+}
 
 public sealed record ProfileCatalogIssue(string? Id, string Path, string Code, string Message);
-public sealed record ProfileSession(string Id, int ProcessId, string Readiness, string GameDirectory);
+public sealed record ProfileSession(string Id, int ProcessId, string Readiness, string GameDirectory,
+    long ProcessStartUtcTicks = 0, string ExecutablePath = "");
+public sealed record RegisteredGameInstallation(string Id, string Name, string GameDirectory,
+    string PhysicalIdentity, string State, string Revision);
 
 public sealed record LauncherProfilesSnapshot(
     string? SelectedProfileId, IReadOnlyList<LauncherProfile> Profiles,
@@ -37,12 +45,15 @@ public static class LauncherProfiles
 public sealed record ProfileCatalogRequest(
     string Operation, string? Root = null, string? Id = null, string? Name = null,
     string? GameDirectory = null, string? ExpectedRevision = null,
-    bool Archived = false, int ApiVersion = 1, int? ExpectedVersion = null, bool Permanent = false,
-    string? SourceUserSid = null, string? ExpectedDestinationSid = null, bool AllowElevation = false);
+    bool Archived = false, int ApiVersion = 2, int? ExpectedVersion = null, bool Permanent = false,
+    string? SourceUserSid = null, string? ExpectedDestinationSid = null, bool AllowElevation = false,
+    string? InstallationId = null, string? PreferredInstallationId = null,
+    string? ExpectedInstallationRevision = null);
 public sealed record ProfileImportUser(string Sid, string Name, bool CurrentUser = false);
 public sealed record ProfileUserImportPlan(
     string SourceUserSid, string SourceUserName, string DestinationUserSid, string DestinationUserName,
-    string Name, string GameDirectory, bool RequiresElevation, string Reason);
+    string Name, string GameDirectory, bool RequiresElevation, string Reason,
+    string PreferredInstallationId = "", string InstallationRevision = "");
 public sealed record ProfileImportSources(IReadOnlyList<ProfileImportUser> Users, ProfileImportUser DestinationUser,
     bool RequiresElevation = false, int UnavailableUsers = 0);
 
@@ -57,7 +68,9 @@ public sealed record ProfileCatalogResponse(
     string? Message = null, GameInstallationSnapshot? Installation = null,
     string? CatalogRoot = null, IReadOnlyList<ProfileImportUser>? Users = null,
     ProfileImportUser? DestinationUser = null, ProfileUserImportPlan? ImportPlan = null,
-    bool? RequiresElevation = null, int? UnavailableUsers = null);
+    bool? RequiresElevation = null, int? UnavailableUsers = null,
+    IReadOnlyList<RegisteredGameInstallation>? Installations = null,
+    RegisteredGameInstallation? RegisteredInstallation = null);
 
 public interface IProfileCatalogTransport
 {
@@ -213,8 +226,15 @@ public sealed class NativeProfileCatalogTransport : IProfileCatalogTransport, IP
                     throw new InvalidOperationException($"The shared profile API failed (transport status {status}).");
                 var json = Marshal.PtrToStringUTF8(response)
                     ?? throw new InvalidDataException("The shared profile API returned no JSON response.");
-                return JsonSerializer.Deserialize<ProfileCatalogResponse>(json, JsonOptions)
+                var result = JsonSerializer.Deserialize<ProfileCatalogResponse>(json, JsonOptions)
                     ?? throw new InvalidDataException("The shared profile API returned an incomplete response.");
+                if (request.Operation is "register-installation" or "installation-paths" && result.Ok)
+                {
+                    using var document = JsonDocument.Parse(json);
+                    var installation = document.RootElement.GetProperty("installation").Deserialize<RegisteredGameInstallation>(JsonOptions);
+                    return result with { Installation = null, RegisteredInstallation = installation };
+                }
+                return result;
             }
             finally { if (response != IntPtr.Zero) Free(response); }
         }
@@ -268,12 +288,21 @@ public sealed class NativeLauncherProfilesStore
         string? selectionError = null;
         try
         {
-            try { selectedId = LoadSelectedId(); }
+            try { selectedId = ReadSelectedId(); }
             catch (Exception exception) when (allowSelectionRepair && IsCatalogException(exception))
             { selectionError = $"Bridge's saved selection needs repair: {exception.Message}"; }
             selectionRead = true;
+            if (!archived)
+            {
+                var builtIn = EnsureDefault();
+                selectedId ??= builtIn.Id;
+            }
             var response = RequireSuccess(new("list", Root: root, Archived: archived));
             var profiles = response.Profiles ?? throw new InvalidDataException("The shared catalog omitted its profile list.");
+            if (profiles.Any(profile => !LauncherProfiles.ValidId(profile.Id)
+                || profile.Kind is not ("isolated" or "windows-user")
+                || profile.Kind == "windows-user" && !profile.IsDefault))
+                throw new InvalidDataException("The shared catalog returned an unsupported profile storage kind.");
             var snapshot = new LauncherProfilesSnapshot(selectedId, profiles, response.Issues ?? []);
             if (!archived && selectedId is not null && snapshot.SelectedProfile is null)
                 return new(LauncherProfilesLoadState.Loaded, snapshot,
@@ -288,6 +317,9 @@ public sealed class NativeLauncherProfilesStore
     }
 
     public string? LoadSelectedId()
+        => ReadSelectedId() ?? ResolveDefault().Id;
+
+    private string? ReadSelectedId()
     {
         if (!File.Exists(selectionPath)) return null;
         var selection = JsonSerializer.Deserialize<Selection>(File.ReadAllBytes(selectionPath), JsonOptions);
@@ -297,9 +329,24 @@ public sealed class NativeLauncherProfilesStore
         return selection.SelectedProfileId;
     }
 
+    public LauncherProfile EnsureDefault() => RequireDefault("ensure-default");
+    public LauncherProfile ResolveDefault() => RequireDefault("resolve-default");
+
+    private LauncherProfile RequireDefault(string operation)
+    {
+        var profile = RequireSuccess(new(operation, Root: root)).Profile;
+        if (profile is null || !LauncherProfiles.ValidId(profile.Id) || !profile.IsDefault
+            || profile.State != "active" || string.IsNullOrWhiteSpace(profile.OwnerUserId))
+            throw new InvalidDataException("The shared Profiles component omitted the current Windows setup identity.");
+        return profile;
+    }
+
     public Task<LauncherProfile> CreateNewAsync(string name, string gameDirectory,
-        CancellationToken cancellationToken = default) => MutateAsync(new("create", Root: root,
-            Name: name, GameDirectory: OptionalGameDirectory(gameDirectory)), cancellationToken);
+        CancellationToken cancellationToken = default) => CreateNewAsync(name, gameDirectory, "", cancellationToken);
+
+    public Task<LauncherProfile> CreateNewAsync(string name, string gameDirectory,
+        string preferredInstallationId, CancellationToken cancellationToken = default) => MutateAsync(new("create", Root: root,
+            Name: name, GameDirectory: OptionalGameDirectory(gameDirectory), PreferredInstallationId: preferredInstallationId), cancellationToken);
 
     public Task<ProfileImportSources> ImportSourcesAsync(bool allowElevation = false, string? expectedDestinationSid = null,
         CancellationToken cancellationToken = default) =>
@@ -317,7 +364,10 @@ public sealed class NativeLauncherProfilesStore
         }, cancellationToken);
 
     public Task<ProfileUserImportPlan> PrepareUserImportAsync(string sourceUserSid, string name, string gameDirectory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => PrepareUserImportAsync(sourceUserSid, name, gameDirectory, "", cancellationToken);
+
+    public Task<ProfileUserImportPlan> PrepareUserImportAsync(string sourceUserSid, string name, string gameDirectory,
+        string preferredInstallationId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceUserSid);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -325,11 +375,13 @@ public sealed class NativeLauncherProfilesStore
         return Task.Run(() =>
         {
             var plan = RequireSuccess(new("prepare-user-import", Root: root, SourceUserSid: sourceUserSid,
-                Name: name, GameDirectory: game)).ImportPlan
+                Name: name, GameDirectory: game, PreferredInstallationId: preferredInstallationId)).ImportPlan
                 ?? throw new InvalidDataException("The shared Profiles component omitted the import explanation.");
             if (plan.SourceUserSid != sourceUserSid || string.IsNullOrWhiteSpace(plan.SourceUserName)
                 || string.IsNullOrWhiteSpace(plan.DestinationUserSid) || string.IsNullOrWhiteSpace(plan.DestinationUserName)
-                || string.IsNullOrWhiteSpace(plan.Name) || (plan.RequiresElevation && string.IsNullOrWhiteSpace(plan.Reason)))
+                || string.IsNullOrWhiteSpace(plan.Name) || plan.PreferredInstallationId != preferredInstallationId
+                || preferredInstallationId.Length > 0 && string.IsNullOrWhiteSpace(plan.InstallationRevision)
+                || (plan.RequiresElevation && string.IsNullOrWhiteSpace(plan.Reason)))
                 throw new InvalidDataException("The shared Profiles component returned an incomplete import explanation.");
             return plan;
         }, cancellationToken);
@@ -342,13 +394,46 @@ public sealed class NativeLauncherProfilesStore
         ArgumentNullException.ThrowIfNull(plan);
         return MutateAsync(new("import-user", Root: root, SourceUserSid: plan.SourceUserSid,
             Name: plan.Name, GameDirectory: plan.GameDirectory, ExpectedDestinationSid: plan.DestinationUserSid,
-            AllowElevation: plan.RequiresElevation), cancellationToken);
+            AllowElevation: plan.RequiresElevation, PreferredInstallationId: plan.PreferredInstallationId,
+            ExpectedInstallationRevision: plan.InstallationRevision), cancellationToken);
     }
 
     public Task<LauncherProfile> EditAsync(LauncherProfile profile, string name, string gameDirectory,
-        CancellationToken cancellationToken = default) => MutateAsync(new("edit", Root: root,
+        CancellationToken cancellationToken = default) => EditAsync(profile, name, gameDirectory, "", cancellationToken);
+
+    public Task<LauncherProfile> EditAsync(LauncherProfile profile, string name, string gameDirectory,
+        string preferredInstallationId, CancellationToken cancellationToken = default) => MutateAsync(new("edit", Root: root,
             Id: profile.Id, Name: name, GameDirectory: OptionalGameDirectory(gameDirectory),
-            ExpectedRevision: profile.Revision), cancellationToken);
+            ExpectedRevision: profile.Revision, PreferredInstallationId: preferredInstallationId), cancellationToken);
+
+    public Task<LauncherProfile> AssignInstallationAsync(LauncherProfile profile, RegisteredGameInstallation installation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(installation);
+        if (installation.State != "available" || !LauncherProfiles.ValidId(installation.Id))
+            throw new InvalidOperationException("Select an available game installation before assigning it.");
+        return MutateAsync(new("edit", Root: root, Id: profile.Id, Name: profile.Name,
+            GameDirectory: installation.GameDirectory, ExpectedRevision: profile.Revision,
+            PreferredInstallationId: installation.Id), cancellationToken);
+    }
+
+    public IReadOnlyList<RegisteredGameInstallation> Installations()
+        => RequireSuccess(new("installations", Root: root)).Installations
+            ?? throw new InvalidDataException("The shared catalog omitted its installation registrations.");
+
+    public Task<IReadOnlyList<RegisteredGameInstallation>> InstallationsAsync(CancellationToken cancellationToken = default)
+        => Task.Run(Installations, cancellationToken);
+
+    public Task<RegisteredGameInstallation> RegisterInstallationAsync(string name, string gameDirectory,
+        CancellationToken cancellationToken = default)
+        => Task.Run(() => RequireSuccess(new("register-installation", Root: root, Name: name,
+            GameDirectory: OptionalGameDirectory(gameDirectory))).RegisteredInstallation
+            ?? throw new InvalidDataException("The shared catalog omitted the registered installation."), cancellationToken);
+
+    public RegisteredGameInstallation InstallationPaths(string id)
+        => RequireSuccess(new("installation-paths", Root: root, InstallationId: id)).RegisteredInstallation
+            ?? throw new InvalidDataException("The shared catalog omitted its installation identity.");
 
     public Task<LauncherProfile> ArchiveAsync(LauncherProfile profile, CancellationToken cancellationToken = default) =>
         MutateAsync(new("archive", Root: root, Id: profile.Id, ExpectedRevision: profile.Revision), cancellationToken);
@@ -360,6 +445,7 @@ public sealed class NativeLauncherProfilesStore
         cancellationToken.ThrowIfCancellationRequested();
         await using var lease = await operationLock.TryAcquireAsync(cancellationToken);
         if (lease is null) throw new InvalidOperationException("Another Bridge operation is active. Try selecting again.");
+        profileId ??= EnsureDefault().Id;
         if (profileId is not null)
         {
             var response = RequireSuccess(new("paths", Root: root, Id: profileId));
@@ -399,9 +485,17 @@ public sealed class NativeLauncherProfilesStore
     public Task<ProfileCatalogResponse> LaunchAsync(LauncherProfile profile, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => transport.Request(new("launch", Root: root, Id: profile.Id,
-            GameDirectory: profile.GameDirectory, ExpectedRevision: profile.Revision)), cancellationToken);
+        return Task.Run(() => transport.Request(new(profile.IsDefault ? "launch-ordinary" : "launch", Root: root, Id: profile.Id,
+            GameDirectory: profile.GameDirectory, ExpectedRevision: profile.Revision,
+            InstallationId: string.IsNullOrWhiteSpace(profile.PreferredInstallationId) ? null : profile.PreferredInstallationId)), cancellationToken);
     }
+
+    public IReadOnlyList<ProfileSession> Sessions()
+        => RequireSuccess(new("sessions", Root: root)).Sessions
+            ?? throw new InvalidDataException("The shared Profiles component omitted its session list.");
+
+    public Task<IReadOnlyList<ProfileSession>> SessionsAsync(CancellationToken cancellationToken = default)
+        => Task.Run(Sessions, cancellationToken);
 
     private Task<LauncherProfile> MutateAsync(ProfileCatalogRequest request, CancellationToken cancellationToken)
     {

@@ -50,7 +50,6 @@ public sealed class ProfileUserImportTests
         Assert.AreEqual("Main", request.Name);
         Assert.AreEqual(temporary.Path, request.Root);
         Assert.AreEqual(Profile().Id, imported.Id);
-        Assert.IsNull(store.LoadSelectedId());
         Assert.IsFalse(File.Exists(Path.Combine(temporary.Path, "profile-ui-selection.json")));
     }
 

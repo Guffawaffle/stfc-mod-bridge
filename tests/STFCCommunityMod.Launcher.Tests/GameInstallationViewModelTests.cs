@@ -131,6 +131,46 @@ public sealed class GameInstallationViewModelTests
         if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
+
+    [TestMethod]
+    public async Task ReadOnlyChecksRemainAvailableWhileInstallationMutationIsBlocked()
+    {
+        using var fixture = new Fixture { MutationAvailable = false };
+        Assert.IsTrue(fixture.ViewModel.CanCheck);
+        await fixture.ViewModel.CheckAsync();
+        StringAssert.Contains(fixture.ViewModel.Status, "221 → 267");
+        Assert.IsFalse(fixture.ViewModel.CanUpdate);
+        await fixture.ViewModel.UpdateAsync();
+        Assert.IsNull(fixture.LastMutation);
+        fixture.RequiresRecovery = true;
+        await fixture.ViewModel.RefreshStatusAsync();
+        Assert.IsFalse(fixture.ViewModel.CanRecover);
+        Assert.IsTrue(fixture.ViewModel.CanCheck);
+    }
+
+    [TestMethod]
+    public async Task ProfileSelectionDuringCheckKeepsOperationTargetAndClearsOldEvidenceOnCompletion()
+    {
+        using var fixture = new Fixture { PauseCheck = true };
+        var original = fixture.SelectedDirectory;
+        var check = fixture.ViewModel.CheckAsync();
+        try
+        {
+            Assert.IsTrue(fixture.CheckEntered.Wait(TimeSpan.FromSeconds(3)), "Synthetic check did not reach transport.");
+            fixture.SelectedDirectory = Path.Combine(fixture.Directory, "next-installation");
+            fixture.ViewModel.SetTarget(fixture.SelectedDirectory);
+            Assert.AreEqual(original, fixture.ViewModel.OperationTarget);
+            Assert.AreEqual(original, fixture.ViewModel.Target);
+        }
+        finally { fixture.CheckContinue.Set(); }
+        await check;
+        Assert.AreEqual(original, fixture.LastCheck!.GameDirectory);
+        Assert.AreEqual(fixture.SelectedDirectory, fixture.ViewModel.Target);
+        Assert.IsNull(fixture.ViewModel.OperationTarget);
+        Assert.IsFalse(fixture.ViewModel.CanUpdate, "A check for the previous installation cannot admit the new target's update.");
+        Assert.AreEqual("Game client version not checked", fixture.ViewModel.Status);
+    }
+
     private sealed class StoppedInspector : IGameProcessInspector
     {
         public GameProcessInspectionState Inspect(string gameDirectory) => GameProcessInspectionState.NotRunning;
@@ -141,6 +181,11 @@ public sealed class GameInstallationViewModelTests
         public string Directory { get; } = Path.Combine(Path.GetTempPath(), "bridge-game-ui-" + Guid.NewGuid().ToString("N"));
         public string SelectedDirectory { get; set; }
         public string State { get; set; } = "ready";
+        public bool MutationAvailable { get; set; } = true;
+        public bool PauseCheck { get; set; }
+        public ManualResetEventSlim CheckEntered { get; } = new(false);
+        public ManualResetEventSlim CheckContinue { get; } = new(false);
+        public ProfileCatalogRequest? LastCheck { get; private set; }
         public bool RequiresRecovery { get; set; }
         public double? ProgressPercent { get; set; }
         public ProfileCatalogRequest? LastMutation { get; private set; }
@@ -149,17 +194,29 @@ public sealed class GameInstallationViewModelTests
         public Fixture()
         {
             SelectedDirectory = Directory;
-            ViewModel = new(new GameInstallationCoordinator(Directory, this), () => SelectedDirectory, () => true, () => Completed++);
+            ViewModel = new(new GameInstallationCoordinator(Directory, this), () => SelectedDirectory, () => MutationAvailable, () => Completed++);
             ViewModel.SetTarget(SelectedDirectory);
         }
         public ProfileCatalogResponse Request(ProfileCatalogRequest request)
         {
+            if (request.Operation == "check-game-update")
+            {
+                LastCheck = request;
+                if (PauseCheck)
+                {
+                    CheckEntered.Set();
+                    if (!CheckContinue.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("Synthetic check was not released.");
+                }
+            }
             if (request.Operation is "update-game" or "recover-game-update") LastMutation = request;
             return new(true, Installation: new(request.GameDirectory!, 221, State, "idle", 267, true,
                 ProgressPercent: ProgressPercent, RequiresRecovery: RequiresRecovery));
         }
         public void Dispose()
         {
+            CheckContinue.Set();
+            CheckEntered.Dispose();
+            CheckContinue.Dispose();
             if (System.IO.Directory.Exists(Directory)) System.IO.Directory.Delete(Directory, recursive: true);
         }
     }

@@ -14,6 +14,9 @@ internal sealed class GameInstallationViewModel(
 {
     private GameInstallationSnapshot? snapshot;
     private string? target;
+    private string? operationTarget;
+    private string? requestedTarget;
+    private long operationGeneration;
     private int? checkedVersion;
     private bool checkedUpdateAvailable;
     private bool isWorking;
@@ -21,7 +24,8 @@ internal sealed class GameInstallationViewModel(
     private string feedback = "Check the official service for a game client update.";
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string Target => target ?? "Choose a game installation first.";
+    public string Target => target ?? "Select an installation first.";
+    public string? OperationTarget => operationTarget;
     public bool IsWorking => isWorking;
     public bool IsMutationInProgress => isMutating;
     public string Status => snapshot is null ? "Game client version not checked"
@@ -35,19 +39,20 @@ internal sealed class GameInstallationViewModel(
     public bool HasProgress => snapshot?.ProgressPercent is >= 0 and <= 100;
     public double ProgressPercent => snapshot?.ProgressPercent is >= 0 and <= 100
         ? snapshot.ProgressPercent.Value : 0;
-    public bool CanCheck => !isWorking && target is not null && mutationAvailable();
-    public bool CanUpdate => CanCheck && checkedUpdateAvailable && checkedVersion is not null
+    public bool CanCheck => !isWorking && target is not null;
+    public bool CanUpdate => CanCheck && mutationAvailable() && checkedUpdateAvailable && checkedVersion is not null
         && snapshot is { State: "ready", RequiresRecovery: false };
-    public bool CanRecover => CanCheck && snapshot?.RequiresRecovery == true;
+    public bool CanRecover => CanCheck && mutationAvailable() && snapshot?.RequiresRecovery == true;
 
     public void SetTarget(string? directory)
     {
-        if (isWorking || target == directory) return;
+        requestedTarget = directory;
+        if (isWorking || string.Equals(target, directory, StringComparison.OrdinalIgnoreCase)) return;
         target = directory;
         snapshot = null;
         checkedVersion = null;
         checkedUpdateAvailable = false;
-        feedback = directory is null ? "Choose the game folder that contains prime.exe."
+        feedback = directory is null ? "Select the installation that contains prime.exe."
             : "Check the official service for a game client update.";
         Notify();
     }
@@ -66,12 +71,14 @@ internal sealed class GameInstallationViewModel(
     private async Task RunAsync(bool check, bool recover, bool mutate, CancellationToken cancellationToken)
     {
         SetTarget(currentDirectory());
-        if (target is null || isWorking || !mutationAvailable()
-            || mutate && (recover ? !CanRecover : !CanUpdate)) return;
+        if (target is null || isWorking
+            || mutate && (!mutationAvailable() || (recover ? !CanRecover : !CanUpdate))) return;
         var admittedTarget = target;
+        var admittedGeneration = ++operationGeneration;
         var expectedVersion = checkedVersion;
         isWorking = true;
         isMutating = mutate;
+        operationTarget = admittedTarget;
         feedback = mutate
             ? recover ? "Recovering the selected game installation…"
                 : $"Updating the selected installation to game client {expectedVersion}…"
@@ -81,7 +88,8 @@ internal sealed class GameInstallationViewModel(
         {
             var progress = new Progress<GameInstallationSnapshot>(observed =>
             {
-                if (!isWorking || !GameInstallationCoordinator.SameDirectory(admittedTarget, observed.GameDirectory)) return;
+                if (!isWorking || admittedGeneration != operationGeneration
+                    || !GameInstallationCoordinator.SameDirectory(admittedTarget, observed.GameDirectory)) return;
                 snapshot = observed;
                 feedback = observed.Message ?? feedback;
                 Notify();
@@ -107,7 +115,11 @@ internal sealed class GameInstallationViewModel(
                 : response.Error?.Message ?? "The shared game updater did not complete the operation.";
         }
         catch (OperationCanceledException)
-        { feedback = "The game client check was canceled before starting a native transaction."; }
+        {
+            feedback = mutate
+                ? "The game client operation was canceled before admission. Recheck this installation for recovery."
+                : "The game client check was canceled.";
+        }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or ArgumentException or NotSupportedException
             or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
@@ -121,6 +133,8 @@ internal sealed class GameInstallationViewModel(
         {
             isWorking = false;
             isMutating = false;
+            operationTarget = null;
+            SetTarget(requestedTarget);
             Notify();
             if (mutate) operationCompleted();
         }
@@ -138,7 +152,7 @@ internal sealed class GameInstallationViewModel(
 
     private void Notify()
     {
-        foreach (var name in new[] { nameof(Target), nameof(IsWorking), nameof(IsMutationInProgress), nameof(Status), nameof(Feedback),
+        foreach (var name in new[] { nameof(Target), nameof(OperationTarget), nameof(IsWorking), nameof(IsMutationInProgress), nameof(Status), nameof(Feedback),
             nameof(ProgressText), nameof(HasProgress), nameof(ProgressPercent), nameof(CanCheck), nameof(CanUpdate),
             nameof(CanRecover) }) OnPropertyChanged(name);
     }

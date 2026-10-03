@@ -391,86 +391,19 @@
 
       <Grid>
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="196" />
+          <ColumnDefinition Width="252" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <Button x:Name="HomeSettingsTitleBarButton"
-                Grid.Column="0"
-                Padding="10,6"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Center"
-                Style="{StaticResource QuietButtonStyle}"
-                Click="SettingsNavigationButton_Click"
-                ToolTip="Open Mod Bridge settings"
-                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Open Mod Bridge settings"
-                automation:AutomationProperties.HelpText="Open configuration, notification, hotkey, and Mod Bridge settings.">
-          <StackPanel Orientation="Horizontal">
-            <controls:AppIcon Width="18"
-                              Height="18"
-                              VerticalAlignment="Center"
-                              FontSize="18"
-                              Kind="Settings" />
-            <TextBlock Margin="10,0,0,0"
-                       VerticalAlignment="Center"
-                       FontSize="14"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource AccentBrush}"
-                       Text="Settings" />
-          </StackPanel>
-        </Button>
-
-        <Button x:Name="SettingsHomeTitleBarButton"
-                Grid.Column="0"
-                Padding="10,6"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Center"
-                Style="{StaticResource QuietButtonStyle}"
-                Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}"
-                ToolTip="Return to Mod Bridge home"
-                Visibility="Collapsed"
-                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Return to Mod Bridge home"
-                automation:AutomationProperties.HelpText="Return to the Mod Bridge home screen.">
-          <StackPanel Orientation="Horizontal">
-            <controls:AppIcon Width="18"
-                              Height="18"
-                              VerticalAlignment="Center"
-                              FontSize="18"
-                              Kind="Back" />
-            <TextBlock Margin="10,0,0,0"
-                       VerticalAlignment="Center"
-                       FontSize="14"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource AccentBrush}"
-                       Text="Home" />
-          </StackPanel>
-        </Button>
-
-        <Button x:Name="DiagnosticsHomeTitleBarButton"
-                Grid.Column="0"
-                Padding="10,6"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Center"
-                Style="{StaticResource QuietButtonStyle}"
-                Click="DiagnosticsHomeButton_Click"
-                ToolTip="Return to Mod Bridge home"
-                Visibility="Collapsed"
-                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                automation:AutomationProperties.Name="Return to Mod Bridge home from Diagnostics">
-          <StackPanel Orientation="Horizontal">
-            <controls:AppIcon Width="18" Height="18" FontSize="18" Kind="Back" />
-            <TextBlock Margin="10,0,0,0"
-                       VerticalAlignment="Center"
-                       FontSize="14"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource AccentBrush}"
-                       Text="Home" />
-          </StackPanel>
-        </Button>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="ShuttleBayButton" Style="{StaticResource QuietButtonStyle}" Click="ShuttleBayButton_Click" Content="Shuttle Bay" shell:WindowChrome.IsHitTestVisibleInChrome="True" automation:AutomationProperties.Name="Shuttle Bay" automation:AutomationProperties.HelpText="Launch or focus a named profile. Switching views preserves drafts." />
+          <Button x:Name="EngineeringButton" Margin="8,0,0,0" Style="{StaticResource QuietButtonStyle}" Click="EngineeringButton_Click" Content="Engineering" shell:WindowChrome.IsHitTestVisibleInChrome="True" automation:AutomationProperties.Name="Engineering" automation:AutomationProperties.HelpText="Profiles, Settings, game installations and runtime management." />
+        </StackPanel>
+        <Button x:Name="HomeSettingsTitleBarButton" Visibility="Collapsed" Click="SettingsNavigationButton_Click" />
+        <Button x:Name="SettingsHomeTitleBarButton" Visibility="Collapsed" Command="{Binding DataContext.NavigateHomeCommand, ElementName=SettingsWorkspace}" />
+        <Button x:Name="DiagnosticsHomeTitleBarButton" Visibility="Collapsed" Click="DiagnosticsHomeButton_Click" />
 
         <Border Grid.Column="1"
                 Width="1"
@@ -701,13 +634,51 @@
             VerticalAlignment="Bottom"
             Background="{DynamicResource BorderBrush}" />
 
+    <ScrollViewer x:Name="ShuttleBayWorkspace" Grid.Row="1" Margin="24,18,24,20" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" automation:AutomationProperties.Name="Shuttle Bay profile launches">
+      <StackPanel MaxWidth="900">
+        <TextBlock Text="Shuttle Bay" FontSize="26" FontWeight="SemiBold" />
+        <TextBlock Margin="0,6,0,20" Text="Choose your profile and launch." Foreground="{DynamicResource TextSecondaryBrush}" />
+        <ItemsControl x:Name="ShuttleBayProfiles" ItemsSource="{Binding ProfileCards}">
+          <ItemsControl.ItemTemplate><DataTemplate>
+            <Border Margin="0,0,0,10" Padding="18,12" CornerRadius="8" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" />
+                  <TextBlock Margin="0,4,16,0" Text="{Binding Status}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                  <TextBlock Margin="0,4,16,0" Text="{Binding SessionSummary}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+                <Button Grid.Column="1" Margin="0,0,10,0" VerticalAlignment="Center" Style="{StaticResource QuietButtonStyle}" Content="Configure" Tag="{Binding Id}" Click="ConfigureProfileButton_Click" automation:AutomationProperties.Name="{Binding Name, StringFormat=Configure {0}}" />
+                <Button Grid.Column="2" VerticalAlignment="Center" MinWidth="130" MaxWidth="220" Style="{StaticResource UtilityActionButtonStyle}" Content="{Binding ActionLabel}" Tag="{Binding Id}" IsEnabled="{Binding CanAct}" Click="LaunchProfileCardButton_Click" automation:AutomationProperties.Name="{Binding ActionAutomationName}">
+                  <Button.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center" /></DataTemplate></Button.ContentTemplate>
+                </Button>
+              </Grid>
+            </Border>
+          </DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Margin="0,8,0,0" Text="{Binding HomeOperationFeedback}" TextWrapping="Wrap"
+                   Visibility="{Binding HasHomeOperationFeedback, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding HomeOperationFeedback}" />
+        <TextBlock x:Name="ShuttleBaySelectionError" Margin="0,8,0,0" Foreground="{DynamicResource ErrorBrush}"
+                   TextWrapping="Wrap" automation:AutomationProperties.LiveSetting="Polite"
+                   controls:LiveRegionBehavior.Announcement="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        <Button Margin="0,14,0,0" HorizontalAlignment="Left" Style="{StaticResource QuietButtonStyle}" Content="Add a profile in Engineering" Click="OpenProfilesButton_Click" automation:AutomationProperties.Name="Add a profile in Engineering" />
+      </StackPanel>
+    </ScrollViewer>
+    <WrapPanel x:Name="EngineeringNavigation" Grid.Row="1" VerticalAlignment="Top" Margin="24,8,24,0" Visibility="Collapsed">
+      <Button Content="Profiles" Click="EngineeringProfilesButton_Click" Style="{StaticResource QuietButtonStyle}" />
+      <Button Content="Game installation" Click="EngineeringInstallationsButton_Click" Style="{StaticResource QuietButtonStyle}" Margin="8,0,0,0" />
+      <Button Content="Settings / Data Sync" Click="SettingsNavigationButton_Click" Style="{StaticResource QuietButtonStyle}" Margin="8,0,0,0" />
+      <Button Content="Diagnostics / Bridge" Click="DiagnosticsButton_Click" Style="{StaticResource QuietButtonStyle}" Margin="8,0,0,0" />
+    </WrapPanel>
+
     <StackPanel x:Name="HomeWorkspace"
                 Grid.Row="1"
-                MaxWidth="680"
-                Margin="24,0"
+                MaxWidth="900"
+                Margin="24,56,24,16"
                 HorizontalAlignment="Stretch"
-                VerticalAlignment="Center">
-      <Image x:Name="HomeProductArtwork"
+                VerticalAlignment="Top" Visibility="Collapsed">
+      <Image x:Name="HomeProductArtwork" Visibility="Collapsed"
              MaxWidth="640"
              Margin="12,0"
              HorizontalAlignment="Stretch"
@@ -724,7 +695,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="Status" />
+        <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="Game installation" />
         <Button Grid.Column="1"
                 Width="36"
                 Height="36"
@@ -880,7 +851,7 @@
               <Button HorizontalAlignment="Right"
                       Style="{StaticResource QuietButtonStyle}"
                       Click="ChooseGameFolderButton_Click"
-                      Content="{Binding GameFolderActionLabel}"
+                      Content="Select installation"
                       IsEnabled="{Binding CanChangeGameFolder}"
                       automation:AutomationProperties.Name="{Binding GameFolderActionAutomationName}" />
               </StackPanel>
@@ -1077,12 +1048,12 @@
 
     <views:SettingsView x:Name="SettingsWorkspace"
                         Grid.Row="1"
-                        Margin="20,0,20,12"
+                        Margin="20,52,20,12"
                         Visibility="Collapsed" />
 
     <ScrollViewer x:Name="DiagnosticsWorkspace"
                   Grid.Row="1"
-                  Margin="32,0,20,16"
+                  Margin="32,52,20,16"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto"
                   Visibility="Collapsed"
@@ -1356,29 +1327,17 @@
       </StackPanel>
     </ScrollViewer>
 
-    <controls:InAppDialog x:Name="ProfilesDialog"
-                          Grid.RowSpan="2"
-                          Style="{StaticResource InAppDialogStyle}"
-                          DialogTitle="Launch profiles"
-                          DialogWidth="540"
-                          automation:AutomationProperties.Name="Launch profiles dialog">
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ScrollViewer.Resources>
-          <Style BasedOn="{StaticResource DiagnosticsScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
-        </ScrollViewer.Resources>
-        <StackPanel x:Name="ProfilesEditor" Margin="0,0,4,0">
-         <TextBlock Text="Profiles are shared with the STFC Profiles CLI. A named launch uses its own account preferences, configuration and logs. Archive retains the entire profile; restore makes it available again. Mod installation still uses the game folder shown on Home."
-                    Foreground="{DynamicResource TextSecondaryBrush}"
-                    TextWrapping="Wrap" />
-         <TextBlock x:Name="ProfileLaunchSelection" Margin="0,8,0,0"
-                    FontWeight="SemiBold" Text="Selected for launch: Default" />
+    <Grid x:Name="ProfilesWorkspace" Grid.Row="1" Margin="24,56,24,16" Visibility="Collapsed" automation:AutomationProperties.Name="Engineering profile workspace">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="250" /><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel><TextBlock Text="Profiles" FontSize="22" FontWeight="SemiBold" />
         <CheckBox x:Name="ShowArchivedProfilesBox" Margin="0,10,0,0" Content="Show archived profiles"
                   Checked="ShowArchivedProfilesBox_Changed" Unchecked="ShowArchivedProfilesBox_Changed"
                   automation:AutomationProperties.Name="Show archived profiles" />
         <TextBlock x:Name="ProfileCatalogIssues" Margin="0,8,0,0" TextWrapping="Wrap"
                    Foreground="{DynamicResource ErrorBrush}" />
         <ListBox x:Name="ProfilesList"
-                 Height="108"
+                 MinHeight="140" MaxHeight="420"
                  Margin="0,12,0,0"
                  Padding="4"
                  Background="{DynamicResource SurfaceMutedBrush}"
@@ -1415,26 +1374,19 @@
             <DataTemplate>
               <StackPanel>
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding Id}" FontFamily="Consolas" FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}">
+                  <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="Isolated profile" />
+                    <Style.Triggers><DataTrigger Binding="{Binding IsDefault}" Value="True"><Setter Property="Text" Value="Windows setup" /></DataTrigger></Style.Triggers>
+                  </Style></TextBlock.Style>
+                </TextBlock>
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
          </ListBox>
-         <WrapPanel Margin="0,8,0,0">
-           <Button Style="{StaticResource QuietButtonStyle}"
-                   Click="UseSelectedProfileButton_Click"
-                   Content="_Use selected for launch"
-                   automation:AutomationProperties.Name="Use selected profile for launch" />
-           <Button Margin="8,0,0,0" Style="{StaticResource QuietButtonStyle}"
-                   Click="UseDefaultProfileButton_Click"
-                   Content="Use _Default"
-                   automation:AutomationProperties.Name="Use Default for launch" />
-         </WrapPanel>
-         <WrapPanel Margin="0,8,0,0">
+        <WrapPanel Margin="0,8,0,0">
           <Button Style="{StaticResource QuietButtonStyle}"
                   Click="NewProfileButton_Click"
-                  Content="_New"
+                  Content="Create _empty profile"
                   automation:AutomationProperties.Name="Create new launch profile" />
           <Button x:Name="ArchiveProfileButton"
                   Margin="8,0,0,0"
@@ -1444,8 +1396,15 @@
                   automation:AutomationProperties.Name="Archive or restore selected launch profile" />
         </WrapPanel>
         <Button Margin="0,8,0,0" HorizontalAlignment="Left" Style="{StaticResource QuietButtonStyle}"
-                Click="ImportProfileButton_Click" Content="_Import from Windows user…"
+                Click="ImportProfileButton_Click" Content="_Copy Windows setup…"
                 automation:AutomationProperties.Name="Import STFC setup from a Windows user" />
+      </StackPanel>
+      </ScrollViewer>
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel x:Name="ProfilesEditor" Margin="0,0,12,0">
+          <TextBlock x:Name="ProfileLaunchSelection" FontSize="18" FontWeight="SemiBold" Text="Choose a profile" />
+          <TextBlock Margin="0,8,0,8" Text="Select a profile to configure it. Game software is shared; account setup stays with the profile." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+          <Button x:Name="ProfileSettingsButton" HorizontalAlignment="Left" Content="Open profile Settings" Click="SettingsNavigationButton_Click" Margin="0,0,0,8" Style="{StaticResource QuietButtonStyle}" automation:AutomationProperties.Name="Open selected profile Settings" />
         <StackPanel x:Name="ProfileImportSourcePanel" Visibility="Collapsed" Margin="0,12,0,0">
           <TextBlock Text="Copy saved login and game settings from" TextWrapping="Wrap" />
           <ComboBox x:Name="ProfileImportSourceBox" Margin="0,4,0,4"
@@ -1471,12 +1430,12 @@
         <TextBox x:Name="ProfileNameBox" Margin="0,4,0,10" MaxLength="48"
                  Style="{StaticResource ProviderConfirmationTextBoxStyle}"
                  automation:AutomationProperties.Name="Profile name" />
-        <TextBlock Text="Preferred game folder (optional)" />
+        <TextBlock Text="Preferred installation (optional)" />
         <DockPanel Margin="0,4,0,0">
           <Button x:Name="BrowseProfileFolderButton" DockPanel.Dock="Right" Margin="8,0,0,0"
                   Style="{StaticResource QuietButtonStyle}"
                   Click="BrowseProfileFolderButton_Click"
-                  Content="_Browse"
+                  Content="Select installation"
                   automation:AutomationProperties.Name="Browse for profile game folder" />
           <TextBox x:Name="ProfileFolderBox"
                    Style="{StaticResource ProviderConfirmationTextBoxStyle}"
@@ -1494,6 +1453,63 @@
                 automation:AutomationProperties.Name="Save launch profile" />
         </StackPanel>
       </ScrollViewer>
+    </Grid>
+
+    <controls:InAppDialog x:Name="InstallationSelectionDialog" Grid.RowSpan="2" Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Select installation" DialogWidth="640" Closed="InstallationSelectionDialog_Closed"
+                          automation:AutomationProperties.Name="Select game installation">
+      <StackPanel>
+        <TextBlock Text="Choose shared game software for this profile's next launch. Running sessions keep their original installation." TextWrapping="Wrap" />
+        <ListBox x:Name="RegisteredInstallationsList" Height="150" Margin="0,12,0,0" SelectionChanged="RegisteredInstallationsList_SelectionChanged"
+                 automation:AutomationProperties.Name="Registered game installations">
+          <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="6">
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding GameDirectory}" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="{Binding State}" FontSize="12" />
+          </StackPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Text="Installation name" Margin="0,12,0,4" />
+        <TextBox x:Name="InstallationNameBox" Style="{StaticResource ProviderConfirmationTextBoxStyle}" automation:AutomationProperties.Name="Installation name" />
+        <TextBlock Text="Game folder containing prime.exe" Margin="0,12,0,4" />
+        <DockPanel>
+          <Button Content="Browse…" DockPanel.Dock="Right" Margin="8,0,0,0" Click="BrowseInstallationButton_Click" Style="{StaticResource QuietButtonStyle}" />
+          <TextBox x:Name="InstallationFolderBox" Style="{StaticResource ProviderConfirmationTextBoxStyle}" automation:AutomationProperties.Name="Installation folder" />
+        </DockPanel>
+        <TextBlock x:Name="InstallationSelectionError" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}" automation:AutomationProperties.LiveSetting="Polite" />
+        <WrapPanel HorizontalAlignment="Right" Margin="0,16,0,0">
+          <Button Content="Not now" Click="CancelInstallationButton_Click" Style="{StaticResource QuietButtonStyle}" />
+          <Button x:Name="ConfirmInstallationButton" Content="Select installation" Click="ConfirmInstallationButton_Click" Margin="8,0,0,0" Style="{StaticResource UtilityActionButtonStyle}" />
+        </WrapPanel>
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="ProfileSessionsDialog" Grid.RowSpan="2" Style="{StaticResource InAppDialogStyle}"
+                          DialogTitle="Choose running session" DialogWidth="640" Closed="ProfileSessionsDialog_Closed"
+                          automation:AutomationProperties.Name="Choose exact running profile session">
+      <StackPanel>
+        <TextBlock x:Name="ProfileSessionTitle" TextWrapping="Wrap" />
+        <ListBox x:Name="ProfileSessionsList" Height="220" Margin="0,12,0,0" SelectionChanged="ProfileSessionsList_SelectionChanged"
+                 automation:AutomationProperties.Name="Running sessions with installation and process identity">
+          <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="6">
+            <TextBlock Text="{Binding ProcessId, StringFormat='Process {0}'}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding GameDirectory}" TextWrapping="Wrap" FontSize="12" />
+          </StackPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <WrapPanel HorizontalAlignment="Right" Margin="0,16,0,0">
+          <Button Content="Not now" Click="CancelProfileSessionButton_Click" Style="{StaticResource QuietButtonStyle}" />
+          <Button x:Name="FocusProfileSessionButton" Content="Focus game" Click="FocusProfileSessionButton_Click" Margin="8,0,0,0" Style="{StaticResource UtilityActionButtonStyle}" />
+        </WrapPanel>
+      </StackPanel>
+    </controls:InAppDialog>
+
+    <controls:InAppDialog x:Name="ProfileDraftDialog" Grid.RowSpan="2" Style="{StaticResource InAppDialogStyle}" DialogTitle="Unsaved profile changes" DialogWidth="540" Closed="ProfileDraftDialog_Closed" automation:AutomationProperties.Name="Resolve unsaved profile changes">
+      <StackPanel><TextBlock x:Name="ProfileDraftMessage" TextWrapping="Wrap" />
+        <WrapPanel HorizontalAlignment="Right" Margin="0,20,0,0">
+          <Button Content="Stay" Click="ProfileDraftStayButton_Click" Style="{StaticResource QuietButtonStyle}" />
+          <Button Content="Discard changes" Click="ProfileDraftDiscardButton_Click" Margin="8,0,0,0" Style="{StaticResource QuietButtonStyle}" />
+          <Button x:Name="ProfileDraftSaveButton" Content="Save changes" Click="ProfileDraftSaveButton_Click" Margin="8,0,0,0" Style="{StaticResource UtilityActionButtonStyle}" />
+        </WrapPanel>
+      </StackPanel>
     </controls:InAppDialog>
 
     <controls:InAppDialog x:Name="ProfileImportReviewDialog" Grid.RowSpan="2"

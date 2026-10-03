@@ -951,6 +951,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
+    internal void DiscardAllDraftsForContextChange()
+    {
+        if (IsSaveInProgress || SyncWorkspace.IsSaveInProgress)
+            throw new InvalidOperationException("Wait for the current configuration save before changing profiles.");
+        SyncWorkspace.DiscardForReload();
+        workspace?.Discard();
+        ClearEditorDrafts();
+        SyncWorkspace.Reload();
+        OperationStatus = "Unsaved Settings and Data Sync changes discarded.";
+        RefreshAllStates();
+        NotifySessionChanged();
+    }
+
     internal Task SaveAsync()
     {
         TaskCompletionSource completion;

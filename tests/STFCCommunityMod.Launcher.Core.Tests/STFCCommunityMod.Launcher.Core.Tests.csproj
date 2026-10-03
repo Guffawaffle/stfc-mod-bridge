@@ -35,6 +35,9 @@
     <None Include="..\..\providers\netniv\provider-pack.v1.json"
           Link="Fixtures\Providers\netniv-provider-pack.v1.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\providers\profiles\provider-pack.v1.json"
+          Link="Fixtures\Providers\profiles-provider-pack.v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\providers\provider-pack.schema.v1.json"
           Link="Fixtures\Providers\provider-pack.schema.v1.json"
           CopyToOutputDirectory="PreserveNewest" />

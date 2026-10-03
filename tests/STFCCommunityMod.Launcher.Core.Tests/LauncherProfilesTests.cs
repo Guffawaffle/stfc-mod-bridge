@@ -6,8 +6,11 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 [TestClass]
 public sealed class LauncherProfilesTests
 {
-    private static readonly string[] SelectionOperations = ["paths", "list"];
+    private static readonly string[] SelectionOperations = ["paths", "ensure-default", "list"];
     private const string ProfileId = "0123456789abcdef0123456789abcdef";
+    private const string DefaultId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static LauncherProfile DefaultProfile() => new(DefaultId, "Default", "", Revision: "default-revision",
+        Kind: "windows-user", OwnerUserId: "S-1-5-21-test", BuiltIn: true);
 
     [TestMethod]
     public async Task SelectionStoresOnlyUiIdentityAndNeverCopiesCatalogMetadata()
@@ -55,7 +58,7 @@ public sealed class LauncherProfilesTests
         Assert.AreEqual(ProfileId, store.Load(archived: true).Snapshot!.Profiles.Single().Id);
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => store.SelectAsync(ProfileId));
         await store.SelectAsync(null);
-        Assert.IsNull(store.LoadSelectedId());
+        Assert.AreEqual(DefaultId, store.LoadSelectedId());
     }
 
     [TestMethod]
@@ -68,7 +71,7 @@ public sealed class LauncherProfilesTests
         };
         var loaded = new NativeLauncherProfilesStore(temporary.Path, transport).Load();
         Assert.AreEqual(LauncherProfilesLoadState.Loaded, loaded.State);
-        Assert.AreEqual(1, loaded.Snapshot!.Profiles.Count);
+        Assert.AreEqual(2, loaded.Snapshot!.Profiles.Count);
         Assert.AreEqual("invalid_metadata", loaded.Snapshot.Issues!.Single().Code);
     }
 
@@ -112,7 +115,7 @@ public sealed class LauncherProfilesTests
     }
 
     [TestMethod]
-    public async Task CatalogFailurePreservesNamedSelectionWhileDefaultSelectionNeedsNoNativeComponent()
+    public async Task CatalogFailurePreservesNamedSelectionAndCannotInventDefaultIdentity()
     {
         using var temporary = new TemporaryDirectory();
         var transport = new RecordingCatalog(Profile());
@@ -122,8 +125,8 @@ public sealed class LauncherProfilesTests
         var loaded = store.Load();
         Assert.AreEqual(LauncherProfilesLoadState.Invalid, loaded.State);
         Assert.AreEqual(ProfileId, loaded.Snapshot!.SelectedProfileId);
-        await store.SelectAsync(null);
-        Assert.IsNull(store.LoadSelectedId());
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => store.SelectAsync(null));
+        Assert.AreEqual(ProfileId, store.LoadSelectedId());
     }
 
     [TestMethod]
@@ -137,7 +140,7 @@ public sealed class LauncherProfilesTests
         var repair = new NativeLauncherProfilesStore(temporary.Path, new RecordingCatalog(Profile()))
             .Load(allowSelectionRepair: true);
         Assert.AreEqual(LauncherProfilesLoadState.Loaded, repair.State);
-        Assert.AreEqual(1, repair.Snapshot!.Profiles.Count);
+        Assert.AreEqual(2, repair.Snapshot!.Profiles.Count);
         StringAssert.Contains(repair.Error!, "needs repair");
         Assert.AreEqual("{broken", File.ReadAllText(Path.Combine(temporary.Path, "profile-ui-selection.json")));
     }
@@ -158,6 +161,25 @@ public sealed class LauncherProfilesTests
     private static LauncherProfile Profile() => new(ProfileId, "Science", "", "catalog/profiles/" + ProfileId,
         "catalog/profiles/" + ProfileId + "/config.toml", "catalog/profiles/" + ProfileId + "/logs/Player.log", "first");
 
+    [TestMethod]
+    public async Task DefaultHasExplicitSharedIdentityAndDoesNotLaunchAsIsolated()
+    {
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingCatalog(Profile());
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        var loaded = store.Load();
+        Assert.IsTrue(loaded.Snapshot!.SelectedProfile!.IsDefault);
+        Assert.AreEqual(DefaultId, loaded.Snapshot.SelectedProfileId);
+        Assert.IsFalse(File.Exists(Path.Combine(temporary.Path, "profile-ui-selection.json")));
+        await store.SelectAsync(null);
+        Assert.AreEqual(DefaultId, store.LoadSelectedId());
+        await store.LaunchAsync(loaded.Snapshot.SelectedProfile);
+        Assert.AreEqual("launch-ordinary", transport.Requests.Last().Operation);
+        Assert.IsTrue(transport.Requests.All(request => request.ApiVersion == 2));
+        Assert.AreEqual("", loaded.Snapshot.SelectedProfile.ConfigPath);
+        Assert.AreEqual("", loaded.Snapshot.SelectedProfile.Directory);
+    }
+
     private sealed class RecordingCatalog(LauncherProfile profile) : IProfileCatalogTransport
     {
         public LauncherProfile Profile { get; set; } = profile;
@@ -168,7 +190,12 @@ public sealed class LauncherProfilesTests
         {
             Requests.Add(request);
             if (Failure is not null) return new(false, Error: Failure);
-            return new(true, Profiles: request.Archived == (Profile.State == "archived") ? [Profile] : [],
+            if (request.Operation is "ensure-default" or "resolve-default") return new(true, Profile: DefaultProfile());
+            if (request.Operation == "paths" && request.Id == DefaultId) return new(true, Profile: DefaultProfile());
+            IReadOnlyList<LauncherProfile> profiles = request.Archived
+                ? Profile.State == "archived" ? [Profile] : []
+                : Profile.State == "active" ? [DefaultProfile(), Profile] : [DefaultProfile()];
+            return new(true, Profiles: profiles,
                 Profile: Profile, Issues: Issues, Revision: "catalog-first");
         }
     }

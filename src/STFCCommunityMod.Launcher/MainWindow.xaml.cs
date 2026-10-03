@@ -137,6 +137,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             providerContext.Selection,
             CreateProviderSession);
         ApplyProviderSession(ProviderSession);
+        isEngineering = ProviderSession.ViewModel.WorkspaceMode == "Engineering";
+        ReloadProfiles();
+        RefreshProfilesList(profiles.SelectedProfileId);
+        UpdateProfileLaunchSelection();
+        UpdatePrimaryWorkspaceVisibility();
         if (!providerShellAccess.CanEditProviderSettings)
         {
             HomeSettingsTitleBarButton.IsEnabled = false;
@@ -164,7 +169,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
             providerSelectionStore);
+        if (viewModel.ConfigurationRuntimeSelection is { } actualSelection
+            && (actualSelection.ProviderId != provider.Id || actualSelection.ReleaseChannelId != releaseChannel.Id))
+        {
+            viewModel.Dispose();
+            return CreateProviderSession(LauncherProviderSelectionResolver.Resolve(distributionProviderCatalog, actualSelection));
+        }
         var configurationCatalog = viewModel.ConfigurationCatalog;
+        viewModel.SelectProfileSessionAsync = ChooseProfileSessionAsync;
         viewModel.ConfirmLaunchOverrideAsync = ConfirmLaunchOverrideAsync;
         var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
@@ -446,65 +458,35 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
-        SetSettingsWorkspaceOpen(!isSettingsWorkspaceOpen);
+        SetSettingsWorkspaceOpen(true);
     }
 
-    private async void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e)
+    private async void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e) =>
+        await SelectInstallationForSelectedProfileAsync();
+
+    private async Task SelectInstallationForSelectedProfileAsync()
     {
-        if (DataContext is not MainWindowViewModel viewModel)
+        if (isProfileOperationPending || DataContext is not MainWindowViewModel { SelectedProfile: { } profile }) return;
+        SetProfileOperationPending(true);
+        try
         {
-            return;
+            var registration = await ChooseInstallationAsync(profile.PreferredInstallationId, profile.GameDirectory);
+            if (registration is null) return;
+            if (!await ResolveProfileDraftsAsync()) return;
+            await ProfilesStore.AssignInstallationAsync(profile, registration, lifetimeCancellation.Token);
+            ReloadProfiles();
+            if (DataContext is MainWindowViewModel viewModel) viewModel.ReloadLaunchProfile();
+            RecomposeSelectedProfileRuntime();
+            RefreshProfilesList(profile.Id);
+            UpdateProfileLaunchSelection();
+            await ReconcileSettingsTargetAsync();
         }
-        if (!viewModel.CanChangeGameFolder)
+        catch (Exception exception) when (IsProfileImportException(exception))
         {
-            SettingsUnavailableMessage.Text = viewModel.ModActionKind == ModManagementActionKind.Recover
-                ? "Recover the incomplete transaction before choosing a different game folder."
-                : "Wait for the current Mod Bridge operation to finish before choosing a different game folder.";
+            SettingsUnavailableMessage.Text = $"The installation could not be selected: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
-            return;
         }
-
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Select the STFC game folder that contains prime.exe",
-            Multiselect = false,
-        };
-        if (!string.IsNullOrWhiteSpace(viewModel.InitialBrowseDirectory))
-        {
-            dialog.InitialDirectory = viewModel.InitialBrowseDirectory;
-        }
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            try
-            {
-                await using var lease = await new LauncherOperationLock(stateDirectory)
-                    .TryAcquireAsync(lifetimeCancellation.Token);
-                if (lease is null)
-                {
-                    SettingsUnavailableMessage.Text =
-                        "Another Mod Bridge operation is active. The game folder was not changed; try again when it finishes.";
-                    SettingsUnavailableDialog.IsOpen = true;
-                    return;
-                }
-
-                viewModel.ConfirmManualSelection(dialog.FolderName);
-                shellLifecycleController.HandleGameInstallationChanged();
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception exception) when (
-                exception is IOException
-                    or UnauthorizedAccessException
-                    or InvalidDataException)
-            {
-                SettingsUnavailableMessage.Text =
-                    $"The game folder could not be saved: {exception.Message}";
-                SettingsUnavailableDialog.IsOpen = true;
-            }
-        }
+        finally { SetProfileOperationPending(false); }
     }
 
     private async void ModActionButton_Click(object sender, RoutedEventArgs e)
@@ -1629,7 +1611,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             if (pendingProviderSwitch is null)
             {
                 ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
-                var configurationPath = GetConfigurationFilePath();
+                var configurationPath = Path.Combine(viewModel.SelectedGameDirectory, "community_patch_settings.toml");
                 pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
                     targetProvider.Id,
                     targetProvider.DefaultReleaseChannelId,
@@ -1921,49 +1903,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void SetSettingsWorkspaceOpen(bool isOpen)
     {
-        if (isOpen)
-        {
-            DiagnosticsWorkspace.Visibility = Visibility.Collapsed;
-            DiagnosticsHomeTitleBarButton.Visibility = Visibility.Collapsed;
-            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
-        }
         isSettingsWorkspaceOpen = isOpen;
-        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        if (!isOpen && DataContext is MainWindowViewModel viewModel)
-        {
-            viewModel.Refresh();
-        }
-
-        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Settings : LauncherWorkspace.Home);
+        engineeringSection = isOpen ? "Settings" : "Profiles";
+        SetPrimaryWorkspace(true);
     }
 
     private void SetDiagnosticsWorkspaceOpen(bool isOpen)
     {
-        if (isOpen)
-        {
-            isSettingsWorkspaceOpen = false;
-        }
-        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsWorkspace.Visibility = Visibility.Collapsed;
-        DiagnosticsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsHomeTitleBarButton.Visibility = Visibility.Collapsed;
-        DiagnosticsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        if (isOpen)
-        {
-            SettingsDiagnosticsTitleBarButton.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
-        }
-        SettingsSearchHost.Visibility = Visibility.Collapsed;
-        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        isSettingsWorkspaceOpen = false;
+        engineeringSection = isOpen ? "Diagnostics" : "Profiles";
         if (!isOpen)
         {
             ClearPendingConfigurationMigration();
@@ -1972,7 +1920,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             diagnosticsFocusTransition.Exit();
         }
 
-        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Diagnostics : LauncherWorkspace.Home);
+        SetPrimaryWorkspace(true);
     }
 
     private void ApplyWorkspaceSizing(LauncherWorkspace workspace)
@@ -2036,28 +1984,10 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         try
         {
-            if (!providerSelectionResolution.IsResolved)
-            {
-                throw new LauncherConfigurationSchemaException(
-                    $"Settings are disabled until the release source is repaired. "
-                    + providerSelectionResolution.Message);
-            }
             if (DataContext is not MainWindowViewModel viewModel)
             {
                 throw new LauncherConfigurationSchemaException(
                     "Settings are unavailable until Mod Bridge finishes loading installation state.");
-            }
-            if (viewModel.HasUnsafeModDeploymentTransaction)
-            {
-                throw new LauncherConfigurationSchemaException(
-                    "Settings are disabled until the unsafe mod deployment transaction is recovered.");
-            }
-            if (string.IsNullOrWhiteSpace(viewModel.ConfigurationGameDirectory)
-                || string.IsNullOrWhiteSpace(viewModel.ConfigurationFilePath)
-                || !File.Exists(Path.Combine(viewModel.ConfigurationGameDirectory, "version.dll")))
-            {
-                throw new LauncherConfigurationSchemaException(
-                    "Community Mod is not installed in the selected game folder. Install it before editing mod settings.");
             }
             if (isSettingsWorkspaceInitialized)
             {
@@ -2101,7 +2031,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             : binding.Resolve(LauncherConfigurationTarget.Capture(
             (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id, configurationPathProvider(),
             ProviderSession.SettingsRuntimeRevision));
-        var configurationHistoryCoordinator = configurationProfile is not null ? null : new ProviderConfigurationRestoreCoordinator(
+        var isolatedConfiguration = configurationProfile is { IsDefault: false };
+        var configurationHistoryCoordinator = isolatedConfiguration ? null : new ProviderConfigurationRestoreCoordinator(
             backupStore,
             distributionProviderCatalog,
             providerSelectionStore,
@@ -2117,13 +2048,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             boundConfigurationPath,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
-            repository: configurationProfile is null
+            repository: !isolatedConfiguration
                 ? new TomlConfigurationRepository(mutationBackup: mutationBackup,
                     mutationAdmission: new LauncherOperationLock(stateDirectory))
-                : new ProfileConfigurationRepository(configurationProfile, ProfilesStore,
+                : new ProfileConfigurationRepository(configurationProfile!, ProfilesStore,
                     () => (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id,
                     new TomlConfigurationRepository(mutationBackup: new ProfileConfigurationMutationBackup(
-                        configurationProfile, provider.Id), mutationAdmission: new LauncherOperationLock(stateDirectory))),
+                        configurationProfile!, provider.Id), mutationAdmission: new LauncherOperationLock(stateDirectory))),
             uiPreferencesStore: uiPreferencesStore,
             openExternalUri: OpenExternalUri,
             openDataFolder: OpenApplicationDataFolder,

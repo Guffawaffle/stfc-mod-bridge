@@ -19,6 +19,8 @@ public static class LauncherProviderCapabilityIds
     public const string ArtifactTrust = "mod.artifact-trust";
     public const string WithdrawalPolicy = "release.withdrawal";
     public const string ConfigurationMigration = "config.migration";
+    public const string ProfileIsolation = "profiles.isolation";
+    public const string CommunityFeatures = "community.features";
 
     public static IReadOnlyList<string> ContractCapabilities { get; } =
     [
