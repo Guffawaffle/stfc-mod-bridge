@@ -1455,6 +1455,10 @@
               <DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
+          <Button x:Name="FindImportUsersButton" Margin="0,8,0,4" HorizontalAlignment="Left"
+                  Visibility="Collapsed" Style="{StaticResource QuietButtonStyle}"
+                  Click="FindImportUsersButton_Click" Content="_Find other Windows users…"
+                  automation:AutomationProperties.Name="Find other Windows users with saved STFC data" />
           <TextBlock Text="This creates a separate profile. The original user’s setup stays as it is."
                      TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
         </StackPanel>
@@ -1498,7 +1502,7 @@
                           automation:AutomationProperties.Name="Review one-time STFC profile import">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
-          <TextBlock Text="About this import" FontWeight="SemiBold" />
+          <TextBlock Text="Before you continue" FontWeight="SemiBold" />
           <TextBlock x:Name="ProfileImportCopyExplanation" Margin="0,8,0,0" TextWrapping="Wrap"
                      Foreground="{DynamicResource TextPrimaryBrush}" />
           <TextBlock x:Name="ProfileImportPermissionExplanation" Margin="0,12,0,0" TextWrapping="Wrap"

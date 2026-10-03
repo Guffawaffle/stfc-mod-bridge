@@ -89,11 +89,43 @@ public sealed class ProfileUserImportTests
         using var temporary = new TemporaryDirectory();
         var transport = new RecordingTransport(_ => new(true,
             Users: [new(SourceSid, "other-user"), new(DestinationSid, "destination-user", true)],
-            DestinationUser: new(DestinationSid, "destination-user", true)));
+            DestinationUser: new(DestinationSid, "destination-user", true), RequiresElevation: false, UnavailableUsers: 0));
         var sources = await new NativeLauncherProfilesStore(temporary.Path, transport).ImportSourcesAsync();
         Assert.AreEqual(2, sources.Users.Count);
         Assert.AreEqual(DestinationSid, sources.DestinationUser.Sid);
         Assert.AreEqual("import-sources", transport.Requests.Single().Operation);
+    }
+
+    [TestMethod]
+    public async Task DiscoveryRetainsReadableUsersAndRequiresSeparatePermissionForTheRest()
+    {
+        using var temporary = new TemporaryDirectory();
+        var transport = new RecordingTransport(_ => new(true,
+            Users: [new(DestinationSid, "destination-user", true)],
+            DestinationUser: new(DestinationSid, "destination-user", true), RequiresElevation: true, UnavailableUsers: 0));
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        var partial = await store.ImportSourcesAsync();
+        Assert.AreEqual(1, partial.Users.Count);
+        Assert.IsTrue(partial.RequiresElevation);
+        Assert.IsFalse(transport.Requests.Single().AllowElevation);
+        await store.ImportSourcesAsync(true, DestinationSid);
+        Assert.AreEqual(DestinationSid, transport.Requests.Last().ExpectedDestinationSid);
+        Assert.IsTrue(transport.Requests.Last().AllowElevation);
+        Assert.IsTrue(transport.Requests.All(request => request.Operation == "import-sources"));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(temporary.Path).Any());
+    }
+
+    [TestMethod]
+    public async Task DiscoveryCannotChangeDestinationOrOmitPermissionResults()
+    {
+        using var temporary = new TemporaryDirectory();
+        ProfileCatalogResponse response = new(true, Users: [], DestinationUser: new(DestinationSid,"destination-user"));
+        var transport = new RecordingTransport(_ => response);
+        var store = new NativeLauncherProfilesStore(temporary.Path, transport);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() => store.ImportSourcesAsync());
+        response = response with { RequiresElevation = false, UnavailableUsers = 0 };
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() => store.ImportSourcesAsync(true, SourceSid));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(temporary.Path).Any());
     }
 
     [TestMethod]

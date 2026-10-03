@@ -43,7 +43,8 @@ public sealed record ProfileImportUser(string Sid, string Name, bool CurrentUser
 public sealed record ProfileUserImportPlan(
     string SourceUserSid, string SourceUserName, string DestinationUserSid, string DestinationUserName,
     string Name, string GameDirectory, bool RequiresElevation, string Reason);
-public sealed record ProfileImportSources(IReadOnlyList<ProfileImportUser> Users, ProfileImportUser DestinationUser);
+public sealed record ProfileImportSources(IReadOnlyList<ProfileImportUser> Users, ProfileImportUser DestinationUser,
+    bool RequiresElevation = false, int UnavailableUsers = 0);
 
 public sealed record ProfileCatalogError(string Code, string Message);
 public sealed record ProfileCatalogResponse(
@@ -55,7 +56,8 @@ public sealed record ProfileCatalogResponse(
     string? Revision = null, int? ProcessId = null, string? Readiness = null,
     string? Message = null, GameInstallationSnapshot? Installation = null,
     string? CatalogRoot = null, IReadOnlyList<ProfileImportUser>? Users = null,
-    ProfileImportUser? DestinationUser = null, ProfileUserImportPlan? ImportPlan = null);
+    ProfileImportUser? DestinationUser = null, ProfileUserImportPlan? ImportPlan = null,
+    bool? RequiresElevation = null, int? UnavailableUsers = null);
 
 public interface IProfileCatalogTransport
 {
@@ -299,13 +301,19 @@ public sealed class NativeLauncherProfilesStore
         CancellationToken cancellationToken = default) => MutateAsync(new("create", Root: root,
             Name: name, GameDirectory: OptionalGameDirectory(gameDirectory)), cancellationToken);
 
-    public Task<ProfileImportSources> ImportSourcesAsync(CancellationToken cancellationToken = default) =>
+    public Task<ProfileImportSources> ImportSourcesAsync(bool allowElevation = false, string? expectedDestinationSid = null,
+        CancellationToken cancellationToken = default) =>
         Task.Run(() =>
         {
-            var response = RequireSuccess(new("import-sources", Root: root));
+            if (allowElevation) ArgumentException.ThrowIfNullOrWhiteSpace(expectedDestinationSid);
+            var response = RequireSuccess(new("import-sources", Root: root,
+                AllowElevation: allowElevation, ExpectedDestinationSid: expectedDestinationSid));
             if (response.Users is null || response.DestinationUser is not { Sid.Length: > 0, Name.Length: > 0 } destination)
                 throw new InvalidDataException("The shared Profiles component omitted the Windows import sources.");
-            return new ProfileImportSources(response.Users, destination);
+            if (response.RequiresElevation is not bool requiresElevation || response.UnavailableUsers is not int unavailable
+                || unavailable is < 0 or > 10000 || (allowElevation && destination.Sid != expectedDestinationSid))
+                throw new InvalidDataException("The shared Profiles component omitted or changed the user discovery details.");
+            return new ProfileImportSources(response.Users, destination, requiresElevation, unavailable);
         }, cancellationToken);
 
     public Task<ProfileUserImportPlan> PrepareUserImportAsync(string sourceUserSid, string name, string gameDirectory,

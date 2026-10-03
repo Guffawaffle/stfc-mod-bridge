@@ -15,6 +15,7 @@ public partial class MainWindow
     private bool isImportingProfile;
     private bool isProfileOperationPending;
     private TaskCompletionSource<bool>? importReviewCompletion;
+    private ProfileImportSources? importSources;
     private NativeLauncherProfilesStore ProfilesStore => new(stateDirectory);
 
     private void OpenProfilesButton_Click(object sender, RoutedEventArgs e)
@@ -136,15 +137,15 @@ public partial class MainWindow
         ProfileFormTitle.Text = "Import a Windows user’s STFC setup";
         SaveProfileButton.Content = "_Review import…";
         AutomationProperties.SetName(SaveProfileButton, "Review Windows user import");
+        importSources = null;
+        ProfileImportSourceBox.ItemsSource = null;
+        FindImportUsersButton.Visibility = Visibility.Collapsed;
+        ProfileImportFeedback.Text = "Checking for saved STFC setups…";
         SetProfileOperationPending(true);
         try
         {
-            var sources = await ProfilesStore.ImportSourcesAsync();
-            var previousSid = (ProfileImportSourceBox.SelectedItem as ProfileImportUser)?.Sid;
-            ProfileImportSourceBox.ItemsSource = sources.Users;
-            ProfileImportSourceBox.SelectedItem = sources.Users.FirstOrDefault(user => user.Sid == previousSid)
-                ?? sources.Users.FirstOrDefault(user => user.CurrentUser);
-            ProfileError.Text = sources.Users.Count == 0 ? "No Windows users with an STFC setup were found." : string.Empty;
+            var discovered = await ProfilesStore.ImportSourcesAsync();
+            if (ProfilesDialog.IsOpen) ApplyImportSources(discovered);
         }
         catch (Exception exception) when (IsProfileImportException(exception))
         {
@@ -152,6 +153,59 @@ public partial class MainWindow
             ProfileError.Text = exception.Message;
         }
         finally { SetProfileOperationPending(false); }
+    }
+
+    private void ApplyImportSources(ProfileImportSources sources)
+    {
+        importSources = sources;
+        var previousSid = (ProfileImportSourceBox.SelectedItem as ProfileImportUser)?.Sid;
+        ProfileImportSourceBox.ItemsSource = sources.Users;
+        ProfileImportSourceBox.SelectedItem = sources.Users.FirstOrDefault(user => user.Sid == previousSid)
+            ?? sources.Users.FirstOrDefault(user => user.CurrentUser) ?? (sources.Users.Count > 0 ? sources.Users[0] : null);
+        FindImportUsersButton.Visibility = sources.RequiresElevation ? Visibility.Visible : Visibility.Collapsed;
+        ProfileError.Text = string.Empty;
+        ProfileImportFeedback.Text = sources.RequiresElevation
+            ? "Windows permission is needed to check other user setups. You can use a listed setup or find other Windows users."
+            : sources.UnavailableUsers > 0 ? "Some user setups could not be checked right now. You can use a listed setup or retry later."
+            : sources.Users.Count == 0 ? "No saved STFC setups were found for the Windows users checked." : string.Empty;
+    }
+
+    private async Task<bool> ReviewProfileImportAsync(ViewModels.ProfileImportPresentation presentation)
+    {
+        if (!ProfilesDialog.IsOpen) return false;
+        ProfileImportReviewDialog.DialogTitle = presentation.Title;
+        AutomationProperties.SetName(ProfileImportReviewDialog, presentation.Title);
+        ProfileImportCopyExplanation.Text = presentation.CopyExplanation;
+        ProfileImportPermissionExplanation.Text = presentation.PermissionExplanation;
+        ProfileImportDetailExplanation.Text = presentation.Details;
+        ProfileImportDetails.IsExpanded = false;
+        importReviewCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        ProfileImportReviewDialog.IsOpen = true;
+        return await importReviewCompletion.Task;
+    }
+
+    private async void FindImportUsersButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (isProfileOperationPending || importSources is not { RequiresElevation: true } sources) return;
+        ProfileError.Text = string.Empty;
+        SetProfileOperationPending(true);
+        try
+        {
+            if (!await ReviewProfileImportAsync(ViewModels.ProfileImportPresentation.ForDiscovery())) return;
+            ProfileImportFeedback.Text = "Checking other Windows users for saved STFC setups…";
+            ApplyImportSources(await ProfilesStore.ImportSourcesAsync(true, sources.DestinationUser.Sid));
+        }
+        catch (Exception exception) when (IsProfileImportException(exception))
+        {
+            ProfileImportFeedback.Text = string.Empty;
+            ProfileError.Text = exception.Message;
+        }
+        finally
+        {
+            importReviewCompletion = null;
+            ProfileImportReviewDialog.IsOpen = false;
+            SetProfileOperationPending(false);
+        }
     }
 
     private async Task ImportProfileAsync()
@@ -168,15 +222,7 @@ public partial class MainWindow
         {
             var plan = await ProfilesStore.PrepareUserImportAsync(source.Sid, ProfileNameBox.Text, ProfileFolderBox.Text);
             if (!ProfilesDialog.IsOpen) return;
-            var presentation = ViewModels.ProfileImportPresentation.From(plan);
-            ProfileImportReviewDialog.DialogTitle = presentation.Title;
-            ProfileImportCopyExplanation.Text = presentation.CopyExplanation;
-            ProfileImportPermissionExplanation.Text = presentation.PermissionExplanation;
-            ProfileImportDetailExplanation.Text = presentation.Details;
-            ProfileImportDetails.IsExpanded = false;
-            importReviewCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            ProfileImportReviewDialog.IsOpen = true;
-            if (!await importReviewCompletion.Task) return;
+            if (!await ReviewProfileImportAsync(ViewModels.ProfileImportPresentation.From(plan))) return;
             ProfileImportFeedback.Text = "Importing the selected STFC setup…";
             var imported = await ProfilesStore.ImportUserAsync(plan);
             if (!ReloadProfiles()) return;

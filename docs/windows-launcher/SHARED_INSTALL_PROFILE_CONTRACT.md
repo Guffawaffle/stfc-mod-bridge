@@ -57,7 +57,13 @@ by the runtime, independent of whether Bridge stays open.
 
 Profiles offers **Import from Windows user** alongside New profile. Source users
 come from the shared library's `import-sources` operation and are selected by SID,
-not commander. Bridge supplies a new display name and preferred game folder to
+not commander. Only users with STFC data are shown. Readable matches remain
+available even when protected users cannot yet be checked. **Find other Windows
+users…** shows a friendly explanation before a separate, short-lived native UAC
+discovery check. It returns names/IDs/status, copies no login values and creates
+no profile. Cancel retains the list, source, name and folder. A later protected
+account import has its own reviewed permission request; Bridge itself stays at
+its original permission level. Bridge supplies a new display name and preferred game folder to
 `prepare-user-import`, then shows the returned source, destination Windows user,
 copy scope and actual access explanation. Close the source user's game first so
 its preferences finish saving.

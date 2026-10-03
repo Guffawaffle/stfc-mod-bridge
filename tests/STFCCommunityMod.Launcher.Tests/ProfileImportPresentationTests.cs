@@ -10,6 +10,16 @@ public sealed class ProfileImportPresentationTests
 {
     private static readonly string[] ReviewButtons = ["_Not now", "_Continue"];
     [TestMethod]
+    public void DiscoveryPermissionExplanationDoesNotAuthorizeCopyingAnAccount()
+    {
+        var presentation = ProfileImportPresentation.ForDiscovery();
+        StringAssert.Contains(presentation.CopyExplanation, "only lists users");
+        StringAssert.Contains(presentation.CopyExplanation, "won’t copy a login or create a profile");
+        StringAssert.Contains(presentation.PermissionExplanation, "Windows permission prompt");
+        StringAssert.Contains(presentation.Details, "after you select a user and review an import");
+    }
+
+    [TestMethod]
     public void ReviewMakesSourceDestinationPreservationAndNativeCredentialPromptVisible()
     {
         var presentation = ProfileImportPresentation.From(Plan(true));
