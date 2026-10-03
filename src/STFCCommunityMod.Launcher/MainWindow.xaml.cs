@@ -57,6 +57,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isColorModeSelectorReady;
     private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
+    private long modPreparationGeneration;
+    private long providerSwitchGeneration;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private ConfigurationEffectiveExportDocument? pendingEffectiveConfigurationExport;
     private ConfigurationDocumentSnapshot? pendingConfigurationMigrationSnapshot;
@@ -273,6 +275,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             throw new InvalidOperationException("The built-in Mod Bridge Home workspace is unavailable.");
         }
         DataContext = homeActivation.Workspace.SharedServices.Foundation;
+        modPreparationGeneration++;
+        providerSwitchGeneration++;
         session.ViewModel.PropertyChanged += MainViewModel_PropertyChanged;
         pendingProviderSwitch = null;
         pendingModOperation = null;
@@ -424,6 +428,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         isDisposed = true;
+        modPreparationGeneration++;
+        providerSwitchGeneration++;
         ObserveSettings(null);
         CompleteLaunchOverrideConfirmation(confirmed: false);
         lifetimeCancellation.Cancel();
@@ -510,12 +516,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
-        pendingModOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
-        if (isDisposed || !ReferenceEquals(DataContext, viewModel))
+        var generation = ++modPreparationGeneration;
+        var preparedOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
+        if (isDisposed || generation != modPreparationGeneration || !ReferenceEquals(DataContext, viewModel))
         {
-            pendingModOperation = null;
             return;
         }
+        pendingModOperation = preparedOperation;
         if (pendingModOperation is
             { RecoveryAction: not ModOperationRecoveryAction.None } recoveryPreparation)
         {
@@ -1530,6 +1537,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SettingsUnavailableDialog.IsOpen = true;
             return;
         }
+        providerSwitchGeneration++;
         pendingProviderSwitch = null;
         isProviderSwitchOperationPending = false;
         ProviderSourceSelector.IsEnabled = true;
@@ -1551,6 +1559,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         _ = sender;
         _ = e;
+        providerSwitchGeneration++;
         pendingProviderSwitch = null;
         var hasDifferentTarget =
             ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
@@ -1603,32 +1612,33 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "Select a valid game installation before switching release sources.";
             return;
         }
+        var generation = ++providerSwitchGeneration;
+        bool IsCurrent() => !isDisposed && generation == providerSwitchGeneration && ReferenceEquals(DataContext, viewModel);
         isProviderSwitchOperationPending = true;
         ProviderSwitchActionButton.IsEnabled = false;
         ProviderSourceSelector.IsEnabled = false;
         var operationWasPrepared = pendingProviderSwitch is not null;
         try
         {
-            if (pendingProviderSwitch is null)
+            var preview = pendingProviderSwitch;
+            if (preview is null)
             {
-                var admittedInstallationId = viewModel.SelectedProfile?.PreferredInstallationId;
+                var target = await viewModel.ResolveRuntimeInstallationAsync(lifetimeCancellation.Token);
+                if (!IsCurrent()) return;
                 ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
-                var configurationPath = Path.Combine(viewModel.SelectedGameDirectory, "community_patch_settings.toml");
-                pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
+                var configurationPath = Path.Combine(target.GameDirectory, "community_patch_settings.toml");
+                preview = await providerSourceSwitchCoordinator.PreviewAsync(
                     targetProvider.Id,
                     targetProvider.DefaultReleaseChannelId,
-                    viewModel.SelectedGameDirectory,
+                    target.GameDirectory,
                     viewModel.IsGameRunning,
                     configurationPath,
                     lifetimeCancellation.Token);
-                if (isDisposed || !ReferenceEquals(DataContext, viewModel))
-                {
-                    pendingProviderSwitch = null;
-                    return;
-                }
-                pendingProviderSwitch = pendingProviderSwitch with { InstallationId = admittedInstallationId };
+                if (!IsCurrent()) return;
+                preview = preview with { InstallationId = target.Id };
+                pendingProviderSwitch = preview;
                 var review = ProviderSwitchReviewPresentation.From(
-                    pendingProviderSwitch,
+                    preview,
                     targetProvider.DefaultReleaseChannel.DisplayName,
                     providerSwitchReviewAcknowledged);
                 ProviderSwitchPreviewText.Text = review.Summary;
@@ -1648,11 +1658,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             }
             operationWasPrepared = true;
             using var installationLease = viewModel.AcquireRuntimeInstallationLease(
-                pendingProviderSwitch.GameDirectory!, pendingProviderSwitch.InstallationId);
+                preview.GameDirectory!, preview.InstallationId);
             var result = await providerSourceSwitchCoordinator.ExecuteAsync(
-                pendingProviderSwitch,
-                pendingProviderSwitch.ConfirmationText,
+                preview,
+                preview.ConfirmationText,
                 lifetimeCancellation.Token);
+            if (!IsCurrent()) return;
             pendingProviderSwitch = null;
             var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
             ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
@@ -1673,6 +1684,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         catch (OperationCanceledException)
         {
+            if (!IsCurrent()) return;
             ProviderSwitchPreviewText.Text = "The provider switch was canceled.";
             pendingProviderSwitch = null;
             ResetProviderSwitchReviewControls();
@@ -1687,6 +1699,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or NotSupportedException or ArgumentException or TypeLoadException or BadImageFormatException
                 or System.Runtime.InteropServices.ExternalException or System.Text.Json.JsonException)
         {
+            if (!IsCurrent()) return;
             ProviderSwitchPreviewText.Text = providerSessions.HasPendingRecomposition
                 ? "The provider switch committed, but its workspace refresh needs attention."
                 : operationWasPrepared
@@ -1701,10 +1714,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         finally
         {
-            isProviderSwitchOperationPending = false;
-            if (pendingProviderSwitch is not null)
+            if (IsCurrent())
             {
-                ProviderSwitchActionButton.IsEnabled = pendingProviderSwitch.CanExecute;
+                isProviderSwitchOperationPending = false;
+                if (pendingProviderSwitch is not null)
+                    ProviderSwitchActionButton.IsEnabled = pendingProviderSwitch.CanExecute;
             }
         }
     }

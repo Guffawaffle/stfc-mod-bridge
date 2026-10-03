@@ -2229,6 +2229,84 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public async Task PhysicalRecoveryRejectsReplacementThenRetainsOriginalDirectoryThroughRollbackAwait()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary, "installation-parent/game");
+        var parent = Path.GetDirectoryName(game)!;
+        CompleteNativeImage(game);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
+            NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
+        var previous = new byte[] { 4, 4, 4, 4 };
+        File.WriteAllBytes(Path.Combine(game, "version.dll"), previous);
+        var deploy = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+            afterFileCheckpoint: (checkpoint, _) => checkpoint == ModDeploymentFileCheckpoint.DurableDllBackupPromoted
+                ? throw new SimulatedProcessTerminationException(checkpoint) : ValueTask.CompletedTask);
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() =>
+            deploy.DeployAsync(game, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve));
+        var journal = deploy.ReadJournal()!;
+        Assert.IsNotNull(journal.InstallationBinding);
+        var backup = File.ReadAllBytes(journal.DurableBackupPath);
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        var refused = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => refused.RecoverAsync());
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(game).Length);
+        CollectionAssert.AreEqual(backup, File.ReadAllBytes(journal.DurableBackupPath));
+        Directory.Move(game, game + "-replacement");
+        Directory.Move(game + "-original", game);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase != ModDeploymentPhase.RollingBack) return ValueTask.CompletedTask;
+                entered.TrySetResult(); return new ValueTask(resume.Task);
+            });
+        var work = recovery.RecoverAsync();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.ThrowsException<IOException>(() => Directory.Move(game, game + "-moved"));
+            Assert.ThrowsException<IOException>(() => Directory.Move(parent, parent + "-moved"));
+        }
+        finally { resume.TrySetResult(); await work; }
+        var result = await work;
+        Assert.IsTrue(result.IsSuccess, result.Message);
+        CollectionAssert.AreEqual(previous, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+        Directory.Move(game, game + "-released");
+        Directory.Move(parent, parent + "-released");
+    }
+
+    [TestMethod]
+    public async Task PhysicalOwnershipBindingRefusesIdenticalDllInReplacementInstallation()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary);
+        CompleteNativeImage(game);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
+            NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
+        var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+        Assert.IsTrue((await service.DeployAsync(game, ReleaseArtifact(), ExistingArtifactPolicy.Reject)).IsSuccess);
+        Assert.IsNotNull(service.ReadInstalledState(game)!.InstallationBinding);
+        var dll = File.ReadAllBytes(Path.Combine(game, "version.dll"));
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1]); CompleteNativeImage(game);
+        File.WriteAllBytes(Path.Combine(game, "version.dll"), dll);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service.UninstallAsync(game));
+        CollectionAssert.AreEqual(dll, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+    }
+
+    private static void CompleteNativeImage(string game)
+    {
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        File.WriteAllBytes(Path.Combine(game, "GameAssembly.dll"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(game, "UnityPlayer.dll"), [1, 2, 3]);
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+    }
+
+    [TestMethod]
     public async Task UninstallRefusesArtifactChangedOutsideLauncher()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -2733,7 +2811,8 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null) =>
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
+        NativeLauncherProfilesStore? profilesStore = null) =>
         CreateService(
             temporaryDirectory,
             new FakeDownloader(download),
@@ -2747,7 +2826,7 @@ public sealed class ModDeploymentServiceTests
             afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten,
             afterDurableCopyCompleted,
-            afterFileCheckpoint);
+            afterFileCheckpoint, profilesStore);
 
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
@@ -2762,7 +2841,8 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null) =>
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
+        NativeLauncherProfilesStore? profilesStore = null) =>
         new ModDeploymentService(
             temporaryDirectory.CreateDirectory("state"),
             downloader,
@@ -2777,7 +2857,7 @@ public sealed class ModDeploymentServiceTests
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
-            afterDurableCopyCompleted: afterDurableCopyCompleted);
+            afterDurableCopyCompleted: afterDurableCopyCompleted, profilesStore: profilesStore);
 
     private static ModInstallationAttribution DefaultAttribution() =>
         new("guffawaffle", "stable", "guffawaffle.windows");

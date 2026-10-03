@@ -62,6 +62,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private const long MaximumArtifactSize = 128L * 1024L * 1024L;
     private const string ManagedFileName = "version.dll";
     private readonly string stateDirectory;
+    private readonly NativeLauncherProfilesStore? profilesStore;
     private readonly LauncherOperationLock operationLock;
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
@@ -93,7 +94,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
-        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
+        NativeLauncherProfilesStore? profilesStore = null)
         : this(
             stateDirectory,
             downloader,
@@ -108,7 +110,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
-            afterDurableCopyCompleted: afterDurableCopyCompleted)
+            afterDurableCopyCompleted: afterDurableCopyCompleted,
+            profilesStore: profilesStore)
     {
     }
 
@@ -128,10 +131,12 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
-        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
+        NativeLauncherProfilesStore? profilesStore = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
+        this.profilesStore = profilesStore;
         operationLock = new(this.stateDirectory);
         this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
@@ -477,6 +482,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.RecoveryRequired,
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, normalizedGameDirectory, previousInstalledState?.InstallationBinding,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (installationCustody is not null)
+        {
+            normalizedGameDirectory = installationCustody.GameDirectory;
+            previousInstalledState = ReadInstalledState(normalizedGameDirectory);
+            installationCustody.ValidateReceipt(previousInstalledState?.InstallationBinding);
+        }
         if (allowManagedRepair
             && (previousInstalledState is null
                 || !ArtifactMatchesInstalledReceipt(previousInstalledState, artifact)
@@ -651,7 +665,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
             TargetInstallationAttribution: installationAttribution,
             AdoptChangedManagedArtifact: adoptChangedManagedArtifact,
-            ReviewedPreviousInstalledState: reviewedPreviousInstalledState);
+            ReviewedPreviousInstalledState: reviewedPreviousInstalledState,
+            InstallationBinding: installationCustody?.Binding);
         ExactFileRevision? exactStagedArtifactRevision = null;
         ExactFileMutation? exactStagedArtifact = null;
         ExactFileMutation? exactStagedRuntimeManifest = null;
@@ -954,7 +969,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     installationAttribution,
                     ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
                     journal.Artifact),
-                journal.Artifact.RepositoryRelease);
+                journal.Artifact.RepositoryRelease,
+                journal.InstallationBinding);
             if (commitParticipant is not null)
             {
                 participantCommitStarted = true;
@@ -1301,6 +1317,15 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
 
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, validation.GameDirectory, installedState?.InstallationBinding,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (installationCustody is not null)
+        {
+            validation = GameInstallValidator.Validate(installationCustody.GameDirectory);
+            installedState = ReadInstalledState(installationCustody.GameDirectory);
+            installationCustody.ValidateReceipt(installedState?.InstallationBinding);
+        }
         var legacyUpgrade = UpgradeLegacyBackupReceipts(installedState);
         if (legacyUpgrade.Failure is not null)
         {
@@ -1379,7 +1404,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingArtifactIdentity: new(installedState.Size, installedState.Sha256),
             ExistingRuntimeManifestIdentity: installedState.RuntimeManifest is null
                 ? null
-                : new(installedState.RuntimeManifest.Size, installedState.RuntimeManifest.Sha256));
+                : new(installedState.RuntimeManifest.Size, installedState.RuntimeManifest.Sha256),
+            InstallationBinding: installationCustody?.Binding);
 
         try
         {
@@ -1607,6 +1633,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return PreserveLiveArtifactRecoveryResult();
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, journal.GameDirectory, journal.InstallationBinding, recovery: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (isGameRunning(journal.GameDirectory))
         {
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before provider-switch recovery.");
@@ -1729,6 +1758,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, journal.GameDirectory, journal.InstallationBinding, recovery: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (journal.PreserveLiveArtifactDuringRecovery)
         {
             return PreserveLiveArtifactRecoveryResult(installedState);

@@ -435,6 +435,17 @@ public sealed class NativeLauncherProfilesStore
         => RequireSuccess(new("installation-paths", Root: root, InstallationId: id)).RegisteredInstallation
             ?? throw new InvalidDataException("The shared catalog omitted its installation identity.");
 
+    public async Task<RegisteredGameInstallation> ResolveOperationTargetAsync(string gameDirectory, string? installationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(installationId))
+            return await RegisterInstallationAsync("STFC installation", gameDirectory, cancellationToken).ConfigureAwait(false);
+        var registered = InstallationPaths(installationId);
+        if (registered.State != "available" || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory))
+            throw new InvalidOperationException("The selected installation changed. Select it again before continuing.");
+        return registered;
+    }
+
     public Task<LauncherProfile> ArchiveAsync(LauncherProfile profile, CancellationToken cancellationToken = default) =>
         MutateAsync(new("archive", Root: root, Id: profile.Id, ExpectedRevision: profile.Revision), cancellationToken);
     public Task<LauncherProfile> RestoreAsync(LauncherProfile profile, CancellationToken cancellationToken = default) =>
@@ -492,6 +503,22 @@ public sealed class NativeLauncherProfilesStore
             lease.Dispose();
             throw;
         }
+    }
+
+    internal IDisposable AcquireRecoveryInstallationLease(RuntimeInstallationBinding binding)
+    {
+        var lease = AcquireInstallationLease(binding.GameDirectory);
+        try
+        {
+            var registered = InstallationPaths(binding.InstallationId);
+            if (registered.PhysicalIdentity != binding.PhysicalIdentity
+                || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, binding.GameDirectory))
+                throw new InvalidDataException("The saved installation identity changed. No recovery files were written.");
+            RequireSuccess(new("installation-status", Root: root, GameDirectory: binding.GameDirectory,
+                InstallationId: binding.InstallationId));
+            return lease;
+        }
+        catch { lease.Dispose(); throw; }
     }
 
     public ProfileCatalogLease AcquireDataLease(string id)

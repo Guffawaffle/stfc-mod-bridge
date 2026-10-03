@@ -38,6 +38,8 @@ public sealed partial class ModDeploymentService
         }
 
         var gameDirectory = Path.GetFullPath(journal.GameDirectory);
+        if (journal.InstallationBinding is not null)
+            RuntimeInstallationCustody.Validate(journal.InstallationBinding, gameDirectory);
         var expectedStagePath = Path.Combine(
             gameDirectory,
             $".{ManagedFileName}.{journal.TransactionId}.stage");
@@ -180,6 +182,8 @@ public sealed partial class ModDeploymentService
 
     private void ValidatePersistedInstalledState(ModInstalledArtifactState state)
     {
+        if (state?.InstallationBinding is not null)
+            RuntimeInstallationCustody.Validate(state.InstallationBinding, state.GameDirectory);
         if (state is null
             || state.GameDirectory is null
             || state.FileName is null

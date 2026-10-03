@@ -214,7 +214,7 @@ public sealed class NativeProfileCatalogIntegrationTests
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern int SHGetKnownFolderPath(ref Guid folderId, uint flags, IntPtr token, out IntPtr path);
 
-    private static NativeProfileCatalogTransport Transport()
+    internal static NativeProfileCatalogTransport Transport()
     {
         var native = Environment.GetEnvironmentVariable("STFC_PROFILES_NATIVE_TEST_DLL");
         if (string.IsNullOrWhiteSpace(native))

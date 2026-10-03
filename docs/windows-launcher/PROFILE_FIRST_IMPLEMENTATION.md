@@ -50,8 +50,20 @@ then acquires native directory custody and rechecks that registration before
 execution. The lease spans the complete download/commit await. Retired provider
 composition cannot display a late preparation result. Journal recovery still
 reaches an incomplete image through registration-bound native recovery.
-Provider switching carries the same captured ID; switching, uninstalling and
-detaching retain native directory custody through their awaited operation too.
+Provider switching carries the same captured ID. Runtime deployment, switching,
+uninstalling and recovery retain native directory custody through their awaited
+operation. Durable transaction journals and installed ownership receipts retain
+the original installation ID, physical identity and canonical directory. Recovery
+revalidates that saved binding before inspecting dependencies or restoring files;
+an incomplete image is recoverable, but a replacement physical directory is not.
+Missing recovery bindings preserve the backups for review rather than deriving a
+new expectation. Detaching management changes only Bridge metadata and does not
+register or modify the game directory.
+
+Unbound Default launches resolve valid installation aliases to a canonical
+registration for that operation without changing the saved Default profile.
+Asynchronous preparation and provider-switch results publish only into their
+original active UI generation; retired results cannot clear newer work.
 
 Startup, refresh and launch decisions observe profile sessions. Default can
 coexist with verified isolated sessions, but an unknown running process cannot

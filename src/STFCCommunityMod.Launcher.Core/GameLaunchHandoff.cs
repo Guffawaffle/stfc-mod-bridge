@@ -512,13 +512,29 @@ public sealed partial class GameLaunchHandoffCoordinator(
             }
         }
 
+        string? capturedInstallationId = null;
+        if (target == LauncherLaunchTarget.PrimeExecutable && requiredProfile?.IsDefault == true)
+        {
+            try
+            {
+                var captured = await profilesStore.ResolveOperationTargetAsync(gameDirectory!,
+                    requiredProfile.PreferredInstallationId, cancellationToken);
+                gameDirectory = captured.GameDirectory;
+                capturedInstallationId = captured.Id;
+                requiredProfile = requiredProfile with { GameDirectory = gameDirectory };
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                return new(GameLaunchHandoffState.Blocked, exception.Message, revalidated, Changed: false);
+            }
+        }
         return target == LauncherLaunchTarget.ScopelyLauncher
             ? await LaunchScopelyAsync(gameDirectory, cancellationToken)
             : await LaunchPrimeAsync(
                 gameDirectory
                     ?? throw new InvalidOperationException("The revalidated prime.exe target has no game directory."),
                 requiredProfile,
-                cancellationToken);
+                cancellationToken, capturedInstallationId);
     }
 
     public Task<GameLaunchHandoffResult> LaunchProfileAsync(
@@ -575,7 +591,8 @@ public sealed partial class GameLaunchHandoffCoordinator(
     private async Task<GameLaunchHandoffResult> LaunchPrimeAsync(
         string gameDirectory,
         LauncherProfile? profile,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? capturedInstallationId = null)
     {
         try
         {
@@ -595,7 +612,9 @@ public sealed partial class GameLaunchHandoffCoordinator(
                     $"{profile.Name} started with isolated preferences (process {launched.ProcessId}).",
                     CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile), Changed: true);
             }
-            IDisposable? installationLease = profilesStore.AcquireInstallationLease(gameDirectory);
+            IDisposable? installationLease = capturedInstallationId is null
+                ? profilesStore.AcquireInstallationLease(gameDirectory)
+                : profilesStore.AcquireInstallationLease(gameDirectory, capturedInstallationId);
             try
             {
                 if (profile is { PreferredInstallationId.Length: > 0 })

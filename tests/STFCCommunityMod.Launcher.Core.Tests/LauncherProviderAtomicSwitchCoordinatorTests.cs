@@ -1231,6 +1231,52 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             fixture.Coordinator.ReadJournal()!.Phase);
     }
 
+    private sealed class PhysicalSwitchTermination : Exception;
+
+    [TestMethod]
+    public async Task PhysicalConfigurationRecoveryRefusesReplacementAndPinsRestorationAcrossAwait()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new NativeLauncherProfilesStore(Path.Combine(directory.Path, "ui"),
+            NativeProfileCatalogIntegrationTests.Transport(), Path.Combine(directory.Path, "catalog"));
+        var fixture = await CreateFixtureAsync(directory.Path, installSource: false, profilesStore: store,
+            checkpoint: (phase, _) => phase == LauncherProviderAtomicSwitchPhase.ConfigurationCommitted
+                ? throw new PhysicalSwitchTermination() : ValueTask.CompletedTask);
+        var preview = await fixture.Coordinator.PreviewAsync("netniv", "stable", fixture.GameDirectory,
+            false, fixture.ConfigurationPath);
+        Assert.IsNull(preview.Artifact, "This fixture must exercise configuration-only recovery.");
+        await Assert.ThrowsExceptionAsync<PhysicalSwitchTermination>(() =>
+            fixture.Coordinator.ExecuteAsync(preview, preview.ConfirmationText));
+        Assert.IsNotNull(fixture.Coordinator.ReadJournal()!.InstallationBinding);
+        Directory.Move(fixture.GameDirectory, fixture.GameDirectory + "-original");
+        Directory.CreateDirectory(fixture.GameDirectory);
+        File.WriteAllBytes(Path.Combine(fixture.GameDirectory, "prime.exe"), [9]);
+        File.WriteAllText(fixture.ConfigurationPath, "replacement setup\n");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restarted = await CreateFixtureAsync(directory.Path, initializeFixture: false,
+            installSource: false, profilesStore: store, checkpoint: (phase, _) =>
+            {
+                if (phase != LauncherProviderAtomicSwitchPhase.RollingBack) return ValueTask.CompletedTask;
+                entered.TrySetResult(); return new ValueTask(resume.Task);
+            });
+        var before = CaptureFiles(directory.Path);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => restarted.Coordinator.RecoverAsync());
+        AssertFilesEqual(before, CaptureFiles(directory.Path));
+        Directory.Move(fixture.GameDirectory, fixture.GameDirectory + "-replacement");
+        Directory.Move(fixture.GameDirectory + "-original", fixture.GameDirectory);
+        var work = restarted.Coordinator.RecoverAsync();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.ThrowsException<IOException>(() => Directory.Move(fixture.GameDirectory, fixture.GameDirectory + "-moved"));
+        }
+        finally { resume.TrySetResult(); await work; }
+        Assert.IsTrue((await work).IsSuccess);
+        CollectionAssert.AreEqual(fixture.GuffawaffleConfiguration, File.ReadAllBytes(fixture.ConfigurationPath));
+        Directory.Move(fixture.GameDirectory, fixture.GameDirectory + "-released");
+    }
+
     [TestMethod]
     public async Task ConfigurationOnlyRecoveryRestoresExpectedFileAbsence()
     {
@@ -2054,7 +2100,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
         bool initializeFixture = true,
         Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint = null,
         Func<ModDeploymentPhase, CancellationToken, ValueTask>? targetPhaseCheckpoint = null,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? targetFileCheckpoint = null)
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? targetFileCheckpoint = null,
+        NativeLauncherProfilesStore? profilesStore = null)
     {
         var gameDirectory = Path.Combine(root, "game");
         var stateDirectory = Path.Combine(root, "state");
@@ -2063,6 +2110,13 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             Directory.CreateDirectory(gameDirectory);
             Directory.CreateDirectory(stateDirectory);
             TemporaryDirectory.CreateFile(gameDirectory, "prime.exe");
+            if (profilesStore is not null)
+            {
+                File.WriteAllText(Path.Combine(gameDirectory, ".version"), "&game=221");
+                File.WriteAllBytes(Path.Combine(gameDirectory, "GameAssembly.dll"), [1, 2, 3]);
+                File.WriteAllBytes(Path.Combine(gameDirectory, "UnityPlayer.dll"), [1, 2, 3]);
+                Directory.CreateDirectory(Path.Combine(gameDirectory, "prime_Data"));
+            }
         }
         else if (!Directory.Exists(gameDirectory)
             || !Directory.Exists(stateDirectory)
@@ -2163,7 +2217,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             ],
             stateDirectory,
             timeProvider: null,
-            checkpoint);
+            checkpoint, profilesStore);
         return new(
             gameDirectory,
             stateDirectory,

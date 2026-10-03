@@ -720,6 +720,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ArgumentNullException.ThrowIfNull(distributionProvider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
+        var sharedProfilesStore = new NativeLauncherProfilesStore(installLayout.StateDirectory);
         uiPreferencesStore ??= new JsonLauncherUiPreferencesStore(installLayout.StateDirectory);
         var currentLauncherVersion = CurrentLauncherVersion();
         var processInspector = new SystemGameProcessInspector();
@@ -806,7 +807,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId),
                 reviewedCertification: binding.ReviewedCertification,
-                reviewedCertifications: reviewedReleases.ReleaseEvidence);
+                reviewedCertifications: reviewedReleases.ReleaseEvidence,
+                profilesStore: sharedProfilesStore);
             var candidateAcquirer = binding.IsAvailable
                 && repositoryReleases is null
                 && binding.ReviewedCertification is not null
@@ -913,7 +915,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             launcherReleaseClient,
             new WindowsPackagedLauncherUpdateService(),
             uiPreferencesStore,
-            new NativeLauncherProfilesStore(installLayout.StateDirectory),
+            sharedProfilesStore,
             new GameInstallationCoordinator(installLayout.StateDirectory),
             distributionProviderCatalog,
             featureRemediationCandidates,
@@ -934,7 +936,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     selection, activeConfigurationSelection,
                     viewModel.ConfigurationGameDirectory, configurationCatalog)),
             providerComponents.Select(component => component.SwitchEndpoint),
-            installLayout.StateDirectory);
+            installLayout.StateDirectory,
+            profilesStore: sharedProfilesStore);
         return viewModel;
     }
 
@@ -1063,6 +1066,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         try
         {
+            var target = await profilesStore.ResolveOperationTargetAsync(admittedDirectory, admittedInstallationId, cancellationToken);
+            admittedDirectory = target.GameDirectory;
+            admittedInstallationId = target.Id;
             var preparation = await modManagementCoordinator.PrepareLatestAsync(
                 admittedDirectory,
                 IsGameRunning,
@@ -1100,7 +1106,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 or InvalidDataException
                 or InvalidOperationException
                 or IOException
-                or UnauthorizedAccessException)
+                or UnauthorizedAccessException
+                or NotSupportedException
+                or ArgumentException
+                or System.Runtime.InteropServices.ExternalException
+                or TypeLoadException
+                or BadImageFormatException
+                or JsonException)
         {
             actionFeedback.Mod.Fail($"Could not prepare the mod operation: {exception.Message}");
             return null;
@@ -1174,6 +1186,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         string.IsNullOrWhiteSpace(installationId)
             ? profilesStore.AcquireInstallationLease(gameDirectory)
             : profilesStore.AcquireInstallationLease(gameDirectory, installationId);
+
+    internal Task<RegisteredGameInstallation> ResolveRuntimeInstallationAsync(CancellationToken cancellationToken) =>
+        profilesStore.ResolveOperationTargetAsync(SelectedGameDirectory
+            ?? throw new InvalidOperationException("Select an installation before continuing."),
+            SelectedProfile?.PreferredInstallationId, cancellationToken);
 
     internal static string ModOperationAcceptedMessage(ModOperationPreparation preparation)
     {
@@ -1494,7 +1511,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Recovering the incomplete mod transaction…",
-            async token =>
+            async (_, token) =>
             {
                 if (HasIncompleteProviderSwitch && ProviderSwitchCoordinator is not null)
                 {
@@ -1584,7 +1601,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Removing the Mod Bridge-managed community mod…",
-            token => modManagementCoordinator.UninstallAsync(admittedDirectory, token),
+            (directory, token) => modManagementCoordinator.UninstallAsync(directory!, token),
             cancellationToken, admittedDirectory, ActiveLaunchProfile?.PreferredInstallationId);
     }
 
@@ -1598,13 +1615,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Detaching Mod Bridge ownership from the selected installation…",
-            token => modManagementCoordinator.StopManagingAsync(admittedDirectory, token),
-            cancellationToken, admittedDirectory, ActiveLaunchProfile?.PreferredInstallationId);
+            (_, token) => modManagementCoordinator.StopManagingAsync(admittedDirectory, token),
+            cancellationToken);
     }
 
     private async Task<ModDeploymentResult?> ExecuteMaintenanceAsync(
         string progress,
-        Func<CancellationToken, Task<ModDeploymentResult>> operation,
+        Func<string?, CancellationToken, Task<ModDeploymentResult>> operation,
         CancellationToken cancellationToken,
         string? operationDirectory = null,
         string? installationId = null)
@@ -1616,9 +1633,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         BeginModMutation(operationDirectory);
         try
         {
-            using var installationLease = operationDirectory is null ? null
-                : AcquireRuntimeInstallationLease(operationDirectory, installationId);
-            var result = await operation(cancellationToken);
+            var resolved = operationDirectory is null ? null
+                : await profilesStore.ResolveOperationTargetAsync(operationDirectory, installationId, cancellationToken);
+            using var installationLease = resolved is null ? null
+                : AcquireRuntimeInstallationLease(resolved.GameDirectory, resolved.Id);
+            var result = await operation(resolved?.GameDirectory, cancellationToken);
             actionFeedback.CompleteModDeployment(result);
             return result;
         }

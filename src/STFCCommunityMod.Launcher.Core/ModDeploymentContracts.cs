@@ -84,7 +84,8 @@ public sealed record ModInstalledArtifactState(
     ModArtifactIdentityReceipt? PreviousRuntimeManifestBackupIdentity = null,
     string? ReleaseProductVersion = null,
     IReadOnlyList<ModReleaseHighWaterState>? ReleaseHighWaterMarks = null,
-    NetnivRepositoryReleaseObservation? RepositoryRelease = null);
+    NetnivRepositoryReleaseObservation? RepositoryRelease = null,
+    RuntimeInstallationBinding? InstallationBinding = null);
 
 public sealed record ModReleaseHighWaterState(
     string ProviderId,
@@ -160,7 +161,8 @@ public sealed record ModDeploymentJournal(
     ModFileIdentityReceipt? RestoredAdoptedArtifactFileIdentity = null,
     ModFileIdentityReceipt? RestoredAdoptedRuntimeManifestFileIdentity = null,
     bool AdoptChangedManagedArtifact = false,
-    ModInstalledArtifactState? ReviewedPreviousInstalledState = null);
+    ModInstalledArtifactState? ReviewedPreviousInstalledState = null,
+    RuntimeInstallationBinding? InstallationBinding = null);
 
 public sealed record ModDeploymentResult(
     ModDeploymentResultState State,

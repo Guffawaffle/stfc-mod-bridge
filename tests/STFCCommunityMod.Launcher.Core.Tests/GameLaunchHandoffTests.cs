@@ -691,6 +691,40 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task PhysicalDefaultLaunchResolvesJunctionWithoutChangingSavedProfileBinding()
+    {
+        using var temporary = new TemporaryDirectory();
+        var parent = temporary.CreateDirectory("installation-parent");
+        var game = Path.Combine(parent, "game");
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+        foreach (var file in new[] { "prime.exe", "GameAssembly.dll", "UnityPlayer.dll" })
+            File.WriteAllBytes(Path.Combine(game, file), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        var alias = Path.Combine(temporary.CreateDirectory("aliases"), "installation");
+        var script = $"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{alias.Replace("'", "''")}' -Target '{parent.Replace("'", "''")}' | Out-Null";
+        var start = new System.Diagnostics.ProcessStartInfo(@"C:\Program Files\PowerShell\7\pwsh.exe")
+        { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-EncodedCommand",
+            Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)) }) start.ArgumentList.Add(argument);
+        using var helper = System.Diagnostics.Process.Start(start)!;
+        await helper.WaitForExitAsync(); Assert.AreEqual(0, helper.ExitCode);
+        try
+        {
+            var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
+                NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
+            var profile = store.EnsureDefault(); await store.SelectAsync(profile.Id);
+            var fixture = CreateFixture(temporary, profileStore: store);
+            var result = await fixture.Coordinator.LaunchProfileAsync(profile,
+                defaultGameDirectory: Path.Combine(alias, "game"));
+            Assert.AreEqual(GameLaunchHandoffState.Completed, result.State, result.Message);
+            Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, fixture.GameService.LastGameDirectory!));
+            Assert.AreEqual("", store.Load().Snapshot!.SelectedProfile!.PreferredInstallationId);
+            Assert.AreEqual("", store.Load().Snapshot!.SelectedProfile!.GameDirectory);
+        }
+        finally { Directory.Delete(alias); }
+    }
+
+    [TestMethod]
     public async Task DefaultCannotLaunchBesideAnUnattributedRunningTarget()
     {
         using var temporary = new TemporaryDirectory();
@@ -721,6 +755,7 @@ public sealed class GameLaunchHandoffTests
 
     private sealed class NamedCatalog(LauncherProfile profile) : IProfileCatalogTransport, IProfileInstallationLeaseTransport
     {
+        private RegisteredGameInstallation? installation;
         public List<ProfileCatalogRequest> Requests { get; } = [];
         public ProfileCatalogResponse LaunchResult { get; set; } = new(true, Profile: profile,
             ProcessId: 123, Readiness: "ready");
@@ -729,6 +764,13 @@ public sealed class GameLaunchHandoffTests
         public ProfileCatalogResponse Request(ProfileCatalogRequest request)
         {
             Requests.Add(request);
+            if (request.Operation == "register-installation")
+            {
+                installation = new("cccccccccccccccccccccccccccccccc", request.Name!, request.GameDirectory!,
+                    new string('e', 64), "available", "synthetic-registration");
+                return new(true, RegisteredInstallation: installation);
+            }
+            if (request.Operation == "installation-paths") return new(true, RegisteredInstallation: installation);
             var builtIn = new LauncherProfile("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Default", "", Revision: "default-revision",
                 Kind: "windows-user", OwnerUserId: "S-1-5-21-test", BuiltIn: true);
             if (request.Operation is "ensure-default" or "resolve-default") return new(true, Profile: builtIn);
