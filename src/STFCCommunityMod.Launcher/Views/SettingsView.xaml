@@ -39,6 +39,24 @@
       <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+              <ScrollViewer x:Name="PART_ContentHost"
+                            HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
+                            VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.65" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Style.Triggers>
         <Trigger Property="IsKeyboardFocused" Value="True">
@@ -61,7 +79,7 @@
       <Setter Property="BorderBrush" Value="Transparent" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding IsSelected}" Value="True">
-          <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+          <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
           <Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" />
           <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
           <Setter Property="FontWeight" Value="SemiBold" />
@@ -225,7 +243,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
                 <Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
               </Trigger>
@@ -349,7 +367,7 @@
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Foreground"
-                        Value="{DynamicResource AccentBrush}" />
+                        Value="{DynamicResource AccentTextBrush}" />
                 <Setter Property="FontWeight" Value="SemiBold" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -592,7 +610,7 @@
       <Setter Property="MinHeight" Value="36" />
       <Setter Property="Margin" Value="0,0,8,8" />
       <Setter Property="Padding" Value="10,5" />
-      <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
     </Style>
   </UserControl.Resources>
@@ -671,6 +689,9 @@
                      FontSize="11"
                      Foreground="{DynamicResource TextSecondaryBrush}"
                      Text="Release source" />
+          <TextBlock Text="{Binding ConfigurationTargetLabel}" TextWrapping="Wrap" MaxWidth="240"
+                     HorizontalAlignment="Right" FontWeight="SemiBold"
+                     automation:AutomationProperties.Name="{Binding ConfigurationTargetLabel}" />
           <TextBlock x:Name="ReleaseSourceIdentityText"
                      Margin="0,2,0,0"
                      MaxWidth="240"
@@ -703,7 +724,7 @@
                  behaviors:DragScrollBehavior.IsEnabled="True"
                  behaviors:KeepVisibleAboveFooterBehavior.Footer="{Binding ElementName=SettingsFooter}"
                  ItemsSource="{Binding FilteredSettings}"
-                 IsEnabled="{Binding CanEdit}"
+                 Foreground="{DynamicResource TextPrimaryBrush}"
                  Background="Transparent"
                  BorderThickness="0"
                  ScrollViewer.CanContentScroll="True"
@@ -716,6 +737,21 @@
                  KeyboardNavigation.TabNavigation="Continue"
                  Visibility="{Binding IsSettingsListVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                  automation:AutomationProperties.Name="Settings in the selected section">
+          <ListBox.Template>
+            <ControlTemplate TargetType="ListBox">
+              <Border Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}">
+                <ScrollViewer x:Name="PART_ScrollViewer" Focusable="False"
+                              CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                              HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                              VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                              PanningMode="{TemplateBinding ScrollViewer.PanningMode}">
+                  <ItemsPresenter />
+                </ScrollViewer>
+              </Border>
+            </ControlTemplate>
+          </ListBox.Template>
           <ListBox.Resources>
             <Style BasedOn="{StaticResource SettingsScrollBarStyle}"
                    TargetType="{x:Type ScrollBar}" />
@@ -920,7 +956,7 @@
                                 CornerRadius="{StaticResource BadgeCornerRadius}"
                                 Visibility="{Binding IsDirty, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <TextBlock FontSize="11"
-                                     Foreground="{DynamicResource AccentBrush}"
+                                     Foreground="{DynamicResource AccentTextBrush}"
                                      Text="Unsaved" />
                         </Border>
                         <Border Padding="7,2"
@@ -1519,7 +1555,7 @@
                        Text="{Binding About.ProductName}" />
             <TextBlock Margin="0,4,0,0"
                        FontSize="15"
-                       Foreground="{DynamicResource AccentBrush}"
+                       Foreground="{DynamicResource AccentTextBrush}"
                        Text="{Binding About.Descriptor}" />
             <TextBlock MaxWidth="720"
                        Margin="0,10,0,0"

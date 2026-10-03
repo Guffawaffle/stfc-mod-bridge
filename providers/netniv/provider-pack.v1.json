@@ -3,7 +3,7 @@
   "provider": {
     "id": "netniv",
     "displayName": "NetniV",
-    "description": "Upstream distribution with a temporary launcher-reviewed Windows release allowlist.",
+    "description": "Upstream distribution with trusted NetniV repository releases and exact Windows artifact verification.",
     "runtimeDistributionId": "netniv.stfc-community-mod",
     "defaultReleaseChannelId": "stable",
     "releaseChannels": [
@@ -25,6 +25,8 @@
       "resourceName": null
     },
     "capabilities": [
+      { "id": "profiles.isolation", "status": "unsupported" },
+      { "id": "community.features", "status": "supported" },
       { "id": "settings.catalog", "status": "supported" },
       { "id": "runtime.manifest", "status": "unknown" },
       { "id": "mod.release-discovery", "status": "supported" },
@@ -35,7 +37,7 @@
     "artifactPolicy": {
       "status": "supported",
       "requireSha256": true,
-      "trustKind": "reviewed-exact-hash",
+      "trustKind": "github-repository-release",
       "windowsPublisher": null,
       "windowsArtifactSigningIdentityEku": null
     },

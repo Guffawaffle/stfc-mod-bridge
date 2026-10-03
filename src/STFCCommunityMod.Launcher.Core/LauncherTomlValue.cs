@@ -1,10 +1,11 @@
 using System.Globalization;
-using System.Text.Json;
+using System.Text;
 
 namespace STFCCommunityMod.Launcher.Core;
 
 public static class LauncherTomlValue
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     public static string RenderInteger(long value) =>
         value.ToString(CultureInfo.InvariantCulture);
 
@@ -94,7 +95,28 @@ public static class LauncherTomlValue
     public static string RenderString(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        return JsonSerializer.Serialize(value);
+        var result = new StringBuilder("\"");
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (char.IsHighSurrogate(character))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]))
+                    throw new ArgumentException("A TOML string must contain valid Unicode.", nameof(value));
+                result.Append(character).Append(value[++index]);
+                continue;
+            }
+            if (char.IsLowSurrogate(character))
+                throw new ArgumentException("A TOML string must contain valid Unicode.", nameof(value));
+            result.Append(character switch
+            {
+                '"' => "\\\"", '\\' => "\\\\", '\b' => "\\b", '\t' => "\\t", '\n' => "\\n",
+                '\f' => "\\f", '\r' => "\\r",
+                < ' ' or '\u007f' => "\\u" + ((int)character).ToString("X4", CultureInfo.InvariantCulture),
+                _ => character.ToString(),
+            });
+        }
+        return result.Append('"').ToString();
     }
 
     private static bool TryRemoveNumericSeparators(
@@ -176,36 +198,15 @@ public static class LauncherTomlValue
         return value.Length > 0;
     }
 
-    public static bool TryReadString(
-        string renderedValue,
-        out string value)
+    public static bool TryReadString(string renderedValue, out string value)
     {
         ArgumentNullException.ThrowIfNull(renderedValue);
         value = string.Empty;
-        if (renderedValue.Length < 2)
-        {
-            return false;
-        }
-
-        if (renderedValue[0] == '\'' && renderedValue[^1] == '\'')
-        {
-            value = renderedValue[1..^1];
-            return !value.Contains('\'');
-        }
-
-        if (renderedValue[0] != '"' || renderedValue[^1] != '"')
-        {
-            return false;
-        }
-
-        try
-        {
-            value = JsonSerializer.Deserialize<string>(renderedValue) ?? string.Empty;
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        try { StrictUtf8.GetByteCount(renderedValue); }
+        catch (EncoderFallbackException) { return false; }
+        var decoded = TomlNativeRuntime.Request(new("decode_string", string.Empty, Value: renderedValue));
+        if (!decoded.Ok || decoded.Value is null) return false;
+        value = decoded.Value;
+        return true;
     }
 }

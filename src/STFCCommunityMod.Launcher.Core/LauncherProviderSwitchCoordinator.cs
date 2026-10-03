@@ -17,8 +17,14 @@ public sealed record LauncherProviderAtomicSwitchPreview(
     LauncherProviderSwitchPreview Configuration,
     ModOperationPreparation? Artifact,
     ModInstallationEvidence SourceInstallation,
-    string? GameDirectory = null)
+    string? GameDirectory = null,
+    string? InstallationId = null,
+    RuntimeInstallationBinding? InstallationBinding = null)
 {
+    internal ModSourceReplacementReview? ReplacementSource { get; init; }
+
+    public bool ReplacesChangedManagedArtifact => ReplacementSource is not null;
+
     public string ConfirmationText => Configuration.ConfirmationText;
 
     public bool CanExecute => Artifact is null || Artifact.State == ModOperationPreparationState.Ready;
@@ -57,7 +63,8 @@ public sealed record LauncherProviderAtomicSwitchJournal(
     ConfigurationBackupReceipt? ConfigurationBackup,
     ModReleaseArtifact? TargetArtifact,
     DateTimeOffset UpdatedAtUtc,
-    string? Error = null);
+    string? Error = null,
+    RuntimeInstallationBinding? InstallationBinding = null);
 
 public sealed class LauncherProviderSwitchJournalException : IOException
 {
@@ -88,6 +95,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
     private readonly LauncherProviderSourceSwitchService configurationSwitch;
     private readonly Dictionary<LauncherProviderSelection, ModManagementCoordinator> endpoints;
     private readonly string journalPath;
+    private readonly NativeLauncherProfilesStore? profilesStore;
     private readonly LauncherOperationLock providerSwitchLock;
     private readonly LauncherOperationLock rootOperationLock;
     private readonly TimeProvider timeProvider;
@@ -98,13 +106,15 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         LauncherProviderSourceSwitchService configurationSwitch,
         IEnumerable<LauncherProviderSwitchEndpoint> endpoints,
         string stateDirectory,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        NativeLauncherProfilesStore? profilesStore = null)
         : this(
             configurationSwitch,
             endpoints,
             stateDirectory,
             timeProvider,
-            checkpoint: null)
+            checkpoint: null,
+            profilesStore: profilesStore)
     {
     }
 
@@ -113,10 +123,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         IEnumerable<LauncherProviderSwitchEndpoint> endpoints,
         string stateDirectory,
         TimeProvider? timeProvider,
-        Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint)
+        Func<LauncherProviderAtomicSwitchPhase, CancellationToken, ValueTask>? checkpoint,
+        NativeLauncherProfilesStore? profilesStore = null)
     {
         this.configurationSwitch = configurationSwitch
             ?? throw new ArgumentNullException(nameof(configurationSwitch));
+        this.profilesStore = profilesStore;
         ArgumentNullException.ThrowIfNull(endpoints);
         var materializedEndpoints = endpoints.ToArray();
         this.endpoints = materializedEndpoints.ToDictionary(
@@ -230,6 +242,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
 
         var configurationExisted = preview.ConfigurationExisted
             ?? true;
+        if (journal.InstallationBinding is not null)
+            RuntimeInstallationCustody.Validate(journal.InstallationBinding, gameDirectory!);
         if (configurationExisted)
         {
             if (!IsSha256(preview.ConfigurationSha256)
@@ -321,7 +335,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         string? configurationPath,
         CancellationToken cancellationToken = default)
     {
-        var gameValidation = GameInstallValidator.Validate(gameDirectory);
+        using var custody = await RuntimeInstallationCustody.AcquireAsync(profilesStore, gameDirectory,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (custody is not null && configurationPath is not null
+            && GameDirectoryIdentity.SameLocation(Path.GetDirectoryName(configurationPath)!, gameDirectory))
+            configurationPath = Path.Combine(custody.GameDirectory, Path.GetFileName(configurationPath));
+        var gameValidation = GameInstallValidator.Validate(custody?.GameDirectory ?? gameDirectory);
         if (!gameValidation.IsValid)
         {
             throw new InvalidOperationException(gameValidation.Message);
@@ -368,21 +387,25 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 ModInstallationEvidenceState.NotInstalled
                 or ModInstallationEvidenceState.ManualInstallation))
         {
-            return new(configuration, Artifact: null, sourceInstallation, gameValidation.GameDirectory);
+            return new(configuration, Artifact: null, sourceInstallation, gameValidation.GameDirectory,
+                custody?.Binding.InstallationId, custody?.Binding);
         }
-        if (sourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
-            || !string.Equals(
-                sourceInstallation.InstalledProviderId,
-                configuration.Source.ProviderId,
-                StringComparison.Ordinal)
-            || !string.Equals(
-                sourceInstallation.InstalledReleaseChannelId,
-                configuration.Source.ReleaseChannelId,
-                StringComparison.Ordinal))
+        if (sourceInstallation.State is not (
+                ModInstallationEvidenceState.ManagedVerified or ModInstallationEvidenceState.ManagedChanged)
+            || !sourceInstallation.HasCompleteAttribution)
         {
             throw new InvalidOperationException(
                 "The selected release source does not match the verified Mod Bridge-managed DLL. "
                 + "Use the separate install, adoption, or repair flow first.");
+        }
+        var replacement = sourceInstallation.State == ModInstallationEvidenceState.ManagedChanged
+            ? sourceEndpoint.CaptureSourceReplacementReview(gameValidation.GameDirectory)
+            : null;
+        if (replacement is not null && !string.Equals(
+                replacement.LiveArtifactIdentity.Sha256,
+                sourceInstallation.InstalledSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The current DLL changed during review. Review the switch again.");
         }
         var artifact = await targetEndpoint.PrepareProviderSwitchTargetAsync(
             gameValidation.GameDirectory,
@@ -397,7 +420,11 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             throw new InvalidOperationException(
                 "The target provider endpoint returned an artifact for a different provider.");
         }
-        return new(configuration, artifact, sourceInstallation, gameValidation.GameDirectory);
+        return new(configuration, artifact, sourceInstallation, gameValidation.GameDirectory,
+            custody?.Binding.InstallationId, custody?.Binding)
+        {
+            ReplacementSource = replacement,
+        };
     }
 
     public async Task<LauncherProviderAtomicSwitchResult> ExecuteAsync(
@@ -465,6 +492,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             throw new InvalidOperationException(
                 "Another Mod Bridge mutation is already active. Try the provider switch again after it finishes.");
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, preview.GameDirectory!, preview.InstallationBinding,
+            cancellationToken: cancellationToken, requireBinding: profilesStore is not null).ConfigureAwait(false);
         if (preview.Artifact is null)
         {
             var preparedConfiguration = await configurationSwitch.PrepareAsync(
@@ -478,7 +508,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                 preparedConfiguration.Preview,
                 preparedConfiguration.ConfigurationBackup,
                 TargetArtifact: null,
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(), InstallationBinding: installationCustody?.Binding);
             await PersistAndObserveAsync(configurationJournal, cancellationToken)
                 .ConfigureAwait(false);
             try
@@ -586,13 +616,14 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             preview.Configuration,
             prepared.ConfigurationBackup,
             preview.Artifact.Artifact,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(), InstallationBinding: installationCustody?.Binding);
         await PersistAndObserveAsync(journal, cancellationToken).ConfigureAwait(false);
         var participant = new ConfigurationCommitParticipant(
             this,
             configurationSwitch,
             prepared,
             preview.SourceInstallation,
+            preview.ReplacementSource,
             journal);
         ModDeploymentResult deployment;
         try
@@ -675,6 +706,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         {
             return new(true, false, "No incomplete provider-switch transaction was found.");
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, Path.GetDirectoryName(journal.Preview.ConfigurationPath!)!,
+            journal.InstallationBinding, recovery: true, cancellationToken: cancellationToken).ConfigureAwait(false);
         var rollBackArtifactParticipant = ValidateRecoveryDependencies(journal);
         ModManagementCoordinator? targetEndpoint = null;
         if (journal.TargetArtifact is not null
@@ -877,9 +911,12 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
         LauncherProviderSourceSwitchService configurationSwitch,
         PreparedLauncherProviderSwitch prepared,
         ModInstallationEvidence expectedSourceInstallation,
-        LauncherProviderAtomicSwitchJournal initialJournal) : IModDeploymentCommitParticipant
+        ModSourceReplacementReview? replacementSource,
+        LauncherProviderAtomicSwitchJournal initialJournal) : IModSourceReplacementParticipant
     {
         private LauncherProviderAtomicSwitchJournal journal = initialJournal;
+
+        public ModSourceReplacementReview? ReplacementSource => replacementSource;
 
         public LauncherProviderSwitchResult? ConfigurationResult { get; private set; }
 
@@ -888,7 +925,10 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             CancellationToken cancellationToken)
         {
             var previous = context.PreviousInstalledState;
-            if (expectedSourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
+            if (expectedSourceInstallation.State is not (
+                    ModInstallationEvidenceState.ManagedVerified or ModInstallationEvidenceState.ManagedChanged)
+                || expectedSourceInstallation.State == ModInstallationEvidenceState.ManagedChanged
+                    && replacementSource is null
                 || previous is null
                 || !string.Equals(
                     previous.ProviderId,
@@ -903,7 +943,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
                     expectedSourceInstallation.InstalledRuntimeDistributionId,
                     StringComparison.Ordinal)
                 || !string.Equals(
-                    previous.Sha256,
+                    context.LiveArtifactIdentity?.Sha256,
                     expectedSourceInstallation.InstalledSha256,
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -939,9 +979,8 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             try
             {
                 await configurationSwitch.RollBackAsync(prepared, cancellationToken).ConfigureAwait(false);
-                await PersistAsync(
-                    LauncherProviderAtomicSwitchPhase.RolledBack,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                // Deployment still owns artifact/receipt compensation. Its final
+                // result or successful cancellation publishes the outer terminal state.
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -975,8 +1014,9 @@ public sealed class LauncherProviderAtomicSwitchCoordinator
             ModDeploymentResult result,
             CancellationToken cancellationToken)
         {
-            if (journal.Phase is LauncherProviderAtomicSwitchPhase.RolledBack
-                or LauncherProviderAtomicSwitchPhase.RecoveryRequired)
+            if (journal.Phase == LauncherProviderAtomicSwitchPhase.RecoveryRequired
+                || journal.Phase == LauncherProviderAtomicSwitchPhase.RolledBack
+                    && result.State != ModDeploymentResultState.RecoveryRequired)
             {
                 return;
             }

@@ -83,7 +83,7 @@
             "requireSha256": { "type": "boolean" },
             "trustKind": {
               "type": ["string", "null"],
-              "enum": ["authenticode-publisher", "reviewed-exact-hash", null]
+              "enum": ["authenticode-publisher", "reviewed-exact-hash", "github-repository-release", null]
             },
             "windowsPublisher": {
               "type": ["string", "null"],

@@ -6,6 +6,29 @@ Guffawaffle catalog. It materializes only an exact provider, track, release,
 and full source-commit tuple listed in `revisions`; any adjacent identity fails
 closed.
 
+## Artifact authority and catalog applicability
+
+Stable install/update uses the configured `github-repository-release` policy
+for `netniV/stfc-mod`, not the bundled historical certification as a current
+release allowlist. See [Provider packs](../../docs/PROVIDER_PACKS.md) for the
+repository/owner identity, exact archive/DLL observation, optional attestation,
+release-floor, and recorded-tag repair boundaries.
+
+Artifact admission does not materialize a settings or Data Sync catalog. This
+schema set still requires its exact reviewed provider/track/release/full-commit
+tuple, and the runtime-manifest capability remains unknown. A new stable
+artifact may be installable while its configuration catalog is unavailable.
+
+Production reads the installed release observation before selecting this schema
+set. A new or mismatched identity gets an unqualified empty catalog with its actual
+release/commit retained; typed Settings, Data Sync and catalog-authorized operations
+stay unavailable, while bound raw TOML access remains available. Prospective source
+switch analysis stays Unknown until the target is installed. Without a repository
+observation, historical fallback requires any managed receipt to match the requested
+provider/channel/runtime. A mismatched source receipt cannot grant typed authority
+during an interrupted transition; manual installations without a receipt retain
+the existing historical behavior.
+
 Runtime facts are reviewed from the matching NetniV `defaultconfig.h`,
 `config.cc`, key mapping, README, and example configuration. The compact shared
 settings and revision deltas own types, defaults, aliases, feature gates,
@@ -39,6 +62,7 @@ directly editable rows. Its newly introduced ship-scale, upgrade-confirmation,
 instant-warp, and HUD-mode settings remain unknown and byte-preserved until
 their typed presentation review lands in issue #217. The older stable `1.1.4`
 and retained dev `1.1.5.1` reviews remain available only for their exact release
-identities. The historical stable `1.1.4` certification is normalization-only:
-it can classify an older exact ownership receipt for a safe update, but it is
-not selected as the current installable release.
+identities. Bundled NetniV certifications, including stable `1.1.4` and `1.1.6.0`, are
+historical identity and release-order evidence for exact matching receipts;
+they do not select the current installable release. Their recorded evidence
+and the exact version/source applicability of these catalogs remain intact.

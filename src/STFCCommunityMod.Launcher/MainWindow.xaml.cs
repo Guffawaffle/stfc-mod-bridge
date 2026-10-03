@@ -19,8 +19,8 @@ namespace STFCCommunityMod.Launcher;
 
 public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarget
 {
-    private const double HomeWidth = 680;
-    private const double HomeHeight = 680;
+    private const double HomeWidth = 1120;
+    private const double HomeHeight = 780;
     private const double HomeMinWidth = 560;
     private const double HomeMinHeight = 620;
     internal const double SettingsMinWidth = 960;
@@ -51,9 +51,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private bool isDisposed;
     private bool isSettingsWorkspaceOpen;
     private bool isSettingsWorkspaceInitialized;
+    private SettingsViewModel? observedSettings;
+    private bool isSettingsTargetRefreshQueued;
+    private bool isSettingsTargetRefreshRunning;
     private bool isColorModeSelectorReady;
     private int isProcessStateRefreshPending;
     private ModOperationPreparation? pendingModOperation;
+    private long modPreparationGeneration;
+    private long providerSwitchGeneration;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private ConfigurationEffectiveExportDocument? pendingEffectiveConfigurationExport;
     private ConfigurationDocumentSnapshot? pendingConfigurationMigrationSnapshot;
@@ -134,6 +139,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             providerContext.Selection,
             CreateProviderSession);
         ApplyProviderSession(ProviderSession);
+        isEngineering = ProviderSession.ViewModel.WorkspaceMode == "Engineering";
+        ReloadProfiles();
+        RefreshProfilesList(profiles.SelectedProfileId);
+        UpdateProfileLaunchSelection();
+        UpdatePrimaryWorkspaceVisibility();
         if (!providerShellAccess.CanEditProviderSettings)
         {
             HomeSettingsTitleBarButton.IsEnabled = false;
@@ -151,7 +161,6 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var shellAccess = LauncherProviderShellAccess.From(resolution);
         var provider = resolution.Provider ?? distributionProviderCatalog.DefaultProvider;
         var releaseChannel = resolution.ReleaseChannel ?? provider.DefaultReleaseChannel;
-        var configurationCatalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(provider);
         var viewModel = MainWindowViewModel.CreateDefault(
             httpClient,
             distributionProviderCatalog,
@@ -161,8 +170,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 ? null
                 : shellAccess.RestrictionReason,
             uiPreferencesStore,
-            providerSelectionStore,
-            configurationCatalog);
+            providerSelectionStore);
+        if (viewModel.ConfigurationRuntimeSelection is { } actualSelection
+            && (actualSelection.ProviderId != provider.Id || actualSelection.ReleaseChannelId != releaseChannel.Id))
+        {
+            viewModel.Dispose();
+            return CreateProviderSession(LauncherProviderSelectionResolver.Resolve(distributionProviderCatalog, actualSelection));
+        }
+        var configurationCatalog = viewModel.ConfigurationCatalog;
+        viewModel.SelectProfileSessionAsync = ChooseProfileSessionAsync;
         viewModel.ConfirmLaunchOverrideAsync = ConfirmLaunchOverrideAsync;
         var battlePreferences = uiPreferencesStore.Load().EffectiveBattlePreferences;
         var composition = LauncherStartupComposition.Create(
@@ -185,7 +201,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 provider,
                 releaseChannel,
                 runtimeComposition,
-                configurationCatalog,
+                viewModel.ConfigurationCatalog,
                 () => viewModel.ConfigurationFilePath));
     }
 
@@ -259,10 +275,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             throw new InvalidOperationException("The built-in Mod Bridge Home workspace is unavailable.");
         }
         DataContext = homeActivation.Workspace.SharedServices.Foundation;
+        modPreparationGeneration++;
+        providerSwitchGeneration++;
         session.ViewModel.PropertyChanged += MainViewModel_PropertyChanged;
         pendingProviderSwitch = null;
         pendingModOperation = null;
         diagnosticPreview = null;
+        ObserveSettings(null);
         SettingsWorkspace.DataContext = null;
         openRawTomlCommand = null;
         isSettingsWorkspaceInitialized = false;
@@ -291,17 +310,16 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             UpdateProviderContextActionAvailability(viewModel);
         }
+        if (e.PropertyName is nameof(MainWindowViewModel.ConfigurationFilePath)
+            or nameof(MainWindowViewModel.SelectedConfigurationProfile)) QueueSettingsTargetRefresh();
         if (e.PropertyName != nameof(MainWindowViewModel.ReviewedRuntimeActivation))
         {
             return;
         }
-        if (!ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation))
-        {
-            return;
-        }
+        var runtimeChanged = ProviderSession.RefreshRuntimeComposition(viewModel.ReviewedRuntimeActivation);
         try
         {
-            ProviderSession.ApplicationComposition.RevalidateHomes();
+            if (runtimeChanged) ProviderSession.ApplicationComposition.RevalidateHomes();
             await RefreshRuntimeCompositionConsumersAsync();
         }
         catch (Exception exception)
@@ -321,31 +339,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     private async Task RefreshRuntimeCompositionConsumersAsync()
     {
         diagnosticPreview = null;
-        var sharedSettings = SharedSettings;
-        var currentSettings = sharedSettings.Current;
-        if (currentSettings is null)
-        {
-            return;
-        }
-        var wasOpen = isSettingsWorkspaceOpen;
-        var discardedDrafts = currentSettings.HasPendingChanges
-            || currentSettings.SyncWorkspace.HasPendingChanges;
-        SettingsWorkspace.DataContext = null;
-        openRawTomlCommand = null;
-        isSettingsWorkspaceInitialized = false;
-        await sharedSettings.InvalidateAsync(LauncherSettingsInvalidationReason.RuntimeActivationChanged);
-        if (wasOpen && !EnsureSettingsWorkspaceInitialized())
-        {
-            SetSettingsWorkspaceOpen(false);
-        }
-        if (discardedDrafts)
-        {
-            SettingsUnavailableMessage.Text =
-                "Runtime compatibility changed while Settings had unsaved drafts. "
-                + "Mod Bridge waited for any active save to finish, reloaded the reviewed settings contract, "
-                + "and discarded any remaining unsaved drafts. Review the saved Settings before continuing.";
-            SettingsUnavailableDialog.IsOpen = true;
-        }
+        // The constructed target retains its runtime revision even after the composition slot advances.
+        // Reconcile unchanged evidence too, so deferred draft/save work cannot lose that refresh.
+        await ReconcileSettingsTargetAsync();
     }
 
     private void ShowProviderRecompositionFailure(Exception exception)
@@ -432,6 +428,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         isDisposed = true;
+        modPreparationGeneration++;
+        providerSwitchGeneration++;
+        ObserveSettings(null);
         CompleteLaunchOverrideConfirmation(confirmed: false);
         lifetimeCancellation.Cancel();
         pendingLauncherUpdate?.Dispose();
@@ -460,70 +459,40 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SettingsUnavailableDialog.IsOpen = true;
             return;
         }
-        if (!isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized())
+        if (!EnsureSettingsWorkspaceInitialized())
         {
             return;
         }
 
-        SetSettingsWorkspaceOpen(!isSettingsWorkspaceOpen);
+        SetSettingsWorkspaceOpen(true);
     }
 
-    private async void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e)
+    private async void ChooseGameFolderButton_Click(object sender, RoutedEventArgs e) =>
+        await SelectInstallationForSelectedProfileAsync();
+
+    private async Task SelectInstallationForSelectedProfileAsync()
     {
-        if (DataContext is not MainWindowViewModel viewModel)
+        if (isProfileOperationPending || DataContext is not MainWindowViewModel { SelectedProfile: { } profile }) return;
+        SetProfileOperationPending(true);
+        try
         {
-            return;
+            var registration = await ChooseInstallationAsync(profile.PreferredInstallationId, profile.GameDirectory);
+            if (registration is null) return;
+            if (!await ResolveProfileDraftsAsync()) return;
+            await ProfilesStore.AssignInstallationAsync(profile, registration, lifetimeCancellation.Token);
+            ReloadProfiles();
+            if (DataContext is MainWindowViewModel viewModel) viewModel.ReloadLaunchProfile();
+            RecomposeSelectedProfileRuntime();
+            RefreshProfilesList(profile.Id);
+            UpdateProfileLaunchSelection();
+            await ReconcileSettingsTargetAsync();
         }
-        if (!viewModel.CanChangeGameFolder)
+        catch (Exception exception) when (IsProfileImportException(exception))
         {
-            SettingsUnavailableMessage.Text = viewModel.ModActionKind == ModManagementActionKind.Recover
-                ? "Recover the incomplete transaction before choosing a different game folder."
-                : "Wait for the current Mod Bridge operation to finish before choosing a different game folder.";
+            SettingsUnavailableMessage.Text = $"The installation could not be selected: {exception.Message}";
             SettingsUnavailableDialog.IsOpen = true;
-            return;
         }
-
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Select the STFC game folder that contains prime.exe",
-            Multiselect = false,
-        };
-        if (!string.IsNullOrWhiteSpace(viewModel.InitialBrowseDirectory))
-        {
-            dialog.InitialDirectory = viewModel.InitialBrowseDirectory;
-        }
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            try
-            {
-                await using var lease = await new LauncherOperationLock(stateDirectory)
-                    .TryAcquireAsync(lifetimeCancellation.Token);
-                if (lease is null)
-                {
-                    SettingsUnavailableMessage.Text =
-                        "Another Mod Bridge operation is active. The game folder was not changed; try again when it finishes.";
-                    SettingsUnavailableDialog.IsOpen = true;
-                    return;
-                }
-
-                viewModel.ConfirmManualSelection(dialog.FolderName);
-                shellLifecycleController.HandleGameInstallationChanged();
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception exception) when (
-                exception is IOException
-                    or UnauthorizedAccessException
-                    or InvalidDataException)
-            {
-                SettingsUnavailableMessage.Text =
-                    $"The game folder could not be saved: {exception.Message}";
-                SettingsUnavailableDialog.IsOpen = true;
-            }
-        }
+        finally { SetProfileOperationPending(false); }
     }
 
     private async void ModActionButton_Click(object sender, RoutedEventArgs e)
@@ -547,11 +516,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             return;
         }
 
-        pendingModOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
-        if (isDisposed)
+        var generation = ++modPreparationGeneration;
+        var preparedOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
+        if (isDisposed || generation != modPreparationGeneration || !ReferenceEquals(DataContext, viewModel))
         {
             return;
         }
+        pendingModOperation = preparedOperation;
         if (pendingModOperation is
             { RecoveryAction: not ModOperationRecoveryAction.None } recoveryPreparation)
         {
@@ -771,7 +742,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 return;
             }
 
-            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var catalog = viewModel.ConfigurationCatalog;
             var contents = File.Exists(path) ? File.ReadAllBytes(path) : [];
             var result = ConfigurationEffectiveExportService.Build(
                 new ConfigurationDocumentSnapshot(path, contents),
@@ -871,6 +842,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "Select a valid game folder before reviewing configuration cleanup.");
             return;
         }
+        if (viewModel.SelectedConfigurationProfile is not null)
+        {
+            ReportConfigurationCleanupAction(false,
+                "Installation configuration cleanup is available for Default. Profile Settings and Data Sync save to their own configuration.");
+            return;
+        }
         if (SharedSettings.HasPendingChanges)
         {
             ReportConfigurationCleanupAction(
@@ -890,7 +867,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 return;
             }
 
-            var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
+            var catalog = viewModel.ConfigurationCatalog;
             var evidence = LauncherConfigurationDiagnosisEvidence.Supported(
                 distributionProvider.Id,
                 distributionReleaseChannel.Id,
@@ -1097,14 +1074,14 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "The persisted release-source selection changed or no longer supports configuration cleanup.");
         }
 
-        var catalog = BundledLauncherProviderCatalog.LoadConfigurationCatalog(
-            providerResolution.Provider);
+        var resolver = new LauncherInstalledConfigurationResolver(
+            providerCatalog,
+            BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(providerCatalog),
+            LauncherInstalledConfigurationResolver.CreateReadOnlyStateReader(stateDirectory));
         return new(
             Path.Combine(gameValidation.GameDirectory, "community_patch_settings.toml"),
-            LauncherConfigurationDiagnosisEvidence.Supported(
-                providerResolution.Provider.Id,
-                providerResolution.ReleaseChannel.Id,
-                catalog));
+            resolver.ResolveEvidence(
+                providerResolution.Selection, gameValidation.GameDirectory));
     }
 
     internal static string CompleteConfigurationCleanupProjection(
@@ -1560,6 +1537,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             SettingsUnavailableDialog.IsOpen = true;
             return;
         }
+        providerSwitchGeneration++;
         pendingProviderSwitch = null;
         isProviderSwitchOperationPending = false;
         ProviderSourceSelector.IsEnabled = true;
@@ -1581,6 +1559,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         _ = sender;
         _ = e;
+        providerSwitchGeneration++;
         pendingProviderSwitch = null;
         var hasDifferentTarget =
             ProviderSourceSelector.SelectedItem is LauncherDistributionProvider provider
@@ -1633,25 +1612,33 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 "Select a valid game installation before switching release sources.";
             return;
         }
+        var generation = ++providerSwitchGeneration;
+        bool IsCurrent() => !isDisposed && generation == providerSwitchGeneration && ReferenceEquals(DataContext, viewModel);
         isProviderSwitchOperationPending = true;
         ProviderSwitchActionButton.IsEnabled = false;
         ProviderSourceSelector.IsEnabled = false;
         var operationWasPrepared = pendingProviderSwitch is not null;
         try
         {
-            if (pendingProviderSwitch is null)
+            var preview = pendingProviderSwitch;
+            if (preview is null)
             {
+                var target = await viewModel.ResolveRuntimeInstallationAsync(lifetimeCancellation.Token);
+                if (!IsCurrent()) return;
                 ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
-                var configurationPath = GetConfigurationFilePath();
-                pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
+                var configurationPath = Path.Combine(target.GameDirectory, "community_patch_settings.toml");
+                preview = await providerSourceSwitchCoordinator.PreviewAsync(
                     targetProvider.Id,
                     targetProvider.DefaultReleaseChannelId,
-                    viewModel.SelectedGameDirectory,
+                    target.GameDirectory,
                     viewModel.IsGameRunning,
                     configurationPath,
                     lifetimeCancellation.Token);
+                if (!IsCurrent()) return;
+                preview = preview with { InstallationId = target.Id };
+                pendingProviderSwitch = preview;
                 var review = ProviderSwitchReviewPresentation.From(
-                    pendingProviderSwitch,
+                    preview,
                     targetProvider.DefaultReleaseChannel.DisplayName,
                     providerSwitchReviewAcknowledged);
                 ProviderSwitchPreviewText.Text = review.Summary;
@@ -1670,10 +1657,13 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 }
             }
             operationWasPrepared = true;
+            using var installationLease = viewModel.AcquireRuntimeInstallationLease(
+                preview.GameDirectory!, preview.InstallationId);
             var result = await providerSourceSwitchCoordinator.ExecuteAsync(
-                pendingProviderSwitch,
-                pendingProviderSwitch.ConfirmationText,
+                preview,
+                preview.ConfirmationText,
                 lifetimeCancellation.Token);
+            if (!IsCurrent()) return;
             pendingProviderSwitch = null;
             var selectedProvider = distributionProviderCatalog.GetProvider(result.Selection.ProviderId);
             ProviderSwitchPreviewText.Text = result.ConfigurationBackup is null
@@ -1694,6 +1684,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         catch (OperationCanceledException)
         {
+            if (!IsCurrent()) return;
             ProviderSwitchPreviewText.Text = "The provider switch was canceled.";
             pendingProviderSwitch = null;
             ResetProviderSwitchReviewControls();
@@ -1704,8 +1695,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or InvalidDataException
                 or InvalidOperationException
                 or KeyNotFoundException
-                or HttpRequestException)
+                or HttpRequestException
+                or NotSupportedException or ArgumentException or TypeLoadException or BadImageFormatException
+                or System.Runtime.InteropServices.ExternalException or System.Text.Json.JsonException)
         {
+            if (!IsCurrent()) return;
             ProviderSwitchPreviewText.Text = providerSessions.HasPendingRecomposition
                 ? "The provider switch committed, but its workspace refresh needs attention."
                 : operationWasPrepared
@@ -1720,10 +1714,11 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
         finally
         {
-            isProviderSwitchOperationPending = false;
-            if (pendingProviderSwitch is not null)
+            if (IsCurrent())
             {
-                ProviderSwitchActionButton.IsEnabled = pendingProviderSwitch.CanExecute;
+                isProviderSwitchOperationPending = false;
+                if (pendingProviderSwitch is not null)
+                    ProviderSwitchActionButton.IsEnabled = pendingProviderSwitch.CanExecute;
             }
         }
     }
@@ -1934,49 +1929,15 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
 
     private void SetSettingsWorkspaceOpen(bool isOpen)
     {
-        if (isOpen)
-        {
-            DiagnosticsWorkspace.Visibility = Visibility.Collapsed;
-            DiagnosticsHomeTitleBarButton.Visibility = Visibility.Collapsed;
-            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
-        }
         isSettingsWorkspaceOpen = isOpen;
-        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSearchHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        if (!isOpen && DataContext is MainWindowViewModel viewModel)
-        {
-            viewModel.Refresh();
-        }
-
-        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Settings : LauncherWorkspace.Home);
+        engineeringSection = isOpen ? "Settings" : "Profiles";
+        SetPrimaryWorkspace(true);
     }
 
     private void SetDiagnosticsWorkspaceOpen(bool isOpen)
     {
-        if (isOpen)
-        {
-            isSettingsWorkspaceOpen = false;
-        }
-        HomeWorkspace.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsWorkspace.Visibility = Visibility.Collapsed;
-        DiagnosticsWorkspace.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        HomeSettingsTitleBarButton.Visibility = isOpen ? Visibility.Collapsed : Visibility.Visible;
-        SettingsHomeTitleBarButton.Visibility = Visibility.Collapsed;
-        DiagnosticsHomeTitleBarButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        if (isOpen)
-        {
-            SettingsDiagnosticsTitleBarButton.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            SettingsDiagnosticsTitleBarButton.ClearValue(VisibilityProperty);
-        }
-        SettingsSearchHost.Visibility = Visibility.Collapsed;
-        ColorModeSelector.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        isSettingsWorkspaceOpen = false;
+        engineeringSection = isOpen ? "Diagnostics" : "Profiles";
         if (!isOpen)
         {
             ClearPendingConfigurationMigration();
@@ -1985,7 +1946,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             diagnosticsFocusTransition.Exit();
         }
 
-        ApplyWorkspaceSizing(isOpen ? LauncherWorkspace.Diagnostics : LauncherWorkspace.Home);
+        SetPrimaryWorkspace(true);
     }
 
     private void ApplyWorkspaceSizing(LauncherWorkspace workspace)
@@ -2019,8 +1980,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var availableHeight = NormalizeWorkAreaDimension(workAreaHeight);
         var minWidth = Math.Min(isHome ? HomeMinWidth : SettingsMinWidth, availableWidth);
         var minHeight = Math.Min(isHome ? HomeMinHeight : SettingsMinHeight, availableHeight);
-        var requestedWidth = isHome ? HomeWidth : Math.Max(currentWidth, SettingsWidth);
-        var requestedHeight = isHome ? HomeHeight : Math.Max(currentHeight, SettingsHeight);
+        var requestedWidth = isHome ? (currentWidth > 0 ? currentWidth : HomeWidth) : Math.Max(currentWidth, SettingsWidth);
+        var requestedHeight = isHome ? (currentHeight > 0 ? currentHeight : HomeHeight) : Math.Max(currentHeight, SettingsHeight);
         return new(
             minWidth,
             minHeight,
@@ -2049,33 +2010,18 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
     {
         try
         {
-            if (!providerSelectionResolution.IsResolved)
-            {
-                throw new LauncherConfigurationSchemaException(
-                    $"Settings are disabled until the release source is repaired. "
-                    + providerSelectionResolution.Message);
-            }
             if (DataContext is not MainWindowViewModel viewModel)
             {
                 throw new LauncherConfigurationSchemaException(
                     "Settings are unavailable until Mod Bridge finishes loading installation state.");
             }
-            if (viewModel.HasUnsafeModDeploymentTransaction)
-            {
-                throw new LauncherConfigurationSchemaException(
-                    "Settings are disabled until the unsafe mod deployment transaction is recovered.");
-            }
-            if (string.IsNullOrWhiteSpace(viewModel.SelectedGameDirectory)
-                || !File.Exists(Path.Combine(viewModel.SelectedGameDirectory, "version.dll")))
-            {
-                throw new LauncherConfigurationSchemaException(
-                    "Community Mod is not installed in the selected game folder. Install it before editing mod settings.");
-            }
             if (isSettingsWorkspaceInitialized)
             {
                 return true;
             }
-            SettingsWorkspace.DataContext = SharedSettings.GetOrCreate();
+            var settings = SharedSettings.GetOrCreate();
+            ObserveSettings(settings);
+            SettingsWorkspace.DataContext = settings;
             isSettingsWorkspaceInitialized = true;
             return true;
         }
@@ -2101,40 +2047,104 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
             provider.Id,
             $"{provider.Id}/{releaseChannel.Id}");
         var activeSelection = new LauncherProviderSelection(provider.Id, releaseChannel.Id);
-        var configurationEvidence = BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
-            distributionProviderCatalog,
-            BundledLauncherProviderCatalog.LoadReviewedWindowsReleases(distributionProviderCatalog),
-            activeSelection);
-        var configurationHistoryCoordinator = new ProviderConfigurationRestoreCoordinator(
+        var configurationEvidence = LauncherConfigurationDiagnosisEvidence.Supported(
+            activeSelection.ProviderId, activeSelection.ReleaseChannelId, catalog);
+        var configurationProfile = (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile;
+        var settingsSession = ProviderSession;
+        var binding = LauncherConfigurationTarget.Capture(configurationProfile?.Id, configurationPathProvider(),
+            ProviderSession.SettingsRuntimeRevision);
+        Func<string?> boundConfigurationPath = () => !ReferenceEquals(settingsSession, ProviderSession) ? null
+            : binding.Resolve(LauncherConfigurationTarget.Capture(
+            (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id, configurationPathProvider(),
+            ProviderSession.SettingsRuntimeRevision));
+        var isolatedConfiguration = configurationProfile is { IsDefault: false };
+        var configurationHistoryCoordinator = isolatedConfiguration ? null : new ProviderConfigurationRestoreCoordinator(
             backupStore,
             distributionProviderCatalog,
             providerSelectionStore,
             activeSelection,
             configurationEvidence,
             stateDirectory,
-            configurationPathProvider);
-        openRawTomlCommand = new RelayCommand(OpenRawConfiguration, CanOpenRawConfiguration);
+            boundConfigurationPath);
+        openRawTomlCommand = LauncherRawConfigurationCommand.Create(boundConfigurationPath, OpenRawConfiguration);
         return new(
             catalog,
             new RelayCommand(() => SetSettingsWorkspaceOpen(false)),
             openRawTomlCommand,
-            configurationPathProvider,
+            boundConfigurationPath,
             runtimeComposition.SettingsLayout,
             runtimeComposition.SettingsDiagnostics,
-            repository: new TomlConfigurationRepository(
-                mutationBackup: mutationBackup,
-                mutationAdmission: new LauncherOperationLock(stateDirectory)),
+            repository: !isolatedConfiguration
+                ? new TomlConfigurationRepository(mutationBackup: mutationBackup,
+                    mutationAdmission: new LauncherOperationLock(stateDirectory))
+                : new ProfileConfigurationRepository(configurationProfile!, ProfilesStore,
+                    () => (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id,
+                    new TomlConfigurationRepository(mutationBackup: new ProfileConfigurationMutationBackup(
+                        configurationProfile!, provider.Id), mutationAdmission: new LauncherOperationLock(stateDirectory))),
             uiPreferencesStore: uiPreferencesStore,
             openExternalUri: OpenExternalUri,
             openDataFolder: OpenApplicationDataFolder,
             manageApplication: OpenWindowsInstalledApps,
             openReleaseSecurityGuidance: OpenReleaseSecurityGuidance,
-            configurationHistoryCoordinator: configurationHistoryCoordinator);
+            configurationHistoryCoordinator: configurationHistoryCoordinator,
+            configurationTargetLabel: (DataContext as MainWindowViewModel)?.ConfigurationTargetLabel);
     }
 
-    private bool CanOpenRawConfiguration()
+    private void ObserveSettings(SettingsViewModel? settings)
     {
-        return TryGetConfigurationFilePath(out var path) && File.Exists(path);
+        if (ReferenceEquals(observedSettings, settings)) return;
+        if (observedSettings is not null)
+        {
+            observedSettings.PropertyChanged -= SettingsTargetStateChanged;
+            observedSettings.SyncWorkspace.PropertyChanged -= SettingsTargetStateChanged;
+        }
+        observedSettings = settings;
+        if (settings is not null)
+        {
+            settings.PropertyChanged += SettingsTargetStateChanged;
+            settings.SyncWorkspace.PropertyChanged += SettingsTargetStateChanged;
+        }
+    }
+
+    private void SettingsTargetStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SettingsViewModel.HasPendingChanges) or nameof(SettingsViewModel.IsSaveInProgress))
+            QueueSettingsTargetRefresh();
+    }
+
+    private void QueueSettingsTargetRefresh()
+    {
+        if (isDisposed || isSettingsTargetRefreshQueued) return;
+        isSettingsTargetRefreshQueued = true;
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, async () =>
+        {
+            isSettingsTargetRefreshQueued = false;
+            try { await ReconcileSettingsTargetAsync(); }
+            catch (Exception exception)
+            {
+                SettingsUnavailableMessage.Text = $"Settings target could not be refreshed: {exception.Message}";
+                SettingsUnavailableDialog.IsOpen = true;
+            }
+        });
+    }
+
+    private async Task ReconcileSettingsTargetAsync()
+    {
+        if (isDisposed || isSettingsTargetRefreshRunning) return;
+        isSettingsTargetRefreshRunning = true;
+        try
+        {
+            var owner = SharedSettings;
+            var invalidated = await owner.ReconcileTargetAsync();
+            openRawTomlCommand?.NotifyCanExecuteChanged();
+            if (!invalidated || !ReferenceEquals(owner, SharedSettings)) return;
+            ObserveSettings(null);
+            SettingsWorkspace.DataContext = null;
+            openRawTomlCommand = null;
+            isSettingsWorkspaceInitialized = false;
+            if (isSettingsWorkspaceOpen && !EnsureSettingsWorkspaceInitialized()) SetSettingsWorkspaceOpen(false);
+        }
+        finally { isSettingsTargetRefreshRunning = false; }
     }
 
     private void OpenExternalUri(Uri uri)
@@ -2210,16 +2220,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         OpenReleaseSecurityGuidance();
     }
 
-    private void OpenRawConfiguration()
+    private void OpenRawConfiguration(string path)
     {
-        if (!TryGetConfigurationFilePath(out var path) || !File.Exists(path))
-        {
-            SettingsUnavailableMessage.Text =
-                "Select a valid game folder with an existing community_patch_settings.toml first.";
-            SettingsUnavailableDialog.IsOpen = true;
-            return;
-        }
-
         try
         {
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });

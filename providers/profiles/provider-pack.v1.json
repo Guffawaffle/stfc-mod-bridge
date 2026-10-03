@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "id": "profiles",
+    "displayName": "Profiles only",
+    "description": "Standalone profile support without community mod features. A player release is pending runtime qualification.",
+    "runtimeDistributionId": "guffawaffle.stfc-profiles",
+    "defaultReleaseChannelId": "development",
+    "releaseChannels": [
+      {
+        "id": "development",
+        "displayName": "Development",
+        "repository": "Guffawaffle/stfc-profiles",
+        "discoveryKind": "github-release-asset",
+        "manifestAssetName": null,
+        "artifactAssetName": "stfc-profiles-windows.zip"
+      }
+    ],
+    "configurationSchema": { "status": "unsupported", "resourceName": null },
+    "runtimeManifest": { "status": "unknown", "resourceName": null },
+    "capabilities": [
+      { "id": "settings.catalog", "status": "unsupported" },
+      { "id": "runtime.manifest", "status": "unknown" },
+      { "id": "mod.release-discovery", "status": "unsupported" },
+      { "id": "mod.artifact-trust", "status": "unknown" },
+      { "id": "release.withdrawal", "status": "unknown" },
+      { "id": "config.migration", "status": "unsupported" },
+      { "id": "profiles.isolation", "status": "supported" },
+      { "id": "community.features", "status": "unsupported" }
+    ],
+    "artifactPolicy": {
+      "status": "unknown", "requireSha256": true, "trustKind": null,
+      "windowsPublisher": null, "windowsArtifactSigningIdentityEku": null
+    },
+    "withdrawalPolicy": { "status": "unknown", "mode": null },
+    "migration": {
+      "status": "unsupported", "configurationFormat": "toml",
+      "preserveUnknownToml": true, "compatibleProviderIds": []
+    }
+  }
+}

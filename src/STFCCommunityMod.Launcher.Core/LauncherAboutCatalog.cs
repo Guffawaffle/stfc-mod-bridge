@@ -100,6 +100,8 @@ public static class LauncherAboutCatalogLoader
                     "go-build-toolchain",
                     "go-build-module",
                     "go-build-graph",
+                    "native-source-pin",
+                    "native-build-module",
                 ],
                 StringComparer.Ordinal));
         RequireEvidenceKind(

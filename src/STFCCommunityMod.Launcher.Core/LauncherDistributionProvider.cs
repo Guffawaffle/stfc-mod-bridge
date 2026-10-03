@@ -19,6 +19,8 @@ public static class LauncherProviderCapabilityIds
     public const string ArtifactTrust = "mod.artifact-trust";
     public const string WithdrawalPolicy = "release.withdrawal";
     public const string ConfigurationMigration = "config.migration";
+    public const string ProfileIsolation = "profiles.isolation";
+    public const string CommunityFeatures = "community.features";
 
     public static IReadOnlyList<string> ContractCapabilities { get; } =
     [
@@ -41,6 +43,7 @@ public enum LauncherProviderArtifactTrustKind
 {
     AuthenticodePublisher,
     ReviewedExactHash,
+    GitHubRepositoryRelease,
 }
 
 public sealed record LauncherProviderReleaseChannel(
@@ -160,7 +163,8 @@ public sealed class LauncherDistributionProvider
         && (ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.AuthenticodePublisher
                 && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
                 && !string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku)
-            || ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.ReviewedExactHash
+            || ArtifactPolicy.TrustKind is (LauncherProviderArtifactTrustKind.ReviewedExactHash
+                    or LauncherProviderArtifactTrustKind.GitHubRepositoryRelease)
                 && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsPublisher)
                 && string.IsNullOrWhiteSpace(ArtifactPolicy.WindowsArtifactSigningIdentityEku));
 

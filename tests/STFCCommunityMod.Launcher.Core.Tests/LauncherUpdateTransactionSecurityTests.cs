@@ -38,7 +38,7 @@ public sealed class LauncherUpdateTransactionSecurityTests
         {
             "plan", "manifest", "bundle", "receipt", "trusted-root", "archive",
             "current-launcher", "current-verifier", "current-other", "candidate-launcher", "candidate-updater",
-            "candidate-verifier", "runner-updater",
+            "candidate-verifier", "candidate-profiles", "candidate-toml", "runner-updater",
         };
         foreach (var role in roles)
         {
@@ -85,6 +85,34 @@ public sealed class LauncherUpdateTransactionSecurityTests
         Assert.AreEqual("healthy", File.ReadAllText(fixture.HealthySentinel));
     }
 
+    [TestMethod]
+    public async Task CandidateLauncherMustPairTheNativeProfilesBeforeAuthorityVerification()
+    {
+        using var fixture = new UpdateFixture();
+        var runtime = fixture.Load();
+        var verifier = new FakeReleaseVerifier(fixture.Receipt);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            LauncherUpdateTransactionSecurity.VerifyImmediatelyBeforeSwapAsync(
+                runtime, verifier, new TrustedAuthenticityVerifier(),
+                new PairedIdentityReader(mismatchProfiles: true), () => fixture.ObservedAt));
+        Assert.AreEqual(0, verifier.CallCount);
+        Assert.AreEqual("healthy", File.ReadAllText(fixture.HealthySentinel));
+    }
+
+    [TestMethod]
+    public async Task CandidateLauncherMustPairNativeTomlBeforeAuthorityVerification()
+    {
+        using var fixture = new UpdateFixture();
+        var runtime = fixture.Load();
+        var verifier = new FakeReleaseVerifier(fixture.Receipt);
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+            LauncherUpdateTransactionSecurity.VerifyImmediatelyBeforeSwapAsync(
+                runtime, verifier, new TrustedAuthenticityVerifier(),
+                new PairedIdentityReader(mismatchToml: true), () => fixture.ObservedAt));
+        Assert.AreEqual(0, verifier.CallCount);
+        Assert.AreEqual("healthy", File.ReadAllText(fixture.HealthySentinel));
+    }
+
     private sealed class UpdateFixture : IDisposable
     {
         private readonly TemporaryDirectory temporary = new();
@@ -116,6 +144,8 @@ public sealed class LauncherUpdateTransactionSecurityTests
                 stageRoot,
                 ModBridgeProductIdentity.ReleaseVerifierExecutableName,
                 "candidate verifier");
+            var candidateProfiles = Write(stageRoot, NativeProfileCatalogTransport.LibraryName, "candidate profiles");
+            var candidateToml = Write(stageRoot, TomlNativeTransport.LibraryName, "candidate toml");
             var runnerUpdater = Write(
                 transactionRoot,
                 ModBridgeProductIdentity.UpdaterExecutableName,
@@ -163,6 +193,8 @@ public sealed class LauncherUpdateTransactionSecurityTests
                                 ModBridgeProductIdentity.ExecutableName,
                                 ModBridgeProductIdentity.ReleaseVerifierExecutableName,
                                 ModBridgeProductIdentity.UpdaterExecutableName,
+                                NativeProfileCatalogTransport.LibraryName,
+                                TomlNativeTransport.LibraryName,
                             },
                         },
                     },
@@ -275,6 +307,8 @@ public sealed class LauncherUpdateTransactionSecurityTests
                 ["candidate-launcher"] = candidateLauncher,
                 ["candidate-updater"] = candidateUpdater,
                 ["candidate-verifier"] = candidateVerifier,
+                ["candidate-profiles"] = candidateProfiles,
+                ["candidate-toml"] = candidateToml,
                 ["runner-updater"] = runnerUpdater,
             };
         }
@@ -347,7 +381,7 @@ public sealed class LauncherUpdateTransactionSecurityTests
         public ModArtifactAuthenticityResult Verify(string artifactPath) => new(true, "trusted");
     }
 
-    private sealed class PairedIdentityReader(bool mismatchCandidate = false) : ILauncherArtifactIdentityReader
+    private sealed class PairedIdentityReader(bool mismatchCandidate = false, bool mismatchProfiles = false, bool mismatchToml = false) : ILauncherArtifactIdentityReader
     {
         public LauncherReleaseIdentity ReadIdentity(string executablePath)
         {
@@ -359,7 +393,17 @@ public sealed class LauncherUpdateTransactionSecurityTests
             {
                 digest = new string('f', 64);
             }
-            return new(TargetCommit, digest);
+            var native = Path.Combine(Path.GetDirectoryName(executablePath)!, NativeProfileCatalogTransport.LibraryName);
+            var nativeDigest = File.Exists(native)
+                ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(native))).ToLowerInvariant()
+                : null;
+            if (mismatchProfiles) nativeDigest = new string('f', 64);
+            var toml = Path.Combine(Path.GetDirectoryName(executablePath)!, TomlNativeTransport.LibraryName);
+            var tomlDigest = File.Exists(toml)
+                ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(toml))).ToLowerInvariant()
+                : null;
+            if (mismatchToml) tomlDigest = new string('f', 64);
+            return new(TargetCommit, digest, nativeDigest, tomlDigest);
         }
     }
 }

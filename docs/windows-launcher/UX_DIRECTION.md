@@ -398,17 +398,20 @@ The future General area may include:
 Labels must distinguish `Start the launcher with Windows` from starting STFC.
 Likewise, checking for an update is not permission to install it.
 
-Named launch profiles are a separate future product concept. A profile may
-select a mod configuration, launch mode, and supported launch-time behavior,
-but profiles must reuse the shared configuration schema rather than copy its
-definitions. The active profile must be visible before launch, and switching
-profiles must never silently materialize defaults, duplicate secrets, or
-rewrite unrelated TOML.
+A profile is saved account identity/preferences; a session is a running game
+using a profile. Guff accepted the [shared profile catalog and CLI direction](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md)
+on 2026-09-29. STFC Profiles owns the directory catalog, metadata and archive
+lifecycle; Bridge consumes those operations and keeps UI selection private.
+The current implementation and remaining runtime work are recorded in the
+[Bridge profile contract](SHARED_INSTALL_PROFILE_CONTRACT.md).
 
-Profiles and launcher preferences require dedicated PM work before
-implementation. `WL-006` supplies the schema-driven configuration foundation,
-while `WL-007` supplies the launch handoff on which profile selection can
-operate.
+The selected profile must be visible before a named launch. Selection never
+redirects a bare launch. Profile configuration reuses the shared schema; switching
+profiles never silently materializes defaults, duplicates secrets or rewrites
+unrelated TOML. Archive/restore preserve identity and data while the profile is
+stopped; permanent deletion is a separate explicit action. General launcher
+preferences retain their own product work. The historical `WL-006`/`WL-007`
+foundation does not define the current profile catalog.
 
 ### Launcher and sidecar product family
 

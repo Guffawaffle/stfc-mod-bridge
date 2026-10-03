@@ -120,6 +120,38 @@ public sealed class LauncherEnvironmentProbeTests
                     && dimension.Severity == LauncherHealthSeverity.ActionRequired));
     }
 
+    [TestMethod]
+    public void RestartRetainsConfirmedRecoveryTargetWhenPrimeIsMissingWithoutSelectingAnotherCandidate()
+    {
+        using var directory = new TemporaryDirectory();
+        var chosen = Path.Combine(directory.Path, "chosen");
+        var other = Path.Combine(directory.Path, "other");
+        Directory.CreateDirectory(chosen);
+        Directory.CreateDirectory(other);
+        TemporaryDirectory.CreateFile(chosen, "prime.exe");
+        TemporaryDirectory.CreateFile(other, "prime.exe");
+        var state = Path.Combine(directory.Path, "bridge-state");
+        new GameInstallDiscovery(new JsonGameInstallSelectionStore(state), []).ConfirmManualSelection(chosen);
+        File.Move(Path.Combine(chosen, "prime.exe"), Path.Combine(chosen, "interrupted-backup.exe"));
+        var restarted = new LauncherEnvironmentProbe(new FakeProcessInspector(GameProcessInspectionState.NotRunning),
+            InstallLayout, new GameInstallDiscovery(new JsonGameInstallSelectionStore(state),
+                [new BoundedGameInstallCandidateProvider([new(other, [])])]));
+        var captured = restarted.Capture();
+        Assert.IsNull(captured.SelectedGameDirectory);
+        Assert.AreEqual(chosen, captured.ConfirmedGameInstallationDirectory);
+        Assert.AreEqual(LauncherHealthCode.SelectionInvalid, captured.HealthCode);
+        Assert.IsTrue(captured.Discovery.ValidCandidates.Any(candidate => candidate.GameDirectory == other));
+    }
+
+    [TestMethod]
+    public void MissingInvalidAndRelativeConfirmationsNeverBecomeRecoveryTargets()
+    {
+        foreach (var selection in new[] { GameInstallSelectionLoadResult.Missing(),
+            GameInstallSelectionLoadResult.Invalid("Corrupt saved selection"),
+            GameInstallSelectionLoadResult.Loaded(new("relative", DateTimeOffset.UtcNow)) })
+            Assert.IsNull(CreateProbe(false, selection).Capture().ConfirmedGameInstallationDirectory);
+    }
+
     private static LauncherEnvironmentProbe CreateProbe(
         bool gameRunning,
         GameInstallSelectionLoadResult? selection = null)

@@ -88,6 +88,56 @@ public sealed class LauncherUiPreferencesStoreTests
         Assert.AreEqual(future, File.ReadAllText(path));
     }
 
+
+    [TestMethod]
+    public void WorkspacePreferenceRoundTripsWithoutChangingOtherPreferences()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var store = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path);
+        var original = new LauncherUiPreferences(true, LauncherColorMode.Dark,
+            LauncherLaunchTarget.PrimeExecutable, true,
+            new(LauncherPlayerFeaturePreference.Enabled, LauncherPlayerFeaturePreference.Disabled));
+        store.Save(original);
+        store.Save(store.Load() with { WorkspaceMode = LauncherWorkspaceMode.Engineering });
+        var result = store.Load();
+        Assert.AreEqual(original with { WorkspaceMode = LauncherWorkspaceMode.Engineering }, result);
+        Assert.IsTrue(store.TrySaveBattlePreferences(result.EffectiveBattlePreferences, LauncherBattlePreferences.Default));
+        Assert.AreEqual(LauncherWorkspaceMode.Engineering, store.Load().WorkspaceMode);
+    }
+
+    [TestMethod]
+    public void PriorSchemaDefaultsToShuttleBayAndPreservesBattleAndLaunchChoices()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(temporaryDirectory.Path, "ui-preferences.json"),
+            "{\"schemaVersion\":5,\"settingsSearchVisible\":true,\"colorMode\":\"Dark\",\"launchTarget\":\"PrimeExecutable\",\"providerSwitchReviewAcknowledged\":true,\"battleCollectionPreference\":\"Enabled\",\"fleetCollectionPreference\":\"Disabled\"}");
+        var result = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path).Load();
+        Assert.AreEqual(LauncherWorkspaceMode.ShuttleBay, result.WorkspaceMode);
+        Assert.IsTrue(result.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
+        Assert.AreEqual(LauncherLaunchTarget.PrimeExecutable, result.LaunchTarget);
+        Assert.IsTrue(result.ProviderSwitchReviewAcknowledged);
+        Assert.AreEqual(LauncherPlayerFeaturePreference.Enabled, result.EffectiveBattlePreferences.BattleCollection);
+        Assert.AreEqual(LauncherPlayerFeaturePreference.Disabled, result.EffectiveBattlePreferences.FleetCollection);
+    }
+
+    [TestMethod]
+    public void UnknownWorkspaceNameFallsBackWithoutDroppingPreferencesButCannotBeRewrittenByBattleCas()
+    {
+        using var temporaryDirectory = new TemporaryDirectory();
+        var path = Path.Combine(temporaryDirectory.Path, "ui-preferences.json");
+        var source = "{\"schemaVersion\":6,\"settingsSearchVisible\":true,\"colorMode\":\"Dark\",\"launchTarget\":\"PrimeExecutable\",\"providerSwitchReviewAcknowledged\":true,\"battleCollectionPreference\":\"Unset\",\"fleetCollectionPreference\":\"Unset\",\"workspaceMode\":\"FutureDeck\"}";
+        File.WriteAllText(path, source);
+        var store = new JsonLauncherUiPreferencesStore(temporaryDirectory.Path);
+        var result = store.Load();
+        Assert.AreEqual(LauncherWorkspaceMode.ShuttleBay, result.WorkspaceMode);
+        Assert.IsTrue(result.SettingsSearchVisible);
+        Assert.AreEqual(LauncherColorMode.Dark, result.ColorMode);
+        Assert.IsFalse(store.TrySaveBattlePreferences(LauncherBattlePreferences.Default,
+            new(LauncherPlayerFeaturePreference.Enabled, LauncherPlayerFeaturePreference.Unset)));
+        Assert.AreEqual(source, File.ReadAllText(path));
+    }
+
     [TestMethod]
     public void MissingPreferencesUseDefaults()
     {

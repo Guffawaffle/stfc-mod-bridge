@@ -100,12 +100,14 @@ public sealed class LaunchTargetSplitButtonTests
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
         var feedback = document.Descendants(Presentation + "TextBlock")
-            .Single(element => (string?)element.Attribute("Text") == "{Binding HomeOperationFeedback}");
+            .Where(element => (string?)element.Attribute("Text") == "{Binding HomeOperationFeedback}")
+            .ToArray();
 
-        Assert.IsTrue(
-            feedback.Attributes().Any(attribute =>
+        Assert.AreEqual(2, feedback.Length, "Both visible workspaces need accessible operation feedback.");
+        Assert.IsTrue(feedback.All(element =>
+            element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "LiveRegionBehavior.Announcement"
-                && attribute.Value == "{Binding HomeOperationFeedback}"));
+                && attribute.Value == "{Binding HomeOperationFeedback}")));
 
         var dismiss = document.Descendants(Presentation + "Button")
             .Single(element => element.Attributes().Any(attribute =>
@@ -154,10 +156,10 @@ public sealed class LaunchTargetSplitButtonTests
     }
 
     [TestMethod]
-    public void HomeUsesResponsiveSemanticSectionsWithNaturalActionMeasurement()
+    public void EngineeringInstallationUsesResponsiveSectionsWithNaturalActionMeasurement()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
-        var workspace = document.Descendants(Presentation + "StackPanel")
+        var workspace = document.Descendants(Presentation + "ScrollViewer")
             .Single(element => GetName(element) == "HomeWorkspace");
         var statusSurface = document.Descendants(Presentation + "Border")
             .Single(element => GetName(element) == "HomeStatusSurface");
@@ -167,7 +169,8 @@ public sealed class LaunchTargetSplitButtonTests
             .Single(element => GetName(element) == "CommunityModStatusSection");
 
         Assert.IsNull(workspace.Attribute("Width"));
-        Assert.AreEqual("680", (string?)workspace.Attribute("MaxWidth"));
+        Assert.AreEqual("900", (string?)workspace.Element(Presentation + "StackPanel")!.Attribute("MaxWidth"));
+        Assert.AreEqual("Auto", (string?)workspace.Attribute("VerticalScrollBarVisibility"));
         Assert.AreEqual("Stretch", (string?)workspace.Attribute("HorizontalAlignment"));
         Assert.IsTrue(HasText(gameSection, "Star Trek Fleet Command"));
         Assert.IsTrue(HasText(modSection, "Community Mod"));
@@ -224,7 +227,7 @@ public sealed class LaunchTargetSplitButtonTests
         var decorativeGlyph = gameSection.Descendants(Presentation + "Viewbox")
             .Single(element => GetName(element) == "GameStatusGlyph");
 
-        Assert.AreEqual("STFC Mod Bridge", (string?)productTitle.Attribute("Text"));
+        Assert.AreEqual("STFC Bridge", (string?)productTitle.Attribute("Text"));
         Assert.AreEqual(1, gameStatusBindings.Length);
         Assert.IsNull(decorativeGlyph.Attribute(Automation + "AutomationProperties.Name"));
         Assert.IsFalse(decorativeGlyph.Descendants().Any(element =>

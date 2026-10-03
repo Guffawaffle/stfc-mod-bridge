@@ -1,0 +1,225 @@
+using System.Security.Cryptography;
+using System.Runtime.InteropServices;
+
+namespace STFCCommunityMod.Launcher.Core.Tests;
+
+[TestClass]
+public sealed class NativeProfileCatalogIntegrationTests
+{
+    [TestMethod]
+    public void TypedDefaultIsMetadataOnlyAndCannotEnterIsolatedLifecycle()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("typed-catalog");
+        var created = transport.Request(new("ensure-default", Root: root));
+        Assert.IsTrue(created.Ok, created.Error?.Message);
+        var profile = created.Profile!;
+        Assert.IsTrue(profile.IsDefault);
+        Assert.IsTrue(LauncherProfiles.ValidId(profile.Id));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(profile.OwnerUserId));
+        Assert.IsTrue(string.IsNullOrWhiteSpace(profile.ConfigPath));
+        Assert.IsFalse(File.Exists(Path.Combine(root, "profiles", profile.Id, "player_prefs.bin")));
+        var same = transport.Request(new("ensure-default", Root: root));
+        Assert.AreEqual(profile.Id, same.Profile!.Id);
+        var archived = transport.Request(new("archive", Root: root, Id: profile.Id, ExpectedRevision: profile.Revision));
+        Assert.IsFalse(archived.Ok);
+        Assert.AreEqual("profile_kind", archived.Error!.Code);
+        var oldProjection = transport.Request(new("list", Root: root, ApiVersion: 1));
+        Assert.IsTrue(oldProjection.Ok, oldProjection.Error?.Message);
+        Assert.AreEqual(0, oldProjection.Profiles!.Count);
+    }
+
+    [TestMethod]
+    public async Task RegistrationDeduplicatesPhysicalFolderAndDoesNotFollowReplacement()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("installation-catalog");
+        var game = temporary.CreateDirectory("game");
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        File.WriteAllBytes(Path.Combine(game, "GameAssembly.dll"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(game, "UnityPlayer.dll"), [1, 2, 3]);
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"), transport, root);
+        var first = await store.RegisterInstallationAsync("First", game);
+        var alias = await store.RegisterInstallationAsync("Another label", Path.Combine(game, "."));
+        Assert.AreEqual(first.Id, alias.Id);
+        Assert.AreEqual("First", alias.Name);
+        Assert.AreEqual(1, store.Installations().Count);
+        var windowsSetup = store.EnsureDefault();
+        windowsSetup = await store.AssignInstallationAsync(windowsSetup, first);
+        Assert.AreEqual(first.Id, windowsSetup.PreferredInstallationId);
+        windowsSetup = await store.EditAsync(windowsSetup, "Default", game, first.Id);
+        Assert.AreEqual(first.Id, windowsSetup.PreferredInstallationId);
+        var coordinator = new GameInstallationCoordinator(temporary.CreateDirectory("operations"), transport, root);
+        var status = await coordinator.ReadStatusAsync(game, first.Id);
+        Assert.IsTrue(status.Ok, status.Error?.Message);
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        Assert.AreEqual("unknown", store.InstallationPaths(first.Id).State);
+        Assert.AreEqual(game, store.InstallationPaths(first.Id).GameDirectory);
+        foreach (var response in new[] {
+            await coordinator.CheckAsync(game, first.Id),
+            await coordinator.UpdateAsync(game, 267, first.Id),
+            await coordinator.RecoverAsync(game, first.Id) })
+        {
+            Assert.IsFalse(response.Ok);
+            Assert.AreEqual("installation_changed", response.Error!.Code);
+        }
+        Assert.AreEqual(2, Directory.GetFileSystemEntries(game).Length,
+            "Rejected maintenance must not write into a replacement installation.");
+    }
+    [TestMethod]
+    public async Task BoundRuntimeLeaseRetainsDirectoryAcrossAwaitAndRejectsReplacementAfterRelease()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("bound-catalog");
+        var parent = temporary.CreateDirectory("installation-parent");
+        var game = Path.Combine(parent, "game");
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+        foreach (var file in new[] { "prime.exe", "GameAssembly.dll", "UnityPlayer.dll" })
+            File.WriteAllBytes(Path.Combine(game, file), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("bridge"), transport, root);
+        var installation = await store.RegisterInstallationAsync("Runtime fixture", game);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var work = Task.Run(async () =>
+        {
+            using var lease = store.AcquireInstallationLease(game, installation.Id);
+            entered.SetResult();
+            await resume.Task;
+            File.WriteAllText(Path.Combine(game, "runtime-fixture.txt"), "admitted original");
+        });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.ThrowsException<IOException>(() => Directory.Move(game, game + "-moved"));
+            Assert.ThrowsException<IOException>(() => Directory.Move(parent, parent + "-moved"));
+        }
+        finally { resume.TrySetResult(); await work; }
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        Assert.ThrowsException<InvalidOperationException>(() => store.AcquireInstallationLease(game, installation.Id));
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(game).Length);
+        Assert.AreEqual("admitted original", File.ReadAllText(Path.Combine(game + "-original", "runtime-fixture.txt")));
+        Directory.Move(game, game + "-replacement");
+    }
+
+    [TestMethod]
+    public void BundledAbiRejectsUnavailableImportWithoutPublishingProfile()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("catalog");
+        var planned = transport.Request(new("prepare-user-import", Root: root,
+            SourceUserSid: "NOT-A-WINDOWS-SID", Name: "Synthetic import"));
+        Assert.IsFalse(planned.Ok);
+        Assert.AreEqual("source_user_missing", planned.Error!.Code);
+        var refused = transport.Request(new("import-user", Root: root,
+            SourceUserSid: "NOT-A-WINDOWS-SID", Name: "Synthetic import",
+            ExpectedDestinationSid: "NOT-A-WINDOWS-SID"));
+        Assert.IsFalse(refused.Ok);
+        Assert.AreEqual("source_user_missing", refused.Error!.Code);
+        var catalog = transport.Request(new("list", Root: root));
+        Assert.IsTrue(catalog.Ok, catalog.Error?.Message);
+        Assert.AreEqual(0, catalog.Profiles!.Count);
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(Path.Combine(root, "profiles")).Length);
+    }
+
+    [TestMethod]
+    public void BundledInstallationAbiReportsNumericVersionAndReaderLeaseExcludesUpdater()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var game = temporary.CreateDirectory("game");
+        var root = temporary.CreateDirectory("catalog");
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1, 2, 3]);
+        var observed = transport.Request(new("installation-status", Root: root, GameDirectory: game));
+        Assert.IsTrue(observed.Ok, observed.Error?.Message);
+        Assert.AreEqual(221, observed.Installation!.InstalledVersion);
+        Assert.AreEqual(game, observed.Installation.GameDirectory);
+        Assert.AreEqual("ready", observed.Installation.State);
+        using (transport.AcquireInstallationLease(new("installation-status", Root: root, GameDirectory: game)))
+        {
+            var refused = transport.Request(new("update-game", Root: root, GameDirectory: game, ExpectedVersion: 267));
+            Assert.IsFalse(refused.Ok);
+            Assert.AreEqual("busy", refused.Error!.Code);
+        }
+        Assert.IsTrue(transport.Request(new("installation-status", Root: root, GameDirectory: game)).Ok);
+    }
+
+    [TestMethod]
+    public async Task BundledAbiRoundTripsUtf8CatalogAndExcludesArchiveDuringConfigLease()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("catalog");
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("bridge"), transport, root);
+        var created = await store.CreateNewAsync("Science Ω", "");
+        Assert.IsTrue(LauncherProfiles.ValidId(created.Id));
+        Assert.AreEqual("Science Ω", created.Name);
+        Assert.AreEqual(Path.Combine(root, "profiles", created.Id, "config.toml"), created.ConfigPath);
+        Assert.AreEqual(Path.Combine(root, "profiles", created.Id, "logs", "Player.log"), created.LogPath);
+        await store.SelectAsync(created.Id);
+        Assert.AreEqual(created.Id, store.Load().Snapshot!.SelectedProfile!.Id);
+        var edited = await store.EditAsync(created, "Renamed Ω", "");
+        Assert.AreEqual(created.Id, edited.Id);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => store.EditAsync(created, "Stale", ""));
+        File.WriteAllText(Path.Combine(edited.Directory, "owned-data.txt"), "retained account-adjacent data");
+        using (store.AcquireDataLease(edited.Id))
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => store.ArchiveAsync(edited));
+        var archived = await store.ArchiveAsync(edited);
+        Assert.AreEqual("archived", archived.State);
+        Assert.IsTrue(File.Exists(Path.Combine(archived.Directory, "owned-data.txt")));
+        Assert.IsNull(store.Load().Snapshot!.SelectedProfile);
+        Assert.AreEqual(edited.Id, store.LoadSelectedId());
+        var restored = await store.RestoreAsync(archived);
+        Assert.AreEqual(edited.Id, restored.Id);
+        Assert.AreEqual("active", restored.State);
+        Assert.AreEqual("Renamed Ω", store.Load().Snapshot!.SelectedProfile!.Name);
+    }
+
+    [TestMethod]
+    public void BundledAbiCatalogLocationUsesUnredirectedOsUserFolderWithoutCatalogMutation()
+    {
+        var transport = Transport();
+        var location = transport.Request(new("catalog-location"));
+        Assert.IsTrue(location.Ok, location.Error?.Message);
+        var folderId = new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+        var status = SHGetKnownFolderPath(ref folderId, 0x00010000, IntPtr.Zero, out var value);
+        try
+        {
+            Assert.AreEqual(0, status);
+            var expected = Path.Combine(Marshal.PtrToStringUni(value)!, "STFC Profiles");
+            Assert.IsTrue(string.Equals(expected, location.CatalogRoot, StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine($"Native catalog location: {location.CatalogRoot}; process: {Environment.ProcessPath}");
+        }
+        finally { Marshal.FreeCoTaskMem(value); }
+        using var temporary = new TemporaryDirectory();
+        var rejectedRoot = temporary.CreateDirectory("caller-root");
+        var rejected = transport.Request(new("catalog-location", Root: rejectedRoot));
+        Assert.IsFalse(rejected.Ok);
+        Assert.AreEqual("invalid_request", rejected.Error!.Code);
+        Assert.AreEqual(0, Directory.EnumerateFileSystemEntries(rejectedRoot).Count());
+    }
+
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int SHGetKnownFolderPath(ref Guid folderId, uint flags, IntPtr token, out IntPtr path);
+
+    internal static NativeProfileCatalogTransport Transport()
+    {
+        var native = Environment.GetEnvironmentVariable("STFC_PROFILES_NATIVE_TEST_DLL");
+        if (string.IsNullOrWhiteSpace(native))
+            Assert.Inconclusive("Set STFC_PROFILES_NATIVE_TEST_DLL to the built native component for isolated ABI qualification.");
+        return new NativeProfileCatalogTransport(native,
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(native!))).ToLowerInvariant());
+    }
+}

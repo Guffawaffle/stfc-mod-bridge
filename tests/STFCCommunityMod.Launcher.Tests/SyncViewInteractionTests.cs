@@ -106,8 +106,13 @@ public sealed class SyncViewInteractionTests
         Assert.AreEqual(
             1,
             scrollViewers.Count(element =>
-                (string?)element.Attribute("VerticalScrollBarVisibility") == "Auto"),
+                (string?)element.Attribute("VerticalScrollBarVisibility") == "Auto"
+                && !element.Ancestors(Presentation + "Border").Any(border => (string?)border.Attribute(Xaml + "Name") == "WizardDialog")),
             "Data Sync must expose one page-level vertical scrolling surface.");
+        var wizard = Named(document.Descendants(Presentation + "Border"), "WizardDialog");
+        Assert.IsTrue(wizard.Descendants(Presentation + "ScrollViewer").Any(element =>
+            (string?)element.Attribute("VerticalScrollBarVisibility") == "Auto"),
+            "All wizard feed choices must remain reachable when they wrap into a narrow column.");
         Assert.IsFalse(
             scrollViewers.Any(element =>
                 (string?)element.Attribute("HorizontalScrollBarVisibility") is "Auto" or "Visible"),
@@ -166,7 +171,7 @@ public sealed class SyncViewInteractionTests
         Assert.AreEqual(
             "Approve moving the older sync setup into a named destination",
             (string?)legacy.Attribute(Automation + "AutomationProperties.Name"));
-        Assert.AreEqual("{Binding CanEdit}", (string?)page.Attribute("IsEnabled"));
+        Assert.IsNull(page.Attribute("IsEnabled"), "Read-only Data Sync must remain scrollable.");
     }
 
     [TestMethod]

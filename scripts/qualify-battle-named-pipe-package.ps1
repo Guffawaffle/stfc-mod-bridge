@@ -11,6 +11,8 @@ $ErrorActionPreference = "Stop"
 $expectedPackageIdentity = "Guffawaffle.STFCModBridge"
 $expectedPublisherSubject = "CN=Joseph Gustavson, O=Joseph Gustavson, L=Dousman, S=Wisconsin, C=US, PostalCode=53118"
 $qualificationArgument = "--battle-ipc-package-qualification"
+$profilesQualificationArgument = "--profiles-package-qualification"
+$profilesEvidenceSchema = "stfc.mod-bridge.profiles-package-qualification.v1"
 $stateEvidenceSchema = "stfc.mod-bridge.package-state-qualification.v1"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outputRoot = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
@@ -110,6 +112,193 @@ function Invoke-QualificationProcess {
     }
   } finally {
     $process.Dispose()
+  }
+}
+
+function Assert-ExternalProfilesFixture {
+  # This control script runs unpackaged; these are Windows known-folder facts, not environment variables.
+  $physicalAppData = @(
+    [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData),
+    [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+  )
+  $localParent = [System.IO.Path]::GetDirectoryName($physicalAppData[0])
+  $roamingParent = [System.IO.Path]::GetDirectoryName($physicalAppData[1])
+  if ($localParent -ieq $roamingParent) { $physicalAppData += $localParent }
+  foreach ($root in $physicalAppData) {
+    if ([string]::IsNullOrWhiteSpace($root) -or -not [System.IO.Path]::IsPathFullyQualified($root)) {
+      throw "The physical OS-user AppData folder facts are unavailable."
+    }
+    $full = [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Path]::GetFullPath($root))
+    if ($profilesFixture -ieq $full -or $profilesFixture.StartsWith($full + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Profiles package qualification refuses an output fixture under physical OS-user AppData; select a workspace artifact output directory."
+    }
+  }
+  if ((Test-Path -LiteralPath $profilesFixture) -or [System.IO.Path]::GetDirectoryName($profilesFixture) -ine $outputRoot) {
+    throw "Profiles package qualification requires a fresh nonce fixture directly under the canonical output root."
+  }
+}
+function Assert-CanonicalProfilesPairing {
+  $archivePath = Join-Path $outputRoot "stfc-mod-bridge-win-x64.zip"
+  $nativePath = Join-Path $outputRoot "app\stfc-profiles-native.dll"
+  $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($launcher).ProductVersion
+  if ($productVersion -cnotmatch '\+commit\.(?<source>[0-9a-f]{40})\.verifier\.[0-9a-f]{64}\.profiles\.(?<native>[0-9a-f]{64})\.toml\.(?<toml>[0-9a-f]{64})$' `
+      -or $Matches.source -cne $ExpectedSourceRevisionId) {
+    throw "The standalone Profiles qualification host is not bound to the exact candidate source."
+  }
+  $expectedToml = $Matches.toml
+  $nativeSha256 = (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($nativeSha256 -cne $Matches.native) {
+    throw "The standalone Profiles qualification host is not paired to its exact native DLL."
+  }
+  $tomlPath = Join-Path $outputRoot "app\stfc-toml-native.dll"
+  $tomlSha256 = (Get-FileHash -LiteralPath $tomlPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($tomlSha256 -cne $expectedToml) { throw "The qualification host is not paired to its exact native TOML DLL." }
+  $launcherSha256 = (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash.ToLowerInvariant()
+  foreach ($artifactPath in @($archivePath, $canonicalPackage)) {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($artifactPath)
+    try {
+      foreach ($expected in @(
+          [pscustomobject]@{ Name = "STFCModBridge.exe"; Sha256 = $launcherSha256 },
+          [pscustomobject]@{ Name = "stfc-profiles-native.dll"; Sha256 = $nativeSha256 },
+          [pscustomobject]@{ Name = "stfc-toml-native.dll"; Sha256 = $tomlSha256 })) {
+        $entries = @($zip.Entries | Where-Object { $_.FullName -ceq $expected.Name })
+        if ($entries.Count -ne 1) {
+          throw "The canonical archive/package does not contain exactly one $($expected.Name)."
+        }
+        $stream = $entries[0].Open()
+        try {
+          $actual = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)).ToLowerInvariant()
+        } finally {
+          $stream.Dispose()
+        }
+        if ($actual -cne $expected.Sha256) {
+          throw "The canonical ZIP, MSIX and standalone app have different $($expected.Name) bytes."
+        }
+      }
+    } finally {
+      $zip.Dispose()
+    }
+  }
+  return $productVersion
+}
+
+function Invoke-ProfilesQualificationProcess {
+  param([Parameter(Mandatory)][ValidateSet("prepare", "verify", "cleanup")][string]$Mode)
+  $started = [DateTimeOffset]::UtcNow
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new($launcher)
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  foreach ($argument in @($profilesQualificationArgument, $Mode, $profilesNonce, $profilesFixture)) {
+    $startInfo.ArgumentList.Add($argument)
+  }
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  if ($null -eq $process) { throw "Profiles $Mode did not start." }
+  try {
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit(30000)) {
+      $process.Kill($true)
+      if (-not $process.WaitForExit(10000)) { throw "Profiles $Mode did not stop after its timeout." }
+      throw "Profiles $Mode exceeded 30 seconds; receipt and fixture remain at $profilesFixture."
+    }
+    $diagnostic = (($stdout.GetAwaiter().GetResult() + "`n" + $stderr.GetAwaiter().GetResult()).Trim())
+    if ($diagnostic.Length -gt 2048) { $diagnostic = $diagnostic.Substring($diagnostic.Length - 2048) }
+    Write-Host "Profiles $Mode exit=$($process.ExitCode) duration=$([math]::Round(([DateTimeOffset]::UtcNow - $started).TotalSeconds, 2))s source=$ExpectedSourceRevisionId cwd=$repoRoot"
+    if ($process.ExitCode -ne 0) {
+      $failureFiles = @(Get-ChildItem -LiteralPath $profilesFixture -Filter "failed-$Mode-*.json" -File -ErrorAction SilentlyContinue)
+      foreach ($failureFile in $failureFiles) {
+        $diagnostic += " | " + [System.IO.File]::ReadAllText($failureFile.FullName)
+      }
+      throw "Profiles $Mode failed. $diagnostic Receipt and fixture retained at $profilesFixture."
+    }
+  } finally {
+    $process.Dispose()
+  }
+}
+
+function Assert-ProfilesEvidence {
+  param(
+    [Parameter(Mandatory)][string]$FileName,
+    [Parameter(Mandatory)][string]$Status,
+    [Parameter(Mandatory)][string]$PackageFullName
+  )
+  $path = Join-Path $profilesFixture $FileName
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Profiles $Status marker is missing at $path." }
+  $receipt = Get-Content -Raw -LiteralPath (Join-Path $profilesFixture "receipt.json") | ConvertFrom-Json -ErrorAction Stop
+  $evidence = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -ErrorAction Stop
+  if ($receipt.schema -cne $profilesEvidenceSchema -or $receipt.nonce -cne $profilesNonce `
+      -or $receipt.fixture -cne $profilesFixture -or $receipt.id -cnotmatch '^[0-9a-f]{32}$' `
+      -or $receipt.name -cne "Bridge MSIX $profilesNonce" `
+      -or $receipt.revision -cnotmatch '^[0-9a-f]{64}$' `
+      -or $receipt.buildIdentity -cne $profilesBuildIdentity `
+      -or $evidence.schema -cne $profilesEvidenceSchema -or $evidence.nonce -cne $profilesNonce `
+      -or $evidence.id -cne $receipt.id -or $evidence.revision -cne $receipt.revision `
+      -or $evidence.buildIdentity -cne $profilesBuildIdentity `
+      -or $evidence.packageFullName -cne $PackageFullName -or $evidence.status -cne $Status `
+      -or $null -ne $evidence.stage) {
+    throw "Profiles $Status evidence is not bound to the exact candidate package, source, nonce and profile revision."
+  }
+}
+
+function Open-ActivatedQualificationProcess {
+  param([Parameter(Mandatory)][int]$ProcessId)
+  $process = [System.Diagnostics.Process]::GetProcessById($ProcessId)
+  try {
+    # GetProcessById/WaitForExit alone do not retain a handle for ExitCode.
+    # Open it while the activated fixture is alive and keep it through release verification.
+    $handle = $process.get_SafeHandle()
+    if ($null -eq $handle -or $handle.IsInvalid -or $handle.IsClosed) {
+      throw "The activated qualification process has no usable retained handle."
+    }
+    return $process
+  } catch {
+    $process.Dispose()
+    throw
+  }
+}
+
+function Invoke-PackagedProfilesQualification {
+  param(
+    [Parameter(Mandatory)][string]$AppUserModelId,
+    [Parameter(Mandatory)][string]$PackageFullName
+  )
+  $started = [DateTimeOffset]::UtcNow
+  $arguments = "$profilesQualificationArgument msix $profilesNonce `"$profilesFixture`""
+  $processId = [BattlePackageActivation.ApplicationActivation]::Activate($AppUserModelId, $arguments)
+  $process = Open-ActivatedQualificationProcess -ProcessId ([int]$processId)
+  try {
+    $readyPath = Join-Path $profilesFixture "msix-ready.json"
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    while (-not (Test-Path -LiteralPath $readyPath -PathType Leaf)) {
+      if ($process.HasExited -or [DateTimeOffset]::UtcNow -ge $deadline) {
+        $failureFiles = @(Get-ChildItem -LiteralPath $profilesFixture -Filter "failed-msix-*.json" -File)
+        $diagnostic = @($failureFiles | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) }) -join " | "
+        throw "Packaged Profiles never acquired both native leases. $diagnostic Receipt retained at $profilesFixture."
+      }
+      Start-Sleep -Milliseconds 50
+    }
+    Assert-ProfilesEvidence -FileName "msix-ready.json" -Status "ready" -PackageFullName $PackageFullName
+    Invoke-ProfilesQualificationProcess -Mode "verify"
+    Assert-ProfilesEvidence -FileName "standalone-verified.json" -Status "verified" -PackageFullName $PackageFullName
+    if (-not $process.WaitForExit(30000)) {
+      throw "Packaged Profiles did not exit after standalone verification."
+    }
+    # Explicit getter calls propagate errors that PowerShell property access can hide as null.
+    $exitCode = $process.get_ExitCode()
+    if ($exitCode -ne 0) { throw "Packaged Profiles exited with code $exitCode." }
+    Assert-ProfilesEvidence -FileName "msix-released.json" -Status "passed" -PackageFullName $PackageFullName
+    Write-Host "Profiles msix exit=0 duration=$([math]::Round(([DateTimeOffset]::UtcNow - $started).TotalSeconds, 2))s source=$ExpectedSourceRevisionId package=$PackageFullName"
+  } finally {
+    try {
+      if (-not $process.HasExited) {
+        $process.Kill($true)
+        if (-not $process.WaitForExit(10000)) { throw "Packaged Profiles failed to terminate; do not clean up its profile." }
+      }
+    } finally {
+      $process.Dispose()
+    }
   }
 }
 
@@ -565,6 +754,11 @@ $canonicalPackageSha256 = (Get-FileHash -LiteralPath $canonicalPackage -Algorith
 $developmentPackage = $null
 $appInstallerHost = $null
 $effectiveUpdateSettingsVerified = $false
+$profilesNonce = [Guid]::NewGuid().ToString("N")
+$profilesFixture = Join-Path $outputRoot "stfc-mod-bridge-profiles-qualification-$profilesNonce"
+$profilesBuildIdentity = $null
+$profilesPrepared = $false
+$profilesCleanupPassed = $false
 $stateEvidenceNonce = [Guid]::NewGuid().ToString("N")
 $stateEvidencePath = Join-Path `
   ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
@@ -575,7 +769,11 @@ try {
     throw "Battle IPC qualification refuses to replace an existing STFC Mod Bridge package."
   }
 
+  Assert-ExternalProfilesFixture
+  $profilesBuildIdentity = Assert-CanonicalProfilesPairing
   Invoke-QualificationProcess -Path $launcher -Mode "standalone"
+  Invoke-ProfilesQualificationProcess -Mode "prepare"
+  $profilesPrepared = $true
 
   if ($UseDisposableDevelopmentCertificate) {
     $developmentPackage = New-DisposableDevelopmentPackage
@@ -640,6 +838,11 @@ try {
       }
       throw "The packaged Bridge qualification reported failure at $failedStage."
     }
+    Invoke-PackagedProfilesQualification `
+      -AppUserModelId $appUserModelId `
+      -PackageFullName $installed.PackageFullName
+    Invoke-ProfilesQualificationProcess -Mode "cleanup"
+    $profilesCleanupPassed = $true
   } finally {
     if ($null -eq $installed -and $registrationAttempted) {
       $registeredAfterFailure = @(Get-DisposablePackages)
@@ -667,8 +870,15 @@ try {
   } else {
     "App Installer association and uninterrupted normal package activation"
   }
-  Write-Host "$qualificationKind standalone, $updateSettingsEvidence, medium-integrity MSIX Battle named-pipe, and external-state qualification passed."
+  Write-Host "$qualificationKind standalone, $updateSettingsEvidence, medium-integrity MSIX Battle named-pipe, external-state, and shared Profiles catalog/lease qualification passed."
 } finally {
+  if ($profilesPrepared -or (Test-Path -LiteralPath $profilesFixture)) {
+    if ($profilesCleanupPassed) {
+      Write-Host "Synthetic Profiles account deleted through the native API; qualification evidence retained at $profilesFixture."
+    } else {
+      Write-Warning "Profiles qualification did not complete cleanup. Receipt, synthetic profile and evidence retained for inspection at $profilesFixture. No account data was broadly deleted."
+    }
+  }
   if (Test-Path -LiteralPath $stateEvidencePath -PathType Leaf) {
     Remove-Item -LiteralPath $stateEvidencePath -Force
   }

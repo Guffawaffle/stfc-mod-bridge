@@ -267,7 +267,7 @@ public sealed class SettingsShellAccessibilityTests
         Assert.AreEqual(
             "{Binding SaveAvailability}",
             (string?)recovery.Attribute(Automation + "AutomationProperties.HelpText"));
-        Assert.AreEqual("{Binding CanEdit}", (string?)settingsList.Attribute("IsEnabled"));
+        Assert.IsNull(settingsList.Attribute("IsEnabled"), "Browsing must remain available while editing is blocked.");
     }
 
     [TestMethod]
@@ -475,7 +475,7 @@ public sealed class SettingsShellAccessibilityTests
             hasIncompleteProviderSwitch: false,
             isGameRunning: false,
             ordinaryActionCanExecute: false));
-        Assert.IsFalse(MainWindowViewModel.ResolveModContextChangeAvailability(
+        Assert.IsTrue(MainWindowViewModel.ResolveModContextChangeAvailability(
             recoveryRequired: true,
             isModOperationInProgress: false,
             isLaunchInProgress: false));
@@ -710,7 +710,7 @@ public sealed class SettingsShellAccessibilityTests
     }
 
     [TestMethod]
-    public void SettingsRequiresPresentModButNotHealthyModProvenance()
+    public void SettingsBrowsingDoesNotRequireAnInstalledOrHealthyRuntime()
     {
         var source = File.ReadAllText(Path.Combine(
             RepositoryRoot(),
@@ -720,16 +720,13 @@ public sealed class SettingsShellAccessibilityTests
             "private bool EnsureSettingsWorkspaceInitialized()",
             "private SettingsViewModel CreateSettingsViewModel");
 
-        StringAssert.Contains(method, "HasUnsafeModDeploymentTransaction");
-        StringAssert.Contains(method, "Path.Combine(viewModel.SelectedGameDirectory, \"version.dll\")");
-        StringAssert.Contains(method, "Community Mod is not installed");
-        Assert.IsTrue(
-            method.IndexOf("version.dll", StringComparison.Ordinal)
-            < method.IndexOf("if (isSettingsWorkspaceInitialized)", StringComparison.Ordinal),
-            "An initialized Settings workspace must not bypass a later mod removal.");
-        Assert.IsFalse(
-            method.Contains("ManagedVerified", StringComparison.Ordinal),
-            "A present proxy must not require managed provenance before Settings can open.");
+        StringAssert.Contains(method, "SharedSettings.GetOrCreate()");
+        Assert.IsFalse(method.Contains("version.dll", StringComparison.Ordinal),
+            "Browsing an existing or unavailable configuration must not require a DLL installation.");
+        Assert.IsFalse(method.Contains("HasUnsafeModDeploymentTransaction", StringComparison.Ordinal),
+            "Recovery must guard conflicting mutations, not hide Settings browsing.");
+        Assert.IsFalse(method.Contains("ManagedVerified", StringComparison.Ordinal),
+            "Publisher receipts do not establish read-only workspace eligibility.");
     }
 
     private static void AssertSearchCollapseTrigger(XDocument document, string elementName)

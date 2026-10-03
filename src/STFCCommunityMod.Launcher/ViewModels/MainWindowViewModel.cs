@@ -19,11 +19,23 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly LauncherEnvironmentProbe environmentProbe;
     private readonly IModManagementCoordinator modManagementCoordinator;
     private readonly GameLaunchHandoffCoordinator gameLaunchCoordinator;
+    private readonly IGameProcessInspector gameProcessInspector;
     private readonly LauncherDiagnosticService diagnosticService;
+    private Func<string?, LauncherConfigurationCatalog>? configurationCatalogResolver;
+    private Func<string?, LauncherConfigurationDiagnosisEvidence>? configurationEvidenceProvider;
+
+    internal LauncherConfigurationCatalog ConfigurationCatalog =>
+        configurationCatalogResolver?.Invoke(ConfigurationGameDirectory)
+        ?? throw new InvalidOperationException("Installed configuration resolution is unavailable.");
+
+    internal LauncherConfigurationDiagnosisEvidence ConfigurationEvidence =>
+        configurationEvidenceProvider?.Invoke(ConfigurationGameDirectory)
+        ?? throw new InvalidOperationException("Installed configuration evidence is unavailable.");
     private readonly LauncherSelfUpdateService launcherSelfUpdateService;
     private readonly ILauncherReleaseDiscoveryClient releaseDiscoveryClient;
     private readonly IPackagedLauncherUpdateService packagedLauncherUpdateService;
     private readonly ILauncherUiPreferencesStore uiPreferencesStore;
+    private readonly NativeLauncherProfilesStore profilesStore;
     private readonly LauncherDistributionProviderCatalog distributionProviderCatalog;
     private readonly LauncherFeatureRemediationCandidates? featureRemediationCandidates;
     private readonly string selectedModSourceMetadata;
@@ -40,6 +52,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly LauncherActionFeedbackChannels actionFeedback = new();
     private readonly HomeActionFeedbackArbiter homeFeedback;
     private LauncherLaunchTarget selectedLaunchTarget;
+    private LauncherProfilesLoadResult profilesLoad;
+    private IReadOnlyList<ProfileSession> profileSessions = [];
+    private IReadOnlyList<LauncherProfileCard> profileCards = [];
+    private long profileGeneration;
+    private LauncherWorkspaceMode workspaceMode;
+    private bool isModMutationInProgress;
+    private string? modOperationDirectory;
     private LauncherDiagnosticPreview? diagnosticPreview;
     private string diagnosticActionStatus = string.Empty;
     private bool isRecoveryWorkspaceTransitionPending;
@@ -64,6 +83,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     internal LauncherFeatureRemediationCoordinator? FeatureRemediationCoordinator { get; private set; }
 
     internal Func<GameLaunchPresentation, Task<bool>>? ConfirmLaunchOverrideAsync { get; set; }
+    internal Func<LauncherProfile, IReadOnlyList<ProfileSession>, Task<ProfileSession?>>? SelectProfileSessionAsync { get; set; }
 
     private MainWindowViewModel(
         LauncherEnvironmentProbe environmentProbe,
@@ -74,24 +94,32 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ILauncherReleaseDiscoveryClient releaseDiscoveryClient,
         IPackagedLauncherUpdateService packagedLauncherUpdateService,
         ILauncherUiPreferencesStore uiPreferencesStore,
+        NativeLauncherProfilesStore profilesStore,
+        GameInstallationCoordinator gameInstallationCoordinator,
         LauncherDistributionProviderCatalog distributionProviderCatalog,
         LauncherFeatureRemediationCandidates? featureRemediationCandidates,
         string modSourceMetadata,
-        IDiagnosticFolderService diagnosticFolderService)
+        IDiagnosticFolderService diagnosticFolderService,
+        IGameProcessInspector gameProcessInspector)
     {
         this.environmentProbe = environmentProbe;
         this.modManagementCoordinator = modManagementCoordinator;
         this.gameLaunchCoordinator = gameLaunchCoordinator;
+        this.gameProcessInspector = gameProcessInspector;
         this.diagnosticService = diagnosticService;
         this.launcherSelfUpdateService = launcherSelfUpdateService;
         this.releaseDiscoveryClient = releaseDiscoveryClient;
         this.packagedLauncherUpdateService = packagedLauncherUpdateService;
         this.uiPreferencesStore = uiPreferencesStore;
+        this.profilesStore = profilesStore;
         this.distributionProviderCatalog = distributionProviderCatalog;
         this.featureRemediationCandidates = featureRemediationCandidates;
         selectedModSourceMetadata = modSourceMetadata;
         this.diagnosticFolderService = diagnosticFolderService;
-        selectedLaunchTarget = uiPreferencesStore.Load().LaunchTarget;
+        var preferences = uiPreferencesStore.Load();
+        selectedLaunchTarget = preferences.LaunchTarget;
+        workspaceMode = preferences.WorkspaceMode;
+        profilesLoad = profilesStore.Load();
         homeFeedback = new(actionFeedback.Mod, actionFeedback.Launch);
         homeFeedback.PropertyChanged += HomeFeedback_PropertyChanged;
         refreshActionStatusTimer = new(DispatcherPriority.Background)
@@ -105,10 +133,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         };
         modActionStatusTimer.Tick += ModActionStatusTimer_Tick;
         snapshot = environmentProbe.Capture();
-        presentation = LauncherHomePresentation.FromSnapshot(snapshot);
+        RefreshSessionObservations();
+        GameClient = new(gameInstallationCoordinator, () => GameClientDirectory,
+            () => !actionFeedback.Mod.IsWorking && !actionFeedback.Launch.IsWorking && !isRecoveryWorkspaceTransitionPending,
+            RefreshCore, () => ActiveLaunchProfile?.PreferredInstallationId);
+        GameClient.SetTarget(GameClientDirectory, ActiveLaunchProfile?.PreferredInstallationId);
+        GameClient.PropertyChanged += GameClient_PropertyChanged;
+        presentation = CaptureSelectedInstallationPresentation();
         localHealth = modManagementCoordinator.CaptureHealth(
-            snapshot.SelectedGameDirectory,
-            snapshot.IsGameRunning);
+            SelectedGameDirectory,
+            presentation.IsGameRunning);
         homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
         modPresentation = localHealth.ModManagement;
         RefreshLaunchPresentations();
@@ -153,12 +187,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         actionFeedback.Launch.PropertyChanged -= LaunchActionState_PropertyChanged;
         actionFeedback.LauncherUpdate.PropertyChanged -= LauncherUpdateActionState_PropertyChanged;
         homeFeedback.PropertyChanged -= HomeFeedback_PropertyChanged;
+        GameClient.PropertyChanged -= GameClient_PropertyChanged;
         if (featureRemediationCandidates is not null)
         {
             ObserveDisposal(featureRemediationCandidates.DisposeAsync().AsTask());
         }
         GC.SuppressFinalize(this);
     }
+
+    public GameInstallationViewModel GameClient { get; }
 
     public string GameSectionStatus => presentation.GameSectionStatus;
 
@@ -174,19 +211,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string GameFolderActionAutomationName => presentation.GameFolderActionAutomationName;
 
-    public bool CanChangeGameFolder => ResolveModContextChangeAvailability(
-        ModActionKind == ModManagementActionKind.Recover,
-        actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
-        actionFeedback.Launch.IsWorking);
+    public bool CanChangeGameFolder => !isDisposed;
 
-    public bool CanChangeReleaseSource => ResolveModContextChangeAvailability(
-        ModActionKind == ModManagementActionKind.Recover,
-        actionFeedback.Mod.IsWorking || isRecoveryWorkspaceTransitionPending,
-        actionFeedback.Launch.IsWorking);
+    public bool CanChangeReleaseSource => !GameClient.IsMutationInProgress
+        && ResolveModContextChangeAvailability(
+            ModActionKind == ModManagementActionKind.Recover,
+            isModMutationInProgress || isRecoveryWorkspaceTransitionPending,
+            actionFeedback.Launch.IsWorking);
 
-    public bool CanOpenSettingsWorkspace =>
-        !actionFeedback.Mod.IsWorking
-        && !isRecoveryWorkspaceTransitionPending;
+    public bool CanOpenSettingsWorkspace => !isDisposed;
 
     public string GameClientStatus => presentation.GameClientStatus;
 
@@ -261,7 +294,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ? "Recover the incomplete provider switch before changing the mod or its release source."
             : modPresentation.AutomationName;
 
-    public bool CanManageMod => actionFeedback.Mod.IsCommandAvailable
+    public bool CanManageMod => !GameClient.IsMutationInProgress && actionFeedback.Mod.IsCommandAvailable
         && !actionFeedback.Launch.IsWorking
         && (!HasIncompleteProviderSwitch || !IsGameRunning);
 
@@ -270,37 +303,36 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         : modPresentation.ActionKind;
 
     public bool CanRecoverMod =>
-        ModActionKind == ModManagementActionKind.Recover
+        !GameClient.IsMutationInProgress && ModActionKind == ModManagementActionKind.Recover
         && actionFeedback.CanStartModMaintenance(
             HasIncompleteProviderSwitch ? !IsGameRunning : modPresentation.CanExecute,
             actionFeedback.Launch.IsWorking);
 
-    public bool CanUninstallMod =>
-        !HasIncompleteProviderSwitch
-        && !IsGameRunning
-        && modPresentation.ActionKind == ModManagementActionKind.CheckForUpdate
-        && actionFeedback.CanStartModMaintenance(modPresentation.CanExecute, actionFeedback.Launch.IsWorking);
+    public bool CanUninstallMod => ResolveUninstallAvailability(
+        localHealth.Installation, modManagementCoordinator.ProviderId,
+        HasIncompleteProviderSwitch || GameClient.IsMutationInProgress
+            || actionFeedback.Mod.IsWorking || actionFeedback.Launch.IsWorking);
 
     public bool CanStopManagingMod =>
-        !HasIncompleteProviderSwitch
+        !GameClient.IsMutationInProgress && !HasIncompleteProviderSwitch
         && SelectedGameDirectory is not null
         && localHealth.Installation.State is (
             ModInstallationEvidenceState.ManagedVerified
             or ModInstallationEvidenceState.ManagedChanged
             or ModInstallationEvidenceState.ManagedMissing)
-        && actionFeedback.CanStartModMaintenance(
-            externallyAvailable: true,
-            actionFeedback.Launch.IsWorking);
+        && !actionFeedback.Mod.IsWorking && !actionFeedback.Launch.IsWorking;
 
     public string DiagnosticRecoveryAvailability
     {
         get
         {
+            var recoveryDirectory = IncompleteProviderSwitchGameDirectory;
+            if (recoveryDirectory is not null && !SameInstallationOrUnknown(SelectedGameDirectory, recoveryDirectory))
+                return $"Provider switch recovery belongs to {recoveryDirectory}. Select that installation to review recovery; the selected installation was not retargeted.";
             if (HasIncompleteProviderSwitch)
             {
-                return DescribeProviderSwitchRecoveryAvailability(
-                    IsGameRunning,
-                    IncompleteProviderSwitchIncludesArtifact);
+                return $"Recovery target: {recoveryDirectory ?? "unavailable; inspect saved transaction details"}. "
+                    + DescribeProviderSwitchRecoveryAvailability(IsGameRunning, IncompleteProviderSwitchIncludesArtifact);
             }
             return CanRecoverMod
                 ? "Recovery is available for the detected incomplete transaction."
@@ -332,19 +364,64 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ? "Candidate recovery is unavailable because no reviewed release source is configured."
             : "Use Retry candidate recovery only after an interrupted reviewed download. It removes only exact launcher-owned candidate residue and does not change the game installation.";
 
-    public string LaunchActionLabel => actionFeedback.Launch.IsWorking ? "Opening…" : launchPresentation.ActionLabel;
+    public string LaunchActionLabel => actionFeedback.Launch.IsWorking
+        ? "Opening…"
+        : ActiveLaunchProfile is { } profile
+            ? NamedProfileActionLabel(profile, gameLaunchCoordinator.CaptureSessions(profile, profileSessions))
+            : "Launch unavailable";
 
     public string LaunchActionAutomationName => actionFeedback.Launch.IsWorking
         ? actionFeedback.Launch.AutomationAnnouncement
-        : launchPresentation.AutomationName;
+        : ActiveLaunchProfile is { } profile
+            ? $"{LaunchActionLabel}: {launchPresentation.AutomationName}"
+            : launchPresentation.AutomationName;
 
-    public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable && !actionFeedback.Mod.IsWorking;
+    public string LaunchProfileStatus => profilesLoad.State == LauncherProfilesLoadState.Invalid
+        ? "Shared profile catalog needs attention"
+        : ActiveLaunchProfile is { } profile
+            ? launchPresentation.CanExecute
+                ? $"Launch profile: {profile.Name} ({profile.Id})"
+                : $"Launch profile: {profile.Name} — {launchPresentation.Reason}"
+            : profilesLoad.Snapshot?.SelectedProfileId is not null
+                ? $"Selected profile needs attention: {profilesLoad.Error}"
+                : "Launch profile: Default";
 
-    public LauncherLaunchTarget SelectedLaunchTarget => selectedLaunchTarget;
+    private LauncherProfile? ActiveLaunchProfile => profilesLoad.State == LauncherProfilesLoadState.Invalid
+        ? null : profilesLoad.Snapshot?.SelectedProfile;
 
-    public bool IsPrimeExecutableSelected => selectedLaunchTarget == LauncherLaunchTarget.PrimeExecutable;
+    public LauncherProfile? SelectedProfile => ActiveLaunchProfile;
+    public string SelectedProfileName => ActiveLaunchProfile?.Name ?? "Profile unavailable";
+    public bool IsDefaultProfileSelected => ActiveLaunchProfile?.IsDefault == true;
+    public IReadOnlyList<LauncherProfileCard> ProfileCards => profileCards;
+    public string NextLaunchInstallationLabel => SelectedGameDirectory ?? "Select installation";
+    public string WorkspaceMode => workspaceMode.ToString();
 
-    public bool IsScopelyLauncherSelected => selectedLaunchTarget == LauncherLaunchTarget.ScopelyLauncher;
+    public void SetWorkspaceMode(string mode)
+    {
+        if (!Enum.TryParse<LauncherWorkspaceMode>(mode, out var parsed)
+            || !Enum.IsDefined(parsed) || parsed.ToString() != mode)
+            throw new ArgumentException("Choose ShuttleBay or Engineering.", nameof(mode));
+        if (workspaceMode == parsed) return;
+        workspaceMode = parsed;
+        try { uiPreferencesStore.Save(uiPreferencesStore.Load() with { WorkspaceMode = parsed }); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // View preference is best-effort; no profile, draft or runtime operation is performed.
+        }
+        OnPropertyChanged(nameof(WorkspaceMode));
+    }
+
+    private LauncherLaunchTarget EffectiveLaunchTarget => ActiveLaunchProfile is not null
+        ? LauncherLaunchTarget.PrimeExecutable : selectedLaunchTarget;
+
+    public bool CanLaunchGame => actionFeedback.Launch.IsCommandAvailable
+        && !HasConflictingInstallationMutation;
+
+    public LauncherLaunchTarget SelectedLaunchTarget => EffectiveLaunchTarget;
+
+    public bool IsPrimeExecutableSelected => EffectiveLaunchTarget == LauncherLaunchTarget.PrimeExecutable;
+
+    public bool IsScopelyLauncherSelected => EffectiveLaunchTarget == LauncherLaunchTarget.ScopelyLauncher;
 
     public string PrimeExecutableChoiceAutomationName => BuildChoiceAutomationName(
         LauncherLaunchTarget.PrimeExecutable,
@@ -358,7 +435,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string ScopelyLauncherChoiceStatus => BuildChoiceStatus(LauncherLaunchTarget.ScopelyLauncher);
 
-    public bool CanOpenLaunchTargetMenu => Enum.IsDefined(selectedLaunchTarget);
+    public static bool CanOpenLaunchTargetMenu => false;
 
     public ICommand LaunchPrimaryCommand { get; }
 
@@ -382,7 +459,26 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void DismissHomeOperationFeedback() => homeFeedback.Dismiss();
 
-    public string? SelectedGameDirectory => snapshot.SelectedGameDirectory;
+    public string? SelectedGameDirectory
+    {
+        get
+        {
+            var directory = ResolveProfileGameDirectory(profilesLoad, snapshot.SelectedGameDirectory,
+                snapshot.ConfirmedGameInstallationDirectory);
+            if (directory is null || ActiveLaunchProfile is not { PreferredInstallationId.Length: > 0 } profile)
+                return directory;
+            try
+            {
+                var registered = profilesStore.InstallationPaths(profile.PreferredInstallationId);
+                return registered.State == "available" && GameDirectoryIdentity.SameLocation(registered.GameDirectory, directory)
+                    ? directory : null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or InvalidOperationException or NotSupportedException or ArgumentException
+                or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+                or JsonException) { return null; }
+        }
+    }
 
     public string SelectionFeedback => selectionFeedback;
 
@@ -427,24 +523,266 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasDiagnosticActionStatus => !string.IsNullOrWhiteSpace(diagnosticActionStatus);
 
-    public bool CanOpenGameFolder => snapshot.SelectedGameDirectory is not null;
+    public bool CanOpenGameFolder => SelectedGameDirectory is not null;
 
-    public bool CanOpenLogsFolder => snapshot.SelectedGameDirectory is not null;
+    public bool CanOpenLogsFolder => SelectedGameDirectory is not null;
 
     public string? InitialBrowseDirectory
     {
         get
         {
             var validCandidates = snapshot.Discovery.ValidCandidates;
-            return snapshot.SelectedGameDirectory
+            return SelectedGameDirectory
                 ?? (validCandidates.Count > 0 ? validCandidates[0].GameDirectory : null);
         }
     }
 
-    public string? ConfigurationFilePath =>
-        snapshot.SelectedGameDirectory is null
-            ? null
-            : Path.Combine(snapshot.SelectedGameDirectory, "community_patch_settings.toml");
+    public LauncherProfile? SelectedConfigurationProfile => ActiveLaunchProfile;
+    public string? ConfigurationGameDirectory => SelectedGameDirectory;
+    private string? GameClientDirectory => ActiveLaunchProfile is { PreferredInstallationId.Length: > 0 } profile
+        ? profile.GameDirectory : SelectedGameDirectory;
+    public string ConfigurationTargetLabel => ActiveLaunchProfile is { } profile
+        ? $"{(profile.IsDefault ? "Windows setup" : profile.Name)} · Settings for next launch on {NextLaunchInstallationLabel}"
+        : "Selected profile is unavailable";
+    public string? ConfigurationFilePath => ResolveConfigurationFilePath(ActiveLaunchProfile, SelectedGameDirectory);
+
+
+    internal static string? ResolveProfileGameDirectory(LauncherProfilesLoadResult load,
+        string? detectedDirectory, string? confirmedDirectory)
+    {
+        if (load.State == LauncherProfilesLoadState.Invalid || load.Snapshot?.SelectedProfile is not { } profile)
+            return null;
+        if (!string.IsNullOrEmpty(profile.PreferredInstallationId) && profile.InstallationState != "available")
+            return null;
+        return !string.IsNullOrWhiteSpace(profile.GameDirectory) ? profile.GameDirectory
+            : profile.IsDefault ? detectedDirectory ?? confirmedDirectory : null;
+    }
+
+    internal static string? ResolveConfigurationFilePath(LauncherProfile? profile, string? installationDirectory) =>
+        profile is null ? null
+            : profile.IsDefault
+                ? installationDirectory is null ? null : Path.Combine(installationDirectory, "community_patch_settings.toml")
+                : string.IsNullOrWhiteSpace(profile.ConfigPath) ? null : profile.ConfigPath;
+
+    internal static bool ResolveUninstallAvailability(ModInstallationEvidence installation,
+        string providerId, bool conflictingOperation) =>
+        !conflictingOperation && !installation.IsGameRunning
+        && installation.State == ModInstallationEvidenceState.ManagedVerified
+        && string.Equals(installation.InstalledProviderId, providerId, StringComparison.Ordinal);
+
+    private bool HasConflictingInstallationMutation => HasConflictingInstallationMutationFor(SelectedGameDirectory);
+
+    private bool HasConflictingInstallationMutationFor(string? directory) =>
+        (GameClient.IsMutationInProgress && SameInstallationOrUnknown(directory, GameClient.OperationTarget))
+        || (isModMutationInProgress && SameInstallationOrUnknown(directory, modOperationDirectory))
+        || isRecoveryWorkspaceTransitionPending;
+
+    internal static bool IsRecoveryForInstallation(string? configurationPath, string? selectedDirectory)
+    {
+        if (selectedDirectory is null || string.IsNullOrWhiteSpace(configurationPath)) return true;
+        try
+        {
+            if (!Path.IsPathFullyQualified(configurationPath)
+                || !string.Equals(Path.GetFileName(configurationPath), "community_patch_settings.toml", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var directory = Path.GetDirectoryName(Path.GetFullPath(configurationPath));
+            return SameInstallationOrUnknown(selectedDirectory, directory);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        { return true; }
+    }
+
+    private static bool SameInstallationOrUnknown(string? left, string? right) =>
+        left is null || right is null || GameDirectoryIdentity.SameLocation(left, right);
+
+    private LauncherHomePresentation CaptureSelectedInstallationPresentation()
+    {
+        var directory = SelectedGameDirectory;
+        var processState = directory is null ? GameProcessInspectionState.NotRunning
+            : gameProcessInspector.Inspect(directory);
+        var selected = LauncherHomePresentation.FromSnapshot(snapshot with
+        {
+            SelectedGameDirectory = directory,
+            IsGameRunning = processState != GameProcessInspectionState.NotRunning,
+            GameProcessState = processState,
+        });
+        return selected with
+        {
+            GameFolderActionLabel = "Select installation",
+            GameFolderActionAutomationName = "Select installation for the selected profile's next launch",
+        };
+    }
+
+    public LauncherProviderSelection? ConfigurationRuntimeSelection
+    {
+        get
+        {
+            var installed = localHealth.Installation;
+            if (installed.State != ModInstallationEvidenceState.ManagedVerified
+                || installed.InstalledProviderId is not { } providerId
+                || installed.InstalledReleaseChannelId is not { } channelId
+                || !distributionProviderCatalog.TryGetProvider(providerId, out var provider)
+                || provider is null || !provider.ReleaseChannels.ContainsKey(channelId)) return null;
+            return new(providerId, channelId);
+        }
+    }
+
+    public bool HasCommunityFeatures => ConfigurationRuntimeSelection is { } selection
+        && distributionProviderCatalog.GetProvider(selection.ProviderId)
+            .GetCapabilityStatus(LauncherProviderCapabilityIds.CommunityFeatures) == LauncherProviderCapabilityStatus.Supported;
+
+    public async Task RefreshProfileSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        var admittedGeneration = profileGeneration;
+        try
+        {
+            var sessions = await profilesStore.SessionsAsync(cancellationToken);
+            if (isDisposed || admittedGeneration != profileGeneration) return;
+            profileSessions = sessions;
+            RefreshLaunchPresentations();
+            NotifyLaunchPresentationChanged();
+            UpdateLaunchActionAvailability();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        {
+            if (isDisposed || admittedGeneration != profileGeneration) return;
+            profileSessions = [];
+            RefreshLaunchPresentations();
+            NotifyLaunchPresentationChanged();
+            UpdateLaunchActionAvailability();
+        }
+    }
+
+    private void RefreshSessionObservations()
+    {
+        try { profileSessions = profilesStore.Sessions(); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException) { profileSessions = []; }
+    }
+
+    internal static string NamedProfileActionLabel(LauncherProfile profile, IReadOnlyList<ProfileSession> sessions) =>
+        sessions.Count > 1 ? $"Choose session for {profile.Name}"
+            : sessions.Count == 1 ? $"Focus {profile.Name}" : $"Launch {profile.Name}";
+
+    internal static LauncherProfileCard ProjectProfileCard(LauncherProfile profile, string? directory,
+        GameLaunchPresentation choice, IReadOnlyList<ProfileSession> sessions, bool conflictingMutation) =>
+        new(profile.Id, profile.Name,
+            sessions.Count > 0 ? "Running"
+                : choice.NextAction == LauncherLaunchRecoveryAction.CloseRunningGame ? "Running · inspect session"
+                : choice.CanExecute ? "Ready" : "Needs setup",
+            sessions.Count > 0 ? NamedProfileActionLabel(profile, sessions) : choice.NextAction switch
+            {
+                LauncherLaunchRecoveryAction.SetUpProfileSupport => $"Set up profile support for {profile.Name}",
+                LauncherLaunchRecoveryAction.SelectGameFolder => $"Select installation for {profile.Name}",
+                _ => NamedProfileActionLabel(profile, sessions),
+            },
+            sessions.Count > 0 || (choice.CanExecute && !conflictingMutation),
+            profile.IsDefault, directory, sessions,
+            sessions.Count > 0 ? "Focus the exact running session; its launch installation remains unchanged." : choice.Reason,
+            choice.NextAction);
+
+    private void RefreshProfileCards()
+    {
+        var installationLabels = new Dictionary<(string InstallationId, string Directory), string>();
+        var runtimeLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        profileCards = profilesLoad.State == LauncherProfilesLoadState.Invalid ? []
+            : (profilesLoad.Snapshot?.Profiles ?? []).Where(profile => profile.State == "active")
+                .OrderByDescending(profile => profile.IsDefault).ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(profile =>
+                {
+                    var directory = !string.IsNullOrWhiteSpace(profile.GameDirectory) ? profile.GameDirectory
+                        : profile.IsDefault ? snapshot.SelectedGameDirectory ?? snapshot.ConfirmedGameInstallationDirectory : null;
+                    var choice = gameLaunchCoordinator.CapturePresentation(directory,
+                        LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile);
+                    var sessions = gameLaunchCoordinator.CaptureSessions(profile, profileSessions);
+                    var installationLabel = string.IsNullOrWhiteSpace(directory) ? "Select installation" : "STFC game";
+                    if (!string.IsNullOrWhiteSpace(directory) && !string.IsNullOrWhiteSpace(profile.PreferredInstallationId))
+                    {
+                        var installationKey = (profile.PreferredInstallationId, directory);
+                        if (!installationLabels.TryGetValue(installationKey, out installationLabel))
+                        {
+                            installationLabel = CaptureProfileInstallationLabel(profile.PreferredInstallationId, directory);
+                            installationLabels.Add(installationKey, installationLabel);
+                        }
+                    }
+                    var runtimeLabel = "Runtime not checked";
+                    if (!string.IsNullOrWhiteSpace(directory) && !runtimeLabels.TryGetValue(directory, out runtimeLabel))
+                    {
+                        runtimeLabel = CaptureProfileRuntimeLabel(directory, sessions.Count > 0);
+                        runtimeLabels.Add(directory, runtimeLabel);
+                    }
+                    return ProjectProfileCard(profile, directory, choice, sessions,
+                        HasConflictingInstallationMutationFor(directory)) with
+                    {
+                        InstallationLabel = installationLabel,
+                        RuntimeLabel = runtimeLabel,
+                    };
+                }).ToArray();
+        OnPropertyChanged(nameof(ProfileCards));
+    }
+
+    private string CaptureProfileInstallationLabel(string installationId, string gameDirectory)
+    {
+        try
+        {
+            var registered = profilesStore.InstallationPaths(installationId);
+            return registered.State == "available"
+                && GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory)
+                && !string.IsNullOrWhiteSpace(registered.Name) ? registered.Name : "STFC game";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        { return "STFC game"; }
+    }
+
+    private string CaptureProfileRuntimeLabel(string gameDirectory, bool isGameRunning)
+    {
+        try
+        {
+            return ProjectProfileRuntimeLabel(modManagementCoordinator.CaptureHealth(gameDirectory, isGameRunning).Installation,
+                distributionProviderCatalog);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        { return "Runtime not checked"; }
+    }
+
+    internal static string ProjectProfileRuntimeLabel(ModInstallationEvidence installed,
+        LauncherDistributionProviderCatalog distributionProviderCatalog)
+    {
+            if (installed.State == ModInstallationEvidenceState.NotInstalled) return "No runtime installed";
+            if (installed.State == ModInstallationEvidenceState.ManagedMissing) return "Runtime missing";
+            if (installed.State == ModInstallationEvidenceState.ManagedChanged) return "Runtime changed";
+            if (installed.State == ModInstallationEvidenceState.RecoveryRequired) return "Recovery required";
+            if (installed.State == ModInstallationEvidenceState.ManualInstallation)
+            {
+                if (installed.BinaryProvenance is { State: ModBinaryProvenanceState.KnownProviderArtifact, DetectedProviderId: { } knownProviderId }
+                    && distributionProviderCatalog.TryGetProvider(knownProviderId, out var knownProvider)
+                    && knownProvider is not null) return knownProvider.DisplayName;
+                if (installed.BinaryProvenance is { State: ModBinaryProvenanceState.SelfDeclaredLineage } provenance)
+                {
+                    var declaredProvider = distributionProviderCatalog.Providers.Values.FirstOrDefault(candidate =>
+                        string.Equals(candidate.RuntimeDistributionId, provenance.DetectedRuntimeDistributionId, StringComparison.Ordinal));
+                    if (declaredProvider is not null) return $"{declaredProvider.DisplayName} · custom build";
+                }
+                return "Custom runtime · unverified";
+            }
+            var providerId = installed.State == ModInstallationEvidenceState.ManagedVerified
+                ? installed.InstalledProviderId : installed.BinaryProvenance?.DetectedProviderId;
+            if (providerId is not null && distributionProviderCatalog.TryGetProvider(providerId, out var provider)
+                && provider is not null) return provider.DisplayName;
+            return "Runtime not checked";
+    }
 
     public static MainWindowViewModel CreateDefault(
         HttpClient httpClient,
@@ -461,6 +799,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ArgumentNullException.ThrowIfNull(distributionProvider);
         ArgumentNullException.ThrowIfNull(releaseChannel);
         var installLayout = PerUserInstallLayout.FromCurrentUser();
+        var sharedProfilesStore = new NativeLauncherProfilesStore(installLayout.StateDirectory);
         uiPreferencesStore ??= new JsonLauncherUiPreferencesStore(installLayout.StateDirectory);
         var currentLauncherVersion = CurrentLauncherVersion();
         var processInspector = new SystemGameProcessInspector();
@@ -487,6 +826,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 string.Equals(provider.Id, distributionProvider.Id, StringComparison.Ordinal)
                     ? providerResolutionFailure
                     : null);
+            var repositoryReleases = binding.IsAvailable
+                && binding.TrustKind == LauncherProviderArtifactTrustKind.GitHubRepositoryRelease
+                    ? new NetnivRepositoryReleaseService(httpClient) : null;
             IModArtifactAuthenticityVerifier artifactVerifier = binding.IsAvailable
                 ? binding.TrustKind switch
                 {
@@ -494,6 +836,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                         new WindowsAuthenticodeVerifier(
                             binding.WindowsPublisher!,
                             binding.WindowsArtifactSigningIdentityEku!),
+                    LauncherProviderArtifactTrustKind.GitHubRepositoryRelease => repositoryReleases!,
                     LauncherProviderArtifactTrustKind.ReviewedExactHash =>
                         new ReviewedExactHashAuthenticityVerifier(binding.ReviewedCertification!),
                     _ => new FailClosedModArtifactAuthenticityVerifier("Unsupported artifact trust kind."),
@@ -518,11 +861,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                                     binding.ReviewedCertification),
                                 binding.ReviewedCertification),
                     LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset =>
-                        new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
+                        repositoryReleases is not null ? repositoryReleases
+                            : new ReviewedGitHubReleaseAssetClient(httpClient, binding.ReviewedCertification!),
                     _ => new UnavailableWindowsReleaseDiscoveryClient("Unsupported release discovery kind."),
                 }
                 : new UnavailableWindowsReleaseDiscoveryClient(binding.UnavailableReason);
-            IModArtifactDownloader artifactDownloader = binding.IsAvailable
+            IModArtifactDownloader artifactDownloader = repositoryReleases is not null ? repositoryReleases
+                : binding.IsAvailable
                 && binding.ReviewedCertification is not null
                     ? binding.DiscoveryKind == LauncherProviderReleaseDiscoveryKind.ReleaseManifest
                         ? new ManifestWithReviewedFallbackArtifactDownloader(
@@ -541,8 +886,10 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     processInspector.Inspect(gameDirectory) != GameProcessInspectionState.NotRunning,
                 new(binding.ProviderId, binding.ReleaseChannelId, provider.RuntimeDistributionId),
                 reviewedCertification: binding.ReviewedCertification,
-                reviewedCertifications: reviewedReleases.ReleaseEvidence);
+                reviewedCertifications: reviewedReleases.ReleaseEvidence,
+                profilesStore: sharedProfilesStore);
             var candidateAcquirer = binding.IsAvailable
+                && repositoryReleases is null
                 && binding.ReviewedCertification is not null
                     ? new ReviewedModArtifactCandidateAcquirer(
                         installLayout.StateDirectory,
@@ -610,52 +957,17 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             new WindowsGameExecutableLaunchService(),
             officialLauncherService,
             processInspector);
-        LauncherConfigurationDiagnosisEvidence configurationEvidence;
-        try
-        {
-            var configurationCapabilityStatus = distributionProvider.GetCapabilityStatus(
-                LauncherProviderCapabilityIds.ConfigurationCatalog);
-            if (configurationCapabilityStatus != LauncherProviderCapabilityStatus.Supported)
-            {
-                configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
-                    distributionProvider.Id,
-                    releaseChannel.Id,
-                    configurationCapabilityStatus);
-            }
-            else
-            {
-                var resolvedConfigurationCatalog = configurationCatalog
-                    ?? BundledLauncherProviderCatalog.LoadConfigurationCatalog(distributionProvider);
-                var catalogMatchesChannel = string.Equals(
-                        resolvedConfigurationCatalog.Identity.TrackId,
-                        releaseChannel.Id,
-                        StringComparison.Ordinal)
-                    || (string.Equals(
-                            resolvedConfigurationCatalog.Identity.TrackId,
-                            "unversioned",
-                            StringComparison.Ordinal)
-                        && string.Equals(
-                            releaseChannel.Id,
-                            distributionProvider.DefaultReleaseChannelId,
-                            StringComparison.Ordinal));
-                configurationEvidence = catalogMatchesChannel
-                    ? LauncherConfigurationDiagnosisEvidence.Supported(
-                        distributionProvider.Id,
-                        releaseChannel.Id,
-                        resolvedConfigurationCatalog)
-                    : LauncherConfigurationDiagnosisEvidence.Unavailable(
-                        distributionProvider.Id,
-                        releaseChannel.Id,
-                        LauncherProviderCapabilityStatus.Unknown);
-            }
-        }
-        catch (LauncherConfigurationSchemaException)
-        {
-            configurationEvidence = LauncherConfigurationDiagnosisEvidence.Unavailable(
-                distributionProvider.Id,
-                releaseChannel.Id,
-                LauncherProviderCapabilityStatus.Unknown);
-        }
+        var activeConfigurationSelection = new LauncherProviderSelection(
+            distributionProvider.Id,
+            releaseChannel.Id);
+        var installedConfiguration = new LauncherInstalledConfigurationResolver(
+            distributionProviderCatalog, reviewedReleases, deploymentService);
+        LauncherConfigurationCatalog ResolveConfigurationCatalog(string? gameDirectory) =>
+            installedConfiguration.ResolveCatalog(
+                activeConfigurationSelection, gameDirectory, configurationCatalog);
+        LauncherConfigurationDiagnosisEvidence ResolveConfigurationEvidence(string? gameDirectory) =>
+            installedConfiguration.ResolveEvidence(
+                activeConfigurationSelection, gameDirectory, configurationCatalog);
 
         var viewModel = new MainWindowViewModel(
             new LauncherEnvironmentProbe(
@@ -669,8 +981,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 officialLauncherService,
                 processInspector,
                 currentLauncherVersion.ToString(3),
-                configurationEvidence: configurationEvidence,
-                runtimeDistributionId: distributionProvider.RuntimeDistributionId),
+                runtimeDistributionId: distributionProvider.RuntimeDistributionId,
+                configurationEvidenceProvider: ResolveConfigurationEvidence),
             new LauncherSelfUpdateService(
                 installLayout.StateDirectory,
                 installLayout.ProgramDirectory,
@@ -682,29 +994,29 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             launcherReleaseClient,
             new WindowsPackagedLauncherUpdateService(),
             uiPreferencesStore,
+            sharedProfilesStore,
+            new GameInstallationCoordinator(installLayout.StateDirectory),
             distributionProviderCatalog,
             featureRemediationCandidates,
             string.IsNullOrWhiteSpace(providerResolutionFailure)
                 ? $"{distributionProvider.DisplayName} · {releaseChannel.DisplayName}"
                 : "Source needs attention",
-            new WindowsDiagnosticFolderService());
+            new WindowsDiagnosticFolderService(),
+            processInspector);
         providerSelectionStore ??= new JsonLauncherProviderSelectionStore(installLayout.StateDirectory);
-        var activeConfigurationSelection = new LauncherProviderSelection(
-            distributionProvider.Id,
-            releaseChannel.Id);
+        viewModel.configurationCatalogResolver = ResolveConfigurationCatalog;
+        viewModel.configurationEvidenceProvider = ResolveConfigurationEvidence;
         viewModel.ProviderSwitchCoordinator = new(
             new LauncherProviderSourceSwitchService(
                 distributionProviderCatalog,
                 providerSelectionStore,
                 installLayout.StateDirectory,
-                selection => selection == activeConfigurationSelection
-                    ? configurationEvidence
-                    : BundledLauncherProviderCatalog.LoadConfigurationDiagnosisEvidence(
-                        distributionProviderCatalog,
-                        reviewedReleases,
-                        selection)),
+                selection => installedConfiguration.ResolveSwitchEvidence(
+                    selection, activeConfigurationSelection,
+                    viewModel.ConfigurationGameDirectory, configurationCatalog)),
             providerComponents.Select(component => component.SwitchEndpoint),
-            installLayout.StateDirectory);
+            installLayout.StateDirectory,
+            profilesStore: sharedProfilesStore);
         return viewModel;
     }
 
@@ -754,6 +1066,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         var before = CaptureHomeState();
         await Task.Yield();
         RefreshCore();
+        await GameClient.RefreshStatusAsync();
+        await RefreshProfileSessionsAsync();
         var changed = before != CaptureHomeState();
         return changed
             ? ObservableActionResult.Changed("Mod Bridge status refreshed. The displayed status changed.")
@@ -762,14 +1076,24 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshCore()
     {
+        profilesLoad = profilesStore.Load();
+        profileGeneration++;
         snapshot = environmentProbe.Capture();
-        presentation = LauncherHomePresentation.FromSnapshot(snapshot);
+        RefreshSessionObservations();
+        GameClient.SetTarget(GameClientDirectory, ActiveLaunchProfile?.PreferredInstallationId);
+        presentation = CaptureSelectedInstallationPresentation();
         localHealth = modManagementCoordinator.CaptureHealth(
-            snapshot.SelectedGameDirectory,
-            snapshot.IsGameRunning);
+            SelectedGameDirectory,
+            presentation.IsGameRunning);
         homeHealth = HomeHealthProjection.FromSnapshot(localHealth);
         modPresentation = localHealth.ModManagement;
         RefreshLaunchPresentations();
+        OnPropertyChanged(nameof(LaunchProfileStatus));
+        NotifyConfigurationTargetChanged();
+        OnPropertyChanged(nameof(SelectedLaunchTarget));
+        OnPropertyChanged(nameof(IsPrimeExecutableSelected));
+        OnPropertyChanged(nameof(IsScopelyLauncherSelected));
+        OnPropertyChanged(nameof(CanOpenLaunchTargetMenu));
         OnPropertyChanged(nameof(GameFolderStatus));
         OnPropertyChanged(nameof(GameSectionStatus));
         OnPropertyChanged(nameof(GameFolderIcon));
@@ -808,7 +1132,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public async Task<ModOperationPreparation?> PrepareModOperationAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!CanManageMod || snapshot.SelectedGameDirectory is null)
+        var admittedDirectory = SelectedGameDirectory;
+        var admittedInstallationId = ActiveLaunchProfile?.PreferredInstallationId;
+        if (!CanManageMod || admittedDirectory is null)
         {
             return null;
         }
@@ -819,10 +1145,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         try
         {
+            var target = await profilesStore.ResolveOperationTargetAsync(admittedDirectory, admittedInstallationId, cancellationToken);
+            admittedDirectory = target.GameDirectory;
+            admittedInstallationId = target.Id;
             var preparation = await modManagementCoordinator.PrepareLatestAsync(
-                snapshot.SelectedGameDirectory,
-                snapshot.IsGameRunning,
+                admittedDirectory,
+                IsGameRunning,
                 cancellationToken);
+            if (!string.IsNullOrWhiteSpace(admittedInstallationId))
+                preparation = preparation with { InstallationId = admittedInstallationId };
             if (preparation.State is ModOperationPreparationState.UpToDate
                 or ModOperationPreparationState.MutationBlocked)
             {
@@ -854,7 +1185,13 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 or InvalidDataException
                 or InvalidOperationException
                 or IOException
-                or UnauthorizedAccessException)
+                or UnauthorizedAccessException
+                or NotSupportedException
+                or ArgumentException
+                or System.Runtime.InteropServices.ExternalException
+                or TypeLoadException
+                or BadImageFormatException
+                or JsonException)
         {
             actionFeedback.Mod.Fail($"Could not prepare the mod operation: {exception.Message}");
             return null;
@@ -866,11 +1203,27 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preparation);
+        IDisposable? admittedLease = null;
+        try
+        {
+            admittedLease = AcquireRuntimeInstallationLease(preparation.GameDirectory, preparation.InstallationId);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        {
+            admittedLease?.Dispose();
+            actionFeedback.Mod.Fail("The prepared installation could not be revalidated. Select it again before continuing.");
+            return null;
+        }
+        using var installationLease = admittedLease;
         if (!actionFeedback.Mod.TryBegin(ModOperationAcceptedMessage(preparation)))
         {
             return null;
         }
 
+        BeginModMutation(preparation.GameDirectory);
         try
         {
             var result = await modManagementCoordinator.ExecuteAsync(preparation, cancellationToken);
@@ -903,9 +1256,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         finally
         {
+            EndModMutation();
             Refresh();
         }
     }
+
+    internal IDisposable AcquireRuntimeInstallationLease(string gameDirectory, string? installationId) =>
+        string.IsNullOrWhiteSpace(installationId)
+            ? profilesStore.AcquireInstallationLease(gameDirectory)
+            : profilesStore.AcquireInstallationLease(gameDirectory, installationId);
+
+    internal Task<RegisteredGameInstallation> ResolveRuntimeInstallationAsync(CancellationToken cancellationToken) =>
+        profilesStore.ResolveOperationTargetAsync(SelectedGameDirectory
+            ?? throw new InvalidOperationException("Select an installation before continuing."),
+            SelectedProfile?.PreferredInstallationId, cancellationToken);
 
     internal static string ModOperationAcceptedMessage(ModOperationPreparation preparation)
     {
@@ -962,10 +1326,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(CanChangeGameFolder));
         OnPropertyChanged(nameof(CanChangeReleaseSource));
         OnPropertyChanged(nameof(CanOpenSettingsWorkspace));
+        UpdateLaunchActionAvailability();
+        NotifyLaunchPresentationChanged();
+        RefreshProfileCards();
     }
 
     private async Task<ObservableActionResult> LaunchSelectedTargetAsync()
     {
+        var displayedProfile = ActiveLaunchProfile;
+        var displayedDefaultDirectory = SelectedGameDirectory;
+        var displayedTarget = EffectiveLaunchTarget;
+        ReloadLaunchProfile();
+        if (!launchPresentation.CanExecute || !SameDisplayedLaunch())
+        {
+            return ObservableActionResult.Failed("The launch selection changed. Review the button and try again.");
+        }
         var allowUnverifiedProxy = false;
         if (launchPresentation.RequiresUserOverride)
         {
@@ -978,12 +1353,52 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             allowUnverifiedProxy = true;
         }
 
-        var result = await gameLaunchCoordinator.LaunchAsync(
-            snapshot.SelectedGameDirectory,
-            selectedLaunchTarget,
-            allowUnverifiedProxy);
+        ReloadLaunchProfile();
+        if (!launchPresentation.CanExecute || !SameDisplayedLaunch())
+        {
+            return ObservableActionResult.Failed("The launch profile changed or became unavailable. Review the selection and try again.");
+        }
+        var profile = ActiveLaunchProfile;
+        if (profile is null)
+            return ObservableActionResult.Failed("The selected profile is unavailable.");
+        await RefreshProfileSessionsAsync();
+        if (!SameDisplayedLaunch())
+            return ObservableActionResult.Failed("The selected profile changed while its sessions were checked.");
+        var sessions = gameLaunchCoordinator.CaptureSessions(profile, profileSessions);
+        if (sessions.Count > 0)
+        {
+            var selectedSession = sessions.Count == 1 ? sessions[0]
+                : SelectProfileSessionAsync is null ? null : await SelectProfileSessionAsync(profile, sessions);
+            if (selectedSession is null)
+                return ObservableActionResult.Unchanged("Focus canceled. No game was launched.");
+            ReloadLaunchProfile();
+            if (!SameDisplayedLaunch() || !sessions.Contains(selectedSession))
+                return ObservableActionResult.Failed("The selected session or profile changed. Refresh and try again.");
+            var focused = gameLaunchCoordinator.FocusSession(profile, selectedSession);
+            RefreshCore();
+            return ProjectLaunchResult(focused);
+        }
+        if (profile is { IsDefault: false })
+        {
+            var contract = LauncherProfileLaunchContract.Inspect(profile.GameDirectory, profile.Id);
+            if (!contract.IsValid)
+            {
+                return ObservableActionResult.Failed(contract.Message);
+            }
+        }
+
+        var result = await gameLaunchCoordinator.LaunchProfileAsync(profile, allowUnverifiedProxy,
+            profile.IsDefault ? displayedDefaultDirectory : snapshot.SelectedGameDirectory);
         RefreshCore();
         return ProjectLaunchResult(result);
+
+        bool SameDisplayedLaunch() =>
+            ActiveLaunchProfile?.Id == displayedProfile?.Id
+            && string.Equals(ActiveLaunchProfile?.GameDirectory, displayedProfile?.GameDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(SelectedGameDirectory, displayedDefaultDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && EffectiveLaunchTarget == displayedTarget;
     }
 
     internal static ObservableActionResult ProjectLaunchResult(GameLaunchHandoffResult result)
@@ -1002,7 +1417,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         var battleFeatures = currentBattleFeatures?.Invoke();
         diagnosticPreview = diagnosticService.BuildPreview(
-            snapshot.SelectedGameDirectory,
+            SelectedGameDirectory,
             localHealth,
             battleFeatures);
         OnPropertyChanged(nameof(DiagnosticChecks));
@@ -1015,12 +1430,12 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public void OpenGameFolder() =>
         SetDiagnosticActionStatus(diagnosticFolderService.TryOpen(
-            snapshot.SelectedGameDirectory,
+            SelectedGameDirectory,
             out var message), message);
 
     public void OpenLogsFolder()
     {
-        var directory = CanOpenLogsFolder ? snapshot.SelectedGameDirectory : null;
+        var directory = CanOpenLogsFolder ? SelectedGameDirectory : null;
         SetDiagnosticActionStatus(diagnosticFolderService.TryOpen(directory, out var message), message);
     }
 
@@ -1175,7 +1590,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         }
         return await ExecuteMaintenanceAsync(
             "Recovering the incomplete mod transaction…",
-            async token =>
+            async (_, token) =>
             {
                 if (HasIncompleteProviderSwitch && ProviderSwitchCoordinator is not null)
                 {
@@ -1242,7 +1657,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 var journal = ProviderSwitchCoordinator?.ReadJournal();
                 return journal is not null
                     && journal.Phase is not (LauncherProviderAtomicSwitchPhase.Completed
-                        or LauncherProviderAtomicSwitchPhase.RolledBack);
+                        or LauncherProviderAtomicSwitchPhase.RolledBack)
+                    && IsRecoveryForInstallation(journal.Preview.ConfigurationPath, SelectedGameDirectory);
             }
             catch (Exception exception) when (
                 exception is IOException
@@ -1257,41 +1673,50 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task<ModDeploymentResult?> UninstallModAsync(CancellationToken cancellationToken = default)
     {
-        if (!CanUninstallMod)
+        var admittedDirectory = SelectedGameDirectory;
+        if (!CanUninstallMod || admittedDirectory is null)
         {
             return null;
         }
         return await ExecuteMaintenanceAsync(
             "Removing the Mod Bridge-managed community mod…",
-            token => modManagementCoordinator.UninstallAsync(SelectedGameDirectory!, token),
-            cancellationToken);
+            (directory, token) => modManagementCoordinator.UninstallAsync(directory!, token),
+            cancellationToken, admittedDirectory, ActiveLaunchProfile?.PreferredInstallationId);
     }
 
     public async Task<ModDeploymentResult?> StopManagingModAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!CanStopManagingMod)
+        var admittedDirectory = SelectedGameDirectory;
+        if (!CanStopManagingMod || admittedDirectory is null)
         {
             return null;
         }
         return await ExecuteMaintenanceAsync(
             "Detaching Mod Bridge ownership from the selected installation…",
-            token => modManagementCoordinator.StopManagingAsync(SelectedGameDirectory!, token),
+            (_, token) => modManagementCoordinator.StopManagingAsync(admittedDirectory, token),
             cancellationToken);
     }
 
     private async Task<ModDeploymentResult?> ExecuteMaintenanceAsync(
         string progress,
-        Func<CancellationToken, Task<ModDeploymentResult>> operation,
-        CancellationToken cancellationToken)
+        Func<string?, CancellationToken, Task<ModDeploymentResult>> operation,
+        CancellationToken cancellationToken,
+        string? operationDirectory = null,
+        string? installationId = null)
     {
         if (!actionFeedback.Mod.TryBegin(progress))
         {
             return null;
         }
+        BeginModMutation(operationDirectory);
         try
         {
-            var result = await operation(cancellationToken);
+            var resolved = operationDirectory is null ? null
+                : await profilesStore.ResolveOperationTargetAsync(operationDirectory, installationId, cancellationToken);
+            using var installationLease = resolved is null ? null
+                : AcquireRuntimeInstallationLease(resolved.GameDirectory, resolved.Id);
+            var result = await operation(resolved?.GameDirectory, cancellationToken);
             actionFeedback.CompleteModDeployment(result);
             return result;
         }
@@ -1312,15 +1737,36 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             exception is InvalidDataException
                 or InvalidOperationException
                 or IOException
-                or UnauthorizedAccessException)
+                or UnauthorizedAccessException
+                or NotSupportedException or ArgumentException or TypeLoadException or BadImageFormatException
+                or System.Runtime.InteropServices.ExternalException or JsonException)
         {
             actionFeedback.Mod.Fail($"The maintenance operation failed: {exception.Message}");
             return null;
         }
         finally
         {
+            EndModMutation();
             Refresh();
         }
+    }
+
+    private void BeginModMutation(string? directory)
+    {
+        isModMutationInProgress = true;
+        modOperationDirectory = directory;
+        UpdateLaunchActionAvailability();
+        NotifyLaunchPresentationChanged();
+        RefreshProfileCards();
+    }
+
+    private void EndModMutation()
+    {
+        isModMutationInProgress = false;
+        modOperationDirectory = null;
+        UpdateLaunchActionAvailability();
+        NotifyLaunchPresentationChanged();
+        RefreshProfileCards();
     }
 
     private void NotifyModPresentationChanged()
@@ -1358,9 +1804,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         bool recoveryRequired,
         bool isModOperationInProgress,
         bool isLaunchInProgress) =>
-        !recoveryRequired
-        && !isModOperationInProgress
-        && !isLaunchInProgress;
+        !isModOperationInProgress && !isLaunchInProgress;
 
     internal static string DescribeProviderSwitchRecoveryAvailability(
         bool isGameRunning,
@@ -1480,11 +1924,16 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void UpdateLaunchActionAvailability() =>
         actionFeedback.Launch.SetAvailability(
-            launchPresentation.CanExecute && !actionFeedback.Mod.IsWorking,
+            launchPresentation.CanExecute && !HasConflictingInstallationMutation,
             launchPresentation.AutomationName);
 
     private void SelectLaunchTarget(LauncherLaunchTarget target)
     {
+        if (ActiveLaunchProfile is not null || profilesLoad.Snapshot?.SelectedProfileId is not null
+            || profilesLoad.Snapshot is null)
+        {
+            return;
+        }
         if (selectedLaunchTarget == target)
         {
             return;
@@ -1517,7 +1966,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string BuildChoiceAutomationName(LauncherLaunchTarget target, string label)
     {
         var choice = GetLaunchChoice(target);
-        var selected = selectedLaunchTarget == target ? ", selected" : string.Empty;
+        var selected = EffectiveLaunchTarget == target ? ", selected" : string.Empty;
         var availability = choice.RequiresUserOverride
             ? $", available after confirmation, {choice.Reason}"
             : choice.CanExecute
@@ -1538,15 +1987,73 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshLaunchPresentations()
     {
+        var profile = ActiveLaunchProfile;
         primeLaunchChoice = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            LauncherLaunchTarget.PrimeExecutable,
-            localHealth.Installation);
+            SelectedGameDirectory, LauncherLaunchTarget.PrimeExecutable,
+            localHealth.Installation, requiredProfile: profile);
         scopelyLaunchChoice = gameLaunchCoordinator.CapturePresentation(
-            snapshot.SelectedGameDirectory,
-            LauncherLaunchTarget.ScopelyLauncher,
+            SelectedGameDirectory, LauncherLaunchTarget.ScopelyLauncher,
             localHealth.Installation);
-        launchPresentation = GetLaunchChoice(selectedLaunchTarget);
+        if (profile is null)
+        {
+            var reason = profilesLoad.Error ?? "The shared profile catalog could not be read.";
+            primeLaunchChoice = BlockProfileLaunch(primeLaunchChoice, reason);
+            scopelyLaunchChoice = BlockProfileLaunch(scopelyLaunchChoice, reason);
+        }
+        else
+        {
+            var sessions = gameLaunchCoordinator.CaptureSessions(profile, profileSessions);
+            if (sessions.Count > 0)
+                primeLaunchChoice = primeLaunchChoice with
+                {
+                    Status = "Running", Tone = LauncherHomeTone.Success,
+                    ActionLabel = NamedProfileActionLabel(profile, sessions), CanExecute = true,
+                    AutomationName = NamedProfileActionLabel(profile, sessions),
+                    Reason = "Focus an exact running session; its launch installation remains unchanged.",
+                    NextAction = LauncherLaunchRecoveryAction.None, RequiresUserOverride = false,
+                };
+        }
+        launchPresentation = primeLaunchChoice;
+        RefreshProfileCards();
+    }
+
+    internal void ReloadLaunchProfile()
+    {
+        RefreshCore();
+        OnPropertyChanged(nameof(LaunchProfileStatus));
+        NotifyConfigurationTargetChanged();
+        OnPropertyChanged(nameof(SelectedLaunchTarget));
+        OnPropertyChanged(nameof(IsPrimeExecutableSelected));
+        OnPropertyChanged(nameof(IsScopelyLauncherSelected));
+        OnPropertyChanged(nameof(CanOpenLaunchTargetMenu));
+        NotifyLaunchPresentationChanged();
+        UpdateLaunchActionAvailability();
+    }
+
+    private static GameLaunchPresentation BlockProfileLaunch(GameLaunchPresentation choice, string reason) =>
+        choice with
+        {
+            Status = "Profile needs attention",
+            Tone = LauncherHomeTone.Warning,
+            CanExecute = false,
+            AutomationName = $"Launch unavailable: {reason}",
+            Reason = reason,
+            NextAction = LauncherLaunchRecoveryAction.OpenDiagnostics,
+            RequiresUserOverride = false,
+        };
+
+    private void NotifyConfigurationTargetChanged()
+    {
+        OnPropertyChanged(nameof(ConfigurationFilePath));
+        OnPropertyChanged(nameof(ConfigurationGameDirectory));
+        OnPropertyChanged(nameof(ConfigurationTargetLabel));
+        OnPropertyChanged(nameof(ConfigurationRuntimeSelection));
+        OnPropertyChanged(nameof(HasCommunityFeatures));
+        OnPropertyChanged(nameof(SelectedConfigurationProfile));
+        OnPropertyChanged(nameof(SelectedProfile));
+        OnPropertyChanged(nameof(SelectedProfileName));
+        OnPropertyChanged(nameof(IsDefaultProfileSelected));
+        OnPropertyChanged(nameof(NextLaunchInstallationLabel));
     }
 
     private GameLaunchPresentation GetLaunchChoice(LauncherLaunchTarget target) =>
@@ -1557,7 +2064,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private HomeState CaptureHomeState() => new(
         snapshot.HealthCode,
         snapshot.IsGameRunning,
-        snapshot.SelectedGameDirectory,
+        SelectedGameDirectory,
         presentation.GameFolderStatus,
         presentation.GameClientStatus,
         modPresentation.Status,
@@ -1611,6 +2118,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void ModActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         _ = sender;
+        if (e.PropertyName == nameof(ObservableActionState.IsWorking)) GameClient.NotifyAvailability();
         switch (e.PropertyName)
         {
             case nameof(ObservableActionState.Status):
@@ -1704,6 +2212,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private void LaunchActionState_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         _ = sender;
+        if (e.PropertyName == nameof(ObservableActionState.IsWorking)) GameClient.NotifyAvailability();
         switch (e.PropertyName)
         {
             case nameof(ObservableActionState.IsWorking):
@@ -1724,6 +2233,20 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanLaunchGame));
                 break;
         }
+    }
+
+    private void GameClient_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(GameInstallationViewModel.IsWorking)
+            or nameof(GameInstallationViewModel.IsMutationInProgress))) return;
+        UpdateLaunchActionAvailability();
+        RefreshProfileCards();
+        NotifyModContextChangeAvailability();
+        OnPropertyChanged(nameof(CanManageMod));
+        OnPropertyChanged(nameof(CanRecoverMod));
+        OnPropertyChanged(nameof(CanUninstallMod));
+        OnPropertyChanged(nameof(CanStopManagingMod));
+        OnPropertyChanged(nameof(CanLaunchGame));
     }
 
     private void HomeFeedback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1779,4 +2302,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         bool CanExecuteModAction,
         string LaunchActionLabel,
         bool CanExecuteLaunchAction);
+}
+
+internal sealed record LauncherProfileCard(string Id, string Name, string Status, string ActionLabel,
+    bool CanLaunch, bool IsDefault, string? GameDirectory, IReadOnlyList<ProfileSession> RunningSessions,
+    string Reason, LauncherLaunchRecoveryAction NextAction)
+{
+    public string KindLabel => IsDefault ? "Windows setup" : "Isolated profile";
+    public string InstallationLabel { get; init; } = "STFC game";
+    public string RuntimeLabel { get; init; } = "Runtime not checked";
+    public bool HasSessionSummary => RunningSessions.Count > 0;
+    public bool HasReason => !string.IsNullOrWhiteSpace(Reason);
+    public bool NeedsSetup => NextAction is (LauncherLaunchRecoveryAction.SetUpProfileSupport
+        or LauncherLaunchRecoveryAction.SelectGameFolder) && RunningSessions.Count == 0;
+    public bool CanAct => CanLaunch || NeedsSetup;
+    public string SessionSummary => string.Join("; ", RunningSessions.Select(session =>
+        $"Process {session.ProcessId} · {session.GameDirectory}"));
+    public string ActionAutomationName => $"{ActionLabel}. {Status}. {Reason}";
 }

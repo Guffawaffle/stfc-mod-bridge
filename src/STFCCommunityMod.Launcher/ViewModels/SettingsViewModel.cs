@@ -36,6 +36,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly SettingsActionCommand lockPatchEditingCommand;
     private readonly object lifecycleSync = new();
     private ConfigurationWorkspace? workspace;
+    private ConfigurationWorkspaceLoadResult? configurationLoadResult;
+
     private Task? activeSave;
     private Task? invalidationTask;
     private string searchText = string.Empty;
@@ -62,7 +64,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         Action? openDataFolder = null,
         Action? manageApplication = null,
         Action? openReleaseSecurityGuidance = null,
-        ProviderConfigurationRestoreCoordinator? configurationHistoryCoordinator = null)
+        ProviderConfigurationRestoreCoordinator? configurationHistoryCoordinator = null,
+        string? configurationTargetLabel = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         NavigateHomeCommand = navigateHomeCommand ?? throw new ArgumentNullException(nameof(navigateHomeCommand));
@@ -77,6 +80,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         this.uiPreferencesStore = uiPreferencesStore;
         isSearchVisible = uiPreferencesStore?.Load().SettingsSearchVisible ?? false;
 
+        ConfigurationTargetLabel = configurationTargetLabel ?? "Default installation";
         SourceIdentity = $"{catalog.Source.DisplayName} Community Mod";
         About = new(
             BundledLauncherAboutCatalog.Load(),
@@ -111,7 +115,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             NavigateToSettingsDraft,
             ReloadAfterSyncConflict,
             ConfigurationPathMatchesLoadedSession,
-            () => IsSaveInProgress);
+            () => IsSaveInProgress,
+            () => catalog.IsQualified);
         SyncWorkspace.StateChanged += SyncWorkspace_StateChanged;
         SyncWorkspace.Committed += SyncWorkspace_Committed;
         ConfigurationHistory = configurationHistoryCoordinator is null
@@ -138,6 +143,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string ConfigurationTargetLabel { get; }
 
     public string SourceIdentity { get; }
 
@@ -309,7 +316,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsSaveInProgress => activeSave is not null;
 
     public bool CanEdit =>
-        IsConfigurationReady
+        catalog.IsQualified
+        && IsConfigurationReady
         && !IsSaveInProgress
         && !SyncWorkspace.IsSaveInProgress
         && workspace?.IsStale != true
@@ -328,11 +336,36 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         settingsDiagnostics.SettingsLayoutName;
 
     public string ConfigurationStatus =>
-        IsConfigurationReady
+        isInvalidating || isInvalidated
+            ? "This Settings view has been replaced. Reopen Settings to review the current configuration."
+        : workspace is not null && !ConfigurationPathMatchesLoadedSession()
+            ? "The selected configuration or runtime changed. Use the recovery action to resolve retained edits."
+        : workspace?.IsStale == true || SyncWorkspace.IsStale
+            ? "The configuration changed outside Bridge. Review the recovery action before editing."
+        : IsConfigurationReady
             ? workspace!.DocumentExists
                 ? "Changes are staged until you save."
                 : "No TOML exists yet. Your first saved change will create it."
-            : "Select a game folder with a supported configuration to enable editing.";
+        : configurationLoadResult?.State is ConfigurationRepositoryReadState.Invalid or ConfigurationRepositoryReadState.IoFailure
+            ? DescribeConfigurationReadFailure(configurationLoadResult)
+            : "Showing provider defaults. Select a game folder to enable editing.";
+
+    private static string DescribeConfigurationReadFailure(ConfigurationWorkspaceLoadResult load)
+    {
+        var line = load.ValidationError?.LineNumber is > 0
+            ? $" at line {load.ValidationError.LineNumber}" : string.Empty;
+        var reason = load.State == ConfigurationRepositoryReadState.IoFailure
+            ? "Bridge could not read the selected configuration."
+            : load.ValidationError?.Code switch
+            {
+                SparseTomlErrorCode.InvalidUtf8 => "The selected configuration is not valid UTF-8.",
+                SparseTomlErrorCode.EditorUnavailable => "The bundled TOML editor is unavailable. Restart Bridge or repair the installation.",
+                SparseTomlErrorCode.InvalidDocument => $"The selected configuration contains malformed TOML{line}.",
+                SparseTomlErrorCode.DuplicateTarget => $"The selected configuration contains duplicate TOML definitions{line}.",
+                _ => $"Bridge could not validate the selected configuration{line}.",
+            };
+        return $"{reason} Showing provider defaults; scrolling and help remain available.";
+    }
 
     public int PendingChangeCount => catalog.VisibleSettings.Count(setting =>
         GetValueState(setting).IsDirty
@@ -397,8 +430,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 WorkspaceSaveStateKind.Blocked,
                 WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
                 includesDataSync
-                    ? "You selected a different game installation while Settings and Data Sync changes were staged. Save is paused so they are not applied to the wrong installation."
-                    : "You selected a different game installation while these changes were staged. Save is paused so they are not applied to the wrong installation.",
+                    ? "The selected configuration or reviewed runtime changed while Settings and Data Sync changes were staged. Discard the drafts to reload the current Settings."
+                    : "The selected configuration or reviewed runtime changed while these changes were staged. Discard the draft to reload the current Settings.",
                 WorkspaceSaveRecoveryKind.DiscardAndReload,
                 includesDataSync ? "Discard all changes and reload" : "Discard my changes and reload");
         }
@@ -639,7 +672,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             .Select(setting => layoutProvider.Place(setting).Section)
             .ToHashSet();
         var sections = layoutProvider.Sections
-            .Where(section => populatedSections.Contains(section.Id))
+            .Where(section => populatedSections.Contains(section.Id)
+                || !catalog.IsQualified && section.Id == LauncherSettingsSection.General)
             .Select(
                 section => new SettingsSectionViewModel(
                     section.Id,
@@ -761,6 +795,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             catalog,
             repository,
             out var loadedWorkspace);
+        configurationLoadResult = load;
         if (load.State == ConfigurationRepositoryReadState.NoConfigurationSelected)
         {
             OperationStatus = string.Empty;
@@ -770,15 +805,17 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         if (!load.IsSuccess || loadedWorkspace is null)
         {
-            OperationStatus = load.State == ConfigurationRepositoryReadState.Invalid
-                ? "Editing is unavailable because this configuration contains content Mod Bridge cannot edit safely. No changes were made."
-                : "Editing is unavailable because Mod Bridge could not read the selected configuration. Close other tools using it, check access, and try again.";
+            OperationStatus = DescribeConfigurationReadFailure(load) + " No changes were made.";
             RefreshPatchEditingAvailability();
             return;
         }
 
         workspace = loadedWorkspace;
-        OperationStatus = string.Empty;
+        OperationStatus = catalog.IsQualified
+            ? string.Empty
+            : catalog.Source.Id == LauncherConfigurationSourceId.Profiles
+                ? "Profiles only has no community mod settings. Choose a community mod for this installation to use these settings."
+                : "Typed Settings are unavailable because this installed release has no exact reviewed configuration catalog. Raw TOML remains available.";
         RefreshPatchEditingAvailability();
     }
 
@@ -916,6 +953,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         NotifySessionChanged();
     }
 
+    internal void DiscardAllDraftsForContextChange()
+    {
+        if (IsSaveInProgress || SyncWorkspace.IsSaveInProgress)
+            throw new InvalidOperationException("Wait for the current configuration save before changing profiles.");
+        SyncWorkspace.DiscardForReload();
+        workspace?.Discard();
+        ClearEditorDrafts();
+        SyncWorkspace.Reload();
+        OperationStatus = "Unsaved Settings and Data Sync changes discarded.";
+        RefreshAllStates();
+        NotifySessionChanged();
+    }
+
     internal Task SaveAsync()
     {
         TaskCompletionSource completion;
@@ -958,7 +1008,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         OperationStatus = result.State switch
         {
             AtomicTomlWriteState.Succeeded when result.BackupReceipt is not null =>
-                $"Changes saved. Protected provider backup {result.BackupReceipt.BackupId} was verified.",
+                $"Changes saved. Protected configuration backup {result.BackupReceipt.BackupId} was verified.",
             AtomicTomlWriteState.Succeeded => "Changes saved.",
             AtomicTomlWriteState.NoChange => "No configuration changes were needed.",
             AtomicTomlWriteState.Conflict =>
@@ -1198,8 +1248,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             : null;
     }
 
+    internal void NotifyConfigurationTargetChanged() => NotifySessionChanged();
+
     private void NotifySessionChanged()
     {
+        foreach (var row in projectedRowsByPath.Values) row.UpdateEditingAvailability(CanEdit);
         OnPropertyChanged(nameof(IsConfigurationReady));
         OnPropertyChanged(nameof(IsSaveInProgress));
         OnPropertyChanged(nameof(CanEdit));

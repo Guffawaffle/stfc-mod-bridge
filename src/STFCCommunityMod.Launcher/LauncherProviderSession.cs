@@ -41,7 +41,7 @@ internal sealed class LauncherProviderSession : IDisposable
             () => runtimeComposition.Current.ActivationPlan,
             GetBattleFeatures);
         ApplicationComposition = new(
-            new(viewModel, () => settingsFactory(runtimeComposition.Current)),
+            new(viewModel, () => settingsFactory(runtimeComposition.Current), () => runtimeComposition.SettingsRevision),
             () => runtimeComposition.Current.ActivationPlan);
     }
 
@@ -57,6 +57,8 @@ internal sealed class LauncherProviderSession : IDisposable
 
     public LauncherStartupComposition StartupComposition => runtimeComposition.Current;
 
+    public long SettingsRuntimeRevision => runtimeComposition.SettingsRevision;
+
     public LauncherBattleFeatureSnapshot BattleFeatures => GetBattleFeatures();
 
     public MainWindowViewModel ViewModel => ApplicationComposition.SharedServices.Foundation;
@@ -69,7 +71,7 @@ internal sealed class LauncherProviderSession : IDisposable
         ViewModel.FeatureRemediationCoordinator;
 
     public bool RefreshRuntimeComposition(ReviewedRuntimeActivation? activation) =>
-        runtimeComposition.Refresh(activation, battlePreferencesProvider());
+        runtimeComposition.Refresh(activation, battlePreferencesProvider(), ViewModel.ConfigurationCatalog);
 
     public bool RefreshBattlePreferences() =>
         runtimeComposition.RefreshBattlePreferences(battlePreferencesProvider());
@@ -91,20 +93,28 @@ internal sealed class LauncherRuntimeCompositionSlot(
     LauncherConfigurationCatalog? configurationCatalog = null)
 {
     private string? evidenceSha256 = initialEvidenceSha256;
+    private LauncherConfigurationCatalog? currentConfigurationCatalog = configurationCatalog;
     private LauncherBattlePreferences battlePreferences = new(
         initial.BattleFeatures.BattleCollection.Preference,
         initial.BattleFeatures.FleetCollection.Preference);
 
     public LauncherStartupComposition Current { get; private set; } = initial;
 
+    public long SettingsRevision { get; private set; }
+
     public bool Refresh(
         ReviewedRuntimeActivation? activation,
-        LauncherBattlePreferences nextBattlePreferences)
+        LauncherBattlePreferences nextBattlePreferences,
+        LauncherConfigurationCatalog? nextConfigurationCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(nextBattlePreferences);
         var nextEvidence = activation?.EvidenceSourceSha256;
+        nextConfigurationCatalog ??= currentConfigurationCatalog;
+        var sameCatalog = currentConfigurationCatalog?.Identity == nextConfigurationCatalog?.Identity
+            && currentConfigurationCatalog?.IsQualified == nextConfigurationCatalog?.IsQualified;
         if (string.Equals(evidenceSha256, nextEvidence, StringComparison.OrdinalIgnoreCase)
-            && battlePreferences == nextBattlePreferences)
+            && battlePreferences == nextBattlePreferences
+            && sameCatalog)
         {
             return false;
         }
@@ -113,7 +123,9 @@ internal sealed class LauncherRuntimeCompositionSlot(
             releaseChannel,
             activation,
             nextBattlePreferences,
-            configurationCatalog);
+            nextConfigurationCatalog);
+        currentConfigurationCatalog = nextConfigurationCatalog;
+        SettingsRevision++;
         evidenceSha256 = nextEvidence;
         battlePreferences = nextBattlePreferences;
         return true;

@@ -77,16 +77,19 @@ public sealed class ConfigurationWorkspace
 {
     private readonly IConfigurationRepository repository;
     private readonly LauncherConfigurationEditSession settingsSession;
+    private readonly bool configurationCatalogQualified;
     private ConfigurationDocumentSnapshot baseline;
 
     private ConfigurationWorkspace(
         IConfigurationRepository repository,
         ConfigurationDocumentSnapshot baseline,
-        LauncherConfigurationEditSession settingsSession)
+        LauncherConfigurationEditSession settingsSession,
+        bool configurationCatalogQualified)
     {
         this.repository = repository;
         this.baseline = baseline;
         this.settingsSession = settingsSession;
+        this.configurationCatalogQualified = configurationCatalogQualified;
     }
 
     public string DocumentPath => baseline.Path;
@@ -152,7 +155,7 @@ public sealed class ConfigurationWorkspace
                 sessionLoad.Error);
         }
 
-        workspace = new(repository, snapshot, settingsSession);
+        workspace = new(repository, snapshot, settingsSession, catalog.IsQualified);
         return new(ConfigurationRepositoryReadState.Succeeded);
     }
 
@@ -222,8 +225,15 @@ public sealed class ConfigurationWorkspace
     public ConfigurationChangeSet PrepareChangeSet() =>
         settingsSession.BuildChangeSet();
 
-    public SyncTopologyTomlLoadResult CreateSyncTopologyEditSession(out SyncTopologyEditSession? session) =>
-        SyncTopologyEditSession.Load(baseline, out session);
+    public SyncTopologyTomlLoadResult CreateSyncTopologyEditSession(out SyncTopologyEditSession? session)
+    {
+        if (!configurationCatalogQualified)
+        {
+            session = null;
+            return new(false, null, [], false);
+        }
+        return SyncTopologyEditSession.Load(baseline, out session);
+    }
 
     public async Task<SyncTopologyPersistenceCommitResult> CommitSyncAsync(
         SyncTopologyEditSession session,
@@ -231,6 +241,11 @@ public sealed class ConfigurationWorkspace
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (!configurationCatalogQualified)
+        {
+            return new(AtomicTomlWriteState.Invalid,
+                Error: "Data Sync is unavailable without an exact reviewed configuration catalog.");
+        }
         if (!PathsEqual(session.DocumentPath, baseline.Path))
         {
             session.MarkStale();

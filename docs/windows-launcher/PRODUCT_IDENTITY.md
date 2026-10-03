@@ -52,6 +52,16 @@ publisher verification, rollback paths, and process detection all use the
 canonical identity from the first public build, so there is no speculative
 migration path to maintain or test.
 
+## Shared profile data boundary
+
+`%LOCALAPPDATA%\STFC Mod Bridge` remains Bridge's private state root. The accepted
+shared account-profile root is `%LOCALAPPDATA%\STFC Profiles`, owned by the
+[STFC Profiles catalog contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md). Bridge and the CLI consume
+that catalog; Bridge's UI selection stays private. Neutral physical catalog and
+acquired-lock checks are implemented. Windows 10 fallback and Windows 11 scoped
+exclusion behavior still require actual clean-host packaged evidence; source
+and ordinary-desktop tests do not qualify that package boundary.
+
 ## Repository coordinate
 
 `Guffawaffle/stfc-mod-bridge` is the canonical repository, self-update

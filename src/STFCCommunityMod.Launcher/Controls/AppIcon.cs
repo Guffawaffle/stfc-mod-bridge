@@ -26,6 +26,16 @@ public enum AppIconKind
     Save,
     Checkmark,
     ChevronDown,
+    Profiles,
+    GameInstallation,
+    Archive,
+    Diagnostics,
+    Launch,
+    Configure,
+    ShuttleBay,
+    Engineering,
+    Information,
+    Brand,
 }
 
 public sealed class AppIcon : SymbolIcon
@@ -104,6 +114,16 @@ public sealed class AppIcon : SymbolIcon
             AppIconKind.Save => Symbol.Save,
             AppIconKind.Checkmark => Symbol.Checkmark,
             AppIconKind.ChevronDown => Symbol.ChevronDown,
+            AppIconKind.Profiles => Symbol.People,
+            AppIconKind.GameInstallation => Symbol.FolderOpen,
+            AppIconKind.Archive => Symbol.Archive,
+            AppIconKind.Diagnostics => Symbol.Pulse,
+            AppIconKind.Launch => Symbol.Play,
+            AppIconKind.Configure => Symbol.Options,
+            AppIconKind.ShuttleBay => Symbol.Grid,
+            AppIconKind.Engineering => Symbol.PanelLeft,
+            AppIconKind.Information => Symbol.Info,
+            AppIconKind.Brand => Symbol.Planet,
             _ => Symbol.Settings,
         };
     }

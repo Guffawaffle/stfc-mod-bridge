@@ -53,6 +53,14 @@ public sealed record LauncherProviderModBinding(
         {
             reason = $"Provider '{provider.Id}' channel '{channel.Id}' has no launcher-reviewed release certification.";
         }
+        if (string.IsNullOrWhiteSpace(reason)
+            && provider.ArtifactPolicy.TrustKind == LauncherProviderArtifactTrustKind.GitHubRepositoryRelease
+            && (provider.Id != "netniv" || channel.Id != "stable"
+                || provider.RuntimeDistributionId != "netniv.stfc-community-mod"
+                || !string.Equals(channel.Repository, NetnivRepositoryReleaseService.Repository, StringComparison.OrdinalIgnoreCase)
+                || channel.ArtifactAssetName != NetnivRepositoryReleaseService.AssetName
+                || channel.DiscoveryKind != LauncherProviderReleaseDiscoveryKind.GitHubReleaseAsset))
+            reason = "The repository-release policy is not bound to the configured NetniV stable authority.";
         var isAvailable = string.IsNullOrWhiteSpace(reason);
         return new(
             provider.Id,

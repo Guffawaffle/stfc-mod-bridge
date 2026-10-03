@@ -140,7 +140,8 @@ public sealed class LauncherDiagnosticService(
     string launcherVersion,
     TimeProvider? timeProvider = null,
     LauncherConfigurationDiagnosisEvidence? configurationEvidence = null,
-    string? runtimeDistributionId = null)
+    string? runtimeDistributionId = null,
+    Func<string?, LauncherConfigurationDiagnosisEvidence>? configurationEvidenceProvider = null)
 {
     private const int MaximumConfigBytes = 4 * 1024 * 1024;
     private const int MaximumLogTailBytes = 64 * 1024;
@@ -211,7 +212,7 @@ public sealed class LauncherDiagnosticService(
         AddConfigurationFact(
             health,
             validGameDirectory,
-            configurationEvidence,
+            configurationEvidenceProvider?.Invoke(validGameDirectory) ?? configurationEvidence,
             runtimeDistributionId);
         if (battleFeatures is not null)
         {
@@ -332,7 +333,7 @@ public sealed class LauncherDiagnosticService(
                 });
                 return;
             }
-            if (gameDirectory is null || !PathEquals(state.GameDirectory, gameDirectory))
+            if (gameDirectory is null || !GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory))
             {
                 health.Add(Attention(
                     "Managed artifact verification",

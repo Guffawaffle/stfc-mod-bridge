@@ -95,7 +95,9 @@ public sealed class LauncherConfigurationDiagnosisEvidence
                 nameof(catalog));
         }
 
-        return new(providerId, channelId, LauncherProviderCapabilityStatus.Supported, catalog);
+        return catalog.IsQualified
+            ? new(providerId, channelId, LauncherProviderCapabilityStatus.Supported, catalog)
+            : Unavailable(providerId, channelId, LauncherProviderCapabilityStatus.Unknown);
     }
 
     public static LauncherConfigurationDiagnosisEvidence Unavailable(
@@ -201,8 +203,9 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         HashSet<string> recognizedAssignments,
         List<ConfigurationDiagnosisFinding> findings)
     {
+        var settingSegments = setting.Path.Split('.');
         var canonical = overrides.Values
-            .Where(item => MatchesPath(setting.Path, item.CanonicalPath))
+            .Where(item => MatchesPath(settingSegments, item.PathSegments))
             .ToArray();
         foreach (var configured in canonical)
         {
@@ -375,8 +378,11 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         HashSet<string> recognizedAssignments,
         List<ConfigurationDiagnosisFinding> findings)
     {
-        foreach (var configured in read.Overrides!.Values.Where(
-                     item => !recognizedAssignments.Contains(item.CanonicalPath)))
+        var recognizedParents = read.Overrides!.Values.Where(item => recognizedAssignments.Contains(item.CanonicalPath))
+            .Select(item => item.PathSegments).ToArray();
+        foreach (var configured in read.Overrides.Values.Where(
+                     item => !recognizedAssignments.Contains(item.CanonicalPath)
+                         && !recognizedParents.Any(parent => LauncherTomlPath.HasPrefix(item.PathSegments, parent))))
         {
             findings.Add(
                 new(
@@ -391,9 +397,10 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
 
         foreach (var table in read.Tables ?? [])
         {
-            if (catalog.Settings.Any(
-                    setting => TableCanContain(table.CanonicalPath, setting.Path)
-                        || setting.Aliases.Any(alias => TableCanContain(table.CanonicalPath, alias.Path))))
+            if (recognizedParents.Any(parent => LauncherTomlPath.HasPrefix(table.PathSegments, parent))
+                || catalog.Settings.Any(
+                    setting => TableCanContain(table.PathSegments, setting.Path)
+                        || setting.Aliases.Any(alias => TableCanContain(table.PathSegments, alias.Path))))
             {
                 continue;
             }
@@ -465,19 +472,15 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
 
     private static ConfigurationDiagnosisFinding FromDocumentError(SparseTomlError? error)
     {
-        var duplicateTable = error?.Code == SparseTomlErrorCode.UnsupportedDocument
-            && error.Message.StartsWith("Table '[", StringComparison.Ordinal)
-            && error.Message.EndsWith("is declared more than once.", StringComparison.Ordinal);
         var code = error?.Code switch
         {
             SparseTomlErrorCode.InvalidUtf8 => "CONFIG_DOCUMENT_INVALID_UTF8",
-            SparseTomlErrorCode.DuplicateTarget => "CONFIG_DOCUMENT_DUPLICATE_ASSIGNMENT",
-            SparseTomlErrorCode.UnsupportedDocument when duplicateTable =>
-                "CONFIG_DOCUMENT_DUPLICATE_TABLE",
-            SparseTomlErrorCode.UnsupportedDocument => "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED",
+            SparseTomlErrorCode.DuplicateTarget => "CONFIG_DOCUMENT_DUPLICATE_DEFINITION",
+            SparseTomlErrorCode.InvalidDocument => "CONFIG_DOCUMENT_MALFORMED",
+            SparseTomlErrorCode.EditorUnavailable => "CONFIG_EDITOR_UNAVAILABLE",
             _ => "CONFIG_DOCUMENT_UNREADABLE",
         };
-        var unsupported = error?.Code == SparseTomlErrorCode.UnsupportedDocument && !duplicateTable;
+        var unsupported = error?.Code == SparseTomlErrorCode.EditorUnavailable;
         return new(
             code,
             unsupported ? ConfigurationDiagnosisSeverity.Unknown : ConfigurationDiagnosisSeverity.Error,
@@ -485,7 +488,7 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
                 ? ConfigurationDiagnosisConfidence.Unsupported
                 : ConfigurationDiagnosisConfidence.Established,
             unsupported
-                ? "The conservative parser cannot establish configuration health for this TOML syntax."
+                ? "The verified TOML editor is unavailable. Rebuild or repair Mod Bridge."
                 : "The configuration document cannot be diagnosed safely.",
             null,
             error?.LineNumber,
@@ -517,22 +520,19 @@ public sealed class ConfigurationHealthAnalyzer(TimeProvider? timeProvider = nul
         string canonicalPath) =>
         $"configuration.alias.{operation}:{sourcePath}->{canonicalPath}";
 
-    private static bool MatchesPath(string pattern, string path)
+    private static bool MatchesPath(IReadOnlyList<string> patternSegments, IReadOnlyList<string> pathSegments)
     {
-        var patternSegments = pattern.Split('.');
-        var pathSegments = path.Split('.');
-        return patternSegments.Length == pathSegments.Length
+        return patternSegments.Count == pathSegments.Count
             && patternSegments.Zip(
                     pathSegments,
                     (expected, actual) => expected == "*" || expected == actual)
                 .All(matches => matches);
     }
 
-    private static bool TableCanContain(string tablePath, string settingPath)
+    private static bool TableCanContain(IReadOnlyList<string> tableSegments, string settingPath)
     {
-        var tableSegments = tablePath.Split('.');
         var settingSegments = settingPath.Split('.');
-        if (tableSegments.Length >= settingSegments.Length)
+        if (tableSegments.Count >= settingSegments.Length)
         {
             return false;
         }

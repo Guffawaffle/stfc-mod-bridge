@@ -16,6 +16,20 @@ public sealed class SystemGameProcessInspectorTests
     }
 
     [TestMethod]
+    public void ExtendedPathAliasOfRunningInstallBlocksTarget()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        using var target = new TemporaryDirectory();
+        var inspector = CreateInspector(Path.Combine(target.Path, "prime.exe"));
+        var extendedAlias = @"\\?\" + target.Path;
+
+        Assert.AreEqual(GameProcessInspectionState.RunningTarget, inspector.Inspect(extendedAlias));
+    }
+
+    [TestMethod]
     public void DifferentInstallProcessDoesNotBlockTarget()
     {
         using var target = new TemporaryDirectory();

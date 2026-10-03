@@ -1132,6 +1132,8 @@ public sealed partial class LiveProviderInstallIntegrationTests
                     File.OpenRead(Path.Combine(root, "providers", "guffawaffle", "provider-pack.v1.json")),
                 "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json" =>
                     File.OpenRead(Path.Combine(root, "providers", "netniv", "provider-pack.v1.json")),
+                "STFCCommunityMod.Launcher.ProviderPacks.Profiles.v1.json" =>
+                    File.OpenRead(Path.Combine(root, "providers", "profiles", "provider-pack.v1.json")),
                 _ => null,
             });
     }

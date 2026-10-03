@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 
 namespace STFCCommunityMod.Launcher.Core;
@@ -69,60 +68,38 @@ public static class LauncherNotificationPolicyParser
             return Invalid(defaultPolicy, "The notification policy must be false, true, or an inline table.");
         }
 
-        var fields = SplitFields(trimmed[1..^1]);
-        if (fields is null)
-        {
+        var read = TomlNativeRuntime.Request(new("read", "policy = " + trimmed + "\n"));
+        if (!read.Ok || read.Overrides is null || read.Tables is null
+            || read.Tables.Any(item => item.Path.Length != 1 || item.Path[0] != "policy")
+            || !read.Overrides.Any(item => item.Path.Length == 1 && item.Path[0] == "policy")
+            || read.Overrides.Any(item => item.Path.Length == 0 || item.Path[0] != "policy"))
             return Invalid(defaultPolicy, "The notification policy inline table is malformed.");
-        }
-
         var system = defaultPolicy.System;
         var audio = defaultPolicy.Audio;
         var sound = defaultPolicy.Sound;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in fields)
+        foreach (var field in read.Overrides.Where(item => item.Path.Length > 1))
         {
-            var equals = FindEquals(field);
-            if (equals <= 0)
-            {
-                return Invalid(defaultPolicy, "A notification policy field is missing '='.");
-            }
-
-            var key = field[..equals].Trim();
-            var value = field[(equals + 1)..].Trim();
-            if (!seen.Add(key))
-            {
-                return Invalid(defaultPolicy, $"Notification policy field '{key}' is assigned more than once.");
-            }
-
-            switch (key)
+            if (field.Path.Length != 2)
+                return Invalid(defaultPolicy, "Notification policy fields cannot contain nested values.");
+            switch (field.Path[1])
             {
                 case "system":
-                    if (!TryParseBoolean(value, out system))
-                    {
+                    if (!TryParseBoolean(field.SemanticValue, out system))
                         return Invalid(defaultPolicy, "Notification policy field 'system' must be true or false.");
-                    }
-
                     break;
                 case "audio":
-                    if (!TryParseBoolean(value, out audio))
-                    {
+                    if (!TryParseBoolean(field.SemanticValue, out audio))
                         return Invalid(defaultPolicy, "Notification policy field 'audio' must be true or false.");
-                    }
-
                     break;
                 case "sound":
-                    if (!TryParseString(value, out sound)
+                    if (!LauncherTomlValue.TryReadString(field.Value, out sound)
                         || !ReadAllowedSounds(setting).Contains(sound, StringComparer.Ordinal))
-                    {
-                        return Invalid(defaultPolicy, $"Notification policy sound '{sound}' is not supported.");
-                    }
-
+                        return Invalid(defaultPolicy, "The notification policy sound is not supported.");
                     break;
                 default:
-                    return Invalid(defaultPolicy, $"Unknown notification policy field '{key}'.");
+                    return Invalid(defaultPolicy, "The notification policy contains an unknown field.");
             }
         }
-
         return new(true, new(system, audio, sound));
     }
 
@@ -224,92 +201,6 @@ public static class LauncherNotificationPolicyParser
             ? property.GetString() ?? fallback
             : fallback;
 
-    private static List<string>? SplitFields(string value)
-    {
-        var fields = new List<string>();
-        var start = 0;
-        var quote = '\0';
-        var escaped = false;
-        for (var index = 0; index < value.Length; index++)
-        {
-            var character = value[index];
-            if (quote != '\0')
-            {
-                if (quote == '"' && !escaped && character == '\\')
-                {
-                    escaped = true;
-                    continue;
-                }
-
-                if (!escaped && character == quote)
-                {
-                    quote = '\0';
-                }
-
-                escaped = false;
-                continue;
-            }
-
-            if (character is '"' or '\'')
-            {
-                quote = character;
-            }
-            else if (character == ',')
-            {
-                fields.Add(value[start..index].Trim());
-                start = index + 1;
-            }
-        }
-
-        if (quote != '\0')
-        {
-            return null;
-        }
-
-        var final = value[start..].Trim();
-        if (final.Length > 0)
-        {
-            fields.Add(final);
-        }
-
-        return fields.Any(string.IsNullOrWhiteSpace) ? null : fields;
-    }
-
-    private static int FindEquals(string value)
-    {
-        var quote = '\0';
-        var escaped = false;
-        for (var index = 0; index < value.Length; index++)
-        {
-            var character = value[index];
-            if (quote != '\0')
-            {
-                if (quote == '"' && !escaped && character == '\\')
-                {
-                    escaped = true;
-                    continue;
-                }
-
-                if (!escaped && character == quote)
-                {
-                    quote = '\0';
-                }
-
-                escaped = false;
-            }
-            else if (character is '"' or '\'')
-            {
-                quote = character;
-            }
-            else if (character == '=')
-            {
-                return index;
-            }
-        }
-
-        return -1;
-    }
-
     private static bool TryParseBoolean(string value, out bool parsed)
     {
         if (value == "true")
@@ -326,36 +217,6 @@ public static class LauncherNotificationPolicyParser
 
         parsed = false;
         return false;
-    }
-
-    private static bool TryParseString(string value, out string parsed)
-    {
-        parsed = string.Empty;
-        if (value.Length < 2)
-        {
-            return false;
-        }
-
-        if (value[0] == '\'' && value[^1] == '\'')
-        {
-            parsed = value[1..^1];
-            return !parsed.Contains('\'');
-        }
-
-        if (value[0] != '"' || value[^1] != '"')
-        {
-            return false;
-        }
-
-        try
-        {
-            parsed = JsonSerializer.Deserialize<string>(value) ?? string.Empty;
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 
     private static LauncherNotificationPolicyParseResult Invalid(

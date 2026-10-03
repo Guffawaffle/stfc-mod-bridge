@@ -6,12 +6,27 @@ namespace STFCCommunityMod.Launcher.Core.Tests;
 public sealed class LauncherDistributionProviderTests
 {
     [TestMethod]
+    public void ProfilesOnlyOfferingHasNoCommunitySettingsOrUnqualifiedDownload()
+    {
+        var catalog = LoadFixtureCatalog();
+        var profiles = catalog.GetProvider("profiles");
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported, profiles.ConfigurationSchema.Status);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported,
+            profiles.GetCapabilityStatus(LauncherProviderCapabilityIds.CommunityFeatures));
+        Assert.IsFalse(profiles.CanUseReleaseDiscoveryFor(profiles.DefaultReleaseChannel));
+        Assert.IsFalse(LauncherProviderModBinding.Resolve(profiles, profiles.DefaultReleaseChannel).IsAvailable);
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Unsupported,
+            catalog.GetProvider("netniv").GetCapabilityStatus(LauncherProviderCapabilityIds.ProfileIsolation));
+        Assert.AreEqual(LauncherProviderCapabilityStatus.Supported,
+            catalog.GetProvider("guffawaffle").GetCapabilityStatus(LauncherProviderCapabilityIds.ProfileIsolation));
+    }
+    [TestMethod]
     public void NeutralFixturesResolveBothProvidersFromStableIds()
     {
         var catalog = LoadFixtureCatalog();
 
         Assert.AreEqual("netniv", catalog.DefaultProviderId);
-        Assert.AreEqual(2, catalog.Providers.Count);
+        Assert.AreEqual(3, catalog.Providers.Count);
         var guffawaffle = catalog.GetProvider("guffawaffle");
         var netniv = catalog.GetProvider("netniv");
         Assert.AreEqual("Guffawaffle/stfc-mod", guffawaffle.DefaultReleaseChannel.Repository);
@@ -84,7 +99,7 @@ public sealed class LauncherDistributionProviderTests
     }
 
     [TestMethod]
-    public void NetnivBindingRequiresMatchingLauncherReviewedCertification()
+    public void NetnivRepositoryPolicyRetainsHistoricalCertificationWithoutRequiringIt()
     {
         var providerCatalog = LoadFixtureCatalog();
         var netniv = providerCatalog.GetProvider("netniv");
@@ -99,9 +114,9 @@ public sealed class LauncherDistributionProviderTests
 
         Assert.IsTrue(available.IsAvailable);
         Assert.IsNotNull(available.ReviewedCertification);
-        Assert.AreEqual(LauncherProviderArtifactTrustKind.ReviewedExactHash, available.TrustKind);
-        Assert.IsFalse(unavailable.IsAvailable);
-        StringAssert.Contains(unavailable.UnavailableReason, "no launcher-reviewed release certification");
+        Assert.AreEqual(LauncherProviderArtifactTrustKind.GitHubRepositoryRelease, available.TrustKind);
+        Assert.IsTrue(unavailable.IsAvailable);
+        Assert.IsNull(unavailable.ReviewedCertification);
     }
 
     [TestMethod]
@@ -167,7 +182,7 @@ public sealed class LauncherDistributionProviderTests
     {
         var contents = File.ReadAllText(FixturePath("netniv-provider-pack.v1.json"));
         using var stream = JsonStream(contents.Replace(
-            "\"trustKind\": \"reviewed-exact-hash\"",
+            "\"trustKind\": \"github-repository-release\"",
             "\"trustKind\": null",
             StringComparison.Ordinal));
 
@@ -213,6 +228,8 @@ public sealed class LauncherDistributionProviderTests
                     File.OpenRead(FixturePath("guffawaffle-provider-pack.v1.json")),
                 "STFCCommunityMod.Launcher.ProviderPacks.Netniv.v1.json" =>
                     File.OpenRead(FixturePath("netniv-provider-pack.v1.json")),
+                "STFCCommunityMod.Launcher.ProviderPacks.Profiles.v1.json" =>
+                    File.OpenRead(FixturePath("profiles-provider-pack.v1.json")),
                 _ => null,
             });
     }

@@ -26,26 +26,26 @@ migration, and write uses one Windows case-insensitive comparison routine and
 rejects duplicate canonical paths.
 
 The registry persists durable facts only: exact managed artifact identity,
-provider/channel/runtime attribution, installation time, the optional signed
-release ProductVersion verified during installation, optional reviewed
-runtime-manifest identity, compact historical release floors, and any
-adopted-backup receipts. Release floors are independent per stable
-`{ providerId, releaseChannelId, runtimeDistributionId }` tuple and survive a
-managed provider round trip; channels are not ordered against one another.
-The active tuple uses its signed ProductVersion plus managed size/SHA-256,
-while historical tuple floors retain the same exact tag-and-digest identity in
-separate entries. A final release outranks any prerelease of the same semantic
-core. An equal ordering value is accepted only when the canonical signed tag
-and artifact digest also match; a same-tag rebuild or incomparable same-core
-release families require an explicit recovery or replacement decision.
-Preparation and the leased deployment
-transaction both enforce the floor, so a stale prepared candidate or mutable
-repository metadata cannot replay an older publisher-signed DLL. Exact bundled
-certification may project the ProductVersion of a matching legacy receipt in
-memory without rewriting it during a passive read. These floors do not
-authorize an unsigned runtime manifest or silently permit a downgrade. The
-registry does not persist a health status. Bridge derives status from the
-selected folder's live files:
+provider/channel/runtime attribution, installation time, release-order identity,
+optional reviewed runtime-manifest identity, compact historical release floors,
+and adopted-backup receipts. Guffawaffle release order comes from the verified
+signed ProductVersion; NetniV repository releases retain the exact observed
+tag and release/asset/archive/DLL observation. These are different evidence
+sources and must not be presented as equivalent signatures. Release floors
+are independent per stable `{ providerId, releaseChannelId, runtimeDistributionId }`
+tuple and survive a managed provider round trip; channels are not ordered
+against one another. A final release outranks any prerelease of the same
+semantic core. Equal release order requires the same retained tag and DLL
+digest; a same-tag rebuild or incomparable same-core release families require
+an explicit recovery or replacement decision.
+
+Preparation and the leased deployment transaction both enforce the floor, so
+a stale prepared candidate or mutable repository metadata cannot replay an
+older accepted release. Exact bundled certification may project release-order
+identity for a matching legacy receipt in memory without rewriting it during a
+passive read. These floors do not authorize an unsigned runtime manifest or
+silently permit a downgrade. The registry does not persist a health status.
+Bridge derives status from the selected folder's live files:
 
 - no receipt and no DLL: not installed;
 - no receipt with a DLL: manual installation;
@@ -184,8 +184,8 @@ The axes do not collapse into one `current source` value. In particular:
 - an unmarked, unknown-hash, or developer DLL is an external/custom artifact and remains runnable after an explicit
   per-attempt launch warning; approval does not authenticate, adopt, or mutate it;
 - if a formerly managed DLL changes, Mod Bridge suspends its managed-integrity claim and must not overwrite or delete
-  the new bytes automatically. A future surface may let the player explicitly keep it as custom or replace it through
-  a confirmed repair/switch transaction;
+  the new bytes automatically. The confirmed switch transaction can explicitly replace those bytes while preserving
+  them as the new uninstall restore backup;
 - passive Home, Settings, Diagnostics, startup, and source selection perform no release-network discovery.
 
 Artifact download is naturally a network operation after the player confirms an install/update/switch/repair prepared
@@ -217,7 +217,7 @@ age limit.
 | **Select source** | Initial/default/invalid preference, or any installation whose preferred source should change. Target stable IDs must resolve in the catalog. No release observation is required. | Confirm the target provider/channel and capability losses. No TOML backup: this action changes only launcher preference. Staged Settings/Data Sync edits must be saved or discarded first. | Allowed while the game runs because no game file changes. The running game is unaffected. Provider-owned catalogs and services are recomposed in-process after commit. | Atomically replace only preference state. On failure, retain/restore the previous bytes. Installed ownership/provenance and TOML remain unchanged. The existing UI currently calls this a switch; that wording is not accepted. |
 | **Install** | No DLL, valid writable game target, resolved preferred source, and a fresh prepared release observation. | Confirm exact game target, provider/channel, version, hash evidence, and effect. If an active TOML already exists, offer a protected backup; no backup is needed when no TOML exists. Install never rewrites TOML. | Block while STFC runs; launch the game after commit to load the new DLL. Provider preference/catalog changes recompose in-process. | Existing verified deployment journal. Failure restores no-artifact state. Result is managed state attributed to the artifact source; preference is not rewritten as a side effect. |
 | **Update** | Verified managed DLL, same provider/channel/runtime as the fresh observation, and a newer explicitly prepared release. Downgrades require separate explicit confirmation. | Confirm from/to versions and artifact evidence. Protected TOML backup is optional for an ordinary same-lineage update and mandatory if catalog migration evidence says configuration compatibility is unknown or lossy. | Block while STFC runs; after commit the next game launch loads the update. | Replace through the deployment journal and preserve managed installed state on failure. An external/custom DLL is never routed through Update. |
-| **Switch installed mod** | Existing managed or external DLL and a fresh target-provider observation. Provider/runtime differs, or the player explicitly replaces custom bytes with the preferred provider. Compatibility preview and exact target artifact must be available. | Typed target-ID confirmation. Protected TOML backup is mandatory when the active TOML exists; an explicit no-file record satisfies the gate when it does not. Existing DLL bytes are also preserved by deployment. TOML is not migrated or normalized automatically. | Block while STFC runs. Target catalogs/actions are recomposed in the same Bridge process after commit; the next game launch loads the target DLL. | One durable source-transition journal coordinates config backup, artifact deployment, installed attribution, and preference commit. Commit preference last. Any failure compensates to the prior artifact, installed record, and preference; the protected config backup remains. |
+| **Switch installed mod** | Existing managed or external DLL and a fresh target-provider observation. Provider/runtime differs, or the player explicitly replaces custom bytes with the preferred provider. Compatibility preview and exact target artifact must be available. | Typed target-ID confirmation. Protected TOML backup is mandatory when the active TOML exists; an explicit no-file record satisfies the gate when it does not. Existing DLL bytes are also preserved by deployment. TOML is not migrated or normalized automatically. | Block while STFC runs. Target catalogs/actions are recomposed in the same Bridge process after commit; the next game launch loads the target DLL. | One durable source-transition journal coordinates config backup, artifact deployment, installed attribution, and preference commit. Fresh compatibility checks and the TOML/preference commit precede target-receipt publication; publication precedes backup promotion and final completion. Any failure compensates to the prior artifact, installed record, and preference; the protected config backup remains. |
 | **Repair** | A managed record exists but the target is missing/changed, and the exact same provider/channel/runtime/version artifact remains independently verifiable. Repair cannot mean `install latest`. | Confirm that current bytes will be replaced and preserve changed bytes for rollback. TOML backup is not required because exact managed lineage is restored and TOML is untouched. If exact bytes are unavailable, fail closed and offer Check for updates as a separate update/switch decision. | Block while STFC runs; next game launch loads repaired bytes. | Existing repair journal. Restore the previous live bytes and installed state on failure. Result retains the original managed attribution. |
 | **Remove** | Verified managed DLL matching installed state. A changed/custom DLL is not deleted. | Confirm exact target and whether an originally adopted DLL will be restored. TOML is always preserved. A protected TOML backup is mandatory if removal restores an adopted artifact with different or unknown lineage; otherwise it is optional. | Block while STFC runs; next game launch reflects removal/restoration. No source-preference change or launcher restart is implied. | Existing uninstall journal removes a fresh managed DLL or restores the original adopted bytes. Failure restores the managed DLL/state. Result is no artifact or external/custom; preferred source remains. |
 | **Stop managing** | The selected canonical installation has an active ownership receipt and no incomplete deployment/provider-switch transaction exists. Changed or missing live bytes are allowed. | Confirm the exact canonical target. Staged Settings/Data Sync edits must be saved or discarded first. | Allowed while STFC runs because no game file or provider state changes. | Atomically remove only the selected active receipt. Never touch DLL, runtime manifest, TOML, logs, preference, or unrelated receipts. Preserve adopted backups under a non-owning recovery receipt. |
@@ -347,6 +347,48 @@ evidence/recovery material. A selection made while no DLL is installed uses the
 smaller preference/TOML transaction, performs no release discovery or download,
 and does not create the outer artifact journal.
 
+For a changed managed installation, switch review retains the complete prior
+ownership receipt and the current DLL's size, SHA-256, attributes, and last-write
+time, plus the optional current runtime-manifest identity. The locked deployment
+rechecks all of that evidence before downloading the target. A stale receipt,
+changed file or metadata, or changed runtime-manifest presence requires another
+review. Preserving those bytes does not authenticate them or transfer their
+provenance to the preferred source. Missing backup identities in an older
+receipt are resolved in memory after that check. The journal retains both
+resolved recovery evidence and the unchanged reviewed receipt; rollback restores
+the original receipt. Rejected reviews do not migrate the registry.
+
+The changed DLL is treated as a new explicit adoption, rather than as an ordinary
+managed update. Its exact current bytes become the durable backup referenced by
+the new active receipt and the restore target for later uninstall. If the old
+receipt already referenced an adopted DLL or runtime-manifest backup, the same
+atomic registry write preserves that older backup under a non-owning detachment
+receipt identified by the switch transaction. Failure or interrupted rollback
+restores the prior receipt and removes only that transaction's detachment;
+other installations and detached backups remain intact. Recovery must work
+both before and after the current custom backup moves to durable state.
+
+The coordinated deployment keeps the source ownership receipt active through
+the final fresh compatibility analysis and TOML/preference commit. It publishes
+the target receipt and any older-backup detachment immediately afterward, before
+backup promotion, `CleanupPending` validation and the outer `Completed` marker.
+This ordering prevents the transaction's own target receipt from invalidating its
+reviewed source analysis, while preserving rejection of independent catalog drift
+after preparation or during acquisition. A process can stop at
+`ConfigurationCommitted` with target files/preferences but the source registry;
+the incomplete exact inner journal then requires rollback of both sides. The
+real termination harness covers that interval and the completed target lineage.
+If registry publication or its compensating write is blocked, the outer journal
+remains recovery-required even after TOML/preference compensation succeeds. A
+canceled operation whose compensation is incomplete reports recovery-required;
+it cannot leave a terminal outer rollback marker over an incomplete inner journal.
+If the outer journal cannot advance from `Prepared`, the exact matching inner
+participant can still compensate. Recovery accepts its `Planned`, `RollingBack`,
+`RolledBack` or `Failed` state only after transaction, artifact, installation and
+participant attribution checks. Forward deployment progress remains rejected
+under an outer `Prepared` journal; legacy participant upgrade remains limited
+to its original `Planned` boundary.
+
 Implementation ownership is intentionally bounded:
 
 | Owner | Follow-up responsibility |
@@ -453,14 +495,19 @@ runtime snapshots, and unrelated game files are untouched. If the managed DLL
 changed outside Mod Bridge, uninstall refuses to guess ownership or delete
 it.
 
-Managed updates retain the original adopted artifact identity rather than
-turning the immediately previous managed release into the uninstall target.
+Ordinary managed updates retain the original adopted artifact identity rather
+than turning the immediately previous managed release into the uninstall
+target. A reviewed switch that explicitly replaces a changed managed DLL is a
+new adoption: its current custom bytes become the new uninstall restore target,
+and the earlier adoption backup is retained separately as described above.
+
 Explicit repair may replace a missing or changed Mod Bridge-managed DLL only
 after discovery reproduces the receipt's exact provider, channel, runtime,
-version, size, SHA-256, and optional runtime-manifest identity. Repair never
-silently substitutes `latest`; if the recorded release is unavailable, it
-fails closed. The changed bytes remain available for rollback until repair
-commits.
+version, size, SHA-256, and optional runtime-manifest identity. NetniV repair
+selects the recorded tag and must also reproduce the retained repository-release
+observation when one exists. Repair never silently substitutes `latest`; if
+the recorded release cannot satisfy the current provider policy, repair fails
+closed. The changed bytes remain available for rollback until repair commits.
 
 **Stop managing** is distinct from uninstall. It atomically removes only the
 selected installation's active ownership receipt and never changes a game

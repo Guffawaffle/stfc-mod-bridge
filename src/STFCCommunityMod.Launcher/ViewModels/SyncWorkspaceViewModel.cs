@@ -43,6 +43,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     private readonly Action? reloadConfiguration;
     private readonly Func<bool> configurationSelectionMatches;
     private readonly Func<bool> siblingSaveInProgress;
+    private readonly Func<bool> configurationCatalogQualified;
     private readonly SettingsActionCommand discardCommand;
     private readonly AsyncSettingsActionCommand saveCommand;
     private readonly SettingsActionCommand saveRecoveryCommand;
@@ -69,7 +70,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         Action? navigateToSiblingSettings = null,
         Action? reloadConfiguration = null,
         Func<bool>? configurationSelectionMatches = null,
-        Func<bool>? siblingSaveInProgress = null)
+        Func<bool>? siblingSaveInProgress = null,
+        Func<bool>? configurationCatalogQualified = null)
     {
         this.configurationPathProvider =
             configurationPathProvider ?? throw new ArgumentNullException(nameof(configurationPathProvider));
@@ -80,6 +82,7 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         this.reloadConfiguration = reloadConfiguration;
         this.configurationSelectionMatches = configurationSelectionMatches ?? (() => true);
         this.siblingSaveInProgress = siblingSaveInProgress ?? (() => false);
+        this.configurationCatalogQualified = configurationCatalogQualified ?? (() => true);
         discardCommand = new(Discard, () => CanEdit && HasPendingChanges);
         saveCommand = new(SaveAsync, () => CanSave);
         saveRecoveryCommand = new(
@@ -120,7 +123,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
     public bool IsSaveInProgress => activeSave is not null;
 
     public bool CanEdit =>
-        IsConfigurationReady
+        configurationCatalogQualified()
+        && IsConfigurationReady
         && !IsSaveInProgress
         && !siblingSaveInProgress()
         && !IsStale
@@ -239,8 +243,8 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
                 WorkspaceSaveStateKind.Blocked,
                 WorkspaceSaveBlockerKind.SelectedConfigurationChanged,
                 includesSettings
-                    ? "You selected a different game installation while Settings and Data Sync changes were staged. Save is paused so they are not applied to the wrong installation."
-                    : "You selected a different game installation while Data Sync changes were staged. Save is paused so they are not applied to the wrong installation.",
+                    ? "The selected configuration or reviewed runtime changed while Settings and Data Sync changes were staged. Discard the drafts to reload the current Settings."
+                    : "The selected configuration or reviewed runtime changed while Data Sync changes were staged. Discard the drafts to reload the current Settings.",
                 WorkspaceSaveRecoveryKind.DiscardAndReload,
                 includesSettings ? "Discard all changes and reload" : "Discard my changes and reload");
         }
@@ -378,6 +382,12 @@ public sealed class SyncWorkspaceViewModel : INotifyPropertyChanged
         }
         migrateLegacyRoot = false;
         workspace = null;
+        if (!configurationCatalogQualified())
+        {
+            OperationStatus = "Data Sync is unavailable because this installed release has no exact reviewed configuration catalog. Raw TOML remains available.";
+            Rebuild();
+            return;
+        }
         if (configurationWorkspaceProvider() is { } configurationWorkspace)
         {
             var sharedLoad = configurationWorkspace.CreateSyncTopologyEditSession(out workspace);

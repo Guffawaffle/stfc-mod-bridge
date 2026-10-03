@@ -225,7 +225,7 @@ public sealed class ModInstallationInspector(
 
             var artifactLength = ReadValidArtifactLength(artifactPath);
             var actualSha256 = fileSystem.ComputeSha256(artifactPath);
-            var verified = PathsEqual(installedState.GameDirectory, normalizedGameDirectory)
+            var verified = GameDirectoryIdentity.SameLocation(installedState.GameDirectory, normalizedGameDirectory)
                 && string.Equals(
                     actualSha256,
                     installedState.Sha256,

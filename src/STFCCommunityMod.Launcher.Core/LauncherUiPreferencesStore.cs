@@ -10,6 +10,12 @@ public enum LauncherColorMode
     Dark,
 }
 
+public enum LauncherWorkspaceMode
+{
+    ShuttleBay,
+    Engineering,
+}
+
 public enum LauncherPlayerFeaturePreference
 {
     Unset,
@@ -31,7 +37,8 @@ public sealed record LauncherUiPreferences(
     LauncherColorMode ColorMode = LauncherColorMode.System,
     LauncherLaunchTarget LaunchTarget = LauncherLaunchTarget.ScopelyLauncher,
     bool ProviderSwitchReviewAcknowledged = false,
-    LauncherBattlePreferences? BattlePreferences = null)
+    LauncherBattlePreferences? BattlePreferences = null,
+    LauncherWorkspaceMode WorkspaceMode = LauncherWorkspaceMode.ShuttleBay)
 {
     public static LauncherUiPreferences Default { get; } =
         new(
@@ -65,7 +72,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
     ILauncherUiPreferencesStore,
     ILauncherBattlePreferencesCommitter
 {
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 6;
     private static readonly JsonSerializerOptions LenientSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -128,7 +135,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
                 return true;
             }
 
-            if (document.SchemaVersion is not (2 or 3 or 4 or CurrentSchemaVersion))
+            if (document.SchemaVersion is not (2 or 3 or 4 or 5 or CurrentSchemaVersion))
             {
                 preferences = LauncherUiPreferences.Default;
                 return false;
@@ -156,7 +163,7 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
                 }
                 launchTarget = LauncherLaunchTarget.ScopelyLauncher;
             }
-            if (document.SchemaVersion == CurrentSchemaVersion)
+            if (document.SchemaVersion is 5 or CurrentSchemaVersion)
             {
                 var battleValid = TryParseExact(
                     document.BattleCollectionPreference,
@@ -172,17 +179,29 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
                 if (!battleValid) battlePreference = LauncherPlayerFeaturePreference.Unset;
                 if (!fleetValid) fleetPreference = LauncherPlayerFeaturePreference.Unset;
             }
+            var workspaceMode = LauncherWorkspaceMode.ShuttleBay;
+            if (document.SchemaVersion == CurrentSchemaVersion
+                && !TryParseExact(document.WorkspaceMode, out workspaceMode))
+            {
+                if (requireCanonical)
+                {
+                    preferences = LauncherUiPreferences.Default;
+                    return false;
+                }
+                workspaceMode = LauncherWorkspaceMode.ShuttleBay;
+            }
             preferences = new(
                 document.SettingsSearchVisible,
                 colorMode,
                 launchTarget,
-                (document.SchemaVersion is 4 or CurrentSchemaVersion)
+                (document.SchemaVersion is 4 or 5 or CurrentSchemaVersion)
                 && document.ProviderSwitchReviewAcknowledged,
-                document.SchemaVersion == CurrentSchemaVersion
+                document.SchemaVersion is 5 or CurrentSchemaVersion
                     ? new(
                         battlePreference,
                         fleetPreference)
-                    : LauncherBattlePreferences.Default);
+                    : LauncherBattlePreferences.Default,
+                workspaceMode);
             return true;
         }
         catch (Exception exception) when (
@@ -199,6 +218,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
     public void Save(LauncherUiPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        if (!Enum.IsDefined(preferences.WorkspaceMode))
+            throw new ArgumentOutOfRangeException(nameof(preferences));
         RequireFeaturePreference(preferences.EffectiveBattlePreferences.BattleCollection);
         RequireFeaturePreference(preferences.EffectiveBattlePreferences.FleetCollection);
         lock (PathGates.GetOrAdd(preferencesPath, static _ => new()))
@@ -263,7 +284,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
             preferences.LaunchTarget.ToString(),
             preferences.ProviderSwitchReviewAcknowledged,
             preferences.EffectiveBattlePreferences.BattleCollection.ToString(),
-            preferences.EffectiveBattlePreferences.FleetCollection.ToString());
+            preferences.EffectiveBattlePreferences.FleetCollection.ToString(),
+            preferences.WorkspaceMode.ToString());
 
         try
         {
@@ -304,7 +326,8 @@ public sealed class JsonLauncherUiPreferencesStore(string stateDirectory) :
         string? LaunchTarget = null,
         bool ProviderSwitchReviewAcknowledged = false,
         string? BattleCollectionPreference = null,
-        string? FleetCollectionPreference = null);
+        string? FleetCollectionPreference = null,
+        string? WorkspaceMode = null);
 
     private static bool TryParseExact<T>(string? value, out T parsed)
         where T : struct, Enum =>

@@ -99,9 +99,12 @@ public sealed class ConfigurationEffectiveExportService
                     true));
         }
 
+        var recognizedParents = read.Overrides.Values.Where(item => recognized.Contains(item.CanonicalPath))
+            .Select(item => item.PathSegments).ToArray();
         entries.AddRange(
             read.Overrides.Values
-                .Where(item => !recognized.Contains(item.CanonicalPath))
+                .Where(item => !recognized.Contains(item.CanonicalPath)
+                    && !recognizedParents.Any(parent => LauncherTomlPath.HasPrefix(item.PathSegments, parent)))
                 .OrderBy(item => item.CanonicalPath, StringComparer.Ordinal)
                 .Select(item => new ConfigurationEffectiveExportEntry(
                     item.CanonicalPath,

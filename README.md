@@ -23,7 +23,10 @@ Fleet Command community-mod distributions.
 Mod Bridge is a .NET 8 WPF application for Windows x64. It discovers and
 validates an STFC installation, opens the Scopely launcher, manages verified
 mod artifacts transactionally, edits configuration through staged Save/Discard
-sessions, and provides a destination-oriented Data Sync workspace.
+sessions, and provides a destination-oriented Data Sync workspace. The Profiles
+MVP consumes the shared native catalog for named accounts, profile-owned settings,
+archive/restore and direct game client update/recovery. Its live qualification
+is still in progress.
 
 ## Repository boundary
 
@@ -82,14 +85,30 @@ described in [SECURITY.md](SECURITY.md).
 
 ## Build and test
 
+Install the .NET SDK version pinned in `global.json` (currently `8.0.425`).
+Local commands and CI use this exact SDK, with roll-forward disabled, so the
+build tools and bundled runtime-pack inventory stay in sync. Run these commands
+from the repository root; `dotnet --version` should report `8.0.425`.
+
 ```powershell
 dotnet restore STFCCommunityMod.Launcher.sln --locked-mode
-dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore
+$tomlBuild = ./scripts/build-toml-native.ps1
+$env:STFC_TOML_NATIVE_TEST_DLL = @($tomlBuild)[-1].NativePath
+$env:STFC_TOML_NATIVE_TEST_SHA256 = (Get-FileHash $env:STFC_TOML_NATIVE_TEST_DLL -Algorithm SHA256).Hash.ToLowerInvariant()
+dotnet test STFCCommunityMod.Launcher.sln -c Release --no-restore `
+  "-p:TomlNativePath=$env:STFC_TOML_NATIVE_TEST_DLL" "-p:TomlNativeSha256=$env:STFC_TOML_NATIVE_TEST_SHA256"
 ```
 
 Double-click `run-launcher.cmd` to build and start the exact Release executable
 from this checkout. A failed build remains visible and never launches stale
-output.
+output. The entrypoint builds the Profiles and offline TOML native components
+from their independent immutable source pins with XMake 3.0.8, embeds each exact
+SHA-256 and copies both DLLs beside the launcher. Explicit development source
+overrides use `-ProfilesSourceDirectory D:\dev\stfc-profiles` and
+`-TomlSourceDirectory D:\dev\stfc-mod`; each build receipt records its own
+revision and dirty state. The test-only native path and digest variables above
+are configured by test assembly initialization; production resolves the DLL
+beside Bridge against its compiled digest.
 
 `scripts/smoke-settings.ps1` is an interactive UI Automation gate: it launches
 and focuses Mod Bridge to exercise keyboard behavior. Local runs must opt in
@@ -106,6 +125,18 @@ profile only for an explicitly supplied game directory. See the broader
 ./scripts/publish.ps1
 ```
 
+Packaging requires XMake 3.0.8 and builds independent shared native components
+from `dependencies/stfc-profiles-source-pin.json` and
+`dependencies/stfc-toml-source-pin.json`. `-ProfilesSourceDirectory` and
+`-TomlSourceDirectory` are explicit local development overrides;
+`-ProfilesNativePath` and `-TomlNativePath` accept already built or signed
+canonical DLLs for the paired release build. TOML builds only the mod-owned
+`shared/toml` project and requires no game or provider DLL. Release provenance
+rejects development override receipts. Missing or mismatched native bytes fail
+explicitly. ZIP and MSIX inspection checks each exact native hash embedded in
+the Bridge build. Both payload forms include the full
+`LICENSE.txt` and generated `THIRD-PARTY-NOTICES.md`.
+
 Package output is written under `artifacts/win-x64`. The `.appinstaller`
 descriptor is the user-facing install artifact. Its signed MSIX is hosted at an
 immutable versioned URL; the ZIP remains a signed standalone/self-update
@@ -118,6 +149,7 @@ fallback.
 - [Repository extraction provenance](docs/EXTRACTION_PROVENANCE.md)
 - [Provider-pack boundary](docs/PROVIDER_PACKS.md)
 - [Product contract](docs/windows-launcher/CONTRACT.md)
+- [Shared profile catalog and explicit-launch contract](docs/windows-launcher/SHARED_INSTALL_PROFILE_CONTRACT.md)
 - [UX direction](docs/windows-launcher/UX_DIRECTION.md)
 - [Data Sync capability matrix](docs/windows-launcher/data-sync-capabilities.md)
 - [Signing policy](docs/windows-launcher/CODE_SIGNING.md)

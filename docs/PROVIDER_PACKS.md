@@ -45,25 +45,42 @@ This matrix documents the current bundled evidence, not an aspiration.
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
 | Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
-| Release discovery | Repository release manifest plus exact reviewed fallback if the manifest asset is absent | Exact launcher-reviewed GitHub release asset |
-| Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
+| Release discovery | Repository release manifest plus exact reviewed fallback if the manifest asset is absent | Latest stable release from the configured NetniV GitHub repository; exact recorded tag for repair |
+| Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | GitHub repository-release authority plus retained exact release/asset, ZIP, DLL, and embedded-version identities |
 | Runtime manifest | Bundled verified fixture | Unknown |
-| Configuration schema | Bundled verified fixture | Unknown; settings editing disabled |
+| Configuration schema | Bundled verified fixture | Exact reviewed release/source catalogs; unreviewed identities remain unavailable |
 | Withdrawal | Repository-reported release state; no authenticated withdrawal contract | Unknown |
 | Migration compatibility | Same-provider TOML preservation | Cross-provider compatibility unknown |
 
 NetniV is the default source for a new launcher-owned selection. Existing
-explicit selections are preserved. Until NetniV publishes the open provenance
-contract, stable install/update is authorized only when GitHub's current latest
-release and downloaded ZIP exactly match the manually reviewed entry in
-`providers/reviewed-windows-releases.v1.json`. The archive must contain exactly
-one root `version.dll`; both archive and DLL size/SHA-256 plus the DLL version
-are checked before the atomic deployment transaction commits. A newer or
-changed release fails closed until a maintainer reviews and updates the entry.
-Historical exact certifications are retained separately from the one current,
-installable certification. They cannot drive discovery or download; they only
-let Mod Bridge recover the release-order identity of an older exact managed
-receipt before applying the monotonic update floor.
+explicit selections are preserved. NetniV stable uses the
+`github-repository-release` provider policy: the GitHub HTTPS API must identify
+`netniV/stfc-mod`, repository ID `693298224`, and owner ID `9052188`. An explicit
+release check selects the latest non-draft, non-prerelease release and exactly
+one uploaded `stfc-community-mod.zip` at its canonical release URL. The asset
+must have a valid SHA-256 digest and bounded size. Bridge downloads and verifies
+the archive, requires exactly one bounded root `version.dll`, resolves the tag
+to its source commit, and checks that the DLL's Windows version equals the
+canonical four-part release tag.
+
+The prepared operation retains release ID, asset ID, tag, source commit, URL,
+archive size/digest, and DLL size/digest/version. Execution may download those
+exact retained bytes; it does not select `latest` again. A changed release or
+asset observation fails closed rather than replacing an earlier preparation.
+The installed receipt retains that repository-release observation and the
+provider/channel/runtime release floor. Exact-tag repair queries the recorded
+release and must reproduce the recorded DLL and, when present, the full retained
+release observation. It never substitutes the latest release.
+
+This policy trusts NetniV's configured GitHub repository and release-asset
+control. Attestations are optional additional provenance, not an admission
+prerequisite; this route does not claim verified attestation or Authenticode
+evidence. Routine newer stable releases do not require a Bridge certification
+catalog update. Bundled exact NetniV certifications remain historical identity
+and release-order evidence for matching older receipts; they do not select or
+authorize the current release. Runtime-manifest capability, configuration
+catalog applicability, migration compatibility, and authenticated withdrawal
+remain separate contracts.
 
 Guffawaffle stable releases publish a release manifest, signed DLL, runtime
 manifest, and compatibility ZIP. The release
@@ -103,10 +120,11 @@ to an exact launcher-reviewed DLL/JSON pair.
 `providers/known-windows-artifacts.v1.json` separately recognizes reviewed
 stable and dev DLL hashes for local provenance display. The dev entry is
 recognition-only because GitHub Actions artifacts expire and are not a durable
-anonymous install source. Guffawaffle owns refreshing these temporary entries.
-The upstream provenance contract will supersede this shim; no publisher,
-configuration schema, runtime manifest, withdrawal policy, or migration
-compatibility is inferred from the allowlist.
+anonymous install source. Updating this snapshot requires review; discovering
+or installing a new repository release does not add it to the snapshot. These
+historical observations do not grant publisher-signature, configuration,
+runtime-manifest, withdrawal, or migration evidence. NetniV's current install
+authority is the repository-release policy above, independent of this catalog.
 
 Manual observation refreshed 2026-08-20:
 
@@ -150,6 +168,16 @@ operations under the
   of DLL, installed state, selection, and exact TOML bytes.
   After commit, Mod Bridge replaces the provider session in-process; the same
   window can immediately inspect the new source or switch back.
+
+The installed provider and preferred source are independently captured. A
+reviewed switch can replace changed bytes at an installation with an existing
+managed receipt without first relabeling or discarding that receipt. Review
+binds the complete prior receipt, the current DLL identity and metadata, and
+the current optional runtime-manifest identity. The current custom bytes
+become the new adoption backup and uninstall restore target. An older adoption
+backup remains separately recorded in the same atomic registry update.
+Rollback restores the current custom bytes, original receipt, source preference,
+and exact TOML, and removes only the detached record created by this switch.
 
 Provider history is DPAPI `CurrentUser` protected, DACL restricted, verified by
 identity and SHA-256, and retained as the newest five records per provider and

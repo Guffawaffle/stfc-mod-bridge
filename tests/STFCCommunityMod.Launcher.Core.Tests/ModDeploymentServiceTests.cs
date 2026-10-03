@@ -2229,6 +2229,188 @@ public sealed class ModDeploymentServiceTests
     }
 
     [TestMethod]
+    public async Task PhysicalRecoveryRejectsReplacementThenRetainsOriginalDirectoryThroughRollbackAwait()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary, "installation-parent/game");
+        var parent = Path.GetDirectoryName(game)!;
+        CompleteNativeImage(game);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
+            NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
+        var previous = new byte[] { 4, 4, 4, 4 };
+        File.WriteAllBytes(Path.Combine(game, "version.dll"), previous);
+        var deploy = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+            afterFileCheckpoint: (checkpoint, _) => checkpoint == ModDeploymentFileCheckpoint.DurableDllBackupPromoted
+                ? throw new SimulatedProcessTerminationException(checkpoint) : ValueTask.CompletedTask);
+        await Assert.ThrowsExceptionAsync<SimulatedProcessTerminationException>(() =>
+            deploy.DeployAsync(game, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve));
+        var journal = deploy.ReadJournal()!;
+        Assert.IsNotNull(journal.InstallationBinding);
+        var backup = File.ReadAllBytes(journal.DurableBackupPath);
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        var refused = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => refused.RecoverAsync());
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(game).Length);
+        CollectionAssert.AreEqual(backup, File.ReadAllBytes(journal.DurableBackupPath));
+        Directory.Move(game, game + "-replacement");
+        Directory.Move(game + "-original", game);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+            afterPhasePersisted: (phase, _) =>
+            {
+                if (phase != ModDeploymentPhase.RollingBack) return ValueTask.CompletedTask;
+                entered.TrySetResult(); return new ValueTask(resume.Task);
+            });
+        var work = recovery.RecoverAsync();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.ThrowsException<IOException>(() => Directory.Move(game, game + "-moved"));
+            Assert.ThrowsException<IOException>(() => Directory.Move(parent, parent + "-moved"));
+        }
+        finally { resume.TrySetResult(); await work; }
+        var result = await work;
+        Assert.IsTrue(result.IsSuccess, result.Message);
+        CollectionAssert.AreEqual(previous, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+        Directory.Move(game, game + "-released");
+        Directory.Move(parent, parent + "-released");
+    }
+
+    [TestMethod]
+    public async Task PhysicalOwnershipBindingRefusesIdenticalDllInReplacementInstallation()
+    {
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary);
+        CompleteNativeImage(game);
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"),
+            NativeProfileCatalogIntegrationTests.Transport(), temporary.CreateDirectory("catalog"));
+        var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+        Assert.IsTrue((await service.DeployAsync(game, ReleaseArtifact(), ExistingArtifactPolicy.Reject)).IsSuccess);
+        Assert.IsNotNull(service.ReadInstalledState(game)!.InstallationBinding);
+        var dll = File.ReadAllBytes(Path.Combine(game, "version.dll"));
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        File.WriteAllBytes(Path.Combine(game, "prime.exe"), [1]); CompleteNativeImage(game);
+        File.WriteAllBytes(Path.Combine(game, "version.dll"), dll);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service.UninstallAsync(game));
+        CollectionAssert.AreEqual(dll, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+    }
+
+    [DataTestMethod]
+    [DataRow(false, false, true, false)]
+    [DataRow(true, false, true, false)]
+    [DataRow(false, true, true, false)]
+    [DataRow(false, true, false, false)]
+    [DataRow(false, true, false, true)]
+    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryAcrossMaintenance(bool repairFirst, bool detachOnly, bool savedThroughAlias, bool retargetDuringDetach)
+    {
+        var transport = NativeProfileCatalogIntegrationTests.Transport();
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary, "installation-parent/game");
+        CompleteNativeImage(game);
+        var alias = Path.Combine(temporary.CreateDirectory("aliases"), "installation");
+        var parent = Path.GetDirectoryName(game)!;
+        var script = $"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{alias.Replace("'", "''")}' -Target '{parent.Replace("'", "''")}' | Out-Null";
+        var start = new System.Diagnostics.ProcessStartInfo(@"C:\Program Files\PowerShell\7\pwsh.exe")
+        { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-EncodedCommand",
+            Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)) }) start.ArgumentList.Add(argument);
+        using var helper = System.Diagnostics.Process.Start(start)!;
+        await helper.WaitForExitAsync(); Assert.AreEqual(0, helper.ExitCode);
+        try
+        {
+            var previous = new byte[] { 6, 6, 6 };
+            File.WriteAllBytes(Path.Combine(game, "version.dll"), previous);
+            var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"), transport,
+                temporary.CreateDirectory("catalog"));
+            var oldService = CreateService(temporary, SuccessfulDownload(), profilesStore: savedThroughAlias ? null : store);
+            var aliasGame = Path.Combine(alias, "game");
+            Assert.IsTrue((await oldService.DeployAsync(savedThroughAlias ? aliasGame : game, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
+            var original = oldService.ReadInstalledState(savedThroughAlias ? aliasGame : game)!;
+            Assert.AreEqual(savedThroughAlias, original.InstallationBinding is null);
+            var registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
+            string? otherGame = null;
+            ModInstalledArtifactState? otherReceipt = null;
+            if (retargetDuringDetach)
+            {
+                otherGame = CreateGameDirectory(temporary, "second-parent/game"); CompleteNativeImage(otherGame);
+                File.WriteAllBytes(Path.Combine(otherGame, "version.dll"), [7, 7, 7]);
+                Assert.IsTrue((await oldService.DeployAsync(otherGame, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
+                otherReceipt = oldService.ReadInstalledState(otherGame);
+                registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
+            }
+            var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store,
+                afterDetachReceiptCaptured: retargetDuringDetach ? captured =>
+                {
+                    Assert.AreEqual(original.GameDirectory, captured.GameDirectory);
+                    Directory.Delete(alias);
+                    var retargetScript = $"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{alias.Replace("'", "''")}' -Target '{Path.GetDirectoryName(otherGame)!.Replace("'", "''")}' | Out-Null";
+                    var retargetStart = new System.Diagnostics.ProcessStartInfo(@"C:\Program Files\PowerShell\7\pwsh.exe") { UseShellExecute = false, CreateNoWindow = true };
+                    foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-EncodedCommand", Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(retargetScript)) }) retargetStart.ArgumentList.Add(argument);
+                    using var retargetHelper = System.Diagnostics.Process.Start(retargetStart)!;
+                    retargetHelper.WaitForExit(); Assert.AreEqual(0, retargetHelper.ExitCode);
+                } : null);
+            var target = savedThroughAlias ? game : aliasGame;
+            var observed = service.ReadInstalledState(target)!;
+            Assert.AreEqual(Path.GetFullPath(game), observed.GameDirectory);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(service.InstalledStatePath));
+            if (detachOnly)
+            {
+                var files = Directory.GetFiles(game, "*", SearchOption.AllDirectories)
+                    .ToDictionary(path => path, File.ReadAllBytes);
+                var installationCount = store.Installations().Count;
+                var detached = await service.StopManagingAsync(target);
+                Assert.IsTrue(detached.IsSuccess, detached.Message); Assert.IsTrue(detached.Changed);
+                Assert.AreEqual(retargetDuringDetach ? 1 : 0, service.ReadInstalledStates().Count);
+                Assert.AreEqual(installationCount, store.Installations().Count);
+                foreach (var pair in files) CollectionAssert.AreEqual(pair.Value, File.ReadAllBytes(pair.Key));
+                var registry = JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!;
+                Assert.AreEqual(1, registry.DetachedAdoptionBackups!.Count);
+                Assert.AreEqual(original.PreviousArtifactBackupPath, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupPath);
+                Assert.AreEqual(original.PreviousArtifactBackupIdentity, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupIdentity);
+                if (retargetDuringDetach)
+                {
+                    Assert.AreEqual(JsonSerializer.Serialize(otherReceipt, JournalJsonOptions),
+                        JsonSerializer.Serialize(service.ReadInstalledState(otherGame!), JournalJsonOptions));
+                    CollectionAssert.AreEqual(SuccessfulDownload().Contents, File.ReadAllBytes(Path.Combine(otherGame!, "version.dll")));
+                }
+                var again = await service.StopManagingAsync(game);
+                Assert.IsTrue(again.IsSuccess, again.Message); Assert.IsFalse(again.Changed);
+                Assert.AreEqual(1, JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!.DetachedAdoptionBackups!.Count);
+                return;
+            }
+            if (repairFirst)
+            {
+                var repair = await service.RepairAsync(game, ReleaseArtifact());
+                Assert.IsTrue(repair.IsSuccess, repair.Message);
+                var repaired = service.ReadInstalledState(game)!;
+                Assert.IsNotNull(repaired.InstallationBinding);
+                Assert.AreEqual(original.PreviousArtifactBackupPath, repaired.PreviousArtifactBackupPath);
+                Assert.AreEqual(original.PreviousArtifactBackupIdentity, repaired.PreviousArtifactBackupIdentity);
+                Assert.AreEqual(1, service.ReadInstalledStates().Count);
+            }
+            var result = await service.UninstallAsync(game);
+            Assert.IsTrue(result.IsSuccess, result.Message);
+            Assert.IsTrue(result.Changed);
+            CollectionAssert.AreEqual(previous, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+            Assert.AreEqual(0, service.ReadInstalledStates().Count);
+            Assert.IsNotNull(service.ReadJournal()!.InstallationBinding);
+            Assert.AreEqual(original.PreviousArtifactBackupPath, service.ReadJournal()!.PreviousInstalledState!.PreviousArtifactBackupPath);
+        }
+        finally { Directory.Delete(alias); }
+    }
+
+    private static void CompleteNativeImage(string game)
+    {
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        File.WriteAllBytes(Path.Combine(game, "GameAssembly.dll"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(game, "UnityPlayer.dll"), [1, 2, 3]);
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+    }
+
+    [TestMethod]
     public async Task UninstallRefusesArtifactChangedOutsideLauncher()
     {
         using var temporaryDirectory = new TemporaryDirectory();
@@ -2733,7 +2915,9 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null) =>
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null) =>
         CreateService(
             temporaryDirectory,
             new FakeDownloader(download),
@@ -2747,7 +2931,7 @@ public sealed class ModDeploymentServiceTests
             afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten,
             afterDurableCopyCompleted,
-            afterFileCheckpoint);
+            afterFileCheckpoint, profilesStore, afterDetachReceiptCaptured);
 
     private static ModDeploymentService CreateService(
         TemporaryDirectory temporaryDirectory,
@@ -2762,7 +2946,9 @@ public sealed class ModDeploymentServiceTests
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
-        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null) =>
+        Func<ModDeploymentFileCheckpoint, CancellationToken, ValueTask>? afterFileCheckpoint = null,
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null) =>
         new ModDeploymentService(
             temporaryDirectory.CreateDirectory("state"),
             downloader,
@@ -2777,7 +2963,8 @@ public sealed class ModDeploymentServiceTests
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
-            afterDurableCopyCompleted: afterDurableCopyCompleted);
+            afterDurableCopyCompleted: afterDurableCopyCompleted, profilesStore: profilesStore,
+            afterDetachReceiptCaptured: afterDetachReceiptCaptured);
 
     private static ModInstallationAttribution DefaultAttribution() =>
         new("guffawaffle", "stable", "guffawaffle.windows");

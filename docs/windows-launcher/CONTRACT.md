@@ -10,6 +10,12 @@ WL-001 through WL-010 delivery sequence are preserved as historical evidence
 and classified in [CURRENT_AUTHORITY.md](CURRENT_AUTHORITY.md). They are not
 current repository, branch, or execution instructions.
 
+The accepted Profiles MVP adds shared profile selection and game installation
+status/update/recovery. Its [Bridge integration contract](SHARED_INSTALL_PROFILE_CONTRACT.md)
+and canonical shared contracts own those additions; live and release
+qualification remain open. Earlier game-update delegation and multi-account
+non-goal statements are superseded for this MVP.
+
 ## Product statement
 
 STFC Mod Bridge is a Windows desktop application that makes the supported STFC Community Mod
@@ -22,7 +28,7 @@ adapting them to the Windows proxy-DLL deployment model:
 | Outcome | macOS today | Windows parity+ |
 |---|---|---|
 | Detect STFC | Xsolla launcher INI | deterministic discovery plus user override |
-| Update STFC | launcher-owned Xsolla client | delegate to official launcher and re-check afterward |
+| Update STFC | launcher-owned Xsolla client | shared Profiles full-image updater with exact target, exclusion and recovery; qualification in progress |
 | Install/update mod | bundled dylib only | verified release download and transactional `version.dll` deployment |
 | Launch modded game | DYLD helper | launch through the supported Windows game/launcher path; proxy loads naturally |
 | Configure mod | open raw TOML | schema-driven editor plus raw-file escape hatch |
@@ -76,23 +82,26 @@ signing, and update evidence remains owned by issue #30.
 - Runtime configuration parsing and defaults.
 - Runtime logs, state snapshots, and feature behavior.
 
-### Official STFC launcher owns
+### Official STFC launcher and shared Profiles ownership
 
 - Authentication.
-- Base-game installation and updates.
-- Xsolla protocol and game-file repair.
+- Official first-time installation and its update/repair flow.
+- Profiles owns the accepted direct complete-image game update/recovery engine;
+  Bridge consumes its status, checks and transaction results.
 
-The Windows launcher must not reproduce Xsolla’s Windows updater in the first
-production release. Its default launch target starts or safely reuses the exact
+Bridge does not contain a second downloader or patcher. The Profiles engine
+owns the MVP update protocol, validation, installation exclusion and recovery.
+Its successful dev update is technical evidence; final player qualification
+remains open. The default launch target starts or safely reuses the exact
 official launcher, waits for that tracked process to exit, and then re-evaluates
 local state. A separately selected direct `prime.exe` target does not inherit
-official authentication, update, or repair responsibilities.
+official authentication responsibilities. Game updating is a separate explicit action.
 
-### Future-state integrated game client
+### Historical post-v1 direction, now the accepted Profiles MVP
 
-The post-v1 product direction is to replace the official launcher for routine
-play on an established installation. The Windows launcher should eventually
-own both of these player-facing actions:
+The earlier post-v1 direction below is superseded by the accepted shared
+[Profiles installation/update contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/GAME_INSTALLATION_CONTRACT.md).
+The MVP implements both actions through the shared component:
 
 - launch the installed STFC client with the selected community-mod release;
 - detect and apply an available base-game update without requiring the player
@@ -110,18 +119,21 @@ and launch actions, while [`XsollaLib`](../../macos-launcher/src/XsollaLib.swift
 checks installed/latest versions and executes the Xsolla download, extract,
 patch, delete, and version plan.
 
-That implementation is evidence, not a Windows port contract. Before Windows
-adopts direct game updating, a dedicated design must validate the current
+That earlier implementation is reference evidence. The shared contract and
+development implementation address the current
 Windows Xsolla protocol, artifact integrity, interruption recovery,
 installation locking, required-update policy, game/mod compatibility, repair,
 and rollback behavior. Authentication and credential storage remain outside
 the community launcher; first-time sign-in or expired-session recovery may
 still hand off to the official launcher.
 
-Until those gates are satisfied, the first-production-release boundary above
-remains authoritative: base-game update and authentication use the supported
-official path even when the player elects to launch an already healthy client
-directly.
+Development source and live dev updating are implemented. Release qualification
+remains separate; authentication still uses the supported official path.
+
+The observed multi-install Windows route through the official updater and its
+remaining safety requirements are recorded in
+[`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md) as a historical probe. It is no
+longer an MVP prerequisite or the current game-updater ownership contract.
 
 ## Supported environment
 
@@ -235,8 +247,11 @@ v2 as defined in `RELEASE_MANIFEST.md`. Issue #96 removes the legacy
 unauthenticated standalone client and implements bounded verify-before-parse
 discovery. Issue #97 packages and digest-pairs the installed verifier with the
 launcher and external updater, but application composition remains explicitly
-unavailable pending issue #30 release qualification. Provider/mod discovery is
-unchanged; NetniV remains on its exact reviewed-hash contract.
+unavailable pending issue #30 release qualification. Provider/mod discovery remains a separate trust domain. Guffawaffle retains
+its provider manifest and publisher-signature policy. NetniV stable uses its
+configured GitHub repository-release policy and exact retained artifact
+observation as defined in `PROVIDER_PACKS.md`; optional attestations do not
+replace or extend the Mod Bridge self-update authority.
 
 Schema v1 shape:
 
@@ -330,12 +345,14 @@ When an installed mod has no `community_patch_settings.toml`, Settings uses a
 virtual empty baseline: opening Settings and staging changes create nothing. The
 first explicit Save uses create-new semantics and fails with a conflict if
 another writer created the file first. No backup is produced when no prior file
-bytes exist. Existing invalid or unsupported TOML still fails closed.
+bytes exist. Malformed or duplicate TOML fails without mutation. Valid unusual syntax follows
+the [shared TOML editing contract](TOML_EDIT_ENGINE.md); refusal concerns an
+unverified requested operation rather than unrelated formatting.
 
 Save behavior:
 
 1. Parse the current file.
-2. Refuse destructive rewrite when unsupported syntax cannot be preserved.
+2. Refuse malformed or duplicate input and any requested edit whose intended whole-document meaning cannot be verified.
 3. Write a sibling temporary file.
 4. Parse and validate the temporary result.
 5. Back up the prior file.
@@ -360,8 +377,8 @@ artifact trust policy, update stream, migration guidance, and matching
 configuration schema/capability adapter for future explicit checks. It is not
 installed-artifact provenance and never attributes an unknown/custom DLL.
 
-Selecting a preference changes only launcher state and takes effect after a
-Mod Bridge restart. Switching the installed mod to another provider/runtime is
+Selecting a preference changes only launcher state and recomposes the
+provider-bound session in the current Mod Bridge process. Switching the installed mod to another provider/runtime is
 a separate, game-closed migration transaction. The launcher previews installed
 artifact and configuration compatibility, requires explicit confirmation and
 a protected exact-byte TOML backup when configuration exists, and retains
@@ -371,8 +388,14 @@ the player explicitly chooses replacement. The authoritative state/action,
 backup/restore, retention, privacy, and transaction rules are in the
 [mod source-selection lifecycle](MOD_DEPLOYMENT.md#mod-source-selection-lifecycle).
 
+A reviewed replacement of changed managed bytes preserves the current custom
+DLL as the new uninstall backup and retains any older adoption backup under a
+separate non-owning receipt. The prior installed receipt, current file identities,
+protected TOML, and previous preference remain bound to one compensating
+transaction; changed bytes are not silently adopted or authenticated.
+
 TOML remains the runtime and interchange boundary for NetniV compatibility and
-safe source switching. A future Guffawaffle-only profile store may be richer,
+safe source switching. A future Guffawaffle-only configuration store may be richer,
 but it must compile/export deterministic sparse TOML while the C++ runtime
 consumes TOML.
 
@@ -533,11 +556,11 @@ and non-ASCII paths.
 
 ## Explicit non-goals for the first production release
 
-- Reimplementing Xsolla game patching.
-- Modifying game files other than allowlisted community-mod artifacts.
+- Implementing the Xsolla delta patch protocol. The accepted Profiles MVP uses
+  the shared full-image update engine under its separate integrity/recovery
+  contract.
 - Runtime hook configuration reload.
 - Wine/Linux launcher support.
-- Multi-account orchestration.
 - Automatic diagnostic upload.
 - Silent elevation.
 - Background Windows service.

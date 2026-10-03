@@ -6,6 +6,7 @@ public enum LauncherConfigurationSourceId
 {
     Guffawaffle,
     Netniv,
+    Profiles,
 }
 
 public enum LauncherConfigurationControl
@@ -90,6 +91,7 @@ public sealed record LauncherConfigurationSource(
         {
             LauncherConfigurationSourceId.Guffawaffle => "guffawaffle",
             LauncherConfigurationSourceId.Netniv => "netniv",
+            LauncherConfigurationSourceId.Profiles => "profiles",
             _ => throw new InvalidOperationException($"Configuration source '{Id}' has no stable provider ID."),
         };
 
@@ -98,6 +100,7 @@ public sealed record LauncherConfigurationSource(
         {
             LauncherConfigurationSourceId.Guffawaffle => "Guffawaffle",
             LauncherConfigurationSourceId.Netniv => "NetniV",
+            LauncherConfigurationSourceId.Profiles => "Profiles only",
             _ => Id.ToString(),
         };
 }
@@ -277,9 +280,11 @@ public sealed class LauncherConfigurationCatalog
         LauncherConfigurationSource source,
         IReadOnlyList<LauncherConfigurationSetting> settings,
         LauncherConfigurationCatalogIdentity? identity = null,
-        string? reviewedSettingsLayoutId = null)
+        string? reviewedSettingsLayoutId = null,
+        bool isQualified = true)
     {
         SchemaVersion = schemaVersion;
+        IsQualified = isQualified;
         Source = source;
         Settings = settings;
         Identity = identity ?? new(
@@ -300,6 +305,22 @@ public sealed class LauncherConfigurationCatalog
     }
 
     public Version SchemaVersion { get; }
+
+    /// <summary>False when the installed release has no exact reviewed typed catalog.</summary>
+    public bool IsQualified { get; }
+
+    public static LauncherConfigurationCatalog CreateUnavailable(
+        LauncherConfigurationSource source,
+        string trackId,
+        string releaseVersion,
+        string sourceCommit) =>
+        new(
+            new Version(0, 0, 0),
+            source,
+            Array.Empty<LauncherConfigurationSetting>(),
+            new($"{source.StableId}.configuration.unavailable", new Version(0, 0, 0),
+                trackId, releaseVersion, sourceCommit),
+            isQualified: false);
 
     public LauncherConfigurationSource Source { get; }
 

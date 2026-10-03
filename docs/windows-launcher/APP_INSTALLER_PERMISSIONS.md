@@ -122,13 +122,34 @@ be visible to other processes and survive package uninstall. Microsoft warns
 that this broad mechanism can exceed an application's needs. See
 [Flexible virtualization][virtualization].
 
-Bridge declares the capability but does not declare
-`RegistryWriteVirtualization`, `FileSystemWriteVirtualization`, or Windows 11
-excluded-key/directory elements. Therefore the current manifest does not ask
-Windows to apply one of those specific virtualization exclusions. The
-capability may instead be a schema/runtime requirement of the current
-`win32App` package shape; that must be proven with a package experiment rather
-than assumed.
+The Profiles MVP manifest now uses the documented dual filesystem policy:
+`desktop6:FileSystemWriteVirtualization` is `disabled` on Windows 10, while
+Windows 11 overrides it with exactly
+`$(KnownFolder:LocalAppData)\STFC Profiles` and
+`$(KnownFolder:LocalAppData)\STFC Mod Bridge` as its excluded directories. The
+Windows 10 fallback disables AppData filesystem write virtualization broadly;
+it preserves the existing minimum Windows version. Windows 11 keeps the
+exceptions limited to the shared Profiles catalog/installation locks and the
+existing external Bridge state. The latter preserves standalone recovery,
+Battle sharing and uninstall retention; Bridge-owned UI state does not mean
+package-private filesystem state.
+There is no Registry virtualization change and no additional capability.
+
+Native Profiles resolves OS-user LocalAppData with
+`KF_FLAG_NO_PACKAGE_REDIRECTION`. This folder lookup and the manifest's write
+policy are both necessary: a matching path string alone does not demonstrate
+that packaged writes are visible outside the package. Synthetic create/edit,
+archive/data-lease and installation-lock observations across a packaged Bridge
+host and an unpackaged host remain an explicit qualification gate before MSIX
+shared-profile behavior is claimed.
+
+Bridge's private UI selection and state still use the existing
+`PerUserInstallLayout.FromCurrentUser()` path, derived from .NET
+`Environment.SpecialFolder.LocalApplicationData`; profile selection is only
+`profile-ui-selection.json` inside that Bridge state directory. This change
+neither copies nor migrates existing private state and does not make it a shared
+account registry. Actual package-private path and lifecycle observations remain
+part of package qualification.
 
 ## What App Installer can and cannot explain
 

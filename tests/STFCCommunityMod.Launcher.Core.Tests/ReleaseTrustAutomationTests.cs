@@ -2,12 +2,77 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace STFCCommunityMod.Launcher.Core.Tests;
 
 [TestClass]
 public sealed partial class ReleaseTrustAutomationTests
 {
+    private static readonly string[] SharedStateExclusions =
+        ["$(KnownFolder:LocalAppData)\\STFC Profiles", "$(KnownFolder:LocalAppData)\\STFC Mod Bridge"];
+    private static readonly string[] ProfilesPackageCapabilities = ["runFullTrust", "unvirtualizedResources"];
+
+    [DataTestMethod]
+    [DataRow(0)]
+    [DataRow(7)]
+    public async Task ActivatedQualificationMonitorRetainsExactExternalProcessExitStatus(int expectedExitCode)
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Windows activated process monitoring qualification.");
+        // Load only the real monitor function; never execute package installation or trust setup.
+        const string script = """
+            $ErrorActionPreference = 'Stop'
+            $tokens = $null; $parseErrors = $null
+            $ast = [Management.Automation.Language.Parser]::ParseFile($env:STFC_MONITOR_SCRIPT, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw 'Qualification script parse failed.' }
+            $function = $ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Open-ActivatedQualificationProcess'}, $true)
+            if ($null -eq $function) { throw 'Activated process monitor is absent.' }
+            . ([ScriptBlock]::Create($function.Extent.Text))
+            $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
+            $start.UseShellExecute = $false; $start.CreateNoWindow = $true
+            foreach ($argument in @('-NoLogo', '-NoProfile', '-Command', ('Start-Sleep -Milliseconds 600; exit ' + $env:STFC_MONITOR_EXIT))) { $start.ArgumentList.Add($argument) }
+            $creator = [Diagnostics.Process]::Start($start)
+            $childId = $creator.Id
+            $creator.Dispose()
+            $monitor = Open-ActivatedQualificationProcess -ProcessId $childId
+            try {
+                $wasAlive = -not $monitor.HasExited
+                if (-not $monitor.WaitForExit(10000)) { throw 'Fixture child timed out.' }
+                $exitCode = $monitor.ExitCode
+                if ($null -eq $exitCode) { throw 'Activated child exit status was lost.' }
+                @{wasAlive=$wasAlive;exitCode=$exitCode} | ConvertTo-Json -Compress
+            } finally {
+                try { if (-not $monitor.HasExited) { $monitor.Kill(); [void]$monitor.WaitForExit(5000) } }
+                finally { $monitor.Dispose() }
+            }
+            """;
+        var start = new ProcessStartInfo("pwsh")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        start.ArgumentList.Add("-NoLogo");
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-EncodedCommand");
+        start.ArgumentList.Add(Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)));
+        start.Environment["STFC_MONITOR_SCRIPT"] = Path.Combine(RepositoryRoot(), "scripts", "qualify-battle-named-pipe-package.ps1");
+        start.Environment["STFC_MONITOR_EXIT"] = expectedExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20)); }
+        finally
+        {
+            if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); }
+        }
+        Assert.AreEqual(0, process.ExitCode, await error);
+        using var result = JsonDocument.Parse(await output);
+        Assert.IsTrue(result.RootElement.GetProperty("wasAlive").GetBoolean());
+        Assert.AreEqual(expectedExitCode, result.RootElement.GetProperty("exitCode").GetInt32());
+    }
+
     [TestMethod]
     public void PublishScriptBuildsTheReleaseVerifierWithoutCapturingItsInformationalOutput()
     {
@@ -116,7 +181,7 @@ public sealed partial class ReleaseTrustAutomationTests
     {
         var root = RepositoryRoot();
         var globalJson = File.ReadAllText(Path.Combine(root, "global.json"));
-        StringAssert.Contains(globalJson, "\"version\": \"8.0.424\"");
+        StringAssert.Contains(globalJson, "\"version\": \"8.0.425\"");
         StringAssert.Contains(globalJson, "\"rollForward\": \"disable\"");
 
         var buildProperties = File.ReadAllText(Path.Combine(root, "Directory.Build.props"));
@@ -253,8 +318,15 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsTrue(finalPayloadSbom > pairedSigning);
         StringAssert.Contains(
             workflow,
-            "files: ${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
+            "${{ github.workspace }}\\artifacts\\win-x64\\app\\STFCModBridge.ReleaseVerifier.exe");
         StringAssert.Contains(workflow, "-ReleaseVerifierPath $retained");
+        StringAssert.Contains(workflow, "-TomlNativePath $tomlRetained");
+        StringAssert.Contains(workflow, "The signed native TOML component changed during paired rebuild.");
+        var tomlReceipt = workflow.IndexOf("- name: Validate pinned TOML build receipt before signing", StringComparison.Ordinal);
+        Assert.IsTrue(tomlReceipt > oidc && tomlReceipt < verifierSigning);
+        StringAssert.Contains(workflow, "${{ github.workspace }}\\artifacts\\win-x64\\app\\stfc-toml-native.dll");
+        Assert.IsTrue(Regex.Matches(workflow, "artifacts/win-x64/app/stfc-toml-native.dll", RegexOptions.CultureInvariant).Count >= 4,
+            "The native TOML DLL must cross signing validation, transfer, attestation and rebuild boundaries.");
         StringAssert.Contains(workflow, "generate-release-verifier-sbom.ps1");
         StringAssert.Contains(workflow, "generate-payload-sbom.ps1");
         StringAssert.Contains(workflow, "STFCModBridge.ReleaseVerifier.spdx.json");
@@ -371,8 +443,8 @@ public sealed partial class ReleaseTrustAutomationTests
         StringAssert.Contains(script, "SelectSingleNode(\"/ai:AppInstaller/ai:MainPackage\"");
         StringAssert.Contains(script, "serve-appinstaller.py");
         StringAssert.Contains(script, "!App");
-        Assert.AreEqual(2, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
-        Assert.AreEqual(4, Regex.Matches(script, Regex.Escape("WaitForExit(10000)")).Count);
+        Assert.AreEqual(4, Regex.Matches(script, Regex.Escape("$process.Kill($true)")).Count);
+        Assert.AreEqual(6, Regex.Matches(script, Regex.Escape("WaitForExit(10000)")).Count);
         StringAssert.Contains(
             script,
             "Remove-AppxPackage -Package $env:STFC_BATTLE_QUALIFICATION_PACKAGE_FULL_NAME");
@@ -787,6 +859,34 @@ public sealed partial class ReleaseTrustAutomationTests
         Assert.IsFalse(File.Exists(Path.Combine(root, "scripts", "uninstall-launcher.ps1")));
         StringAssert.Contains(readme, "%LOCALAPPDATA%\\STFC Mod Bridge");
         StringAssert.Contains(readme, "external local data");
+    }
+
+    [TestMethod]
+    public void MsixProfilesFilesystemPolicyPreservesWindows10AndLimitsWindows11Scope()
+    {
+        var manifest = XDocument.Load(Path.Combine(RepositoryRoot(), "packaging", "windows", "AppxManifest.xml.in"));
+        XNamespace foundation = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
+        XNamespace desktop6 = "http://schemas.microsoft.com/appx/manifest/desktop/windows10/6";
+        XNamespace virtualization = "http://schemas.microsoft.com/appx/manifest/virtualization/windows10";
+        var properties = manifest.Root!.Element(foundation + "Properties")!;
+        Assert.AreEqual(2, manifest.Descendants().Count(element => element.Name.LocalName == "FileSystemWriteVirtualization"));
+        Assert.AreEqual("disabled", properties.Elements(desktop6 + "FileSystemWriteVirtualization").Single().Value);
+        var selective = properties.Elements(virtualization + "FileSystemWriteVirtualization").Single();
+        var directories = selective.Elements().Single();
+        Assert.AreEqual(virtualization + "ExcludedDirectories", directories.Name);
+        var excluded = directories.Elements().ToArray();
+        Assert.AreEqual(2, excluded.Length);
+        Assert.IsTrue(excluded.All(element => element.Name == virtualization + "ExcludedDirectory"));
+        CollectionAssert.AreEqual(SharedStateExclusions,
+            excluded.Select(element => element.Value).ToArray());
+        Assert.IsFalse(manifest.Descendants().Any(element => element.Name.LocalName == "RegistryWriteVirtualization"));
+        var deviceFamily = manifest.Descendants(foundation + "TargetDeviceFamily").Single();
+        Assert.AreEqual("Windows.Desktop", (string?)deviceFamily.Attribute("Name"));
+        Assert.AreEqual("10.0.19041.0", (string?)deviceFamily.Attribute("MinVersion"));
+        XNamespace rescap = "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities";
+        CollectionAssert.AreEquivalent(ProfilesPackageCapabilities,
+            manifest.Descendants(rescap + "Capability").Select(element => (string)element.Attribute("Name")!).ToArray());
+
     }
 
     [TestMethod]

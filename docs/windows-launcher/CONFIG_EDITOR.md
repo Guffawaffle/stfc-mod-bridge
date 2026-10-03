@@ -12,11 +12,28 @@ authority.
 The selected release source chooses the matching schema and capabilities.
 Guffawaffle and NetniV are both packaged through stable provider IDs. NetniV
 uses a provider-owned versioned schema set that resolves only an exact reviewed
-provider, track, release version, and full source commit. The current stable
-binding is NetniV `1.1.6.0` at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`;
-the older stable `1.1.4` and captured dev `1.1.5.1` catalogs remain unavailable
-unless a selected release matches their exact reviewed identities. Unreviewed
-releases fail closed instead of reusing Guffawaffle or adjacent NetniV metadata.
+provider, track, release version, and full source commit. The newest bundled stable configuration-catalog binding is NetniV `1.1.6.0`
+at `e80a303a9949c89100b6e59b8a5e5cc2271e7144`; the older stable `1.1.4` and
+captured dev `1.1.5.1` catalogs remain unavailable unless the selected release
+matches their exact reviewed identities. Unreviewed configuration identities
+leave the catalog unavailable rather than reusing Guffawaffle or adjacent
+NetniV metadata. Artifact install/update authority is independent and follows
+the repository-release provider policy.
+Production catalog resolution reads the selected installation's validated
+repository-release receipt on startup and refresh. Any managed receipt whose
+provider/channel/runtime differs from the requested source yields Unknown evidence,
+even without a repository observation. An observed release/full commit cannot
+borrow the historical default or another preferred provider's catalog.
+Unknown applicability disables typed Settings and Data Sync, effective-default
+export and catalog-authorized cleanup, while keeping bound raw TOML access.
+Catalog changes advance the Settings session revision even without runtime evidence
+changes; existing draft and admitted-save reconciliation still applies.
+
+A prospective non-active NetniV source has Unknown configuration evidence until
+deployment commits. Source switching can preserve or restore protected raw TOML
+without claiming typed compatibility. The committed observation then selects its
+exact catalog, when reviewed.
+
 TOML remains the compatibility boundary. Runtime facts, capabilities, feature policy, and startup activation
 are kept separate by the
 [runtime activation contract](RUNTIME_ACTIVATION.md).
@@ -222,10 +239,12 @@ counts and opening time before physical assembly separation.
   they never parse then reserialize. Explicit restore is a
   Diagnostics/recovery action and must close or reload an open workspace
   without changing preferred source or installed artifact provenance.
-- Duplicate targets, malformed statements, array tables, unsupported target
-  syntax, invalid UTF-8, and unsafe multiline target edits fail closed.
+- The replacement [shared TOML engine contract](TOML_EDIT_ENGINE.md) accepts
+  valid unusual source syntax and verifies the complete intended semantic edit.
+  Malformed/duplicate documents, invalid UTF-8 and unverified requested operations
+  fail without candidate bytes; unrelated valid syntax is not a whole-editor block.
 - The atomic store writes and flushes a sibling temporary file, rechecks the
-  transformed document against the conservative supported grammar, refreshes
+  transformed document through the shared full parser, refreshes
   a backup, serializes same-process writes per path, and performs a
   content-hash recheck immediately before replacement. Injected failures and
   concurrent edits detected by that optimistic check leave the destination

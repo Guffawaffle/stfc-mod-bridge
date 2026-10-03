@@ -89,7 +89,9 @@ public sealed class LauncherStartupCompositionTests
             reviewed,
             new string('a', 64));
 
+        Assert.AreEqual(0L, slot.SettingsRevision);
         Assert.IsTrue(slot.Refresh(null, enabled));
+        Assert.AreEqual(1L, slot.SettingsRevision);
         Assert.AreNotEqual(profile.SourceRevision, slot.Current.RuntimeProfile.SourceRevision);
         Assert.IsFalse(slot.Current.RuntimeProfile.HasCapability("battle.capture.v1"));
         Assert.AreEqual(
@@ -99,6 +101,7 @@ public sealed class LauncherStartupCompositionTests
             LauncherPlayerFeaturePreference.Enabled,
             slot.Current.BattleFeatures.BattleCollection.Preference);
         Assert.IsFalse(slot.Refresh(null, enabled));
+        Assert.AreEqual(1L, slot.SettingsRevision);
     }
 
     [TestMethod]
@@ -117,6 +120,7 @@ public sealed class LauncherStartupCompositionTests
             LauncherPlayerFeaturePreference.Unset);
 
         Assert.IsTrue(slot.RefreshBattlePreferences(enabled));
+        Assert.AreEqual(0L, slot.SettingsRevision);
         Assert.AreEqual(
             LauncherPlayerFeaturePreference.Enabled,
             slot.Current.BattleFeatures.BattleCollection.Preference);

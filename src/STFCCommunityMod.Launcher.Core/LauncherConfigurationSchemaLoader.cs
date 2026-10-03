@@ -864,6 +864,7 @@ public static class LauncherConfigurationSchemaLoader
         {
             "guffawaffle" => LauncherConfigurationSourceId.Guffawaffle,
             "netniv" => LauncherConfigurationSourceId.Netniv,
+            "profiles" => LauncherConfigurationSourceId.Profiles,
             _ => throw Invalid($"Unsupported configuration source '{value}'."),
         };
 
@@ -872,6 +873,7 @@ public static class LauncherConfigurationSchemaLoader
         {
             LauncherConfigurationSourceId.Guffawaffle => "guffawaffle",
             LauncherConfigurationSourceId.Netniv => "netniv",
+            LauncherConfigurationSourceId.Profiles => "profiles",
             _ => throw Invalid($"Unsupported configuration source enum '{value}'."),
         };
 

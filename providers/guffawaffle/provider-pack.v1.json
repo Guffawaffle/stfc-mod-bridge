@@ -33,6 +33,8 @@
       "resourceName": "STFCCommunityMod.Launcher.RuntimeManifests.Guffawaffle.v1.json"
     },
     "capabilities": [
+      { "id": "profiles.isolation", "status": "supported" },
+      { "id": "community.features", "status": "supported" },
       { "id": "settings.catalog", "status": "supported" },
       { "id": "runtime.manifest", "status": "supported" },
       { "id": "mod.release-discovery", "status": "supported" },

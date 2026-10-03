@@ -50,7 +50,7 @@ public sealed class HomeArtworkTests
             .Single(element => (string?)element.Attribute(Xaml + "Name") == "ProductTitleText");
 
         Assert.AreEqual("STFC Mod Bridge", (string?)artwork.Attribute(Automation + "AutomationProperties.Name"));
-        Assert.AreEqual("STFC Mod Bridge", (string?)productTitle.Attribute("Text"));
+        Assert.AreEqual("STFC Bridge", (string?)productTitle.Attribute("Text"));
         Assert.AreEqual(
             1,
             artwork.Attributes().Count(attribute => attribute.Name.Namespace == Automation));

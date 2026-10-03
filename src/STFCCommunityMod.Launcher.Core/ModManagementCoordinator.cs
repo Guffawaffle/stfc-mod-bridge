@@ -44,7 +44,8 @@ public sealed record ModOperationPreparation(
     ModManagementActionKind ActionKind,
     string ProviderId,
     bool IsAdoptionOnly = false,
-    ModOperationRecoveryAction RecoveryAction = ModOperationRecoveryAction.None);
+    ModOperationRecoveryAction RecoveryAction = ModOperationRecoveryAction.None,
+    string? InstallationId = null);
 
 public interface IModManagementCoordinator
 {
@@ -154,10 +155,11 @@ public sealed class ModManagementCoordinator(
             throw new InvalidOperationException("Recovery does not require release discovery.");
         }
 
-        var discovery = await releaseDiscoveryClient.DiscoverLatestAsync(
-            channel,
-            launcherVersion,
-            cancellationToken);
+        var repairReceipt = presentation.ActionKind == ModManagementActionKind.Repair
+            ? deploymentService.ReadInstalledState(gameDirectory) : null;
+        var discovery = repairReceipt is not null && releaseDiscoveryClient is IRecordedModReleaseDiscoveryClient recordedClient
+            ? await recordedClient.DiscoverRecordedAsync(repairReceipt, launcherVersion, cancellationToken).ConfigureAwait(false)
+            : await releaseDiscoveryClient.DiscoverLatestAsync(channel, launcherVersion, cancellationToken).ConfigureAwait(false);
         if (presentation.ActionKind == ModManagementActionKind.Repair)
         {
             var receipt = deploymentService.ReadInstalledState(gameDirectory);
@@ -343,6 +345,9 @@ public sealed class ModManagementCoordinator(
                 cancellationToken);
     }
 
+    internal ModSourceReplacementReview CaptureSourceReplacementReview(string gameDirectory) =>
+        deploymentService.CaptureSourceReplacementReview(gameDirectory);
+
     public async Task<ModOperationPreparation> PrepareProviderSwitchTargetAsync(
         string gameDirectory,
         bool isGameRunning,
@@ -360,7 +365,8 @@ public sealed class ModManagementCoordinator(
             throw new InvalidOperationException(
                 "Close Star Trek Fleet Command in the selected installation before switching release source.");
         }
-        if (sourceInstallation.State != ModInstallationEvidenceState.ManagedVerified
+        if (sourceInstallation.State is not (
+                ModInstallationEvidenceState.ManagedVerified or ModInstallationEvidenceState.ManagedChanged)
             || string.IsNullOrWhiteSpace(sourceInstallation.InstalledProviderId))
         {
             throw new InvalidOperationException(
@@ -389,11 +395,12 @@ public sealed class ModManagementCoordinator(
         }
         return new(
             ModOperationPreparationState.Ready,
-            $"Switch the managed community mod to {discovery.Manifest.ReleaseVersion}.",
+            $"Switch the community mod to {discovery.Manifest.ReleaseVersion}; preserve the current DLL for rollback.",
             validation.GameDirectory,
             discovery.Manifest.ReleaseVersion,
             discovery.ModArtifact,
-            ExistingArtifactPolicy.Reject,
+            sourceInstallation.State == ModInstallationEvidenceState.ManagedChanged
+                ? ExistingArtifactPolicy.AdoptAndPreserve : ExistingArtifactPolicy.Reject,
             ModManagementActionKind.UpdateManualInstallation,
             ProviderId);
     }

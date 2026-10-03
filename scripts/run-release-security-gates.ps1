@@ -24,8 +24,23 @@ if (Test-Path -LiteralPath (Join-Path $repositoryRoot ".gitmodules")) {
     throw "Release inputs must not contain unaudited Git submodules."
 }
 
-$projects = @(Get-ChildItem -LiteralPath $repositoryRoot -Recurse -Filter *.csproj -File |
-    Where-Object { $_.FullName -notmatch '[\\/](artifacts|bin|obj)[\\/]' })
+# Audit the same reviewed project set that dotnet list below builds. Repository-local
+# historical worktrees and build fixtures are not additional release projects.
+$solutionPath = Join-Path $repositoryRoot "STFCCommunityMod.Launcher.sln"
+$projects = @(foreach ($line in Get-Content -LiteralPath $solutionPath) {
+    if ($line -notmatch '^Project\("[^"]+"\) = "[^"]+", "(?<path>[^"]+\.csproj)",') {
+        continue
+    }
+    $projectPath = [IO.Path]::GetFullPath([IO.Path]::Combine($repositoryRoot, $Matches.path))
+    if (-not $projectPath.StartsWith($repositoryRoot + [IO.Path]::DirectorySeparatorChar,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "A solution project escapes the reviewed repository: '$projectPath'."
+    }
+    Get-Item -LiteralPath $projectPath -ErrorAction Stop
+})
+if ($projects.Count -eq 0) {
+    throw "The reviewed release solution contains no projects."
+}
 foreach ($project in $projects) {
     $lockFile = Join-Path $project.DirectoryName "packages.lock.json"
     if (-not (Test-Path -LiteralPath $lockFile -PathType Leaf)) {

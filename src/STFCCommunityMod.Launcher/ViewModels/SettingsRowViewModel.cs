@@ -666,6 +666,19 @@ public sealed class SettingsRowViewModel :
 
     public ICommand RevertDraftCommand => revertDraftCommand;
 
+    internal void UpdateEditingAvailability(bool editingAvailable)
+    {
+        var available = editingAvailable && (IsBooleanEditor || IsEnumEditor || IsNumericEditor
+            || IsStringEditor || IsKeybindingEditor || IsNotificationEditor);
+        if (CanEdit == available) return;
+        CanEdit = available;
+        revertDraftCommand.RaiseCanExecuteChanged();
+        addKeybindingCommand.RaiseCanExecuteChanged();
+        removeKeybindingCommand.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanSelectNotificationSound));
+    }
+
     internal void UpdateState(SettingsValueState state, bool editingAvailable)
     {
         valueState = state;

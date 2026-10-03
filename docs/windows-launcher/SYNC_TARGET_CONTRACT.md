@@ -125,7 +125,7 @@ Rules:
   write.
 - Invalid and unsupported entries remain in the source unless the user explicitly edits or removes them.
 - Sparse writes touch only the selected assignment or target block and preserve unknown content.
-- A stale revision, duplicate table, unsupported TOML construct, failed backup, or failed verification aborts the
+- A stale revision, duplicate definition, unverified requested TOML edit, failed backup, or failed verification aborts the
   entire write.
 - Presets create a desired draft. They do not send traffic or persist credentials before confirmation.
 
@@ -150,7 +150,7 @@ the LS-003 domain resolver and LS-004 persistence tests.
 The LS-002 test suite currently enforces:
 
 - every required case and fixture exists;
-- every fixture is readable by the launcher's conservative TOML surface without byte mutation;
+- every fixture is readable by the shared full-TOML engine without byte mutation;
 - declared paths exist exactly as written;
 - diagnostic identifiers and provenance states come from the locked machine contract;
 - security, non-inheritance, and sidecar-only invariants cannot drift unnoticed.

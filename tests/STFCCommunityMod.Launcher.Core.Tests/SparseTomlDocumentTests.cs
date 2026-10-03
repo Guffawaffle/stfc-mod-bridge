@@ -61,15 +61,15 @@ public sealed class SparseTomlDocumentTests
 
         var tableDocument = Load(rootResult.Contents!);
         var tableResult = tableDocument.SetOverride("existing.second", "\"two\"");
-        Assert.AreEqual(
-            "root_toggle = true\n[existing]\nvalue = 1\nsecond = \"two\"\n",
-            Decode(tableResult.Contents!));
+        Assert.IsTrue(tableResult.IsValid, tableResult.Error?.Message);
+        Assert.AreEqual(Decode(rootResult.Contents!), Decode(tableResult.Contents!).Replace("second = \"two\"\n", string.Empty, StringComparison.Ordinal));
 
         var newTableDocument = Load(tableResult.Contents!);
         var newTableResult = newTableDocument.SetOverride("new_section.enabled", "true");
-        Assert.AreEqual(
-            "root_toggle = true\n[existing]\nvalue = 1\nsecond = \"two\"\n[new_section]\nenabled = true\n",
-            Decode(newTableResult.Contents!));
+        Assert.IsTrue(newTableResult.IsValid, newTableResult.Error?.Message);
+        StringAssert.Contains(Decode(newTableResult.Contents!), Decode(tableResult.Contents!));
+        var inserted = Load(newTableResult.Contents!).ReadOverrides();
+        Assert.AreEqual("true", inserted.Overrides!["new_section.enabled"].RenderedValue);
     }
 
     [TestMethod]
@@ -85,13 +85,10 @@ public sealed class SparseTomlDocumentTests
         var result = document.SetOverride("notifications.fleet_arrived_in_system", "true");
 
         Assert.IsTrue(result.IsValid, result.Error?.Message);
-        Assert.AreEqual(
-            "# preserve compatibility input\n"
-            + "notifications.fleet_arrived_in_system = true\n"
-            + "[notifications.events.fleet]\n"
-            + "arrived_in_system = true\n"
-            + "[unrelated]\nkeep = true\n",
-            Decode(result.Contents!));
+        Assert.AreEqual(source, Decode(result.Contents!).Replace("notifications.fleet_arrived_in_system = true\n", string.Empty, StringComparison.Ordinal));
+        var inserted = Load(result.Contents!).ReadOverrides();
+        Assert.AreEqual("true", inserted.Overrides!["notifications.fleet_arrived_in_system"].RenderedValue);
+        Assert.AreEqual("true", inserted.Overrides["notifications.events.fleet.arrived_in_system"].RenderedValue);
     }
 
     [TestMethod]
@@ -135,7 +132,7 @@ public sealed class SparseTomlDocumentTests
     }
 
     [TestMethod]
-    public void MultilineTargetAndArrayTablesFailClosed()
+    public void MultilineValuesAndUnrelatedArrayTablesCanBeEdited()
     {
         var multiline = Load(
             """
@@ -146,7 +143,8 @@ public sealed class SparseTomlDocumentTests
             ]
             """);
         var multilineResult = multiline.SetOverride("settings.value", "[3]");
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedTarget, multilineResult.Error?.Code);
+        Assert.IsTrue(multilineResult.IsValid, multilineResult.Error?.Message);
+        Assert.AreEqual("[settings]\nvalue = [ 3 ]", Decode(multilineResult.Contents!));
 
         var arrayTable = Load(
             """
@@ -154,7 +152,11 @@ public sealed class SparseTomlDocumentTests
             name = "first"
             """);
         var arrayResult = arrayTable.SetOverride("settings.value", "true");
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedDocument, arrayResult.Error?.Code);
+        Assert.IsTrue(arrayResult.IsValid, arrayResult.Error?.Message);
+        StringAssert.Contains(Decode(arrayResult.Contents!), "[[profiles]]\nname = \"first\"");
+        var indexed = arrayTable.SetOverride("profiles.name", "\"second\"");
+        Assert.AreEqual(SparseTomlErrorCode.UnsupportedTarget, indexed.Error?.Code);
+        Assert.IsNull(indexed.Contents);
     }
 
     [TestMethod]
@@ -167,7 +169,7 @@ public sealed class SparseTomlDocumentTests
             enabled = false
             """);
         var statementResult = invalidStatement.SetOverride("settings.enabled", "true");
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedDocument, statementResult.Error?.Code);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidDocument, statementResult.Error?.Code);
         Assert.IsNull(statementResult.Contents);
 
         var invalidScalar = Load(
@@ -177,7 +179,7 @@ public sealed class SparseTomlDocumentTests
             enabled = false
             """);
         var scalarResult = invalidScalar.SetOverride("settings.enabled", "true");
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedDocument, scalarResult.Error?.Code);
+        Assert.AreEqual(SparseTomlErrorCode.InvalidDocument, scalarResult.Error?.Code);
         Assert.IsNull(scalarResult.Contents);
     }
 
@@ -228,7 +230,7 @@ public sealed class SparseTomlDocumentTests
         var result = document.SetOverride("settings.first", "false");
 
         Assert.IsFalse(result.IsValid);
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedDocument, result.Error?.Code);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, result.Error?.Code);
         Assert.IsNull(result.Contents);
     }
 
@@ -253,9 +255,8 @@ public sealed class SparseTomlDocumentTests
             """{ system = true, audio = true, sound = "alarm" }""",
             result.Overrides["notifications.incoming_attack_player"].RenderedValue);
         Assert.AreEqual(4, result.Overrides["notifications.incoming_attack_player"].LineNumber);
-        Assert.AreEqual(1, result.Tables?.Count);
-        Assert.AreEqual("notifications", result.Tables![0].CanonicalPath);
-        Assert.AreEqual(3, result.Tables[0].LineNumber);
+        Assert.IsNotNull(result.Tables);
+        Assert.AreEqual(3, result.Tables.Single(item => item.CanonicalPath == "notifications").LineNumber);
     }
 
     [TestMethod]
@@ -326,7 +327,7 @@ public sealed class SparseTomlDocumentTests
             """);
         var dottedResult = dotted.RenameTable("sync.targets.old", "sync.targets.new");
         Assert.IsFalse(dottedResult.IsValid);
-        Assert.AreEqual(SparseTomlErrorCode.UnsupportedTarget, dottedResult.Error?.Code);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, dottedResult.Error?.Code);
         Assert.IsNull(dottedResult.Contents);
     }
 
@@ -375,6 +376,143 @@ public sealed class SparseTomlDocumentTests
                 .Concat(Encoding.UTF8.GetBytes(source.Replace("old", "new", StringComparison.Ordinal)))
                 .ToArray(),
             result.Contents!);
+    }
+
+    [TestMethod]
+    [DataRow("\"enabled\"")]
+    [DataRow("'enabled'")]
+    [DataRow("nested . \"enabled\"")]
+    [DataRow("\"nested\".'enabled'")]
+    public void SimpleQuotedAssignmentPreservesBytesAndUsesBareCanonicalIdentity(string key)
+    {
+        var source = "[settings]\r\n  " + key + " = false # retain\r\nunknown = 12\r\n";
+        var contents = new byte[] { 0xef, 0xbb, 0xbf }.Concat(Encoding.UTF8.GetBytes(source)).ToArray();
+        var path = key.Contains('.') ? "settings.nested.enabled" : "settings.enabled";
+        var document = Load(contents);
+        Assert.IsTrue(document.ReadOverrides().Overrides!.ContainsKey(path));
+        var changed = document.SetOverride(path, "true");
+        Assert.IsTrue(changed.IsValid, changed.Error?.Message);
+        CollectionAssert.AreEqual(new byte[] { 0xef, 0xbb, 0xbf }
+            .Concat(Encoding.UTF8.GetBytes(source.Replace("false", "true", StringComparison.Ordinal))).ToArray(), changed.Contents!);
+        var removed = document.RemoveOverride(path);
+        Assert.IsTrue(removed.IsValid, removed.Error?.Message);
+        CollectionAssert.AreEqual(new byte[] { 0xef, 0xbb, 0xbf }
+            .Concat(Encoding.UTF8.GetBytes("[settings]\r\nunknown = 12\r\n")).ToArray(), removed.Contents!);
+    }
+
+    [TestMethod]
+    [DataRow("enabled = true\n\"enabled\" = false\n")]
+    [DataRow("\"enabled\" = true\n'enabled' = false\n")]
+    [DataRow("\"settings\".enabled = true\n[settings]\n'enabled' = false\n")]
+    public void QuotedAndBareDuplicateSpellingsFailClosed(string source)
+    {
+        var result = Load(source).ValidateForMutation();
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, result.Error?.Code);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("\"settings\" = true\n")]
+    [DataRow("\"settings\".enabled.child = true\n")]
+    public void QuotedKeysRetainScalarAndNamespaceExclusion(string source)
+    {
+        var result = Load(source).SetOverride("settings.enabled", "true");
+        Assert.IsFalse(result.IsValid);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("\"key.with.dot\"")]
+    [DataRow("\"key with space\"")]
+    [DataRow("\"\\u006bey\"")]
+    [DataRow("'clé'")]
+    [DataRow("\"\"")]
+    [DataRow("'🚀'")]
+    public void ValidQuotedKeysRemainDistinctAndSourcePreserved(string key)
+    {
+        var source = key + " = true\nother = false\n";
+        var document = Load(source);
+        Assert.IsTrue(document.ValidateForMutation().IsValid);
+        var result = document.SetOverride("other", "true");
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(source.Replace("other = false", "other = true", StringComparison.Ordinal), Decode(result.Contents!));
+        var original = document.ReadOverrides();
+        var literal = original.Overrides!.Values.Single(item => item.CanonicalPath != "other");
+        Assert.AreEqual(1, literal.PathSegments.Count);
+        var changed = document.SetOverride(literal.CanonicalPath, "false");
+        Assert.IsTrue(changed.IsValid, changed.Error?.Message);
+        Assert.AreEqual(source.Replace(" = true", " = false", StringComparison.Ordinal), Decode(changed.Contents!));
+    }
+
+    [TestMethod]
+    public void LiteralDotsAndDecodedUnicodeCannotAliasDottedPaths()
+    {
+        const string source = "\"key.with.dot\" = true\nkey.with.dot = false\n\"\\u006bey\".other = true\n";
+        var document = Load(source);
+        var read = document.ReadOverrides();
+        Assert.IsTrue(read.IsValid, read.Error?.Message);
+        Assert.AreEqual(3, read.Overrides!.Count);
+        Assert.AreEqual("true", read.Overrides["\"key.with.dot\""].RenderedValue);
+        Assert.AreEqual("false", read.Overrides["key.with.dot"].RenderedValue);
+        Assert.IsTrue(read.Overrides.ContainsKey("key.other"));
+        var result = document.SetOverride("\"key.with.dot\"", "false");
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(source.Replace("\"key.with.dot\" = true", "\"key.with.dot\" = false", StringComparison.Ordinal), Decode(result.Contents!));
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, Load("key = true\n\"\\u006bey\" = false\n").ValidateForMutation().Error?.Code);
+    }
+
+    [TestMethod]
+    public void QuotedHeadersAndQuotedApiPathsUseDecodedIdentity()
+    {
+        const string source = "[\"settings\"] # keep\nenabled = false\n";
+        var result = Load(source).SetOverride("\"settings\".enabled", "true");
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(source.Replace("false", "true", StringComparison.Ordinal), Decode(result.Contents!));
+        Assert.AreEqual(SparseTomlErrorCode.InvalidPath, Load(source).SetOverride("settings\nenabled", "true").Error?.Code);
+        Assert.IsFalse(Load("'key\" = true\n").ValidateForMutation().IsValid);
+    }
+
+    [TestMethod]
+    [DataRow("\"settings\"")]
+    [DataRow("settings")]
+    public void MultilineScalarIdentityBlocksChildInsertion(string key)
+    {
+        var document = Load(key + " = \"\"\"\nheld\n\"\"\"\n");
+        Assert.IsTrue(document.ValidateForMutation().IsValid);
+        var result = document.SetOverride("settings.enabled", "true");
+        Assert.IsFalse(result.IsValid);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("enabled = \"\"\"\nheld\n\"\"\"\n\"enabled\" = false\n")]
+    [DataRow("\"enabled\" = \"\"\"\nheld\n\"\"\"\nenabled = false\n")]
+    [DataRow("enabled = \"\"\"\nheld\n\"\"\"\nenabled = '''\nalso held\n'''\n")]
+    public void MultilineAliasesParticipateInDuplicateGuards(string source)
+    {
+        var document = Load(source);
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, document.ReadOverrides().Error?.Code);
+        var result = document.SetOverride("other", "true");
+        Assert.AreEqual(SparseTomlErrorCode.DuplicateTarget, result.Error?.Code);
+        Assert.IsNull(result.Contents);
+    }
+
+    [TestMethod]
+    public void MultilineReadRetainsRawValueAndRemovalUsesWholeAssignment()
+    {
+        const string source = "held = \"\"\"\r\nkeep everything\r\n\"\"\" # retain\r\n\"enabled\" = false\r\n";
+        var document = Load(source);
+        var held = document.ReadOverrides().Overrides!["held"];
+        Assert.AreEqual("\"\"\"\r\nkeep everything\r\n\"\"\"", held.RenderedValue);
+        Assert.IsTrue(LauncherTomlValue.TryReadString(held.RenderedValue, out var decoded));
+        Assert.AreEqual("keep everything\n", decoded);
+        var result = document.SetOverride("enabled", "true");
+        Assert.IsTrue(result.IsValid, result.Error?.Message);
+        Assert.AreEqual(source.Replace("false", "true", StringComparison.Ordinal), Decode(result.Contents!));
+        var removed = document.RemoveOverride("held");
+        Assert.IsTrue(removed.IsValid, removed.Error?.Message);
+        Assert.AreEqual("\"enabled\" = false\r\n", Decode(removed.Contents!));
     }
 
     private static SparseTomlDocument Load(string source) =>

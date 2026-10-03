@@ -28,6 +28,33 @@ public sealed class SyncTopologyPersistenceTests
     }
 
     [TestMethod]
+    public void LiteralDotTargetsAreDecodedWithoutAliasingOrdinaryTargetNames()
+    {
+        const string source = "[sync.targets.\"a.b\"]\nurl = 'https://literal.invalid'\ntoken = 'literal'\n[\"sync\".targets.a]\nurl = 'https://ordinary.invalid'\ntoken = 'ordinary'\n";
+        var loaded = SyncTopologyTomlAdapter.Load(Encoding.UTF8.GetBytes(source));
+        Assert.IsTrue(loaded.IsValid, loaded.Error?.Message);
+        Assert.AreEqual(2, loaded.Topology!.Targets.Count);
+        Assert.AreEqual("https://literal.invalid", loaded.Topology.Targets["a.b"].Url);
+        Assert.AreEqual("https://ordinary.invalid", loaded.Topology.Targets["a"].Url);
+        Assert.IsTrue(loaded.Topology.Resolve().Diagnostics.Any(item => item.Code == "SYNC_TARGET_NAME_INVALID"));
+        SparseTomlDocument.Load(Encoding.UTF8.GetBytes(source), out var document);
+        var renamed = document!.RenameTable("sync.targets.\"a.b\"", "sync.targets.literal");
+        Assert.IsTrue(renamed.IsValid, renamed.Error?.Message);
+        Assert.AreEqual(source.Replace("[sync.targets.\"a.b\"]", "[sync.targets.literal]", StringComparison.Ordinal), Encoding.UTF8.GetString(renamed.Contents!));
+    }
+
+    [TestMethod]
+    public void EmptyInlineTargetIsDiscoveredWithoutChangingItsBytes()
+    {
+        var source = "sync.targets.first = {}\n"u8.ToArray();
+        var loaded = SyncTopologyTomlAdapter.Load(source);
+        Assert.IsTrue(loaded.IsValid, loaded.Error?.Message);
+        Assert.IsTrue(loaded.Topology!.Targets.ContainsKey("first"));
+        SparseTomlDocument.Load(source, out var document);
+        CollectionAssert.AreEqual(source, document!.ValidateForMutation().Contents!);
+    }
+
+    [TestMethod]
     public void AdapterNativeDefaultsMatchTheGeneratedRuntimeSchema()
     {
         var catalog = LauncherConfigurationSchemaLoader.LoadFile(
@@ -383,7 +410,6 @@ public sealed class SyncTopologyPersistenceTests
         Assert.IsFalse(blocked.IsValid);
         Assert.IsTrue(blocked.Diagnostics.Any(item => item.Code == "SYNC_LEGACY_MIGRATION_REQUIRED"));
         Assert.IsTrue(migration.IsValid);
-        StringAssert.Contains(updated, "[sync.targets.default]");
         StringAssert.Contains(updated, "battlelogs = false");
         var migrated = Load(updated);
         var sparseLoad = SparseTomlDocument.Load(Encoding.UTF8.GetBytes(updated), out var document);

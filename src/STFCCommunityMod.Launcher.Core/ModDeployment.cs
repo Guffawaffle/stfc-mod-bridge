@@ -62,6 +62,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private const long MaximumArtifactSize = 128L * 1024L * 1024L;
     private const string ManagedFileName = "version.dll";
     private readonly string stateDirectory;
+    private readonly NativeLauncherProfilesStore? profilesStore;
     private readonly LauncherOperationLock operationLock;
     private readonly IModArtifactDownloader downloader;
     private readonly IModArtifactVersionReader versionReader;
@@ -79,6 +80,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     private readonly Func<string, string, long, CancellationToken, ValueTask>?
         afterDurableCopyChunkWritten;
     private readonly Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted;
+    private readonly Action<ModInstalledArtifactState>? afterDetachReceiptCaptured;
 
     public ModDeploymentService(
         string stateDirectory,
@@ -93,7 +95,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
-        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
+        NativeLauncherProfilesStore? profilesStore = null)
         : this(
             stateDirectory,
             downloader,
@@ -108,7 +111,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             reviewedCertifications: reviewedCertifications,
             afterDurableCopyBytesFlushed: afterDurableCopyBytesFlushed,
             afterDurableCopyChunkWritten: afterDurableCopyChunkWritten,
-            afterDurableCopyCompleted: afterDurableCopyCompleted)
+            afterDurableCopyCompleted: afterDurableCopyCompleted,
+            profilesStore: profilesStore)
     {
     }
 
@@ -128,10 +132,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         IEnumerable<ReviewedReleaseCertification>? reviewedCertifications = null,
         Func<string, string, CancellationToken, ValueTask>? afterDurableCopyBytesFlushed = null,
         Func<string, string, long, CancellationToken, ValueTask>? afterDurableCopyChunkWritten = null,
-        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null)
+        Func<string, string, CancellationToken, ValueTask>? afterDurableCopyCompleted = null,
+        NativeLauncherProfilesStore? profilesStore = null,
+        Action<ModInstalledArtifactState>? afterDetachReceiptCaptured = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         this.stateDirectory = Path.GetFullPath(stateDirectory);
+        this.profilesStore = profilesStore;
         operationLock = new(this.stateDirectory);
         this.downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         this.versionReader = versionReader ?? throw new ArgumentNullException(nameof(versionReader));
@@ -152,6 +159,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         this.afterDurableCopyBytesFlushed = afterDurableCopyBytesFlushed;
         this.afterDurableCopyChunkWritten = afterDurableCopyChunkWritten;
         this.afterDurableCopyCompleted = afterDurableCopyCompleted;
+        this.afterDetachReceiptCaptured = afterDetachReceiptCaptured;
     }
 
     public string JournalPath => Path.Combine(stateDirectory, "deployment-journal.json");
@@ -184,12 +192,25 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
         var normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
-        return ReadInstalledStates()
-            .SingleOrDefault(state => PathEquals(state.GameDirectory, normalizedGameDirectory));
+        var state = FindInstalledStateByLocation(ReadInstalledStates(), normalizedGameDirectory);
+        // Project old unbound alias receipts consistently during observation/review.
+        // Mutation normalizes their persisted path only after canonical custody is held.
+        return state is { InstallationBinding: null }
+            ? state with { GameDirectory = normalizedGameDirectory } : state;
     }
 
     public IReadOnlyList<ModInstalledArtifactState> ReadInstalledStates() =>
         ReadInstalledRegistry().Installations;
+
+    private static ModInstalledArtifactState? FindInstalledStateByLocation(
+        IEnumerable<ModInstalledArtifactState> states, string gameDirectory)
+    {
+        var matches = states.Where(state => PathEquals(state.GameDirectory, gameDirectory)
+            || GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory)).Take(2).ToArray();
+        if (matches.Length > 1)
+            throw new InvalidDataException("Multiple ownership receipts refer to this installation. Preserve their backups and review the installation before continuing.");
+        return matches.Length == 0 ? null : matches[0];
+    }
 
     public string? ReadReleaseProductVersionFloor(string gameDirectory)
     {
@@ -477,6 +498,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 ModDeploymentResultState.RecoveryRequired,
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, normalizedGameDirectory, previousInstalledState?.InstallationBinding,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (installationCustody is not null)
+        {
+            normalizedGameDirectory = installationCustody.GameDirectory;
+            CanonicalizeInstalledReceipt(installationCustody);
+            previousInstalledState = ReadInstalledState(normalizedGameDirectory);
+            installationCustody.ValidateReceipt(previousInstalledState?.InstallationBinding);
+        }
         if (allowManagedRepair
             && (previousInstalledState is null
                 || !ArtifactMatchesInstalledReceipt(previousInstalledState, artifact)
@@ -537,13 +568,6 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     "The verified candidate could not be cleaned safely; deployment did not start.");
             }
         }
-        var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState);
-        if (legacyUpgrade.Failure is not null)
-        {
-            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
-        }
-        previousInstalledState = legacyUpgrade.State;
-
         var targetPath = Path.Combine(normalizedGameDirectory, ManagedFileName);
         var runtimeManifestPath = RuntimeManifestTargetPath(normalizedGameDirectory);
         var hadExistingArtifact = File.Exists(targetPath);
@@ -552,6 +576,21 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         var existingRuntimeManifestIdentity = hadExistingRuntimeManifest
             ? CaptureIdentity(runtimeManifestPath)
             : null;
+        var replacement = (commitParticipant as IModSourceReplacementParticipant)?.ReplacementSource;
+        var adoptChangedManagedArtifact = replacement is not null;
+        if (adoptChangedManagedArtifact && (!MatchesReplacementSource(
+                replacement!, previousInstalledState, existingArtifactIdentity, existingRuntimeManifestIdentity)
+            || existingArtifactPolicy != ExistingArtifactPolicy.AdoptAndPreserve))
+        {
+            return new(ModDeploymentResultState.ManagedArtifactChanged,
+                "The current DLL, runtime manifest or managed receipt changed after review. Review the switch again.");
+        }
+        var reviewedPreviousInstalledState = adoptChangedManagedArtifact ? previousInstalledState : null;
+        var legacyUpgrade = UpgradeLegacyBackupReceipts(previousInstalledState,
+            persistUpgrade: !adoptChangedManagedArtifact);
+        if (legacyUpgrade.Failure is not null)
+            return new(ModDeploymentResultState.RecoveryRequired, legacyUpgrade.Failure);
+        previousInstalledState = legacyUpgrade.State;
         var isManagedUpdate = false;
         if (previousInstalledState is not null)
         {
@@ -560,7 +599,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     ComputeFileSha256(targetPath),
                     previousInstalledState.Sha256,
                     StringComparison.OrdinalIgnoreCase))
-                && !allowManagedRepair)
+                && !allowManagedRepair && !adoptChangedManagedArtifact)
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
@@ -572,13 +611,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         ComputeFileSha256(runtimeManifestPath),
                         previousInstalledState.RuntimeManifest.Sha256,
                         StringComparison.OrdinalIgnoreCase))
-                && !allowManagedRepair)
+                && !allowManagedRepair && !adoptChangedManagedArtifact)
             {
                 return new(
                     ModDeploymentResultState.ManagedArtifactChanged,
                     "The managed runtime manifest no longer matches Mod Bridge state; repair is required.");
             }
-            isManagedUpdate = true;
+            isManagedUpdate = !adoptChangedManagedArtifact;
         }
 
         if (previousInstalledState is not null)
@@ -641,7 +680,10 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             CommitParticipantCompleted: commitParticipant is null,
             ExistingArtifactIdentity: existingArtifactIdentity,
             ExistingRuntimeManifestIdentity: existingRuntimeManifestIdentity,
-            TargetInstallationAttribution: installationAttribution);
+            TargetInstallationAttribution: installationAttribution,
+            AdoptChangedManagedArtifact: adoptChangedManagedArtifact,
+            ReviewedPreviousInstalledState: reviewedPreviousInstalledState,
+            InstallationBinding: installationCustody?.Binding);
         ExactFileRevision? exactStagedArtifactRevision = null;
         ExactFileMutation? exactStagedArtifact = null;
         ExactFileMutation? exactStagedRuntimeManifest = null;
@@ -657,7 +699,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         normalizedGameDirectory,
                         journal.Artifact,
                         previousInstalledState,
-                        hadExistingArtifact),
+                        hadExistingArtifact,
+                        existingArtifactIdentity),
                     cancellationToken).ConfigureAwait(false);
             }
             journal = await PersistPhaseAsync(journal, ModDeploymentPhase.Downloading, cancellationToken);
@@ -942,14 +985,19 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     previousInstalledState,
                     installationAttribution,
                     ResolveReleaseProductVersion(journal.Artifact, installationAttribution),
-                    journal.Artifact));
-            UpsertInstalledState(installedState);
-
+                    journal.Artifact),
+                journal.Artifact.RepositoryRelease,
+                journal.InstallationBinding);
             if (commitParticipant is not null)
             {
                 participantCommitStarted = true;
                 await commitParticipant.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
+
+            // Fresh source compatibility checks must still observe the source receipt.
+            // Recovery uses the exact journal if termination occurs before publication.
+            UpsertInstalledState(installedState,
+                adoptChangedManagedArtifact ? PriorAdoptionBackup(journal) : null);
 
             if (!isManagedUpdate && File.Exists(sameVolumeBackupPath))
             {
@@ -1057,13 +1105,18 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             exactStagedArtifact?.Dispose();
             exactStagedRuntimeManifest?.Dispose();
-            await RollBackCoordinatedAsync(
+            var rolledBack = await RollBackCoordinatedAsync(
                 journal,
                 targetPath,
                 commitParticipant,
                 participantCommitStarted,
                 exactStagedArtifactRevision,
                 CancellationToken.None).ConfigureAwait(false);
+            if (!rolledBack)
+            {
+                return new(ModDeploymentResultState.RecoveryRequired,
+                    "The canceled mod transaction could not restore all prior state and requires recovery.");
+            }
             throw;
         }
         catch (Exception exception)
@@ -1175,7 +1228,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         try
         {
             journal = ReadJournal();
-            installedState = ReadInstalledState(normalizedGameDirectory);
+            installedState = FindInstalledStateByLocation(ReadInstalledStates(), normalizedGameDirectory);
         }
         catch (Exception exception) when (IsStateReadFailure(exception))
         {
@@ -1200,6 +1253,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 $"Mod Bridge is not managing the installation at '{normalizedGameDirectory}'.");
         }
 
+        var capturedReceipt = installedState;
+        afterDetachReceiptCaptured?.Invoke(capturedReceipt);
         var legacyUpgrade = UpgradeLegacyBackupReceipts(installedState, persistUpgrade: false);
         if (legacyUpgrade.Failure is not null)
         {
@@ -1226,7 +1281,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
         try
         {
-            DetachInstalledState(normalizedGameDirectory, retainedBackup);
+            DetachInstalledState(capturedReceipt, retainedBackup);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -1281,6 +1336,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 "An incomplete mod transaction must be recovered before another mutation can start.");
         }
 
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, validation.GameDirectory, installedState?.InstallationBinding,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (installationCustody is not null)
+        {
+            validation = GameInstallValidator.Validate(installationCustody.GameDirectory);
+            CanonicalizeInstalledReceipt(installationCustody);
+            installedState = ReadInstalledState(installationCustody.GameDirectory);
+            installationCustody.ValidateReceipt(installedState?.InstallationBinding);
+        }
         var legacyUpgrade = UpgradeLegacyBackupReceipts(installedState);
         if (legacyUpgrade.Failure is not null)
         {
@@ -1359,7 +1424,8 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             ExistingArtifactIdentity: new(installedState.Size, installedState.Sha256),
             ExistingRuntimeManifestIdentity: installedState.RuntimeManifest is null
                 ? null
-                : new(installedState.RuntimeManifest.Size, installedState.RuntimeManifest.Sha256));
+                : new(installedState.RuntimeManifest.Size, installedState.RuntimeManifest.Sha256),
+            InstallationBinding: installationCustody?.Binding);
 
         try
         {
@@ -1587,6 +1653,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return PreserveLiveArtifactRecoveryResult();
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, journal.GameDirectory, journal.InstallationBinding, recovery: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (isGameRunning(journal.GameDirectory))
         {
             return new(ModDeploymentResultState.GameRunning, "Close Star Trek Fleet Command before provider-switch recovery.");
@@ -1657,7 +1726,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
             throw new InvalidDataException(
                 "The provider-switch deployment transaction does not match its recovery journal.");
         }
-        if (outerPrepared && journal.Phase != ModDeploymentPhase.Planned)
+        // A failed Begin publication can leave the outer journal Prepared
+        // while this exact participant compensates. Only rollback progress or
+        // its terminal states are admissible alongside the original Planned state.
+        if (outerPrepared && journal.Phase is not (ModDeploymentPhase.Planned
+            or ModDeploymentPhase.RollingBack
+            or ModDeploymentPhase.RolledBack
+            or ModDeploymentPhase.Failed))
         {
             throw new InvalidDataException(
                 "The provider-switch deployment advanced beyond its outer recovery journal.");
@@ -1703,6 +1778,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         {
             return new(ModDeploymentResultState.Succeeded, "No incomplete mod transaction was found.", installedState);
         }
+        using var installationCustody = await RuntimeInstallationCustody.AcquireAsync(
+            profilesStore, journal.GameDirectory, journal.InstallationBinding, recovery: true,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (journal.PreserveLiveArtifactDuringRecovery)
         {
             return PreserveLiveArtifactRecoveryResult(installedState);
@@ -2157,7 +2235,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                 RuntimeManifestDurableBackupPath(journal),
                 journal.ExistingRuntimeManifestIdentity,
                 "redundant durable runtime-manifest rollback");
-            RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState);
+            RestoreInstalledState(journal.GameDirectory, journal.PreviousInstalledState,
+                journal.AdoptChangedManagedArtifact ? journal.TransactionId : null,
+                journal.ReviewedPreviousInstalledState);
             await PersistPhaseAsync(
                 journal with { PreserveLiveArtifactDuringRecovery = false },
                 ModDeploymentPhase.RolledBack,
@@ -2873,8 +2953,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     private void RestoreInstalledState(
         string gameDirectory,
-        ModInstalledArtifactState? state)
+        ModInstalledArtifactState? state,
+        string? replacementDetachmentId = null,
+        ModInstalledArtifactState? reviewedPreviousInstalledState = null)
     {
+        if (replacementDetachmentId is not null)
+        {
+            RestoreReplacementInstalledState(gameDirectory, state!, replacementDetachmentId,
+                reviewedPreviousInstalledState);
+            return;
+        }
         if (state is null)
         {
             RemoveInstalledState(gameDirectory);
@@ -3394,6 +3482,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                         state.RuntimeDistributionId,
                         targetAttribution.RuntimeDistributionId,
                         StringComparison.Ordinal)
+                    || state.RepositoryRelease != journal.Artifact.RepositoryRelease
                     || !RuntimeInstalledStateMatches(state.RuntimeManifest, journal.Artifact.RuntimeManifest))
                 {
                     return "Committed cleanup was blocked because installed-mod state does not match the live pair.";
@@ -3448,7 +3537,9 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModDeploymentJournal journal,
         ModInstalledArtifactState installed)
     {
-        var previous = journal.PreviousInstalledState;
+        var detachmentFailure = ValidatePriorAdoptionDetachment(journal);
+        if (detachmentFailure is not null) return detachmentFailure;
+        var previous = journal.AdoptChangedManagedArtifact ? null : journal.PreviousInstalledState;
         var expectedDllPath = previous is not null
             ? previous.PreviousArtifactBackupPath
             : journal.HadExistingArtifact ? journal.DurableBackupPath : null;
@@ -3823,7 +3914,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
                     floor.AcceptedArtifactSha256,
                     StringComparison.OrdinalIgnoreCase)))
         {
-            return $"The selected {candidateProductVersion} release does not exactly match the retained signed tag and artifact identity for this release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
+            return $"The selected {candidateProductVersion} release does not exactly match the retained release tag and artifact identity for this release floor. Use an explicit replacement or downgrade recovery flow to replace it.";
         }
         return null;
     }
@@ -3845,6 +3936,17 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         ModReleaseArtifact artifact,
         ModInstallationAttribution attribution)
     {
+        if (artifact.RepositoryRelease is { } repositoryRelease)
+        {
+            NetnivRepositoryReleaseService.ValidateObservation(repositoryRelease);
+            if (attribution.ProviderId != "netniv" || attribution.ReleaseChannelId != "stable"
+                || attribution.RuntimeDistributionId != "netniv.stfc-community-mod"
+                || artifact.DownloadUri != repositoryRelease.DownloadUri || artifact.Size != repositoryRelease.PayloadSize
+                || !string.Equals(artifact.Sha256, repositoryRelease.PayloadSha256, StringComparison.OrdinalIgnoreCase)
+                || artifact.ExpectedVersion != repositoryRelease.FileVersion)
+                throw new InvalidDataException("The repository release does not match the target artifact attribution.");
+            return repositoryRelease.Tag;
+        }
         if (artifact.ExpectedProductVersion is not null)
         {
             return artifact.ExpectedProductVersion;

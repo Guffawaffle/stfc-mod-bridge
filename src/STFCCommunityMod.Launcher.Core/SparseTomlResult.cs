@@ -8,6 +8,8 @@ public enum SparseTomlErrorCode
     DuplicateTarget,
     UnsupportedDocument,
     UnsupportedTarget,
+    InvalidDocument,
+    EditorUnavailable,
 }
 
 public sealed record SparseTomlError(
@@ -34,11 +36,18 @@ public sealed record SparseTomlEditResult(
 public sealed record SparseTomlOverride(
     string CanonicalPath,
     string RenderedValue,
-    int LineNumber);
+    int LineNumber)
+{
+    public IReadOnlyList<string> PathSegments { get; init; } = Array.Empty<string>();
+    public string SemanticValue { get; init; } = RenderedValue;
+}
 
 public sealed record SparseTomlTable(
     string CanonicalPath,
-    int LineNumber);
+    int LineNumber)
+{
+    public IReadOnlyList<string> PathSegments { get; init; } = Array.Empty<string>();
+}
 
 public sealed record SparseTomlReadResult(
     bool IsValid,

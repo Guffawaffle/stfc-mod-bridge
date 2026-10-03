@@ -102,6 +102,31 @@ public sealed class ConfigurationDiagnosisTests
     }
 
     [TestMethod]
+    public void LargeUnknownDocumentUsesDecodedIdentityWithoutBlockingDiagnosis()
+    {
+        var builder = new StringBuilder("\"graphics.default_system_zoom\" = 5001\n"
+            + "[\"graphics.test\"]\nvalue = true\n"
+            + "[graphics]\ndefault_system_zoom = 1750\n[unknown]\n");
+        for (var index = 0; index < 3000; index++)
+        {
+            builder.Append("item").Append(index).Append(" = true\n");
+        }
+        var contents = Encoding.UTF8.GetBytes(builder.ToString());
+        var snapshot = Snapshot(contents);
+        var evidence = SupportedEvidence();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var report = Analyzer().Analyze(snapshot, evidence);
+        watch.Stop();
+
+        Assert.AreEqual(3002, report.Findings.Count(item => item.Code == "CONFIG_UNKNOWN_KEY"));
+        Assert.AreEqual(2, report.Findings.Count(item => item.Code == "CONFIG_UNKNOWN_TABLE"));
+        LacksCode(report, "CONFIG_VALUE_INVALID");
+        CollectionAssert.AreEqual(contents, snapshot.Contents);
+        Assert.IsTrue(watch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Diagnosis of a small valid document took {watch.Elapsed.TotalSeconds:F3}s.");
+    }
+
+    [TestMethod]
     public void AliasCorpusDistinguishesPresenceRedundancyAndConflicts()
     {
         var aliasOnly = Diagnose("shortcuts.set_hotkeys_disable = \"CTRL-ALT-MINUS\"\n");
@@ -129,6 +154,13 @@ public sealed class ConfigurationDiagnosisTests
     }
 
     [TestMethod]
+    public void KnownQuotedInlinePolicyMembersAreRecognizedAsOneSetting()
+    {
+        var report = Diagnose("[notifications]\nfleet_arrived_in_system = { \"system\" = true, 'audio' = true, sound = '''arrival''' }\n");
+        Assert.IsFalse(report.Findings.Any(item => item.Code is "CONFIG_VALUE_INVALID" or "CONFIG_UNKNOWN_KEY" or "CONFIG_UNKNOWN_TABLE"));
+    }
+
+    [TestMethod]
     public void KnownInvalidRangesEnumsKeybindingsAndPoliciesUseStableCode()
     {
         var report = Diagnose(
@@ -149,11 +181,11 @@ public sealed class ConfigurationDiagnosisTests
     }
 
     [DataTestMethod]
-    [DataRow("value = true\nvalue = false\n", "CONFIG_DOCUMENT_DUPLICATE_ASSIGNMENT", false)]
-    [DataRow("[same]\nvalue = true\n[same]\nother = false\n", "CONFIG_DOCUMENT_DUPLICATE_TABLE", false)]
-    [DataRow("[[unsupported]]\nvalue = true\n", "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED", true)]
-    [DataRow("quoted.\"key\" = true\n", "CONFIG_DOCUMENT_SYNTAX_UNSUPPORTED", true)]
-    public void InvalidAndUnsupportedSyntaxCorpusFailsClosed(
+    [DataRow("value = true\nvalue = false\n", "CONFIG_DOCUMENT_DUPLICATE_DEFINITION", false)]
+    [DataRow("[same]\nvalue = true\n[same]\nother = false\n", "CONFIG_DOCUMENT_DUPLICATE_DEFINITION", false)]
+    [DataRow("[[broken]\nvalue = true\n", "CONFIG_DOCUMENT_MALFORMED", false)]
+    [DataRow("quoted.\"key.with.dot = true\n", "CONFIG_DOCUMENT_MALFORMED", false)]
+    public void MalformedAndDuplicateSyntaxCorpusFailsClosed(
         string text,
         string expectedCode,
         bool expectedUnknown)

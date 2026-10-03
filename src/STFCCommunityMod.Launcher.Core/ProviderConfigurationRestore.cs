@@ -619,7 +619,7 @@ public sealed class ProviderConfigurationRestoreCoordinator
                     receipt,
                     destinationPath,
                     ProviderConfigurationCompatibilityState.Blocked,
-                    "This protected entry is not safe for the conservative TOML restore path.",
+                    "This protected entry is not safe for the verified shared TOML restore path.",
                     diagnosisEvidence.Catalog?.Identity.CatalogId,
                     diagnosisEvidence.Catalog?.Identity.CatalogVersion);
             }

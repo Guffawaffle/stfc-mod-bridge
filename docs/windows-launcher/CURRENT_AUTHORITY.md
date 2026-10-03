@@ -12,12 +12,22 @@ signed artifacts, or candidate-specific qualification receipts.
 |---|---|
 | Repository scope, branch policy, verification, and safety boundaries | [`AGENTS.md`](../../AGENTS.md) |
 | Windows product behavior and ownership boundaries | [`CONTRACT.md`](CONTRACT.md) |
+| Observed Windows multi-install game-update route and proposed recovery requirements | [`GAME_CLIENT_UPDATE.md`](GAME_CLIENT_UPDATE.md) |
+| Shared profile catalog, immutable identity, storage, archive lifecycle and CLI direction | [STFC Profiles canonical contract](https://github.com/Guffawaffle/stfc-profiles/blob/main/docs/PROFILE_CATALOG_CONTRACT.md) |
+| Bridge explicit profile requests, standalone composition and remaining runtime obligations | [`SHARED_INSTALL_PROFILE_CONTRACT.md`](SHARED_INSTALL_PROFILE_CONTRACT.md) |
 | Public name, package identity, state paths, and repository coordinate | [`PRODUCT_IDENTITY.md`](PRODUCT_IDENTITY.md) |
 | Player-facing layout and interaction direction | [`UX_DIRECTION.md`](UX_DIRECTION.md) |
 | Provider versus Bridge ownership and trust | [`PROVIDER_PACKS.md`](../PROVIDER_PACKS.md), [`MOD_DEPLOYMENT.md`](MOD_DEPLOYMENT.md), and [`SELF_UPDATE.md`](SELF_UPDATE.md) |
 | Pre-v1 App Installer permission and least-authority plan | [`APP_INSTALLER_PERMISSIONS.md`](APP_INSTALLER_PERMISSIONS.md) and [GitHub issue #219](https://github.com/Guffawaffle/stfc-mod-bridge/issues/219) |
 | Current v1 release decision and evidence checklist | [GitHub issue #30](https://github.com/Guffawaffle/stfc-mod-bridge/issues/30) |
 | Battle feature activation and dormancy | [`BATTLE_BRIDGE_ACTIVATION_ADR.md`](BATTLE_BRIDGE_ACTIVATION_ADR.md) and [`BATTLE_BRIDGE_LOCAL_IPC.md`](BATTLE_BRIDGE_LOCAL_IPC.md) |
+
+The current NetniV stable provider policy uses configured GitHub repository-release
+authority with exact retained artifact observations. Older notes describing a
+temporary installable reviewed-hash allowlist are superseded by the current
+[provider contract](../PROVIDER_PACKS.md). Historical certifications, provenance
+snapshots, signed artifacts, and qualification receipts remain evidence only for
+their exact recorded source and bytes.
 
 GitHub issue state changes over time. Read the live issue before starting a
 candidate-specific action; a copied checklist or old release comment is not the
