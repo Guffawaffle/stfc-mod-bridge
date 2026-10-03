@@ -13,6 +13,7 @@ public partial class MainWindow
     private bool isArchivingProfile;
     private bool isImportingProfile;
     private bool isCreatingProfile;
+    private LauncherProfile? profileBeingEdited;
     private bool isProfileOperationPending;
     private TaskCompletionSource<bool>? importReviewCompletion;
     private ProfileImportSources? importSources;
@@ -43,7 +44,7 @@ public partial class MainWindow
 
     private void UpdateProfileLaunchSelection() => ProfileLaunchSelection.Text = isImportingProfile
         ? "Copy Windows setup" : isCreatingProfile ? "New profile"
-        : ProfilesList.SelectedItem is LauncherProfile editing ? editing.Name
+        : profileBeingEdited is { } editing ? editing.Name
         : profiles.SelectedProfile is { } selected ? selected.Name
         : profiles.SelectedProfileId is { } missing
             ? $"Selected profile is unavailable: {missing}. Restore it or choose Default."
@@ -84,6 +85,7 @@ public partial class MainWindow
 
     private void FillProfileForm(LauncherProfile profile)
     {
+        profileBeingEdited = profile;
         profileFormInstallation = null;
         if (!string.IsNullOrEmpty(profile.PreferredInstallationId))
         {
@@ -125,6 +127,7 @@ public partial class MainWindow
     {
         if (isProfileOperationPending) return;
         ResetImportMode();
+        profileBeingEdited = null;
         profileFormInstallation = null;
         ProfileImportFeedback.Text = string.Empty;
         ShowArchivedProfilesBox.IsChecked = false;
@@ -317,7 +320,7 @@ public partial class MainWindow
         try
         {
             if (!await ResolveProfileDraftsAsync()) return;
-            var selected = ProfilesList.SelectedItem as LauncherProfile;
+            var selected = profileBeingEdited;
             var updated = selected is null
                 ? await ProfilesStore.CreateNewAsync(ProfileNameBox.Text, ProfileFolderBox.Text,
                     preferredInstallationId: SelectedFormInstallationId())
