@@ -58,7 +58,9 @@ public sealed class ProfileImportPresentationTests
         Assert.IsNotNull(details.Attribute(automation + "AutomationProperties.Name"));
         var buttons = dialog.Descendants().Where(element => element.Name.LocalName == "Button").ToArray();
         CollectionAssert.AreEquivalent(ReviewButtons, buttons.Select(button => (string)button.Attribute("Content")!).ToArray());
-        Assert.IsTrue(buttons.All(button => button.Attribute(automation + "AutomationProperties.Name") is not null));
+        var actionNames = buttons.Select(button => (string?)button.Attribute(automation + "AutomationProperties.Name")).ToArray();
+        CollectionAssert.AreEquivalent(new[] { "Not now; keep current selections", "Continue the reviewed action" }, actionNames);
+        Assert.AreEqual("Why this action may need Windows permission", (string?)details.Attribute(automation + "AutomationProperties.Name"));
         Assert.IsTrue(dialog.Descendants().Any(element => element.Name.LocalName == "ScrollViewer"));
     }
 

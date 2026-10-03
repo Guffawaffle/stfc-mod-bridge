@@ -1510,17 +1510,17 @@
                      automation:AutomationProperties.LiveSetting="Polite" />
           <Expander x:Name="ProfileImportDetails" Margin="0,12,0,0" Header="Why is this needed?"
                     Foreground="{DynamicResource TextPrimaryBrush}"
-                    automation:AutomationProperties.Name="Why this import may need Windows permission">
+                    automation:AutomationProperties.Name="Why this action may need Windows permission">
             <TextBlock x:Name="ProfileImportDetailExplanation" Margin="0,8,0,0" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextSecondaryBrush}" />
           </Expander>
           <WrapPanel HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button Margin="0,0,10,0" Style="{StaticResource QuietButtonStyle}"
                     Click="CancelProfileImportButton_Click" Content="_Not now"
-                    automation:AutomationProperties.Name="Cancel profile import and keep selections" />
+                    automation:AutomationProperties.Name="Not now; keep current selections" />
             <Button Style="{StaticResource UtilityActionButtonStyle}"
                     Click="ContinueProfileImportButton_Click" Content="_Continue"
-                    automation:AutomationProperties.Name="Continue the reviewed profile import" />
+                    automation:AutomationProperties.Name="Continue the reviewed action" />
           </WrapPanel>
         </StackPanel>
       </ScrollViewer>
