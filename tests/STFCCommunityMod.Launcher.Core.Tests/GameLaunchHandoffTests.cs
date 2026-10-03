@@ -731,6 +731,25 @@ public sealed class GameLaunchHandoffTests
             Assert.IsTrue(GameDirectoryIdentity.SameLocation(game, fixture.GameService.LastGameDirectory!));
             Assert.AreEqual("", store.Load().Snapshot!.SelectedProfile!.PreferredInstallationId);
             Assert.AreEqual("", store.Load().Snapshot!.SelectedProfile!.GameDirectory);
+            File.WriteAllText(fixture.DeploymentService.InstalledStatePath,
+                System.Text.Json.JsonSerializer.Serialize(new ModInstalledArtifactRegistry(2,
+                    [canonicalReceipt, canonicalReceipt with { GameDirectory = aliasGame, InstallationBinding = null }]),
+                    WebJsonOptions));
+            var ambiguousRegistry = File.ReadAllBytes(fixture.DeploymentService.InstalledStatePath);
+            var ambiguousDll = File.ReadAllBytes(Path.Combine(game, "version.dll"));
+            Assert.AreEqual(ModInstallationEvidenceState.Unavailable,
+                new ModInstallationInspector(fixture.DeploymentService, new SystemModInstallationFileSystem()).Capture(aliasGame, false).State);
+            Assert.IsTrue(fixture.Coordinator.CapturePresentation(aliasGame, LauncherLaunchTarget.PrimeExecutable,
+                requiredProfile: profile with { GameDirectory = aliasGame }).RequiresUserOverride);
+            Assert.AreEqual(GameLaunchHandoffState.Blocked,
+                (await fixture.Coordinator.LaunchProfileAsync(profile, defaultGameDirectory: aliasGame)).State);
+            Assert.AreEqual(1, fixture.GameService.StartCount);
+            Assert.AreEqual(ModDeploymentResultState.RecoveryRequired,
+                (await fixture.DeploymentService.StopManagingAsync(aliasGame)).State);
+            Assert.AreEqual(ModDeploymentResultState.RecoveryRequired,
+                (await fixture.DeploymentService.UninstallAsync(game)).State);
+            CollectionAssert.AreEqual(ambiguousRegistry, File.ReadAllBytes(fixture.DeploymentService.InstalledStatePath));
+            CollectionAssert.AreEqual(ambiguousDll, File.ReadAllBytes(Path.Combine(game, "version.dll")));
         }
         finally { Directory.Delete(alias); }
     }

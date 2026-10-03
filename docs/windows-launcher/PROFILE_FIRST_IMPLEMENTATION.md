@@ -76,6 +76,9 @@ Health and diagnostics recognize a canonical ownership receipt through an alias
 without changing its physical binding. Detach captures the original raw receipt
 key and content, then checks that same row at removal; retargeting the alias cannot
 detach another installation or misattribute its retained backup history.
+Multiple historical receipts naming the same physical installation are classified
+as unavailable state, preserving all receipts and backups. Observation presents
+that condition instead of letting a sequence-selection exception abort startup.
 
 Startup, refresh and launch decisions observe profile sessions. Default can
 coexist with verified isolated sessions, but an unknown running process cannot

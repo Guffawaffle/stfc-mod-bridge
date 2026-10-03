@@ -192,9 +192,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
         var normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
-        var state = ReadInstalledStates().SingleOrDefault(state =>
-            PathEquals(state.GameDirectory, normalizedGameDirectory)
-            || GameDirectoryIdentity.SameLocation(state.GameDirectory, normalizedGameDirectory));
+        var state = FindInstalledStateByLocation(ReadInstalledStates(), normalizedGameDirectory);
         // Project old unbound alias receipts consistently during observation/review.
         // Mutation normalizes their persisted path only after canonical custody is held.
         return state is { InstallationBinding: null }
@@ -203,6 +201,16 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
 
     public IReadOnlyList<ModInstalledArtifactState> ReadInstalledStates() =>
         ReadInstalledRegistry().Installations;
+
+    private static ModInstalledArtifactState? FindInstalledStateByLocation(
+        IEnumerable<ModInstalledArtifactState> states, string gameDirectory)
+    {
+        var matches = states.Where(state => PathEquals(state.GameDirectory, gameDirectory)
+            || GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory)).Take(2).ToArray();
+        if (matches.Length > 1)
+            throw new InvalidDataException("Multiple ownership receipts refer to this installation. Preserve their backups and review the installation before continuing.");
+        return matches.Length == 0 ? null : matches[0];
+    }
 
     public string? ReadReleaseProductVersionFloor(string gameDirectory)
     {
@@ -1220,9 +1228,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         try
         {
             journal = ReadJournal();
-            installedState = ReadInstalledStates().SingleOrDefault(state =>
-                PathEquals(state.GameDirectory, normalizedGameDirectory)
-                || GameDirectoryIdentity.SameLocation(state.GameDirectory, normalizedGameDirectory));
+            installedState = FindInstalledStateByLocation(ReadInstalledStates(), normalizedGameDirectory);
         }
         catch (Exception exception) when (IsStateReadFailure(exception))
         {

@@ -563,9 +563,7 @@ public sealed partial class ModDeploymentService
     private void CanonicalizeInstalledReceipt(RuntimeInstallationCustody custody)
     {
         var registry = ReadInstalledRegistry();
-        var existing = registry.Installations.SingleOrDefault(state =>
-            PathEquals(state.GameDirectory, custody.GameDirectory)
-            || GameDirectoryIdentity.SameLocation(state.GameDirectory, custody.GameDirectory));
+        var existing = FindInstalledStateByLocation(registry.Installations, custody.GameDirectory);
         if (existing is null) return;
         custody.ValidateReceipt(existing.InstallationBinding);
         if (PathEquals(existing.GameDirectory, custody.GameDirectory)) return;
