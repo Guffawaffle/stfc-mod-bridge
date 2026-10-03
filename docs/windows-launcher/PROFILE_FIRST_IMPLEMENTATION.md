@@ -104,7 +104,8 @@ switches between Shuttle Bay and Engineering, with a persistent Bay status foote
 Engineering uses a primary navigation sidebar, profile rail and selected-profile
 workspace. Below 1040 logical pixels the primary navigation becomes an icon rail
 with named tooltips so Settings retains enough editing space. The Data Sync wizard
-is constrained to its available workspace width. The opening Bay is 1120 by 780
+is constrained to its available workspace width; its scrollable body keeps all
+feed choices reachable while retaining the header and action footer. The opening Bay is 1120 by 780
 logical pixels, clamped to the work area; returning to Bay preserves the user's
 current window size. Both appearances use the original HTML study's palette,
 separate link accents and button fills, normal body text and themed scrollbars.

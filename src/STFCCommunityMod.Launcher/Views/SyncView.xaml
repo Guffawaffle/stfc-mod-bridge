@@ -529,7 +529,9 @@
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
           <StackPanel><TextBlock FontSize="21" FontWeight="SemiBold" Text="Add destination" />
             <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding StepTitle}" /></StackPanel>
-          <Grid Grid.Row="1" Margin="0,18,0,18">
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,18" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+            <ScrollViewer.Resources><Style TargetType="ScrollBar" BasedOn="{StaticResource SyncScrollBarStyle}" /></ScrollViewer.Resources>
+            <Grid>
             <ItemsControl ItemsSource="{Binding Choices}" Visibility="{Binding IsChooseStep, Converter={StaticResource BooleanToVisibilityConverter}}">
               <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type viewModels:SyncAddChoiceViewModel}">
                 <Button Margin="0,0,0,6" Padding="12,6" HorizontalContentAlignment="Stretch"
@@ -581,6 +583,7 @@
               </Border>
             </Grid>
           </Grid>
+          </ScrollViewer>
           <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource ErrorBrush}" Text="{Binding Error}" />
             <StackPanel Grid.Column="1" Orientation="Horizontal">
