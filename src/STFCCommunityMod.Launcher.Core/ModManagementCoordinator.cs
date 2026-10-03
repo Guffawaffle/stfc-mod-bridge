@@ -44,7 +44,8 @@ public sealed record ModOperationPreparation(
     ModManagementActionKind ActionKind,
     string ProviderId,
     bool IsAdoptionOnly = false,
-    ModOperationRecoveryAction RecoveryAction = ModOperationRecoveryAction.None);
+    ModOperationRecoveryAction RecoveryAction = ModOperationRecoveryAction.None,
+    string? InstallationId = null);
 
 public interface IModManagementCoordinator
 {

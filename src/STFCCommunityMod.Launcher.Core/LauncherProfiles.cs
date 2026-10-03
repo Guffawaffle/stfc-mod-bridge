@@ -475,6 +475,25 @@ public sealed class NativeLauncherProfilesStore
         return leases.AcquireInstallationLease(new("installation-status", Root: root, GameDirectory: gameDirectory));
     }
 
+    public IDisposable AcquireInstallationLease(string gameDirectory, string installationId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(installationId);
+        var lease = AcquireInstallationLease(gameDirectory);
+        try
+        {
+            var registered = InstallationPaths(installationId);
+            if (registered.State != "available"
+                || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory))
+                throw new InvalidOperationException("The prepared installation changed. Select it again before continuing.");
+            return lease;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
     public ProfileCatalogLease AcquireDataLease(string id)
     {
         if (transport is not IProfileCatalogLeaseTransport leases)

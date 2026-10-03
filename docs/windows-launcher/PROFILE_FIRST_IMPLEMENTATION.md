@@ -44,12 +44,24 @@ Default metadata edits omit a name field, since the native descriptor cannot be
 renamed. Game status, checking, updating, progress polling and recovery carry
 the captured registration ID. Changing that ID invalidates checked-version
 evidence even when the path is unchanged. A stale registration cannot authorize
-shared runtime or Default configuration targets. Prepared runtime work rechecks
-its original registration before execution; journal recovery still reaches an
-incomplete image through the registration-bound native recovery operation.
+shared runtime or Default configuration targets. Prepared runtime work carries
+its original registration in the preparation record across provider composition,
+then acquires native directory custody and rechecks that registration before
+execution. The lease spans the complete download/commit await. Retired provider
+composition cannot display a late preparation result. Journal recovery still
+reaches an incomplete image through registration-bound native recovery.
+Provider switching carries the same captured ID; switching, uninstalling and
+detaching retain native directory custody through their awaited operation too.
 
 Startup, refresh and launch decisions observe profile sessions. Default can
 coexist with verified isolated sessions, but an unknown running process cannot
 be claimed or authorize an extra ordinary launch. Settings navigation restores
 its workspace after provider recomposition. Profiles-only composition has an
 explicit empty community-settings catalog with its own source identity.
+
+Save/Discard/Stay protects Settings and Data Sync drafts on target transitions.
+Profile metadata and import-form draft preservation needs separate UX validation;
+the settings guard does not establish that behavior. Actual desktop startup,
+Focus/foreground behavior and the account-import/reverse-restart journey remain
+live qualification work. The old Home-oriented smoke script is not evidence for
+this shell.

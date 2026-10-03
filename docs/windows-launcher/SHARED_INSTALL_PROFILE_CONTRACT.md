@@ -63,7 +63,7 @@ repoints an update/recovery journal.
 Shuttle Bay and Engineering share one visible profile selection. Shuttle Bay
 provides named Launch/Focus actions; Engineering provides profile lifecycle,
 settings and installation/runtime management. View-only switching preserves
-drafts. Changing profile/editor target offers Save, Discard or Stay. There is
+drafts. Changing a Settings or Data Sync target offers Save, Discard or Stay. There is
 no second hidden launch-selection button.
 
 The profile library accepts explicit ID and store lifecycle inputs from its host.

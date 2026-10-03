@@ -511,8 +511,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         }
 
         pendingModOperation = await viewModel.PrepareModOperationAsync(lifetimeCancellation.Token);
-        if (isDisposed)
+        if (isDisposed || !ReferenceEquals(DataContext, viewModel))
         {
+            pendingModOperation = null;
             return;
         }
         if (pendingModOperation is
@@ -1610,6 +1611,7 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         {
             if (pendingProviderSwitch is null)
             {
+                var admittedInstallationId = viewModel.SelectedProfile?.PreferredInstallationId;
                 ProviderSwitchPreviewText.Text = "Discovering and verifying the target release…";
                 var configurationPath = Path.Combine(viewModel.SelectedGameDirectory, "community_patch_settings.toml");
                 pendingProviderSwitch = await providerSourceSwitchCoordinator.PreviewAsync(
@@ -1619,6 +1621,12 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                     viewModel.IsGameRunning,
                     configurationPath,
                     lifetimeCancellation.Token);
+                if (isDisposed || !ReferenceEquals(DataContext, viewModel))
+                {
+                    pendingProviderSwitch = null;
+                    return;
+                }
+                pendingProviderSwitch = pendingProviderSwitch with { InstallationId = admittedInstallationId };
                 var review = ProviderSwitchReviewPresentation.From(
                     pendingProviderSwitch,
                     targetProvider.DefaultReleaseChannel.DisplayName,
@@ -1639,6 +1647,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 }
             }
             operationWasPrepared = true;
+            using var installationLease = viewModel.AcquireRuntimeInstallationLease(
+                pendingProviderSwitch.GameDirectory!, pendingProviderSwitch.InstallationId);
             var result = await providerSourceSwitchCoordinator.ExecuteAsync(
                 pendingProviderSwitch,
                 pendingProviderSwitch.ConfirmationText,
@@ -1673,7 +1683,9 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
                 or InvalidDataException
                 or InvalidOperationException
                 or KeyNotFoundException
-                or HttpRequestException)
+                or HttpRequestException
+                or NotSupportedException or ArgumentException or TypeLoadException or BadImageFormatException
+                or System.Runtime.InteropServices.ExternalException or System.Text.Json.JsonException)
         {
             ProviderSwitchPreviewText.Text = providerSessions.HasPendingRecomposition
                 ? "The provider switch committed, but its workspace refresh needs attention."

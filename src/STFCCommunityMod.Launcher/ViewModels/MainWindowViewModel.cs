@@ -54,8 +54,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private LauncherLaunchTarget selectedLaunchTarget;
     private LauncherProfilesLoadResult profilesLoad;
     private IReadOnlyList<ProfileSession> profileSessions = [];
-    private sealed record PreparedInstallationBinding(string Id);
-    private readonly ConditionalWeakTable<ModOperationPreparation, PreparedInstallationBinding> preparedInstallationBindings = new();
     private IReadOnlyList<LauncherProfileCard> profileCards = [];
     private long profileGeneration;
     private LauncherWorkspaceMode workspaceMode;
@@ -1070,7 +1068,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 IsGameRunning,
                 cancellationToken);
             if (!string.IsNullOrWhiteSpace(admittedInstallationId))
-                preparedInstallationBindings.Add(preparation, new(admittedInstallationId));
+                preparation = preparation with { InstallationId = admittedInstallationId };
             if (preparation.State is ModOperationPreparationState.UpToDate
                 or ModOperationPreparationState.MutationBlocked)
             {
@@ -1114,27 +1112,21 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(preparation);
-        if (preparedInstallationBindings.TryGetValue(preparation, out var binding))
+        IDisposable? admittedLease = null;
+        try
         {
-            try
-            {
-                var registered = profilesStore.InstallationPaths(binding.Id);
-                if (registered.State != "available"
-                    || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, preparation.GameDirectory))
-                {
-                    actionFeedback.Mod.Fail("The installation changed after this operation was prepared. Select the intended installation and prepare it again.");
-                    return null;
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-                or InvalidOperationException or NotSupportedException or ArgumentException
-                or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
-                or JsonException)
-            {
-                actionFeedback.Mod.Fail("The prepared installation could not be revalidated. Select it again before continuing.");
-                return null;
-            }
+            admittedLease = AcquireRuntimeInstallationLease(preparation.GameDirectory, preparation.InstallationId);
         }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        {
+            admittedLease?.Dispose();
+            actionFeedback.Mod.Fail("The prepared installation could not be revalidated. Select it again before continuing.");
+            return null;
+        }
+        using var installationLease = admittedLease;
         if (!actionFeedback.Mod.TryBegin(ModOperationAcceptedMessage(preparation)))
         {
             return null;
@@ -1177,6 +1169,11 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             Refresh();
         }
     }
+
+    internal IDisposable AcquireRuntimeInstallationLease(string gameDirectory, string? installationId) =>
+        string.IsNullOrWhiteSpace(installationId)
+            ? profilesStore.AcquireInstallationLease(gameDirectory)
+            : profilesStore.AcquireInstallationLease(gameDirectory, installationId);
 
     internal static string ModOperationAcceptedMessage(ModOperationPreparation preparation)
     {
@@ -1588,7 +1585,7 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return await ExecuteMaintenanceAsync(
             "Removing the Mod Bridge-managed community mod…",
             token => modManagementCoordinator.UninstallAsync(admittedDirectory, token),
-            cancellationToken, admittedDirectory);
+            cancellationToken, admittedDirectory, ActiveLaunchProfile?.PreferredInstallationId);
     }
 
     public async Task<ModDeploymentResult?> StopManagingModAsync(
@@ -1602,14 +1599,15 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         return await ExecuteMaintenanceAsync(
             "Detaching Mod Bridge ownership from the selected installation…",
             token => modManagementCoordinator.StopManagingAsync(admittedDirectory, token),
-            cancellationToken, admittedDirectory);
+            cancellationToken, admittedDirectory, ActiveLaunchProfile?.PreferredInstallationId);
     }
 
     private async Task<ModDeploymentResult?> ExecuteMaintenanceAsync(
         string progress,
         Func<CancellationToken, Task<ModDeploymentResult>> operation,
         CancellationToken cancellationToken,
-        string? operationDirectory = null)
+        string? operationDirectory = null,
+        string? installationId = null)
     {
         if (!actionFeedback.Mod.TryBegin(progress))
         {
@@ -1618,6 +1616,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         BeginModMutation(operationDirectory);
         try
         {
+            using var installationLease = operationDirectory is null ? null
+                : AcquireRuntimeInstallationLease(operationDirectory, installationId);
             var result = await operation(cancellationToken);
             actionFeedback.CompleteModDeployment(result);
             return result;
@@ -1639,7 +1639,9 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             exception is InvalidDataException
                 or InvalidOperationException
                 or IOException
-                or UnauthorizedAccessException)
+                or UnauthorizedAccessException
+                or NotSupportedException or ArgumentException or TypeLoadException or BadImageFormatException
+                or System.Runtime.InteropServices.ExternalException or JsonException)
         {
             actionFeedback.Mod.Fail($"The maintenance operation failed: {exception.Message}");
             return null;

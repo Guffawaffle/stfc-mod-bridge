@@ -17,7 +17,8 @@ public sealed record LauncherProviderAtomicSwitchPreview(
     LauncherProviderSwitchPreview Configuration,
     ModOperationPreparation? Artifact,
     ModInstallationEvidence SourceInstallation,
-    string? GameDirectory = null)
+    string? GameDirectory = null,
+    string? InstallationId = null)
 {
     internal ModSourceReplacementReview? ReplacementSource { get; init; }
 

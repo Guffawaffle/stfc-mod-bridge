@@ -74,6 +74,44 @@ public sealed class NativeProfileCatalogIntegrationTests
             "Rejected maintenance must not write into a replacement installation.");
     }
     [TestMethod]
+    public async Task BoundRuntimeLeaseRetainsDirectoryAcrossAwaitAndRejectsReplacementAfterRelease()
+    {
+        var transport = Transport();
+        using var temporary = new TemporaryDirectory();
+        var root = temporary.CreateDirectory("bound-catalog");
+        var parent = temporary.CreateDirectory("installation-parent");
+        var game = Path.Combine(parent, "game");
+        Directory.CreateDirectory(Path.Combine(game, "prime_Data"));
+        foreach (var file in new[] { "prime.exe", "GameAssembly.dll", "UnityPlayer.dll" })
+            File.WriteAllBytes(Path.Combine(game, file), [1, 2, 3]);
+        File.WriteAllText(Path.Combine(game, ".version"), "&game=221");
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("bridge"), transport, root);
+        var installation = await store.RegisterInstallationAsync("Runtime fixture", game);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var work = Task.Run(async () =>
+        {
+            using var lease = store.AcquireInstallationLease(game, installation.Id);
+            entered.SetResult();
+            await resume.Task;
+            File.WriteAllText(Path.Combine(game, "runtime-fixture.txt"), "admitted original");
+        });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.ThrowsException<IOException>(() => Directory.Move(game, game + "-moved"));
+            Assert.ThrowsException<IOException>(() => Directory.Move(parent, parent + "-moved"));
+        }
+        finally { resume.TrySetResult(); await work; }
+        Directory.Move(game, game + "-original");
+        Directory.CreateDirectory(game);
+        Assert.ThrowsException<InvalidOperationException>(() => store.AcquireInstallationLease(game, installation.Id));
+        Assert.AreEqual(0, Directory.GetFileSystemEntries(game).Length);
+        Assert.AreEqual("admitted original", File.ReadAllText(Path.Combine(game + "-original", "runtime-fixture.txt")));
+        Directory.Move(game, game + "-replacement");
+    }
+
+    [TestMethod]
     public void BundledAbiRejectsUnavailableImportWithoutPublishingProfile()
     {
         var transport = Transport();
