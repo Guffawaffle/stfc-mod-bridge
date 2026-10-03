@@ -2298,6 +2298,61 @@ public sealed class ModDeploymentServiceTests
         CollectionAssert.AreEqual(dll, File.ReadAllBytes(Path.Combine(game, "version.dll")));
     }
 
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryForCanonicalMaintenance(bool repairFirst)
+    {
+        var transport = NativeProfileCatalogIntegrationTests.Transport();
+        using var temporary = new TemporaryDirectory();
+        var game = CreateGameDirectory(temporary, "installation-parent/game");
+        CompleteNativeImage(game);
+        var alias = Path.Combine(temporary.CreateDirectory("aliases"), "installation");
+        var parent = Path.GetDirectoryName(game)!;
+        var script = $"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{alias.Replace("'", "''")}' -Target '{parent.Replace("'", "''")}' | Out-Null";
+        var start = new System.Diagnostics.ProcessStartInfo(@"C:\Program Files\PowerShell\7\pwsh.exe")
+        { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-EncodedCommand",
+            Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)) }) start.ArgumentList.Add(argument);
+        using var helper = System.Diagnostics.Process.Start(start)!;
+        await helper.WaitForExitAsync(); Assert.AreEqual(0, helper.ExitCode);
+        try
+        {
+            var previous = new byte[] { 6, 6, 6 };
+            File.WriteAllBytes(Path.Combine(game, "version.dll"), previous);
+            var oldService = CreateService(temporary, SuccessfulDownload());
+            var aliasGame = Path.Combine(alias, "game");
+            Assert.IsTrue((await oldService.DeployAsync(aliasGame, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
+            var original = oldService.ReadInstalledState(aliasGame)!;
+            Assert.IsNull(original.InstallationBinding);
+            var registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
+            var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"), transport,
+                temporary.CreateDirectory("catalog"));
+            var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
+            var observed = service.ReadInstalledState(game)!;
+            Assert.AreEqual(Path.GetFullPath(game), observed.GameDirectory);
+            CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(service.InstalledStatePath));
+            if (repairFirst)
+            {
+                var repair = await service.RepairAsync(game, ReleaseArtifact());
+                Assert.IsTrue(repair.IsSuccess, repair.Message);
+                var repaired = service.ReadInstalledState(game)!;
+                Assert.IsNotNull(repaired.InstallationBinding);
+                Assert.AreEqual(original.PreviousArtifactBackupPath, repaired.PreviousArtifactBackupPath);
+                Assert.AreEqual(original.PreviousArtifactBackupIdentity, repaired.PreviousArtifactBackupIdentity);
+                Assert.AreEqual(1, service.ReadInstalledStates().Count);
+            }
+            var result = await service.UninstallAsync(game);
+            Assert.IsTrue(result.IsSuccess, result.Message);
+            Assert.IsTrue(result.Changed);
+            CollectionAssert.AreEqual(previous, File.ReadAllBytes(Path.Combine(game, "version.dll")));
+            Assert.AreEqual(0, service.ReadInstalledStates().Count);
+            Assert.IsNotNull(service.ReadJournal()!.InstallationBinding);
+            Assert.AreEqual(original.PreviousArtifactBackupPath, service.ReadJournal()!.PreviousInstalledState!.PreviousArtifactBackupPath);
+        }
+        finally { Directory.Delete(alias); }
+    }
+
     private static void CompleteNativeImage(string game)
     {
         File.WriteAllText(Path.Combine(game, ".version"), "&game=221");

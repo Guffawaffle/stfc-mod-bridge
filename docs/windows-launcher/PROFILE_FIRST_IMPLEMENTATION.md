@@ -64,6 +64,10 @@ Unbound Default launches resolve valid installation aliases to a canonical
 registration for that operation without changing the saved Default profile.
 Asynchronous preparation and provider-switch results publish only into their
 original active UI generation; retired results cannot clear newer work.
+Existing unbound ownership receipts recorded through installation aliases remain
+visible under the canonical path. Mutations normalize that spelling under native
+custody while preserving artifact attribution and adoption-backup history;
+observation alone does not rewrite the receipt.
 
 Startup, refresh and launch decisions observe profile sessions. Default can
 coexist with verified isolated sessions, but an unknown running process cannot

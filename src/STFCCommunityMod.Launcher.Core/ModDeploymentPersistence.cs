@@ -560,6 +560,27 @@ public sealed partial class ModDeploymentService
         WriteJsonAtomically(InstalledStatePath, normalized);
     }
 
+    private void CanonicalizeInstalledReceipt(RuntimeInstallationCustody custody)
+    {
+        var registry = ReadInstalledRegistry();
+        var existing = registry.Installations.SingleOrDefault(state =>
+            PathEquals(state.GameDirectory, custody.GameDirectory)
+            || GameDirectoryIdentity.SameLocation(state.GameDirectory, custody.GameDirectory));
+        if (existing is null) return;
+        custody.ValidateReceipt(existing.InstallationBinding);
+        if (PathEquals(existing.GameDirectory, custody.GameDirectory)) return;
+        if (existing.InstallationBinding is not null)
+            throw new InvalidDataException("A physically bound ownership receipt has a different canonical path.");
+        // Retain every artifact, backup and attribution field. New transaction/ownership
+        // records capture physical bindings; this spelling-only upgrade keeps review
+        // snapshots stable and never recaptures missing recovery expectations.
+        WriteInstalledRegistry(registry with
+        {
+            Installations = registry.Installations.Select(state => ReferenceEquals(state, existing)
+                ? state with { GameDirectory = custody.GameDirectory } : state).ToArray(),
+        });
+    }
+
     private void UpsertInstalledState(
         ModInstalledArtifactState state, ModDetachedAdoptionBackupState? retainedBackup = null)
     {

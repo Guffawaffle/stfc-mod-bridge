@@ -189,8 +189,13 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDirectory);
         var normalizedGameDirectory = NormalizeGameDirectory(gameDirectory);
-        return ReadInstalledStates()
-            .SingleOrDefault(state => PathEquals(state.GameDirectory, normalizedGameDirectory));
+        var state = ReadInstalledStates().SingleOrDefault(state =>
+            PathEquals(state.GameDirectory, normalizedGameDirectory)
+            || GameDirectoryIdentity.SameLocation(state.GameDirectory, normalizedGameDirectory));
+        // Project old unbound alias receipts consistently during observation/review.
+        // Mutation normalizes their persisted path only after canonical custody is held.
+        return state is { InstallationBinding: null }
+            ? state with { GameDirectory = normalizedGameDirectory } : state;
     }
 
     public IReadOnlyList<ModInstalledArtifactState> ReadInstalledStates() =>
@@ -488,6 +493,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         if (installationCustody is not null)
         {
             normalizedGameDirectory = installationCustody.GameDirectory;
+            CanonicalizeInstalledReceipt(installationCustody);
             previousInstalledState = ReadInstalledState(normalizedGameDirectory);
             installationCustody.ValidateReceipt(previousInstalledState?.InstallationBinding);
         }
@@ -1323,6 +1329,7 @@ public sealed partial class ModDeploymentService : IModDeploymentStateReader
         if (installationCustody is not null)
         {
             validation = GameInstallValidator.Validate(installationCustody.GameDirectory);
+            CanonicalizeInstalledReceipt(installationCustody);
             installedState = ReadInstalledState(installationCustody.GameDirectory);
             installationCustody.ValidateReceipt(installedState?.InstallationBinding);
         }
