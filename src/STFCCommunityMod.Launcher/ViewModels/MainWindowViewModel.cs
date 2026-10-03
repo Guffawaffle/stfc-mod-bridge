@@ -747,13 +747,28 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            var installed = modManagementCoordinator.CaptureHealth(gameDirectory, isGameRunning).Installation;
+            return ProjectProfileRuntimeLabel(modManagementCoordinator.CaptureHealth(gameDirectory, isGameRunning).Installation,
+                distributionProviderCatalog);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        { return "Runtime not checked"; }
+    }
+
+    internal static string ProjectProfileRuntimeLabel(ModInstallationEvidence installed,
+        LauncherDistributionProviderCatalog distributionProviderCatalog)
+    {
             if (installed.State == ModInstallationEvidenceState.NotInstalled) return "No runtime installed";
             if (installed.State == ModInstallationEvidenceState.ManagedMissing) return "Runtime missing";
             if (installed.State == ModInstallationEvidenceState.ManagedChanged) return "Runtime changed";
             if (installed.State == ModInstallationEvidenceState.RecoveryRequired) return "Recovery required";
             if (installed.State == ModInstallationEvidenceState.ManualInstallation)
             {
+                if (installed.BinaryProvenance is { State: ModBinaryProvenanceState.KnownProviderArtifact, DetectedProviderId: { } knownProviderId }
+                    && distributionProviderCatalog.TryGetProvider(knownProviderId, out var knownProvider)
+                    && knownProvider is not null) return knownProvider.DisplayName;
                 if (installed.BinaryProvenance is { State: ModBinaryProvenanceState.SelfDeclaredLineage } provenance)
                 {
                     var declaredProvider = distributionProviderCatalog.Providers.Values.FirstOrDefault(candidate =>
@@ -767,12 +782,6 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             if (providerId is not null && distributionProviderCatalog.TryGetProvider(providerId, out var provider)
                 && provider is not null) return provider.DisplayName;
             return "Runtime not checked";
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or NotSupportedException or ArgumentException
-            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
-            or JsonException)
-        { return "Runtime not checked"; }
     }
 
     public static MainWindowViewModel CreateDefault(

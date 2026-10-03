@@ -32,6 +32,7 @@ public sealed class ModSourceMetadataProjectionTests
         var result = ModSourceMetadataProjection.From(installation, catalog, "Guffawaffle · Stable");
 
         Assert.AreEqual("Installed: NetniV · Stable · reviewed hash", result);
+        Assert.AreEqual("NetniV", MainWindowViewModel.ProjectProfileRuntimeLabel(installation, catalog));
     }
 
     [TestMethod]
@@ -57,6 +58,7 @@ public sealed class ModSourceMetadataProjectionTests
         var result = ModSourceMetadataProjection.From(installation, catalog, "Guffawaffle · Stable");
 
         Assert.AreEqual("Installed: Guffawaffle · custom build", result);
+        Assert.AreEqual("Guffawaffle · custom build", MainWindowViewModel.ProjectProfileRuntimeLabel(installation, catalog));
     }
 
     [TestMethod]
@@ -73,6 +75,7 @@ public sealed class ModSourceMetadataProjectionTests
         var result = ModSourceMetadataProjection.From(installation, catalog, "Guffawaffle · Stable");
 
         Assert.AreEqual("Installed: custom build · selected source Guffawaffle · Stable", result);
+        Assert.AreEqual("Custom runtime · unverified", MainWindowViewModel.ProjectProfileRuntimeLabel(installation, catalog));
     }
 
     private static ModInstallationEvidence Installation(ModBinaryProvenance provenance) => new(

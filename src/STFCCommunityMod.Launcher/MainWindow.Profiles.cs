@@ -12,6 +12,7 @@ public partial class MainWindow
     private IReadOnlyList<LauncherProfile> archivedProfiles = [];
     private bool isArchivingProfile;
     private bool isImportingProfile;
+    private bool isCreatingProfile;
     private bool isProfileOperationPending;
     private TaskCompletionSource<bool>? importReviewCompletion;
     private ProfileImportSources? importSources;
@@ -40,8 +41,10 @@ public partial class MainWindow
         return active.State != LauncherProfilesLoadState.Invalid && active.Snapshot is not null;
     }
 
-    private void UpdateProfileLaunchSelection() => ProfileLaunchSelection.Text = profiles.SelectedProfile is { } selected
-        ? selected.Name
+    private void UpdateProfileLaunchSelection() => ProfileLaunchSelection.Text = isImportingProfile
+        ? "Copy Windows setup" : isCreatingProfile ? "New profile"
+        : ProfilesList.SelectedItem is LauncherProfile editing ? editing.Name
+        : profiles.SelectedProfile is { } selected ? selected.Name
         : profiles.SelectedProfileId is { } missing
             ? $"Selected profile is unavailable: {missing}. Restore it or choose Default."
             : "Selected for launch: Default";
@@ -89,6 +92,7 @@ public partial class MainWindow
             { ProfileCatalogIssues.Text = exception.Message; }
         }
         isArchivingProfile = false;
+        isCreatingProfile = false;
         ProfileImportFeedback.Text = string.Empty;
         ResetImportMode();
         ProfileError.Text = string.Empty;
@@ -128,6 +132,7 @@ public partial class MainWindow
         try { ProfilesList.SelectedItem = null; }
         finally { isRestoringProfileSelection = false; }
         isArchivingProfile = false;
+        isCreatingProfile = true;
         ProfileFormTitle.Text = "Create an empty profile";
         ProfileLaunchSelection.Text = "New profile";
         ProfileWorkspaceKindLabel.Text = "Isolated profile";
