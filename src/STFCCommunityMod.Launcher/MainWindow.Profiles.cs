@@ -123,6 +123,18 @@ public partial class MainWindow
         AutomationProperties.SetName(SaveProfileButton, "Save launch profile");
     }
 
+    private async void ProfileSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (profileBeingEdited is not { State: "active" } profile
+            || !await SelectVisibleProfileAsync(profile.Id)) return;
+        if ((DataContext as ViewModels.MainWindowViewModel)?.SelectedConfigurationProfile?.Id != profile.Id)
+        {
+            ProfileError.Text = "This profile’s settings are not ready. Select the profile again to retry.";
+            return;
+        }
+        SettingsNavigationButton_Click(sender, e);
+    }
+
     private void NewProfileButton_Click(object sender, RoutedEventArgs e)
     {
         if (isProfileOperationPending) return;

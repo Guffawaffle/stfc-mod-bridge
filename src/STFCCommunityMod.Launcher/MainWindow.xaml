@@ -1459,7 +1459,7 @@
           <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,18,0,20">
             <WrapPanel>
               <Border BorderBrush="{DynamicResource AccentTextBrush}" BorderThickness="0,0,0,2" Margin="0,0,20,0" Padding="0,10"><TextBlock Text="Overview" Foreground="{DynamicResource AccentTextBrush}" /></Border>
-              <Button x:Name="ProfileSettingsButton" HorizontalAlignment="Left" Content="Settings / Data Sync" Click="SettingsNavigationButton_Click" Style="{StaticResource ShellLinkButtonStyle}" automation:AutomationProperties.Name="Open selected profile Settings" />
+              <Button x:Name="ProfileSettingsButton" HorizontalAlignment="Left" Content="Settings / Data Sync" Click="ProfileSettingsButton_Click" Style="{StaticResource ShellLinkButtonStyle}" automation:AutomationProperties.Name="Open this profile’s Settings" />
             </WrapPanel>
           </Border>
           <Border Style="{StaticResource ProfileCardStyle}"><StackPanel>

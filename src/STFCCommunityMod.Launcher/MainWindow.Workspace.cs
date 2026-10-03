@@ -132,7 +132,8 @@ public partial class MainWindow
     private async Task<bool> SelectVisibleProfileAsync(string profileId)
     {
         if (isProfileOperationPending) return false;
-        if (profiles.SelectedProfileId == profileId) return true;
+        if (profiles.SelectedProfileId == profileId
+            && (DataContext as MainWindowViewModel)?.SelectedConfigurationProfile?.Id == profileId) return true;
         SetProfileOperationPending(true);
         try
         {
