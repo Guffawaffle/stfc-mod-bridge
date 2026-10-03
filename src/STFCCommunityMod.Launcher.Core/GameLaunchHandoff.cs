@@ -534,7 +534,7 @@ public sealed partial class GameLaunchHandoffCoordinator(
                 gameDirectory
                     ?? throw new InvalidOperationException("The revalidated prime.exe target has no game directory."),
                 requiredProfile,
-                cancellationToken, capturedInstallationId);
+                cancellationToken, capturedInstallationId, allowUnverifiedProxy);
     }
 
     public Task<GameLaunchHandoffResult> LaunchProfileAsync(
@@ -592,7 +592,8 @@ public sealed partial class GameLaunchHandoffCoordinator(
         string gameDirectory,
         LauncherProfile? profile,
         CancellationToken cancellationToken,
-        string? capturedInstallationId = null)
+        string? capturedInstallationId = null,
+        bool allowUnverifiedProxy = false)
     {
         try
         {
@@ -623,6 +624,9 @@ public sealed partial class GameLaunchHandoffCoordinator(
                     if (registered.State != "available" || !GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory))
                         throw new InvalidOperationException("The selected installation changed before launch. Select the intended installation again.");
                 }
+                var final = CapturePresentation(gameDirectory, LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile);
+                if (!final.CanExecute || (final.RequiresUserOverride && !allowUnverifiedProxy))
+                    return new(GameLaunchHandoffState.Blocked, final.AutomationName, final, Changed: false);
                 var child = await gameExecutableLaunchService.StartAsync(gameDirectory, [], cancellationToken);
                 RememberOrdinarySession(profile, gameDirectory, child);
                 GameInstallationLaunchCustody.Retain(child, installationLease);

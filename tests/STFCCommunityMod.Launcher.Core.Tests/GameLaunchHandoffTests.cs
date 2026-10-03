@@ -725,6 +725,24 @@ public sealed class GameLaunchHandoffTests
     }
 
     [TestMethod]
+    public async Task DefaultRechecksTheResolvedTargetUnderCustodyBeforeStarting()
+    {
+        using var temporary = new TemporaryDirectory();
+        var initiallyChecked = CreateGameDirectory(temporary, "initial");
+        var resolved = CreateGameDirectory(temporary, "resolved");
+        File.WriteAllBytes(Path.Combine(resolved, "version.dll"), [9, 9, 9]);
+        var transport = new NamedCatalog(NamedProfile(initiallyChecked)) { RegisteredGameDirectory = resolved };
+        var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("state"), transport);
+        var profile = store.EnsureDefault(); await store.SelectAsync(profile.Id);
+        var fixture = CreateFixture(temporary, profileStore: store);
+        var result = await fixture.Coordinator.LaunchProfileAsync(profile, defaultGameDirectory: initiallyChecked);
+        Assert.AreEqual(GameLaunchHandoffState.Blocked, result.State, result.Message);
+        Assert.IsTrue(result.Presentation.RequiresUserOverride);
+        Assert.AreEqual(0, fixture.GameService.StartCount);
+        Assert.AreEqual(1, transport.Requests.Count(request => request.Operation == "register-installation"));
+    }
+
+    [TestMethod]
     public async Task DefaultCannotLaunchBesideAnUnattributedRunningTarget()
     {
         using var temporary = new TemporaryDirectory();
@@ -756,6 +774,7 @@ public sealed class GameLaunchHandoffTests
     private sealed class NamedCatalog(LauncherProfile profile) : IProfileCatalogTransport, IProfileInstallationLeaseTransport
     {
         private RegisteredGameInstallation? installation;
+        public string? RegisteredGameDirectory { get; init; }
         public List<ProfileCatalogRequest> Requests { get; } = [];
         public ProfileCatalogResponse LaunchResult { get; set; } = new(true, Profile: profile,
             ProcessId: 123, Readiness: "ready");
@@ -766,7 +785,7 @@ public sealed class GameLaunchHandoffTests
             Requests.Add(request);
             if (request.Operation == "register-installation")
             {
-                installation = new("cccccccccccccccccccccccccccccccc", request.Name!, request.GameDirectory!,
+                installation = new("cccccccccccccccccccccccccccccccc", request.Name!, RegisteredGameDirectory ?? request.GameDirectory!,
                     new string('e', 64), "available", "synthetic-registration");
                 return new(true, RegisteredInstallation: installation);
             }

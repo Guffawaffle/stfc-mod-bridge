@@ -2299,9 +2299,11 @@ public sealed class ModDeploymentServiceTests
     }
 
     [DataTestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryForCanonicalMaintenance(bool repairFirst)
+    [DataRow(false, false, true)]
+    [DataRow(true, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(false, true, false)]
+    public async Task PhysicalAliasReceiptRetainsAdoptionHistoryAcrossMaintenance(bool repairFirst, bool detachOnly, bool savedThroughAlias)
     {
         var transport = NativeProfileCatalogIntegrationTests.Transport();
         using var temporary = new TemporaryDirectory();
@@ -2320,18 +2322,38 @@ public sealed class ModDeploymentServiceTests
         {
             var previous = new byte[] { 6, 6, 6 };
             File.WriteAllBytes(Path.Combine(game, "version.dll"), previous);
-            var oldService = CreateService(temporary, SuccessfulDownload());
-            var aliasGame = Path.Combine(alias, "game");
-            Assert.IsTrue((await oldService.DeployAsync(aliasGame, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
-            var original = oldService.ReadInstalledState(aliasGame)!;
-            Assert.IsNull(original.InstallationBinding);
-            var registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
             var store = new NativeLauncherProfilesStore(temporary.CreateDirectory("ui"), transport,
                 temporary.CreateDirectory("catalog"));
+            var oldService = CreateService(temporary, SuccessfulDownload(), profilesStore: savedThroughAlias ? null : store);
+            var aliasGame = Path.Combine(alias, "game");
+            Assert.IsTrue((await oldService.DeployAsync(savedThroughAlias ? aliasGame : game, ReleaseArtifact(), ExistingArtifactPolicy.AdoptAndPreserve)).IsSuccess);
+            var original = oldService.ReadInstalledState(savedThroughAlias ? aliasGame : game)!;
+            Assert.AreEqual(savedThroughAlias, original.InstallationBinding is null);
+            var registryBefore = File.ReadAllBytes(oldService.InstalledStatePath);
             var service = CreateService(temporary, SuccessfulDownload(), profilesStore: store);
-            var observed = service.ReadInstalledState(game)!;
+            var target = savedThroughAlias ? game : aliasGame;
+            var observed = service.ReadInstalledState(target)!;
             Assert.AreEqual(Path.GetFullPath(game), observed.GameDirectory);
             CollectionAssert.AreEqual(registryBefore, File.ReadAllBytes(service.InstalledStatePath));
+            if (detachOnly)
+            {
+                var files = Directory.GetFiles(game, "*", SearchOption.AllDirectories)
+                    .ToDictionary(path => path, File.ReadAllBytes);
+                var installationCount = store.Installations().Count;
+                var detached = await service.StopManagingAsync(target);
+                Assert.IsTrue(detached.IsSuccess, detached.Message); Assert.IsTrue(detached.Changed);
+                Assert.AreEqual(0, service.ReadInstalledStates().Count);
+                Assert.AreEqual(installationCount, store.Installations().Count);
+                foreach (var pair in files) CollectionAssert.AreEqual(pair.Value, File.ReadAllBytes(pair.Key));
+                var registry = JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!;
+                Assert.AreEqual(1, registry.DetachedAdoptionBackups!.Count);
+                Assert.AreEqual(original.PreviousArtifactBackupPath, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupPath);
+                Assert.AreEqual(original.PreviousArtifactBackupIdentity, registry.DetachedAdoptionBackups[0].PreviousArtifactBackupIdentity);
+                var again = await service.StopManagingAsync(target);
+                Assert.IsTrue(again.IsSuccess, again.Message); Assert.IsFalse(again.Changed);
+                Assert.AreEqual(1, JsonSerializer.Deserialize<ModInstalledArtifactRegistry>(File.ReadAllText(service.InstalledStatePath), JournalJsonOptions)!.DetachedAdoptionBackups!.Count);
+                return;
+            }
             if (repairFirst)
             {
                 var repair = await service.RepairAsync(game, ReleaseArtifact());

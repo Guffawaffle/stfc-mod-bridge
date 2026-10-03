@@ -618,8 +618,12 @@ public sealed partial class ModDeploymentService
         ModDetachedAdoptionBackupState? retainedBackup)
     {
         var registry = ReadInstalledRegistry();
+        var matched = registry.Installations.SingleOrDefault(state =>
+            PathEquals(state.GameDirectory, gameDirectory)
+            || GameDirectoryIdentity.SameLocation(state.GameDirectory, gameDirectory));
+        if (matched is null) throw new IOException("The ownership receipt changed before it could be detached.");
         var installations = registry.Installations
-            .Where(state => !PathEquals(state.GameDirectory, gameDirectory))
+            .Where(state => !ReferenceEquals(state, matched))
             .ToArray();
         var detached = (registry.DetachedAdoptionBackups ?? [])
             .Concat(retainedBackup is null ? [] : [retainedBackup])
