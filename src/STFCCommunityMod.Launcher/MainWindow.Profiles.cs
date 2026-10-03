@@ -326,6 +326,7 @@ public partial class MainWindow
                     preferredInstallationId: SelectedFormInstallationId())
                 : await ProfilesStore.EditAsync(selected, ProfileNameBox.Text, ProfileFolderBox.Text,
                     preferredInstallationId: SelectedFormInstallationId());
+            FillProfileForm(updated);
             await ProfilesStore.SelectAsync(updated.Id);
             if (!ReloadProfiles()) return;
             RefreshProfilesList(updated.Id);
