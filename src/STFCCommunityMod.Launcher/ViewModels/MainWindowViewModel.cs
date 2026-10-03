@@ -689,6 +689,8 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshProfileCards()
     {
+        var installationLabels = new Dictionary<(string InstallationId, string Directory), string>();
+        var runtimeLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         profileCards = profilesLoad.State == LauncherProfilesLoadState.Invalid ? []
             : (profilesLoad.Snapshot?.Profiles ?? []).Where(profile => profile.State == "active")
                 .OrderByDescending(profile => profile.IsDefault).ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
@@ -699,10 +701,78 @@ internal sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                     var choice = gameLaunchCoordinator.CapturePresentation(directory,
                         LauncherLaunchTarget.PrimeExecutable, requiredProfile: profile);
                     var sessions = gameLaunchCoordinator.CaptureSessions(profile, profileSessions);
+                    var installationLabel = string.IsNullOrWhiteSpace(directory) ? "Select installation" : "STFC game";
+                    if (!string.IsNullOrWhiteSpace(directory) && !string.IsNullOrWhiteSpace(profile.PreferredInstallationId))
+                    {
+                        var installationKey = (profile.PreferredInstallationId, directory);
+                        if (!installationLabels.TryGetValue(installationKey, out installationLabel))
+                        {
+                            installationLabel = CaptureProfileInstallationLabel(profile.PreferredInstallationId, directory);
+                            installationLabels.Add(installationKey, installationLabel);
+                        }
+                    }
+                    var runtimeLabel = "Runtime not checked";
+                    if (!string.IsNullOrWhiteSpace(directory) && !runtimeLabels.TryGetValue(directory, out runtimeLabel))
+                    {
+                        runtimeLabel = CaptureProfileRuntimeLabel(directory, sessions.Count > 0);
+                        runtimeLabels.Add(directory, runtimeLabel);
+                    }
                     return ProjectProfileCard(profile, directory, choice, sessions,
-                        HasConflictingInstallationMutationFor(directory));
+                        HasConflictingInstallationMutationFor(directory)) with
+                    {
+                        InstallationLabel = installationLabel,
+                        RuntimeLabel = runtimeLabel,
+                    };
                 }).ToArray();
         OnPropertyChanged(nameof(ProfileCards));
+    }
+
+    private string CaptureProfileInstallationLabel(string installationId, string gameDirectory)
+    {
+        try
+        {
+            var registered = profilesStore.InstallationPaths(installationId);
+            return registered.State == "available"
+                && GameDirectoryIdentity.SameLocation(registered.GameDirectory, gameDirectory)
+                && !string.IsNullOrWhiteSpace(registered.Name) ? registered.Name : "STFC game";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        { return "STFC game"; }
+    }
+
+    private string CaptureProfileRuntimeLabel(string gameDirectory, bool isGameRunning)
+    {
+        try
+        {
+            var installed = modManagementCoordinator.CaptureHealth(gameDirectory, isGameRunning).Installation;
+            if (installed.State == ModInstallationEvidenceState.NotInstalled) return "No runtime installed";
+            if (installed.State == ModInstallationEvidenceState.ManagedMissing) return "Runtime missing";
+            if (installed.State == ModInstallationEvidenceState.ManagedChanged) return "Runtime changed";
+            if (installed.State == ModInstallationEvidenceState.RecoveryRequired) return "Recovery required";
+            if (installed.State == ModInstallationEvidenceState.ManualInstallation)
+            {
+                if (installed.BinaryProvenance is { State: ModBinaryProvenanceState.SelfDeclaredLineage } provenance)
+                {
+                    var declaredProvider = distributionProviderCatalog.Providers.Values.FirstOrDefault(candidate =>
+                        string.Equals(candidate.RuntimeDistributionId, provenance.DetectedRuntimeDistributionId, StringComparison.Ordinal));
+                    if (declaredProvider is not null) return $"{declaredProvider.DisplayName} · custom build";
+                }
+                return "Custom runtime · unverified";
+            }
+            var providerId = installed.State == ModInstallationEvidenceState.ManagedVerified
+                ? installed.InstalledProviderId : installed.BinaryProvenance?.DetectedProviderId;
+            if (providerId is not null && distributionProviderCatalog.TryGetProvider(providerId, out var provider)
+                && provider is not null) return provider.DisplayName;
+            return "Runtime not checked";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException
+            or System.Runtime.InteropServices.ExternalException or TypeLoadException or BadImageFormatException
+            or JsonException)
+        { return "Runtime not checked"; }
     }
 
     public static MainWindowViewModel CreateDefault(
@@ -2229,6 +2299,11 @@ internal sealed record LauncherProfileCard(string Id, string Name, string Status
     bool CanLaunch, bool IsDefault, string? GameDirectory, IReadOnlyList<ProfileSession> RunningSessions,
     string Reason, LauncherLaunchRecoveryAction NextAction)
 {
+    public string KindLabel => IsDefault ? "Windows setup" : "Isolated profile";
+    public string InstallationLabel { get; init; } = "STFC game";
+    public string RuntimeLabel { get; init; } = "Runtime not checked";
+    public bool HasSessionSummary => RunningSessions.Count > 0;
+    public bool HasReason => !string.IsNullOrWhiteSpace(Reason);
     public bool NeedsSetup => NextAction is (LauncherLaunchRecoveryAction.SetUpProfileSupport
         or LauncherLaunchRecoveryAction.SelectGameFolder) && RunningSessions.Count == 0;
     public bool CanAct => CanLaunch || NeedsSetup;

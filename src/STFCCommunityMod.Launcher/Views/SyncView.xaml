@@ -523,7 +523,7 @@
     <Grid Grid.RowSpan="2" Panel.ZIndex="100" Background="{DynamicResource DialogBackdropBrush}"
           Visibility="{Binding IsAddWizardOpen, Converter={StaticResource BooleanToVisibilityConverter}}"
           KeyboardNavigation.TabNavigation="Cycle">
-      <Border x:Name="WizardDialog" Width="720" MaxHeight="650" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+      <Border x:Name="WizardDialog" Width="720" MaxWidth="{Binding ActualWidth, ElementName=SyncRoot}" MaxHeight="650" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center"
               Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14">
         <Grid DataContext="{Binding AddWizard}">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -538,7 +538,7 @@
                     <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" /><Setter Property="Background" Value="{DynamicResource QuietHoverBrush}" /></DataTrigger>
                   </Style.Triggers></Style></Button.Style>
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <StackPanel><TextBlock FontSize="11" Foreground="{DynamicResource AccentBrush}" Text="{Binding Eyebrow}" />
+                    <StackPanel><TextBlock FontSize="11" Foreground="{DynamicResource AccentTextBrush}" Text="{Binding Eyebrow}" />
                       <TextBlock Margin="0,2,0,0" FontSize="15" FontWeight="SemiBold" Text="{Binding Title}" />
                       <TextBlock Margin="0,2,20,0" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding Description}" /></StackPanel>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock HorizontalAlignment="Right" FontSize="11" Text="{Binding CapabilitySummary}" />
@@ -576,7 +576,7 @@
                 </DataTemplate></ItemsControl.ItemTemplate>
               </ItemsControl>
               <Border Grid.Column="1" Padding="15" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="8">
-                <StackPanel><TextBlock FontSize="11" Foreground="{DynamicResource AccentBrush}" Text="Review" /><TextBlock Margin="0,5,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding ReviewSummary}" />
+                <StackPanel><TextBlock FontSize="11" Foreground="{DynamicResource AccentTextBrush}" Text="Review" /><TextBlock Margin="0,5,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding ReviewSummary}" />
                   <TextBlock Margin="0,10,0,0" FontSize="12" Text="Finish stages this destination. Nothing is written until Save changes." /></StackPanel>
               </Border>
             </Grid>

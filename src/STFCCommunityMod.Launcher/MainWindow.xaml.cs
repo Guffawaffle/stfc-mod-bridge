@@ -19,8 +19,8 @@ namespace STFCCommunityMod.Launcher;
 
 public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarget
 {
-    private const double HomeWidth = 680;
-    private const double HomeHeight = 680;
+    private const double HomeWidth = 1120;
+    private const double HomeHeight = 780;
     private const double HomeMinWidth = 560;
     private const double HomeMinHeight = 620;
     internal const double SettingsMinWidth = 960;
@@ -1980,8 +1980,8 @@ public partial class MainWindow : Window, IDisposable, ILauncherShellRefreshTarg
         var availableHeight = NormalizeWorkAreaDimension(workAreaHeight);
         var minWidth = Math.Min(isHome ? HomeMinWidth : SettingsMinWidth, availableWidth);
         var minHeight = Math.Min(isHome ? HomeMinHeight : SettingsMinHeight, availableHeight);
-        var requestedWidth = isHome ? HomeWidth : Math.Max(currentWidth, SettingsWidth);
-        var requestedHeight = isHome ? HomeHeight : Math.Max(currentHeight, SettingsHeight);
+        var requestedWidth = isHome ? (currentWidth > 0 ? currentWidth : HomeWidth) : Math.Max(currentWidth, SettingsWidth);
+        var requestedHeight = isHome ? (currentHeight > 0 ? currentHeight : HomeHeight) : Math.Max(currentHeight, SettingsHeight);
         return new(
             minWidth,
             minHeight,

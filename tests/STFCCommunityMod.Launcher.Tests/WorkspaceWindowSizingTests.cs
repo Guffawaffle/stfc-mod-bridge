@@ -8,7 +8,7 @@ namespace STFCCommunityMod.Launcher.Tests;
 public sealed class WorkspaceWindowSizingTests
 {
     [TestMethod]
-    public void InitialHomeAndNavigationHomeResolveToTheSameContract()
+    public void InitialBayFitsCardsAndReturningPreservesTheUsersWindowSize()
     {
         var initial = MainWindow.ResolveWorkspaceSizing(
             LauncherWorkspace.Home,
@@ -23,8 +23,8 @@ public sealed class WorkspaceWindowSizingTests
             workAreaWidth: 1920,
             workAreaHeight: 1040);
 
-        Assert.AreEqual(initial, returning);
-        Assert.AreEqual(new WorkspaceWindowSizing(560, 620, 680, 680), initial);
+        Assert.AreEqual(new WorkspaceWindowSizing(560, 620, 1120, 780), initial);
+        Assert.AreEqual(new WorkspaceWindowSizing(560, 620, 1120, 740), returning);
     }
 
     [TestMethod]

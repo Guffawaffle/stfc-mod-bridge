@@ -92,3 +92,25 @@ the settings guard does not establish that behavior. Actual desktop startup,
 Focus/foreground behavior and the account-import/reverse-restart journey remain
 live qualification work. The old Home-oriented smoke script is not evidence for
 this shell.
+
+## Visual alignment with the accepted mockup
+
+Shuttle Bay now presents responsive three-, two- or one-column profile cards,
+with an explicit storage-kind badge, installation and runtime labels, a solid
+named action and Configure link. Installation names require a matching native
+registration; custom runtime labels remain explicit. The product-first header
+switches between Shuttle Bay and Engineering, with a persistent Bay status footer.
+
+Engineering uses a primary navigation sidebar, profile rail and selected-profile
+workspace. Below 1040 logical pixels the primary navigation becomes an icon rail
+with named tooltips so Settings retains enough editing space. The Data Sync wizard
+is constrained to its available workspace width. The opening Bay is 1120 by 780
+logical pixels, clamped to the work area; returning to Bay preserves the user's
+current window size. Both appearances use the original HTML study's palette,
+separate link accents and button fills, normal body text and themed scrollbars.
+
+Offscreen visual qualification uses actual XAML, compiled controls and resources
+with synthetic data, covering dark/light layouts, narrow windows, long names,
+running/setup states and Settings/Data Sync. It does not establish live startup,
+account persistence or foreground focus behavior. Profile storage, action admission
+and install/update/recovery transactions retain their existing contracts.

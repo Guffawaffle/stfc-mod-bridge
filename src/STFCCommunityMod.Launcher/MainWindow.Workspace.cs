@@ -21,6 +21,35 @@ public partial class MainWindow
     private void ShuttleBayButton_Click(object sender, RoutedEventArgs e) => SetPrimaryWorkspace(false);
     private void EngineeringButton_Click(object sender, RoutedEventArgs e) => SetPrimaryWorkspace(true);
 
+    private void ShellWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (ProductTitleText is not null)
+            ProductTitleText.Text = e.NewSize.Width < 760 ? "Bridge" : "STFC Bridge";
+        UpdateShellLayout();
+    }
+
+    private void UpdateShellLayout()
+    {
+        if (EngineeringNavigation is null) return;
+        var compact = ActualWidth > 0 && ActualWidth < 1040;
+        var navigationWidth = compact ? 64 : 184;
+        EngineeringNavigation.Width = navigationWidth;
+        EngineeringNavigationTitle.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var button in new[] { EngineeringProfilesButton, EngineeringInstallationsButton, EngineeringSettingsButton, EngineeringDiagnosticsButton })
+        {
+            if (button.Content is not DockPanel content) continue;
+            foreach (var child in content.Children)
+            {
+                if (child is TextBlock label) label.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+                if (child is Controls.AppIcon icon) icon.Margin = compact ? new Thickness(0) : new Thickness(0, 0, 10, 0);
+            }
+        }
+        HomeWorkspace.Margin = new Thickness(navigationWidth + 26, 28, 26, 16);
+        ProfilesWorkspace.Margin = new Thickness(navigationWidth + 26, 28, 26, 16);
+        SettingsWorkspace.Margin = new Thickness(navigationWidth + 10, 16, 14, 12);
+        DiagnosticsWorkspace.Margin = new Thickness(navigationWidth + 26, 16, 26, 16);
+    }
+
     private void SetPrimaryWorkspace(bool engineering)
     {
         isEngineering = engineering;
@@ -45,7 +74,14 @@ public partial class MainWindow
         SettingsDiagnosticsTitleBarButton.Visibility = Visibility.Collapsed;
         ShuttleBayButton.IsEnabled = true;
         EngineeringButton.IsEnabled = true;
+        ShuttleBayButton.Visibility = isEngineering ? Visibility.Visible : Visibility.Collapsed;
+        EngineeringButton.Visibility = isEngineering ? Visibility.Collapsed : Visibility.Visible;
+        EngineeringProfilesButton.Style = (Style)FindResource(engineeringSection == "Profiles" ? "ShellSelectedNavigationButtonStyle" : "ShellNavigationButtonStyle");
+        EngineeringInstallationsButton.Style = (Style)FindResource(engineeringSection == "Installations" ? "ShellSelectedNavigationButtonStyle" : "ShellNavigationButtonStyle");
+        EngineeringSettingsButton.Style = (Style)FindResource(engineeringSection == "Settings" ? "ShellSelectedNavigationButtonStyle" : "ShellNavigationButtonStyle");
+        EngineeringDiagnosticsButton.Style = (Style)FindResource(engineeringSection == "Diagnostics" ? "ShellSelectedNavigationButtonStyle" : "ShellNavigationButtonStyle");
         ApplyWorkspaceSizing(isEngineering ? LauncherWorkspace.Settings : LauncherWorkspace.Home);
+        UpdateShellLayout();
     }
 
     private void EngineeringProfilesButton_Click(object sender, RoutedEventArgs e) => OpenProfilesWorkspace();

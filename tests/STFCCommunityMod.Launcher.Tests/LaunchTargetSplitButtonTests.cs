@@ -159,7 +159,7 @@ public sealed class LaunchTargetSplitButtonTests
     public void EngineeringInstallationUsesResponsiveSectionsWithNaturalActionMeasurement()
     {
         var document = LoadXaml("src/STFCCommunityMod.Launcher/MainWindow.xaml");
-        var workspace = document.Descendants(Presentation + "StackPanel")
+        var workspace = document.Descendants(Presentation + "ScrollViewer")
             .Single(element => GetName(element) == "HomeWorkspace");
         var statusSurface = document.Descendants(Presentation + "Border")
             .Single(element => GetName(element) == "HomeStatusSurface");
@@ -169,7 +169,8 @@ public sealed class LaunchTargetSplitButtonTests
             .Single(element => GetName(element) == "CommunityModStatusSection");
 
         Assert.IsNull(workspace.Attribute("Width"));
-        Assert.AreEqual("900", (string?)workspace.Attribute("MaxWidth"));
+        Assert.AreEqual("900", (string?)workspace.Element(Presentation + "StackPanel")!.Attribute("MaxWidth"));
+        Assert.AreEqual("Auto", (string?)workspace.Attribute("VerticalScrollBarVisibility"));
         Assert.AreEqual("Stretch", (string?)workspace.Attribute("HorizontalAlignment"));
         Assert.IsTrue(HasText(gameSection, "Star Trek Fleet Command"));
         Assert.IsTrue(HasText(modSection, "Community Mod"));
@@ -226,7 +227,7 @@ public sealed class LaunchTargetSplitButtonTests
         var decorativeGlyph = gameSection.Descendants(Presentation + "Viewbox")
             .Single(element => GetName(element) == "GameStatusGlyph");
 
-        Assert.AreEqual("STFC Mod Bridge", (string?)productTitle.Attribute("Text"));
+        Assert.AreEqual("STFC Bridge", (string?)productTitle.Attribute("Text"));
         Assert.AreEqual(1, gameStatusBindings.Length);
         Assert.IsNull(decorativeGlyph.Attribute(Automation + "AutomationProperties.Name"));
         Assert.IsFalse(decorativeGlyph.Descendants().Any(element =>

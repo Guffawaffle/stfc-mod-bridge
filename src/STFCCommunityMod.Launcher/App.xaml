@@ -27,31 +27,35 @@
     <Thickness x:Key="ControlBorderThickness">1</Thickness>
     <Thickness x:Key="SectionDividerThickness">0,0,0,1</Thickness>
 
-    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#0B1220" />
-    <SolidColorBrush x:Key="SurfaceBrush" Color="#111B2C" />
-    <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#172337" />
-    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F7FAFC" />
-    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#AEB4BF" />
-    <SolidColorBrush x:Key="BorderBrush" Color="#2A3950" />
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#0C1421" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#172233" />
+    <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#202E43" />
+    <SolidColorBrush x:Key="NavigationBrush" Color="#101C2E" />
+    <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#213D5E" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F1F5FC" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#B3C3DA" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#35455E" />
     <SolidColorBrush x:Key="ControlBorderBrush" Color="#60738E" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#0B70C9" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#0A68B8" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#145A9F" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#1969B7" />
+    <SolidColorBrush x:Key="AccentTextBrush" Color="#73B9FF" />
     <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="QuietHoverBrush" Color="#223149" />
-    <SolidColorBrush x:Key="FocusOuterBrush" Color="#F7FAFC" />
-    <SolidColorBrush x:Key="FocusInnerBrush" Color="#0B1220" />
-    <SolidColorBrush x:Key="SuccessBrush" Color="#57D17C" />
-    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#183A2A" />
-    <SolidColorBrush x:Key="WarningBrush" Color="#F6BE4F" />
-    <SolidColorBrush x:Key="WarningSoftBrush" Color="#3A2F18" />
-    <SolidColorBrush x:Key="ErrorBrush" Color="#FF7070" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="#202E43" />
+    <SolidColorBrush x:Key="FocusOuterBrush" Color="#F1F5FC" />
+    <SolidColorBrush x:Key="FocusInnerBrush" Color="#0C1421" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#82D8B3" />
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#183B35" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#F4CF8A" />
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#3B3021" />
+    <SolidColorBrush x:Key="ErrorBrush" Color="#FFA1AF" />
     <SolidColorBrush x:Key="ErrorSoftBrush" Color="#3C2025" />
     <SolidColorBrush x:Key="DialogBackdropBrush" Color="#B3000000" />
 
     <Style TargetType="TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
       <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
-      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Normal" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
@@ -141,6 +145,27 @@
       </Setter>
     </Style>
 
+    <Style x:Key="PrimaryActionButtonStyle"
+           BasedOn="{StaticResource {x:Type Button}}"
+           TargetType="Button">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="ShellButtonTextStyle"
+           BasedOn="{StaticResource {x:Type TextBlock}}"
+           TargetType="TextBlock">
+      <Setter Property="Foreground"
+              Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" />
+      <Setter Property="FontSize"
+              Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" />
+      <Setter Property="FontWeight"
+              Value="{Binding FontWeight, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" />
+    </Style>
+
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
       <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
       <Setter Property="Background" Value="Transparent" />
@@ -191,6 +216,79 @@
       <Setter Property="MinWidth" Value="76" />
       <Setter Property="MinHeight" Value="44" />
       <Setter Property="Padding" Value="14,8" />
+    </Style>
+
+    <!-- Profile-first shell roles mirror the design preview without changing action semantics. -->
+    <Style x:Key="ShellNavigationButtonStyle"
+           BasedOn="{StaticResource SecondaryButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontFamily" Value="{StaticResource LauncherTextFontFamily}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Style.Triggers>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter Property="BorderThickness" Value="2" />
+          <Setter Property="BorderBrush" Value="{DynamicResource FocusOuterBrush}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ShellSelectedNavigationButtonStyle"
+           BasedOn="{StaticResource ShellNavigationButtonStyle}"
+           TargetType="Button">
+      <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource NavigationSelectedBrush}" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style x:Key="ShellLinkButtonStyle"
+           BasedOn="{StaticResource ShellNavigationButtonStyle}"
+           TargetType="Button">
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="0,7" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+    </Style>
+
+    <Style x:Key="ProfileCardStyle" TargetType="Border">
+      <Setter Property="Padding" Value="20" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+
+    <Style x:Key="ProfileBadgeStyle" TargetType="Border">
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+      <Setter Property="CornerRadius" Value="5" />
+    </Style>
+
+    <Style x:Key="PageTitleStyle"
+           BasedOn="{StaticResource {x:Type TextBlock}}"
+           TargetType="TextBlock">
+      <Setter Property="FontSize" Value="27" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style x:Key="ProfileNameStyle"
+           BasedOn="{StaticResource {x:Type TextBlock}}"
+           TargetType="TextBlock">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+    </Style>
+
+    <Style x:Key="MutedBodyStyle"
+           BasedOn="{StaticResource {x:Type TextBlock}}"
+           TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     </Style>
 
     <Style x:Key="CaptionButtonStyle" TargetType="Button">

@@ -41,7 +41,7 @@ public partial class MainWindow
     }
 
     private void UpdateProfileLaunchSelection() => ProfileLaunchSelection.Text = profiles.SelectedProfile is { } selected
-        ? $"{selected.Name} · {(selected.IsDefault ? "Windows setup" : "Isolated profile")}"
+        ? selected.Name
         : profiles.SelectedProfileId is { } missing
             ? $"Selected profile is unavailable: {missing}. Restore it or choose Default."
             : "Selected for launch: Default";
@@ -93,10 +93,12 @@ public partial class MainWindow
         ResetImportMode();
         ProfileError.Text = string.Empty;
         var archived = profile.State == "archived";
+        ProfileLaunchSelection.Text = profile.Name;
         ProfileFormTitle.Text = archived ? "Archived profile" : "Edit profile";
         ProfileIdentity.Text = $"Profile ID: {profile.Id}";
         ProfileIdentity.Visibility = Visibility.Visible;
         ProfileNameBox.Text = profile.Name;
+        ProfileWorkspaceKindLabel.Text = profile.IsDefault ? "Windows setup" : "Isolated profile";
         ProfileFolderBox.Text = profile.GameDirectory;
         ProfileNameBox.IsReadOnly = archived || profile.IsDefault;
         ProfileFolderBox.IsReadOnly = archived;
@@ -127,6 +129,8 @@ public partial class MainWindow
         finally { isRestoringProfileSelection = false; }
         isArchivingProfile = false;
         ProfileFormTitle.Text = "Create an empty profile";
+        ProfileLaunchSelection.Text = "New profile";
+        ProfileWorkspaceKindLabel.Text = "Isolated profile";
         SaveProfileButton.Content = "_Create profile";
         ProfileIdentity.Visibility = Visibility.Collapsed;
         ProfileNameBox.Text = string.Empty;
@@ -155,6 +159,7 @@ public partial class MainWindow
         isImportingProfile = true;
         ProfileImportSourcePanel.Visibility = Visibility.Visible;
         ProfileFormTitle.Text = "Import a Windows user’s STFC setup";
+        ProfileLaunchSelection.Text = "Copy Windows setup";
         SaveProfileButton.Content = "_Review import…";
         AutomationProperties.SetName(SaveProfileButton, "Review Windows user import");
         importSources = null;
