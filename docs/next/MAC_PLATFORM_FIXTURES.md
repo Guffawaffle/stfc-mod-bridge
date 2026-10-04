@@ -259,7 +259,9 @@ closed pipes without EOF, or a disconnect alone cannot. The ordinary combined
 close event remains a supported Node lifecycle acknowledgement. Timeout, output
 error and missing facts still refuse; no unknown group is signalled to manufacture
 closure. Native replay must observe the same facts and the existing group-absence
-checks. [Pinned Node close accounting](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/child_process.js#L831-L883).
+checks. See pinned Node [peer EOF](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/child_process.js#L638-L644),
+[local IPC disconnect](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/child_process.js#L889-L943)
+and [close accounting](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/child_process.js#L1096-L1100).
 
 The stopped-shell barrier and all six cancellation/disposal checks still require actual
 Apple Silicon execution and independent review. A foreign-host parser test is
