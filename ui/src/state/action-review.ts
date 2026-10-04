@@ -81,11 +81,13 @@ export class ActionReviewController {
     if (this.disposed || this.transition.kind !== 'review' || !attempt?.plan) return undefined;
     const epoch = this.work.observations.state.cursor?.hostEpoch;
     const confidence = this.work.observations.state.confidence;
+    if (attempt.provedUnsent && !this.releaseOwnedReplay(attempt, true)) {
+      attempt.provedUnsent = false; this.transition = { kind: 'uncertain' };
+      this.say('Action outcome is unconfirmed. The exact submission is retained.', true); return undefined;
+    }
     if (!this.work.hostEpochCurrent(attempt.plan.planRef.hostEpoch)) {
-      if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
       this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined;
     }
-    if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
     try { attempt.commit = captureData({ idempotencyKey: this.options.idempotencyKey(), planRef: attempt.plan.planRef }); }
     catch { this.say('Action submission is unavailable.', true); return undefined; }
     attempt.provedUnsent = false; this.transition = { kind: 'admitting' }; this.publish();
@@ -232,17 +234,25 @@ export class ActionReviewController {
   stay(): boolean {
     const attempt = this.attempt;
     if (this.disposed || this.transition.kind !== 'review' || !attempt) return false;
-    if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
+    if (attempt.provedUnsent && !this.releaseOwnedReplay(attempt, true)) {
+      attempt.provedUnsent = false; this.transition = { kind: 'uncertain' };
+      this.say('Action outcome is unconfirmed. The exact submission is retained.', true); return false;
+    }
     this.attempt = undefined; this.transition = { kind: 'idle' }; this.options.focus.restore(attempt.focusKey); this.say('Action review closed.'); return true;
   }
-  private releaseOwnedReplay(attempt: Attempt): void {
-    if (!attempt.ownsReplay || !attempt.replayCapture || !attempt.commit) return;
+  private releaseOwnedReplay(attempt: Attempt, unsent = false): boolean {
+    if (!attempt.ownsReplay || !attempt.replayCapture || !attempt.commit) return true;
     const retained = this.client.getReplay(attempt.commit.idempotencyKey);
-    if (retained?.request === attempt.replayCapture && canonicalData(retained.input) === canonicalData(attempt.commit)) { this.client.forgetReplay(attempt.commit.idempotencyKey); attempt.ownsReplay = false; }
+    if (retained?.request === attempt.replayCapture && canonicalData(retained.input) === canonicalData(attempt.commit)) {
+      const released = unsent ? this.client.forgetUnsentReplay(attempt.commit.idempotencyKey, attempt.replayCapture) : this.client.forgetReplay(attempt.commit.idempotencyKey);
+      if (released) attempt.ownsReplay = false;
+      return released;
+    }
+    return true;
   }
   dispose(): void {
     if (this.disposed) return; this.disposed = true; this.lifecycle.abort();
-    if (this.attempt?.provedUnsent) this.releaseOwnedReplay(this.attempt);
+    if (this.attempt?.provedUnsent) this.releaseOwnedReplay(this.attempt, true);
     this.attempt = undefined; this.cancelling.clear(); this.recoveryAttempts.clear(); this.stop(); this.listeners.clear();
   }
 }

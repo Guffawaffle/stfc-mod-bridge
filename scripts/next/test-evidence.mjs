@@ -77,6 +77,8 @@ export const frontendCriteria = {
     'abort before send prevents dispatch; abort afterward abandons only observation',
     'timeout retains exact commit replay without cancel or a new preparation',
     'replay key conflict and replay/pending bounds refuse dispatch',
+    'reentrant replay reserves new submission custody before an older unsent settlement',
+    'late old admission cannot change a forgotten and replaced equal-input replay',
     'duplicate injected ID refuses; late first request cannot settle a later call',
     'adapter exceptions and malformed frames are sanitized',
     'validated subscriptions are bounded and malformed event stops only its observer',

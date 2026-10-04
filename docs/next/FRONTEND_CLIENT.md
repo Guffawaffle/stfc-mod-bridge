@@ -48,6 +48,12 @@ progress continues; it is never a backend cancellation command. Backend
 cancellation is an explicit protocol command. The client retains exact commit
 input for deliberate replay and bounds pending requests, replay records,
 subscriptions and recent IDs. Replay retention must be explicitly released.
+The original capture remains immutable across replay; private client custody
+tracks each accepted submission before timer or transport callbacks. Unsent
+cleanup requires that original capture to remain the latest submission, with
+current client proof of no delivery and no admitted operation. A later call,
+including another caller's unsent replay, prevents that cleanup. Late settlement
+cannot change a forgotten and replaced capture.
 
 Observation reconciliation uses BigInt decimal counters, stream/epoch identity,
 authoritative snapshot watermarks, buffered events and stable operation/draft

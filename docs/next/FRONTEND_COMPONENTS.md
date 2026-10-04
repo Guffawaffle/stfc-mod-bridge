@@ -28,7 +28,10 @@ new preparation. A sent domain refusal has no admission-disposition proof and
 therefore retains uncertain custody, including a refusal received during replay.
 Only this facade's identical retained capture/input can be retired after exact
 terminal reconciliation or deliberate abandonment of a proved-unsent submission.
-Unknown delivery, preexisting keys and replaced captures retain their replay.
+Unknown delivery, preexisting keys, replaced captures and any later submission
+retain their replay. A shared resubmission turns a local proved-unsent review
+into uncertainty; fresh Confirm or Stay cannot abandon it as unsent. Exact
+terminal reconciliation remains independent of submission generations.
 Stay abandons navigation intent while keeping local edits;
 Discard requires an exact backend receipt.
 
@@ -44,7 +47,7 @@ Tauri webviews, native window behavior, Narrator, VoiceOver, finished product
 screens and release qualification still require their later work packages.
 
 The browser suite has 28 required sampled checks and retains 22 screenshots;
-the component suite binds all 89 actual assertions and six evidence regressions.
+the component suite binds all 93 actual assertions and six evidence regressions.
 Its development-only CSS hot-reload probe changes one guarded gallery file,
 observes computed style without navigation or lost draft/form context, then
 restores the exact original bytes in `finally`. It never changes production

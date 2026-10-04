@@ -22,7 +22,7 @@ with zero errors and warnings, then only the frozen focused Vitest files in
 `frontend-management-evidence.mjs`. The inventory includes Management and
 Support tests, cancellation, recovery custody, adversarial action custody and
 diagnostic integrity, plus the closed Management/Support preview-session cases.
-The frozen inventory covers 197 assertions across nine files, including eleven
+The frozen inventory covers 201 assertions across nine files, including eleven
 preview-session cases. Its exact authored count is exported as `managementCounts`
 in `frontend-management-evidence.mjs`. Counts come from the executed JSON report;
 writing an inventory or a document establishes no passing coverage.
@@ -121,6 +121,10 @@ original replay. A recovery commit has its own replay custody. Its terminal
 result does not retire the original operation's replay before original terminal
 reconciliation. Release compares both exact input and captured request identity,
 so an equal-input replacement replay remains owned by its replacement caller.
+Unsent abandonment additionally requires current client delivery proof for the
+original submission. Any accepted resubmission invalidates that proof, even if
+the later call is unsent. Confirm or Stay then retains exact uncertain custody
+without allocating another commit key; disposal preserves the shared replay.
 Typed recovery target/capture correlation must pass before the observation
 store adopts a row and a controller derives an intent. Unsupported recovery
 families retain their recorded evidence without an invented generic command.

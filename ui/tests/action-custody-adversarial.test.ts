@@ -190,6 +190,31 @@ test('obsolete generic review cleanup preserves a foreign replacement replay cap
   } finally { run.dispose(); }
 });
 
+test.each(['pending', 'uncertain', 'admitted', 'not_sent'] as const)('proved-unsent generic cleanup retains a shared later submission: %s', async delivery => {
+  for (const cleanup of ['confirm', 'stay', 'dispose'] as const) {
+    const run = harness([], 1);
+    try {
+      await run.facade.actions.prepare(intent()); run.failNextUnsent(); await run.facade.actions.confirm();
+      const key = run.keys[0], original = run.client.getReplay(key)!;
+      if (delivery === 'not_sent') run.failNextUnsent();
+      const replay = run.client.replayCommit(key);
+      if (delivery === 'uncertain') { run.failCommit(); expect(await replay).toMatchObject({ kind: 'fault', fault: { delivery: 'may_have_reached_backend' } }); }
+      else if (delivery === 'admitted') { run.finish('commit', admitted()); expect(await replay).toMatchObject({ kind: 'result' }); }
+      else if (delivery === 'not_sent') expect(await replay).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+      else expect(run.client.pendingCount).toBe(1);
+      const retained = run.client.getReplay(key)!; expect(retained.request).toBe(original.request);
+      replaceHost(run); const before = run.sent.length;
+      if (cleanup === 'confirm') expect(await run.facade.actions.confirm()).toBeUndefined();
+      else if (cleanup === 'stay') expect(run.facade.actions.stay()).toBe(false);
+      else run.facade.dispose();
+      expect(run.sent).toHaveLength(before); expect(run.client.getReplay(key)).toBe(retained);
+      if (cleanup !== 'dispose') expect(run.facade.actions.state.transition.kind).toBe('uncertain');
+      run.facade.dispose(); expect(run.client.getReplay(key)).toBe(retained);
+      if (delivery === 'pending') { run.failCommit(); await replay; expect(run.client.getReplay(key)).toBe(retained); }
+    } finally { run.dispose(); }
+  }
+});
+
 test('a later listener cannot redisplay review after a reentrant Stay closes it', async () => {
   const run = harness(); let closed = false; const shown: ActionReviewState[] = [];
   run.facade.actions.subscribe(state => {
@@ -284,6 +309,8 @@ test('a newly requested exact replay after a host replacement still observes the
     const commits = run.sent.filter(row => row.body.type === 'command' && row.body.command.name === 'commit');
     expect(commits).toHaveLength(2);
     expect(commits.map(row => row.body.type === 'command' ? row.body.command.input : undefined)).toEqual([original?.input, original?.input]);
+    expect(run.facade.work.observations.observeOperation(operation())).toBe(true);
+    expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(run.client.replayCount).toBe(0);
   } finally { run.dispose(); }
 });
 

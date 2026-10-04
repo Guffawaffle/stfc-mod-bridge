@@ -242,6 +242,36 @@ test('facade uncertain disposal retains exact replay while proved-unsent disposa
   }
 });
 
+test.each(['pending', 'uncertain', 'admitted', 'not_sent'] as const)('facade proved-unsent cleanup retains a shared later submission: %s', async delivery => {
+  for (const cleanup of ['retry', 'stay', 'dispose'] as const) {
+    let mode: 'unsent' | typeof delivery = 'unsent', failReplay = () => {};
+    const { facade, client, sent } = harness(request => {
+      if (request.body.command?.name !== 'commit' || mode === 'admitted') return;
+      if (mode === 'unsent' || mode === 'not_sent') throw { code: 'delivery_failed', delivery: 'not_sent' };
+      if (mode === 'uncertain') throw { code: 'disconnected', delivery: 'may_have_reached_backend' };
+      return new Promise<string>((_resolve, reject) => { failReplay = () => reject({ code: 'disconnected', delivery: 'may_have_reached_backend' }); });
+    }, undefined, undefined, { maximumReplays: 2, idempotencyKey: keySequence() });
+    try {
+      await facade.prepareSave(); await facade.commitSave();
+      const input = sent.at(-1).body.command.input, original = client.getReplay(input.idempotencyKey)!;
+      mode = delivery; const replay = client.replayCommit(input.idempotencyKey);
+      if (delivery === 'uncertain') expect(await replay).toMatchObject({ kind: 'fault', fault: { delivery: 'may_have_reached_backend' } });
+      else if (delivery === 'admitted') expect(await replay).toMatchObject({ kind: 'result' });
+      else if (delivery === 'not_sent') expect(await replay).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+      else expect(client.pendingCount).toBe(1);
+      const retained = client.getReplay(input.idempotencyKey)!; expect(retained.request).toBe(original.request);
+      const before = sent.length;
+      if (cleanup === 'retry') expect(await facade.commitSave()).toBeUndefined();
+      else if (cleanup === 'stay') expect(facade.stay()).toBe(false);
+      else facade.dispose();
+      expect(sent).toHaveLength(before); expect(client.getReplay(input.idempotencyKey)).toBe(retained);
+      if (cleanup !== 'dispose') expect(facade.state.transition.kind).toBe('uncertain');
+      facade.dispose(); expect(client.getReplay(input.idempotencyKey)).toBe(retained);
+      if (delivery === 'pending') { failReplay(); await replay; expect(client.getReplay(input.idempotencyKey)).toBe(retained); }
+    } finally { facade.dispose(); client.dispose(); }
+  }
+});
+
 test('facade terminal reconciliation cannot forget a replacement replay with a different capture', async () => {
   for (const sameInput of [false, true]) {
     const { facade, client, sent } = harness(); await facade.prepareSave(); await facade.commitSave();
@@ -267,11 +297,16 @@ test('facade unsent invocation of a preexisting identical replay cannot prove ea
 });
 
 test('facade exact terminal failure releases replay without claiming Save or releasing queued navigation', async () => {
+  let replayUnsent = false;
   const { facade, client } = harness((request, reply) => {
+    if (request.body.command?.name === 'commit' && replayUnsent) throw { code: 'delivery_failed', delivery: 'not_sent' };
     if (request.body.query?.name === 'get_operation') reply.body.result.query.output.operation.value.state = frame('sc15-terminal-failed-reply').body.result.query.output.operation.value.state;
     return reply;
   });
-  await facade.prepareSave(); await facade.commitSave(); expect(client.replayCount).toBe(1); await facade.reconcileSave();
+  await facade.prepareSave(); await facade.commitSave(); expect(client.replayCount).toBe(1);
+  const original = client.getReplay('00000001-1111-4111-8111-111111111111')!; replayUnsent = true;
+  expect(await client.replayCommit(original.input.idempotencyKey)).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+  expect(client.getReplay(original.input.idempotencyKey)?.request).toBe(original.request); await facade.reconcileSave();
   expect(client.replayCount).toBe(0); expect(facade.state.transition.kind).toBe('idle'); expect(facade.state.work.transitionBusy).toBe(false);
   expect(facade.state.work.closeRequested).toBe(false); expect(facade.state.work.pendingNavigation?.kind).toBe('close');
   expect(facade.state.work.edits).toEqual(edits()); expect(facade.state.notice).not.toBe('Changes saved.'); expect(facade.stay()).toBe(true); facade.dispose();

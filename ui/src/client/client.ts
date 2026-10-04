@@ -69,6 +69,9 @@ export class BridgeClient {
   private readonly pending = new Map<string, Pending>();
   private readonly recentIds = new Set<string>();
   private readonly replays = new Map<string, CommitReplay>();
+  // The original capture stays immutable across exact replay. Delivery custody
+  // belongs to each submission, including one made by another shared caller.
+  private readonly replaySubmissions = new WeakMap<RequestCapture, { latest: RequestCapture; delivery: 'pending' | ClientFault['delivery'] }>();
   private readonly subscriptions = new Set<() => void>();
   private readonly clock: ClientClock;
   private readonly timeoutMs: number;
@@ -96,6 +99,12 @@ export class BridgeClient {
   getReplay(key: string): CommitReplay | undefined { return this.replays.get(key); }
   /** Explicit release after backend reconciliation or a user's deliberate choice. */
   forgetReplay(key: string): boolean { return this.replays.delete(key); }
+  /** Retire only an owned original submission still proved unsent by this client. */
+  forgetUnsentReplay(key: string, original: RequestCapture): boolean {
+    const replay = this.replays.get(key), submission = this.replaySubmissions.get(original);
+    if (replay?.request !== original || replay.operationId || submission?.latest !== original || submission.delivery !== 'not_sent') return false;
+    return this.replays.delete(key);
+  }
   replayCommit(key: string, options: CallOptions = {}): Promise<ClientOutcome<CommandOutput<'commit'>>> {
     const replay = this.replays.get(key);
     return replay ? this.command('commit', replay.input, options) : Promise.resolve(this.fault('replay_missing', 'not_sent'));
@@ -155,12 +164,18 @@ export class BridgeClient {
     const request = capture.request;
     const metadata: RequestMetadata = Object.freeze({ requestId: request.requestId, kind, method });
     if (this.recentIds.has(request.requestId) || this.pending.has(request.requestId)) return Promise.resolve(this.fault('request_id_reused', 'not_sent', metadata));
+    let replayOwner: RequestCapture | undefined;
+    let replayKey: string | undefined;
     if (kind === 'command' && method === 'commit' && request.body.type === 'command' && request.body.command.name === 'commit') {
       const commit = request.body.command.input;
       const prior = this.replays.get(commit.idempotencyKey);
       if (prior && canonicalData(prior.input) !== canonicalData(commit)) return Promise.resolve(this.fault('replay_conflict', 'not_sent', metadata));
       if (!prior && this.replays.size >= this.maximumReplays) return Promise.resolve(this.fault('replay_limit', 'not_sent', metadata));
       if (!prior) this.replays.set(commit.idempotencyKey, Object.freeze({ input: commit, request: capture }));
+      replayOwner = prior?.request ?? capture;
+      replayKey = commit.idempotencyKey;
+      // Reserve the new submission before clocks or transport can call back.
+      this.replaySubmissions.set(replayOwner, { latest: capture, delivery: 'pending' });
     }
     this.recentIds.add(request.requestId);
     if (this.recentIds.size > this.maximumRecentIds) this.recentIds.delete(this.recentIds.values().next().value!);
@@ -173,6 +188,10 @@ export class BridgeClient {
       const finish = (outcome: ClientOutcome<T>) => {
         if (settled) return;
         settled = true; cancelTimer(); callOptions.signal?.removeEventListener('abort', abort);
+        const submission = replayOwner && this.replaySubmissions.get(replayOwner);
+        if (submission?.latest === capture && replayKey && this.replays.get(replayKey)?.request === replayOwner) {
+          submission.delivery = outcome.kind === 'fault' ? outcome.fault.delivery : 'may_have_reached_backend';
+        }
         pendingRequest = undefined;
         this.pending.delete(metadata.requestId); resolve(outcome);
       };
@@ -244,7 +263,7 @@ export class BridgeClient {
           }
           if (command.name === 'commit' && output.name === 'commit') {
             const replay = this.replays.get(command.input.idempotencyKey);
-            if (replay && canonicalData(replay.input) === canonicalData(command.input)) {
+            if (replay && replay.request === replayOwner && canonicalData(replay.input) === canonicalData(command.input)) {
               if (replay.operationId && replay.operationId !== output.output.operationId) { finish(this.fault('correlation', 'may_have_reached_backend', metadata)); return; }
               if (!replay.operationId) this.replays.set(command.input.idempotencyKey, Object.freeze({ ...replay, operationId: output.output.operationId }));
             }

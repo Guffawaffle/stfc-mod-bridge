@@ -374,6 +374,42 @@ test('replay key conflict and replay/pending bounds refuse dispatch', async () =
   expect(other.client.forgetReplay(input.idempotencyKey)).toBe(true);
 });
 
+test('reentrant replay reserves new submission custody before an older unsent settlement', async () => {
+  for (const laterUnsent of [false, true]) {
+    let calls = 0, replay!: Promise<ClientOutcome<CommandOutput<'commit'>>>;
+    const later = deferred<RawFrame>(), input = JSON.parse(raw('sc14-admit-request')).body.command.input;
+    const { client } = harness(() => {
+      if (++calls === 1) { replay = client.replayCommit(input.idempotencyKey); throw { code: 'delivery_failed', delivery: 'not_sent' }; }
+      if (laterUnsent) throw { code: 'delivery_failed', delivery: 'not_sent' };
+      return later.promise;
+    });
+    expect(await client.command('commit', input)).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+    const original = client.getReplay(input.idempotencyKey)!;
+    expect(client.forgetUnsentReplay(input.idempotencyKey, original.request)).toBe(false);
+    if (!laterUnsent) later.reject({ code: 'disconnected', delivery: 'may_have_reached_backend' });
+    expect(await replay).toMatchObject({ kind: 'fault', fault: { delivery: laterUnsent ? 'not_sent' : 'may_have_reached_backend' } });
+    expect(client.getReplay(input.idempotencyKey)).toBe(original);
+    expect(client.forgetUnsentReplay(input.idempotencyKey, original.request)).toBe(false); client.dispose();
+  }
+});
+
+test('late old admission cannot change a forgotten and replaced equal-input replay', async () => {
+  let calls = 0, encoded = '';
+  const first = deferred<RawFrame>(), input = JSON.parse(raw('sc14-admit-request')).body.command.input;
+  const { client } = harness(request => {
+    if (++calls === 1) { encoded = request; return first.promise; }
+    throw { code: 'delivery_failed', delivery: 'not_sent' };
+  });
+  const pending = client.command('commit', input), original = client.getReplay(input.idempotencyKey)!;
+  expect(client.forgetReplay(input.idempotencyKey)).toBe(true);
+  expect(await client.command('commit', input)).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+  const replacement = client.getReplay(input.idempotencyKey)!; expect(replacement.request).not.toBe(original.request);
+  first.resolve(correlated(raw('sc14-admit-reply'), encoded)); expect(await pending).toMatchObject({ kind: 'result' });
+  expect(client.getReplay(input.idempotencyKey)).toBe(replacement); expect(replacement.operationId).toBeUndefined();
+  expect(client.forgetUnsentReplay(input.idempotencyKey, original.request)).toBe(false);
+  expect(client.forgetUnsentReplay(input.idempotencyKey, replacement.request)).toBe(true); client.dispose();
+});
+
 test('duplicate injected ID refuses; late first request cannot settle a later call', async () => {
   const first = deferred<RawFrame>(); const second = deferred<RawFrame>(); let calls = 0;
   const { client, clock } = harness(() => (++calls === 1 ? first.promise : second.promise));

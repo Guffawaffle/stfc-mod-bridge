@@ -125,7 +125,10 @@ export class BridgeFacade {
     let inPlace = false, key = this.work.state.focusKey;
     if (this.attempt) {
       if (this.attempt.review.purpose.kind === 'in_place') key = this.attempt.review.focusKey;
-      if (this.attempt.provedUnsent) this.releaseOwnedReplay(this.attempt);
+      if (this.attempt.provedUnsent && !this.releaseOwnedReplay(this.attempt, true)) {
+        this.attempt.provedUnsent = false; this.transition = { kind: 'uncertain' };
+        this.say('Save outcome is unconfirmed. Changes and exact submission are retained.', true); return false;
+      }
       const abandonedReview = this.work.abandonReview(this.attempt.review);
       inPlace = abandonedReview && this.attempt.review.purpose.kind === 'in_place';
       this.attempt = undefined; this.transition = { kind: 'idle' };
@@ -195,11 +198,13 @@ export class BridgeFacade {
   async commitSave(options: CallOptions = {}): Promise<ClientOutcome<OperationSnapshot> | undefined> {
     const attempt = this.attempt;
     if (this.disposed || this.transition.kind !== 'review' || !attempt?.plan) return undefined;
+    if (attempt.provedUnsent && !this.releaseOwnedReplay(attempt, true)) {
+      attempt.provedUnsent = false; this.transition = { kind: 'uncertain' };
+      this.say('Save outcome is unconfirmed. Changes and exact submission are retained.', true); return undefined;
+    }
     if (!this.work.hostEpochCurrent(attempt.review.draft.draft.hostEpoch)) {
       this.say('Changes retained. The Bridge host changed before Save submission. Refresh the draft baseline.', true); return undefined;
     }
-    // An explicit retry can retire only this attempt's proved-unsent capture.
-    if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
     try { attempt.commit = Object.freeze({ idempotencyKey: this.options.idempotencyKey(), planRef: attempt.plan.planRef }); }
     catch { this.say('Changes retained. Save submission is unavailable.', true); return undefined; }
     attempt.provedUnsent = false;
@@ -270,12 +275,15 @@ export class BridgeFacade {
     } finally { this.settling = false; }
     if (reopen) this.baselineTask = this.reloadBaseline();
   }
-  private releaseOwnedReplay(attempt: SaveAttempt): void {
-    if (!attempt.ownsReplay || !attempt.replayCapture || !attempt.commit) return;
+  private releaseOwnedReplay(attempt: SaveAttempt, unsent = false): boolean {
+    if (!attempt.ownsReplay || !attempt.replayCapture || !attempt.commit) return true;
     const retained = this.client.getReplay(attempt.commit.idempotencyKey);
     if (retained?.request === attempt.replayCapture && canonicalData(retained.input) === canonicalData(attempt.commit)) {
-      this.client.forgetReplay(attempt.commit.idempotencyKey); attempt.ownsReplay = false;
+      const released = unsent ? this.client.forgetUnsentReplay(attempt.commit.idempotencyKey, attempt.replayCapture) : this.client.forgetReplay(attempt.commit.idempotencyKey);
+      if (released) attempt.ownsReplay = false;
+      return released;
     }
+    return true;
   }
   async reconcileSave(options: CallOptions = {}): Promise<void> {
     const attempt = this.attempt; if (this.disposed || !attempt?.operationId) return;
@@ -351,7 +359,7 @@ export class BridgeFacade {
   dispose(): void {
     if (this.disposed) return; this.disposed = true; this.lifecycle.abort();
     this.actions.dispose();
-    if (this.attempt) { if (this.attempt.provedUnsent) this.releaseOwnedReplay(this.attempt); this.work.finishSave(this.attempt.review, abandoned()); this.work.abandonBaselineReservation(this.attempt.review); }
+    if (this.attempt) { if (this.attempt.provedUnsent) this.releaseOwnedReplay(this.attempt, true); this.work.finishSave(this.attempt.review, abandoned()); this.work.abandonBaselineReservation(this.attempt.review); }
     if (this.discardReview) { this.work.finishDiscard(this.discardReview, abandoned()); this.work.abandonBaselineReservation(this.discardReview); }
     if (this.reopening) this.work.finishBaselineReopen(this.reopening, abandoned());
     this.baselineTask = undefined; this.reopening = undefined; this.attempt = undefined; this.session.dispose(); for (const stop of this.stops) stop(); this.stops = []; this.listeners.clear();

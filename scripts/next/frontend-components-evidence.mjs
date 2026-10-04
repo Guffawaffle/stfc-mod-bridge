@@ -48,6 +48,7 @@ const facade = [
   'facade explicit retry retires only the proved-unsent owned replay before using a fresh key',
   'facade replay conflict and Stay preserve another callers preexisting capture',
   'facade uncertain disposal retains exact replay while proved-unsent disposal releases owned capture',
+  ...['pending', 'uncertain', 'admitted', 'not_sent'].map(name => `facade proved-unsent cleanup retains a shared later submission: ${name}`),
   'facade terminal reconciliation cannot forget a replacement replay with a different capture',
   'facade unsent invocation of a preexisting identical replay cannot prove earlier non-admission',
   'facade exact terminal failure releases replay without claiming Save or releasing queued navigation',
@@ -72,7 +73,7 @@ const facade = [
   'facade synchronous disposal during synchronized review publication releases exact updated custody',
   'facade synchronized review disposal cleanup preserves a newly captured review owner',
 ];
-assert.equal(primitives.length, 51); assert.equal(facade.length, 38);
+assert.equal(primitives.length, 51); assert.equal(facade.length, 42);
 export const componentCriteria = Object.freeze({
   'ui/tests/components/primitives.test.ts': Object.freeze(primitives),
   'ui/tests/components/facade.test.ts': Object.freeze(facade),
@@ -80,7 +81,7 @@ export const componentCriteria = Object.freeze({
 
 export function componentEvidence(report, root) {
   const inventory = vitestEvidence(report, { root, required: componentCriteria });
-  assert.equal(inventory.tests, 89, 'Component evidence must execute all 89 bound assertions');
+  assert.equal(inventory.tests, 93, 'Component evidence must execute all 93 bound assertions');
   assert.equal(inventory.files.length, 2, 'Component evidence cannot substitute another test file');
   for (const result of report.testResults) {
     const observed = inventory.files.find(file => result.name.replaceAll('\\', '/').endsWith(`/${file.file}`));
