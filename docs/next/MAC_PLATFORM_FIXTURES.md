@@ -249,6 +249,18 @@ with no signal/error, and actual group absence. They launch no fixture helper
 and are separate from the three helper-alive disposal observations. An early
 failed/unknown native probe or blocked initialization is not a successful check.
 
+Parent-initiated IPC disconnect can suppress Node24.14.1's combined
+`ChildProcess` `close` event even after the child exits and both output pipes
+reach EOF and close. A bounded owned Windows Node probe observed that behavior;
+it does not qualify the Mac supervisor. Capture retains the actual exit event,
+stdout/stderr EOF and close events, stdin closure and IPC disconnect separately.
+That complete set may finish capture without the combined event; exit alone,
+closed pipes without EOF, or a disconnect alone cannot. The ordinary combined
+close event remains a supported Node lifecycle acknowledgement. Timeout, output
+error and missing facts still refuse; no unknown group is signalled to manufacture
+closure. Native replay must observe the same facts and the existing group-absence
+checks. [Pinned Node close accounting](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/child_process.js#L831-L883).
+
 The stopped-shell barrier and all six cancellation/disposal checks still require actual
 Apple Silicon execution and independent review. A foreign-host parser test is
 not native validation. Unexpected anchor death, blocked event loop, escaped

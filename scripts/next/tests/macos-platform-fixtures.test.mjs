@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { fork, spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { macFixtureAdmission, macMachO, macArtifactInventory, macPsRows,
   macPsObservation, macDfVolume, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic,
-  macFixtureCommandRouting } from '../macos-platform-fixtures.mjs';
+  macFixtureCommandRouting, macCaptureChild } from '../macos-platform-fixtures.mjs';
 
 // Portable parsing/refusal and Node invocation assertions do not execute the
 // native harness, authenticate CI metadata or qualify an Apple Silicon host.
@@ -184,4 +185,73 @@ test('Mac supervisor diagnostic failure or a stalled pipe cannot hold disposal i
   assert.equal(await macBoundedDiagnostic(() => Promise.resolve()), true);
   assert.equal(await macBoundedDiagnostic(() => Promise.reject(Error('closed pipe'))), false);
   assert.equal(await macBoundedDiagnostic(() => new Promise(() => {})), false);
+});
+
+function observedChild({ ipc = true, stdin = true } = {}) {
+  return Object.assign(new EventEmitter(), { channel: ipc ? {} : null,
+    stdin: stdin ? new EventEmitter() : null, stdout: new EventEmitter(), stderr: new EventEmitter() });
+}
+function completeOutput(child) {
+  for (const name of ['stdout', 'stderr']) { child[name].emit('end'); child[name].emit('close'); }
+}
+test('Mac capture exit alone waits for both output EOFs, pipe closure, stdin and IPC', async () => {
+  const child = observedChild(); let settled = false;
+  const captured = macCaptureChild(child, 1000, { onFailure: () => {} }).then(value => { settled = true; return value; });
+  child.emit('exit', 2, null); completeOutput(child);
+  await Promise.resolve(); assert.equal(settled, false);
+  child.stdin.emit('close'); await Promise.resolve(); assert.equal(settled, false);
+  child.emit('disconnect'); const result = await captured;
+  assert.equal(result.closed, true); assert.equal(result.exitCode, 2); assert.equal(result.error, null);
+  assert.equal(result.lifecycle.nodeCloseObserved, false); assert.equal(result.lifecycle.ipcDisconnected, true);
+});
+test('Mac capture pipe closure and IPC without actual exit cannot finish observation', async () => {
+  const child = observedChild(); let settled = false;
+  const captured = macCaptureChild(child, 1000, { onFailure: () => {} }).then(value => { settled = true; return value; });
+  completeOutput(child); child.stdin.emit('close'); child.emit('disconnect');
+  await Promise.resolve(); assert.equal(settled, false);
+  child.emit('exit', 2, null); const result = await captured;
+  assert.deepEqual(result.lifecycle.exit, { exitCode: 2, signal: null }); assert.equal(result.closed, true);
+});
+test('Mac capture requires EOF in addition to closed pipes and preserves an output failure', async () => {
+  const child = observedChild({ ipc: false, stdin: false }); let settled = false;
+  const captured = macCaptureChild(child, 1000, { onFailure: () => {} }).then(value => { settled = true; return value; });
+  child.stdout.emit('error', Error('controlled pipe failure'));
+  child.emit('exit', 2, null); child.stdout.emit('close'); child.stderr.emit('close');
+  await Promise.resolve(); assert.equal(settled, false);
+  child.stdout.emit('end'); await Promise.resolve(); assert.equal(settled, false);
+  child.stderr.emit('end'); const result = await captured;
+  assert.equal(result.closed, true); assert.equal(result.error, 'MAC_FIXTURE_COMMAND_OUTPUT');
+});
+test('Mac capture observes an actual owned Node fork after parent IPC disconnect without relying on close', async () => {
+  const child = fork(path.join(import.meta.dirname, 'fixtures', 'node-ipc-close-child.mjs'), [], {
+    execPath: process.execPath, execArgv: [], windowsHide: true, serialization: 'json', stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  let exitObservation, exitResolve;
+  const exited = new Promise(resolve => { exitResolve = resolve; });
+  child.once('exit', (exitCode, signal) => { exitObservation = { exitCode, signal }; exitResolve(); });
+  const captured = macCaptureChild(child, 3000, { maxOutput: 8192, onFailure: () => {} });
+  let output = '';
+  child.stdout.on('data', bytes => {
+    output += bytes.toString('utf8');
+    if (output.includes('ready\n') && child.connected) child.disconnect();
+  });
+  let cleanupTimer;
+  try {
+    child.send('observe-disconnect');
+    const result = await captured;
+    assert.equal(result.closed, true); assert.equal(result.error, null);
+    assert.equal(result.exitCode, 2); assert.equal(result.signal, null);
+    assert.deepEqual(result.lifecycle.exit, { exitCode: 2, signal: null });
+    assert.deepEqual(result.lifecycle.stdout, { end: true, close: true });
+    assert.deepEqual(result.lifecycle.stderr, { end: true, close: true });
+    assert.equal(result.lifecycle.ipcDisconnected, true); assert.equal(result.stdout, 'ready\nrefused\n');
+  } finally {
+    // Kill only this retained child if exit is still unobserved. The fixture's
+    // own deadline is independent, but deadline intent is never exit evidence.
+    if (!exitObservation) assert.equal(child.kill('SIGKILL'), true);
+    try {
+      assert.equal(await Promise.race([exited.then(() => true), new Promise(resolve => {
+        cleanupTimer = setTimeout(() => resolve(false), 3000);
+      })]), true, 'owned probe exit must actually be observed');
+    } finally { clearTimeout(cleanupTimer); }
+  }
 });

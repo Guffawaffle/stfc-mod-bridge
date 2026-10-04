@@ -210,15 +210,38 @@ async function resolveTool(requested, environment) {
   for (const candidate of candidates) { try { await access(candidate, constants.X_OK); return await realpath(candidate); } catch { /* Try the next explicit PATH entry. */ } }
   requireProof(false, 'MAC_FIXTURE_TOOL_UNAVAILABLE');
 }
-function captureChild(child, timeoutMs, { input = null, onFailure = null, maxOutput = MAX_OUTPUT } = {}) {
+export function macCaptureChild(child, timeoutMs, { input = null, onFailure = null, maxOutput = MAX_OUTPUT } = {}) {
   return new Promise(resolve => {
     const startedAt = new Date().toISOString(), stdout = [], stderr = [];
     let outputBytes = 0, failure = null, settled = false, fallback;
+    const lifecycle = { exit: null, nodeCloseObserved: false, ipcRequired: Boolean(child.channel),
+      ipcDisconnected: !child.channel, stdinClosed: !child.stdin,
+      stdout: { end: !child.stdout, close: !child.stdout }, stderr: { end: !child.stderr, close: !child.stderr } };
     const fail = code => { if (failure) return; failure = code; if (onFailure) onFailure(code); else child.kill('SIGKILL'); fallback = setTimeout(() => finish(null, null, false), 5000); };
     const timer = setTimeout(() => fail('MAC_FIXTURE_COMMAND_TIMEOUT'), timeoutMs);
-    function finish(exitCode, signal, closed = true) { if (settled) return; settled = true; clearTimeout(timer); clearTimeout(fallback); resolve({ startedAt, completedAt: new Date().toISOString(), exitCode, signal, closed, error: failure, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') }); }
+    function finish(exitCode, signal, closed = true) { if (settled) return; settled = true; clearTimeout(timer); clearTimeout(fallback); resolve({ startedAt, completedAt: new Date().toISOString(), exitCode, signal, closed, error: failure,
+      lifecycle: { ...lifecycle, stdout: { ...lifecycle.stdout }, stderr: { ...lifecycle.stderr } },
+      stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') }); }
+    // Node24.14.1 can omit ChildProcess 'close' after a parent-initiated IPC
+    // disconnect. Require actual exit plus both drained/closed output pipes,
+    // closed stdin and IPC disconnect; exit alone never finishes capture.
+    function finishObserved() {
+      if (lifecycle.exit && lifecycle.ipcDisconnected && lifecycle.stdinClosed &&
+        lifecycle.stdout.end && lifecycle.stdout.close && lifecycle.stderr.end && lifecycle.stderr.close) {
+        finish(lifecycle.exit.exitCode, lifecycle.exit.signal);
+      }
+    }
     for (const [stream, chunks] of [[child.stdout, stdout], [child.stderr, stderr]]) stream?.on('data', bytes => { outputBytes += bytes.length; if (outputBytes > maxOutput) { fail('MAC_FIXTURE_OUTPUT_BOUND'); return; } chunks.push(bytes); });
-    child.on('error', () => fail('MAC_FIXTURE_COMMAND_ERROR')); child.once('close', (code, signal) => finish(code, signal));
+    for (const name of ['stdout', 'stderr']) {
+      child[name]?.once('end', () => { lifecycle[name].end = true; finishObserved(); });
+      child[name]?.once('close', () => { lifecycle[name].close = true; finishObserved(); });
+      child[name]?.on('error', () => fail('MAC_FIXTURE_COMMAND_OUTPUT'));
+    }
+    child.stdin?.once('close', () => { lifecycle.stdinClosed = true; finishObserved(); });
+    child.once('exit', (exitCode, signal) => { lifecycle.exit = { exitCode, signal }; finishObserved(); });
+    child.once('disconnect', () => { lifecycle.ipcDisconnected = true; finishObserved(); });
+    child.on('error', () => fail('MAC_FIXTURE_COMMAND_ERROR'));
+    child.once('close', (code, signal) => { lifecycle.nodeCloseObserved = true; finish(code, signal); });
     if (input !== null) { child.stdin.on('error', () => fail('MAC_FIXTURE_COMMAND_INPUT')); child.stdin.end(input); }
   });
 }
@@ -232,7 +255,7 @@ export function macFixtureCommandRouting(executable, argv0) {
 async function command(executable, argv, environment, timeout = 180000, options = {}) {
   const routing = macFixtureCommandRouting(executable, options.argv0);
   const child = spawn(routing.executable, argv, { argv0: routing.argv0, cwd: ROOT, env: environment, shell: false, detached: false, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
-  return captureChild(child, timeout, { input: options.input ?? null, maxOutput: options.maxOutput || MAX_OUTPUT });
+  return macCaptureChild(child, timeout, { input: options.input ?? null, maxOutput: options.maxOutput || MAX_OUTPUT });
 }
 async function psRows(selector, pid, group, environment) {
   requireProof(integerPid(pid) && integerPid(group), 'MAC_FIXTURE_GROUP_ID');
@@ -348,7 +371,7 @@ async function supervisor() {
       admission.active(); clearTimeout(deadline); deadline = setTimeout(() => void dispose(message.operation === 'deadline' ? 'fixture-timeout' : 'supervisor-deadline'), message.operation === 'owned-case' ? 30000 : 8000);
       admission.admitLaunch();
       const child = spawn(SYSTEM.sh, ['-c', START_BARRIER, 'bridge-macos-fixture-start-v1', executable, ...argv], { cwd: ROOT, env: nativeEnvironment, shell: false, detached: false, stdio: ['pipe', 'pipe', 'pipe'] });
-      const result = captureChild(child, 35000, { maxOutput: 65536, onFailure: () => void dispose('child-failure') });
+      const result = macCaptureChild(child, 35000, { maxOutput: 65536, onFailure: () => void dispose('child-failure') });
       requireProof(integerPid(child.pid), 'MAC_FIXTURE_CHILD_PID');
       let stopped = null;
       for (let attempt = 0; attempt < 40; attempt++) { const rows = await admission.observe(() => psRows('-p', child.pid, process.pid, environment)); if (rows.length === 1 && rows[0].pid === child.pid && rows[0].state.startsWith('T')) { stopped = rows[0]; break; } requireProof(child.exitCode === null && child.signalCode === null, 'MAC_FIXTURE_BARRIER_EXIT'); await admission.observe(() => delay(25)); }
@@ -383,7 +406,7 @@ async function runSupervised(operation, context, retain) {
   const requestDisposal = () => { if (child.connected) child.send({ schemaVersion: PROTOCOL, nonce, action: 'dispose' }, error => { if (error) protocolFailure ||= 'MAC_FIXTURE_IPC_ERROR'; }); };
   const signals = ['SIGINT', 'SIGTERM'], signalHandler = () => { protocolFailure ||= 'MAC_FIXTURE_PARENT_SIGNAL'; requestDisposal(); };
   for (const signal of signals) process.on(signal, signalHandler);
-  const captured = captureChild(child, 45000, { maxOutput: 256 * 1024, onFailure: () => { protocolFailure ||= 'MAC_FIXTURE_PARENT_DEADLINE'; requestDisposal(); } });
+  const captured = macCaptureChild(child, 45000, { maxOutput: 256 * 1024, onFailure: () => { protocolFailure ||= 'MAC_FIXTURE_PARENT_DEADLINE'; requestDisposal(); } });
   child.on('error', () => { protocolFailure ||= 'MAC_FIXTURE_IPC_ERROR'; });
   const monitor = setInterval(() => {}, 1000); // Keep parent custody referenced.
   child.stdout.on('data', () => {});
@@ -416,7 +439,7 @@ async function runSupervised(operation, context, retain) {
   let events = [];
   try { events = value.stdout.trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)); requireProof(!pending.trim() && !decoder.end(), 'MAC_FIXTURE_SUPERVISOR_OUTPUT'); }
   catch { protocolFailure ||= 'MAC_FIXTURE_SUPERVISOR_EVENT'; }
-  const report = { operation, supervisorPid: child.pid, nonce, preAnchorCancellation: preAnchor, events, stdout: value.stdout, close: { exitCode: value.exitCode, signal: value.signal, closed: value.closed, error: value.error }, stderr: value.stderr, protocolFailure, groupAbsence: [] };
+  const report = { operation, supervisorPid: child.pid, nonce, preAnchorCancellation: preAnchor, events, stdout: value.stdout, close: { exitCode: value.exitCode, signal: value.signal, closed: value.closed, error: value.error, lifecycle: value.lifecycle }, stderr: value.stderr, protocolFailure, groupAbsence: [] };
   await retain(report);
   requireProof(!protocolFailure && value.closed && !value.error && !value.stderr.trim() && (preAnchor ? value.exitCode === 2 && value.signal === null : value.exitCode === null && value.signal === 'SIGKILL'), 'MAC_FIXTURE_SUPERVISOR_DISPOSAL');
   const expectedEvents = preAnchor ? 'validating|refused-before-anchor' : operation === 'owned-case' ? 'barrier|result|disposing' : 'barrier|ready|disposing';
