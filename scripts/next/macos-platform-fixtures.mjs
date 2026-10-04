@@ -250,7 +250,7 @@ async function volumeFence(selected, handle, expected, fixtureDev) {
   const disk = await lstat(selected.mountPoint, { bigint: true }), held = await handle.stat({ bigint: true });
   requireProof(!disk.isSymbolicLink() && disk.isDirectory() && held.isDirectory() &&
     await realpath(selected.mountPoint) === selected.mountPoint &&
-    String(disk.dev) === fixtureDev && String(held.dev) === fixtureDev &&
+    expected.dev === fixtureDev && String(disk.dev) === expected.dev && String(held.dev) === expected.dev &&
     String(disk.ino) === expected.ino && String(held.ino) === expected.ino, 'MAC_FIXTURE_VOLUME_CUSTODY');
 }
 function exactKeys(value, keys) { requireProof(record(value) && Object.keys(value).sort().join('|') === [...keys].sort().join('|'), 'MAC_FIXTURE_SUPERVISOR_SCHEMA'); }
