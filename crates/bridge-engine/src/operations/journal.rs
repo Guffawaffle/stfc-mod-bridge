@@ -2,12 +2,15 @@
 //! not a native catalog or replacement for the canonical owner's own journal.
 use super::{KernelFailure, ResourceKey};
 use bridge_contracts::v1::*;
+use bridge_journal_io::{JournalStorage, StorageFailure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
+    marker::PhantomData,
     path::Path,
+    rc::Rc,
 };
 
 const MAGIC: &[u8; 8] = b"BRJWAL01";
@@ -44,24 +47,39 @@ pub enum JournalRecord {
     Operation { value: Box<DurableOperation> },
 }
 
-/// An existing regular journal file must be provisioned in an owner-controlled
-/// private state directory by the platform adapter. Opening this implementation
-/// creates no directory or file, follows no final symlink and holds an exclusive
-/// OS file lock until drop. Native packaging must qualify that directory's ACL,
-/// mount, durability and alias semantics; this portable layer cannot do that.
+/// One WAL codec over an opaque retained storage owner. Native application
+/// composition must supply a qualified private owner through `open_retained`.
+/// The legacy `open_existing` entry owns a file lock but cannot establish native
+/// ancestry, privacy, race-free namespace custody or namespace durability.
+///
+/// ```compile_fail
+/// use bridge_engine::operations::journal::FileJournal;
+/// fn transfer<T: Send>() {}
+/// transfer::<FileJournal>();
+/// ```
+/// ```compile_fail
+/// use bridge_engine::operations::journal::FileJournal;
+/// fn share<T: Sync>() {}
+/// share::<FileJournal>();
+/// ```
 pub struct FileJournal {
-    file: File,
+    storage: Box<dyn JournalStorage>,
+    expected_len: u64,
     records: Vec<JournalRecord>,
     poisoned: bool,
 }
 
 impl FileJournal {
+    /// Compatibility for explicitly provisioned portable fixtures. This creates
+    /// no file or directory and rejects observed final links. The caller owns
+    /// the native provisioning and race-free custody boundary; production uses
+    /// `open_retained` instead of reopening a captured path.
     pub fn open_existing(path: &Path) -> Result<Self, KernelFailure> {
         let before = std::fs::symlink_metadata(path).map_err(|_| KernelFailure::Storage)?;
         if !before.is_file() || before.is_symlink() || before.len() > MAX_JOURNAL {
             return Err(KernelFailure::UnsafeJournal);
         }
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(path)
@@ -76,15 +94,46 @@ impl FileJournal {
         {
             return Err(KernelFailure::UnsafeJournal);
         }
-        if file.metadata().map_err(|_| KernelFailure::Storage)?.len() == 0 {
-            file.write_all(MAGIC).map_err(|_| KernelFailure::Storage)?;
-            file.sync_all().map_err(|_| KernelFailure::Storage)?;
+        Self::open_retained(LegacyFileStorage {
+            file,
+            _local: PhantomData,
+        })
+    }
+
+    pub fn open_retained(storage: impl JournalStorage + 'static) -> Result<Self, KernelFailure> {
+        let mut storage: Box<dyn JournalStorage> = Box::new(storage);
+        let mut length = storage.validate_custody().map_err(storage_failure)?;
+        if length > MAX_JOURNAL {
+            return Err(KernelFailure::UnsafeJournal);
+        }
+        if length == 0 {
+            storage
+                .seek(SeekFrom::Start(0))
+                .map_err(|_| KernelFailure::Storage)?;
+            storage
+                .write_all(MAGIC)
+                .map_err(|_| KernelFailure::Storage)?;
+            storage.sync_durable().map_err(storage_failure)?;
+            length = MAGIC.len() as u64;
+            require_length(storage.as_ref(), length)?;
         }
         let mut bytes = Vec::new();
-        file.seek(SeekFrom::Start(0))
+        storage
+            .seek(SeekFrom::Start(0))
             .map_err(|_| KernelFailure::Storage)?;
-        file.read_to_end(&mut bytes)
+        Read::by_ref(&mut storage)
+            .take(MAX_JOURNAL + 1)
+            .read_to_end(&mut bytes)
             .map_err(|_| KernelFailure::Storage)?;
+        if bytes.len() as u64 > MAX_JOURNAL {
+            return Err(KernelFailure::UnsafeJournal);
+        }
+        // Custody and length must stay stable for the complete bounded read.
+        // Neither corruption parsing nor tail repair may precede this check.
+        require_length(storage.as_ref(), length)?;
+        if bytes.len() as u64 != length {
+            return Err(KernelFailure::UnsafeJournal);
+        }
         if !bytes.starts_with(MAGIC) {
             return Err(KernelFailure::CorruptJournal);
         }
@@ -121,14 +170,17 @@ impl FileJournal {
         if offset != bytes.len() {
             // Only an incomplete final frame can be discarded. No effects may
             // precede a durable executing frame; complete corruption blocks open.
-            file.set_len(offset as u64)
-                .map_err(|_| KernelFailure::Storage)?;
-            file.sync_all().map_err(|_| KernelFailure::Storage)?;
+            storage.truncate(offset as u64).map_err(storage_failure)?;
+            storage.sync_durable().map_err(storage_failure)?;
+            length = offset as u64;
+            require_length(storage.as_ref(), length)?;
         }
-        file.seek(SeekFrom::End(0))
+        storage
+            .seek(SeekFrom::Start(length))
             .map_err(|_| KernelFailure::Storage)?;
         Ok(Self {
-            file,
+            storage,
+            expected_len: length,
             records,
             poisoned: false,
         })
@@ -144,30 +196,102 @@ impl super::DurableJournal for FileJournal {
             return Err(KernelFailure::Poisoned);
         }
         let payload = serde_json::to_vec(record).map_err(|_| KernelFailure::Storage)?;
-        let current = self
-            .file
-            .metadata()
-            .map_err(|_| KernelFailure::Storage)?
-            .len();
-        if payload.is_empty()
-            || payload.len() > MAX_RECORD
-            || current + payload.len() as u64 + 40 > MAX_JOURNAL
-        {
+        if payload.is_empty() || payload.len() > MAX_RECORD {
             return Err(KernelFailure::Capacity);
         }
-        let result = (|| {
-            self.file.write_all(&(payload.len() as u32).to_le_bytes())?;
-            self.file
-                .write_all(&(!(payload.len() as u32)).to_le_bytes())?;
-            self.file.write_all(&payload)?;
-            self.file.write_all(&Sha256::digest(&payload))?;
-            self.file.sync_all()
+        let next_len = self
+            .expected_len
+            .checked_add(payload.len() as u64)
+            .and_then(|length| length.checked_add(40))
+            .filter(|length| *length <= MAX_JOURNAL)
+            .ok_or(KernelFailure::Capacity)?;
+        let result = (|| -> Result<(), KernelFailure> {
+            require_length(self.storage.as_ref(), self.expected_len)?;
+            self.storage
+                .seek(SeekFrom::Start(self.expected_len))
+                .map_err(|_| KernelFailure::Storage)?;
+            self.storage
+                .write_all(&(payload.len() as u32).to_le_bytes())
+                .map_err(|_| KernelFailure::Storage)?;
+            self.storage
+                .write_all(&(!(payload.len() as u32)).to_le_bytes())
+                .map_err(|_| KernelFailure::Storage)?;
+            self.storage
+                .write_all(&payload)
+                .map_err(|_| KernelFailure::Storage)?;
+            self.storage
+                .write_all(&Sha256::digest(&payload))
+                .map_err(|_| KernelFailure::Storage)?;
+            self.storage.sync_durable().map_err(storage_failure)?;
+            require_length(self.storage.as_ref(), next_len)
         })();
-        if result.is_err() {
+        if let Err(failure) = result {
             self.poisoned = true;
-            return Err(KernelFailure::Storage);
+            return Err(failure);
         }
+        self.expected_len = next_len;
         self.records.push(record.clone());
         Ok(())
+    }
+}
+
+fn storage_failure(failure: StorageFailure) -> KernelFailure {
+    match failure {
+        StorageFailure::Unsafe => KernelFailure::UnsafeJournal,
+        StorageFailure::Busy => KernelFailure::JournalBusy,
+        StorageFailure::Unavailable => KernelFailure::Storage,
+    }
+}
+
+fn require_length(storage: &dyn JournalStorage, expected: u64) -> Result<(), KernelFailure> {
+    if storage.validate_custody().map_err(storage_failure)? == expected {
+        Ok(())
+    } else {
+        Err(KernelFailure::UnsafeJournal)
+    }
+}
+
+struct LegacyFileStorage {
+    file: File,
+    _local: PhantomData<Rc<()>>,
+}
+impl Read for LegacyFileStorage {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        self.file.read(output)
+    }
+}
+impl Write for LegacyFileStorage {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.file.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
+}
+impl Seek for LegacyFileStorage {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file.seek(position)
+    }
+}
+impl JournalStorage for LegacyFileStorage {
+    fn validate_custody(&self) -> Result<u64, StorageFailure> {
+        let metadata = self
+            .file
+            .metadata()
+            .map_err(|_| StorageFailure::Unavailable)?;
+        if !metadata.is_file() {
+            return Err(StorageFailure::Unsafe);
+        }
+        Ok(metadata.len())
+    }
+    fn truncate(&mut self, length: u64) -> Result<(), StorageFailure> {
+        self.file
+            .set_len(length)
+            .map_err(|_| StorageFailure::Unavailable)
+    }
+    fn sync_durable(&mut self) -> Result<(), StorageFailure> {
+        self.file
+            .sync_all()
+            .map_err(|_| StorageFailure::Unavailable)
     }
 }

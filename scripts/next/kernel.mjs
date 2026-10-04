@@ -126,6 +126,31 @@ if (suite === 'recovery') {
 }
 assert.equal(digest(readFileSync(executable)), binary.sha256, 'Executed kernel test bytes changed');
 const additionalTests = [];
+if (suite === 'recovery') {
+  const storage = compileTest('compile-current-storage-tests', ['--test', 'journal_storage'],
+    'journal_storage', 'test', 'crates/bridge-engine/tests/journal_storage.rs');
+  const discovered = run('list-storage-tests', storage.executable, ['--list']).split(/\r?\n/)
+    .filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
+  const required = [
+    'retained_short_and_interrupted_io_roundtrips_only_after_sync_and_validation',
+    'oversized_or_growing_read_is_bounded_and_never_repaired',
+    'changing_length_or_custody_during_read_blocks_parsing_and_repair',
+    'partial_initial_header_never_constructs_a_usable_journal_or_gets_repaired',
+    'partial_append_failure_poison_retains_owner_without_publishing_a_record',
+    'unacknowledged_complete_frame_survives_sync_or_post_write_custody_failure',
+    'pre_append_custody_and_length_loss_poison_without_writing',
+    'failed_tail_truncate_or_sync_never_constructs_a_usable_journal',
+    'complete_corruption_remains_untouched_through_retained_storage',
+    'retained_file_poison_keeps_actual_lock_until_drop_and_preserves_legacy_codec'
+  ];
+  assert.deepEqual([...discovered].sort(), [...required].sort(), 'All retained storage fault tests must be present');
+  const output = run('retained-storage-faults', storage.executable, ['--test-threads=1']);
+  assert.match(output, /test result: ok\. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;/);
+  assert.equal(digest(readFileSync(storage.executable)), storage.sha256, 'Executed storage test bytes changed');
+  additionalTests.push({ binary: storage, discoveredTests: discovered, executedTests: required });
+  const docs = cargo('storage-custody-doctests', ['test', '--locked', '-p', 'bridge-engine', '--doc', 'operations::journal::FileJournal']);
+  assert.match(docs, /test result: ok\. 2 passed; 0 failed; 0 ignored; 0 measured;/);
+}
 if (suite === 'operation') {
   const unit = compileTest('compile-current-bindings-unit', ['--lib'], 'bridge_engine', 'lib', 'crates/bridge-engine/src/lib.rs');
   const unitName = 'operations::bindings::tests::accepted_fixture_preparations_match_captures_with_valid_owner_resources';
@@ -146,5 +171,5 @@ writeFileSync(receipt, JSON.stringify({ schemaVersion: 'bridge-kernel-observatio
   boundary: 'Actual engine test executable with synthetic canonical owner ports, private fixture filesystem and child kill/restart; platform owner custody and native domain services remain unqualified',
   nativeRuntimeQualified: false, releaseQualified: false
 }, null, 2) + '\n');
-console.log(JSON.stringify({ result: 'passed', suite, tests: selected.length + additionalTests.length, receipt,
+console.log(JSON.stringify({ result: 'passed', suite, tests: selected.length + additionalTests.reduce((sum, entry) => sum + entry.executedTests.length, 0), receipt,
   nativeRuntimeQualified: false, releaseQualified: false }));

@@ -27,7 +27,7 @@ const cargo = (id, argv) => run(id, process.execPath, ['scripts/next/cargo.mjs',
 cargo('format', ['fmt', '--package', 'bridge-domain', '--', '--check']);
 cargo('clippy', ['clippy', '--locked', '--package', 'bridge-domain', '--all-targets', '--', '-D', 'warnings']);
 const tree = cargo('dependency-tree', ['tree', '--locked', '--package', 'bridge-domain', '--edges', 'normal']);
-assert.ok(!/\b(?:tauri|wry|webkit|webview|bridge-platform-|bridge-profiles|bridge-toml|bridge-engine)\b/i.test(tree), 'Pure domain cannot consume native, engine or UI services');
+assert.ok(!/\b(?:tauri|wry|webkit|webview|bridge-platform-|bridge-profiles|bridge-toml|bridge-engine|bridge-app|bridge-journal-io)\b/i.test(tree), 'Pure domain cannot consume native, engine, application, storage or UI services');
 const output = cargo('compile-current-tests', ['test', '--locked', '--package', 'bridge-domain', '--lib', '--no-run', '--message-format', 'json']);
 const artifacts = output.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)).filter(value =>
   value.reason === 'compiler-artifact' && value.target.name === 'bridge_domain' && value.target.kind.includes('lib') && value.profile.test && value.executable);

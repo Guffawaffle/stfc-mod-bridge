@@ -45,14 +45,14 @@ export const registry = {
   'operation-contention': {
     host: 'any', timeoutMs: 300000,
     argv: ['scripts/next/kernel.mjs', 'operation'],
-    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine', 'crates/bridge-journal-io'],
     criteria: ['BR04-01', 'BR04-02', 'BR04-03', 'BR04-04', 'BR04-05', 'BR04-06'],
     boundary: 'Actual current native engine test artifact, strict Clippy and synthetic canonical owner contention/capture/replay/cancel/close/event tests. No native domain services, installed game or release qualification.'
   },
   'crash-recovery': {
     host: 'any', timeoutMs: 300000,
     argv: ['scripts/next/kernel.mjs', 'recovery'],
-    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine', 'crates/bridge-journal-io'],
     criteria: ['BR04-04', 'BR04-05', 'BR04-06', 'BR04-07'],
     boundary: 'Actual private fixture filesystem journal/fault tests and child kill/restart at admission/staging/native commit. Port-owned game recovery, platform private-directory provisioning and canonical native exclusion remain unqualified.'
   },

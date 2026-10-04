@@ -4,7 +4,7 @@ import path from 'node:path';
 export function verifyDependencyBoundary(metadata) {
   const packages = new Map(metadata.packages.map(p => [p.id, p]));
   const nodes = new Map(metadata.resolve.nodes.map(n => [n.id, n]));
-  const roots = ['bridge-contracts', 'bridge-domain', 'bridge-engine'];
+  const roots = ['bridge-contracts', 'bridge-domain', 'bridge-engine', 'bridge-app'];
   const observed = {};
   for (const name of roots) {
     const root = metadata.packages.find(p => p.name === name && metadata.workspace_members.includes(p.id));

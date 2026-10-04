@@ -8,9 +8,9 @@ import { registry } from '../gate-registry.mjs';
 import { fingerprintInputs, qualificationInputs } from '../qualification.mjs';
 
 function fixture(extra = {}) {
-  const names = ['bridge-contracts', 'bridge-domain', 'bridge-engine', 'bridge-desktop', 'tauri', 'wry'];
+  const names = ['bridge-contracts', 'bridge-domain', 'bridge-engine', 'bridge-app', 'bridge-desktop', 'tauri', 'wry'];
   return {
-    packages: names.map(name => ({ id: name, name })), workspace_members: names.slice(0, 4),
+    packages: names.map(name => ({ id: name, name })), workspace_members: names.slice(0, 5),
     resolve: { nodes: names.map(id => ({ id, dependencies: extra[id] || (id === 'bridge-desktop' ? ['tauri'] : id === 'tauri' ? ['wry'] : []) })) }
   };
 }
@@ -56,6 +56,7 @@ test('renderer dependencies in the shell do not contaminate core boundary', () =
 test('direct and transitive renderer contamination is rejected', () => {
   assert.throws(() => verifyDependencyBoundary(fixture({ 'bridge-engine': ['tauri'] })), /renderer package tauri/);
   assert.throws(() => verifyDependencyBoundary(fixture({ 'bridge-engine': ['bridge-domain'], 'bridge-domain': ['wry'] })), /renderer package wry/);
+  assert.throws(() => verifyDependencyBoundary(fixture({ 'bridge-app': ['tauri'] })), /renderer package tauri/);
 });
 test('missing workspace roots or unresolved dependencies cannot prove independence', () => {
   const missing = fixture(); missing.workspace_members = [];

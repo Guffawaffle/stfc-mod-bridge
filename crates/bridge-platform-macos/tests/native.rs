@@ -326,10 +326,7 @@ fn native_owned_child_exit_is_not_a_reusable_pid_binding() {
                 if matches!(
                     error.code,
                     PlatformErrorCode::IdentityChanged | PlatformErrorCode::UnknownObservation
-                ) =>
-            {
-                ()
-            }
+                ) => {}
             Err(error) => panic!("owned child observation refused: {error}"),
         }
         assert!(Instant::now() < deadline, "owned helper readiness deadline");

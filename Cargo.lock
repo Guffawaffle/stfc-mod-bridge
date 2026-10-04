@@ -184,6 +184,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
+name = "bridge-app"
+version = "0.1.0"
+dependencies = [
+ "bridge-contracts",
+ "bridge-domain",
+ "bridge-engine",
+ "bridge-platform-macos",
+ "bridge-platform-windows",
+ "time",
+]
+
+[[package]]
 name = "bridge-contracts"
 version = "0.1.0"
 dependencies = [
@@ -216,11 +228,16 @@ version = "0.1.0"
 dependencies = [
  "bridge-contracts",
  "bridge-domain",
+ "bridge-journal-io",
  "bridge-toml",
  "serde",
  "serde_json",
  "sha2 0.11.0",
 ]
+
+[[package]]
+name = "bridge-journal-io"
+version = "0.1.0"
 
 [[package]]
 name = "bridge-native"

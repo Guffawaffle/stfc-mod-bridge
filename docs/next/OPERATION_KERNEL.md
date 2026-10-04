@@ -31,10 +31,14 @@ Production bootstrap must qualify its own providers before creating fresh state.
 Platform helper modules expose native uptime and 16 raw entropy bytes without
 creating IDs or application state. Windows uses GetTickCount64/BCryptGenRandom;
 Mac uses checked mach_continuous_time conversion/SecRandomCopyBytes. Both count
-suspension and refuse entropy errors without fallback. These helpers are not yet
-bound into production application composition. Windows unit calls and foreign-
-host Mac conversion tests are separate evidence; real Apple Silicon probes,
-checked UTC conversion, secure UUID encoding and private bootstrap remain work.
+suspension and refuse entropy errors without fallback. `bridge-app` supplies
+the backend clock and identity providers: checked signed UTC conversion, one
+native monotonic sample followed by one wall observation, checked deadlines
+without resampling, and UUID v4 encoding from one native draw per identity.
+Unsupported hosts refuse native sampling. Providers are not yet bound to a
+private production host. Windows calls, portable conversion/fault tests and
+real Apple Silicon probes remain separate evidence; suspend behavior and
+installed application bootstrap still require native qualification.
 
 BR04-01: the owner port acquires canonical resource exclusions before commit
 revalidation. A losing writer returns busy before a download, stage, backup or
@@ -99,16 +103,31 @@ replacement, close obligations and real subprocess kills at admitted, staging
 and committed boundaries. A native owner supplies the exact recovery binding
 before admission and reconciles its effects; missing custody is unavailable.
 
-The concrete `FileJournal` assumes a private directory provisioned and qualified
-by its platform owner. Kernel fixture proof does not qualify a shared game
-catalog, permissions, canonical process lifetime exclusions or native domain
-services. Journal custody alone is not a cross-process game writer lock.
+`FileJournal::open_retained` owns a `bridge-journal-io::JournalStorage` for its
+entire lifetime. The storage owner validates custody and length, truncates a
+torn tail and acknowledges durable synchronization. Reads stop at the 128 MiB
+bound plus one byte; changing custody or length prevents parsing or repair.
+Append acknowledges a record only after writing, syncing and revalidating its
+new length. Any uncertain append poisons the journal while retaining its owner
+and exclusion until drop. Complete corruption remains untouched.
+
+The legacy path opener remains a fixture adapter. Its caller must establish the
+physical namespace and private directory boundary; a file lock alone cannot
+prove ancestry or permissions. Native private owners, their namespace flush
+protocols and production host binding remain work. Kernel fixture proof does
+not qualify a shared game catalog, permissions, canonical process lifetime
+exclusions or native domain services. Journal custody alone is not a
+cross-process game writer lock.
 
 `node scripts/next/kernel.mjs operation` runs formatting/strict Clippy, compiles
 the exact current native test artifact, verifies its executable architecture
 and runs the operation inventory. `kernel.mjs recovery` compiles its own current
 artifact and executes the required named durable/crash tests, refusing absent
-or ignored tests. The operation suite separately compiles, inventories and
+or ignored tests. Recovery also compiles and inventories the retained-storage
+fault suite and executes the journal's ownership compile-fail documentation
+tests. These cover bounded reads, partial writes, uncertain synchronization,
+custody loss and a poisoned journal retaining an actual file lock. The operation
+suite separately compiles, inventories and
 executes the required accepted-corpus binding unit test. Together the inventories
 cover all kernel tests. Each receipt
 binds the actual Cargo compiler artifact and executable bytes before/after
