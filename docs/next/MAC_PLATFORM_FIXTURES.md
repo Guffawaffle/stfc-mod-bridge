@@ -55,7 +55,7 @@ Physical path, byte and identity fences remain unchanged. This dispatch follows
 [Rustup 1.29's command selection](https://github.com/rust-lang/rustup/blob/1.29.0/src/process.rs#L43-L53).
 
 Importing the script does not execute its entry point. Its exported bounded
-admission, Mach-O, Cargo artifact, process-row/no-match, ACL and APFS parsers let
+admission, Mach-O, Cargo artifact, process-row/no-match, ACL and volume parsers let
 shared tests check refusals on Windows. Synthetic parser results supply no
 native execution or qualification evidence.
 
@@ -90,10 +90,30 @@ the bytes copied from the current example artifact. Native tests independently
 check its physical containment and digest. No helper entropy or secret data is
 logged.
 
-The suite invokes fixed `diskutil info -plist` for this exact private root and
-inspected `plutil` parsing. Unknown schema or a filesystem type other than APFS
-fails. The full disk plist is not retained: only bounded output hashes and the
-required filesystem fact are stored. A private `CaseProbe`/`caseprobe` lookup
+The inspected `/bin/df` runs with fixed `-P -k -I -Y` and this exact private root
+as its only operand. Apple `df` calls `statfs` on that directory and reports its
+filesystem type, mounted device and mountpoint; APFS firmlinks may resolve a
+directory to the Data volume even when its path starts below `/`. There is no
+root-volume fallback or all-volume query. Bounded output must contain one exact
+C-locale header and one APFS device/mountpoint row, with inode columns suppressed,
+1024-byte units, no stderr and a successfully closed command. Unknown output
+fails. Inherited nonempty `LIBXO_OPTIONS`, including whitespace, refuses
+admission; that output-control variable is scrubbed from child context.
+[Apple df source](https://github.com/apple-oss-distributions/file_cmds/blob/659a8a301e2acf0343f8b8673a154a2ca4d07084/df/df.c#L256-L298),
+[Apple df options and directory example](https://github.com/apple-oss-distributions/file_cmds/blob/659a8a301e2acf0343f8b8673a154a2ca4d07084/df/df.1#L273-L279).
+
+The reported mountpoint must be a physical directory with a retained descriptor;
+its path and descriptor device/inode must agree, and its device must equal the
+private root's retained device. Root custody is checked around selection. The
+exact-directory `df` observation and both directory fences repeat before success;
+device/mountpoint changes refuse. These are repeated observations, not an atomic
+mount attestation or a namespace exclusion. The five system tools are `chmod`,
+`ls`, `ps`, `sh` and `df`; together with Node/script, Git/Rustup and pinned Rust
+routes the suite seals 19 tools before and after success. Raw volume output is
+retained only as bounded hashes; selected filesystem/device/mountpoint and
+descriptor identities are explicit fixture diagnostics.
+
+A private `CaseProbe`/`caseprobe` lookup
 records actual case behavior and identity. This covers one selected volume and
 case mode. No volume/image creation or mounting is authorized.
 

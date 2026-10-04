@@ -18,7 +18,7 @@ const SELF = fileURLToPath(import.meta.url), ROOT = path.resolve(import.meta.dir
 const PACKAGE = 'bridge-platform-macos', TARGET = 'aarch64-apple-darwin';
 const PROTOCOL = 'bridge-macos-fixture-supervisor/v1';
 const MAX_OUTPUT = 8 * 1024 * 1024, MAX_BINARY = 128 * 1024 * 1024;
-const SYSTEM = { chmod: '/bin/chmod', ls: '/bin/ls', ps: '/bin/ps', sh: '/bin/sh', diskutil: '/usr/sbin/diskutil', plutil: '/usr/bin/plutil' };
+const SYSTEM = { chmod: '/bin/chmod', ls: '/bin/ls', ps: '/bin/ps', sh: '/bin/sh', df: '/bin/df' };
 // Fixed reviewed start barrier. No command text, PID or argument list is public.
 const START_BARRIER = 'kill -STOP "$$"; exec "$@"';
 const OWNED_CASE = 'native_owned_child_exit_is_not_a_reusable_pid_binding';
@@ -78,6 +78,7 @@ export function macFixtureAdmission({ argv, platform, architecture, version, exe
   requireProof(execArgv.length === 0 && !environment.NODE_OPTIONS?.trim(), 'MAC_FIXTURE_NODE_LOADER_OVERRIDE');
   // Rustup uses this value before argv[0], including nonempty whitespace.
   requireProof(!environment.RUSTUP_FORCE_ARG0, 'MAC_FIXTURE_TOOL_OVERRIDE');
+  requireProof(!environment.LIBXO_OPTIONS, 'MAC_FIXTURE_TOOL_OVERRIDE');
   for (const [key, value] of Object.entries(environment)) {
     if (!value?.trim()) continue;
     requireProof(!/^BRIDGE_MACOS_/i.test(key), 'MAC_FIXTURE_INJECTED_SELECTOR');
@@ -91,7 +92,7 @@ export function macFixtureAdmission({ argv, platform, architecture, version, exe
 }
 function childEnvironment(source) {
   const result = { ...source, LC_ALL: 'C', LANG: 'C', COMMAND_MODE: 'unix2003' };
-  for (const key of Object.keys(result)) if (/^BRIDGE_MACOS_/i.test(key) || /^(?:RUSTUP_FORCE_ARG0|NODE_OPTIONS|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|BASH_FUNC_.*|DYLD_.*)$/.test(key)) delete result[key];
+  for (const key of Object.keys(result)) if (/^BRIDGE_MACOS_/i.test(key) || /^(?:RUSTUP_FORCE_ARG0|LIBXO_OPTIONS|NODE_OPTIONS|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|BASH_FUNC_.*|DYLD_.*)$/.test(key)) delete result[key];
   return result;
 }
 export function macMachO(bytes) {
@@ -125,14 +126,17 @@ export function macPsObservation(value, group) {
   const rows = macPsRows(value.stdout, group), empty = !value.stdout.trim() && !value.stderr.trim();
   requireProof(value.exitCode === 1 && empty || value.exitCode === 0 && rows.length > 0 && !value.stderr.trim(), 'MAC_FIXTURE_PS_CONTRACT'); return rows;
 }
-export function macApfsPlistJson(stdout) {
-  requireProof(typeof stdout === 'string' && Buffer.byteLength(stdout) <= 512 * 1024, 'MAC_FIXTURE_APFS_UNKNOWN');
-  // Inspect decoded object-key tokens, including escaped spellings, so JSON's
-  // last-key-wins behavior cannot conceal a duplicate critical schema field.
-  const criticalKeys = [...stdout.matchAll(/"(?:\\[\s\S]|[^"\\])*"/g)].filter(match => /^\s*:/.test(stdout.slice(match.index + match[0].length)) && JSON.parse(match[0]) === 'FilesystemType');
-  requireProof(criticalKeys.length === 1, 'MAC_FIXTURE_APFS_UNKNOWN');
-  const value = JSON.parse(stdout); requireProof(record(value) && value.FilesystemType === 'apfs', 'MAC_FIXTURE_APFS_UNKNOWN');
-  return { filesystemType: 'apfs' };
+export function macDfVolume(stdout) {
+  requireProof(typeof stdout === 'string' && Buffer.byteLength(stdout) <= 8192, 'MAC_FIXTURE_VOLUME_UNKNOWN');
+  // Fixed -P -k -I -Y and C locale: one header and the exact directory's
+  // statfs row. No all-volume query, inode fields or human-readable sizes.
+  const lines = stdout.split('\n');
+  requireProof(lines.length === 3 && lines[2] === '' &&
+    /^Filesystem[ \t]+Type[ \t]+1024-blocks[ \t]+Used[ \t]+Available[ \t]+Capacity[ \t]+Mounted on$/.test(lines[0]), 'MAC_FIXTURE_VOLUME_UNKNOWN');
+  const row = /^(\/dev\/disk[0-9]{1,10}(?:s[0-9]{1,10}){1,2})[ \t]+apfs[ \t]+[0-9]{1,20}[ \t]+[0-9]{1,20}[ \t]+[0-9]{1,20}[ \t]+([0-9]{1,3})%[ \t]+(\/[^\u0000-\u001f\u007f-\u009f\ufffd]*)$/.exec(lines[1]);
+  requireProof(row && Number(row[2]) <= 100 && path.posix.normalize(row[3]) === row[3] &&
+    (row[3] === '/' || !row[3].endsWith('/')), 'MAC_FIXTURE_VOLUME_UNKNOWN');
+  return { filesystemType: 'apfs', device: row[1], mountPoint: row[3] };
 }
 export function macAclAbsent(stdout, kind) {
   requireProof(typeof stdout === 'string' && Buffer.byteLength(stdout) <= 8192 && ['directory', 'file'].includes(kind), 'MAC_FIXTURE_ACL_UNKNOWN');
@@ -241,6 +245,13 @@ async function rootFence(directory, handle, expected) {
     Number(held.uid) === process.getuid() && process.getuid() === process.geteuid() && process.getuid() !== 0 &&
     (Number(held.mode) & 0o7777) === 0o700 && String(held.dev) === expected.dev && String(held.ino) === expected.ino, 'MAC_FIXTURE_ROOT_CUSTODY');
   return statIdentity(held);
+}
+async function volumeFence(selected, handle, expected, fixtureDev) {
+  const disk = await lstat(selected.mountPoint, { bigint: true }), held = await handle.stat({ bigint: true });
+  requireProof(!disk.isSymbolicLink() && disk.isDirectory() && held.isDirectory() &&
+    await realpath(selected.mountPoint) === selected.mountPoint &&
+    String(disk.dev) === fixtureDev && String(held.dev) === fixtureDev &&
+    String(disk.ino) === expected.ino && String(held.ino) === expected.ino, 'MAC_FIXTURE_VOLUME_CUSTODY');
 }
 function exactKeys(value, keys) { requireProof(record(value) && Object.keys(value).sort().join('|') === [...keys].sort().join('|'), 'MAC_FIXTURE_SUPERVISOR_SCHEMA'); }
 
@@ -453,7 +464,7 @@ async function main() {
   const observation = { schemaVersion: 'bridge-macos-platform-fixtures/v1', result: 'failed', startedAt: new Date().toISOString(),
     host: { id: 'macos-arm64-native', platform: process.platform, architecture: process.arch, node: process.version }, checks: [], binaries: [], executions: [], supervisor: [],
     excludedNativeCases: [EXCLUDED], packageAcceptance: false, nativeRuntimeQualified: false, releaseQualified: false, nativeFixtureSubsetExecuted: false };
-  let directory, directoryHandle, helperHandle;
+  let directory, directoryHandle, helperHandle, volumeHandle;
   const environment = childEnvironment(process.env);
   async function save(name, value) { if (directory) await writeFile(ownedArtifactPath(ROOT, `${relative(directory)}/${name}.json`, 'file', { allowMissing: true }), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); }
   async function run(id, executable, argv, timeout = 180000, options = {}) {
@@ -461,7 +472,8 @@ async function main() {
     const check = { id, ...macFixtureCommandRouting(executable, options.argv0), argv, cwd: ROOT, ...result };
     if (options.privateOutput) for (const key of ['stdout', 'stderr']) check[key] = { bytes: Buffer.byteLength(result[key]), sha256: sha(result[key]), retained: false };
     observation.checks.push(check); await save(id, check);
-    requireProof(result.closed && result.exitCode === 0 && result.signal === null && !result.error, 'MAC_FIXTURE_COMMAND_FAILED'); return result.stdout;
+    requireProof(result.closed && result.exitCode === 0 && result.signal === null && !result.error &&
+      (!options.emptyStderr || result.stderr === ''), 'MAC_FIXTURE_COMMAND_FAILED'); return result.stdout;
   }
   try {
     macFixtureAdmission({ argv: process.argv, platform: process.platform, architecture: process.arch, version: process.version, execArgv: process.execArgv, environment: process.env });
@@ -496,11 +508,19 @@ async function main() {
     const rustVersion = await run('rustc-version', tools.rustc.physicalPath, ['-vV']); requireProof(/^release: 1\.99\.0$/m.test(rustVersion) && /^host: aarch64-apple-darwin$/m.test(rustVersion), 'MAC_FIXTURE_COMPILER_HOST');
     const cargoVersion = (await run('cargo-version', tools.cargo.physicalPath, ['--version'])).trim(), rustdocVersion = (await run('rustdoc-version', tools.rustdoc.physicalPath, ['--version'])).trim();
     requireProof(/^cargo 1\.99\.0\b/.test(cargoVersion) && /^rustdoc 1\.99\.0\b/.test(rustdocVersion), 'MAC_FIXTURE_TOOL_VERSION'); observation.tools = { before: tools, versions: { rustc: rustVersion.trim(), cargo: cargoVersion, rustdoc: rustdocVersion } };
-    const diskInfo = await run('selected-volume', SYSTEM.diskutil, ['info', '-plist', directory], 15000, { privateOutput: true });
-    macApfsPlistJson(await run('parse-selected-volume', SYSTEM.plutil, ['-convert', 'json', '-o', '-', '-'], 15000, { input: diskInfo, privateOutput: true }));
+    await rootFence(directory, directoryHandle, fixtureIdentity);
+    const volumeArgs = ['-P', '-k', '-I', '-Y', directory], volumeOptions = { privateOutput: true, maxOutput: 8192, emptyStderr: true };
+    const selectedVolume = macDfVolume(await run('selected-volume', SYSTEM.df, volumeArgs, 15000, volumeOptions));
+    const mount = await lstat(selectedVolume.mountPoint, { bigint: true });
+    requireProof(!mount.isSymbolicLink() && mount.isDirectory() && await realpath(selectedVolume.mountPoint) === selectedVolume.mountPoint, 'MAC_FIXTURE_VOLUME_CUSTODY');
+    volumeHandle = await open(selectedVolume.mountPoint, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    const volumeIdentity = { dev: String(mount.dev), ino: String(mount.ino) };
+    await volumeFence(selectedVolume, volumeHandle, volumeIdentity, fixtureIdentity.dev);
+    await rootFence(directory, directoryHandle, fixtureIdentity);
     const casePath = path.join(directory, 'CaseProbe'), caseFile = await open(casePath, 'wx', 0o600); await caseFile.writeFile('bridge-br07-case-v1\n'); await caseFile.sync(); const caseIdentity = statIdentity(await caseFile.stat({ bigint: true })); await caseFile.close();
     let caseSensitive; try { const alternate = await lstat(path.join(directory, 'caseprobe'), { bigint: true }); requireProof(String(alternate.dev) === caseIdentity.dev && String(alternate.ino) === caseIdentity.ino && !alternate.isSymbolicLink(), 'MAC_FIXTURE_CASE_UNKNOWN'); caseSensitive = false; } catch (error) { if (error.code !== 'ENOENT') throw error; caseSensitive = true; }
-    observation.volume = { filesystemType: 'apfs', dev: fixtureIdentity.dev, caseSensitive, caseProbeIdentity: caseIdentity, coversBothCaseModes: false }; await rootFence(directory, directoryHandle, fixtureIdentity);
+    observation.volume = { ...selectedVolume, dev: fixtureIdentity.dev, mountIdentity: volumeIdentity,
+      directoryVolumeObserved: true, namespaceExclusion: false, caseSensitive, caseProbeIdentity: caseIdentity, coversBothCaseModes: false }; await rootFence(directory, directoryHandle, fixtureIdentity);
     const cargo = (id, argv, timeout = 180000) => run(id, tools.cargo.physicalPath, argv, timeout);
     await cargo('format', ['fmt', '-p', PACKAGE, '--', '--check']); await cargo('clippy', ['clippy', '--locked', '-p', PACKAGE, '--all-targets', '--', '-D', 'warnings']);
     observation.compileFailDocs = await macDocEvidence(await cargo('ownership-docs', ['test', '--locked', '-p', PACKAGE, '--doc']));
@@ -533,14 +553,20 @@ async function main() {
       if (name === OWNED_CASE) { await runSupervised('owned-case', context, async report => { const index = observation.supervisor.findIndex(item => item.operation === 'owned-case'); if (index < 0) observation.supervisor.push(report); else observation.supervisor[index] = report; await save('supervisor-owned-case', report); }); observation.executions.push({ id: OWNED_CASE, binarySha256: native.sha256, names: [OWNED_CASE], passed: 1, filtered: 10, cleanup: 'anchored-group-observed-absent' }); }
       else await testRun(`execute-${name}`, native, [name, '--ignored', '--exact', '--test-threads=1'], 1, 10);
     }
-    await rootFence(directory, directoryHandle, fixtureIdentity); macAclAbsent(await run('fixture-acl-after', SYSTEM.ls, ['-lde', directory], 10000, { privateOutput: true }), 'directory'); await assertFileFence(helper, { native: true, privateFile: true, retained: helperHandle });
+    await rootFence(directory, directoryHandle, fixtureIdentity);
+    await volumeFence(selectedVolume, volumeHandle, volumeIdentity, fixtureIdentity.dev);
+    const volumeAfter = macDfVolume(await run('selected-volume-after', SYSTEM.df, volumeArgs, 15000, volumeOptions));
+    requireProof(volumeAfter.device === selectedVolume.device && volumeAfter.mountPoint === selectedVolume.mountPoint, 'MAC_FIXTURE_VOLUME_CHANGED');
+    await volumeFence(selectedVolume, volumeHandle, volumeIdentity, fixtureIdentity.dev);
+    await rootFence(directory, directoryHandle, fixtureIdentity); observation.volume.selectorReobserved = true;
+    macAclAbsent(await run('fixture-acl-after', SYSTEM.ls, ['-lde', directory], 10000, { privateOutput: true }), 'directory'); await assertFileFence(helper, { native: true, privateFile: true, retained: helperHandle });
     for (const binary of observation.binaries) await assertFileFence(binary, { native: true });
     observation.tools.after = {}; for (const [name, tool] of Object.entries(tools)) observation.tools.after[name] = await assertFileFence(tool);
     const after = fingerprintInputRecords(ROOT, macFixtureInputs); assert.deepEqual(after, before, 'Fixture source changed'); observation.source.after = after; observation.source.afterSha256 = sha(JSON.stringify(after));
     requireProof((await run('source-head-after', git, ['--no-optional-locks', 'rev-parse', 'HEAD'])).trim() === sourceHead, 'MAC_FIXTURE_SOURCE_CHANGED');
     observation.result = 'passed'; observation.nativeFixtureSubsetExecuted = true; observation.counts = { defaultControlled: 25, selectedNative: 12, compileFailDocBlocks: 5, supervisorDisposalSelfChecks: 3, supervisorPreAnchorCancellationChecks: 3 };
   } catch (error) { observation.failure = { code: typeof error.code === 'string' && /^[A-Z0-9_]{1,128}$/.test(error.code) ? error.code : 'MAC_FIXTURE_REFUSED' }; }
-  finally { observation.completedAt = new Date().toISOString(); observation.boundary = 'Native fixture subset only. No Keychain execution, installed game, account/signing setup, production journal/actor custody, suspend, both-volume case coverage, universal crash cleanup, hardware durability, full br-07 or release acceptance.'; await save('macos-platform-fixtures', observation); await helperHandle?.close(); await directoryHandle?.close(); }
+  finally { observation.completedAt = new Date().toISOString(); observation.boundary = 'Native fixture subset only. No Keychain execution, installed game, account/signing setup, production journal/actor custody, suspend, both-volume case coverage, universal crash cleanup, hardware durability, full br-07 or release acceptance.'; await save('macos-platform-fixtures', observation); await helperHandle?.close(); await volumeHandle?.close(); await directoryHandle?.close(); }
   console.log(JSON.stringify({ result: observation.result, code: observation.failure?.code, receipt: directory ? path.join(directory, 'macos-platform-fixtures.json') : null, counts: observation.counts, packageAcceptance: false, nativeFixtureSubsetExecuted: observation.nativeFixtureSubsetExecuted, nativeRuntimeQualified: false, releaseQualified: false }));
   if (observation.result !== 'passed') process.exitCode = 2;
 }

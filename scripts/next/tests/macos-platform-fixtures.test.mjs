@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { macFixtureAdmission, macMachO, macArtifactInventory, macPsRows,
-  macPsObservation, macApfsPlistJson, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic,
+  macPsObservation, macDfVolume, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic,
   macFixtureCommandRouting } from '../macos-platform-fixtures.mjs';
 
 // Portable parsing/refusal and Node invocation assertions do not execute the
@@ -36,6 +36,14 @@ test('Rustup dispatch cannot be replaced by inherited force-arg0 values, includi
     assert.throws(() => macFixtureAdmission(input), { code: 'MAC_FIXTURE_TOOL_OVERRIDE' });
   }
   const input = admission(); input.environment.RUSTUP_FORCE_ARG0 = '';
+  assert.doesNotThrow(() => macFixtureAdmission(input));
+});
+test('Mac volume output cannot inherit nonempty libxo formatting options, including whitespace', () => {
+  for (const value of ['json', 'html', 'color', ' ', '\n']) {
+    const input = admission(); input.environment.LIBXO_OPTIONS = value;
+    assert.throws(() => macFixtureAdmission(input), { code: 'MAC_FIXTURE_TOOL_OVERRIDE' });
+  }
+  const input = admission(); input.environment.LIBXO_OPTIONS = '';
   assert.doesNotThrow(() => macFixtureAdmission(input));
 });
 
@@ -87,13 +95,42 @@ test('Mac group absence requires the complete fixed ps no-match contract', () =>
   }
 });
 
-test('Mac APFS fact refuses missing, duplicate, escaped-duplicate and foreign filesystem fields', () => {
-  assert.deepEqual(macApfsPlistJson('{"FilesystemType":"apfs","OtherObservation":true}'), { filesystemType: 'apfs' });
-  for (const value of ['{}', '[]', '{"FilesystemType":"hfs"}', '{"FilesystemType":null}',
-    '{"FilesystemType":"hfs","FilesystemType":"apfs"}',
-    '{"FilesystemType":"hfs","\\u0046ilesystemType":"apfs"}',
-    '{"FilesystemType":"apfs","nested":{"FilesystemType":"apfs"}}', 'x'.repeat(512 * 1024 + 1)]) {
-    assert.throws(() => macApfsPlistJson(value));
+const volumeHeader = 'Filesystem    Type 1024-blocks Used Available Capacity Mounted on\n';
+const volumeRow = '/dev/disk3s5   apfs 123456 456 123000 1% /System/Volumes/Data\n';
+test('Mac volume parser preserves the actual APFS device and mountpoint without a root fallback', () => {
+  assert.deepEqual(macDfVolume(volumeHeader + volumeRow),
+    { filesystemType: 'apfs', device: '/dev/disk3s5', mountPoint: '/System/Volumes/Data' });
+  assert.deepEqual(macDfVolume(volumeHeader + volumeRow.replace('disk3s5', 'disk3s1s1').replace('/System/Volumes/Data', '/')),
+    { filesystemType: 'apfs', device: '/dev/disk3s1s1', mountPoint: '/' });
+  assert.deepEqual(macDfVolume(volumeHeader + volumeRow.replace('/System/Volumes/Data', '/Volumes/Fixture Disk')),
+    { filesystemType: 'apfs', device: '/dev/disk3s5', mountPoint: '/Volumes/Fixture Disk' });
+});
+test('Mac volume parser refuses unknown headers, extra rows and alternate units or inode columns', () => {
+  for (const value of ['', volumeRow, volumeHeader, volumeHeader + volumeRow + volumeRow,
+    volumeHeader + volumeRow + '\n', (volumeHeader + volumeRow).trimEnd(),
+    volumeHeader.replace('Type ', '') + volumeRow, volumeHeader.replace('Available', 'Avail') + volumeRow,
+    volumeHeader.replace('1024-blocks', '512-blocks') + volumeRow,
+    volumeHeader.replace('1024-blocks', '1K-blocks') + volumeRow,
+    volumeHeader.replace('Capacity ', 'Capacity iused ifree %iused ') + volumeRow,
+    (volumeHeader + volumeRow).replaceAll('\n', '\r\n'), 'x'.repeat(8193)]) {
+    assert.throws(() => macDfVolume(value), { code: 'MAC_FIXTURE_VOLUME_UNKNOWN' });
+  }
+});
+test('Mac volume parser refuses foreign filesystems, non-device sources and invalid numeric fields', () => {
+  for (const row of [volumeRow.replace('apfs', 'hfs'), volumeRow.replace('apfs', 'APFS'),
+    volumeRow.replace('/dev/disk3s5', 'server:/export'), volumeRow.replace('/dev/disk3s5', '/dev/rdisk3s5'),
+    volumeRow.replace('/dev/disk3s5', '/dev/disk3'), volumeRow.replace('/dev/disk3s5', '/dev/disk3s5-extra'),
+    volumeRow.replace('123456', '123Gi'), volumeRow.replace('123456', '-1'), volumeRow.replace('1%', '101%'),
+    volumeRow.replace('1%', 'unknown%'), volumeRow.replace('1%', '-1%')]) {
+    assert.throws(() => macDfVolume(volumeHeader + row), { code: 'MAC_FIXTURE_VOLUME_UNKNOWN' });
+  }
+});
+test('Mac volume parser refuses relative, ambiguous and control-bearing mountpoint paths', () => {
+  for (const mount of ['relative', '/Volumes/../Data', '/Volumes//Data', '//Volumes/Data', '/Volumes/Data/',
+    '/Volumes/./Data', '/Volumes/Bad\tName', '/Volumes/Bad\0Name', '/Volumes/Bad\u007fName',
+    '/Volumes/Bad\ufffdName', '/Volumes/Bad\nName']) {
+    assert.throws(() => macDfVolume(volumeHeader + volumeRow.replace('/System/Volumes/Data', mount)),
+      { code: 'MAC_FIXTURE_VOLUME_UNKNOWN' });
   }
 });
 test('Mac private fixture ACL observation accepts exact owner mode and refuses unknown or extended ACL rows', () => {
