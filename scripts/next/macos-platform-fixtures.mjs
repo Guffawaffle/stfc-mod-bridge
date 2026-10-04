@@ -76,6 +76,8 @@ export function macFixtureAdmission({ argv, platform, architecture, version, exe
   requireProof(platform === 'darwin' && architecture === 'arm64', 'MAC_FIXTURE_NATIVE_HOST_REQUIRED');
   requireProof(version === 'v24.14.1', 'MAC_FIXTURE_NODE_PIN');
   requireProof(execArgv.length === 0 && !environment.NODE_OPTIONS?.trim(), 'MAC_FIXTURE_NODE_LOADER_OVERRIDE');
+  // Rustup uses this value before argv[0], including nonempty whitespace.
+  requireProof(!environment.RUSTUP_FORCE_ARG0, 'MAC_FIXTURE_TOOL_OVERRIDE');
   for (const [key, value] of Object.entries(environment)) {
     if (!value?.trim()) continue;
     requireProof(!/^BRIDGE_MACOS_/i.test(key), 'MAC_FIXTURE_INJECTED_SELECTOR');
@@ -89,7 +91,7 @@ export function macFixtureAdmission({ argv, platform, architecture, version, exe
 }
 function childEnvironment(source) {
   const result = { ...source, LC_ALL: 'C', LANG: 'C', COMMAND_MODE: 'unix2003' };
-  for (const key of Object.keys(result)) if (/^BRIDGE_MACOS_/i.test(key) || /^(?:NODE_OPTIONS|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|BASH_FUNC_.*|DYLD_.*)$/.test(key)) delete result[key];
+  for (const key of Object.keys(result)) if (/^BRIDGE_MACOS_/i.test(key) || /^(?:RUSTUP_FORCE_ARG0|NODE_OPTIONS|NODE_CHANNEL_FD|NODE_CHANNEL_SERIALIZATION_MODE|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|BASH_FUNC_.*|DYLD_.*)$/.test(key)) delete result[key];
   return result;
 }
 export function macMachO(bytes) {
@@ -216,8 +218,16 @@ function captureChild(child, timeoutMs, { input = null, onFailure = null, maxOut
     if (input !== null) { child.stdin.on('error', () => fail('MAC_FIXTURE_COMMAND_INPUT')); child.stdin.end(input); }
   });
 }
+// Physical executable custody and multicall dispatch names are separate. The
+// only alternate dispatch name is the internally selected Rustup CLI mode.
+export function macFixtureCommandRouting(executable, argv0) {
+  requireProof(typeof executable === 'string' && path.isAbsolute(executable), 'MAC_FIXTURE_TOOL_ROUTE');
+  requireProof(argv0 === undefined || argv0 === 'rustup', 'MAC_FIXTURE_TOOL_DISPATCH');
+  return { executable, argv0: argv0 ?? executable };
+}
 async function command(executable, argv, environment, timeout = 180000, options = {}) {
-  const child = spawn(executable, argv, { cwd: ROOT, env: environment, shell: false, detached: false, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+  const routing = macFixtureCommandRouting(executable, options.argv0);
+  const child = spawn(routing.executable, argv, { argv0: routing.argv0, cwd: ROOT, env: environment, shell: false, detached: false, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
   return captureChild(child, timeout, { input: options.input ?? null, maxOutput: options.maxOutput || MAX_OUTPUT });
 }
 async function psRows(selector, pid, group, environment) {
@@ -448,7 +458,7 @@ async function main() {
   async function save(name, value) { if (directory) await writeFile(ownedArtifactPath(ROOT, `${relative(directory)}/${name}.json`, 'file', { allowMissing: true }), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); }
   async function run(id, executable, argv, timeout = 180000, options = {}) {
     const result = await command(executable, argv, environment, timeout, options);
-    const check = { id, executable, argv, cwd: ROOT, ...result };
+    const check = { id, ...macFixtureCommandRouting(executable, options.argv0), argv, cwd: ROOT, ...result };
     if (options.privateOutput) for (const key of ['stdout', 'stderr']) check[key] = { bytes: Buffer.byteLength(result[key]), sha256: sha(result[key]), retained: false };
     observation.checks.push(check); await save(id, check);
     requireProof(result.closed && result.exitCode === 0 && result.signal === null && !result.error, 'MAC_FIXTURE_COMMAND_FAILED'); return result.stdout;
@@ -479,7 +489,7 @@ async function main() {
     const acl = macAclAbsent(await run('fixture-acl', SYSTEM.ls, ['-lde', directory], 10000, { privateOutput: true }), 'directory'); await rootFence(directory, directoryHandle, fixtureIdentity);
     observation.fixture = { physicalPath: directory, identity: fixtureIdentity, acl, retained: true, namespaceExclusion: false };
     for (const name of ['cargo', 'rustc', 'rustdoc', 'rustfmt', 'cargo-fmt', 'cargo-clippy', 'clippy-driver']) {
-      const resolved = (await run(`resolve-${name}`, rustup, ['which', '--toolchain', rust.pin, name])).trim(); requireProof(path.isAbsolute(resolved) && !resolved.includes('\n'), 'MAC_FIXTURE_TOOL_ROUTE'); tools[name] = await observeFile(resolved);
+      const resolved = (await run(`resolve-${name}`, rustup, ['which', '--toolchain', rust.pin, name], 180000, { argv0: 'rustup' })).trim(); requireProof(path.isAbsolute(resolved) && !resolved.includes('\n'), 'MAC_FIXTURE_TOOL_ROUTE'); tools[name] = await observeFile(resolved);
     }
     tools.cargoShim = await observeFile(await resolveTool(rust.cargo, environment)); tools.rustcShim = await observeFile(await resolveTool(rust.rustc, environment)); tools.rustdocShim = await observeFile(await resolveTool(rust.env.RUSTDOC, environment));
     Object.assign(environment, { RUSTC: tools.rustc.physicalPath, RUSTDOC: tools.rustdoc.physicalPath, RUSTFMT: tools.rustfmt.physicalPath, PATH: `${path.dirname(tools.cargo.physicalPath)}${path.delimiter}${environment.PATH || ''}` });

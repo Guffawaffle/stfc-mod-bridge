@@ -45,6 +45,15 @@ native host. Direct underlying tool executables receive no `+pin` argument;
 their context still sets the pinned toolchain, target and inspected compiler
 paths. All recorded tool and executable bytes are checked again before success.
 
+Rustup is a multicall executable. A Homebrew `rustup` alias may physically resolve
+to `rustup-init`, whose default dispatch is the installer. The seven pinned
+`rustup which` queries execute the inspected physical binary with the fixed
+internal `argv0: rustup`; each check records both values. No other command gets
+an alternate dispatch name. Inherited nonempty `RUSTUP_FORCE_ARG0`, including
+whitespace, refuses admission; that variable is also removed from child context.
+Physical path, byte and identity fences remain unchanged. This dispatch follows
+[Rustup 1.29's command selection](https://github.com/rust-lang/rustup/blob/1.29.0/src/process.rs#L43-L53).
+
 Importing the script does not execute its entry point. Its exported bounded
 admission, Mach-O, Cargo artifact, process-row/no-match, ACL and APFS parsers let
 shared tests check refusals on Windows. Synthetic parser results supply no

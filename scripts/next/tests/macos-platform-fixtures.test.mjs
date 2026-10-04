@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { macFixtureAdmission, macMachO, macArtifactInventory, macPsRows,
-  macPsObservation, macApfsPlistJson, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic } from '../macos-platform-fixtures.mjs';
+  macPsObservation, macApfsPlistJson, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic,
+  macFixtureCommandRouting } from '../macos-platform-fixtures.mjs';
 
-// These are foreign-host parsing/refusal assertions. They do not execute the
+// Portable parsing/refusal and Node invocation assertions do not execute the
 // native harness, authenticate CI metadata or qualify an Apple Silicon host.
 const admission = () => ({ argv: ['node', 'macos-platform-fixtures.mjs'], platform: 'darwin', architecture: 'arm64',
   version: 'v24.14.1', execArgv: [], environment: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted',
@@ -26,6 +28,30 @@ test('Mac fixture entry refuses foreign hosts, unbound jobs and public selectors
     const value = admission(); Object.assign(value.environment, delta);
     assert.throws(() => macFixtureAdmission(value));
   }
+});
+
+test('Rustup dispatch cannot be replaced by inherited force-arg0 values, including whitespace', () => {
+  for (const value of ['rustup-init', 'rustc', 'rustup', ' ', '\n']) {
+    const input = admission(); input.environment.RUSTUP_FORCE_ARG0 = value;
+    assert.throws(() => macFixtureAdmission(input), { code: 'MAC_FIXTURE_TOOL_OVERRIDE' });
+  }
+  const input = admission(); input.environment.RUSTUP_FORCE_ARG0 = '';
+  assert.doesNotThrow(() => macFixtureAdmission(input));
+});
+
+test('multicall routing keeps the physical executable while supplying the fixed Rustup dispatch name', () => {
+  const route = macFixtureCommandRouting(process.execPath, 'rustup');
+  const result = spawnSync(route.executable, ['--eval', 'process.stdout.write(JSON.stringify({ argv0: process.argv0, executable: process.execPath }))'],
+    { argv0: route.argv0, shell: false, encoding: 'utf8', timeout: 10000 });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(result.signal, null);
+  assert.deepEqual(JSON.parse(result.stdout), { argv0: 'rustup', executable: process.execPath });
+  assert.deepEqual(macFixtureCommandRouting(process.execPath), { executable: process.execPath, argv0: process.execPath });
+  for (const name of ['rustup-init', 'rustc', '', ' rustup ', '--other']) {
+    assert.throws(() => macFixtureCommandRouting(process.execPath, name), { code: 'MAC_FIXTURE_TOOL_DISPATCH' });
+  }
+  assert.throws(() => macFixtureCommandRouting('rustup', 'rustup'), { code: 'MAC_FIXTURE_TOOL_ROUTE' });
 });
 
 function macho() {
