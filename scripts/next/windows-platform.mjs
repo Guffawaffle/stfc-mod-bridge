@@ -7,6 +7,7 @@ import { rustContext } from './rust-context.mjs';
 import { ownedArtifactPath } from './owned-artifact.mjs';
 import { fingerprintInputRecords } from './input-tree.mjs';
 import { nativePhysicalPath, nativeTestInventory, nativeTestResult } from './native-evidence.mjs';
+import { NATIVE_TESTS } from './windows-private-journal-evidence.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 assert.equal(process.argv.length, 2, 'Windows gate accepts no overrides');
@@ -15,7 +16,7 @@ assert.equal(realpathSync(process.cwd()), realpathSync(root));
 const rust = rustContext({ root }), sha = bytes => createHash('sha256').update(bytes).digest('hex');
 for (const key of Object.keys(process.env)) assert.ok(!/^BRIDGE_(?:TEST_WINDOWS_|WINDOWS_CHILD_)/i.test(key) || !process.env[key], 'Caller cannot inject private native fixture selectors');
 const inputs = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
-  'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'scripts/next', 'crates/bridge-journal-io', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-platform-windows'];
+  'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'scripts/next', 'contracts', 'crates/bridge-engine', 'crates/bridge-toml', 'crates/bridge-native', 'crates/bridge-journal-io', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-platform-windows'];
 const before = fingerprintInputRecords(root, inputs);
 const directory = ownedArtifactPath(root, `artifacts/next/windows-platform/${randomUUID()}`, 'directory', { allowMissing: true });
 mkdirSync(directory, { recursive: true });
@@ -78,11 +79,18 @@ const units = [
     'path_policy_refuses_redirected_alias_and_unbounded_routes',
     'sid_extent_checks_interior_pointer_and_count_before_native_helpers',
     'synthetic_private_security_rejects_grants_owner_mask_and_inheritance_drift'
-  ].map(name => `private_journal::custody_tests::${name}`)
+  ].map(name => `private_journal::custody_tests::${name}`),
+  ...['fixture_nonce_requires_canonical_v4_and_refuses_all_aliases',
+    'fixture_child_protocol_has_closed_phase_and_bounded_frame',
+    'fixture_extension_bounds_are_checked_before_namespace_effects'
+  ].map(name => `private_journal::native_fixtures::${name}`),
+  ...NATIVE_TESTS, 'private_journal::native_fixtures::fixture_private_journal_child'
 ];
+const skippedUnits = [...NATIVE_TESTS, 'private_journal::native_fixtures::fixture_private_journal_child'];
+assert.equal(units.length, 38); assert.equal(skippedUnits.length, 10);
 const unit = compile('lib', 'bridge_platform_windows', 'crates/bridge-platform-windows/src/lib.rs', ['--lib']);
 nativeTestInventory(run('list-unit', unit.executable, ['--list']), units);
-nativeTestResult(run('execute-unit', unit.executable, ['--test-threads=1']), units.length);
+nativeTestResult(run('execute-unit', unit.executable, ['--test-threads=1', ...skippedUnits.flatMap(name => ['--skip', name])]), 28, 10);
 const cases = [
   'physical_identity_retains_hardlink_alias_and_replacement', 'capture_does_not_exclude_and_admission_blocks_write_delete',
   'bounded_hash_and_device_stream_inputs_are_refused', 'final_and_ancestor_junctions_are_refused_without_following_targets',
@@ -143,8 +151,8 @@ for (const binary of binaries) assert.equal(sha(readFileSync(binary.executable))
 const receipt = path.join(directory, 'windows-platform.json');
 writeFileSync(receipt, JSON.stringify({ schemaVersion: 'bridge-windows-platform-observation/v1', result: 'passed', completedAt: new Date().toISOString(),
   host: 'windows-x64', toolchain: { rust: rust.pin, nativeTarget: rust.hostTarget, node: process.version }, sources: before, binaries, checks, observations,
-  unitTests: units, nativeCases: cases, compileFailOwnershipDocs: 5, fixtureRoot: fixture,
+  unitTests: units, executedDefaultUnitTests: 28, explicitSkippedUnitTests: skippedUnits, nativeCases: cases, compileFailOwnershipDocs: 5, fixtureRoot: fixture,
   signatureSubject: { source: process.execPath, privateCopy: signedSubject, sha256: pin.sha256, certificateSha256: pin.primarySignerCertificateSha256, pinManifestSha256: sha(pinBytes), executed: false, publisherApproved: false },
-  boundary: 'Actual ordinary-user Windows services in fresh private owner-scoped fixtures, including retained physical/process identity, native reparse refusals, DPAPI synthetic bytes, cache-only signature observations and exact owned-window focus policy. No game, catalog, stored account/configuration or installed Bridge update touched. Namespace exclusion, journal recovery and installed-runtime qualification remain application-service responsibilities.',
+  boundary: 'Actual Windows services in fresh private owner-scoped fixtures, including retained physical/process identity, native reparse refusals, DPAPI synthetic bytes, cache-only signature observations and exact owned-window focus policy. This suite does not directly observe token elevation/integrity. No game, catalog, stored account/configuration or installed Bridge update touched. Namespace exclusion, journal recovery and installed-runtime qualification remain application-service responsibilities.',
   privateJournalOwnerQualified: false, installedGameQualified: false, nativeRuntimeQualified: false, releaseQualified: false }, null, 2) + '\n', { flag: 'wx' });
-console.log(JSON.stringify({ result: 'passed', nativeTests: cases.length, unitTests: units.length, receipt, nativeRuntimeQualified: false, releaseQualified: false }));
+console.log(JSON.stringify({ result: 'passed', nativeTests: cases.length, unitTests: 28, listedUnitTests: units.length, explicitSkippedUnitTests: 10, receipt, nativeRuntimeQualified: false, releaseQualified: false }));

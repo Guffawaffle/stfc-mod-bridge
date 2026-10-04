@@ -115,6 +115,15 @@ their nested Cargo calls and formatter use the observed toolchain payloads.
 PATH discovery accepts a symlink only when its resolved payload is a regular
 file and retains the original invocation route for Rustup's shim dispatch.
 The physical tool payload is still inventoried and hashed before/after checks.
+The source inventory includes the engine's transitive `bridge-toml` and
+`bridge-native` roots. Older observations whose suite inventory omitted a
+compiled transitive root retain that narrower scope; a passing host job does
+not retrospectively complete its source closure.
+The driver retains byte-identical copies of its three selected test executables
+inside the uploaded observation folder and rechecks them before completion.
+Those copies are evidence payloads; only the original current Cargo artifacts
+are executed. Older archives without those payloads permit log/hash readback
+but cannot supply independent rehashing of the tested bytes after job completion.
 It runs strict format/Clippy, engine and adapter dependency checks,
 ownership compile-fail controls, frontend type checking and focused injected
 adapter tests. No synthetic host enters production composition.

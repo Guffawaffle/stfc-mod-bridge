@@ -606,6 +606,17 @@
           "cwdResolution": "canonical-local-checkout",
           "availability": "not-established",
           "receiptRequired": true
+        },
+        {
+          "id": "windows-private-journal-fixtures",
+          "state": "implemented-awaiting-native-observation",
+          "requiredHost": "windows-x64",
+          "command": "node scripts/next/qualify.mjs --suite windows-private-journal-fixtures --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true,
+          "packageAcceptanceAvailable": false
         }
       ],
       "host": "windows-x64"

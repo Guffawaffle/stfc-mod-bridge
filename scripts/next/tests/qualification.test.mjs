@@ -81,15 +81,27 @@ test('empty, duplicate and malformed suite inventories block before acceptance',
   assert.equal(qualificationPassed({ checks: [], suites: [], before: digest, after: digest }), false);
 });
 
-test('Windows platform package requires native host and complete private-fixture sources', () => {
-  const selected = select({ package: 'br-06', host: 'windows-x64' });
-  assert.deepEqual(selected.suites.map(suite => suite.id), ['windows-platform']);
-  assert.equal(selected.packageAcceptance, true);
+test('Windows platform and journal suites retain native host and partial acceptance boundaries', () => {
+  const selected = select({ suite: 'windows-platform', host: 'windows-x64' });
+  assert.equal(selected.package.id, 'br-06');
+  assert.equal(selected.packageAcceptance, false);
+  assert.deepEqual(selected.package.dependsOn, ['br-02']);
+  assert.deepEqual(selected.package.gates.map(value => value.id), ['windows-platform', 'windows-private-journal-fixtures']);
+  assert.throws(() => select({ package: 'br-06', host: 'windows-x64' }), blocked('PACKAGE_INTEGRATION_UNQUALIFIED'));
   assert.throws(() => select({ package: 'br-06', host: 'windows-x64' }, { actualHost: 'macos-arm64-native' }), blocked('WRONG_NATIVE_HOST'));
   const inventory = qualificationInputs(selected.suites);
-  for (const item of ['crates/bridge-platform-windows', 'crates/bridge-domain', 'dependencies/next-windows-signature-fixture.json', 'scripts/next', 'Cargo.lock']) assert.ok(inventory.includes(item));
+  for (const item of ['crates/bridge-platform-windows', 'crates/bridge-domain', 'crates/bridge-engine', 'crates/bridge-toml', 'crates/bridge-native', 'contracts', 'dependencies/next-windows-signature-fixture.json', 'scripts/next', 'Cargo.lock']) assert.ok(inventory.includes(item));
   const documented = readFileSync(path.join(root, 'docs/next/WINDOWS_PLATFORM.md'), 'utf8');
   for (const criterion of selected.suites[0].criteria) assert.ok(documented.includes(criterion));
+  const journal = select({ suite: 'windows-private-journal-fixtures', host: 'windows-x64' });
+  assert.equal(journal.packageAcceptance, false); assert.equal(journal.suites[0].packageAcceptanceAvailable, false);
+  assert.equal(journal.suites[0].host, 'windows-x64'); assert.equal(journal.suites[0].timeoutMs, 600000);
+  assert.deepEqual(journal.suites[0].argv, ['scripts/next/windows-private-journal-fixtures.mjs']);
+  assert.throws(() => select({ suite: 'windows-private-journal-fixtures', host: 'windows-x64' }, { actualHost: 'macos-arm64-native' }), blocked('WRONG_NATIVE_HOST'));
+  for (const item of ['crates/bridge-platform-windows', 'crates/bridge-engine', 'crates/bridge-toml', 'crates/bridge-native', 'contracts', '.github/workflows/next-foundation.yml', 'docs/next/NATIVE_QUALIFICATION.md']) assert.ok(qualificationInputs(journal.suites).includes(item));
+  const storage = readFileSync(path.join(root, 'docs/next/PRIVATE_JOURNAL_STORAGE.md'), 'utf8');
+  assert.equal(journal.suites[0].criteria.length, 9);
+  for (const criterion of journal.suites[0].criteria) assert.ok(storage.includes(criterion));
 });
 
 test('selected Mac fixtures require actual Apple Silicon and cannot accept the full Mac package', () => {
@@ -139,7 +151,7 @@ test('portable host foundation requires an actual native probe and cannot accept
     assert.deepEqual(selected.observationScope, { kind: 'single-native-host-probe', host: actualHost, requiredHosts: ['windows-x64', 'macos-arm64-native'], matrixAcceptance: false });
     assert.deepEqual(selected.package.dependsOn, ['br-03', 'br-04', 'br-13']);
     const inventory = qualificationInputs(selected.suites);
-    for (const input of ['crates/bridge-engine', 'ui/src', 'ui/tests', 'scripts/next', '.github/workflows/next-foundation.yml']) assert.ok(inventory.includes(input));
+    for (const input of ['crates/bridge-engine', 'crates/bridge-toml', 'crates/bridge-native', 'ui/src', 'ui/tests', 'scripts/next', '.github/workflows/next-foundation.yml']) assert.ok(inventory.includes(input));
     const document = readFileSync(path.join(root, 'docs/next/HOST_ADAPTER_FOUNDATION.md'), 'utf8');
     for (const criterion of selected.suites[0].criteria) assert.ok(document.includes(criterion));
   }

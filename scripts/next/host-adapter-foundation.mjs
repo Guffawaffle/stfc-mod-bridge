@@ -29,7 +29,7 @@ const relative = selected => path.relative(root, selected).replaceAll('\\', '/')
 const inputs = [
   'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
-  'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
+  'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-native', 'crates/bridge-journal-io',
   'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/svelte.config.js', 'ui/vite.config.ts', 'ui/src', 'ui/tests'
 ];
 const sourcesBefore = fingerprintInputRecords(root, inputs);
@@ -265,8 +265,10 @@ try {
     const relation = relative(artifact.executable);
     assert.ok(relation.startsWith(`target/${rust.hostTarget}/`), 'Test artifact must remain inside the owning native target directory');
     const executable = ownedArtifactPath(root, relation), bytes = readFileSync(executable);
+    const retainedCopy = { ...save(`compiled-${target}.test-artifact`, bytes), executed: false };
+    assert.equal(retainedCopy.sha256, sha(bytes));
     binaries.push({ target, executable, bytes: bytes.length, sha256: sha(bytes), architecture: nativeArchitecture(bytes),
-      compilerArtifact: artifact, discoveredTests: [], executedTests: [] });
+      retainedCopy, compilerArtifact: artifact, discoveredTests: [], executedTests: [] });
   }
   assert.equal(new Set(binaries.map(binary => binary.executable)).size, artifacts.length, 'Test targets must have distinct executables');
   for (const binary of binaries) {
@@ -303,7 +305,11 @@ try {
   assert.deepEqual(sourcesAfter, sourcesBefore, 'Source drift invalidates the host adapter observation');
   for (const tool of toolsBefore) toolsAfter.push(observeTool(tool.role, tool.route));
   assert.deepEqual(toolsAfter, toolsBefore, 'Tool routing or bytes changed during the host adapter observation');
-  for (const binary of binaries) observeBinary(binary);
+  for (const binary of binaries) {
+    observeBinary(binary);
+    const retained = readFileSync(ownedArtifactPath(root, binary.retainedCopy.path));
+    assert.equal(retained.length, binary.bytes); assert.equal(sha(retained), binary.sha256);
+  }
   passed = true;
 } catch (error) {
   failure = { name: error?.name ?? 'Error', code: error?.code ?? null,

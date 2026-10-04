@@ -81,6 +81,24 @@ test('missing, suite-only, failed, unknown-version and unstable receipts refuse 
     [(f, values) => { const r = f.receipt('br-00'); r.inputsStable = false; values.set('br-00', f.wrap(r)); }, 'PREREQUISITE_RECEIPT_INVALID']
   ]) fixture(f => { mutate(f, f.receipts); assert.throws(() => f.validate(), blocked(code)); });
 });
+
+test('required partial br-06 suite blocks dependency admission before its receipt is read', () => fixture(f => {
+  const prerequisite = f.packages[1];
+  prerequisite.id = 'br-06';
+  f.packages.at(-1).dependsOn = ['br-06'];
+  f.campaign.packages['br-06'] = { owner: 'Bridge', issue: 'https://github.com/Guffawaffle/stfc-mod-bridge/issues/241' };
+  prerequisite.gates.push({ id: 'windows-private-journal-fixtures' });
+  f.registry['windows-private-journal-fixtures'] = {
+    host: 'any', packageAcceptanceAvailable: false, argv: ['--test', 'suites/partial.test.mjs'],
+    inputs: ['suites/partial.test.mjs'], criteria: ['BR06-WJ01'], boundary: 'Synthetic selected-suite receipt only.'
+  };
+  f.write('suites/partial.test.mjs', 'Synthetic fixture.');
+  const partial = { ...f.receipts.get('br-01').receipt, package: 'br-06', packageAcceptance: false, issue: f.campaign.packages['br-06'].issue };
+  f.receipts.set('br-06', f.wrap(partial));
+  const read = [];
+  assert.throws(() => f.validate({ readReceipt: id => { read.push(id); return f.readReceipt(id); } }), blocked('PACKAGE_INTEGRATION_UNQUALIFIED'));
+  assert.deepEqual(read, ['br-00']);
+}));
 test('partial, empty, duplicate, reordered and failed checks cannot satisfy a multi-suite prerequisite', () => {
   for (const [mutate, code] of [
     [r => { r.checks = []; }, 'PREREQUISITE_CHECKS_INCOMPLETE'],

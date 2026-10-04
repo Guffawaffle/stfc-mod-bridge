@@ -178,6 +178,377 @@ const MAX_JOURNAL_BYTES: u64 = 128 * 1024 * 1024;
 const STATE_NAMES: [&str; 2] = ["STFCModBridgeNext", "v1"];
 const JOURNAL_NAME: &str = "operations.wal";
 
+enum Namespace {
+    Production,
+    #[cfg(test)]
+    Fixture(FixtureContext),
+}
+impl Namespace {
+    fn directory_limit(&self) -> usize {
+        match self {
+            Self::Production => MAX_COMPONENTS + 3,
+            #[cfg(test)]
+            Self::Fixture(_) => MAX_COMPONENTS + 4,
+        }
+    }
+    fn components(&self) -> Vec<Vec<u16>> {
+        match self {
+            Self::Production => STATE_NAMES
+                .iter()
+                .map(|name| name.encode_utf16().collect())
+                .collect(),
+            #[cfg(test)]
+            Self::Fixture(context) => {
+                ["STFCModBridgeNextFixtures", context.nonce.component(), "v1"]
+                    .iter()
+                    .map(|name| name.encode_utf16().collect())
+                    .collect()
+            }
+        }
+    }
+    fn extension_bounds(&self, selected: &Route) -> Result<(), StorageFailure> {
+        let components = self.components();
+        for component in &components {
+            validate_component(component)?;
+        }
+        let extension = components
+            .iter()
+            .map(|name| name.len() + 1)
+            .sum::<usize>()
+            .checked_add(JOURNAL_NAME.len() + 1)
+            .ok_or(StorageFailure::Unsafe)?;
+        if selected
+            .full
+            .len()
+            .checked_add(extension)
+            .is_none_or(|n| n > MAX_PATH_UNITS)
+            || selected
+                .components
+                .len()
+                .checked_add(components.len() + 1)
+                .is_none_or(|n| n > self.directory_limit())
+        {
+            return Err(StorageFailure::Unsafe);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FixtureNonce([u8; 36]);
+#[cfg(test)]
+impl FixtureNonce {
+    fn parse(input: &[u8]) -> Result<Self, StorageFailure> {
+        if input.len() != 36 {
+            return Err(StorageFailure::Unsafe);
+        }
+        let mut nonce = [0; 36];
+        nonce.copy_from_slice(input);
+        for (index, byte) in nonce.iter().enumerate() {
+            if [8, 13, 18, 23].contains(&index) {
+                if *byte != b'-' {
+                    return Err(StorageFailure::Unsafe);
+                }
+            } else if !matches!(*byte, b'0'..=b'9' | b'a'..=b'f') {
+                return Err(StorageFailure::Unsafe);
+            }
+        }
+        if nonce[14] != b'4' || !matches!(nonce[19], b'8' | b'9' | b'a' | b'b') {
+            return Err(StorageFailure::Unsafe);
+        }
+        Ok(Self(nonce))
+    }
+    fn fresh() -> Result<Self, StorageFailure> {
+        use windows::Win32::Security::Cryptography::{
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
+        };
+        let mut random = [0; 16];
+        // SAFETY: exactly one fixed native draw; failed generation never retries.
+        let status = unsafe { BCryptGenRandom(None, &mut random, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };
+        if status.0 != 0 {
+            return Err(StorageFailure::Unavailable);
+        }
+        random[6] = (random[6] & 0x0f) | 0x40;
+        random[8] = (random[8] & 0x3f) | 0x80;
+        let hex = b"0123456789abcdef";
+        let mut output = [b'-'; 36];
+        let mut cursor = 0;
+        for byte in random {
+            while [8, 13, 18, 23].contains(&cursor) {
+                cursor += 1;
+            }
+            output[cursor] = hex[(byte >> 4) as usize];
+            output[cursor + 1] = hex[(byte & 15) as usize];
+            cursor += 2;
+        }
+        Self::parse(&output)
+    }
+    fn component(&self) -> &str {
+        // Parsing/generation established ASCII; never a caller path.
+        std::str::from_utf8(&self.0).expect("validated ASCII nonce")
+    }
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureAdmission {
+    Fresh,
+    Reopen,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FlushStage {
+    LeafBefore,
+    VersionDirectory,
+    NonceDirectory,
+    FixturesDirectory,
+    KnownFolderDirectory,
+    LeafAfter,
+}
+#[cfg(test)]
+const FIXTURE_FLUSH_STAGES: [FlushStage; 6] = [
+    FlushStage::LeafBefore,
+    FlushStage::VersionDirectory,
+    FlushStage::NonceDirectory,
+    FlushStage::FixturesDirectory,
+    FlushStage::KnownFolderDirectory,
+    FlushStage::LeafAfter,
+];
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureFault {
+    None,
+    AfterFlush(FlushStage),
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixturePhase {
+    Preflight,
+    Ancestor(usize),
+    KnownFolder,
+    FixturesRoot,
+    Nonce,
+    Version,
+    Wal,
+    Flush(FlushStage),
+    FinalCustodyValidation,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeFlushState {
+    Started,
+    CompletedAwaitingOutput,
+    PendingQuarantined,
+    CompletedNativeFailure,
+    CompletedOutputRefusal,
+    Accepted,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FlushSnapshot {
+    stage: FlushStage,
+    submitted: bool,
+    primary: Option<i32>,
+    native: NativeFlushState,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureFailureKind {
+    NativeFlushFailure,
+    PendingQuarantined,
+    CompletedOutputRefusal,
+    InjectedAfterNativeSuccess,
+    HarnessTraceRefusal,
+    ProtocolRefusal,
+    OtherConstructorRefusal,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FixtureTerminal {
+    phase: FixturePhase,
+    kind: FixtureFailureKind,
+    primary: Option<i32>,
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureEvent {
+    CreateReturned(FixturePhase, i32),
+    FlushStarted(FlushStage),
+    NativeFlushReturned(FlushStage, i32),
+    NativeFlushAccepted(FlushStage, i32),
+    FaultInjected(FlushStage, i32),
+    ConstructorValidated,
+}
+#[cfg(test)]
+struct FixtureControl {
+    fault: FixtureFault,
+    constructor_claimed: Cell<bool>,
+    constructor_validated: Cell<bool>,
+    fired: Cell<bool>,
+    phase: Cell<FixturePhase>,
+    last_flush: Cell<Option<FlushSnapshot>>,
+    terminal: Cell<Option<FixtureTerminal>>,
+    trace_failed: Cell<bool>,
+    events: RefCell<Vec<FixtureEvent>>,
+}
+#[cfg(test)]
+impl FixtureControl {
+    fn latch(&self, kind: FixtureFailureKind, primary: Option<i32>) {
+        if self.terminal.get().is_none() {
+            self.terminal.set(Some(FixtureTerminal {
+                phase: self.phase.get(),
+                kind,
+                primary,
+            }));
+        }
+    }
+    fn event(&self, event: FixtureEvent) -> Result<(), StorageFailure> {
+        let result = (|| {
+            let mut events = self
+                .events
+                .try_borrow_mut()
+                .map_err(|_| StorageFailure::Unsafe)?;
+            if events.len() >= 4096 || events.len() >= events.capacity() {
+                return Err(StorageFailure::Unsafe);
+            }
+            events.push(event);
+            Ok(())
+        })();
+        if result.is_err() {
+            self.trace_failed.set(true);
+            self.latch(
+                FixtureFailureKind::HarnessTraceRefusal,
+                self.last_flush.get().and_then(|s| s.primary),
+            );
+        }
+        if result.is_ok() && event == FixtureEvent::ConstructorValidated {
+            self.constructor_validated.set(true);
+        }
+        result
+    }
+    fn start_flush(&self) -> Result<FlushStage, StorageFailure> {
+        let FixturePhase::Flush(stage) = self.phase.get() else {
+            self.latch(FixtureFailureKind::ProtocolRefusal, None);
+            return Err(StorageFailure::Unsafe);
+        };
+        self.last_flush.set(Some(FlushSnapshot {
+            stage,
+            submitted: false,
+            primary: None,
+            native: NativeFlushState::Started,
+        }));
+        self.event(FixtureEvent::FlushStarted(stage))?;
+        Ok(stage)
+    }
+    fn submitted(&self) {
+        if let Some(mut snapshot) = self.last_flush.get() {
+            snapshot.submitted = true;
+            self.last_flush.set(Some(snapshot));
+        }
+    }
+    fn classified_flush(
+        &self,
+        stage: FlushStage,
+        primary: NTSTATUS,
+        classified: bool,
+    ) -> Result<(), StorageFailure> {
+        let state = if primary == PENDING {
+            NativeFlushState::PendingQuarantined
+        } else if primary.0 < 0 {
+            NativeFlushState::CompletedNativeFailure
+        } else {
+            NativeFlushState::CompletedAwaitingOutput
+        };
+        self.last_flush.set(Some(FlushSnapshot {
+            stage,
+            submitted: true,
+            primary: Some(primary.0),
+            native: state,
+        }));
+        if primary == PENDING {
+            self.latch(FixtureFailureKind::PendingQuarantined, Some(primary.0));
+        } else if primary.0 < 0 {
+            self.latch(FixtureFailureKind::NativeFlushFailure, Some(primary.0));
+        } else if !classified {
+            self.latch(FixtureFailureKind::ProtocolRefusal, Some(primary.0));
+        }
+        self.event(FixtureEvent::NativeFlushReturned(stage, primary.0))
+    }
+    fn output_refused(&self, stage: FlushStage, primary: NTSTATUS) {
+        self.last_flush.set(Some(FlushSnapshot {
+            stage,
+            submitted: true,
+            primary: Some(primary.0),
+            native: NativeFlushState::CompletedOutputRefusal,
+        }));
+        self.latch(FixtureFailureKind::CompletedOutputRefusal, Some(primary.0));
+    }
+    fn accepted(&self, stage: FlushStage, primary: NTSTATUS) -> Result<(), StorageFailure> {
+        self.last_flush.set(Some(FlushSnapshot {
+            stage,
+            submitted: true,
+            primary: Some(primary.0),
+            native: NativeFlushState::Accepted,
+        }));
+        self.event(FixtureEvent::NativeFlushAccepted(stage, primary.0))?;
+        if self.fault == FixtureFault::AfterFlush(stage) {
+            if self.fired.replace(true) {
+                self.latch(FixtureFailureKind::ProtocolRefusal, Some(primary.0));
+                return Err(StorageFailure::Unsafe);
+            }
+            self.latch(
+                FixtureFailureKind::InjectedAfterNativeSuccess,
+                Some(primary.0),
+            );
+            self.event(FixtureEvent::FaultInjected(stage, primary.0))?;
+            return Err(StorageFailure::Unavailable);
+        }
+        Ok(())
+    }
+}
+#[cfg(test)]
+#[derive(Clone)]
+struct FixtureContext {
+    nonce: FixtureNonce,
+    admission: FixtureAdmission,
+    control: Rc<FixtureControl>,
+}
+#[cfg(test)]
+impl FixtureContext {
+    fn new(
+        nonce: FixtureNonce,
+        admission: FixtureAdmission,
+        fault: FixtureFault,
+    ) -> Result<Self, StorageFailure> {
+        FixtureNonce::parse(&nonce.0)?;
+        if native_fixtures::fixture_poisoned() {
+            return Err(StorageFailure::Unavailable);
+        }
+        let mut events = Vec::new();
+        events
+            .try_reserve_exact(4096)
+            .map_err(|_| StorageFailure::Unavailable)?;
+        Ok(Self {
+            nonce,
+            admission,
+            control: Rc::new(FixtureControl {
+                fault,
+                constructor_claimed: Cell::new(false),
+                constructor_validated: Cell::new(false),
+                fired: Cell::new(false),
+                phase: Cell::new(FixturePhase::Preflight),
+                last_flush: Cell::new(None),
+                terminal: Cell::new(None),
+                trace_failed: Cell::new(false),
+                events: RefCell::new(events),
+            }),
+        })
+    }
+}
+
+#[cfg(test)]
+mod native_fixtures;
+
 #[link(name = "shell32")]
 unsafe extern "system" {
     #[link_name = "SHGetKnownFolderPath"]
@@ -581,8 +952,25 @@ struct Capsule {
     directory_sd: Option<LocalAllocation>,
     leaf_sd: Option<LocalAllocation>,
     apartment: Option<Apartment>,
+    #[cfg(test)]
+    fixture: Option<FixtureContext>,
 }
 impl Capsule {
+    #[cfg(test)]
+    fn prepare_fixture(mut self, context: FixtureContext) -> Result<Self, StorageFailure> {
+        let required = Namespace::Fixture(context.clone()).directory_limit();
+        let additional = required
+            .checked_sub(self.directories.len())
+            .ok_or(StorageFailure::Unsafe)?;
+        self.directories
+            .try_reserve_exact(additional)
+            .map_err(|_| StorageFailure::Unavailable)?;
+        if self.directories.capacity() < required {
+            return Err(StorageFailure::Unsafe);
+        }
+        self.fixture = Some(context);
+        Ok(self)
+    }
     fn empty() -> Self {
         Self {
             request: None,
@@ -595,6 +983,8 @@ impl Capsule {
             directory_sd: None,
             leaf_sd: None,
             apartment: None,
+            #[cfg(test)]
+            fixture: None,
         }
     }
 }
@@ -626,6 +1016,10 @@ enum OpenPolicy {
     CreationParent,
     PrivateDirectory,
     PrivateLeaf,
+    #[cfg(test)]
+    PrivateNonceFresh,
+    #[cfg(test)]
+    PrivateNonceExisting,
 }
 fn relative_open(
     guard: &CustodyGuard<Capsule>,
@@ -639,6 +1033,10 @@ fn relative_open(
         OpenPolicy::CreationParent => (true, false, false, true),
         OpenPolicy::PrivateDirectory => (true, true, true, true),
         OpenPolicy::PrivateLeaf => (false, true, true, false),
+        #[cfg(test)]
+        OpenPolicy::PrivateNonceFresh => (true, true, true, true),
+        #[cfg(test)]
+        OpenPolicy::PrivateNonceExisting => (true, true, false, true),
     };
     let security = if private {
         if directory {
@@ -679,6 +1077,13 @@ fn relative_open(
     } else {
         FILE_SHARE_READ | FILE_SHARE_WRITE
     };
+    let disposition = if create { NT_OPEN_IF } else { NT_OPEN };
+    #[cfg(test)]
+    let disposition = if matches!(policy, OpenPolicy::PrivateNonceFresh) {
+        windows::Wdk::Storage::FileSystem::FILE_CREATE
+    } else {
+        disposition
+    };
     guard.arm()?;
     // SAFETY: complete heap request graph and parent/descriptor custody are
     // already retained. Synchronous, single-component, nonfollowing open.
@@ -691,16 +1096,37 @@ fn relative_open(
             None,
             FILE_ATTRIBUTE_NORMAL,
             share,
-            if create { NT_OPEN_IF } else { NT_OPEN },
+            disposition,
             (if directory { NT_DIRECTORY } else { NT_FILE }) | NT_SYNCHRONOUS | NT_NOFOLLOW,
             None,
             0,
         )
     };
+    let classified = guard.finish(primary);
     if primary != PENDING && primary.0 >= 0 {
         request.owns_handle.set(true);
     }
-    guard.finish(primary)?;
+    #[cfg(test)]
+    if let Some(context) = &capsule.fixture {
+        // Constructor witness is sealed after final validation; later custody
+        // refresh opens must not append to or exhaust its constructor trace.
+        if !context.control.constructor_validated.get() {
+            if primary == PENDING {
+                context
+                    .control
+                    .latch(FixtureFailureKind::PendingQuarantined, Some(primary.0));
+            } else if primary.0 < 0 {
+                context
+                    .control
+                    .latch(FixtureFailureKind::OtherConstructorRefusal, Some(primary.0));
+            }
+            context.control.event(FixtureEvent::CreateReturned(
+                context.control.phase.get(),
+                primary.0,
+            ))?;
+        }
+    }
+    classified?;
     completed_output(&request.iosb, primary, None)?;
     // SAFETY: completed successful handle output, retained until transfer.
     let handle = unsafe { *request.handle.get() };
@@ -1194,6 +1620,11 @@ fn native_flush(
     capsule: &mut Capsule,
     handle: HANDLE,
 ) -> Result<(), StorageFailure> {
+    #[cfg(test)]
+    let fixture_flush = match capsule.fixture.as_ref() {
+        Some(context) => Some((context.control.clone(), context.control.start_flush()?)),
+        None => None,
+    };
     capsule.request = Some(Request::Flush(Box::new(FlushRequest {
         iosb: UnsafeCell::new(iosb()),
     })));
@@ -1205,19 +1636,47 @@ fn native_flush(
         return Err(StorageFailure::Unavailable);
     };
     guard.arm()?;
+    #[cfg(test)]
+    if let Some((control, _)) = &fixture_flush {
+        control.submitted();
+    }
     // SAFETY: synchronous flags0/null0 protocol, retained handle and heap IOSB.
     let primary = unsafe { NtFlushBuffersFileEx(handle, 0, ptr::null(), 0, request.iosb.get()) };
-    guard.finish(primary)?;
-    completed_output(&request.iosb, primary, None)?;
+    let classified = guard.finish(primary);
+    #[cfg(test)]
+    if let Some((control, stage)) = &fixture_flush {
+        control.classified_flush(*stage, primary, classified.is_ok())?;
+    }
+    classified?;
+    let output = completed_output(&request.iosb, primary, None);
+    #[cfg(test)]
+    if output.is_err()
+        && let Some((control, stage)) = &fixture_flush
+    {
+        control.output_refused(*stage, primary);
+    }
+    output?;
     capsule.request = None;
+    #[cfg(test)]
+    if let Some((control, stage)) = &fixture_flush {
+        control.accepted(*stage, primary)?;
+    }
     Ok(())
 }
 fn constructor_flush(
     known_index: usize,
     directory_count: usize,
+    flush: impl FnMut(Option<usize>) -> Result<(), StorageFailure>,
+) -> Result<(), StorageFailure> {
+    constructor_flush_bounded(known_index, directory_count, MAX_COMPONENTS + 3, flush)
+}
+fn constructor_flush_bounded(
+    known_index: usize,
+    directory_count: usize,
+    directory_limit: usize,
     mut flush: impl FnMut(Option<usize>) -> Result<(), StorageFailure>,
 ) -> Result<(), StorageFailure> {
-    if known_index >= directory_count || directory_count > MAX_COMPONENTS + 3 {
+    if known_index >= directory_count || directory_count > directory_limit {
         return Err(StorageFailure::Unsafe);
     }
     flush(None)?;
@@ -1283,8 +1742,54 @@ impl NativePrivateJournalStorage {
     /// Provision only the fixed new backend namespace; foreign objects refuse.
     /// Failure may leave declared entries; it never removes or repairs them.
     pub fn open() -> Result<Self, StorageFailure> {
+        Self::open_namespace(Namespace::Production)
+    }
+    fn open_namespace(namespace: Namespace) -> Result<Self, StorageFailure> {
+        #[cfg(test)]
+        let fixture = match &namespace {
+            Namespace::Fixture(context) => {
+                FixtureNonce::parse(&context.nonce.0)?;
+                if native_fixtures::fixture_poisoned() {
+                    return Err(StorageFailure::Unavailable);
+                }
+                if context.control.constructor_claimed.replace(true) {
+                    context
+                        .control
+                        .latch(FixtureFailureKind::ProtocolRefusal, None);
+                    return Err(StorageFailure::Unsafe);
+                }
+                Some(context.clone())
+            }
+            _ => None,
+        };
+        #[cfg(test)]
+        let result = Self::construct(namespace);
+        #[cfg(test)]
+        {
+            if result.is_err()
+                && let Some(context) = fixture
+            {
+                context
+                    .control
+                    .latch(FixtureFailureKind::OtherConstructorRefusal, None);
+            }
+            result
+        }
+        #[cfg(not(test))]
+        Self::construct(namespace)
+    }
+    fn construct(namespace: Namespace) -> Result<Self, StorageFailure> {
         let reservation = Reservation::acquire(&JOURNAL_RESERVATION)?;
-        let guard = CustodyGuard::new(reservation, Capsule::empty());
+        let initial = Capsule::empty();
+        #[cfg(test)]
+        let initial = {
+            if let Namespace::Fixture(context) = &namespace {
+                initial.prepare_fixture(context.clone())?
+            } else {
+                initial
+            }
+        };
+        let guard = CustodyGuard::new(reservation, initial);
         {
             let mut capsule = guard.borrow()?;
             refuse_impersonation()?;
@@ -1298,6 +1803,7 @@ impl NativePrivateJournalStorage {
             capsule.directory_sd = Some(directory_sd);
             capsule.leaf_sd = Some(leaf_sd);
             let selected = known_folder()?;
+            namespace.extension_bounds(&selected)?;
             let file = root_file(&selected)?;
             record_directory(&guard, &mut capsule, file, false, &selected.root[..3])?;
             let mut path = selected.root[..3].to_vec();
@@ -1309,6 +1815,17 @@ impl NativePrivateJournalStorage {
                         .ok_or(StorageFailure::Unsafe)?
                         .file,
                 );
+                #[cfg(test)]
+                if let Some(context) = &capsule.fixture {
+                    context
+                        .control
+                        .phase
+                        .set(if index + 1 == selected.components.len() {
+                            FixturePhase::KnownFolder
+                        } else {
+                            FixturePhase::Ancestor(index)
+                        });
+                }
                 let file = relative_open(
                     &guard,
                     &mut capsule,
@@ -1324,8 +1841,28 @@ impl NativePrivateJournalStorage {
                 record_directory(&guard, &mut capsule, file, false, &path)?;
             }
             capsule.selected = Some(selected);
-            for name in STATE_NAMES {
-                let name: Vec<u16> = name.encode_utf16().collect();
+            for (private_index, name) in namespace.components().into_iter().enumerate() {
+                let policy = OpenPolicy::PrivateDirectory;
+                #[cfg(test)]
+                let policy = if let Some(context) = &capsule.fixture {
+                    context.control.phase.set(match private_index {
+                        0 => FixturePhase::FixturesRoot,
+                        1 => FixturePhase::Nonce,
+                        _ => FixturePhase::Version,
+                    });
+                    if private_index == 1 {
+                        match context.admission {
+                            FixtureAdmission::Fresh => OpenPolicy::PrivateNonceFresh,
+                            FixtureAdmission::Reopen => OpenPolicy::PrivateNonceExisting,
+                        }
+                    } else {
+                        policy
+                    }
+                } else {
+                    policy
+                };
+                #[cfg(not(test))]
+                let _ = private_index;
                 let parent = file_handle(
                     &capsule
                         .directories
@@ -1333,13 +1870,7 @@ impl NativePrivateJournalStorage {
                         .ok_or(StorageFailure::Unsafe)?
                         .file,
                 );
-                let file = relative_open(
-                    &guard,
-                    &mut capsule,
-                    parent,
-                    &name,
-                    OpenPolicy::PrivateDirectory,
-                )?;
+                let file = relative_open(&guard, &mut capsule, parent, &name, policy)?;
                 path = expected_path(&path, &name);
                 record_directory(&guard, &mut capsule, file, true, &path)?;
             }
@@ -1351,6 +1882,10 @@ impl NativePrivateJournalStorage {
                     .ok_or(StorageFailure::Unsafe)?
                     .file,
             );
+            #[cfg(test)]
+            if let Some(context) = &capsule.fixture {
+                context.control.phase.set(FixturePhase::Wal);
+            }
             let file = relative_open(&guard, &mut capsule, parent, &name, OpenPolicy::PrivateLeaf)?;
             capsule.leaf = Some(file);
             let handle = file_handle(capsule.leaf.as_ref().ok_or(StorageFailure::Unsafe)?);
@@ -1382,14 +1917,64 @@ impl NativePrivateJournalStorage {
                 .components
                 .len();
             let directory_count = capsule.directories.len();
-            constructor_flush(known_index, directory_count, |index| {
+            #[cfg(test)]
+            let mut fixture_flush_ordinal = 0;
+            let flush = |index: Option<usize>| {
+                #[cfg(test)]
+                if let Some(context) = &capsule.fixture {
+                    let stage = *FIXTURE_FLUSH_STAGES
+                        .get(fixture_flush_ordinal)
+                        .ok_or(StorageFailure::Unsafe)?;
+                    let expected = match stage {
+                        FlushStage::LeafBefore | FlushStage::LeafAfter => None,
+                        FlushStage::VersionDirectory => Some(known_index + 3),
+                        FlushStage::NonceDirectory => Some(known_index + 2),
+                        FlushStage::FixturesDirectory => Some(known_index + 1),
+                        FlushStage::KnownFolderDirectory => Some(known_index),
+                    };
+                    if index != expected {
+                        context
+                            .control
+                            .latch(FixtureFailureKind::ProtocolRefusal, None);
+                        return Err(StorageFailure::Unsafe);
+                    }
+                    fixture_flush_ordinal += 1;
+                    context.control.phase.set(FixturePhase::Flush(stage));
+                }
                 let selected = match index {
                     Some(index) => file_handle(&capsule.directories[index].file),
                     None => handle,
                 };
                 native_flush(&guard, &mut capsule, selected)
-            })?;
+            };
+            match &namespace {
+                Namespace::Production => constructor_flush(known_index, directory_count, flush)?,
+                #[cfg(test)]
+                Namespace::Fixture(_) => constructor_flush_bounded(
+                    known_index,
+                    directory_count,
+                    namespace.directory_limit(),
+                    flush,
+                )?,
+            }
+            #[cfg(test)]
+            if let Some(context) = &capsule.fixture {
+                context
+                    .control
+                    .phase
+                    .set(FixturePhase::FinalCustodyValidation);
+            }
             validate(&guard, &mut capsule)?;
+            #[cfg(test)]
+            if let Some(context) = &capsule.fixture {
+                if fixture_flush_ordinal != 6 {
+                    context
+                        .control
+                        .latch(FixtureFailureKind::ProtocolRefusal, None);
+                    return Err(StorageFailure::Unsafe);
+                }
+                context.control.event(FixtureEvent::ConstructorValidated)?;
+            }
         }
         Ok(Self {
             guard,
@@ -1559,8 +2144,34 @@ mod custody_tests {
             let custody = owner.borrow().unwrap();
             (custody.output.get(), custody.request.get())
         };
+        let nonce = FixtureNonce::parse(b"01234567-89ab-4cde-8fab-0123456789ab").unwrap();
+        let fixture = FixtureContext::new(
+            nonce,
+            FixtureAdmission::Fresh,
+            FixtureFault::AfterFlush(FlushStage::LeafBefore),
+        )
+        .unwrap();
+        fixture
+            .control
+            .phase
+            .set(FixturePhase::Flush(FlushStage::LeafBefore));
+        let stage = fixture.control.start_flush().unwrap();
         owner.arm().unwrap();
+        fixture.control.submitted();
         assert_eq!(owner.finish(PENDING), Err(StorageFailure::Unavailable));
+        fixture
+            .control
+            .classified_flush(stage, PENDING, false)
+            .unwrap();
+        assert_eq!(
+            fixture.control.terminal.get().unwrap().kind,
+            FixtureFailureKind::PendingQuarantined
+        );
+        assert_eq!(
+            fixture.control.last_flush.get().unwrap().primary,
+            Some(PENDING.0)
+        );
+        assert!(!fixture.control.fired.get());
         assert!(owner.borrow().is_err());
         assert!(owner.arm().is_err());
         assert_eq!(owner.finish(NTSTATUS(0)), Err(StorageFailure::Unavailable));
@@ -1795,13 +2406,71 @@ mod custody_tests {
         let state = state();
         let owner = guard(state, Arc::new(AtomicUsize::new(0)));
         let output = UnsafeCell::new(iosb());
+        let nonce = FixtureNonce::parse(b"01234567-89ab-4cde-8fab-0123456789ab").unwrap();
+        let fixture = FixtureContext::new(
+            nonce,
+            FixtureAdmission::Fresh,
+            FixtureFault::AfterFlush(FlushStage::LeafBefore),
+        )
+        .unwrap();
+        fixture
+            .control
+            .phase
+            .set(FixturePhase::Flush(FlushStage::LeafBefore));
+        let stage = fixture.control.start_flush().unwrap();
         owner.arm().unwrap();
+        fixture.control.submitted();
         owner.finish(NTSTATUS(0)).unwrap();
+        fixture
+            .control
+            .classified_flush(stage, NTSTATUS(0), true)
+            .unwrap();
         assert_eq!(
             completed_output(&output, NTSTATUS(0), Some(8)),
             Err(StorageFailure::Unsafe)
         );
+        fixture.control.output_refused(stage, NTSTATUS(0));
+        assert_eq!(
+            fixture.control.terminal.get().unwrap().kind,
+            FixtureFailureKind::CompletedOutputRefusal
+        );
+        assert_eq!(
+            fixture.control.last_flush.get().unwrap().native,
+            NativeFlushState::CompletedOutputRefusal
+        );
+        assert!(!fixture.control.fired.get());
         drop(owner);
+        assert_eq!(state.load(Ordering::Acquire), FREE);
+        let failed = guard(state, Arc::new(AtomicUsize::new(0)));
+        let native_error = NTSTATUS(0xc000_0043u32 as i32);
+        let fixture = FixtureContext::new(
+            nonce,
+            FixtureAdmission::Fresh,
+            FixtureFault::AfterFlush(FlushStage::LeafBefore),
+        )
+        .unwrap();
+        fixture
+            .control
+            .phase
+            .set(FixturePhase::Flush(FlushStage::LeafBefore));
+        let stage = fixture.control.start_flush().unwrap();
+        failed.arm().unwrap();
+        fixture.control.submitted();
+        assert_eq!(failed.finish(native_error), Err(StorageFailure::Busy));
+        fixture
+            .control
+            .classified_flush(stage, native_error, false)
+            .unwrap();
+        assert_eq!(
+            fixture.control.terminal.get().unwrap().kind,
+            FixtureFailureKind::NativeFlushFailure
+        );
+        assert_eq!(
+            fixture.control.last_flush.get().unwrap().primary,
+            Some(native_error.0)
+        );
+        assert!(!fixture.control.fired.get());
+        drop(failed);
         assert_eq!(state.load(Ordering::Acquire), FREE);
     }
     #[test]

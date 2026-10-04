@@ -274,7 +274,9 @@ dependencies = [
 name = "bridge-platform-windows"
 version = "0.1.0"
 dependencies = [
+ "bridge-contracts",
  "bridge-domain",
+ "bridge-engine",
  "bridge-journal-io",
  "serde_json",
  "sha2 0.11.0",

@@ -38,10 +38,71 @@ but create no journal or private directory.
 
 Actual ordinary-user ACL, relative creation, sharing, directory flush,
 cross-process exclusion, interrupted constructor and killed-process WAL reopen
-fixtures remain required. The existing Windows platform suite's other native
-fixtures do not establish this owner's qualification. Successful flush calls
+fixtures require fresh execution evidence. The existing Windows platform suite's
+other native fixtures do not establish this owner's qualification. Successful flush calls
 cannot claim power-loss durability. No production namespace was opened during
 source implementation, and no installed game or release is qualified by it.
 
 Apple Silicon needs its own retained private owner and namespace protocol;
 the shared trait or Windows source supplies no Mac storage qualification.
+
+## Selected Windows fixture gate
+
+`windows-private-journal-fixtures` is a partial `br-06` suite on native Windows
+x64. Its driver binds pinned tools, current source, one current Cargo library
+test executable and a separate normal library build. It requires an exact
+38-name inventory, 28 default cases with ten explicit skips, all five ownership
+documents and nine sequential exact ignored native selections. The tenth ignored
+test is the internal child helper; the driver never selects it directly.
+
+| Criterion | Selected case and intended observation |
+| --- | --- |
+| BR06-WJ01 | Fresh construction and reopen: current-user owner/DACL, local fixed NTFS identity, retained namespace and complete constructor flush schedule. |
+| BR06-WJ02 | Twelve synthetic DACL changes plus live drift: refusal without ACL or journal repair. |
+| BR06-WJ03 | Retained leaf/private-directory sharing denies competing access. |
+| BR06-WJ04 | An exact owned child competes for the same nonce, observes exclusion and releases custody. |
+| BR06-WJ05 | Six injected failures after actual completed constructor flushes, followed by a complete clean retry; seven marker rows. |
+| BR06-WJ06 | Two durable codec records and reopen after owned child kill; actual cleanup and retained artifact identity. |
+| BR06-WJ07 | Torn append after owned child kill repairs to the last valid prefix; second open is stable. |
+| BR06-WJ08 | Complete corruption refuses without changing journal bytes. |
+| BR06-WJ09 | Owned-child containment failure observes exit, pipe EOF and reader cleanup; unknown cleanup retains custody and poisons further fixture construction. |
+
+All native work uses the test-only
+`LocalAppData/STFCModBridgeNextFixtures/<fresh UUIDv4>/v1/operations.wal`
+namespace. The caller supplies no path, SID, handle, executable or external PID.
+The shared fixture directory ACL is never repaired. Created trees remain for
+inspection. A successful run reports 25 distinct nonces across 27 marker rows;
+that does not enumerate or prove all 26 created trees. Child processes use the
+current test executable, retained executable/process identity and unique
+kill-on-close Job containment. Kill plus observed exit does not prove that no
+destructor ran.
+
+The parser validates bounded raw UTF-8, closed JSON members, exact libtest
+completion, prescribed row order and native failure witnesses. Declared FILETIME
+and volume u64 values are preserved exactly; receipt JSON labels their decimal
+representation rather than rounding through JavaScript Number. Synthetic parser
+controls do not establish native behavior. The driver must retain actual command
+status, raw logs and stable source/tool/artifact observations separately.
+
+Normal-library isolation requires an actual selected `--lib` build, its normal
+dependency/features, source cfg guards and bounded archive observations. The
+platform already reaches contracts indirectly through domain; the added direct
+engine/contracts development edges and JobObjects fixture feature must be absent
+from that normal closure. Test namespace/role markers must not appear in the
+normal archive. No single absent string or source guard proves this boundary.
+
+Ordinary-user qualification requires observed privilege context; Runner/Codex
+startup is insufficient. Each selected process emits a separate closed context
+row as its first test statement, querying its own process/current-thread token,
+creation FILETIME and native architecture before journal effects. The driver
+binds its PID to the actual spawn result. Only a primary non-elevated token at
+medium integrity with no current-thread token permits journal work. This is
+an observation of that test process, not Node's token or an account identity.
+Copies of the selected test executable and isolated normal library artifacts
+are retained as evidence and never executed in place of the original artifacts.
+Until fresh native receipts exist, the cases above
+describe implemented checks awaiting observation. Full `br-06` selection remains
+blocked by `PACKAGE_INTEGRATION_UNQUALIFIED`, and a partial receipt cannot satisfy
+a dependent package. Foreign owners, reparse/hard-link/mapping/KnownFolder
+redirection, allocator/reader-launch failure and broader custody-loss matrix,
+real native pending outcomes and production owner adoption remain unqualified.

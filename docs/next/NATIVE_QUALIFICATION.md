@@ -151,3 +151,14 @@ Changed source, inputs or artifacts invalidate only affected evidence through
 the dependency graph. Receipts for one OS, process architecture, client or
 artifact cannot qualify another. A native build, signed package or passed plan
 validation alone cannot close a required live journey.
+
+The Windows `windows-private-journal-fixtures` suite collects a selected private
+storage subset described in [PRIVATE_JOURNAL_STORAGE.md](PRIVATE_JOURNAL_STORAGE.md).
+Its exact 38-name library inventory, 28 default cases, five ownership documents
+and nine ignored native selections are distinct from the existing fourteen
+Windows platform cases. It requires current compiler selection, privilege
+context, bounded raw markers and normal-build exclusion evidence. The suite
+cannot accept full `br-06`; the dispatcher refuses that package while required
+native integration is partial. No installed game, production namespace, power-loss
+durability, Apple Silicon storage or release qualification follows from these
+Windows observations.

@@ -17,5 +17,10 @@ windows = { version = "=0.62.2", features = ["Wdk_Foundation", "Wdk_Storage_File
 [dev-dependencies]
 serde_json.workspace = true
 
+[target.'cfg(windows)'.dev-dependencies]
+bridge-engine.workspace = true
+bridge-contracts.workspace = true
+windows = { version = "=0.62.2", features = ["Win32_System_JobObjects"] }
+
 [lints]
 workspace = true

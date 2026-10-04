@@ -45,6 +45,12 @@ jobs:
         run: node scripts/next/make-runner-plan.mjs --package br-02
       - name: Execute both protocol and complete scenario gates
         run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-02.plan.json --artifact-dir artifacts/next/runner/br-02 --timeout 990000 --max-level 0 --keep-cache --json
+      - name: Bind selected Windows private-journal fixtures to this job's prerequisites
+        if: matrix.host == 'windows-x64'
+        run: node scripts/next/make-runner-plan.mjs --suite windows-private-journal-fixtures --host windows-x64
+      - name: Execute private Windows journal fixture subset
+        if: matrix.host == 'windows-x64'
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-06.windows-private-journal-fixtures.windows-x64.plan.json --artifact-dir artifacts/next/runner/br-06-private-journal-fixtures --timeout 630000 --max-level 0 --keep-cache --json
       - name: Bind selected Apple Silicon fixtures to this job's prerequisites
         if: matrix.host == 'macos-arm64-native'
         run: node scripts/next/make-runner-plan.mjs --suite macos-platform-fixtures --host macos-arm64-native

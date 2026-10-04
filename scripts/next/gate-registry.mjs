@@ -5,7 +5,7 @@ export const registry = {
     argv: ['scripts/next/host-adapter-foundation.mjs'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
       'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', '.github/workflows/next-foundation.yml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
-      'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
+      'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-native', 'crates/bridge-journal-io',
       'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/vite.config.ts', 'ui/svelte.config.js', 'ui/src', 'ui/tests'],
     criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05', 'BR21-FND-06'],
     boundary: 'Portable embedded owner and host registration registry, actual current native-architecture controlled host/kernel/registration test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No production owner, native Tauri invocation, GUI or full br-21 acceptance.'
@@ -85,9 +85,18 @@ export const registry = {
   'windows-platform': {
     host: 'windows-x64', timeoutMs: 600000,
     argv: ['scripts/next/windows-platform.mjs'],
-    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'scripts/next', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-platform-windows'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'scripts/next', 'contracts', 'crates/bridge-engine', 'crates/bridge-toml', 'crates/bridge-native', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-platform-windows'],
     criteria: ['BR06-01', 'BR06-02', 'BR06-03', 'BR06-04'],
-    boundary: 'Actual ordinary-user Windows native physical/process identity, private retained reparse/replace/DPAPI/signature/owned-focus/shortcut fixtures. Namespace exclusion and recovery remain application-service responsibilities. No game, account, catalog, Mac or release qualification.'
+    boundary: 'Actual Windows native physical/process identity, private retained reparse/replace/DPAPI/signature/owned-focus/shortcut fixtures. Token elevation/integrity is not directly observed here. Namespace exclusion and recovery remain application-service responsibilities. No game, account, catalog, Mac or release qualification.'
+  },
+  'windows-private-journal-fixtures': {
+    host: 'windows-x64', timeoutMs: 600000, packageAcceptanceAvailable: false,
+    argv: ['scripts/next/windows-private-journal-fixtures.mjs'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
+      '.github/workflows/next-foundation.yml', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/NATIVE_QUALIFICATION.md',
+      'scripts/next', 'contracts', 'crates/bridge-platform-windows', 'crates/bridge-engine', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-toml', 'crates/bridge-native'],
+    criteria: ['BR06-WJ01', 'BR06-WJ02', 'BR06-WJ03', 'BR06-WJ04', 'BR06-WJ05', 'BR06-WJ06', 'BR06-WJ07', 'BR06-WJ08', 'BR06-WJ09'],
+    boundary: 'Selected retained Windows private-journal fixtures only: fresh test namespace, exact source/tools/artifact inventories, actual ACL/sharing/constructor-flush and child interruption observations. Broader custody-loss and namespace matrix, production owner adoption, full br-06, installed game, power-loss durability and release remain unqualified.'
   },
   'capability-projection': {
     host: 'any', timeoutMs: 300000,
