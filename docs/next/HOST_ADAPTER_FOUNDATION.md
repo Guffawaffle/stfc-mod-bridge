@@ -112,6 +112,9 @@ source inventories. It refuses caller formatter, nested Cargo and fmt/Clippy
 alias overrides before tool discovery. Format and Clippy invoke the observed
 physical subcommand payloads directly, bypassing configured alias dispatch;
 their nested Cargo calls and formatter use the observed toolchain payloads.
+PATH discovery accepts a symlink only when its resolved payload is a regular
+file and retains the original invocation route for Rustup's shim dispatch.
+The physical tool payload is still inventoried and hashed before/after checks.
 It runs strict format/Clippy, engine and adapter dependency checks,
 ownership compile-fail controls, frontend type checking and focused injected
 adapter tests. No synthetic host enters production composition.

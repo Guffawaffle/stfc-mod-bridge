@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fingerprintInputRecords } from './input-tree.mjs';
 import { ownedArtifactPath } from './owned-artifact.mjs';
 import { rustContext } from './rust-context.mjs';
 import { vitestEvidence } from './test-evidence.mjs';
 import { selectHostArtifacts } from './host-artifacts.mjs';
+import { resolveHostTool } from './host-tools.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 assert.equal(process.argv.length, 2, 'Host adapter foundation suite accepts no caller overrides');
@@ -175,15 +176,7 @@ function run(id, executable, argv, timeout = 180000) {
   return text;
 }
 function resolveTool(selected) {
-  if (path.isAbsolute(selected)) return selected;
-  const entries = Object.entries(rust.env).filter(([key]) => process.platform === 'win32' ? key.toUpperCase() === 'PATH' : key === 'PATH');
-  assert.equal(entries.length, 1, 'Tool resolution requires one child PATH');
-  for (const entry of entries[0][1].split(path.delimiter)) {
-    if (!entry || !path.isAbsolute(entry)) continue;
-    const candidate = path.join(entry, selected);
-    if (existsSync(candidate) && lstatSync(candidate).isFile()) return candidate;
-  }
-  assert.fail(`Pinned tool ${selected} cannot be resolved`);
+  return resolveHostTool(selected, rust.env);
 }
 function observeTool(role, route) {
   const physical = realpathSync.native(route), stat = lstatSync(physical);
