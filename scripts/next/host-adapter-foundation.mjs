@@ -43,6 +43,7 @@ const required = {
     "embedded_driver_panic_permanently_taints_custody_and_prohibits_closed",
     "embedded_owner_panic_permanently_stops_owner_calls_without_drop",
     "embedded_destructor_panic_does_not_publish_closed_or_reenter_owner",
+    "embedded_first_failure_survives_a_later_destructor_panic",
     "embedded_external_close_retires_driver_but_fallback_keeps_deferred_work_serviced",
     "embedded_queued_close_retires_driver_after_the_one_turn_that_observes_it",
     "embedded_abandonment_keeps_owned_state_after_external_observation_is_dropped",
@@ -205,6 +206,9 @@ try {
   const extension = process.platform === 'win32' ? '.exe' : '';
   for (const tool of ['cargo', 'rustc', 'rustdoc', 'rustfmt', 'cargo-clippy', 'clippy-driver'])
     toolsBefore.push(observeTool(`toolchain-${tool}`, path.join(sysroot, 'bin', tool + extension)));
+  // Caller selectors were refused/scrubbed by rustContext. Bind cargo fmt to
+  // the exact payload retained above rather than an ambient executable.
+  rust.env.RUSTFMT = toolsBefore.find(tool => tool.role === 'toolchain-rustfmt').physical;
   const cargoVersion = run('cargo-version', cargoPath, [`+${rust.pin}`, '--version']);
   assert.ok(cargoVersion.startsWith(`cargo ${rust.pin} `), 'Actual Cargo must match the tracked Rust release');
   ownedArtifactPath(root, 'target', 'directory', { allowMissing: true });

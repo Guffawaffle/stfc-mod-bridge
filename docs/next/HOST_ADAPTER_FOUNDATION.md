@@ -26,8 +26,8 @@ Closed publication. A caught unwind cannot preserve call-local native guards.
 
 Closed requires a fresh validated Ready or safe RecoveryRequired disposition,
 the actual owner cursor and successful original-thread destruction. Destruction
-panic preserves the observed closing state and denies Closed; it does not prove
-that a partly destroyed owner survived. Dropping an unresolved portable shell
+panic preserves the first failure and observed closing state and denies Closed;
+it does not prove that a partly destroyed owner survived. Dropping an unresolved portable shell
 leaks its owned runtime and abandons servicing. Production composition must
 instead enforce an aborting panic policy before native construction, keep the
 OS loop servicing Deferred work, veto close/exit synchronously, and treat loss
@@ -63,7 +63,8 @@ the dispatcher refuses full br-21 package acceptance. Exact current prerequisite
 packages br-03, br-04 and br-13 remain mandatory. The suite retains native Cargo
 artifact selection, executable architecture and before/after hashes, complete
 fixed test inventories, command logs, pinned tool payload observations and
-source inventories. It runs strict format/Clippy, engine dependency checks,
+source inventories. It refuses caller formatter overrides before binding the
+observed formatter. It runs strict format/Clippy, engine dependency checks,
 ownership compile-fail controls, frontend type checking and focused injected
 adapter tests. No synthetic host enters production composition.
 

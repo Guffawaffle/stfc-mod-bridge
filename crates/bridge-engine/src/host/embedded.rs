@@ -175,6 +175,7 @@ impl<H: LocalHost + 'static> EmbeddedOwner<H> {
         }));
         match result {
             Ok(Some(exit)) => {
+                let first_failure = self.failure.get().or(exit.failure);
                 // Keep the borrow during destruction, so native destructor
                 // callbacks cannot reenter an empty/replaced owner shell.
                 let runtime = retained.take().expect("safe embedded runtime");
@@ -185,7 +186,8 @@ impl<H: LocalHost + 'static> EmbeddedOwner<H> {
                     }
                     Err(_) => {
                         self.tainted.set(true);
-                        self.failure.set(Some(HostFailure::OwnerPanicked));
+                        self.failure
+                            .set(first_failure.or(Some(HostFailure::OwnerPanicked)));
                         self.observation(&retained)
                     }
                 }

@@ -387,6 +387,57 @@ fn embedded_destructor_panic_does_not_publish_closed_or_reenter_owner() {
 }
 
 #[test]
+fn embedded_first_failure_survives_a_later_destructor_panic() {
+    for first_failure in [
+        HostFailure::UnavailableService,
+        HostFailure::CloseUnavailable,
+    ] {
+        let (audit, _handle, owner) = setup();
+        audit.released.set(true);
+        audit.drop_panic.set(true);
+        let result = if first_failure == HostFailure::CloseUnavailable {
+            audit.close_error.set(true);
+            owner.signal_close();
+            assert_eq!(
+                progress(&owner),
+                EmbeddedTurn::Retained {
+                    closing: true,
+                    failure: Some(first_failure),
+                }
+            );
+            assert_eq!(audit.drops.get(), 0);
+            audit.close_error.set(false);
+            progress(&owner)
+        } else {
+            owner.turn(|_| Err(first_failure))
+        };
+        let retained = EmbeddedTurn::Retained {
+            closing: true,
+            failure: Some(first_failure),
+        };
+        assert_eq!(result, retained);
+        assert_eq!(audit.drops.get(), 1);
+        let calls = audit.threads.borrow().len();
+        for _ in 0..3 {
+            assert_eq!(
+                owner.turn(|_| panic!("tainted destruction cannot restart a driver")),
+                retained
+            );
+        }
+        assert_eq!(audit.threads.borrow().len(), calls);
+        assert!(
+            audit
+                .threads
+                .borrow()
+                .iter()
+                .all(|id| *id == thread::current().id())
+        );
+        drop(owner);
+        assert_eq!(audit.drops.get(), 1);
+    }
+}
+
+#[test]
 fn embedded_external_close_retires_driver_but_fallback_keeps_deferred_work_serviced() {
     let (audit, _handle, owner) = setup();
     owner.signal_close();

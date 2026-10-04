@@ -69,6 +69,20 @@ test('Cargo build compiler aliases cannot bypass override refusal, including Win
     assert.throws(() => context({ platform: 'darwin', architecture: 'arm64', environment: { [key]: 'unknown-compiler' } }), blocked('RUST_COMPILER_OVERRIDE'));
   }
 }));
+test('formatter overrides refuse before execution and empty selectors cannot shadow the pinned tool', () => fixture(({ context }) => {
+  for (const spelling of ['RUSTFMT', 'rustfmt', 'Rustfmt']) {
+    for (const value of ['unexecuted-external-formatter', ' ', '\t']) {
+      assert.throws(() => context({ environment: { [spelling]: value } }), blocked('RUST_COMPILER_OVERRIDE'));
+    }
+    const environment = Object.freeze({ [spelling]: '' });
+    const result = context({ environment });
+    assert.ok(!Object.keys(result.env).some(key => key.toUpperCase() === 'RUSTFMT'));
+    assert.deepEqual(environment, { [spelling]: '' });
+  }
+  assert.throws(() => context({ platform: 'darwin', architecture: 'arm64', environment: { RUSTFMT: 'unexecuted-external-formatter' } }), blocked('RUST_COMPILER_OVERRIDE'));
+  const result = context({ environment: { RUSTFMT: undefined } });
+  assert.ok(!Object.hasOwn(result.env, 'RUSTFMT'));
+}));
 test('blank compiler aliases are removed and dedicated child routes reset configured wrappers', () => fixture(({ context }) => {
   const environment = Object.freeze({
     cargo_build_rustc: '', Cargo_Build_Rustdoc: ' \t',
