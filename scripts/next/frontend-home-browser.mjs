@@ -187,8 +187,15 @@ try {
   assert.equal(await selected(), 'Not selected'); await state('idle'); assert.deepEqual(await methods(), ['snapshot']);
   await observed('reset-disposes-pending-observation', { oldTargetReadNotApplied: true });
   const maintenance = [];
-  for (const [control, heading] of [['Game and recovery', 'Game and recovery'], ['Community Mod', 'Community Mod'], ['Bridge and preferences', 'Bridge and preferences']]) {
-    await choose('ordinary_ready'); await button(control).click(); await page.getByRole('heading', { name: heading, exact: true }).waitFor(); maintenance.push(heading);
+  for (const [control, heading, view] of [['Game and recovery', 'Game update', 'engineering'], ['Community Mod', 'Community Mod', 'engineering'], ['Bridge and preferences', 'Bridge update', 'preferences']]) {
+    await choose('ordinary_ready'); await button(control).click(); await page.getByRole('heading', { name: heading, exact: true, level: 1 }).waitFor();
+    assert.match(await page.getByTestId('home-preview-navigation').innerText(), new RegExp(`view: ${view}; queued: none`));
+    const main = page.getByRole('navigation', { name: 'Bridge workspace', exact: true });
+    assert.equal(await main.getByRole('button', { name: view === 'engineering' ? 'Engineering' : 'Preferences', exact: true }).getAttribute('aria-current'), 'page');
+    const engineering = page.getByRole('navigation', { name: 'Engineering sections', exact: true });
+    if (view === 'engineering') assert.equal(await engineering.getByRole('button', { name: heading, exact: true }).getAttribute('aria-current'), 'page');
+    else assert.equal(await engineering.count(), 0);
+    maintenance.push(heading);
   }
   await observed('three-maintenance-destinations', { headings: maintenance, separateReviewsStillRequired: true });
   await choose('ordinary_ready'); const normal = await page.locator('.bridge-shell').innerText(); assert.doesNotMatch(normal, /[A-Za-z]:[\\/]|\/Users\/|\/home\/|private-token|credential/i);
