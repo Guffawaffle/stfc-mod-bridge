@@ -236,6 +236,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bridge-host-adapter"
+version = "0.1.0"
+dependencies = [
+ "bridge-contracts",
+ "bridge-engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bridge-journal-io"
 version = "0.1.0"
 

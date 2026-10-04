@@ -51,6 +51,51 @@ automatically retried. Cleanup uses the known registration key with at most
 two unsubscribe attempts. Native high-water retirement, expiry and caller
 authorization remain separate production requirements.
 
+## Portable registration registry
+
+`bridge-host-adapter` implements the native-side observation state without a
+Tauri, webview or platform dependency. It holds only engine subscription
+receivers, DTOs and bounded synchronization state. Root creates one registry
+for one trusted document epoch; a registration key is never caller authority.
+The shared engine owner, services and journal remain on their original thread.
+
+Eight Preparing/Ready/Closing slots remain reserved until actual readiness
+work, receiver disposal and any poll lease finish. Canonical nonzero u64 keys
+advance a permanent high-water mark even when capacity refuses admission or
+unsubscribe arrives first. Existing earlier live keys remain addressable.
+Preparing has five seconds from admission. Only a valid admitted poll renews
+the 30-second Ready deadline; root must service expiry independently of the
+renderer and revoke the registry on document or timer/worker failure.
+
+Readiness waits on an actual engine watermark ACK in a bounded off-main task.
+The registry creates no task or thread. Unsubscribe during that wait cannot
+release its slot or return a Closed ACK before actual work/receiver disposal.
+Two close waiters per key and sixteen overall retain quota until token drop.
+Mutex poison permanently refuses admission and never fabricates cleanup.
+
+One global poll lease holds its reservation through one receiver read, bounded
+JSON serialization and raw response construction, including retirement. It
+returns zero or one exact UTF-8 frame. Early response loss retires the stream;
+root explicitly calls `abandon_response` if response construction fails after
+serialization. Successful serialization does not attest browser delivery or
+SDK promise settlement. Observation expiry/revocation never cancels admitted
+work or closes the engine owner.
+
+`confirm_ready_ack` is a point-in-time check. Native root composition must
+coordinate expiry, unsubscribe and document revocation with final caller/key
+authorization and response publication under one short admission boundary.
+It must not await readiness, perform native work or block on cleanup inside
+that boundary. These platform scheduling/publication requirements are not
+implemented or qualified by this portable crate.
+
+The suite requires 31 registry cases in a separately selected current library
+test artifact, alongside the 43 engine host/kernel cases. The controls use
+actual engine channels and original-thread embedded turns with a test-only
+host. Bounded worker tests exercise revocation/unsubscribe before the engine
+ACK and after it is consumed but before registry installation, response
+abandonment, permanent mutex poison and real cleanup notification. They do
+not establish native executor, caller, timer or IPC behavior.
+
 ## Qualification boundary
 
 ```powershell
@@ -67,7 +112,7 @@ source inventories. It refuses caller formatter, nested Cargo and fmt/Clippy
 alias overrides before tool discovery. Format and Clippy invoke the observed
 physical subcommand payloads directly, bypassing configured alias dispatch;
 their nested Cargo calls and formatter use the observed toolchain payloads.
-It runs strict format/Clippy, engine dependency checks,
+It runs strict format/Clippy, engine and adapter dependency checks,
 ownership compile-fail controls, frontend type checking and focused injected
 adapter tests. No synthetic host enters production composition.
 
@@ -78,6 +123,7 @@ adapter tests. No synthetic host enters production composition.
 | BR21-FND-03 | Panic, close error, unresolved abandonment and destructor recursion cannot manufacture safe Closed. |
 | BR21-FND-04 | Typed raw adapter readiness, bounded quotas, stale-generation fencing, exact capture and conservative delivery classification. |
 | BR21-FND-05 | Current native test binaries and stable source/tool inventories, frontend independence and compile-fail ownership boundaries. |
+| BR21-FND-06 | Real engine ACK, bounded registration/poll/cleanup custody, monotonic retirement and permanent poison refusal in the portable native-side registry. |
 
 Real CLI application workflows, native Tauri command/caller/document/ACL
 composition, production journal and service provisioning, Windows WebView2

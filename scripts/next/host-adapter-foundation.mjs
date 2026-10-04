@@ -7,6 +7,7 @@ import { fingerprintInputRecords } from './input-tree.mjs';
 import { ownedArtifactPath } from './owned-artifact.mjs';
 import { rustContext } from './rust-context.mjs';
 import { vitestEvidence } from './test-evidence.mjs';
+import { selectHostArtifacts } from './host-artifacts.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 assert.equal(process.argv.length, 2, 'Host adapter foundation suite accepts no caller overrides');
@@ -27,7 +28,7 @@ const relative = selected => path.relative(root, selected).replaceAll('\\', '/')
 const inputs = [
   'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
-  'scripts/next', 'crates/bridge-engine', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
+  'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
   'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/svelte.config.js', 'ui/vite.config.ts', 'ui/src', 'ui/tests'
 ];
 const sourcesBefore = fingerprintInputRecords(root, inputs);
@@ -80,6 +81,39 @@ const required = {
     "embedded_real_kernel_terminal_journal_failure_retains_lease_and_poison_after_fault_clear"
   ]
 };
+required.bridge_host_adapter = [
+  "registration::tests::registration_state_is_send_sync_without_a_local_owner",
+  "registration::tests::key_parser_matches_canonical_frontend_epoch_and_nonzero_u64",
+  "registration::tests::control_arguments_and_faults_have_the_exact_frontend_closed_shape",
+  "registration::tests::readiness_requires_the_actual_engine_watermark_ack",
+  "registration::tests::unsubscribe_before_subscribe_fences_unknown_keys_but_keeps_earlier_active_keys",
+  "registration::tests::preparing_duplicate_is_refused_and_ready_duplicate_never_adds_an_observer_or_renews_idle",
+  "registration::tests::eight_actual_ready_subscriptions_refuse_ninth_and_real_cleanup_releases_capacity",
+  "registration::tests::preparing_deadline_begins_at_admission_and_closing_waits_for_actual_unscheduled_work_drop",
+  "registration::tests::delayed_worker_cannot_reset_its_five_second_deadline_or_enqueue_after_expiry",
+  "registration::tests::preparing_unsubscribe_and_late_actual_ack_cannot_resurrect_the_key",
+  "registration::tests::ready_response_must_recheck_exact_key_and_document_liveness_before_root_publication",
+  "registration::tests::close_waiters_are_bounded_until_actual_waiter_drop_even_after_observer_cleanup",
+  "registration::tests::cleanup_timeout_is_uncertain_and_cannot_publish_a_success_before_real_drop",
+  "registration::tests::only_a_valid_poll_renews_ready_idle_and_expiry_needs_no_renderer_call",
+  "registration::tests::global_poll_survives_expiry_and_retirement_until_actual_native_lease_drop",
+  "registration::tests::one_frame_poll_retains_order_and_uses_the_shared_codec_without_lookahead",
+  "registration::tests::sticky_engine_overflow_fault_precedes_queued_frames_and_closes_the_generation",
+  "registration::tests::poll_abandoned_after_pop_retires_instead_of_concealing_the_consumed_event",
+  "registration::tests::revoke_during_a_poll_suppresses_serialization_and_preserves_reservation_until_drop",
+  "registration::tests::maximal_scalar_frame_json_escaping_stays_inside_the_declared_native_dto_budget",
+  "registration::tests::independent_observer_expiry_never_cancels_admitted_work_or_drops_the_owner",
+  "registration::tests::lost_poll_response_requires_frontend_retirement_and_never_replays_backend_exchange",
+  "registration::tests::a_fixed_clock_at_the_preparing_deadline_refuses_without_a_zero_wait_spin",
+  "registration::tests::blocking_readiness_rechecks_elapsed_time_after_the_actual_ack_before_installing_ready",
+  "registration::tests::explicit_abandon_after_serialization_retires_consumed_stream_with_global_poll_retained",
+  "registration::tests::mutex_poison_is_permanent_and_never_fabricates_subscription_cleanup_ack",
+  "registration::tests::off_owner_readiness_unsubscribe_before_engine_ack_retains_closing_until_real_drop",
+  "registration::tests::off_owner_readiness_revoke_before_engine_ack_cannot_restore_document",
+  "registration::tests::off_owner_readiness_unsubscribe_after_engine_ack_before_install_is_fenced",
+  "registration::tests::off_owner_readiness_revoke_after_engine_ack_before_install_is_fenced",
+  "registration::tests::close_wait_real_notification_and_drop_follow_actual_global_poll_retirement"
+];
 const frontendRequired = {
   "ui/tests/tauri-transport.test.ts": [
     "snapshot exchange waits for a genuine exact native registration acknowledgement",
@@ -216,33 +250,32 @@ try {
   ownedArtifactPath(root, `target/${rust.hostTarget}`, 'directory', { allowMissing: true });
   const cargo = (id, argv) => run(id, cargoPath, [`+${rust.pin}`, ...argv]);
   run('format', toolsBefore.find(tool => tool.role === 'toolchain-cargo-fmt').physical,
-    ['fmt', '-p', 'bridge-engine', '--', '--check']);
+    ['fmt', '-p', 'bridge-engine', '-p', 'bridge-host-adapter', '--', '--check']);
   run('clippy', toolsBefore.find(tool => tool.role === 'toolchain-cargo-clippy').physical,
-    ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
+    ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '-p', 'bridge-host-adapter', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
   const dependencyTree = cargo('engine-dependency-tree', ['tree', '--locked', '--offline', '-p', 'bridge-engine', '--edges', 'normal']);
   assert.ok(!/\b(?:tauri|wry|webkit|webview|svelte)\b/i.test(dependencyTree), 'Engine remains frontend independent');
-  const names = Object.keys(required);
-  const output = cargo('compile-current-host-tests', ['test', '--locked', '--offline', '-p', 'bridge-engine', '--target', rust.hostTarget,
-    ...names.flatMap(name => ['--test', name]), '--no-run', '--message-format', 'json']);
-  const messages = output.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
-  assert.equal(messages.filter(message => message.reason === 'build-finished' && message.success === true).length, 1,
-    'Require this Cargo invocation to finish successfully');
-  const artifacts = messages.filter(message => message.reason === 'compiler-artifact' && message.executable && message.profile.test
-    && message.target.kind.includes('test') && names.includes(message.target.name));
-  assert.equal(artifacts.length, names.length, 'This Cargo invocation must identify both host test executables exactly once');
-  for (const target of names) {
-    const selected = artifacts.filter(artifact => artifact.target.name === target);
-    assert.equal(selected.length, 1, `Require one current ${target} compiler artifact`);
-    const artifact = selected[0];
-    assert.equal(realpathSync.native(artifact.manifest_path), realpathSync.native(path.join(root, 'crates/bridge-engine/Cargo.toml')));
-    assert.equal(realpathSync.native(artifact.target.src_path), realpathSync.native(path.join(root, `crates/bridge-engine/tests/${target}.rs`)));
+  const adapterTree = cargo('adapter-dependency-tree', ['tree', '--locked', '--offline', '-p', 'bridge-host-adapter', '--edges', 'normal']);
+  assert.ok(!/\b(?:tauri|wry|webkit|webview|svelte)\b/i.test(adapterTree), 'Host adapter remains frontend independent');
+  const engineTargets = ['embedded_host', 'host_transport'].map(name => ({name, kind: 'test',
+    manifest: 'crates/bridge-engine/Cargo.toml', source: 'crates/bridge-engine/tests/' + name + '.rs'}));
+  const adapterTargets = [{name: 'bridge_host_adapter', kind: 'lib',
+    manifest: 'crates/bridge-host-adapter/Cargo.toml', source: 'crates/bridge-host-adapter/src/lib.rs'}];
+  const engineOutput = cargo('compile-current-host-tests', ['test', '--locked', '--offline', '-p', 'bridge-engine', '--target', rust.hostTarget,
+    ...engineTargets.flatMap(target => ['--test', target.name]), '--no-run', '--message-format', 'json']);
+  const adapterOutput = cargo('compile-current-registration-tests', ['test', '--locked', '--offline', '-p', 'bridge-host-adapter',
+    '--lib', '--target', rust.hostTarget, '--no-run', '--message-format', 'json']);
+  const artifacts = [...selectHostArtifacts(engineOutput, {root, targets: engineTargets}),
+    ...selectHostArtifacts(adapterOutput, {root, targets: adapterTargets})];
+  for (const artifact of artifacts) {
+    const target = artifact.target.name;
     const relation = relative(artifact.executable);
     assert.ok(relation.startsWith(`target/${rust.hostTarget}/`), 'Test artifact must remain inside the owning native target directory');
     const executable = ownedArtifactPath(root, relation), bytes = readFileSync(executable);
     binaries.push({ target, executable, bytes: bytes.length, sha256: sha(bytes), architecture: nativeArchitecture(bytes),
       compilerArtifact: artifact, discoveredTests: [], executedTests: [] });
   }
-  assert.equal(new Set(binaries.map(binary => binary.executable)).size, names.length, 'Test targets must have distinct executables');
+  assert.equal(new Set(binaries.map(binary => binary.executable)).size, artifacts.length, 'Test targets must have distinct executables');
   for (const binary of binaries) {
     observeBinary(binary);
     const inventory = run(`list-${binary.target}`, binary.executable, ['--list', '--color', 'never']);
@@ -292,7 +325,7 @@ try {
     host: { platform: process.platform, architecture: process.arch, node: process.version },
     toolchain: { pin: rust.pin, nativeTarget: rust.hostTarget }, inputs, sourcesBefore, sourcesAfter, toolsBefore, toolsAfter,
     requiredTests: required, binaries, checks, ownershipDocs, frontendRequired, frontendInventory, frontendReport, failure,
-    boundary: 'Actual native-architecture portable owner and real kernel tests with controlled ports, retained test binaries, ownership compile-fail controls, and typed frontend poll adapter using injected invoke promises. No native GUI, production owner provisioning or installed runtime qualification.',
+    boundary: 'Actual native-architecture portable owner and real kernel and registration tests with controlled ports, retained test binaries, ownership compile-fail controls, and typed frontend poll adapter using injected invoke promises. No native GUI, production owner provisioning or installed runtime qualification.',
     portableModelObserved: passed, injectedFrontendAdapterObserved: passed, nativeWebviewQualified: false, productionOwnerQualified: false,
     physicalOwnerQualified: false, operationPortsAdopted: false, br21Accepted: false, nativeRuntimeQualified: false, releaseQualified: false
   }, null, 2) + '\n');

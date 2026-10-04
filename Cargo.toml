@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos", "crates/bridge-app", "crates/bridge-journal-io", "apps/desktop/src-tauri"]
-default-members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos", "crates/bridge-app", "crates/bridge-journal-io"]
+members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-host-adapter", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos", "crates/bridge-app", "crates/bridge-journal-io", "apps/desktop/src-tauri"]
+default-members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-host-adapter", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos", "crates/bridge-app", "crates/bridge-journal-io"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,7 @@ publish = false
 bridge-contracts = { path = "crates/bridge-contracts" }
 bridge-domain = { path = "crates/bridge-domain" }
 bridge-engine = { path = "crates/bridge-engine" }
+bridge-host-adapter = { path = "crates/bridge-host-adapter" }
 bridge-native = { path = "crates/bridge-native" }
 bridge-profiles = { path = "crates/bridge-profiles" }
 bridge-toml = { path = "crates/bridge-toml" }

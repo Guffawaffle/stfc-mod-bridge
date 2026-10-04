@@ -5,10 +5,10 @@ export const registry = {
     argv: ['scripts/next/host-adapter-foundation.mjs'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
       'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', '.github/workflows/next-foundation.yml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
-      'scripts/next', 'crates/bridge-engine', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
+      'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
       'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/vite.config.ts', 'ui/svelte.config.js', 'ui/src', 'ui/tests'],
-    criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05'],
-    boundary: 'Portable embedded owner, actual current native-architecture controlled host/kernel test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No production owner, native Tauri invocation, GUI or full br-21 acceptance.'
+    criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05', 'BR21-FND-06'],
+    boundary: 'Portable embedded owner and host registration registry, actual current native-architecture controlled host/kernel/registration test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No production owner, native Tauri invocation, GUI or full br-21 acceptance.'
   },
   'macos-platform-fixtures': {
     host: 'macos-arm64-native', timeoutMs: 600000, packageAcceptanceAvailable: false,

@@ -1325,6 +1325,7 @@
       ],
       "writeScope": [
         "crates/bridge-cli/**",
+        "crates/bridge-host-adapter/**",
         "apps/desktop/src-tauri/src/transport/**",
         "ui/src/client/tauri/**",
         "crates/bridge-contract-tests/**"
