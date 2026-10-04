@@ -38,6 +38,8 @@ const facade = [
   'facade synchronized draft accepts Rust optional None binding while retaining exact submitted edits',
   'facade commit timeout retains exact replay and never claims Save or backend cancellation',
   'facade Stay releases only review navigation and restores a connected registered opener',
+  'facade reentrant Stay cannot deliver superseded Save review to a later listener',
+  'facade remount during nested Stay publication cannot revive superseded Save review',
   'facade unsent initial commit retains review and allows explicit Stay without claiming Save',
   'facade unsent replay preserves the original uncertain submission and navigation custody',
   'facade sent domain rejection retains exact uncertain custody until authoritative completion',
@@ -70,7 +72,7 @@ const facade = [
   'facade synchronous disposal during synchronized review publication releases exact updated custody',
   'facade synchronized review disposal cleanup preserves a newly captured review owner',
 ];
-assert.equal(primitives.length, 51); assert.equal(facade.length, 36);
+assert.equal(primitives.length, 51); assert.equal(facade.length, 38);
 export const componentCriteria = Object.freeze({
   'ui/tests/components/primitives.test.ts': Object.freeze(primitives),
   'ui/tests/components/facade.test.ts': Object.freeze(facade),
@@ -78,7 +80,7 @@ export const componentCriteria = Object.freeze({
 
 export function componentEvidence(report, root) {
   const inventory = vitestEvidence(report, { root, required: componentCriteria });
-  assert.equal(inventory.tests, 87, 'Component evidence must execute all 87 bound assertions');
+  assert.equal(inventory.tests, 89, 'Component evidence must execute all 89 bound assertions');
   assert.equal(inventory.files.length, 2, 'Component evidence cannot substitute another test file');
   for (const result of report.testResults) {
     const observed = inventory.files.find(file => result.name.replaceAll('\\', '/').endsWith(`/${file.file}`));

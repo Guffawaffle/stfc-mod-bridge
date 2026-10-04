@@ -22,7 +22,7 @@ This is a strict scripted demonstration, never a frontend policy oracle.
 
 Run `node scripts/next/frontend-home.mjs` for 32 Home assertions and nine preview
 composition regressions, Svelte checking, 25 pinned-browser criteria, 18 retained
-images and production graph inspection. The 87 shared component/facade assertions
+images and production graph inspection. The 89 shared component/facade assertions
 remain separately bound in br-12. Package acceptance also requires current br-12
 prerequisite evidence through the canonical candidate-bound LexRunner gate.
 

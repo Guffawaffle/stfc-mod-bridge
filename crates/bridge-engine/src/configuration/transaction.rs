@@ -251,7 +251,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         let ownership = self.schemas.owned_paths(&schema)?;
         check_ownership(&sync_mutations, &ownership, &initial)?;
         mutations.extend(sync_mutations);
-        candidate = apply_mutations(&mut self.toml, &candidate, &initial, &mutations)?;
+        candidate = apply_mutations(&mut self.toml, &candidate, &initial, &mutations, &ownership)?;
         self.schemas
             .validate_candidate(&schema, &self.toml.read(&candidate)?)?;
         let changed = candidate.as_bytes() != read.bytes;
@@ -370,8 +370,13 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 let mut ownership = self.schemas.owned_paths(&source)?;
                 ownership.extend(self.schemas.owned_paths(&target)?);
                 check_ownership(&mutations, &ownership, &original)?;
-                let candidate =
-                    apply_mutations(&mut self.toml, read.text()?, &original, &mutations)?;
+                let candidate = apply_mutations(
+                    &mut self.toml,
+                    read.text()?,
+                    &original,
+                    &mutations,
+                    &ownership,
+                )?;
                 self.schemas
                     .validate_candidate(&target, &self.toml.read(&candidate)?)?;
                 Ok(Some(PreparedConfiguration {
@@ -596,28 +601,17 @@ fn check_ownership(
     allowed: &[TomlPath],
     snapshot: &TomlSnapshot,
 ) -> ConfigurationResult<()> {
+    let keys = tree(snapshot)?;
+    let tables = table_tree(snapshot)?;
     for mutation in mutations {
-        for path in mutation.paths() {
-            match mutation {
-                SemanticMutation::RemoveTable { .. } | SemanticMutation::RenameTable { .. } => {
-                    let children = snapshot
-                        .overrides
-                        .iter()
-                        .filter(|v| v.path.segments().starts_with(path.segments()))
-                        .collect::<Vec<_>>();
-                    if children.iter().any(|v| !allowed.contains(&v.path))
-                        || !allowed
-                            .iter()
-                            .any(|p| p.segments().starts_with(path.segments()))
-                    {
-                        return Err(ConfigurationFailure::UnsupportedSchema);
-                    }
-                }
-                _ if !allowed.contains(path) => {
-                    return Err(ConfigurationFailure::UnsupportedSchema);
-                }
-                _ => {}
+        match mutation {
+            SemanticMutation::RemoveTable { .. } | SemanticMutation::RenameTable { .. } => {
+                check_table_ownership(mutation, allowed, &keys, &tables)?;
             }
+            _ if mutation.paths().iter().any(|path| !allowed.contains(path)) => {
+                return Err(ConfigurationFailure::UnsupportedSchema);
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -634,14 +628,67 @@ fn tree(snapshot: &TomlSnapshot) -> ConfigurationResult<BTreeMap<Vec<String>, St
     }
     Ok(result)
 }
+fn table_tree(snapshot: &TomlSnapshot) -> ConfigurationResult<BTreeSet<Vec<String>>> {
+    let mut result = BTreeSet::new();
+    for table in &snapshot.tables {
+        if !result.insert(table.path.segments().to_vec()) {
+            return Err(ConfigurationFailure::InvalidDocument);
+        }
+    }
+    Ok(result)
+}
+fn owns_path(allowed: &[TomlPath], path: &[String]) -> bool {
+    allowed.iter().any(|owned| owned.segments() == path)
+}
+fn proper_prefixes(path: &[String]) -> impl Iterator<Item = Vec<String>> + '_ {
+    (1..path.len()).map(|length| path[..length].to_vec())
+}
+fn check_table_ownership(
+    mutation: &SemanticMutation,
+    allowed: &[TomlPath],
+    keys: &BTreeMap<Vec<String>, String>,
+    tables: &BTreeSet<Vec<String>>,
+) -> ConfigurationResult<()> {
+    let (source, destination) = match mutation {
+        SemanticMutation::RemoveTable { path } => (path, None),
+        SemanticMutation::RenameTable { path, destination } => (path, Some(destination)),
+        _ => return Err(ConfigurationFailure::InvalidInput),
+    };
+    if !owns_path(allowed, source.segments())
+        || destination.is_some_and(|path| !owns_path(allowed, path.segments()))
+    {
+        return Err(ConfigurationFailure::UnsupportedSchema);
+    }
+    for path in keys
+        .keys()
+        .chain(tables.iter())
+        .filter(|path| path.starts_with(source.segments()))
+    {
+        if !owns_path(allowed, path) {
+            return Err(ConfigurationFailure::UnsupportedSchema);
+        }
+        if let Some(destination) = destination {
+            let mut relocated = destination.segments().to_vec();
+            relocated.extend_from_slice(&path[source.segments().len()..]);
+            if !owns_path(allowed, &relocated) {
+                return Err(ConfigurationFailure::UnsupportedSchema);
+            }
+        }
+    }
+    Ok(())
+}
 fn apply_mutations<T: TomlPreparation>(
     toml: &mut T,
     text: &str,
     initial: &TomlSnapshot,
     mutations: &[SemanticMutation],
+    allowed: &[TomlPath],
 ) -> ConfigurationResult<String> {
     let mut candidate = text.to_owned();
     let mut expected = tree(initial)?;
+    let original_tables = table_tree(initial)?;
+    let mut expected_tables = original_tables.clone();
+    let mut removable_ancestors = BTreeSet::new();
     let mut touched = BTreeSet::new();
     for mutation in mutations {
         match mutation {
@@ -651,20 +698,44 @@ fn apply_mutations<T: TomlPreparation>(
                 }
                 let normalized = toml.normalize(value)?;
                 expected.insert(path.segments().to_vec(), normalized);
+                expected_tables.extend(proper_prefixes(path.segments()));
                 candidate = toml.set(&candidate, path, value)?;
             }
             SemanticMutation::Remove { path } => {
                 if !touched.insert(path.segments().to_vec()) {
                     return Err(ConfigurationFailure::InvalidInput);
                 }
-                expected.remove(path.segments());
+                // Scalar removal must not consume an inline aggregate or table.
+                if expected_tables.contains(path.segments()) {
+                    return Err(ConfigurationFailure::UnsupportedSyntax);
+                }
+                if expected.remove(path.segments()).is_some() {
+                    removable_ancestors.extend(proper_prefixes(path.segments()));
+                }
                 candidate = toml.remove(&candidate, path)?;
             }
             SemanticMutation::RemoveTable { path } => {
+                check_table_ownership(mutation, allowed, &expected, &expected_tables)?;
+                if expected_tables.contains(path.segments()) {
+                    removable_ancestors.extend(proper_prefixes(path.segments()));
+                }
                 expected.retain(|key, _| !key.starts_with(path.segments()));
+                expected_tables.retain(|key| !key.starts_with(path.segments()));
                 candidate = toml.remove_table(&candidate, path)?;
             }
             SemanticMutation::RenameTable { path, destination } => {
+                check_table_ownership(mutation, allowed, &expected, &expected_tables)?;
+                if path.segments().starts_with(destination.segments())
+                    || destination.segments().starts_with(path.segments())
+                    || !expected_tables.contains(path.segments())
+                    || expected
+                        .keys()
+                        .chain(expected_tables.iter())
+                        .any(|key| key.starts_with(destination.segments()))
+                {
+                    return Err(ConfigurationFailure::InvalidInput);
+                }
+                removable_ancestors.extend(proper_prefixes(path.segments()));
                 let removed = expected
                     .iter()
                     .filter(|(key, _)| key.starts_with(path.segments()))
@@ -678,6 +749,18 @@ fn apply_mutations<T: TomlPreparation>(
                         return Err(ConfigurationFailure::InvalidInput);
                     }
                 }
+                let moved_tables = expected_tables
+                    .iter()
+                    .filter(|key| key.starts_with(path.segments()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for key in moved_tables {
+                    expected_tables.remove(&key);
+                    let mut relocated = destination.segments().to_vec();
+                    relocated.extend_from_slice(&key[path.segments().len()..]);
+                    expected_tables.insert(relocated);
+                }
+                expected_tables.extend(proper_prefixes(destination.segments()));
                 candidate = toml.rename_table(&candidate, path, destination)?;
             }
         }
@@ -686,8 +769,31 @@ fn apply_mutations<T: TomlPreparation>(
         }
     }
     toml.validate(&candidate)?;
-    if tree(&toml.read(&candidate)?)? != expected {
+    let observed = toml.read(&candidate)?;
+    let observed_tables = table_tree(&observed)?;
+    if tree(&observed)? != expected || !observed_tables.is_subset(&expected_tables) {
         return Err(ConfigurationFailure::InvalidOwnerResult);
+    }
+    // ABI v1 does not report explicit headers. Permit only schema-owned,
+    // newly emptied ancestors to be pruned; every unowned and initially empty
+    // table is preserved. Remaining table additions/moves must match exactly.
+    for missing in expected_tables.difference(&observed_tables) {
+        let initially_empty = original_tables.contains(missing)
+            && !initial
+                .overrides
+                .iter()
+                .any(|entry| entry.path.segments().starts_with(missing))
+            && !original_tables
+                .iter()
+                .any(|path| path != missing && path.starts_with(missing));
+        if !removable_ancestors.contains(missing)
+            || !owns_path(allowed, missing)
+            || initially_empty
+            || expected.keys().any(|path| path.starts_with(missing))
+            || observed_tables.iter().any(|path| path.starts_with(missing))
+        {
+            return Err(ConfigurationFailure::InvalidOwnerResult);
+        }
     }
     Ok(candidate)
 }

@@ -80,7 +80,21 @@ that invocation's Cargo JSON compiler artifacts. It verifies owning manifest
 and source, physical confinement to the owning native target directory, native
 executable architecture and byte hashes. It inventories and executes every
 required test, refusing missing, duplicate, ignored or filtered tests. Current
-inventories cover 9 draft, 6 semantics, 13 transaction and 4 recovery tests.
+inventories cover 10 draft, 11 semantics, 13 transaction and 4 recovery tests.
+
+Fresh draft synchronization always advances one revision, including unchanged
+edits after Stay or failed preparation. Exact lost-ack replay returns its original
+successor. Saved private handles distinguish scalar fields, Sync endpoints and
+Sync proxies by destination and never change their bound payload.
+
+Preservation checks include semantic table paths as well as values. Removal and
+renaming require explicit ownership of every consumed and relocated table/key.
+Set requires new parent tables. Unknown and initially empty tables remain intact;
+only explicitly owned ancestors emptied by removal/movement may be pruned.
+ABI v1 does not expose explicit-header metadata, so this consumer check permits
+owned ancestor pruning without claiming independent header-preservation proof.
+Inline aggregate transformations remain unsupported when strict value proof
+cannot establish preservation.
 
 Receipts under ignored `artifacts/next/configuration-workspace/<invocation>/`
 retain command status, stdout/stderr and log hashes; source/directory inventories

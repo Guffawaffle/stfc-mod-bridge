@@ -44,7 +44,7 @@ Tauri webviews, native window behavior, Narrator, VoiceOver, finished product
 screens and release qualification still require their later work packages.
 
 The browser suite has 28 required sampled checks and retains 22 screenshots;
-the component suite binds all 87 actual assertions and six evidence regressions.
+the component suite binds all 89 actual assertions and six evidence regressions.
 Its development-only CSS hot-reload probe changes one guarded gallery file,
 observes computed style without navigation or lost draft/form context, then
 restores the exact original bytes in `finally`. It never changes production

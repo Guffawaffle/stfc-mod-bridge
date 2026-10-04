@@ -55,7 +55,7 @@
     {#if presented.numericText !== undefined}<Button disabled={blocked} ariaLabel={`Reset unfinished value for ${label}`} onclick={() => { controller.resetNumeric(field.fieldId); }}>Reset unfinished value</Button>{/if}
   {:else if field.valueType.kind === 'string'}
     <label for={id}>{label}</label><input {id} type="text" value={fieldText(presented.value)} disabled={blocked}
-      maxlength={Math.min(Number(field.valueType.maximumLength), 4096)} aria-describedby={`${id}-description`} aria-invalid={presented.error ? 'true' : undefined}
+      maxlength={Math.min(Number(field.valueType.maximumLength), 4096) * 2} aria-describedby={`${id}-description`} aria-invalid={presented.error ? 'true' : undefined}
       oninput={(event) => set({ kind: 'string', value: event.currentTarget.value })}/>
     <p class="description">Up to {field.valueType.maximumLength} characters.</p>
   {:else if field.valueType.kind === 'enum'}

@@ -40,7 +40,8 @@ const required = {
     'cancelled_or_unavailable_entry_creates_no_reference_and_wrong_host_refuses',
     'duplicate_edit_targets_and_foreign_draft_capture_refuse_atomically',
     'repeated_protected_use_gets_one_closed_transfer_for_all_occurrences',
-    'read_cannot_substitute_ordinary_target_for_requested_isolated_profile'
+    'read_cannot_substitute_ordinary_target_for_requested_isolated_profile',
+    'repeated_sync_observation_preserves_distinct_saved_subjects_and_payloads'
   ],
   configuration_semantics: [
     'semantic_equality_keeps_source_spelling_comments_and_unknown_keys',
@@ -48,7 +49,12 @@ const required = {
     'missing_remove_override_and_no_change_create_no_empty_document',
     'native_codec_semantic_proof_rejects_unowned_mutation',
     'complete_candidate_validation_refuses_before_persistence',
-    'complete_edit_set_projects_mixed_apply_timing_and_exact_int64'
+    'complete_edit_set_projects_mixed_apply_timing_and_exact_int64',
+    'unknown_empty_descendant_refuses_owned_parent_removal_and_rename',
+    'fully_owned_table_moves_preserve_unrelated_empty_tables_and_require_new_parents',
+    'scalar_set_proof_requires_table_parents_and_preserves_unowned_empty_tables',
+    'scalar_remove_prunes_only_explicitly_owned_newly_empty_ancestors',
+    'table_rename_refuses_unowned_relocated_values_and_existing_destinations'
   ],
   configuration_transactions: [
     'missing_meaningful_save_commits_sparse_bytes_without_backup',

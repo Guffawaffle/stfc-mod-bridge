@@ -15,7 +15,14 @@ test('unknown enum, oversized strings, unsupported keys and sounds refuse withou
   expect(controller.setPublic('setting.string',{kind:'string',value:'a'.repeat(65)})).toBe(false);
   expect(controller.setPublic('setting.keys',{kind:'keybinding',value:[{key:'NOT_PUBLISHED',modifiers:[]}]})).toBe(false);
   expect(controller.setPublic('setting.notification',{kind:'notification_policy',value:{kind:'channels',system:true,audio:true,sound:'NOT_PUBLISHED'}})).toBe(false);
-  expect(canonicalData(facade.work.state.edits)).toBe(before); dispose();
+  expect(canonicalData(facade.work.state.edits)).toBe(before);
+  const scalars = 'A🚀'.repeat(32);
+  expect(controller.setPublic('setting.string',{kind:'string',value:scalars})).toBe(true);
+  expect(facade.work.state.edits).toEqual([{kind:'set_public',fieldId:'setting.boolean',value:{kind:'boolean',value:true}},
+    {kind:'set_public',fieldId:'setting.string',value:{kind:'string',value:scalars}}]);
+  const accepted = canonicalData(facade.work.state.edits);
+  expect(controller.setPublic('setting.string',{kind:'string',value:scalars+'B'})).toBe(false);
+  expect(canonicalData(facade.work.state.edits)).toBe(accepted); dispose();
 });
 test('integer and exact decimal partial input retain shared dirty custody until valid completion', () => {
   const {facade,controller,dispose} = harness();

@@ -22,7 +22,7 @@ with zero errors and warnings, then only the frozen focused Vitest files in
 `frontend-management-evidence.mjs`. The inventory includes Management and
 Support tests, cancellation, recovery custody, adversarial action custody and
 diagnostic integrity, plus the closed Management/Support preview-session cases.
-The frozen inventory covers 190 assertions across nine files, including eleven
+The frozen inventory covers 195 assertions across nine files, including eleven
 preview-session cases. Its exact authored count is exported as `managementCounts`
 in `frontend-management-evidence.mjs`. Counts come from the executed JSON report;
 writing an inventory or a document establishes no passing coverage.

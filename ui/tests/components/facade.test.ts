@@ -103,6 +103,34 @@ test('facade Stay releases only review navigation and restores a connected regis
   expect(sent).toHaveLength(2); facade.dispose();
 });
 
+test('facade reentrant Stay cannot deliver superseded Save review to a later listener', async () => {
+  const { facade, sent, client } = harness(); let closed = false; const shown: string[] = [];
+  facade.subscribe(state => { if (!closed && state.transition.kind === 'review') { closed = true; expect(facade.stay()).toBe(true); } });
+  facade.subscribe(state => shown.push(state.transition.kind));
+  try {
+    await facade.prepareSave(); expect(closed).toBe(true);
+    expect(facade.state.transition.kind).toBe('idle'); expect(shown.at(-1)).toBe('idle');
+    expect(shown.slice(shown.indexOf('idle', shown.indexOf('preparing')))).not.toContain('review');
+    expect(facade.state.work.pendingNavigation).toBeUndefined(); expect(facade.state.work.edits).toEqual(edits());
+    expect(facade.state.work.transitionBusy).toBe(false); expect(sent.map(row => row.body.command.name)).toEqual(['set_draft_changes', 'prepare']);
+  } finally { facade.dispose(); client.dispose(); }
+});
+
+test('facade remount during nested Stay publication cannot revive superseded Save review', async () => {
+  const { facade, sent, client } = harness(); let remounted = false, stop = () => {}; const shown: string[] = [];
+  facade.subscribe(state => {
+    if (!remounted && state.transition.kind === 'review') {
+      remounted = true; stop(); expect(facade.stay()).toBe(true); stop = facade.subscribe(next => shown.push(next.transition.kind));
+    }
+  });
+  stop = facade.subscribe(() => {});
+  try {
+    await facade.prepareSave(); expect(remounted).toBe(true); expect(shown.length).toBeGreaterThan(0); expect(new Set(shown)).toEqual(new Set(['idle']));
+    expect(facade.state.transition.kind).toBe('idle'); expect(facade.state.work.pendingNavigation).toBeUndefined(); expect(facade.state.work.edits).toEqual(edits());
+    expect(facade.state.work.transitionBusy).toBe(false); expect(sent.map(row => row.body.command.name)).toEqual(['set_draft_changes', 'prepare']);
+  } finally { stop(); facade.dispose(); client.dispose(); }
+});
+
 test('facade unsent initial commit retains review and allows explicit Stay without claiming Save', async () => {
   const { facade, sent, client } = harness(request => {
     if (request.body.command.name === 'commit') throw { code: 'delivery_failed', delivery: 'not_sent' };

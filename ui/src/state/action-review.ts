@@ -53,14 +53,20 @@ export class ActionReviewController {
   }
   async prepare(intent: MutationIntent | DeepReadonly<MutationIntent>, focusKey?: string, options: CallOptions = {}): Promise<ClientOutcome<PreparedPlan> | undefined> {
     if (this.disposed || this.transition.kind !== 'idle' || !this.options.canPrepare()) return undefined;
+    const epoch = this.work.observations.state.cursor?.hostEpoch;
+    if (epoch ? !this.work.hostEpochCurrent(epoch) : this.work.observations.state.reason === 'epoch_changed') return undefined;
     let attempt: Attempt;
-    try { attempt = { intent: captureData(intent), focusKey, epoch: this.work.observations.state.cursor?.hostEpoch }; }
+    try { attempt = { intent: captureData(intent), focusKey, epoch }; }
     catch { this.say('Action review is unavailable.', true); return undefined; }
     this.attempt = attempt; this.transition = { kind: 'preparing' }; this.publish();
+    if (this.disposed || this.attempt !== attempt) return { kind: 'fault', fault: { code: 'observational_abort', delivery: 'not_sent' } };
+    if (epoch ? !this.work.hostEpochCurrent(epoch) : this.work.observations.state.reason === 'epoch_changed') {
+      this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('Action review was not confirmed. Refresh and review again.', true); return undefined;
+    }
     const outcome = await this.observe(value => this.client.command('prepare', { intent: attempt.intent }, value), options);
     if (this.disposed || this.attempt !== attempt) return outcome;
     const currentEpoch = this.work.observations.state.cursor?.hostEpoch;
-    if (outcome.kind !== 'result' || attempt.epoch && currentEpoch !== attempt.epoch
+    if (outcome.kind !== 'result' || !this.work.hostEpochCurrent(outcome.value.planRef.hostEpoch) || attempt.epoch && currentEpoch !== attempt.epoch
       || currentEpoch && outcome.value.planRef.hostEpoch !== currentEpoch || !preparationMatches(attempt.intent, outcome.value.semantics)) {
       this.attempt = undefined; this.transition = { kind: 'idle' };
       this.say(outcome.kind === 'rejected' && outcome.error.code === 'artifact_unrecognized' ? 'The runtime is not recognized. Review the consent choice for this attempt.'
@@ -75,11 +81,15 @@ export class ActionReviewController {
     if (this.disposed || this.transition.kind !== 'review' || !attempt?.plan) return undefined;
     const epoch = this.work.observations.state.cursor?.hostEpoch;
     const confidence = this.work.observations.state.confidence;
-    if (epoch && epoch !== attempt.plan.planRef.hostEpoch) { this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined; }
+    if (!this.work.hostEpochCurrent(attempt.plan.planRef.hostEpoch)) { this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined; }
     if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
     try { attempt.commit = captureData({ idempotencyKey: this.options.idempotencyKey(), planRef: attempt.plan.planRef }); }
     catch { this.say('Action submission is unavailable.', true); return undefined; }
     attempt.provedUnsent = false; this.transition = { kind: 'admitting' }; this.publish();
+    if (this.disposed || this.attempt !== attempt) return { kind: 'fault', fault: { code: 'observational_abort', delivery: 'not_sent' } };
+    if (!this.work.hostEpochCurrent(attempt.plan.planRef.hostEpoch)) {
+      this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined;
+    }
     const outcome = await this.observe(value => {
       const prior = this.client.getReplay(attempt.commit!.idempotencyKey);
       attempt.ownsReplay = !prior; attempt.replayCapture = undefined;

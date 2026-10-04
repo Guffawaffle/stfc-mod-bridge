@@ -13,9 +13,16 @@ enum VaultReference {
     Private(PrivateValueRef),
     Secret(SecretRef),
 }
+#[derive(PartialEq, Eq)]
+enum SavedSubject {
+    ScalarField,
+    SyncEndpoint(DestinationId),
+    SyncProxy(DestinationId),
+}
 struct VaultEntry {
     reference: VaultReference,
     value: ProtectedValue,
+    saved_subject: Option<SavedSubject>,
 }
 
 /// One actor-local store is shared by Settings and Data Sync. No selection or
@@ -103,12 +110,20 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                     ProjectedValue::Public { value: public }
                 }
                 (Sensitivity::Private, Some(v)) => {
-                    let reference = self.saved_reference(&read.binding, &definition.field_id)?;
+                    let value = ProtectedValue::new(v.semantic_value.as_bytes().to_vec())?;
+                    let subject = SavedSubject::ScalarField;
+                    let reference = self.saved_reference(
+                        &read.binding,
+                        &definition.field_id,
+                        &subject,
+                        &value,
+                    )?;
                     additions.push((
                         reference.value_id.as_str().to_owned(),
                         VaultEntry {
                             reference: VaultReference::Private(reference.clone()),
-                            value: ProtectedValue::new(v.semantic_value.as_bytes().to_vec())?,
+                            value,
+                            saved_subject: Some(subject),
                         },
                     ));
                     ProjectedValue::Private {
@@ -133,24 +148,34 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         }
         let mut sync = Vec::new();
         for projected in self.schemas.project_sync(&schema, &source)? {
-            let endpoint = self.saved_reference(&read.binding, &projected.endpoint_field)?;
+            let subject = SavedSubject::SyncEndpoint(projected.id.clone());
+            let endpoint = self.saved_reference(
+                &read.binding,
+                &projected.endpoint_field,
+                &subject,
+                &projected.endpoint,
+            )?;
             additions.push((
                 endpoint.value_id.as_str().to_owned(),
                 VaultEntry {
                     reference: VaultReference::Private(endpoint.clone()),
                     value: projected.endpoint,
+                    saved_subject: Some(subject),
                 },
             ));
             let desired_proxy = match projected.proxy {
                 SyncProjectedProxy::Global => ProxyChoice::Global,
                 SyncProjectedProxy::None => ProxyChoice::None,
                 SyncProjectedProxy::Custom { field, value } => {
-                    let reference = self.saved_reference(&read.binding, &field)?;
+                    let subject = SavedSubject::SyncProxy(projected.id.clone());
+                    let reference =
+                        self.saved_reference(&read.binding, &field, &subject, &value)?;
                     additions.push((
                         reference.value_id.as_str().to_owned(),
                         VaultEntry {
                             reference: VaultReference::Private(reference.clone()),
                             value,
+                            saved_subject: Some(subject),
                         },
                     ));
                     ProxyChoice::Custom {
@@ -171,7 +196,11 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 feeds: projected.feeds,
             });
         }
-        if self.vault.len() + additions.len() > MAX_PROTECTED_ENTRIES {
+        let new_entries = additions
+            .iter()
+            .filter(|(id, _)| !self.vault.contains_key(id))
+            .count();
+        if self.vault.len() + new_entries > MAX_PROTECTED_ENTRIES {
             return Err(ConfigurationFailure::Capacity);
         }
         let snapshot = DocumentSnapshot {
@@ -205,22 +234,22 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         &mut self,
         document: &DocumentBinding,
         field_id: &FieldId,
+        subject: &SavedSubject,
+        value: &ProtectedValue,
     ) -> ConfigurationResult<PrivateValueRef> {
-        if let Some(reference) = self
-            .vault
-            .values()
-            .find_map(|entry| match &entry.reference {
-                VaultReference::Private(p)
-                    if p.document == *document
-                        && p.field_id == *field_id
-                        && p.captured_for.is_none() =>
-                {
-                    Some(p.clone())
-                }
-                _ => None,
-            })
-        {
-            return Ok(reference);
+        let source = value.source()?;
+        for entry in self.vault.values() {
+            if let VaultReference::Private(reference) = &entry.reference
+                && reference.document == *document
+                && reference.field_id == *field_id
+                && reference.captured_for.is_none()
+                && entry.saved_subject.as_ref() == Some(subject)
+                && entry.value.source()? == source
+            {
+                // A saved handle is immutable. Different subjects or bytes
+                // receive new IDs even when a producer repeats the binding.
+                return Ok(reference.clone());
+            }
         }
         let value_id = self.ids.private_id();
         self.issue_id(value_id.as_str().to_owned())?;
@@ -356,6 +385,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                             VaultEntry {
                                 reference: VaultReference::Private(reference.clone()),
                                 value,
+                                saved_subject: None,
                             },
                         );
                         SensitiveInputOutcome::CapturedPrivate {
@@ -375,6 +405,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                             VaultEntry {
                                 reference: VaultReference::Secret(reference.clone()),
                                 value,
+                                saved_subject: None,
                             },
                         );
                         SensitiveInputOutcome::CapturedSecret {
@@ -413,25 +444,25 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             return Err(ConfigurationFailure::Stale);
         }
         let schema = record.snapshot.schema.clone();
-        let unchanged = record.snapshot.edits == input.edits;
         let (validation, apply) = validate_edits(&schema, input.edits.as_slice())?;
         let mut successor = input.draft.clone();
-        if !unchanged {
-            successor.revision = RevisionCounter::new(
-                successor
-                    .revision
-                    .get()
-                    .checked_add(1)
-                    .ok_or(ConfigurationFailure::Capacity)?,
-            );
-        }
+        // The exact lost-ack replay above returns its original receipt. Every
+        // fresh synchronization of the current draft advances once, including
+        // unchanged edits after Stay or a refused preparation.
+        successor.revision = RevisionCounter::new(
+            successor
+                .revision
+                .get()
+                .checked_add(1)
+                .ok_or(ConfigurationFailure::Capacity)?,
+        );
         let mut edits = input.edits.as_slice().to_vec();
         let mut transfers: Vec<ProtectedReferenceTransfer> = Vec::new();
         let mut seen: BTreeMap<String, ProtectedReferenceTransfer> = BTreeMap::new();
         visit_refs(&mut edits, &mut |reference| {
             let key = reference.key().to_owned();
             self.validate_reference(&reference, &input.draft)?;
-            if !unchanged && reference.captured() {
+            if reference.captured() {
                 if let Some(transfer) = seen.get(&key) {
                     match (reference, transfer) {
                         (

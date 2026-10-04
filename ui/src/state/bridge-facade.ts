@@ -30,6 +30,7 @@ export class BridgeFacade {
   private disposed = false;
   private lifecycle = new AbortController();
   private listeners = new Set<(state: ScreenState) => void>();
+  private publication = 0;
   private stops: (() => void)[] = [];
   constructor(readonly client: BridgeClient, private readonly options: FacadeOptions) {
     this.work = options.work ?? new WorkContext(); this.focus = options.focus ?? new FocusController();
@@ -44,7 +45,14 @@ export class BridgeFacade {
   }
   get state(): ScreenState { return Object.freeze({ work: this.work.state, observations: this.work.observations.state, transition: Object.freeze({ ...this.transition }), notice: this.notice, ...(this.attempt || this.discardReview ? { reviewPurpose: (this.attempt?.review ?? this.discardReview!).purpose.kind } : {}) }); }
   subscribe(listener: (state: ScreenState) => void): () => void { this.listeners.add(listener); listener(this.state); return () => { this.listeners.delete(listener); }; }
-  private publish(): void { if (!this.disposed) { const state = this.state; for (const listener of this.listeners) listener(state); } }
+  private publish(): void {
+    if (this.disposed) return;
+    const publication = ++this.publication, state = this.state;
+    for (const listener of [...this.listeners]) {
+      if (this.disposed || publication !== this.publication) return;
+      if (this.listeners.has(listener)) listener(state);
+    }
+  }
   private say(message: string, urgent = false): void { this.notice = message; this.announcements.announce(message, urgent ? 'assertive' : 'polite'); this.publish(); }
   private async observe<T>(execute: (options: CallOptions) => Promise<ClientOutcome<T>>, options: CallOptions): Promise<ClientOutcome<T>> {
     const controller = new AbortController(); const abort = () => controller.abort();

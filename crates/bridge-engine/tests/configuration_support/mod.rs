@@ -3,7 +3,7 @@
 //! persistence, producer schemas, ABI compatibility or game installations.
 use bridge_contracts::v1::*;
 use bridge_engine::configuration::*;
-use bridge_toml::{TomlOverride, TomlPath, TomlSnapshot};
+use bridge_toml::{TomlOverride, TomlPath, TomlSnapshot, TomlTable};
 use sha2::{Digest, Sha256 as Hasher};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
@@ -73,19 +73,19 @@ pub struct Codec {
     snapshots: BTreeMap<String, TomlSnapshot>,
     pub calls: Rc<RefCell<Vec<&'static str>>>,
     pub sabotage: bool,
+    pub scripted_candidate: Option<(String, TomlSnapshot)>,
 }
 impl Codec {
     pub fn new(text: &str, overrides: Vec<TomlOverride>) -> Self {
+        let mut tables = vec![];
+        for entry in &overrides {
+            add_parents(&mut tables, &entry.path);
+        }
         Self {
-            snapshots: BTreeMap::from([(
-                text.to_owned(),
-                TomlSnapshot {
-                    overrides,
-                    tables: vec![],
-                },
-            )]),
+            snapshots: BTreeMap::from([(text.to_owned(), TomlSnapshot { overrides, tables })]),
             calls: Rc::new(RefCell::new(vec![])),
             sabotage: false,
+            scripted_candidate: None,
         }
     }
     fn apply(
@@ -94,6 +94,10 @@ impl Codec {
         path: &TomlPath,
         value: Option<&str>,
     ) -> ConfigurationResult<String> {
+        if let Some(candidate) = self.scripted_candidate.take() {
+            self.snapshots.insert(candidate.0.clone(), candidate.1);
+            return Ok(candidate.0);
+        }
         let mut snapshot = self.read(text)?;
         let old = snapshot.overrides.iter().find(|v| &v.path == path).cloned();
         snapshot.overrides.retain(|v| &v.path != path);
@@ -108,6 +112,7 @@ impl Codec {
             output.push_str(&format!("{key} = {value}\n"));
         }
         if let Some(value) = value {
+            add_parents(&mut snapshot.tables, path);
             snapshot.overrides.push(TomlOverride {
                 path: path.clone(),
                 canonical_path: key,
@@ -121,6 +126,18 @@ impl Codec {
         }
         self.snapshots.insert(output.clone(), snapshot);
         Ok(output)
+    }
+}
+fn add_parents(tables: &mut Vec<TomlTable>, path: &TomlPath) {
+    for length in 1..path.segments().len() {
+        let prefix = TomlPath::new(path.segments()[..length].to_vec()).unwrap();
+        if !tables.iter().any(|table| table.path == prefix) {
+            tables.push(TomlTable {
+                canonical_path: prefix.segments().join("."),
+                path: prefix,
+                line: std::num::NonZeroU32::new(1).unwrap(),
+            });
+        }
     }
 }
 impl TomlPreparation for Codec {
@@ -157,10 +174,27 @@ impl TomlPreparation for Codec {
         self.apply(text, path, None)
     }
     fn remove_table(&mut self, _: &str, _: &TomlPath) -> ConfigurationResult<String> {
-        Err(ConfigurationFailure::UnsupportedSyntax)
+        self.scripted_table_result()
     }
     fn rename_table(&mut self, _: &str, _: &TomlPath, _: &TomlPath) -> ConfigurationResult<String> {
-        Err(ConfigurationFailure::UnsupportedSyntax)
+        self.scripted_table_result()
+    }
+}
+impl Codec {
+    fn scripted_table_result(&mut self) -> ConfigurationResult<String> {
+        let (text, snapshot) = self
+            .scripted_candidate
+            .take()
+            .ok_or(ConfigurationFailure::UnsupportedSyntax)?;
+        self.snapshots.insert(text.clone(), snapshot);
+        Ok(text)
+    }
+}
+pub fn table(id: &str) -> TomlTable {
+    TomlTable {
+        path: path(id),
+        canonical_path: id.to_owned(),
+        line: std::num::NonZeroU32::new(1).unwrap(),
     }
 }
 pub fn override_(id: &str, value: &str) -> TomlOverride {
@@ -178,6 +212,14 @@ pub fn override_(id: &str, value: &str) -> TomlOverride {
 pub struct Schemas {
     pub schema: AdoptedSchema,
     pub invalid_candidate: bool,
+    pub sync: Rc<RefCell<Vec<SyncFixture>>>,
+    pub mutations: Vec<SemanticMutation>,
+    pub additional_owned: Vec<TomlPath>,
+}
+pub struct SyncFixture {
+    pub id: String,
+    pub endpoint: String,
+    pub proxy: String,
 }
 impl SchemaSource for Schemas {
     fn resolve(&mut self, binding: &SchemaBinding) -> ConfigurationResult<AdoptedSchema> {
@@ -226,7 +268,25 @@ impl SchemaSource for Schemas {
         _: &AdoptedSchema,
         _: &TomlSnapshot,
     ) -> ConfigurationResult<Vec<SyncProjection>> {
-        Ok(vec![])
+        self.sync
+            .borrow()
+            .iter()
+            .map(|destination| {
+                Ok(SyncProjection {
+                    id: DestinationId::new(&destination.id).unwrap(),
+                    mode: SyncMode::Legacy,
+                    exposure: SyncExposure::Creatable,
+                    endpoint_field: field("sync.endpoint"),
+                    endpoint: ProtectedValue::new(destination.endpoint.as_bytes().to_vec())?,
+                    secret_configured: false,
+                    proxy: SyncProjectedProxy::Custom {
+                        field: field("sync.proxy"),
+                        value: ProtectedValue::new(destination.proxy.as_bytes().to_vec())?,
+                    },
+                    feeds: list(vec![]),
+                })
+            })
+            .collect()
     }
     fn compile_sync(
         &mut self,
@@ -234,7 +294,9 @@ impl SchemaSource for Schemas {
         _: &TomlSnapshot,
         edits: &[ResolvedSyncEdit],
     ) -> ConfigurationResult<Vec<SemanticMutation>> {
-        if edits.is_empty() {
+        if !self.mutations.is_empty() {
+            Ok(std::mem::take(&mut self.mutations))
+        } else if edits.is_empty() {
             Ok(vec![])
         } else {
             Err(ConfigurationFailure::UnsupportedSchema)
@@ -254,6 +316,7 @@ impl SchemaSource for Schemas {
             .fields
             .iter()
             .map(|f| f.canonical.clone())
+            .chain(self.additional_owned.iter().cloned())
             .collect())
     }
     fn validate_candidate(
@@ -467,7 +530,76 @@ pub fn workspace(
     sabotage: bool,
     invalid_candidate: bool,
 ) -> TestWorkspace {
-    let f = fixture();
+    workspace_with_sync(
+        text,
+        overrides,
+        entry,
+        sabotage,
+        invalid_candidate,
+        Rc::new(RefCell::new(vec![])),
+    )
+}
+pub fn workspace_with_sync(
+    text: &str,
+    overrides: Vec<TomlOverride>,
+    entry: Option<ProtectedEntryOutcome>,
+    sabotage: bool,
+    invalid_candidate: bool,
+    sync: Rc<RefCell<Vec<SyncFixture>>>,
+) -> TestWorkspace {
+    workspace_with_options(
+        text,
+        overrides,
+        entry,
+        sabotage,
+        invalid_candidate,
+        FixtureOptions {
+            sync,
+            ..FixtureOptions::default()
+        },
+    )
+}
+#[derive(Default)]
+pub struct FixtureOptions {
+    pub sync: Rc<RefCell<Vec<SyncFixture>>>,
+    pub tables: Vec<TomlTable>,
+    pub mutations: Vec<SemanticMutation>,
+    pub additional_owned: Vec<TomlPath>,
+    pub candidate: Option<(String, TomlSnapshot)>,
+}
+pub fn workspace_with_options(
+    text: &str,
+    overrides: Vec<TomlOverride>,
+    entry: Option<ProtectedEntryOutcome>,
+    sabotage: bool,
+    invalid_candidate: bool,
+    options: FixtureOptions,
+) -> TestWorkspace {
+    let sync = options.sync;
+    let mut f = fixture();
+    if !sync.borrow().is_empty() {
+        let mut definitions = f.schema.fields.as_slice().to_vec();
+        let mut proxy = definitions
+            .iter()
+            .find(|definition| definition.field_id == field("sync.endpoint"))
+            .unwrap()
+            .clone();
+        proxy.field_id = field("sync.proxy");
+        proxy.path = list(vec![
+            TomlPathSegment::new("sync").unwrap(),
+            TomlPathSegment::new("proxy").unwrap(),
+        ]);
+        definitions.push(proxy);
+        f.schema.fields = list(definitions);
+        let mut modes = f.schema.sync.as_slice().to_vec();
+        for mode in &mut modes {
+            mode.proxy_field_id = Some(field("sync.proxy"));
+            let mut fields = mode.fields.as_slice().to_vec();
+            fields.push(field("sync.proxy"));
+            mode.fields = list(fields);
+        }
+        f.schema.sync = list(modes);
+    }
     let mut binding = f.draft.document;
     if !text.is_empty() {
         binding.baseline = DocumentBaseline::Existing {
@@ -515,8 +647,22 @@ pub fn workspace(
             platform: SupportedPlatform::Windows,
         },
         invalid_candidate,
+        sync,
+        mutations: options.mutations,
+        additional_owned: options.additional_owned,
     };
     let mut codec = Codec::new(text, overrides);
+    let initial = codec.snapshots.get_mut(text).unwrap();
+    for table in options.tables {
+        if !initial
+            .tables
+            .iter()
+            .any(|existing| existing.path == table.path)
+        {
+            initial.tables.push(table);
+        }
+    }
+    codec.scripted_candidate = options.candidate;
     for value in ["false", "true"] {
         let text = format!("setting.boolean = {value}\n");
         codec.snapshots.entry(text).or_insert(TomlSnapshot {

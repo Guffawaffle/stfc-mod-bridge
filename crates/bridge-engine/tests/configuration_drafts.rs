@@ -32,8 +32,14 @@ fn exact_lost_ack_retry_returns_one_successor_changed_retry_refuses() {
         stage(&mut w, &d.draft, vec![boolean(false)]),
         Err(ConfigurationFailure::Stale)
     ));
-    let next = stage(&mut w, &first.snapshot.draft, vec![boolean(false)]).unwrap();
-    assert_eq!(next.snapshot.draft.revision.get(), 2);
+    let same = stage(&mut w, &first.snapshot.draft, vec![boolean(true)]).unwrap();
+    assert_eq!(same.snapshot.draft.revision.get(), 2);
+    assert_eq!(
+        stage(&mut w, &first.snapshot.draft, vec![boolean(true)]).unwrap(),
+        same
+    );
+    let next = stage(&mut w, &same.snapshot.draft, vec![boolean(false)]).unwrap();
+    assert_eq!(next.snapshot.draft.revision.get(), 3);
     assert!(matches!(
         stage(&mut w, &d.draft, vec![boolean(true)]),
         Err(ConfigurationFailure::Stale)
@@ -72,18 +78,46 @@ fn protected_capture_stage_transfer_prepare_continuity_and_forgery_refusal() {
     assert_eq!(successor.draft, first.snapshot.draft);
     assert_ne!(successor.secret_id, reference.secret_id);
     assert_eq!(stage(&mut w, &d.draft, edits).unwrap(), first);
-    let candidate = prepare(&mut w, &first.snapshot);
+    let same = stage(
+        &mut w,
+        &first.snapshot.draft,
+        first.snapshot.edits.as_slice().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        same.snapshot.draft.revision.get(),
+        first.snapshot.draft.revision.get() + 1
+    );
+    assert_eq!(same.protected_transfers.as_slice().len(), 1);
+    assert_eq!(
+        stage(
+            &mut w,
+            &first.snapshot.draft,
+            first.snapshot.edits.as_slice().to_vec()
+        )
+        .unwrap(),
+        same
+    );
+    let candidate = prepare(&mut w, &same.snapshot);
     assert!(
         std::str::from_utf8(candidate.candidate_bytes().unwrap())
             .unwrap()
             .contains("synthetic-token")
     );
+    let ConfigurationEdit::ReplaceSecret {
+        reference: successor,
+        ..
+    } = &same.snapshot.edits.as_slice()[0]
+    else {
+        panic!("secret")
+    };
+    assert_eq!(successor.draft, same.snapshot.draft);
     let mut forged = (**successor).clone();
     forged.secret_id = SecretRefId::new(id(777)).unwrap();
     assert!(matches!(
         stage(
             &mut w,
-            &first.snapshot.draft,
+            &same.snapshot.draft,
             vec![ConfigurationEdit::ReplaceSecret {
                 field_id: field("sync.token"),
                 reference: Box::new(forged)
@@ -267,6 +301,130 @@ fn repeated_protected_use_gets_one_closed_transfer_for_all_occurrences() {
     };
     assert_eq!(a, b);
     assert_eq!(a.captured_for.as_deref(), Some(&first.snapshot.draft));
+    let same = stage(
+        &mut w,
+        &first.snapshot.draft,
+        first.snapshot.edits.as_slice().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        same.snapshot.draft.revision.get(),
+        first.snapshot.draft.revision.get() + 1
+    );
+    assert_eq!(same.protected_transfers.as_slice().len(), 1);
+    let ConfigurationEdit::SetPrivate {
+        reference: next_a, ..
+    } = &same.snapshot.edits.as_slice()[0]
+    else {
+        panic!("private")
+    };
+    let ConfigurationEdit::SetSyncProxy {
+        value: ProxyChoice::Custom { reference: next_b },
+        ..
+    } = &same.snapshot.edits.as_slice()[1]
+    else {
+        panic!("proxy")
+    };
+    assert_eq!(next_a, next_b);
+    assert_ne!(next_a.value_id, a.value_id);
+    assert_eq!(next_a.captured_for.as_deref(), Some(&same.snapshot.draft));
+    assert_eq!(
+        stage(
+            &mut w,
+            &first.snapshot.draft,
+            first.snapshot.edits.as_slice().to_vec()
+        )
+        .unwrap(),
+        same
+    );
+}
+
+#[test]
+fn repeated_sync_observation_preserves_distinct_saved_subjects_and_payloads() {
+    use std::{cell::RefCell, rc::Rc};
+    let sync = Rc::new(RefCell::new(vec![
+        SyncFixture {
+            id: "one".into(),
+            endpoint: "\"endpoint-one\"".into(),
+            proxy: "\"proxy-one\"".into(),
+        },
+        SyncFixture {
+            id: "two".into(),
+            endpoint: "\"endpoint-two\"".into(),
+            proxy: "\"proxy-two\"".into(),
+        },
+    ]));
+    let (mut w, s, _) = workspace_with_sync("", vec![], None, false, false, sync.clone());
+    let selector = TargetSelector {
+        installation: InstallationSelector::Registered {
+            id: InstallationId::new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(),
+            directory_assertion: None,
+            revision_assertion: None,
+        },
+        profile: ProfileSelector::Ordinary {
+            catalog_id_assertion: None,
+        },
+    };
+    let first = w.read_configuration(&selector).unwrap();
+    let second = w.read_configuration(&selector).unwrap();
+    assert_eq!(first, second);
+    let mut references = vec![];
+    for destination in first.sync.as_slice() {
+        references.push((
+            destination.endpoint.clone(),
+            format!("endpoint-{}", destination.id.as_str()),
+        ));
+        let ProxyChoice::Custom { reference } = &destination.desired_proxy else {
+            panic!("proxy")
+        };
+        references.push((
+            (**reference).clone(),
+            format!("proxy-{}", destination.id.as_str()),
+        ));
+    }
+    assert_eq!(
+        references
+            .iter()
+            .map(|(reference, _)| &reference.value_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        4
+    );
+    // Even an inconsistent repeated producer binding must not retarget an old
+    // handle to new bytes. The current projection gets a distinct handle.
+    sync.borrow_mut()[0].endpoint = "\"replacement-one\"".into();
+    let replacement = w.read_configuration(&selector).unwrap();
+    assert_ne!(
+        replacement.sync.as_slice()[0].endpoint.value_id,
+        first.sync.as_slice()[0].endpoint.value_id
+    );
+    references.push((
+        replacement.sync.as_slice()[0].endpoint.clone(),
+        "replacement-one".into(),
+    ));
+    for (reference, expected) in references {
+        let draft = open(&mut w, &s);
+        let staged = stage(
+            &mut w,
+            &draft.draft,
+            vec![ConfigurationEdit::SetPrivate {
+                field_id: reference.field_id.clone(),
+                reference: Box::new(reference),
+            }],
+        )
+        .unwrap();
+        let candidate = prepare(&mut w, &staged.snapshot);
+        assert!(
+            std::str::from_utf8(candidate.candidate_bytes().unwrap())
+                .unwrap()
+                .contains(&format!("\"{expected}\""))
+        );
+        w.discard_draft(&DiscardDraftInput {
+            draft: staged.snapshot.draft,
+        })
+        .unwrap();
+    }
+    assert_eq!(s.borrow().effects, 0);
 }
 
 #[test]

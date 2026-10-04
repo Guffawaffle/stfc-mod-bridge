@@ -83,6 +83,64 @@ function harness(initial: OperationSnapshot[] = []) {
   };
 }
 
+function replaceHost(run: ReturnType<typeof harness>): void {
+  const epoch = run.facade.work.observations.state.cursor!.hostEpoch;
+  run.facade.work.observations.observeHello(restartedEpoch);
+  run.facade.work.observations.invalidate('disconnected');
+  expect(run.facade.work.observations.state.cursor?.hostEpoch).toBe(epoch);
+  expect(run.facade.work.hostEpochCurrent(epoch)).toBe(false);
+}
+
+test('known host replacement prevents fresh generic preparation without outbound work', async () => {
+  const run = harness();
+  try {
+    replaceHost(run); expect(await run.facade.actions.prepare(intent())).toBeUndefined();
+    expect(run.sent).toEqual([]); expect(run.client.pendingCount).toBe(0); expect(run.client.replayCount).toBe(0);
+    expect(run.facade.actions.state.plan).toBeUndefined(); expect(run.facade.actions.state.transition.kind).toBe('idle');
+  } finally { run.dispose(); }
+});
+
+test('host replacement during generic preparing publication prevents outbound preparation', async () => {
+  const run = harness(); let replaced = false;
+  run.facade.actions.subscribe(state => { if (!replaced && state.transition.kind === 'preparing') { replaced = true; replaceHost(run); } });
+  try {
+    expect(await run.facade.actions.prepare(intent())).toBeUndefined(); expect(replaced).toBe(true);
+    expect(run.sent).toEqual([]); expect(run.client.pendingCount).toBe(0); expect(run.client.replayCount).toBe(0);
+    expect(run.facade.actions.state.plan).toBeUndefined(); expect(run.facade.actions.state.transition.kind).toBe('idle');
+  } finally { run.dispose(); }
+});
+
+test('matching generic preparation after known host replacement cannot install review', async () => {
+  const run = harness();
+  try {
+    const pending = run.facade.actions.prepare(intent()); replaceHost(run); await pending;
+    expect(run.sent).toHaveLength(1); expect(run.facade.actions.state.plan).toBeUndefined();
+    expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(await run.facade.actions.confirm()).toBeUndefined();
+    expect(run.sent).toHaveLength(1); expect(run.client.replayCount).toBe(0);
+  } finally { run.dispose(); }
+});
+
+test('known host replacement prevents fresh generic confirmation without replay custody', async () => {
+  const run = harness();
+  try {
+    await run.facade.actions.prepare(intent()); replaceHost(run);
+    expect(await run.facade.actions.confirm()).toBeUndefined(); expect(run.sent).toHaveLength(1);
+    expect(run.client.pendingCount).toBe(0); expect(run.client.replayCount).toBe(0);
+    expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(run.facade.actions.blocksTransitions).toBe(false);
+  } finally { run.dispose(); }
+});
+
+test('host replacement during generic admitting publication prevents fresh commit', async () => {
+  const run = harness(); let replaced = false;
+  try {
+    await run.facade.actions.prepare(intent());
+    run.facade.actions.subscribe(state => { if (!replaced && state.transition.kind === 'admitting') { replaced = true; replaceHost(run); } });
+    expect(await run.facade.actions.confirm()).toBeUndefined(); expect(replaced).toBe(true);
+    expect(run.sent).toHaveLength(1); expect(run.client.pendingCount).toBe(0); expect(run.client.replayCount).toBe(0);
+    expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(run.facade.actions.blocksTransitions).toBe(false);
+  } finally { run.dispose(); }
+});
+
 test('a later listener cannot redisplay review after a reentrant Stay closes it', async () => {
   const run = harness(); let closed = false; const shown: ActionReviewState[] = [];
   run.facade.actions.subscribe(state => {
@@ -174,6 +232,9 @@ test('a newly requested exact replay after a host replacement still observes the
     expect(run.facade.actions.state.transition.kind).toBe('observing');
     expect(run.facade.work.observations.state.operations[0].operationId).toBe(admitted().operationId);
     expect(run.client.getReplay(run.keys[0])?.request).toBe(original?.request);
+    const commits = run.sent.filter(row => row.body.type === 'command' && row.body.command.name === 'commit');
+    expect(commits).toHaveLength(2);
+    expect(commits.map(row => row.body.type === 'command' ? row.body.command.input : undefined)).toEqual([original?.input, original?.input]);
   } finally { run.dispose(); }
 });
 

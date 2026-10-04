@@ -6,13 +6,13 @@ import { componentCriteria, componentEvidence } from '../frontend-components-evi
 const root = path.resolve(import.meta.dirname, '../../..');
 function report() {
   return { success: true, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0,
-    numFailedTestSuites: 0, numPendingTestSuites: 0, numTotalTests: 87, numPassedTests: 87,
+    numFailedTestSuites: 0, numPendingTestSuites: 0, numTotalTests: 89, numPassedTests: 89,
     testResults: Object.entries(componentCriteria).map(([file, titles]) => ({ name: path.join(root, file), status: 'passed',
       assertionResults: titles.map(title => ({ title, status: 'passed' })) })) };
 }
 test('component receipt binds all required assertion names and exact observed file counts', () => {
   const evidence = componentEvidence(report(), root);
-  assert.equal(evidence.tests, 87); assert.deepEqual(evidence.files.map(file => file.tests), [51, 36]);
+  assert.equal(evidence.tests, 89); assert.deepEqual(evidence.files.map(file => file.tests), [51, 38]);
 });
 test('component receipt rejects a zero-exit skipped criterion', () => {
   const value = report(); value.testResults[0].assertionResults[0].status = 'skipped';
