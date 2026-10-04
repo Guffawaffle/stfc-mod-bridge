@@ -7,10 +7,14 @@ mod ports;
 use bridge_contracts::v1::*;
 pub use journal::{DurableOperation, DurablePhase, FileJournal, JournalRecord};
 pub use ports::*;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    cell::Cell,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+};
 
 const MAX_OPERATIONS: usize = 64;
 const MAX_PREPARATIONS: usize = 128;
+const MAX_ISSUED_PLANS: usize = 4096;
 const EVENT_RETENTION: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +54,41 @@ struct Worker<L> {
     lease: L,
 }
 
+#[derive(Default)]
+struct ClockState {
+    last_sample: Cell<Option<u64>>,
+    regression: Cell<Option<ProviderFailure>>,
+}
+
+impl ClockState {
+    fn latch_failure(&self, failure: ProviderFailure) {
+        if failure == ProviderFailure::MonotonicRegression {
+            self.regression.set(Some(failure));
+        }
+    }
+
+    fn read<C: HostClock>(&self, clock: &C) -> Result<ClockReading, ProviderFailure> {
+        if let Some(failure) = self.regression.get() {
+            return Err(failure);
+        }
+        let sample = clock
+            .now()
+            .inspect_err(|failure| self.latch_failure(*failure))?;
+        if self
+            .last_sample
+            .get()
+            .is_some_and(|previous| sample.monotonic_millis < previous)
+        {
+            self.regression
+                .set(Some(ProviderFailure::MonotonicRegression));
+            return Err(ProviderFailure::MonotonicRegression);
+        }
+        // A future deadline is deliberately never fed into this high-water mark.
+        self.last_sample.set(Some(sample.monotonic_millis));
+        Ok(sample)
+    }
+}
+
 /// The host owns this value through safe shutdown. Dropping a request, renderer,
 /// channel or client handle has no relationship to worker exclusion ownership.
 /// Actual process death drops workers; restart uses retained journal evidence.
@@ -57,9 +96,11 @@ pub struct Engine<P: OperationPorts, J: DurableJournal, C: HostClock, I: Identit
     ports: P,
     journal: J,
     clock: C,
+    clock_state: ClockState,
     ids: I,
     host: HostConfiguration,
     preparations: BTreeMap<PlanId, Preparation>,
+    issued_plans: BTreeSet<PlanId>,
     operations: BTreeMap<OperationId, DurableOperation>,
     idempotency: BTreeMap<IdempotencyKey, OperationId>,
     workers: BTreeMap<OperationId, Worker<P::Lease>>,
@@ -142,9 +183,11 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             ports,
             journal,
             clock,
+            clock_state: ClockState::default(),
             ids,
             host,
             preparations: BTreeMap::new(),
+            issued_plans: BTreeSet::new(),
             operations,
             idempotency,
             workers: BTreeMap::new(),
@@ -255,15 +298,14 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
                 ]),
             })),
             Query::GetOperation(input) => {
+                let evidence = self.evidence()?;
                 Ok(QueryResult::GetOperation(Box::new(GetOperationResult {
                     operation: match self.operations.get(&input.operation_id) {
                         Some(o) => Observation::Observed {
                             value: o.snapshot.clone(),
-                            evidence: self.evidence(),
+                            evidence,
                         },
-                        None => Observation::Missing {
-                            evidence: self.evidence(),
-                        },
+                        None => Observation::Missing { evidence },
                     },
                 })))
             }
@@ -273,13 +315,18 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
         }
     }
 
-    fn evidence(&self) -> Evidence {
-        Evidence {
+    fn read_clock(&self) -> Result<ClockReading, Box<BridgeError>> {
+        self.clock_state
+            .read(&self.clock)
+            .map_err(|_| error(ErrorCode::InternalFailure))
+    }
+    fn evidence(&self) -> Result<Evidence, Box<BridgeError>> {
+        Ok(Evidence {
             observation_id: ObservationId::new(self.host.epoch.as_str())
                 .expect("host UUID is observation UUID"),
-            observed_at: self.clock.now().utc,
+            observed_at: self.read_clock()?.utc,
             source: EvidenceSource::SessionReceipt,
-        }
+        })
     }
     fn revision(&self) -> OpaqueRevision {
         OpaqueRevision::new(format!("operations:{}", self.sequence)).expect("bounded revision")
@@ -367,8 +414,12 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
 
     fn prepare(&mut self, intent: MutationIntent) -> Result<PreparedPlan, Box<BridgeError>> {
         self.require_open()?;
+        if self.issued_plans.len() >= MAX_ISSUED_PLANS {
+            return Err(error(ErrorCode::OperationBusy));
+        }
+        let pruning_sample = self.read_clock()?;
         self.preparations
-            .retain(|_, p| p.deadline > self.clock.now().unix_millis);
+            .retain(|_, p| p.deadline > pruning_sample.monotonic_millis);
         if self.preparations.len() >= MAX_PREPARATIONS {
             return Err(error(ErrorCode::OperationBusy));
         }
@@ -383,14 +434,25 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
         {
             return Err(error(ErrorCode::InternalFailure));
         }
-        let deadline = self.clock.deadline(self.host.preparation_lifetime_millis)?;
-        let now = self.clock.now();
-        if deadline.unix_millis <= now.unix_millis {
+        let now = self.read_clock()?;
+        let expected_deadline = now
+            .monotonic_millis
+            .checked_add(self.host.preparation_lifetime_millis)
+            .ok_or_else(|| error(ErrorCode::InternalFailure))?;
+        let deadline = self
+            .clock
+            .deadline(&now, self.host.preparation_lifetime_millis)
+            .inspect_err(|failure| self.clock_state.latch_failure(*failure))
+            .map_err(|_| error(ErrorCode::InternalFailure))?;
+        if deadline.monotonic_millis != expected_deadline {
             return Err(error(ErrorCode::InternalFailure));
         }
         let plan = PreparedPlan {
             plan_ref: PlanRef {
-                plan_id: self.ids.plan_id(),
+                plan_id: self
+                    .ids
+                    .plan_id()
+                    .map_err(|_| error(ErrorCode::InternalFailure))?,
                 host_epoch: self.host.epoch.clone(),
                 review_digest: semantic_plan_digest(&captured.semantics)
                     .map_err(|_| error(ErrorCode::InternalFailure))?,
@@ -402,7 +464,9 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
         };
         validate_command_output(CommandResult::Prepare(plan.clone()))
             .map_err(|_| error(ErrorCode::InternalFailure))?;
-        if self.preparations.contains_key(&plan.plan_ref.plan_id) {
+        // Pruning expired captures must never make an old PlanRef fresh again.
+        // Keep bounded identity custody until this host's lifetime ends.
+        if !self.issued_plans.insert(plan.plan_ref.plan_id.clone()) {
             return Err(error(ErrorCode::InternalFailure));
         }
         self.preparations.insert(
@@ -410,7 +474,7 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             Preparation {
                 plan: plan.clone(),
                 resources,
-                deadline: deadline.unix_millis,
+                deadline: deadline.monotonic_millis,
             },
         );
         Ok(plan)
@@ -440,7 +504,7 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
         if prepared.plan.plan_ref != input.plan_ref {
             return Err(error(ErrorCode::InvalidRequest));
         }
-        if prepared.deadline <= self.clock.now().unix_millis {
+        if prepared.deadline <= self.read_clock()?.monotonic_millis {
             return Err(error(ErrorCode::PlanExpired));
         }
         if self.operations.len() >= MAX_OPERATIONS {
@@ -448,6 +512,7 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
         }
         let semantics = prepared.plan.semantics.clone();
         let resources = prepared.resources.clone();
+        let deadline = prepared.deadline;
         for operation in self.operations.values() {
             if operation.phase == DurablePhase::Recovery
                 && overlaps(&resources, &operation.resources)
@@ -460,6 +525,13 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
                 return Err(error(ErrorCode::OperationBusy));
             }
         }
+        let id = self
+            .ids
+            .operation_id()
+            .map_err(|_| error(ErrorCode::InternalFailure))?;
+        if self.operations.contains_key(&id) {
+            return Err(error(ErrorCode::InternalFailure));
+        }
         let lease = self.ports.acquire(&resources)?;
         if normalize_resources(lease.resources().to_vec()).is_err()
             || lease.resources() != resources.as_slice()
@@ -467,9 +539,8 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             return Err(error(ErrorCode::InternalFailure));
         }
         self.ports.revalidate(&semantics, &lease)?;
-        let id = self.ids.operation_id();
-        if self.operations.contains_key(&id) {
-            return Err(error(ErrorCode::InternalFailure));
+        if deadline <= self.read_clock()?.monotonic_millis {
+            return Err(error(ErrorCode::PlanExpired));
         }
         let recovery = self.ports.recovery_binding(&id, &semantics, &lease)?;
         let snapshot = OperationSnapshot {

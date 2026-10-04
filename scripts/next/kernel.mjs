@@ -98,7 +98,16 @@ const requiredOperations = [
   'deferred_close_includes_safe_recovery_and_independent_running_operation',
   'snapshots_are_complete_and_events_are_scoped_consecutive_and_replay_free',
   'retention_gap_requires_resnapshot_and_current_cursor_never_reexecutes',
-  'retained_history_capacity_refuses_before_another_exclusion_or_journal'
+  'retained_history_capacity_refuses_before_another_exclusion_or_journal',
+  'preparation_provider_failures_have_no_journal_or_native_effects',
+  'fresh_commit_provider_failures_precede_binding_and_admission',
+  'identity_collisions_refuse_before_exclusion_or_journal',
+  'retired_plan_identity_cannot_revive_an_expired_commit',
+  'issued_plan_capacity_refuses_without_recycling_or_blocking_admitted_replay',
+  'equal_samples_and_future_deadlines_do_not_latch_regression',
+  'wall_adjustment_and_suspend_elapsed_time_do_not_retime_prepared_expiry',
+  'monotonic_regression_latches_but_keeps_replay_and_worker_lifecycle',
+  'restored_replay_opens_without_clock_or_identity_sampling'
 ];
 for (const name of requiredOperations) assert.ok(names.includes(name), `Missing required operation test ${name}`);
 const selected = suite === 'recovery' ? recovery : names.filter(name => !recovery.includes(name));

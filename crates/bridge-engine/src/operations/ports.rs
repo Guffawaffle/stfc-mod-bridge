@@ -45,19 +45,38 @@ pub trait ResourceLease {
 
 #[derive(Clone, Debug)]
 pub struct ClockReading {
-    /// Actual host clock; this is not a renderer supplied value.
-    pub unix_millis: u64,
+    /// Host-local elapsed milliseconds, including suspension. This has no UTC
+    /// meaning and is never supplied by a renderer.
+    pub monotonic_millis: u64,
+    /// Wall-clock evidence only; wall adjustments do not change plan expiry.
     pub utc: UtcTimestamp,
 }
 
+/// Provider failures carry no native paths, diagnostic strings or entropy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderFailure {
+    ClockUnavailable,
+    ClockRange,
+    MonotonicRegression,
+    DeadlineOverflow,
+    EntropyUnavailable,
+    InvalidIdentity,
+}
+
 pub trait HostClock: Send {
-    fn now(&self) -> ClockReading;
-    fn deadline(&self, lifetime_millis: u64) -> Result<ClockReading, Box<BridgeError>>;
+    fn now(&self) -> Result<ClockReading, ProviderFailure>;
+    /// Derive both projections from this supplied sample without resampling.
+    /// UTC addition and representability are the provider's obligations.
+    fn deadline(
+        &self,
+        sampled: &ClockReading,
+        lifetime_millis: u64,
+    ) -> Result<ClockReading, ProviderFailure>;
 }
 
 pub trait IdentitySource: Send {
-    fn plan_id(&mut self) -> PlanId;
-    fn operation_id(&mut self) -> OperationId;
+    fn plan_id(&mut self) -> Result<PlanId, ProviderFailure>;
+    fn operation_id(&mut self) -> Result<OperationId, ProviderFailure>;
 }
 
 /// One bounded advancement of a native transaction. Unknown progress stays

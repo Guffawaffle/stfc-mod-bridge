@@ -7,6 +7,35 @@ dispatch, prepared-plan capture, admission/replay, worker progression,
 cancellation, close dispositions, event cursors and durable restart recovery.
 Native domain services and canonical platform consumers remain later packages.
 
+Time sampling and plan/operation identities use fallible backend-only ports.
+Fresh plans expire on host-local monotonic milliseconds, including suspension;
+UTC is an evidence/display projection. Deadline calculation uses one supplied
+sample with checked addition and no resampling. Equal actual samples are valid;
+decreasing samples or a reported regression latch refusal for that engine's
+lifetime. Only actual samples update the high-water mark, never future deadlines.
+Fresh Commit checks expiry before acquisition and again after owner revalidation
+under the lease. Identity failure/collision precedes acquisition. Refusal creates
+no admission record or recovery binding and does not poison persistence.
+
+Issued plan IDs remain reserved for the host lifetime after their captures expire.
+The history is bounded at 4096 IDs; exhaustion refuses fresh Preparation with
+OperationBusy before provider sampling or capture. It never recycles an old
+PlanRef, and durable admitted replay remains available.
+
+Exact durable replay runs before clock, entropy, host, expiry and close checks.
+Snapshot, admitted progression, cancellation and close stay provider-independent
+after a regression; GetOperation evidence refuses rather than inventing a time.
+Opening a restored portable kernel does not preflight providers and block replay.
+Production bootstrap must qualify its own providers before creating fresh state.
+
+Platform helper modules expose native uptime and 16 raw entropy bytes without
+creating IDs or application state. Windows uses GetTickCount64/BCryptGenRandom;
+Mac uses checked mach_continuous_time conversion/SecRandomCopyBytes. Both count
+suspension and refuse entropy errors without fallback. These helpers are not yet
+bound into production application composition. Windows unit calls and foreign-
+host Mac conversion tests are separate evidence; real Apple Silicon probes,
+checked UTC conversion, secure UUID encoding and private bootstrap remain work.
+
 BR04-01: the owner port acquires canonical resource exclusions before commit
 revalidation. A losing writer returns busy before a download, stage, backup or
 admission journal. The worker retains its lease while observers disconnect.

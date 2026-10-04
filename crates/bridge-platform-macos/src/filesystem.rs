@@ -368,7 +368,7 @@ impl RetainedDirectory {
         self.0.revalidate_links()?;
         // SAFETY: attrlist is a C integer-only POD structure.
         let mut attributes: libc::attrlist = unsafe { std::mem::zeroed() };
-        attributes.bitmapcount = libc::ATTR_BIT_MAP_COUNT as u16;
+        attributes.bitmapcount = libc::ATTR_BIT_MAP_COUNT;
         attributes.volattr = libc::ATTR_VOL_CAPABILITIES;
         let mut output = [0_u8; 36]; // length + capabilities[4] + valid[4]
         // SAFETY: retained directory and correctly sized packed result buffer.

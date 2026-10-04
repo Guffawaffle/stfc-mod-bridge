@@ -12,6 +12,8 @@ mod native;
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod process;
 #[cfg(all(windows, target_arch = "x86_64"))]
+pub mod providers;
+#[cfg(all(windows, target_arch = "x86_64"))]
 mod secrets;
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod shell;

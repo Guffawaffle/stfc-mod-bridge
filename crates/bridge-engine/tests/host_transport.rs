@@ -301,28 +301,35 @@ impl DurableJournal for Journal {
 }
 struct Clock;
 impl HostClock for Clock {
-    fn now(&self) -> ClockReading {
-        ClockReading {
-            unix_millis: 1000,
-            utc: UtcTimestamp::new("2026-10-03T12:00:00Z").unwrap(),
-        }
-    }
-    fn deadline(&self, duration: u64) -> Result<ClockReading, Box<BridgeError>> {
+    fn now(&self) -> Result<ClockReading, ProviderFailure> {
         Ok(ClockReading {
-            unix_millis: 1000 + duration,
+            monotonic_millis: 1000,
+            utc: UtcTimestamp::new("2026-10-03T12:00:00Z").unwrap(),
+        })
+    }
+    fn deadline(
+        &self,
+        sampled: &ClockReading,
+        duration: u64,
+    ) -> Result<ClockReading, ProviderFailure> {
+        Ok(ClockReading {
+            monotonic_millis: sampled
+                .monotonic_millis
+                .checked_add(duration)
+                .ok_or(ProviderFailure::DeadlineOverflow)?,
             utc: UtcTimestamp::new("2026-10-03T12:01:00Z").unwrap(),
         })
     }
 }
 struct Ids(u64);
 impl IdentitySource for Ids {
-    fn plan_id(&mut self) -> PlanId {
+    fn plan_id(&mut self) -> Result<PlanId, ProviderFailure> {
         self.0 += 1;
-        PlanId::new(uuid(self.0)).unwrap()
+        Ok(PlanId::new(uuid(self.0)).unwrap())
     }
-    fn operation_id(&mut self) -> OperationId {
+    fn operation_id(&mut self) -> Result<OperationId, ProviderFailure> {
         self.0 += 1;
-        OperationId::new(uuid(self.0)).unwrap()
+        Ok(OperationId::new(uuid(self.0)).unwrap())
     }
 }
 type Kernel = KernelHost<Owner, Journal, Clock, Ids>;

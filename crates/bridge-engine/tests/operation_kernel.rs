@@ -112,18 +112,75 @@ fn session() -> SessionBinding {
 #[derive(Clone)]
 struct Clock {
     now: Arc<AtomicU64>,
+    controls: ClockControls,
 }
+
+#[derive(Clone, Default)]
+struct ClockControls {
+    calls: Arc<AtomicU64>,
+    fail: Arc<AtomicBool>,
+    fail_at: Arc<AtomicU64>,
+    fail_deadline: Arc<AtomicBool>,
+    deadline_regression: Arc<AtomicBool>,
+    bad_deadline: Arc<AtomicBool>,
+    wall: Arc<AtomicU64>,
+    regression: Arc<AtomicBool>,
+    advance_at: Arc<AtomicU64>,
+    advance_to: Arc<AtomicU64>,
+}
+
 impl HostClock for Clock {
-    fn now(&self) -> ClockReading {
-        ClockReading {
-            unix_millis: self.now.load(Ordering::SeqCst),
-            utc: UtcTimestamp::new("2026-10-03T12:00:00Z").unwrap(),
+    fn now(&self) -> Result<ClockReading, ProviderFailure> {
+        let call = self.controls.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.controls.regression.load(Ordering::SeqCst) {
+            return Err(ProviderFailure::MonotonicRegression);
         }
-    }
-    fn deadline(&self, lifetime_millis: u64) -> Result<ClockReading, Box<BridgeError>> {
+        if self.controls.fail.load(Ordering::SeqCst)
+            || self.controls.fail_at.load(Ordering::SeqCst) == call
+        {
+            return Err(ProviderFailure::ClockUnavailable);
+        }
+        if self.controls.advance_at.load(Ordering::SeqCst) == call {
+            self.now.store(
+                self.controls.advance_to.load(Ordering::SeqCst),
+                Ordering::SeqCst,
+            );
+        }
+        let utc = match self.controls.wall.load(Ordering::SeqCst) {
+            1 => "2026-10-03T11:00:00Z",
+            2 => "2026-10-03T13:00:00Z",
+            _ => "2026-10-03T12:00:00Z",
+        };
         Ok(ClockReading {
-            unix_millis: self.now.load(Ordering::SeqCst) + lifetime_millis,
-            utc: UtcTimestamp::new("2026-10-03T12:01:00Z").unwrap(),
+            monotonic_millis: self.now.load(Ordering::SeqCst),
+            utc: UtcTimestamp::new(utc).unwrap(),
+        })
+    }
+    fn deadline(
+        &self,
+        sampled: &ClockReading,
+        lifetime_millis: u64,
+    ) -> Result<ClockReading, ProviderFailure> {
+        if self.controls.deadline_regression.load(Ordering::SeqCst) {
+            return Err(ProviderFailure::MonotonicRegression);
+        }
+        if self.controls.fail_deadline.load(Ordering::SeqCst) {
+            return Err(ProviderFailure::ClockRange);
+        }
+        let expected = sampled
+            .monotonic_millis
+            .checked_add(lifetime_millis)
+            .ok_or(ProviderFailure::DeadlineOverflow)?;
+        let utc = match sampled.utc.as_str() {
+            "2026-10-03T11:00:00Z" => "2026-10-03T11:01:00Z",
+            "2026-10-03T13:00:00Z" => "2026-10-03T13:01:00Z",
+            _ => "2026-10-03T12:01:00Z",
+        };
+        Ok(ClockReading {
+            monotonic_millis: expected
+                .checked_add(u64::from(self.controls.bad_deadline.load(Ordering::SeqCst)))
+                .ok_or(ProviderFailure::DeadlineOverflow)?,
+            utc: UtcTimestamp::new(utc).unwrap(),
         })
     }
 }
@@ -131,13 +188,19 @@ struct Ids {
     next: u64,
 }
 impl IdentitySource for Ids {
-    fn plan_id(&mut self) -> PlanId {
-        self.next += 1;
-        PlanId::new(uuid(self.next)).unwrap()
+    fn plan_id(&mut self) -> Result<PlanId, ProviderFailure> {
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or(ProviderFailure::InvalidIdentity)?;
+        Ok(PlanId::new(uuid(self.next)).unwrap())
     }
-    fn operation_id(&mut self) -> OperationId {
-        self.next += 1;
-        OperationId::new(uuid(self.next)).unwrap()
+    fn operation_id(&mut self) -> Result<OperationId, ProviderFailure> {
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or(ProviderFailure::InvalidIdentity)?;
+        Ok(OperationId::new(uuid(self.next)).unwrap())
     }
 }
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -549,6 +612,7 @@ impl Fixture {
             root,
             clock: Clock {
                 now: Arc::new(AtomicU64::new(1_000)),
+                controls: ClockControls::default(),
             },
         }
     }
@@ -607,8 +671,8 @@ fn request(body: RequestBody) -> ValidatedRequest {
     )
     .unwrap()
 }
-fn command<P: OperationPorts, J: DurableJournal>(
-    engine: &mut Engine<P, J, Clock, Ids>,
+fn command<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+    engine: &mut Engine<P, J, Clock, I>,
     command: Command,
 ) -> ReplyBody {
     engine
@@ -617,13 +681,13 @@ fn command<P: OperationPorts, J: DurableJournal>(
         .into_inner()
         .body
 }
-fn prepare<P: OperationPorts, J: DurableJournal>(
-    engine: &mut Engine<P, J, Clock, Ids>,
+fn prepare<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+    engine: &mut Engine<P, J, Clock, I>,
 ) -> PreparedPlan {
     prepare_for(engine, intent())
 }
-fn prepare_for<P: OperationPorts, J: DurableJournal>(
-    engine: &mut Engine<P, J, Clock, Ids>,
+fn prepare_for<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+    engine: &mut Engine<P, J, Clock, I>,
     intent: MutationIntent,
 ) -> PreparedPlan {
     match command(engine, Command::Prepare(Box::new(PrepareInput { intent }))) {
@@ -636,8 +700,8 @@ fn prepare_for<P: OperationPorts, J: DurableJournal>(
         _ => panic!("preparation rejected"),
     }
 }
-fn commit<P: OperationPorts, J: DurableJournal>(
-    engine: &mut Engine<P, J, Clock, Ids>,
+fn commit<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+    engine: &mut Engine<P, J, Clock, I>,
     input: CommitInput,
 ) -> OperationSnapshot {
     match command(engine, Command::Commit(input)) {
@@ -659,6 +723,459 @@ fn commit_input(plan: PreparedPlan, key: u64) -> CommitInput {
 fn rejected(body: ReplyBody, expected: ErrorCode) {
     assert!(matches!(body, ReplyBody::Rejected { error } if error.code == expected));
 }
+#[derive(Clone, Default)]
+struct IdentityControls {
+    fail_plan: Arc<AtomicBool>,
+    fail_operation: Arc<AtomicBool>,
+    plan: Arc<Mutex<Option<PlanId>>>,
+    operation: Arc<Mutex<Option<OperationId>>>,
+}
+struct FaultIds {
+    ids: Ids,
+    controls: IdentityControls,
+}
+impl IdentitySource for FaultIds {
+    fn plan_id(&mut self) -> Result<PlanId, ProviderFailure> {
+        if self.controls.fail_plan.load(Ordering::SeqCst) {
+            return Err(ProviderFailure::EntropyUnavailable);
+        }
+        if let Some(id) = self.controls.plan.lock().unwrap().clone() {
+            return Ok(id);
+        }
+        self.ids.plan_id()
+    }
+    fn operation_id(&mut self) -> Result<OperationId, ProviderFailure> {
+        if self.controls.fail_operation.load(Ordering::SeqCst) {
+            return Err(ProviderFailure::EntropyUnavailable);
+        }
+        if let Some(id) = self.controls.operation.lock().unwrap().clone() {
+            return Ok(id);
+        }
+        self.ids.operation_id()
+    }
+}
+fn provider_engine(
+    f: &Fixture,
+    c: &IdentityControls,
+    host: u64,
+) -> Engine<Owner, FileJournal, Clock, FaultIds> {
+    Engine::open(
+        f.owner.clone(),
+        FileJournal::open_existing(&f.root.join("engine.journal")).unwrap(),
+        f.clock.clone(),
+        FaultIds {
+            ids: Ids { next: host * 1000 },
+            controls: c.clone(),
+        },
+        config(host),
+    )
+    .unwrap()
+}
+
+#[test]
+fn preparation_provider_failures_have_no_journal_or_native_effects() {
+    for fault in [
+        "sample",
+        "capture_sample",
+        "deadline",
+        "overflow",
+        "mismatch",
+        "identity",
+    ] {
+        let f = Fixture::new();
+        let ids = IdentityControls::default();
+        let mut e = provider_engine(&f, &ids, 1);
+        let before = std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len();
+        match fault {
+            "sample" => f.clock.controls.fail.store(true, Ordering::SeqCst),
+            "capture_sample" => f.clock.controls.fail_at.store(2, Ordering::SeqCst),
+            "deadline" => f.clock.controls.fail_deadline.store(true, Ordering::SeqCst),
+            "overflow" => f.clock.now.store(u64::MAX - 1, Ordering::SeqCst),
+            "mismatch" => f.clock.controls.bad_deadline.store(true, Ordering::SeqCst),
+            "identity" => ids.fail_plan.store(true, Ordering::SeqCst),
+            _ => unreachable!(),
+        }
+        rejected(
+            command(
+                &mut e,
+                Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+            ),
+            ErrorCode::InternalFailure,
+        );
+        assert_eq!(f.counts(), Counts::default(), "{fault}");
+        assert_eq!(
+            std::fs::metadata(f.root.join("engine.journal"))
+                .unwrap()
+                .len(),
+            before,
+            "{fault}"
+        );
+        assert_eq!(
+            f.clock.controls.calls.load(Ordering::SeqCst),
+            if fault == "sample" { 1 } else { 2 },
+            "no deadline resampling: {fault}"
+        );
+    }
+}
+
+#[test]
+fn fresh_commit_provider_failures_precede_binding_and_admission() {
+    for fault in ["sample", "lease_sample", "identity", "lease_expiry"] {
+        let f = Fixture::new();
+        let ids = IdentityControls::default();
+        let mut e = provider_engine(&f, &ids, 1);
+        let input = commit_input(prepare(&mut e), 900);
+        let before = std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len();
+        let calls = f.clock.controls.calls.load(Ordering::SeqCst);
+        match fault {
+            "sample" => f.clock.controls.fail.store(true, Ordering::SeqCst),
+            "lease_sample" => f.clock.controls.fail_at.store(calls + 2, Ordering::SeqCst),
+            "identity" => ids.fail_operation.store(true, Ordering::SeqCst),
+            "lease_expiry" => {
+                f.clock
+                    .controls
+                    .advance_at
+                    .store(calls + 2, Ordering::SeqCst);
+                f.clock.controls.advance_to.store(61_000, Ordering::SeqCst);
+            }
+            _ => unreachable!(),
+        }
+        rejected(
+            command(&mut e, Command::Commit(input)),
+            if fault == "lease_expiry" {
+                ErrorCode::PlanExpired
+            } else {
+                ErrorCode::InternalFailure
+            },
+        );
+        let mut expected = Counts::default();
+        if matches!(fault, "lease_sample" | "lease_expiry") {
+            expected.acquisition = 1;
+            expected.revalidation = 1;
+            expected.lease_drops = 1;
+        }
+        assert_eq!(f.counts(), expected, "{fault}");
+        assert_eq!(
+            std::fs::metadata(f.root.join("engine.journal"))
+                .unwrap()
+                .len(),
+            before,
+            "{fault}"
+        );
+        f.clock.controls.fail.store(false, Ordering::SeqCst);
+        f.clock.controls.fail_at.store(0, Ordering::SeqCst);
+        ids.fail_operation.store(false, Ordering::SeqCst);
+        let replacement = commit_input(prepare(&mut e), 900);
+        assert!(
+            matches!(commit(&mut e, replacement).state, OperationState::Admitted),
+            "failed admission must not reserve its key"
+        );
+    }
+}
+
+#[test]
+fn identity_collisions_refuse_before_exclusion_or_journal() {
+    let f = Fixture::new();
+    let ids = IdentityControls::default();
+    let mut e = provider_engine(&f, &ids, 1);
+    let plan = prepare(&mut e);
+    *ids.plan.lock().unwrap() = Some(plan.plan_ref.plan_id.clone());
+    let before = std::fs::metadata(f.root.join("engine.journal"))
+        .unwrap()
+        .len();
+    rejected(
+        command(
+            &mut e,
+            Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+        ),
+        ErrorCode::InternalFailure,
+    );
+    assert_eq!(f.counts(), Counts::default());
+    assert_eq!(
+        std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len(),
+        before
+    );
+    *ids.plan.lock().unwrap() = None;
+    let op = commit(&mut e, commit_input(plan, 900));
+    e.advance(&op.operation_id).unwrap();
+    assert!(matches!(
+        e.advance(&op.operation_id).unwrap().state,
+        OperationState::Completed { .. }
+    ));
+    *ids.operation.lock().unwrap() = Some(op.operation_id);
+    let input = commit_input(prepare(&mut e), 901);
+    let before = std::fs::metadata(f.root.join("engine.journal"))
+        .unwrap()
+        .len();
+    let counts = f.counts();
+    rejected(
+        command(&mut e, Command::Commit(input)),
+        ErrorCode::InternalFailure,
+    );
+    assert_eq!(f.counts(), counts);
+    assert_eq!(
+        std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len(),
+        before
+    );
+}
+
+#[test]
+fn retired_plan_identity_cannot_revive_an_expired_commit() {
+    let f = Fixture::new();
+    let ids = IdentityControls::default();
+    let mut e = provider_engine(&f, &ids, 1);
+    let old = prepare(&mut e);
+    let old_commit = commit_input(old.clone(), 900);
+    let before = std::fs::metadata(f.root.join("engine.journal"))
+        .unwrap()
+        .len();
+    f.clock.now.store(61_000, Ordering::SeqCst);
+    *ids.plan.lock().unwrap() = Some(old.plan_ref.plan_id.clone());
+    rejected(
+        command(
+            &mut e,
+            Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+        ),
+        ErrorCode::InternalFailure,
+    );
+    rejected(
+        command(&mut e, Command::Commit(old_commit)),
+        ErrorCode::PlanExpired,
+    );
+    assert_eq!(f.counts(), Counts::default());
+    assert_eq!(
+        std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len(),
+        before,
+    );
+    *ids.plan.lock().unwrap() = None;
+    let fresh = prepare(&mut e);
+    assert_ne!(fresh.plan_ref.plan_id, old.plan_ref.plan_id);
+    assert!(matches!(
+        commit(&mut e, commit_input(fresh, 901)).state,
+        OperationState::Admitted
+    ));
+}
+
+#[test]
+fn issued_plan_capacity_refuses_without_recycling_or_blocking_admitted_replay() {
+    let f = Fixture::new();
+    let ids = IdentityControls::default();
+    let mut e = provider_engine(&f, &ids, 1);
+    let mut last = None;
+    // Policy is bounded at 4096 host-lifetime identities, even after all earlier
+    // captures expire. Pruning alone must not reopen that capacity.
+    for index in 0..4096 {
+        f.clock.now.store(1000 + index * 60_000, Ordering::SeqCst);
+        last = Some(prepare(&mut e));
+    }
+    let before = std::fs::metadata(f.root.join("engine.journal"))
+        .unwrap()
+        .len();
+    let calls = f.clock.controls.calls.load(Ordering::SeqCst);
+    ids.fail_plan.store(true, Ordering::SeqCst);
+    rejected(
+        command(
+            &mut e,
+            Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+        ),
+        ErrorCode::OperationBusy,
+    );
+    assert_eq!(f.clock.controls.calls.load(Ordering::SeqCst), calls);
+    assert_eq!(f.counts(), Counts::default());
+    assert_eq!(
+        std::fs::metadata(f.root.join("engine.journal"))
+            .unwrap()
+            .len(),
+        before,
+    );
+    let input = commit_input(last.unwrap(), 900);
+    let op = commit(&mut e, input.clone());
+    ids.fail_operation.store(true, Ordering::SeqCst);
+    assert_eq!(commit(&mut e, input), op);
+}
+
+#[test]
+fn equal_samples_and_future_deadlines_do_not_latch_regression() {
+    let f = Fixture::new();
+    let mut e = f.open(1);
+    let first = prepare(&mut e);
+    let second = prepare(&mut e);
+    assert_ne!(first.plan_ref.plan_id, second.plan_ref.plan_id);
+    assert_eq!(f.clock.controls.calls.load(Ordering::SeqCst), 4);
+    assert!(matches!(
+        commit(&mut e, commit_input(first, 900)).state,
+        OperationState::Admitted
+    ));
+}
+
+#[test]
+fn wall_adjustment_and_suspend_elapsed_time_do_not_retime_prepared_expiry() {
+    for wall in [1, 2] {
+        for (ticks, accept) in [(60_999, true), (61_000, false)] {
+            let f = Fixture::new();
+            let mut e = f.open(1);
+            let plan = prepare(&mut e);
+            assert_eq!(plan.expires_at.as_str(), "2026-10-03T12:01:00Z");
+            f.clock.controls.wall.store(wall, Ordering::SeqCst);
+            f.clock.now.store(ticks, Ordering::SeqCst);
+            let input = commit_input(plan, 900);
+            if accept {
+                assert!(matches!(
+                    commit(&mut e, input).state,
+                    OperationState::Admitted
+                ));
+            } else {
+                let before = std::fs::metadata(f.root.join("engine.journal"))
+                    .unwrap()
+                    .len();
+                rejected(
+                    command(&mut e, Command::Commit(input)),
+                    ErrorCode::PlanExpired,
+                );
+                assert_eq!(f.counts(), Counts::default());
+                assert_eq!(
+                    std::fs::metadata(f.root.join("engine.journal"))
+                        .unwrap()
+                        .len(),
+                    before
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn monotonic_regression_latches_but_keeps_replay_and_worker_lifecycle() {
+    for origin in ["sample", "reported_sample", "reported_deadline"] {
+        let f = Fixture::new();
+        let ids = IdentityControls::default();
+        let mut e = provider_engine(&f, &ids, 1);
+        let input = commit_input(prepare(&mut e), 900);
+        let op = commit(&mut e, input.clone());
+        let running = e.advance(&op.operation_id).unwrap();
+        match origin {
+            "sample" => f.clock.now.store(999, Ordering::SeqCst),
+            "reported_sample" => f.clock.controls.regression.store(true, Ordering::SeqCst),
+            "reported_deadline" => {
+                f.clock
+                    .controls
+                    .deadline_regression
+                    .store(true, Ordering::SeqCst);
+                rejected(
+                    command(
+                        &mut e,
+                        Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+                    ),
+                    ErrorCode::InternalFailure,
+                );
+            }
+            _ => unreachable!(),
+        }
+        let observe = Query::GetOperation(GetOperationInput {
+            operation_id: op.operation_id.clone(),
+        });
+        rejected(
+            e.dispatch(request(RequestBody::Query {
+                query: observe.clone(),
+            }))
+            .unwrap()
+            .into_inner()
+            .body,
+            ErrorCode::InternalFailure,
+        );
+        let calls = f.clock.controls.calls.load(Ordering::SeqCst);
+        f.clock.controls.regression.store(false, Ordering::SeqCst);
+        f.clock
+            .controls
+            .deadline_regression
+            .store(false, Ordering::SeqCst);
+        f.clock.now.store(2000, Ordering::SeqCst);
+        rejected(
+            e.dispatch(request(RequestBody::Query { query: observe }))
+                .unwrap()
+                .into_inner()
+                .body,
+            ErrorCode::InternalFailure,
+        );
+        rejected(
+            command(
+                &mut e,
+                Command::Prepare(Box::new(PrepareInput { intent: intent() })),
+            ),
+            ErrorCode::InternalFailure,
+        );
+        assert_eq!(f.clock.controls.calls.load(Ordering::SeqCst), calls);
+        ids.fail_plan.store(true, Ordering::SeqCst);
+        ids.fail_operation.store(true, Ordering::SeqCst);
+        assert_eq!(commit(&mut e, input.clone()), running);
+        let mut conflict = input;
+        conflict.plan_ref.plan_id = PlanId::new(uuid(7000)).unwrap();
+        rejected(
+            command(&mut e, Command::Commit(conflict)),
+            ErrorCode::IdempotencyConflict,
+        );
+        assert!(matches!(
+            e.dispatch(request(RequestBody::Query {
+                query: Query::Snapshot(EmptyInput {})
+            }))
+            .unwrap()
+            .into_inner()
+            .body,
+            ReplyBody::Result { .. }
+        ));
+        assert!(matches!(
+            command(
+                &mut e,
+                Command::CancelOperation(CancelOperationInput {
+                    operation_id: running.operation_id.clone(),
+                    expected_operation_revision: running.operation_revision
+                })
+            ),
+            ReplyBody::Result { .. }
+        ));
+        assert!(matches!(
+            e.advance(&op.operation_id).unwrap().state,
+            OperationState::Completed { .. }
+        ));
+        let cursor = e.cursor();
+        assert!(
+            matches!(command(&mut e, Command::RequestHostClose(RequestHostCloseInput { expected_cursor: cursor })), ReplyBody::Result { result: ResultPayload::Command { command } } if matches!(*command, CommandResult::RequestHostClose(CloseDisposition::Ready)))
+        );
+        assert_eq!(f.clock.controls.calls.load(Ordering::SeqCst), calls);
+    }
+}
+
+#[test]
+fn restored_replay_opens_without_clock_or_identity_sampling() {
+    let f = Fixture::new();
+    let ids = IdentityControls::default();
+    let mut e = provider_engine(&f, &ids, 1);
+    let input = commit_input(prepare(&mut e), 900);
+    let original = commit(&mut e, input.clone());
+    drop(e);
+    f.clock.controls.fail.store(true, Ordering::SeqCst);
+    ids.fail_plan.store(true, Ordering::SeqCst);
+    ids.fail_operation.store(true, Ordering::SeqCst);
+    let calls = f.clock.controls.calls.load(Ordering::SeqCst);
+    let counts = f.counts();
+    let mut restarted = provider_engine(&f, &ids, 2);
+    let replay = commit(&mut restarted, input);
+    assert_eq!(replay.operation_id, original.operation_id);
+    assert!(matches!(replay.state, OperationState::Completed { .. }));
+    assert_eq!(f.clock.controls.calls.load(Ordering::SeqCst), calls);
+    assert_eq!(f.counts(), counts);
+}
+
 fn admitted(engine: &mut FixtureEngine) -> (CommitInput, OperationSnapshot) {
     let input = commit_input(prepare(engine), 900);
     let snapshot = commit(engine, input.clone());
@@ -1828,6 +2345,7 @@ fn forced_death_recovery_across_actual_process_boundaries() {
             journal,
             Clock {
                 now: Arc::new(AtomicU64::new(1000)),
+                controls: ClockControls::default(),
             },
             Ids { next: 501_000 },
             config(501),

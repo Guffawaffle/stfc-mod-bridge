@@ -58,7 +58,12 @@ const units = [
   'filesystem::tests::child_names_reject_aliases_streams_and_reserved_devices',
   'native::tests::explicit_paths_reject_devices_streams_relative_and_parent_routes', 'native::tests::native_errors_do_not_retain_diagnostic_strings',
   'secrets::tests::secret_entropy_is_closed_versioned_and_domain_separated', 'secrets::tests::plaintext_wipe_clears_owned_bytes',
-  'shell::tests::literal_arguments_preserve_quotes_empty_and_trailing_slashes', 'shell::tests::argument_preflight_bounds_escaped_utf16_before_output_allocation'
+  'shell::tests::literal_arguments_preserve_quotes_empty_and_trailing_slashes', 'shell::tests::argument_preflight_bounds_escaped_utf16_before_output_allocation',
+  'providers::tests::random_fill_uses_initialized_owned_bytes_once_and_preserves_non_uuid_bits',
+  'providers::tests::every_nonzero_rng_status_refuses_and_wipes_partial_or_complete_output',
+  'providers::tests::failed_rng_call_does_not_retry_or_return_partially_written_bytes',
+  'providers::tests::native_monotonic_reading_is_bracketed_by_windows_uptime_in_milliseconds',
+  'providers::tests::native_preferred_rng_returns_bounded_owned_raw_bytes'
 ];
 const unit = compile('lib', 'bridge_platform_windows', 'crates/bridge-platform-windows/src/lib.rs', ['--lib']);
 nativeTestInventory(run('list-unit', unit.executable, ['--list']), units);
