@@ -28,9 +28,9 @@ pub use filesystem::{
     admit_file, capture_directory, capture_file,
 };
 #[cfg(all(windows, target_arch = "x86_64"))]
-pub use process::{ExactProcessGuard, capture_process, open_exact_process};
-#[cfg(all(windows, target_arch = "x86_64"))]
 pub use private_journal::NativePrivateJournalStorage;
+#[cfg(all(windows, target_arch = "x86_64"))]
+pub use process::{ExactProcessGuard, capture_process, open_exact_process};
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub use secrets::{Plaintext, protect_secret, unprotect_secret};
 #[cfg(all(windows, target_arch = "x86_64"))]
