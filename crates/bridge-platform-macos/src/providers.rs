@@ -27,11 +27,7 @@ unsafe extern "C" {
 #[link(name = "Security", kind = "framework")]
 unsafe extern "C" {
     static kSecRandomDefault: *const std::ffi::c_void;
-    fn SecRandomCopyBytes(
-        random: *const std::ffi::c_void,
-        count: usize,
-        bytes: *mut std::ffi::c_void,
-    ) -> i32;
+    fn SecRandomCopyBytes(random: *const std::ffi::c_void, count: usize, bytes: *mut u8) -> i32;
 }
 
 /// Monotonic milliseconds with system-sleep time included, rounded down.
@@ -72,7 +68,7 @@ pub fn secure_random_16() -> Result<[u8; 16], PlatformError> {
     random_with(|output| {
         // SAFETY: the framework supplies its default source; the initialized,
         // exclusively borrowed array has exactly the requested writable size.
-        unsafe { SecRandomCopyBytes(kSecRandomDefault, output.len(), output.as_mut_ptr().cast()) }
+        unsafe { SecRandomCopyBytes(kSecRandomDefault, output.len(), output.as_mut_ptr()) }
     })
 }
 
