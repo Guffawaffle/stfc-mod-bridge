@@ -83,6 +83,27 @@ test('formatter overrides refuse before execution and empty selectors cannot sha
   const result = context({ environment: { RUSTFMT: undefined } });
   assert.ok(!Object.hasOwn(result.env, 'RUSTFMT'));
 }));
+test('Cargo and external subcommand aliases refuse before route discovery and scrub empty selectors', () => fixture(({ context }) => {
+  for (const key of ['CARGO', 'CARGO_ALIAS_FMT', 'CARGO_ALIAS_CLIPPY']) {
+    for (const platform of ['win32', 'darwin']) {
+      const spellings = platform === 'win32' ? [key, key.toLowerCase(), key.replace('CARGO', 'Cargo')] : [key];
+      for (const spelling of spellings) {
+        for (const value of ['metadata --format-version 1 --no-deps --locked --offline', ' ', '\t']) {
+          let routeChecks = 0;
+          assert.throws(() => context({ platform, architecture: platform === 'win32' ? 'x64' : 'arm64',
+            environment: Object.freeze({ [spelling]: value }), exists: () => { routeChecks++; return true; } }), blocked('RUST_COMPILER_OVERRIDE'));
+          assert.equal(routeChecks, 0, 'The selector must refuse before any tool route can be consulted');
+        }
+        for (const value of ['', undefined]) {
+          const environment = Object.freeze({ [spelling]: value });
+          const result = context({ platform, architecture: platform === 'win32' ? 'x64' : 'arm64', environment });
+          assert.ok(!Object.keys(result.env).some(name => (platform === 'win32' ? name.toUpperCase() : name) === key));
+          assert.deepEqual(environment, { [spelling]: value });
+        }
+      }
+    }
+  }
+}));
 test('blank compiler aliases are removed and dedicated child routes reset configured wrappers', () => fixture(({ context }) => {
   const environment = Object.freeze({
     cargo_build_rustc: '', Cargo_Build_Rustdoc: ' \t',

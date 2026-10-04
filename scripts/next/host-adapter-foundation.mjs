@@ -204,18 +204,21 @@ try {
   const sysroot = run('rustc-sysroot', rustcPath, [`+${rust.pin}`, '--print', 'sysroot']).trim();
   assert.ok(path.isAbsolute(sysroot) && !sysroot.includes('\n') && !sysroot.includes('\r'), 'Compiler must identify one absolute sysroot');
   const extension = process.platform === 'win32' ? '.exe' : '';
-  for (const tool of ['cargo', 'rustc', 'rustdoc', 'rustfmt', 'cargo-clippy', 'clippy-driver'])
+  for (const tool of ['cargo', 'rustc', 'rustdoc', 'rustfmt', 'cargo-fmt', 'cargo-clippy', 'clippy-driver'])
     toolsBefore.push(observeTool(`toolchain-${tool}`, path.join(sysroot, 'bin', tool + extension)));
-  // Caller selectors were refused/scrubbed by rustContext. Bind cargo fmt to
-  // the exact payload retained above rather than an ambient executable.
+  // Direct subcommand payloads avoid configured Cargo alias dispatch. Both
+  // tools' nested Cargo calls and the formatter use the observed payloads.
+  rust.env.CARGO = toolsBefore.find(tool => tool.role === 'toolchain-cargo').physical;
   rust.env.RUSTFMT = toolsBefore.find(tool => tool.role === 'toolchain-rustfmt').physical;
   const cargoVersion = run('cargo-version', cargoPath, [`+${rust.pin}`, '--version']);
   assert.ok(cargoVersion.startsWith(`cargo ${rust.pin} `), 'Actual Cargo must match the tracked Rust release');
   ownedArtifactPath(root, 'target', 'directory', { allowMissing: true });
   ownedArtifactPath(root, `target/${rust.hostTarget}`, 'directory', { allowMissing: true });
   const cargo = (id, argv) => run(id, cargoPath, [`+${rust.pin}`, ...argv]);
-  cargo('format', ['fmt', '-p', 'bridge-engine', '--', '--check']);
-  cargo('clippy', ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
+  run('format', toolsBefore.find(tool => tool.role === 'toolchain-cargo-fmt').physical,
+    ['fmt', '-p', 'bridge-engine', '--', '--check']);
+  run('clippy', toolsBefore.find(tool => tool.role === 'toolchain-cargo-clippy').physical,
+    ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
   const dependencyTree = cargo('engine-dependency-tree', ['tree', '--locked', '--offline', '-p', 'bridge-engine', '--edges', 'normal']);
   assert.ok(!/\b(?:tauri|wry|webkit|webview|svelte)\b/i.test(dependencyTree), 'Engine remains frontend independent');
   const names = Object.keys(required);

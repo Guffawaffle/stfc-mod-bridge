@@ -63,8 +63,11 @@ the dispatcher refuses full br-21 package acceptance. Exact current prerequisite
 packages br-03, br-04 and br-13 remain mandatory. The suite retains native Cargo
 artifact selection, executable architecture and before/after hashes, complete
 fixed test inventories, command logs, pinned tool payload observations and
-source inventories. It refuses caller formatter overrides before binding the
-observed formatter. It runs strict format/Clippy, engine dependency checks,
+source inventories. It refuses caller formatter, nested Cargo and fmt/Clippy
+alias overrides before tool discovery. Format and Clippy invoke the observed
+physical subcommand payloads directly, bypassing configured alias dispatch;
+their nested Cargo calls and formatter use the observed toolchain payloads.
+It runs strict format/Clippy, engine dependency checks,
 ownership compile-fail controls, frontend type checking and focused injected
 adapter tests. No synthetic host enters production composition.
 
