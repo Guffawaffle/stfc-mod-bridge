@@ -92,6 +92,19 @@ test('Windows platform package requires native host and complete private-fixture
   for (const criterion of selected.suites[0].criteria) assert.ok(documented.includes(criterion));
 });
 
+test('selected Mac fixtures require actual Apple Silicon and cannot accept the full Mac package', () => {
+  const selected = select({ suite: 'macos-platform-fixtures', host: 'macos-arm64-native' }, { actualHost: 'macos-arm64-native' });
+  assert.equal(selected.package.id, 'br-07'); assert.equal(selected.packageAcceptance, false);
+  assert.equal(selected.suites[0].packageAcceptanceAvailable, false);
+  assert.deepEqual(selected.suites[0].argv, ['scripts/next/macos-platform-fixtures.mjs']);
+  assert.throws(() => select({ suite: 'macos-platform-fixtures', host: 'macos-arm64-native' }), blocked('WRONG_NATIVE_HOST'));
+  assert.throws(() => select({ package: 'br-07', host: 'macos-arm64-native' }, { actualHost: 'macos-arm64-native' }), blocked('UNIMPLEMENTED_SUITE'));
+  const documentary = readFileSync(path.join(root, 'docs/next/MAC_PLATFORM_FIXTURES.md'), 'utf8');
+  for (const criterion of selected.suites[0].criteria) assert.ok(documentary.includes(criterion));
+  const inputs = qualificationInputs(selected.suites);
+  for (const required of ['crates/bridge-platform-macos', 'scripts/next', '.github/workflows/next-foundation.yml']) assert.ok(inputs.includes(required));
+});
+
 test('capability projection and Home require their exact suite and independent source inventories', () => {
   for (const [id, suite, document, required] of [
     ['br-13', 'capability-projection', 'DOMAIN_PROJECTIONS.md', ['crates/bridge-domain', 'crates/bridge-contracts', 'Cargo.lock']],

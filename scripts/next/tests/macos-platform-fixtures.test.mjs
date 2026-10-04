@@ -1,0 +1,124 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { macFixtureAdmission, macMachO, macArtifactInventory, macPsRows,
+  macPsObservation, macApfsPlistJson, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic } from '../macos-platform-fixtures.mjs';
+
+// These are foreign-host parsing/refusal assertions. They do not execute the
+// native harness, authenticate CI metadata or qualify an Apple Silicon host.
+const admission = () => ({ argv: ['node', 'macos-platform-fixtures.mjs'], platform: 'darwin', architecture: 'arm64',
+  version: 'v24.14.1', execArgv: [], environment: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted',
+    RUNNER_OS: 'macOS', RUNNER_ARCH: 'ARM64', GITHUB_REPOSITORY: 'Guffawaffle/stfc-mod-bridge',
+    GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'foundation' } });
+
+test('Mac fixture entry refuses foreign hosts, unbound jobs and public selectors before native work', () => {
+  assert.doesNotThrow(() => macFixtureAdmission(admission()));
+  for (const delta of [{ platform: 'win32' }, { architecture: 'x64' }, { version: 'v24.14.0' },
+    { argv: ['node', 'fixture', '--helper=/tmp/other'] }, { execArgv: ['--import', 'other.mjs'] }]) {
+    assert.throws(() => macFixtureAdmission({ ...admission(), ...delta }));
+  }
+  for (const delta of [{ RUNNER_ENVIRONMENT: 'self-hosted' }, { RUNNER_ARCH: 'X64' },
+    { GITHUB_REPOSITORY: 'other/repo' }, { GITHUB_SHA: 'not-a-commit' }, { GITHUB_RUN_ID: '0' },
+    { GITHUB_RUN_ATTEMPT: '0' }, { GITHUB_JOB: '../other' }, { NODE_OPTIONS: '--require other.cjs' },
+    { BRIDGE_MACOS_KEYCHAIN_FIXTURE: 'yes' }, { bridge_macos_helper: '/other' }, { BASH_ENV: '/other' },
+    { ENV: '/other' }, { SHELLOPTS: 'xtrace' }, { 'BASH_FUNC_exec%%': '() { false; }' },
+    { DYLD_INSERT_LIBRARIES: '/other.dylib' }]) {
+    const value = admission(); Object.assign(value.environment, delta);
+    assert.throws(() => macFixtureAdmission(value));
+  }
+});
+
+function macho() {
+  const bytes = Buffer.alloc(40); bytes.writeUInt32LE(0xfeedfacf, 0); bytes.writeUInt32LE(0x0100000c, 4);
+  bytes.writeUInt32LE(2, 12); bytes.writeUInt32LE(1, 16); bytes.writeUInt32LE(8, 20);
+  bytes.writeUInt32LE(1, 32); bytes.writeUInt32LE(8, 36); return bytes;
+}
+test('Mac executable parser refuses universal, Intel, wrong-type and malformed load-command artifacts', () => {
+  assert.equal(macMachO(macho()).architecture, 'arm64');
+  assert.throws(() => macMachO(Buffer.alloc(31)));
+  for (const [offset, value] of [[0, 0xcafebabe], [4, 0x01000007], [12, 6], [16, 0],
+    [16, 2], [20, 16], [36, 7], [36, 16]]) {
+    const bytes = macho(); bytes.writeUInt32LE(value, offset); assert.throws(() => macMachO(bytes));
+  }
+});
+
+test('Mac process observations bind bounded unique PIDs to only the captured group', () => {
+  assert.deepEqual(macPsRows(' 200 200 Ss\n 201 200 T+\n', 200),
+    [{ pid: 200, pgid: 200, state: 'Ss' }, { pid: 201, pgid: 200, state: 'T+' }]);
+  for (const text of ['PID PGID STAT\n', '200 201 S\n', '200 200 S\n200 200 T\n',
+    '2147483648 200 S\n', '0 200 S\n', '200 200 S /unrelated/path\n', '200 200 S!\n', 'x'.repeat(8193)]) {
+    assert.throws(() => macPsRows(text, 200));
+  }
+  assert.throws(() => macPsRows('200 200 S\n', 1));
+});
+test('Mac group absence requires the complete fixed ps no-match contract', () => {
+  const observation = { stdout: '', stderr: '', closed: true, error: null, signal: null, exitCode: 1 };
+  assert.deepEqual(macPsObservation(observation, 200), []);
+  assert.equal(macPsObservation({ ...observation, exitCode: 0, stdout: '200 200 Ss\n' }, 200).length, 1);
+  for (const delta of [{ exitCode: 0 }, { exitCode: 2 }, { stderr: 'permission denied' },
+    { stdout: '200 200 S\n' }, { closed: false }, { error: 'timeout' }, { signal: 'SIGKILL' }]) {
+    assert.throws(() => macPsObservation({ ...observation, ...delta }, 200));
+  }
+});
+
+test('Mac APFS fact refuses missing, duplicate, escaped-duplicate and foreign filesystem fields', () => {
+  assert.deepEqual(macApfsPlistJson('{"FilesystemType":"apfs","OtherObservation":true}'), { filesystemType: 'apfs' });
+  for (const value of ['{}', '[]', '{"FilesystemType":"hfs"}', '{"FilesystemType":null}',
+    '{"FilesystemType":"hfs","FilesystemType":"apfs"}',
+    '{"FilesystemType":"hfs","\\u0046ilesystemType":"apfs"}',
+    '{"FilesystemType":"apfs","nested":{"FilesystemType":"apfs"}}', 'x'.repeat(512 * 1024 + 1)]) {
+    assert.throws(() => macApfsPlistJson(value));
+  }
+});
+test('Mac private fixture ACL observation accepts exact owner mode and refuses unknown or extended ACL rows', () => {
+  assert.equal(macAclAbsent('drwx------ 2 runner staff 64 Oct 4 10:00 /fixture\n', 'directory').extendedAcl, 'observed-absent');
+  assert.equal(macAclAbsent('-rwx------@ 1 runner staff 40 Oct 4 10:00 /helper\n', 'file').xattrMarker, true);
+  for (const [value, kind] of [['drwx------+', 'directory'], ['drwxr-x---', 'directory'],
+    ['-rwx------', 'directory'], ['-rwx------\n 0: user:other allow read', 'file'], ['', 'file'],
+    ['drwx------', 'unknown']]) assert.throws(() => macAclAbsent(value, kind));
+});
+
+function artifactFixture() {
+  const root = path.resolve('synthetic-mac-parser-root'), manifest = path.join(root, 'crate', 'Cargo.toml'),
+    source = path.join(root, 'crate', 'tests', 'native.rs'), targetPrefix = path.join(root, 'target', 'aarch64-apple-darwin');
+  const selected = { reason: 'compiler-artifact', manifest_path: manifest, target: { name: 'native', kind: ['test'], src_path: source },
+    profile: { test: true }, executable: path.join(targetPrefix, 'debug', 'deps', 'native-123') };
+  return { selected, options: { name: 'native', kind: 'test', manifest, source, targetPrefix, test: true },
+    finished: { reason: 'build-finished', success: true } };
+}
+test('Mac compiler artifact selection requires exact source, target, profile and one successful build', () => {
+  const { selected, options, finished } = artifactFixture();
+  const output = values => values.map(value => JSON.stringify(value)).join('\n');
+  assert.deepEqual(macArtifactInventory(output([selected, finished]), options), selected);
+  for (const values of [[selected], [selected, { ...finished, success: false }], [selected, finished, finished],
+    [selected, selected, finished], [{ ...selected, profile: { test: false } }, finished],
+    [{ ...selected, target: { ...selected.target, kind: ['test', 'bin'] } }, finished],
+    [{ ...selected, manifest_path: path.join(options.manifest, '..', 'other.toml') }, finished],
+    [{ ...selected, target: { ...selected.target, src_path: path.join(options.source, '..', 'other.rs') } }, finished],
+    [{ ...selected, executable: path.join(options.targetPrefix, '..', 'other', 'native') }, finished]]) {
+    assert.throws(() => macArtifactInventory(output(values), options));
+  }
+});
+
+test('Mac supervisor cancellation during delayed validation permanently prevents anchor and child admission', async () => {
+    const admission = new MacSupervisorAdmission(), validation = Promise.withResolvers();
+    let launches = 0;
+    const initialization = (async () => { await admission.observe(() => validation.promise); admission.admitAnchor(); admission.admitLaunch(); launches++; })();
+    const refusal = assert.rejects(initialization, error => error.code === 'MAC_FIXTURE_SUPERVISOR_CANCELLED');
+    admission.cancel(); validation.resolve('successful later validation'); await refusal;
+    assert.equal(admission.anchored, false); assert.equal(admission.launches, 0); assert.equal(launches, 0);
+    assert.throws(() => admission.admitAnchor()); assert.throws(() => admission.admitLaunch());
+    await assert.rejects(admission.observe(() => Promise.resolve()), error => error.code === 'MAC_FIXTURE_SUPERVISOR_CANCELLED');
+});
+test('Mac supervisor cancellation after anchoring prevents launch and later continuation', async () => {
+  const admission = new MacSupervisorAdmission(); admission.admitAnchor(); admission.cancel();
+  assert.equal(admission.anchored, true); assert.equal(admission.launches, 0);
+  assert.throws(() => admission.admitLaunch());
+  const running = new MacSupervisorAdmission(); running.admitAnchor(); running.admitLaunch(); running.cancel();
+  assert.throws(() => running.active()); assert.throws(() => running.admitLaunch()); assert.equal(running.launches, 1);
+});
+test('Mac supervisor diagnostic failure or a stalled pipe cannot hold disposal indefinitely', async () => {
+  assert.equal(await macBoundedDiagnostic(() => Promise.resolve()), true);
+  assert.equal(await macBoundedDiagnostic(() => Promise.reject(Error('closed pipe'))), false);
+  assert.equal(await macBoundedDiagnostic(() => new Promise(() => {})), false);
+});

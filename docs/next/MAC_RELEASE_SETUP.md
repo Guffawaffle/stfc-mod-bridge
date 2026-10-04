@@ -1,8 +1,8 @@
 # Apple Silicon release prerequisites
 
 The initial release targets native Apple Silicon macOS alongside Windows x64.
-The current campaign has no bound live Mac host or confirmed Bridge signing
-identity. The human confirmed an existing Apple developer account used to sign
+The human currently has no Mac available, and this campaign has no bound live
+Mac host or confirmed Bridge signing identity. The human confirmed an existing Apple developer account used to sign
 the Community Mod. Reuse that account; new enrollment is not a prerequisite.
 Development and portable qualification can continue; the Mac release cannot be
 qualified by Windows, cross-compilation or browser evidence.

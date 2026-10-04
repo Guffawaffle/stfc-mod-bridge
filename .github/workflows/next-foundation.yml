@@ -45,6 +45,12 @@ jobs:
         run: node scripts/next/make-runner-plan.mjs --package br-02
       - name: Execute both protocol and complete scenario gates
         run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-02.plan.json --artifact-dir artifacts/next/runner/br-02 --timeout 990000 --max-level 0 --keep-cache --json
+      - name: Bind selected Apple Silicon fixtures to this job's prerequisites
+        if: matrix.host == 'macos-arm64-native'
+        run: node scripts/next/make-runner-plan.mjs --suite macos-platform-fixtures --host macos-arm64-native
+      - name: Execute private Apple Silicon fixture subset
+        if: matrix.host == 'macos-arm64-native'
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-07.macos-platform-fixtures.macos-arm64-native.plan.json --artifact-dir artifacts/next/runner/br-07-fixtures --timeout 630000 --max-level 0 --keep-cache --json
       - name: Install pinned project browser
         run: node scripts/next/browser.mjs install
       - name: Bind frontend package to completed prerequisites

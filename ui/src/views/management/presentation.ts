@@ -31,7 +31,7 @@ export interface ReviewSummary {
     warning?: string;
 }
 function installationLines(installation: DeepReadonly<InstallationBinding>): string[] { return [installation.kind === 'registered' ? `Installation: ${installation.registrationId} · revision ${installation.registrationRevision}` : 'Explicit directory installation', `Physical installation: ${installation.physicalId}`]; }
-function targetLines(target: DeepReadonly<ResolvedTarget>): string[] { return [...installationLines(target.installation), target.profile.kind === 'isolated' ? `Profile: ${target.profile.id} · revision ${target.profile.revision}` : target.profile.ordinaryId ? `Ordinary profile: ${target.profile.ordinaryId}` : 'Owner-scoped ordinary profile']; }
+export function targetLines(target: DeepReadonly<ResolvedTarget>): string[] { return [...installationLines(target.installation), target.profile.kind === 'isolated' ? `Profile: ${target.profile.id} · revision ${target.profile.revision}` : target.profile.ordinaryId ? `Ordinary profile: ${target.profile.ordinaryId}` : 'Owner-scoped ordinary profile']; }
 /** Root's shared ActionReview consumes this typed allowlist. No paths, secret
  * refs, runtime authority tokens or arbitrary input JSON are printed. */
 export function captureSummary(plan: Pick<DeepReadonly<PreparedPlan>, 'semantics'>): ReviewSummary {

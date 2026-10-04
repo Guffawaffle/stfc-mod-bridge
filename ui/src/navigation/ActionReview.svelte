@@ -32,7 +32,7 @@
     <p>Unrecognized runtime consent applies to this attempt only.</p>
   {/if}
   {#if plan}<p>Proposed effects:</p><ul>{#each plan.semantics.effects as effect}<li>{effect.replaceAll('_', ' ')}</li>{/each}</ul>{/if}
-  {#if summary && capture?.kind !== 'launch_ordinary' && capture?.kind !== 'launch_isolated' && capture?.kind !== 'focus_session'}
+  {#if summary}
     <ul aria-label="Captured action details">{#each summary.lines as line}<li>{line}</li>{/each}</ul>
     {#if summary.warning}<Notice title="Review this effect" tone="warning"><p>{summary.warning}</p></Notice>{/if}
   {/if}

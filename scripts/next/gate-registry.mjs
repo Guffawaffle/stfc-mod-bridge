@@ -1,5 +1,14 @@
 // Only implemented gates belong here. The planning graph is not executable evidence.
 export const registry = {
+  'macos-platform-fixtures': {
+    host: 'macos-arm64-native', timeoutMs: 600000, packageAcceptanceAvailable: false,
+    argv: ['scripts/next/macos-platform-fixtures.mjs'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
+      '.github/workflows/next-foundation.yml', 'docs/next/MAC_PLATFORM_FIXTURES.md', 'docs/next/NATIVE_QUALIFICATION.md',
+      'scripts/next', 'crates/bridge-platform-macos', 'crates/bridge-domain', 'crates/bridge-contracts'],
+    criteria: ['BR07-FIX-01', 'BR07-FIX-02', 'BR07-FIX-03', 'BR07-FIX-04', 'BR07-FIX-05', 'BR07-FIX-06', 'BR07-FIX-07', 'BR07-FIX-08'],
+    boundary: 'Selected native Apple Silicon private fixtures only: exact source/tools/artifact inventories, one APFS volume, owned helper containment, native provider calls and ownership docs. Excludes Keychain, GUI, installed game, full br-07 acceptance and release qualification.'
+  },
   'scope-contract': {
     host: 'any',
     argv: ['--test', 'scripts/next/tests/qualification.test.mjs', 'scripts/next/tests/prerequisites.test.mjs', 'scripts/next/tests/input-tree.test.mjs'],
@@ -66,7 +75,7 @@ export const registry = {
   'windows-platform': {
     host: 'windows-x64', timeoutMs: 600000,
     argv: ['scripts/next/windows-platform.mjs'],
-    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'scripts/next', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-platform-windows'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'dependencies/next-windows-signature-fixture.json', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'scripts/next', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-platform-windows'],
     criteria: ['BR06-01', 'BR06-02', 'BR06-03', 'BR06-04'],
     boundary: 'Actual ordinary-user Windows native physical/process identity, private retained reparse/replace/DPAPI/signature/owned-focus/shortcut fixtures. Namespace exclusion and recovery remain application-service responsibilities. No game, account, catalog, Mac or release qualification.'
   },

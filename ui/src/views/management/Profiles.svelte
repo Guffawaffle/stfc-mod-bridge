@@ -5,6 +5,7 @@ import { type DeepReadonly } from '../../client';
 import type { PreferredInstallationEdit, ProfileProjection } from '../../generated/protocol';
 import type { ManagementController } from './controller';
 import { observedProfiles, observedInstallations, profileIdentity, profileLabel, availabilityReason, available, inventoryStatus } from './presentation';
+import { installationLabel } from '../home/presentation';
 export interface Props {
     controller: ManagementController;
 }
@@ -66,7 +67,7 @@ async function create() {
   {:else}<Notice title="Profile actions unavailable"><p>The canonical catalog mutation baseline is unavailable.</p></Notice>{/if}
  </article>{/if}
  <article><h3>Create an isolated profile</h3><Field id="management-new-profile" label="New profile name" bind:value={newName} />
-  <Select id="management-new-installation" label="Preferred installation for the new profile" bind:value={newInstallation} options={[{value:'',label:'Choose explicitly'},...installations.flatMap(row=>row.binding.kind==='registered'?[{value:row.binding.registrationId,label:row.name}]:[])]} />
+  <Select id="management-new-installation" label="Preferred installation for the new profile" bind:value={newInstallation} options={[{value:'',label:'Choose explicitly'},...installations.flatMap(row=>row.binding.kind==='registered'?[{value:row.binding.registrationId,label:installationLabel(row)}]:[])]} />
   <Select id="management-profile-setup" label="Initial isolated store" bind:value={setup} options={[{value:'new',label:'Create a new store'},...($controller.imports??[]).map(row=>({value:row.reference.sourceId,label:`${row.name} · ${row.reference.sourceId}`}))]}/>
   {#if setup!=='new'&&source}<p>Captured source {source.reference.sourceId} · revision {source.reference.sourceRevision}. Accessibility: {source.accessibility.status}.</p>
    <label class="confirmation"><input type="checkbox" bind:checked={importConfirmed}/> Request native approval to import this exact user store.</label>{/if}

@@ -7,7 +7,7 @@ import { ActionReviewController } from './action-review';
 export type ScreenTransition = { readonly kind: 'idle' | 'preparing' | 'admitting' | 'uncertain' | 'discard_review' | 'reopening' }
   | { readonly kind: 'review'; readonly plan: DeepReadonly<PreparedPlan> }
   | { readonly kind: 'observing'; readonly operationId: string };
-export interface ScreenState { readonly work: WorkState; readonly observations: ObservationState; readonly transition: ScreenTransition; readonly notice: string; readonly reviewPurpose?: 'navigation' | 'in_place'; }
+export interface ScreenState { readonly work: WorkState; readonly observations: ObservationState; readonly transition: ScreenTransition; readonly notice: string; readonly reviewPurpose?: 'navigation' | 'in_place'; readonly draftReview?: DraftReview; }
 export interface FacadeOptions { readonly idempotencyKey: () => string; readonly work?: WorkContext; readonly focus?: FocusController; readonly announcements?: AnnouncementController; }
 type SaveAttempt = { review: DraftReview; plan?: DeepReadonly<PreparedPlan>; commit?: DeepReadonly<CommitInput>; operationId?: string; request?: RequestMetadata;
   ownsReplay?: boolean; replayCapture?: CommitReplay['request']; provedUnsent?: boolean; priorDeliveryUncertain?: boolean };
@@ -43,7 +43,7 @@ export class BridgeFacade {
     this.stops.push(this.work.subscribe(() => this.publish()));
     this.stops.push(this.work.observations.subscribe(() => { this.reconcileObserved(); this.publish(); }));
   }
-  get state(): ScreenState { return Object.freeze({ work: this.work.state, observations: this.work.observations.state, transition: Object.freeze({ ...this.transition }), notice: this.notice, ...(this.attempt || this.discardReview ? { reviewPurpose: (this.attempt?.review ?? this.discardReview!).purpose.kind } : {}) }); }
+  get state(): ScreenState { return Object.freeze({ work: this.work.state, observations: this.work.observations.state, transition: Object.freeze({ ...this.transition }), notice: this.notice, ...(this.attempt || this.discardReview ? { reviewPurpose: (this.attempt?.review ?? this.discardReview!).purpose.kind, draftReview: this.attempt?.review ?? this.discardReview! } : {}) }); }
   subscribe(listener: (state: ScreenState) => void): () => void { this.listeners.add(listener); listener(this.state); return () => { this.listeners.delete(listener); }; }
   private publish(): void {
     if (this.disposed) return;

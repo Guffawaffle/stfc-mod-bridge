@@ -35,7 +35,7 @@ const expected = ['initial-no-implicit-target', 'ordinary-explicit-review-and-mo
   'focus-exact-session-among-recycled-identities', 'lost-delivery-retains-explicit-replay', 'exact-replay-then-observed-completion',
   'partial-unknown-availability', 'complete-missing-installation', 'offline-refuses-launch', 'recovery-refuses-launch',
   'dirty-view-navigation-preserves-draft', 'dirty-target-Stay-restores-opener', 'dirty-Save-keeps-target-until-completed',
-  'confirmed-Discard-applies-target', 'reset-disposes-pending-observation', 'three-maintenance-destinations',
+  'confirmed-Discard-applies-target', 'reset-disposes-pending-observation', 'separate-maintenance-and-recovery-destinations',
   'normal-screen-no-private-paths', 'home-dark-presentation', 'home-forced-colors-reduced-motion', 'home-text-200-desktop', 'home-text-200-compact'];
 assert.equal(new Set(expected).size, expected.length);
 const observations = [], screenshots = [], browserErrors = [], externalRequests = [], provenance = [];
@@ -175,11 +175,20 @@ try {
   assert.deepEqual(await methods(), ['snapshot']); await observed('dirty-target-Stay-restores-opener', { modalCount: 1, noMutation: true, openerRestored: true }, 'dirty-stay');
   await button('Use target').click(); await dialog('Unsaved changes').waitFor(); await dialog('Unsaved changes').getByRole('button', { name: 'Save', exact: true }).click();
   await dialog('Review Save').waitFor(); await state('idle', 'review'); assert.equal(await selected(), 'Not selected');
+  const saveReview = await dialog('Review Save').innerText();
+  assert.match(saveReview, /Draft being reviewed/); assert.match(saveReview, /Owner-scoped ordinary profile/);
+  assert.match(saveReview, /Requested next target/); assert.match(saveReview, /bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/);
+  assert.match(saveReview, /Installation: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+  await picture('dirty-save-review');
   await button('Confirm Save').click(); await state('idle', 'observing'); assert.equal(await selected(), 'Not selected');
   await button('Refresh Save outcome').click(); await state('idle'); await page.waitForFunction(() => document.querySelector('[data-testid="home-preview-selection"]')?.textContent !== 'Not selected');
   assert.match(await page.getByTestId('home-preview-draft').innerText(), /edits: 0; dirty: false/); await observed('dirty-Save-keeps-target-until-completed', { explicitReview: true, targetAfterCompletedOnly: true }, 'dirty-saved');
   await choose('dirty_draft'); await page.getByLabel('Development draft outcome', { exact: true }).selectOption('discard');
   await page.getByTestId('home-preview-confidence').filter({ hasText: /^authoritative$/ }).waitFor(); await applyTarget(true); await dialog('Unsaved changes').waitFor();
+  const discardReview = await dialog('Unsaved changes').innerText();
+  assert.match(discardReview, /Draft being reviewed/); assert.match(discardReview, /Owner-scoped ordinary profile/);
+  assert.match(discardReview, /Requested next target/); assert.match(discardReview, /bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/);
+  await picture('dirty-discard-decision');
   await dialog('Unsaved changes').getByRole('button', { name: 'Discard', exact: true }).click(); await page.waitForFunction(() => document.querySelector('[data-testid="home-preview-selection"]')?.textContent !== 'Not selected');
   assert.match(await page.getByTestId('home-preview-draft').innerText(), /dirty: false/); await observed('confirmed-Discard-applies-target', { exactOldRevisionReceipt: true });
 
@@ -187,17 +196,22 @@ try {
   assert.equal(await selected(), 'Not selected'); await state('idle'); assert.deepEqual(await methods(), ['snapshot']);
   await observed('reset-disposes-pending-observation', { oldTargetReadNotApplied: true });
   const maintenance = [];
-  for (const [control, heading, view] of [['Game and recovery', 'Game update', 'engineering'], ['Community Mod', 'Community Mod', 'engineering'], ['Bridge and preferences', 'Bridge update', 'preferences']]) {
+  for (const [control, heading, view] of [['Game updates', 'Game update', 'engineering'], ['Recorded recovery', 'History', 'history'], ['Community Mod', 'Community Mod', 'engineering'], ['Bridge and preferences', 'Bridge update', 'preferences']]) {
     await choose('ordinary_ready'); await button(control).click(); await page.getByRole('heading', { name: heading, exact: true, level: 1 }).waitFor();
     assert.match(await page.getByTestId('home-preview-navigation').innerText(), new RegExp(`view: ${view}; queued: none`));
     const main = page.getByRole('navigation', { name: 'Bridge workspace', exact: true });
-    assert.equal(await main.getByRole('button', { name: view === 'engineering' ? 'Engineering' : 'Preferences', exact: true }).getAttribute('aria-current'), 'page');
+    assert.equal(await main.getByRole('button', { name: view === 'engineering' ? 'Engineering' : view === 'history' ? 'History' : 'Preferences', exact: true }).getAttribute('aria-current'), 'page');
     const engineering = page.getByRole('navigation', { name: 'Engineering sections', exact: true });
     if (view === 'engineering') assert.equal(await engineering.getByRole('button', { name: heading, exact: true }).getAttribute('aria-current'), 'page');
     else assert.equal(await engineering.count(), 0);
     maintenance.push(heading);
   }
-  await observed('three-maintenance-destinations', { headings: maintenance, separateReviewsStillRequired: true });
+  await choose('recovery'); await button('Recorded recovery').click(); await page.getByRole('heading', { name: 'History', exact: true, level: 1 }).waitFor();
+  await page.getByText('Retained recovery obligation', { exact: true }).waitFor();
+  await page.getByText('Executable recovery is unavailable for this recorded operation.', { exact: true }).waitFor();
+  assert.equal(await button('Review recorded recovery').count(), 0, 'A launch obligation cannot invent an updater recovery command');
+  assert.deepEqual(await methods(), ['snapshot']);
+  await observed('separate-maintenance-and-recovery-destinations', { headings: maintenance, blockedLaunchFindsRecordedObligation: true, unsupportedRecoveryHasNoInventedCommand: true, separateReviewsStillRequired: true });
   await choose('ordinary_ready'); const normal = await page.locator('.bridge-shell').innerText(); assert.doesNotMatch(normal, /[A-Za-z]:[\\/]|\/Users\/|\/home\/|private-token|credential/i);
   await observed('normal-screen-no-private-paths', { explicitDevelopmentDiagnosticsExcluded: true });
   await page.emulateMedia({ colorScheme: 'dark' }); await geometry(); await observed('home-dark-presentation', { colorScheme: 'dark', nativeMacClaim: false }, 'home-dark');

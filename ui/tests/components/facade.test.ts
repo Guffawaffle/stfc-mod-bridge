@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { BridgeClient, WorkContext, canonicalData, decodeReply, decodeRequest, type ClientClock, type ClientOutcome, type DeepReadonly } from '../../src/client';
 import type { DraftSnapshot, OperationSnapshot } from '../../src/generated/protocol';
 import { BridgeFacade, FocusController, AnnouncementController } from '../../src/state';
+import { render } from 'svelte/server';
+import { UnsavedChanges } from '../../src/navigation';
 
 const root = new URL('../../../contracts/fixtures/', import.meta.url);
 const raw = (name: string) => readFileSync(new URL(name + '.json', root), 'utf8');
@@ -88,6 +90,13 @@ test('facade commit timeout retains exact replay and never claims Save or backen
   const { facade, sent, clock, client } = harness(request => request.body.type === 'command' && request.body.command.name === 'commit' && lose ? new Promise(() => {}) : undefined);
   await facade.prepareSave(); const pending = facade.commitSave(); clock.expire(); await pending;
   expect(facade.state.transition.kind).toBe('uncertain'); expect(facade.state.work.closeRequested).toBe(false);
+  const held = facade.state.draftReview!;
+  expect(held.draft.draft.document.target).toEqual(facade.state.work.draft?.draft.document.target);
+  facade.work.observations.invalidate('disconnected');
+  const review = render(UnsavedChanges, { props: { facade } }).body;
+  expect(review).toContain('Captured Save target'); expect(review).toContain('The requested transition remains pending');
+  expect(review).toContain(held.draft.draft.document.target.installation.kind === 'registered' ? held.draft.draft.document.target.installation.registrationId : held.draft.draft.document.target.installation.physicalId);
+  expect(review).not.toContain(held.draft.draft.document.target.installation.nativeTargetRef);
   expect(facade.stay()).toBe(false); expect(facade.state.notice).not.toBe('Changes saved.');
   const original = sent.at(-1).body.command.input; expect(client.getReplay(original.idempotencyKey)?.input).toEqual(original);
   lose = false; await facade.replaySave(); expect(sent.map(row => row.body.command.name)).toEqual(['set_draft_changes', 'prepare', 'commit', 'commit']);

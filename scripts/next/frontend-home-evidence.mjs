@@ -39,7 +39,9 @@ export const homeCriteria = Object.freeze({
     "Home workspace navigation marks the current view and view changes preserve the same dirty draft",
     "Home queued dirty target change renders one semantic Save Discard Stay decision without claiming admission success",
     "Home operation progress preserves exact observed counts and refuses unknown stale or unsafe numeric percentages",
-    "Home Save review copy describes protected edits without exposing references or private public-string paths"
+    "Home Save review copy describes protected edits without exposing references or private public-string paths",
+    "Home duplicate installation names use stable public identities through reorder rename and inventory loss",
+    "Home dirty transition shows captured draft target separately from queued destination after inventory loss"
   ],
   "ui/tests/home-preview/session.test.ts": [
     "Home preview every mode validates exact composed wire frames and hashes all unchanged shared source bytes",
@@ -56,7 +58,7 @@ export const homeCriteria = Object.freeze({
 
 export function homeEvidence(report, root) {
   const result = vitestEvidence(report, { root, required: homeCriteria });
-  assert.equal(result.tests, 41); assert.equal(result.files.length, 4);
+  assert.equal(result.tests, 43); assert.equal(result.files.length, 4);
   for (const output of report.testResults) {
     const file = result.files.find(value => output.name.replaceAll('\\', '/').endsWith('/' + value.file));
     assert.ok(file && Object.hasOwn(homeCriteria, file.file));

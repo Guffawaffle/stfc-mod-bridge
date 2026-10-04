@@ -24,6 +24,7 @@ async function review() { if (!scope)
 </script>
 <section aria-label={section==='game'?'Game updates':'Bridge updates'}><h2>{section==='game'?'Game client':'Bridge application'}</h2>
  <p>{section==='game'?'Updates the official game client in the selected installation.':'Updates this Bridge application and its paired support components.'}</p>
+ <Button onclick={()=>facade.navigate('history')}>Recorded recovery</Button><p>Review retained operations and their captured targets in History.</p>
  {#if section==='bridge'&&!application}<Notice title="Current Bridge package unavailable"><p>Bridge cannot check updates until its installed package is identified.</p></Notice>{/if}
  <Button busy={$controller.busy} disabled={section==='bridge'?!application:!target} onclick={check}>Check {section==='game'?'game':'Bridge'} updates</Button>
  {#if checked?.status==='observed'}

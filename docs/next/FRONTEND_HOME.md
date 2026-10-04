@@ -6,6 +6,14 @@ There is one applied installation/profile selector. Session focus captures the
 exact observed PID/start/executable/session rather than the next-launch selector.
 Preparation, explicit confirmation, admission and observed completion remain
 separate. A lost commit response retains its exact replay until reconciliation.
+Installation choices show stable public catalog identities, including the profile
+creation selector. Captured launch/focus reviews retain their identity details
+if names change or inventories disappear. Save/Discard review shows the held
+draft target separately from the requested next target; an uncertain Save keeps
+that capture visible. Private directory and protected-value references stay hidden.
+Home and game/Bridge update screens link directly to recorded recovery in History.
+The recovery list uses each recorded operation's target, independent of the current
+selection, and presents unsupported recovery as unavailable.
 
 | Criterion | Implemented behavior and evidence |
 | --- | --- |
@@ -20,8 +28,8 @@ digests are unchanged; request correlation and observed selector assertions,
 query envelopes and documented availability variants are development composition.
 This is a strict scripted demonstration, never a frontend policy oracle.
 
-Run `node scripts/next/frontend-home.mjs` for 32 Home assertions and nine preview
-composition regressions, Svelte checking, 25 pinned-browser criteria, 18 retained
+Run `node scripts/next/frontend-home.mjs` for 34 Home assertions and nine preview
+composition regressions, Svelte checking, 25 pinned-browser criteria, 20 retained
 images and production graph inspection. The 89 shared component/facade assertions
 remain separately bound in br-12. Package acceptance also requires current br-12
 prerequisite evidence through the canonical candidate-bound LexRunner gate.
@@ -31,4 +39,4 @@ draft navigation, sampled dark/forced-color/reduced-motion presentation and
 200% root text scale at desktop and compact widths. Images are reviewed alongside
 interaction assertions. It does not establish whole-product usability, native
 webview behavior, Narrator/VoiceOver, actual Apple Silicon execution or a release.
-Management and Engineering data views are separate later work packages.
+Management and Engineering data views retain their separate package evidence.

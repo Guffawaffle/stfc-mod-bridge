@@ -6,9 +6,9 @@
   import type { BridgeFacade } from '../../state';
   import type { MutationIntent, StoreMode, UnrecognizedRuntimeChoice } from '../../generated/protocol';
   import { HomeController } from './controller';
-  import { availabilityText, installations, inventoryText, profileKey, profileLabel, profiles, selectorFor, sessions, sessionStatus, targetLabels } from './presentation';
+  import { availabilityText, installationLabel, installations, inventoryText, profileKey, profileLabel, profiles, selectorFor, sessions, sessionStatus, targetLabels } from './presentation';
   export interface Props { facade?: BridgeFacade; onreview?: (intent: DeepReadonly<MutationIntent>, focusKey: string) => void | Promise<void>;
-    onmaintenance?: (destination: 'game' | 'runtime' | 'bridge') => void; }
+    onmaintenance?: (destination: 'game' | 'runtime' | 'bridge' | 'recovery') => void; }
   let { facade = useBridge(), onreview, onmaintenance }: Props = $props();
   const scopedFacade = untrack(() => facade), controller = new HomeController(scopedFacade), actions = scopedFacade.actions;
   const initial = scopedFacade.work.state.selector;
@@ -58,7 +58,7 @@
   <div class="target-grid">
     <div class="choose-target"><h2>Choose a target</h2><p class="helper">Apply both choices explicitly. A profile preference does not select an installation for you.</p>
       <Select id="home-installation" label="Installation" bind:value={installationChoice} disabled={blocked}
-        options={[{ value: '', label: 'Choose an installation' }, ...installationRows.flatMap(row => row.binding.kind === 'registered' ? [{ value: row.binding.registrationId, label: row.name }] : [])]}/>
+        options={[{ value: '', label: 'Choose an installation' }, ...installationRows.flatMap(row => row.binding.kind === 'registered' ? [{ value: row.binding.registrationId, label: installationLabel(row) }] : [])]}/>
       <p class="inventory">{inventoryText($facade.observations.snapshot?.installations, 'Installations')}</p>
       <Select id="home-profile" label="Profile" bind:value={profileChoice} disabled={blocked}
         options={[{ value: '', label: 'Choose ordinary or isolated' }, ...profileRows.map((row, index) => ({ value: profileKey(row), label: profileLabel(row, index) }))]}/>
@@ -96,7 +96,7 @@
     {/each}
   </section>
   <section class="maintenance" aria-labelledby="home-maintenance-title"><h2 id="home-maintenance-title">Manage deliberately</h2><p class="helper">Game, Community Mod and Bridge updates have separate reviews and recovery.</p>
-    <div class="maintenance-links"><Button onclick={() => onmaintenance ? onmaintenance('game') : facade.navigate('engineering')}>Game and recovery</Button><Button onclick={() => onmaintenance ? onmaintenance('runtime') : facade.navigate('engineering')}>Community Mod</Button><Button onclick={() => onmaintenance ? onmaintenance('bridge') : facade.navigate('preferences')}>Bridge and preferences</Button></div>
+    <div class="maintenance-links"><Button onclick={() => onmaintenance ? onmaintenance('game') : facade.navigate('engineering')}>Game updates</Button><Button onclick={() => onmaintenance ? onmaintenance('recovery') : facade.navigate('history')}>Recorded recovery</Button><Button onclick={() => onmaintenance ? onmaintenance('runtime') : facade.navigate('engineering')}>Community Mod</Button><Button onclick={() => onmaintenance ? onmaintenance('bridge') : facade.navigate('preferences')}>Bridge and preferences</Button></div>
   </section>
 </section>
 <style>

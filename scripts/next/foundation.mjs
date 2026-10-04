@@ -63,7 +63,7 @@ async function browserStartup() {
   }
 }
 
-run('dispatcher-tests', ['--test', 'scripts/next/tests/qualification.test.mjs', 'scripts/next/tests/prerequisites.test.mjs', 'scripts/next/tests/input-tree.test.mjs', 'scripts/next/tests/foundation.test.mjs', 'scripts/next/tests/rust-context.test.mjs']);
+run('dispatcher-tests', ['--test', 'scripts/next/tests/qualification.test.mjs', 'scripts/next/tests/prerequisites.test.mjs', 'scripts/next/tests/input-tree.test.mjs', 'scripts/next/tests/foundation.test.mjs', 'scripts/next/tests/rust-context.test.mjs', 'scripts/next/tests/macos-platform-fixtures.test.mjs']);
 run('frontend-typecheck', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'check']);
 run('frontend-tests', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'test']);
 run('frontend-build', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'build']);

@@ -648,6 +648,17 @@
           "cwdResolution": "required-on-matching-native-host-before-execution",
           "availability": "not-established",
           "receiptRequired": true
+        },
+        {
+          "id": "macos-platform-fixtures",
+          "state": "implemented-awaiting-native-observation",
+          "requiredHost": "macos-arm64-native",
+          "command": "node scripts/next/qualify.mjs --suite macos-platform-fixtures --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true,
+          "packageAcceptanceAvailable": false
         }
       ],
       "host": "macos-arm64-native"

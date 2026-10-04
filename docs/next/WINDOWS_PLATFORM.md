@@ -12,7 +12,7 @@ authority, operational permission or namespace exclusion.
 | BR06-04 | Synthetic purpose/version-bound current-user DPAPI, separate Mod/OfficialGame/Bridge signature labels, cache-only primary signer observation and secondary-index refusal, exact private-window focus outcome, explicit private shortcut destination and literal arguments. |
 
 `node scripts/next/windows-platform.mjs` compiles current native x64 artifacts,
-checks seven exact unit tests and three compile-fail ownership examples, then
+checks twenty-five exact unit tests and five compile-fail ownership examples, then
 invokes fourteen native cases separately by exact name. The re-executed child
 helper is orchestration, never a fifteenth criterion or a skipped success.
 Every fixture remains under a fresh `artifacts/next/windows-platform/` directory;
@@ -59,3 +59,8 @@ OS call cannot atomically retain a window handle against recycling. A denied
 foreground request remains a recorded policy outcome. These services alone do
 not qualify a game installation, actual catalog, engine integration, macOS,
 assistive technology, signing, distribution or release.
+
+The new retained private journal owner and its unit/ownership tests are described
+in [PRIVATE_JOURNAL_STORAGE.md](PRIVATE_JOURNAL_STORAGE.md). Its native
+ACL/sharing/namespace-flush and process-interruption fixtures remain pending;
+this platform suite does not qualify that owner for production bootstrap.

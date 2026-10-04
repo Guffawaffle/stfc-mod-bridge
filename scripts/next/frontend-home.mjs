@@ -32,7 +32,7 @@ function nested(output, expected) {
   const selected = ownedArtifactPath(root, relative), bytes = readFileSync(selected);
   return { path: selected, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
 }
-const testReceipt = nested(tests, { tests: 41 }), browserReceipt = nested(browser, { checks: 25, screenshots: 18 });
+const testReceipt = nested(tests, { tests: 43 }), browserReceipt = nested(browser, { checks: 25, screenshots: 20 });
 const graphPath = ownedArtifactPath(root, 'artifacts/next/frontend/production-graph.json'), graphBytes = readFileSync(graphPath);
 const graph = JSON.parse(graphBytes); assert.equal(graph.productionMockHostPresent, false); assert.ok(graph.modules.length > 0 && graph.outputs.length > 0);
 assert.ok(graph.modules.every(module => !/[/\\](?:mocks|scenarios|fixtures|gallery|home-preview|settings-preview|management-preview)[/\\]|@wdio|webdriver|playwright/i.test(module)));
@@ -40,6 +40,6 @@ assert.deepEqual(fingerprintInputRecords(root, inputs), before, 'Home suite inpu
 const receipt = path.join(directory, 'home-suite.json');
 writeFileSync(receipt, JSON.stringify({ schemaVersion: 'bridge-frontend-home-suite/v1', result: 'passed', completedAt: new Date().toISOString(),
   sources: before, checks, testReceipt, browserReceipt, productionGraph: { path: graphPath, sha256: createHash('sha256').update(graphBytes).digest('hex') },
-  boundary: 'Actual browser-only typed Home/navigation/action custody, 41 exact focused tests, 25 pinned-browser criteria and production graph exclusion. Native routes and webviews qualify separately.',
+  boundary: 'Actual browser-only typed Home/navigation/action custody, 43 exact focused tests, 25 pinned-browser criteria and production graph exclusion. Native routes and webviews qualify separately.',
   rustBuildInvoked: false, nativeRuntimeQualified: false, nativeWebviewQualified: false, releaseQualified: false }, null, 2) + '\n', { flag: 'wx' });
-console.log(JSON.stringify({ result: 'passed', tests: 41, browserChecks: 25, receipt, nativeRuntimeQualified: false, releaseQualified: false }));
+console.log(JSON.stringify({ result: 'passed', tests: 43, browserChecks: 25, receipt, nativeRuntimeQualified: false, releaseQualified: false }));

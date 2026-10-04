@@ -22,7 +22,8 @@
   const connection = $derived($scopedFacade.observations.confidence === 'authoritative' ? 'Observations current'
     : $scopedFacade.observations.confidence === 'partial' ? 'Some observations unavailable'
     : $scopedFacade.observations.confidence === 'stale' ? 'Observations need refresh' : 'Waiting for Bridge');
-  function openMaintenance(destination: 'game' | 'runtime' | 'bridge'): void {
+  function openMaintenance(destination: 'game' | 'runtime' | 'bridge' | 'recovery'): void {
+    if (destination === 'recovery') { scopedFacade.navigate('history'); return; }
     if (destination === 'bridge') { scopedFacade.navigate('preferences'); return; }
     managementSection = destination;
     scopedFacade.navigate('engineering');

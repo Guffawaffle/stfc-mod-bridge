@@ -44,6 +44,10 @@ export function profiles(observations: ObservationState): readonly DeepReadonly<
 export function sessions(observations: ObservationState): readonly DeepReadonly<SessionProjection>[] {
   const inventory = observations.snapshot?.sessions; return inventory?.status === 'observed' ? inventory.value.items : [];
 }
+/** Public catalog identity, never the private native directory reference. */
+export function installationLabel(installation: DeepReadonly<InstallationProjection>): string {
+  return `${installation.name} · ${installation.binding.kind === 'registered' ? installation.binding.registrationId : installation.binding.physicalId}`;
+}
 export const profileKey = (profile: DeepReadonly<ProfileProjection>): string => profile.kind === 'ordinary' ? 'ordinary' : profile.reference.id;
 export function profileLabel(profile: DeepReadonly<ProfileProjection>, index = 0): string {
   return profile.kind === 'ordinary' ? 'Ordinary · current user' : `${profile.name} · isolated ${index + 1}${profile.reference.state === 'archived' ? ' · archived' : ''}`;
@@ -65,11 +69,18 @@ export function targetMatches(selector: DeepReadonly<TargetSelector>, target: De
 }
 export function targetLabels(target: DeepReadonly<ResolvedTarget> | undefined, selector: WorkState['selector'], observations: ObservationState): { installation: string; profile: string } {
   const installation = installations(observations).find(row => target ? row.binding.physicalId === target.installation.physicalId
+    && (target.installation.kind !== 'registered' || row.binding.kind === 'registered' && row.binding.registrationId === target.installation.registrationId)
     : selector?.installation.kind === 'registered' && row.binding.kind === 'registered' && row.binding.registrationId === selector.installation.id);
   const profile = profiles(observations).find(row => target ? target.profile.kind === row.kind && (target.profile.kind === 'ordinary' || row.kind === 'isolated' && target.profile.id === row.reference.id)
     : selector?.profile.kind === row.kind && (selector.profile.kind === 'ordinary' || row.kind === 'isolated' && selector.profile.id === row.reference.id));
-  return { installation: installation?.name ?? (selector || target ? 'Selected installation · observation unavailable' : 'Not selected'),
-    profile: profile ? profileLabel(profile, profiles(observations).indexOf(profile)) : selector?.profile.kind === 'ordinary' || target?.profile.kind === 'ordinary' ? 'Ordinary · current user' : selector || target ? 'Selected isolated profile · observation unavailable' : 'Not selected' };
+  const installationId = target?.installation.kind === 'registered' ? target.installation.registrationId
+    : target?.installation.physicalId ?? (selector?.installation.kind === 'registered' ? selector.installation.id : undefined);
+  const profileId = target?.profile.kind === 'isolated' ? target.profile.id : selector?.profile.kind === 'isolated' ? selector.profile.id : undefined;
+  return { installation: installation ? `${installation.name} · ${installationId}` : installationId ? `Installation ${installationId} · observation unavailable`
+      : selector || target ? 'Explicit directory installation · observation unavailable' : 'Not selected',
+    profile: profile ? `${profileLabel(profile, profiles(observations).indexOf(profile))}${profileId ? ` · ${profileId}` : ''}`
+      : selector?.profile.kind === 'ordinary' || target?.profile.kind === 'ordinary' ? 'Ordinary · current user'
+      : profileId ? `Isolated profile ${profileId} · observation unavailable` : 'Not selected' };
 }
 export function sessionStatus(session: DeepReadonly<SessionProjection>): string {
   const live = session.liveIdentity;

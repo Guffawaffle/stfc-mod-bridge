@@ -2,9 +2,10 @@ import { expect, test } from 'vitest';
 import { render } from 'svelte/server';
 import { BridgeClient, ObservationStore, decodeEvent } from '../../src/client';
 import { BridgeFacade } from '../../src/state';
-import { Home, availabilityText, inventoryText, profileLabel, selectorFor, sessionStatus, targetLabels } from '../../src/views/home';
+import { Home, availabilityText, installationLabel, inventoryText, profileLabel, selectorFor, sessionStatus, targetLabels } from '../../src/views/home';
 import { ActionReview, UnsavedChanges, WorkspaceNavigation } from '../../src/navigation';
 import { actionProgress, editSummary } from '../../src/navigation/action-presentation';
+import { Management } from '../../src/views/management';
 import { frame, snapshot } from './helpers';
 
 function facade() { const client = new BridgeClient({ subscribe: () => () => {}, exchange: () => Promise.reject({ code: 'unavailable_binding', delivery: 'not_sent' }) }, { requestId: () => '00000001-2222-4222-8222-222222222222' }); return new BridgeFacade(client, { idempotencyKey: () => '00000001-1111-4111-8111-111111111111' }); }
@@ -60,7 +61,7 @@ test('Home normal render hides private paths and escapes long labels while separ
   api.work.observations.acceptSnapshot(observed); api.requestTarget({ installation: { kind: 'directory', directory: { platform: 'windows', value: 'C:\\Private\\Commander\\game' } }, profile: { kind: 'ordinary' } });
   const body = render(Home, { props: { facade: api } }).body;
   expect(body).not.toContain('C:\\Private\\Commander'); expect(body).toContain('&lt;img src=x>'); expect(body).not.toContain('<img src=x>');
-  expect(body).toContain('Game and recovery'); expect(body).toContain('Community Mod'); expect(body).toContain('Bridge and preferences'); api.dispose();
+  expect(body).toContain('Game updates'); expect(body).toContain('Recorded recovery'); expect(body).toContain('Community Mod'); expect(body).toContain('Bridge and preferences'); api.dispose();
 });
 
 test('Home workspace navigation marks the current view and view changes preserve the same dirty draft', () => {
@@ -95,4 +96,41 @@ test('Home Save review copy describes protected edits without exposing reference
   for (const edit of edits) expect(editSummary(edit)).not.toMatch(/synthetic-(private|secret)|C:\\|\/Users\//);
   const publicEdit = frame('sc08-stage-dirty-draft-request').body.command.input.edits[0]; expect(editSummary(publicEdit)).toBe('On');
   expect(editSummary({ ...publicEdit, value: { kind: 'string', value: 'C:\\Private\\Commander\\game' } })).toBe('Public value updated');
+});
+
+test('Home duplicate installation names use stable public identities through reorder rename and inventory loss', () => {
+  const observed = snapshot(), store = new ObservationStore();
+  if (observed.installations.status !== 'observed') throw new Error('installation_fixture');
+  const first = observed.installations.value.items[0], second = structuredClone(first);
+  if (first.binding.kind !== 'registered' || second.binding.kind !== 'registered') throw new Error('registered_fixture');
+  second.binding.registrationId = 'cccccccccccccccccccccccccccccccc'; second.binding.physicalId = 'second-physical-installation';
+  observed.installations.value.items = [first, second]; store.acceptSnapshot(observed);
+  const api = facade(); api.work.observations.acceptSnapshot(observed);
+  const home = render(Home, { props: { facade: api } }).body;
+  const creation = render(Management, { props: { facade: api, section: 'profiles' } }).body;
+  for (const row of [first, second]) { expect(home).toContain(installationLabel(row)); expect(creation).toContain(installationLabel(row)); }
+  api.dispose();
+  const target = frame('sc-02-ordinary-absent-prepare-reply').body.result.command.output.semantics.capture.target;
+  expect(installationLabel(first)).not.toBe(installationLabel(second));
+  expect(targetLabels(target, undefined, store.state).installation).toContain(first.binding.registrationId);
+  observed.installations.value.items.reverse(); first.name = 'Renamed display label'; store.acceptSnapshot(observed);
+  expect(targetLabels(target, undefined, store.state).installation).toBe(`Renamed display label · ${first.binding.registrationId}`);
+  observed.installations = { status: 'unavailable', reason: 'native_unavailable' }; store.acceptSnapshot(observed);
+  expect(targetLabels(target, undefined, store.state).installation).toContain(first.binding.registrationId);
+  expect(targetLabels(target, undefined, store.state).installation).toContain('observation unavailable');
+  expect(targetLabels(target, undefined, store.state).installation).not.toContain(first.binding.nativeTargetRef);
+});
+
+test('Home dirty transition shows captured draft target separately from queued destination after inventory loss', () => {
+  const api = facade(), draft = frame('sc08-open-clean-draft-reply').body.result.command.output;
+  api.work.observations.acceptSnapshot(snapshot()); api.work.openDraft(draft);
+  api.stage(frame('sc08-stage-dirty-draft-request').body.command.input.edits);
+  api.requestTarget({ installation: { kind: 'registered', id: 'cccccccccccccccccccccccccccccccc' }, profile: { kind: 'isolated', id: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' } });
+  api.work.observations.invalidate('disconnected');
+  const body = render(UnsavedChanges, { props: { facade: api } }).body;
+  expect(body).toContain('Draft being reviewed'); expect(body).toContain('Requested next target');
+  expect(body).toContain(draft.draft.document.target.installation.registrationId);
+  expect(body).toContain('Owner-scoped ordinary profile');
+  expect(body).toContain('cccccccccccccccccccccccccccccccc'); expect(body).toContain('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+  expect(api.stay()).toBe(true); expect(api.work.state.draft).toEqual(draft); expect(api.work.state.dirty).toBe(true); api.dispose();
 });
