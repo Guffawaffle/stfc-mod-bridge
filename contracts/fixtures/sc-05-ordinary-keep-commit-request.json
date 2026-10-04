@@ -1,0 +1,18 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "idempotencyKey": "00001fcf-1111-4111-8111-111111111111",
+        "planRef": {
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "planId": "00001fcc-1111-4111-8111-111111111111",
+          "reviewDigest": "sha256:271a639ae0437fe45001246a5f8e5fac2968da28586bbaae7632f71f33879a9a"
+        }
+      },
+      "name": "commit"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fd0-1111-4111-8111-111111111111"
+}

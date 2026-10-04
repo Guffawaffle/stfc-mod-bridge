@@ -1,0 +1,6 @@
+packages:
+  - ui
+overrides:
+  '@wdio/globals': 9.31.3
+  serialize-javascript: 7.1.2
+  basic-ftp: 6.2.1

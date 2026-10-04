@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": "artifact_unrecognized",
+      "retryDisposition": "after_user_choice",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d04-1111-4111-8111-111111111111"
+}

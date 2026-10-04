@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": "invalid_request",
+      "retryDisposition": "never",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": null
+}

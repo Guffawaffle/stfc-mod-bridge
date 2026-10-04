@@ -1,0 +1,34 @@
+{
+  "case": "register-explicit-installation",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-01-register-explicit-installation-journey",
+  "scenario": "SC-01",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-01-register-explicit-installation-prepare-reply",
+      "request": "sc-01-register-explicit-installation-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-01-register-explicit-installation-commit-reply",
+      "request": "sc-01-register-explicit-installation-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-01-register-explicit-installation-observe-reply",
+      "request": "sc-01-register-explicit-installation-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

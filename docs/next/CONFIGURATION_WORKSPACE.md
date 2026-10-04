@@ -1,0 +1,132 @@
+# Configuration workspace
+
+The br-14 implementation in `bridge-engine::configuration` supplies an actor-local
+Settings and Data Sync workspace. The engine uses portable contract DTOs and
+native owner ports; it has no frontend, Tauri, webview or game dependency. This
+document describes implementation and source validation. It does not declare
+br-14 acceptance or native configuration qualification.
+
+Opening a document captures its exact installation/profile, document ID, schema,
+revision and physical baseline. A missing document is a virtual empty baseline.
+Open, stage, protected capture, preparation and Discard do not persist the
+configuration document.
+Settings and Data Sync share the captured draft. The host must compose target
+navigation and close decisions so Save succeeds before changing target, Discard
+only releases draft intent, and Stay preserves the original target.
+
+Staging replaces the complete edit set at an exact draft generation. The actual
+Rust contract codec checks its result, including the complete encoded envelope
+size, before the workspace advances revision or protected custody. An exact
+uncertain-delivery retry returns the original acknowledgement and successor;
+changed retries against the previous generation refuse. Public invalid intent
+remains visible in the draft; sensitive plaintext supplied as a public edit
+refuses atomically. Native/headless `SensitiveEntry` supplies protected bytes.
+The renderer receives opaque private/secret references only. Closed, explicit
+transfers rebind captured references to the successor generation, including one
+transfer for repeated use. Foreign, forged, discarded and wrong-host references
+do not acquire custody. Protected bytes remain actor-local and are cleared on
+drop; native entry protection is the adapter's responsibility.
+
+`SchemaSource` supplies adopted producer encodings, aliases and precedence,
+platform policy, Sync projection and mutations, migration, owned paths and
+complete candidate validation. A UI field list cannot establish this policy.
+Preparation writes sparse selected intent, proves the complete semantic tree
+changed only in the allowed way, preserves semantically equal source spelling,
+and validates the complete candidate. Removing an override is explicit.
+Missing/no-change Save creates no empty document, backup or stage. Unsupported
+schema or preservation syntax refuses rather than rewriting unknown content.
+The real `CanonicalToml` implementation calls the canonical `bridge-toml`
+`TomlClient`; it introduces no competing parser or filesystem writer.
+
+Preparation owns no writer reservation. `DocumentOwner` must acquire canonical
+document, installation and profile custody all-or-none, then revalidate exact
+physical/revision identity under the retained lease. A losing writer performs no
+stage, backup or journal work. Staging newer intent before acquisition or before
+durable begin invalidates an old plan. Restore also revalidates the exact
+retained backup subject under the lease; a preparation-time digest is no lock.
+Replacement requires a fresh file identity, the reviewed candidate digest and
+an exact prior-byte backup for an existing baseline. Meaningful first Save uses
+create-new semantics. Terminal replay performs no additional writes or revision
+bumps. An exact matching Save installs a clean successor baseline once; newer
+local edits remain stale and available for an explicit recovery choice.
+
+The composition layer must implement `OperationPorts` adoption. It must persist
+executing admission and the owner's exact recovery binding before invoking
+`begin_configuration`, and retain the actual lease through advancement and a
+verified terminal or safe recovery boundary. Observation loss or caller
+cancellation cannot release a writing lease. Precommit cancellation may report
+no effect; a late request cannot undo a committed result or interrupt a
+synchronous native ABI call. Ambiguous promotion retains recovery-required
+custody. Normal host exit must honor the kernel's close obligations.
+
+Restart recovery consumes identity-only `RecoveryConfiguration` captured from
+the durable operation, including baseline, destination schema and candidate
+digest. It reconciles exact deterministic owner subjects under newly acquired
+custody. It does not recreate protected values lost with the previous host,
+overwrite a foreign destination or claim that execution survived process death.
+Old host drafts and uncommitted plans are not recovered as current edit custody.
+
+Run the portable source validation from the canonical checkout:
+
+```powershell
+node scripts/next/configuration-workspace.mjs
+```
+
+The command accepts no overrides. It uses the tracked Node and Rust releases,
+the scoped Rust child context, locked/offline dependencies and the actual native
+Windows x64 or Apple Silicon target. It checks engine formatting and strict
+all-target Clippy, then selects all four configuration test executables from
+that invocation's Cargo JSON compiler artifacts. It verifies owning manifest
+and source, physical confinement to the owning native target directory, native
+executable architecture and byte hashes. It inventories and executes every
+required test, refusing missing, duplicate, ignored or filtered tests. Current
+inventories cover 9 draft, 6 semantics, 13 transaction and 4 recovery tests.
+
+Receipts under ignored `artifacts/next/configuration-workspace/<invocation>/`
+retain command status, stdout/stderr and log hashes; source/directory inventories
+before and after; actual Node, shim and Rust toolchain payload hashes; the Cargo
+artifact records; executable hashes; and discovered/executed tests. A failed
+command retains its observation and a failed receipt. Stable disk/hash checks
+are observations, not native exclusions or protection against transient changes.
+
+These tests use synthetic `DocumentOwner`, `SchemaSource`, `SensitiveEntry` and
+`TomlPreparation` ports. They exercise the real workspace, transaction model and
+Rust contract codec, including acknowledgement preflight, using synthetic
+source bytes and fixtures. Their preservation examples do not qualify genuine
+native TOML syntax breadth or operating-system persistence. The installed
+application, actual game, account/profile stores and native configuration files
+are not part of this suite.
+
+The remaining integration and acceptance seams are:
+
+- Invoke the real canonical TOML module with verified producer/source/binary
+  pairing, and qualify the preservation matrix, including BOM, Unicode, quoted
+  paths, interleaved sections, arrays and table migrations.
+- Adopt actual producer `SchemaSource` policy and runtime/schema compatibility;
+  the synthetic schema is not product authority.
+- Implement ordinary-user physical `DocumentOwner` and native `SensitiveEntry`
+  adapters with private staging, exclusion, flush, backup, create-new, atomic
+  replacement and exact Restore/recovery custody on both required platforms.
+- Adopt the workspace into `OperationPorts`, dispatcher, replay, events and
+  close/recovery orchestration without wiring synthetic support into production.
+- Retain prerequisite native receipts, independent candidate review and the
+  package qualification evidence required by the operating contract.
+
+A passing portable receipt therefore keeps `br14Accepted`, native TOML,
+producer policy, physical owner, `OperationPorts` adoption, native runtime and
+release qualification false. Root owns suite registry and campaign admission;
+this script does not create or modify either.
+
+The registered `configuration-workspace` suite supplies source observations.
+Package selection refuses with `PACKAGE_INTEGRATION_UNQUALIFIED` while the
+required native integration is incomplete. Explicit suite selection still
+requires the declared prerequisite receipts; it cannot substitute a local
+native probe for the br-05 two-host matrix.
+
+The source criteria are BR14-01 (exact sparse/no-change preparation), BR14-02
+(complete candidate preservation and producer-policy boundaries), BR14-03
+(captured draft/protected-reference transfer and retry), BR14-04 (physical
+revision/backup revalidation before durable begin), BR14-05 (cancellation,
+terminal reconciliation and retained draft), and BR14-06 (identity-only restart
+recovery and fail-closed executable/evidence inventory). Their portable tests
+leave the native integration boundaries above unqualified.

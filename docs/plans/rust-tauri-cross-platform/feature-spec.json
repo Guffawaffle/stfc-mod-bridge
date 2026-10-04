@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "0.1.0",
+  "title": "Frontend-independent Rust Bridge for Windows and macOS",
+  "description": "Fresh Rust application engine and replaceable web frontend in a thin Tauri shell. UI iteration is a primary product goal: all first-release flows must run against deterministic typed mocks without game/native/backend dependencies. Windows x64 and Apple Silicon macOS are independently planned and qualified. Intel Mac host support is outside this release; actual game process architecture on Apple Silicon still governs injected payload pairing. Existing behavior and test scenarios inform requirements; C#/WPF implementation preservation is not a constraint. Canonical Profiles and producer ownership remain separate.",
+  "acceptanceCriteria": [
+    "Rust engine and domain have no Tauri/webview dependencies; CLI and UI use one command/event contract.",
+    "Mock browser development supports all player journeys and failure/progress/draft/recovery states without native dependencies.",
+    "One visible install/profile selection with captured operation targets; ordinary and isolated requests remain distinct.",
+    "Windows x64 and Apple Silicon macOS have actual build, runtime, package and accessibility evidence.",
+    "Shared Profiles retains native catalog/storage/game update/exclusion ownership; no second catalog/updater.",
+    "Mod management, schema-driven settings/Data Sync, launch, game management, diagnostics and independent Bridge update are usable.",
+    "Plans/revisions/physical identities revalidated under retained exclusions; losing writers have no durable side effects.",
+    "Cancellation/disconnect/restart and fault recovery are honest and idempotent.",
+    "Three trust domains and per-platform artifact pairing/signing are independently verified.",
+    "Frontend semantic/accessibility/visual tests and actual WebView2/WKWebView UX qualification are required.",
+    "Dependency work is executed by explicit repo-scoped packets with real commands and receipts.",
+    "No placeholder gates, inferred account identity, reused WPF qualification or one-OS release substitution."
+  ],
+  "technicalContext": "Proposed frontend default: Svelte + TypeScript + Vite; Tauri is a replaceable shell adapter. Rust crates: bridge-contracts/domain/engine/profiles/toml/platform-windows/platform-macos/cli/updater. Canonical repositories remain existing checkouts. macOS Profiles registration, ordinary setup, coordinated launch/loading, update and browser/Keychain qualification are open prerequisites. Installed LexRunner2.1.0 supports FeatureSpecv0, ExecutionPlanv1, plan schema validation and Kahn dependency ordering. Rich work packages bind owners/scopes/gate requirements; Runner scheduling projection is planning-only until exact issues/heads/native hosts/gates are materialized.",
+  "constraints": "Planning only. No product code, branch switches, worktrees, runs, attempts, merges, builds, deployments or game cycles. ALLOW_MUTATIONS and automatic Lex frame emission remain disabled. Shared databasePath must be explicit for future coordination. Every owner uses canonical cwd and scoped continuity; Mac roots/host bindings must be resolved on real Mac before execution. Current branches are observations, not designated implementation branches. Root integrates; at most three active implementation workers plus root.",
+  "repo": "Guffawaffle/stfc-mod-bridge",
+  "createdAt": "2026-10-03T08:55:12.826Z"
+}

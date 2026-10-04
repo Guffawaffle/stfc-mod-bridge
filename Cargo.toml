@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos", "apps/desktop/src-tauri"]
+default-members = ["crates/bridge-contracts", "crates/bridge-domain", "crates/bridge-engine", "crates/bridge-native", "crates/bridge-profiles", "crates/bridge-toml", "crates/bridge-platform-windows", "crates/bridge-platform-macos"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+bridge-contracts = { path = "crates/bridge-contracts" }
+bridge-domain = { path = "crates/bridge-domain" }
+bridge-engine = { path = "crates/bridge-engine" }
+bridge-native = { path = "crates/bridge-native" }
+bridge-profiles = { path = "crates/bridge-profiles" }
+bridge-toml = { path = "crates/bridge-toml" }
+bridge-platform-windows = { path = "crates/bridge-platform-windows" }
+bridge-platform-macos = { path = "crates/bridge-platform-macos" }
+libloading = "=0.9.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+schemars = "=1.2.2"
+sha2 = "=0.11.0"
+jsonschema = { version = "=0.58.5", default-features = false }
+tauri = "=2.12.1"
+tauri-build = "=2.7.1"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

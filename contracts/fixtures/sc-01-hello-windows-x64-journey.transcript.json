@@ -1,0 +1,24 @@
+{
+  "case": "hello-windows-x64",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-01-hello-windows-x64-journey",
+  "scenario": "SC-01",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-01-hello-windows-x64-reply",
+      "request": "sc-01-hello-windows-x64-request",
+      "type": "exchange"
+    }
+  ]
+}

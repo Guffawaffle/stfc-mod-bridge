@@ -1,0 +1,34 @@
+{
+  "case": "create-new",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-05-create-new-journey",
+  "scenario": "SC-05",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-05-create-new-prepare-reply",
+      "request": "sc-05-create-new-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-05-create-new-commit-reply",
+      "request": "sc-05-create-new-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-05-create-new-observe-reply",
+      "request": "sc-05-create-new-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

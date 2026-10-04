@@ -1,0 +1,34 @@
+{
+  "case": "sc14-modeled-second-submit-busy",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc14-modeled-second-submit-busy",
+  "scenario": "SC-14",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-prepare-reply",
+      "request": "sc14-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-admit-reply",
+      "request": "sc14-admit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-second-submit-busy-reply",
+      "request": "sc14-second-submit-busy-request",
+      "type": "exchange"
+    }
+  ]
+}

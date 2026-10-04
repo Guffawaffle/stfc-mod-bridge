@@ -1,0 +1,53 @@
+{
+  "case": "sc14-replay-lookup-precedes-old-plan-check",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc14-replay-lookup-precedes-old-plan-check",
+  "scenario": "SC-14",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-prepare-reply",
+      "request": "sc14-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-admit-reply",
+      "request": "sc14-admit-request",
+      "type": "exchange"
+    },
+    {
+      "cursor": {
+        "hostEpoch": "00001776-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "00001777-1111-4111-8111-111111111111"
+      },
+      "reason": "restart",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-changed-input-conflict-reply",
+      "request": "sc14-changed-input-conflict-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-fresh-old-host-plan-reply",
+      "request": "sc14-fresh-old-host-plan-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-exact-replay-reply",
+      "request": "sc14-exact-replay-request",
+      "type": "exchange"
+    }
+  ]
+}

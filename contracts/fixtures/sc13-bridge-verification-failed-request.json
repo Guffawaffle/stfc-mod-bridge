@@ -1,0 +1,88 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "selectedRelease": {
+              "authority": "synthetic-bridge-authority-1",
+              "current": {
+                "applicationId": "guffawaffle.stfc-mod-bridge",
+                "architecture": "x86_64",
+                "channelId": "stable",
+                "installationRef": "synthetic-bridge-installation-1",
+                "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "payloads": [
+                  {
+                    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                    "role": "application",
+                    "size": "1024"
+                  },
+                  {
+                    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    "role": "profiles_native",
+                    "size": "512"
+                  },
+                  {
+                    "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                    "role": "toml_native",
+                    "size": "512"
+                  },
+                  {
+                    "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                    "role": "update_helper",
+                    "size": "512"
+                  }
+                ],
+                "platform": "windows",
+                "revision": "synthetic-bridge-app-1"
+              },
+              "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+              "offered": {
+                "applicationId": "guffawaffle.stfc-mod-bridge",
+                "architecture": "x86_64",
+                "channelId": "stable",
+                "installationRef": "synthetic-bridge-installation-1",
+                "packageDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                "pairingDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+                "payloads": [
+                  {
+                    "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                    "role": "application",
+                    "size": "1024"
+                  },
+                  {
+                    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    "role": "profiles_native",
+                    "size": "512"
+                  },
+                  {
+                    "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                    "role": "toml_native",
+                    "size": "512"
+                  },
+                  {
+                    "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                    "role": "update_helper",
+                    "size": "512"
+                  }
+                ],
+                "platform": "windows",
+                "revision": "synthetic-bridge-app-2"
+              },
+              "releaseVersion": "1.0.0",
+              "revision": "synthetic-bridge-release-1",
+              "selectionId": "00000c80-1111-4111-8111-111111111111"
+            }
+          },
+          "kind": "bridge_update"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d35-1111-4111-8111-111111111111"
+}

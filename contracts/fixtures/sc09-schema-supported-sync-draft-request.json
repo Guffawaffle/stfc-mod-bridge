@@ -1,0 +1,166 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "draft": {
+          "document": {
+            "baseline": {
+              "kind": "missing"
+            },
+            "documentId": "000007d0-1111-4111-8111-111111111111",
+            "revision": "synthetic-document-1",
+            "schema": {
+              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "providerId": "guffawaffle",
+              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "schemaId": "stfc-community-mod.config-schema",
+              "schemaVersion": "1.0.0"
+            },
+            "target": {
+              "installation": {
+                "kind": "registered",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1",
+                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "registrationRevision": "synthetic-installation-revision-1"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          },
+          "draftId": "000007d1-1111-4111-8111-111111111111",
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "revision": "2"
+        },
+        "edits": [
+          {
+            "destination": {
+              "endpoint": {
+                "capturedFor": {
+                  "document": {
+                    "baseline": {
+                      "kind": "missing"
+                    },
+                    "documentId": "000007d0-1111-4111-8111-111111111111",
+                    "revision": "synthetic-document-1",
+                    "schema": {
+                      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "providerId": "guffawaffle",
+                      "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "schemaId": "stfc-community-mod.config-schema",
+                      "schemaVersion": "1.0.0"
+                    },
+                    "target": {
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "profile": {
+                        "kind": "ordinary",
+                        "ownerScope": "synthetic-native-owner-1"
+                      }
+                    }
+                  },
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                  "revision": "2"
+                },
+                "document": {
+                  "baseline": {
+                    "kind": "missing"
+                  },
+                  "documentId": "000007d0-1111-4111-8111-111111111111",
+                  "revision": "synthetic-document-1",
+                  "schema": {
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "providerId": "guffawaffle",
+                    "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "schemaId": "stfc-community-mod.config-schema",
+                    "schemaVersion": "1.0.0"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                },
+                "fieldId": "sync.endpoint",
+                "revision": "synthetic-endpoint-1",
+                "valueId": "000008ac-1111-4111-8111-111111111111"
+              },
+              "feeds": [
+                {
+                  "desired": "inherit",
+                  "feedId": "battlelog"
+                },
+                {
+                  "desired": "off",
+                  "feedId": "missions"
+                }
+              ],
+              "id": "synthetic-destination-1",
+              "mode": "legacy",
+              "proxy": {
+                "kind": "global"
+              },
+              "secret": {
+                "draft": {
+                  "document": {
+                    "baseline": {
+                      "kind": "missing"
+                    },
+                    "documentId": "000007d0-1111-4111-8111-111111111111",
+                    "revision": "synthetic-document-1",
+                    "schema": {
+                      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "providerId": "guffawaffle",
+                      "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "schemaId": "stfc-community-mod.config-schema",
+                      "schemaVersion": "1.0.0"
+                    },
+                    "target": {
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "profile": {
+                        "kind": "ordinary",
+                        "ownerScope": "synthetic-native-owner-1"
+                      }
+                    }
+                  },
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                  "revision": "2"
+                },
+                "fieldId": "sync.token",
+                "secretId": "000008ad-1111-4111-8111-111111111111"
+              }
+            },
+            "kind": "add_sync_destination"
+          }
+        ]
+      },
+      "name": "set_draft_changes"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000840-1111-4111-8111-111111111111"
+}

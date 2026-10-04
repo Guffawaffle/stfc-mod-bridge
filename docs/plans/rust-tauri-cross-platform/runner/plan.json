@@ -1,0 +1,779 @@
+{
+  "schemaVersion": "1.0.0",
+  "target": "main",
+  "policy": {
+    "requiredGates": [
+      "acceptance"
+    ],
+    "optionalGates": [],
+    "maxWorkers": 3,
+    "mergeRule": {
+      "type": "strict-required"
+    },
+    "blockOn": [
+      "missing-gate-evidence",
+      "unresolved-owner-host-bindings"
+    ],
+    "retries": {},
+    "overrides": {}
+  },
+  "items": [
+    {
+      "name": "br-00",
+      "deps": [],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-00 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "scope-contract",
+            "BRIDGE_WORK_PACKAGE": "br-00"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-00/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-01",
+      "deps": [
+        "br-00"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-01 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "workspace-foundation",
+            "BRIDGE_WORK_PACKAGE": "br-01"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-01/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-02",
+      "deps": [
+        "br-01"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-02 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "protocol-contract,scenario-catalog",
+            "BRIDGE_WORK_PACKAGE": "br-02"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-02/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-03",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-03 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "mock-contract,mock-development",
+            "BRIDGE_WORK_PACKAGE": "br-03"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-03/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-04",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-04 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "operation-contention,crash-recovery",
+            "BRIDGE_WORK_PACKAGE": "br-04"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-04/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-05",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-05 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "native-ffi-contract",
+            "BRIDGE_WORK_PACKAGE": "br-05"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-05/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-06",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-06 --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "windows-x64",
+            "BRIDGE_REQUIRED_SUITES": "windows-platform",
+            "BRIDGE_WORK_PACKAGE": "br-06"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-06/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-07",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-07 --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-platform",
+            "BRIDGE_WORK_PACKAGE": "br-07"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-07/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-08",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Package br-08 -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-foundation",
+            "BRIDGE_WORK_PACKAGE": "br-08"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-08/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-09",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "pwsh -NoLogo -NoProfile -File scripts/Qualify-MacLaunch.ps1 -Package br-09 -HostArchitecture arm64",
+          "cwd": "D:/dev/netniv/stfc-mod",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "explicit-loader-contract",
+            "BRIDGE_WORK_PACKAGE": "br-09"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-09/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-10",
+      "deps": [
+        "br-08",
+        "br-09"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Package br-10 -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-launch",
+            "BRIDGE_WORK_PACKAGE": "br-10"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-10/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-11",
+      "deps": [
+        "br-08"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Package br-11 -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-game-update",
+            "BRIDGE_WORK_PACKAGE": "br-11"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-11/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-12",
+      "deps": [
+        "br-03"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-12 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "frontend-components,frontend-accessibility",
+            "BRIDGE_WORK_PACKAGE": "br-12"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-12/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-13",
+      "deps": [
+        "br-02"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-13 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "capability-projection",
+            "BRIDGE_WORK_PACKAGE": "br-13"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-13/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-14",
+      "deps": [
+        "br-04",
+        "br-05"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-14 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "configuration-workspace",
+            "BRIDGE_WORK_PACKAGE": "br-14"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-14/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-15",
+      "deps": [
+        "br-04",
+        "br-06",
+        "br-07",
+        "br-14"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-15 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "runtime-lifecycle",
+            "BRIDGE_WORK_PACKAGE": "br-15"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-15/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-16",
+      "deps": [
+        "br-04",
+        "br-05",
+        "br-06"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-16 --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "windows-x64",
+            "BRIDGE_REQUIRED_SUITES": "windows-session-game",
+            "BRIDGE_WORK_PACKAGE": "br-16"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-16/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-17",
+      "deps": [
+        "br-04",
+        "br-05",
+        "br-07",
+        "br-10",
+        "br-11"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-17 --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-session-game",
+            "BRIDGE_WORK_PACKAGE": "br-17"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-17/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-18",
+      "deps": [
+        "br-12"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-18 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "frontend-home-targets",
+            "BRIDGE_WORK_PACKAGE": "br-18"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-18/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-19",
+      "deps": [
+        "br-12"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-19 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "frontend-settings-drafts",
+            "BRIDGE_WORK_PACKAGE": "br-19"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-19/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-20",
+      "deps": [
+        "br-12"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-20 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "frontend-management-feedback",
+            "BRIDGE_WORK_PACKAGE": "br-20"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-20/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-21",
+      "deps": [
+        "br-03",
+        "br-04",
+        "br-13"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-21 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "client-transport-conformance,headless-workflow",
+            "BRIDGE_WORK_PACKAGE": "br-21"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-21/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-22",
+      "deps": [
+        "br-04",
+        "br-13",
+        "br-14"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-22 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "diagnostics-support",
+            "BRIDGE_WORK_PACKAGE": "br-22"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-22/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-23",
+      "deps": [
+        "br-01",
+        "br-05",
+        "br-06",
+        "br-07",
+        "br-09"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-23 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "package-native-pairing,package-trust",
+            "BRIDGE_WORK_PACKAGE": "br-23"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-23/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-24",
+      "deps": [
+        "br-04",
+        "br-06",
+        "br-07",
+        "br-23"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-24 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "bridge-self-update",
+            "BRIDGE_WORK_PACKAGE": "br-24"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-24/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-25",
+      "deps": [
+        "br-18",
+        "br-19",
+        "br-20"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-25 --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "any",
+            "BRIDGE_REQUIRED_SUITES": "mock-ux-review",
+            "BRIDGE_WORK_PACKAGE": "br-25"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-25/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-26",
+      "deps": [
+        "br-14",
+        "br-15",
+        "br-16",
+        "br-17",
+        "br-18",
+        "br-19",
+        "br-20",
+        "br-21",
+        "br-22",
+        "br-24",
+        "br-25"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-26 --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "native-target-matrix",
+            "BRIDGE_REQUIRED_SUITES": "integrated-journeys,multi-client-contention",
+            "BRIDGE_WORK_PACKAGE": "br-26"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-26/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-27",
+      "deps": [
+        "br-23",
+        "br-25",
+        "br-26"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-27 --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "windows-x64",
+            "BRIDGE_REQUIRED_SUITES": "windows-webview-live",
+            "BRIDGE_WORK_PACKAGE": "br-27"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-27/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-29",
+      "deps": [
+        "br-23",
+        "br-25",
+        "br-26"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-29 --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
+            "BRIDGE_REQUIRED_SUITES": "macos-arm-webview-live",
+            "BRIDGE_WORK_PACKAGE": "br-29"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-29/acceptance.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "br-30",
+      "deps": [
+        "br-27",
+        "br-29"
+      ],
+      "gates": [
+        {
+          "name": "acceptance",
+          "run": "node scripts/next/qualify.mjs --package br-30 --host evidence-aggregation",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "env": {
+            "BRIDGE_PLAN_DISPOSITION": "planning-only",
+            "BRIDGE_REQUIRED_HOST": "evidence-aggregation",
+            "BRIDGE_REQUIRED_SUITES": "cross-platform-release-readiness",
+            "BRIDGE_WORK_PACKAGE": "br-30"
+          },
+          "runtime": "local",
+          "timeoutMs": 900000,
+          "artifacts": [
+            "artifacts/next/br-30/acceptance.json"
+          ]
+        }
+      ]
+    }
+  ]
+}

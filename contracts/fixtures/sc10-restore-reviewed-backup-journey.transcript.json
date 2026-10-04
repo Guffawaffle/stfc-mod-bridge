@@ -1,0 +1,24 @@
+{
+  "case": "Restore is an explicit reviewed mutation, preserving backup identity and retained bytes",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc10-restore-reviewed-backup-journey",
+  "scenario": "SC-10",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc10-restore-reviewed-backup-reply",
+      "request": "sc10-restore-reviewed-backup-request",
+      "type": "exchange"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "body": {
+    "reason": "host_restarted",
+    "type": "snapshot_invalidated"
+  },
+  "cursor": {
+    "hostEpoch": "00001776-1111-4111-8111-111111111111",
+    "sequence": "1",
+    "streamId": "00001777-1111-4111-8111-111111111111"
+  },
+  "protocolVersion": 1
+}

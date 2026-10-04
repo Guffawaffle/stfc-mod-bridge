@@ -1,0 +1,24 @@
+{
+  "case": "missing-established-store",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-05-missing-established-store-journey",
+  "scenario": "SC-05",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-05-missing-established-store-reply",
+      "request": "sc-05-missing-established-store-request",
+      "type": "exchange"
+    }
+  ]
+}

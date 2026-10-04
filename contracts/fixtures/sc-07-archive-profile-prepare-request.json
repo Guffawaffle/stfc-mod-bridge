@@ -1,0 +1,22 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "profile": {
+              "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "revision": "synthetic-profile-revision-1",
+              "state": "active"
+            }
+          },
+          "kind": "archive_profile"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001ff8-1111-4111-8111-111111111111"
+}

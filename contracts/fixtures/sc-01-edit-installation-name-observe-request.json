@@ -1,0 +1,13 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "operationId": "00001f52-1111-4111-8111-111111111111"
+      },
+      "name": "get_operation"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f55-1111-4111-8111-111111111111"
+}

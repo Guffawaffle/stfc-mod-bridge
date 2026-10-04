@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "bridge-campaign/v1",
+  "epic": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/231",
+  "authorizedScope": "Implement the accepted Rust Bridge dependency plan through qualified release",
+  "authorizationDate": "2026-10-03",
+  "branch": "feature/rust-bridge-231",
+  "baseSha": "aad5fda716d9cb402965c294d7bc33b061ab1d8c",
+  "platforms": [
+    "windows-x64",
+    "macos-arm64-native"
+  ],
+  "frontend": "Svelte + TypeScript + Vite",
+  "shell": "thin Tauri adapter",
+  "engineHost": "in-process with safe deferred normal exit and durable forced-termination recovery",
+  "mutationPolicy": {
+    "runnerDestructiveMutations": false,
+    "automaticLexFrameEmission": false
+  },
+  "runnerRoute": "candidate-bound integration gates from canonical owning cwd; no ADR-010 Attempt claim",
+  "coordinationDatabase": "D:/dev/stfc-workspace/.smartergpt/runner/coordination.db",
+  "packages": {
+    "br-00": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/232"
+    },
+    "br-01": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/234"
+    },
+    "br-02": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/236"
+    },
+    "br-03": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/237"
+    },
+    "br-04": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/238"
+    },
+    "br-05": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/239"
+    },
+    "br-06": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/241"
+    },
+    "br-07": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/244"
+    },
+    "br-12": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/240"
+    },
+    "br-13": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/242"
+    },
+    "br-18": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/243"
+    },
+    "br-14": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/245"
+    },
+    "br-19": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/246"
+    },
+    "br-20": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/247"
+    },
+    "br-21": {
+      "owner": "Bridge",
+      "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/248"
+    }
+  },
+  "releasePrerequisites": [
+    "bound live Apple Silicon game host",
+    "Bridge macOS signing/notary provisioning",
+    "both installed native packages and exact game/process/artifact qualification",
+    "independent review and required checks"
+  ]
+}

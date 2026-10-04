@@ -1,0 +1,23 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "directory": {
+              "platform": "windows",
+              "value": "C:\\Synthetic\\RegisteredGame"
+            },
+            "expectedCatalogRevision": "synthetic-catalog-1",
+            "name": "Synthetic registration"
+          },
+          "kind": "register_installation"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f4b-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,24 @@
+{
+  "case": "Read-only support capability remains explicitly unavailable",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc16-unavailable-support-journey",
+  "scenario": "SC-16",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc16-unavailable-support-reply",
+      "request": "sc16-unavailable-support-request",
+      "type": "exchange"
+    }
+  ]
+}

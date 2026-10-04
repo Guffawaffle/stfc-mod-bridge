@@ -1,0 +1,196 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "list_sessions",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [
+              {
+                "binding": {
+                  "process": {
+                    "architecture": "x86_64",
+                    "executableIdentity": "synthetic-game-executable-1",
+                    "installationPhysicalId": "synthetic-installation-physical-1",
+                    "pid": 4300,
+                    "startIdentity": {
+                      "platform": "windows",
+                      "value": "synthetic-process-generation-1"
+                    }
+                  },
+                  "revision": "synthetic-session-revision-1",
+                  "sessionId": "00001fa9-1111-4111-8111-111111111111"
+                },
+                "liveIdentity": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": false
+                },
+                "readiness": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "session_receipt"
+                  },
+                  "status": "observed",
+                  "value": "isolated_ready"
+                },
+                "target": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "session_receipt"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "kind": "isolated",
+                      "revision": "synthetic-profile-revision-1"
+                    }
+                  }
+                }
+              },
+              {
+                "binding": {
+                  "process": {
+                    "architecture": "x86_64",
+                    "executableIdentity": "synthetic-game-executable-1",
+                    "installationPhysicalId": "synthetic-installation-physical-1",
+                    "pid": 4300,
+                    "startIdentity": {
+                      "platform": "windows",
+                      "value": "synthetic-process-generation-2"
+                    }
+                  },
+                  "revision": "synthetic-session-revision-1",
+                  "sessionId": "00001fb0-1111-4111-8111-111111111111"
+                },
+                "liveIdentity": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": true
+                },
+                "readiness": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": "isolated_ready"
+                },
+                "target": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "kind": "isolated",
+                      "revision": "synthetic-profile-revision-1"
+                    }
+                  }
+                }
+              },
+              {
+                "binding": {
+                  "process": {
+                    "architecture": "x86_64",
+                    "executableIdentity": "synthetic-game-executable-1",
+                    "installationPhysicalId": "synthetic-installation-physical-1",
+                    "pid": 4301,
+                    "startIdentity": {
+                      "platform": "windows",
+                      "value": "synthetic-process-generation-1"
+                    }
+                  },
+                  "revision": "synthetic-session-revision-1",
+                  "sessionId": "00001fb1-1111-4111-8111-111111111111"
+                },
+                "liveIdentity": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": true
+                },
+                "readiness": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": "isolated_ready"
+                },
+                "target": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "kind": "isolated",
+                      "revision": "synthetic-profile-revision-1"
+                    }
+                  }
+                }
+              }
+            ],
+            "revision": "synthetic-inventory-1"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fb2-1111-4111-8111-111111111111"
+}

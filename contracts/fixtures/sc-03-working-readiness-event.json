@@ -1,0 +1,54 @@
+{
+  "body": {
+    "operation": {
+      "operationId": "00001fa5-1111-4111-8111-111111111111",
+      "operationRevision": "2",
+      "semantics": {
+        "action": "launch_isolated",
+        "capture": {
+          "catalogRevision": "synthetic-catalog-1",
+          "kind": "launch_isolated",
+          "runtime": {
+            "kind": "absent"
+          },
+          "storeMode": "existing",
+          "target": {
+            "installation": {
+              "kind": "registered",
+              "nativeTargetRef": "synthetic-native-target-1",
+              "physicalId": "synthetic-installation-physical-1",
+              "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "registrationRevision": "synthetic-installation-revision-1"
+            },
+            "profile": {
+              "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "kind": "isolated",
+              "revision": "synthetic-profile-revision-1"
+            }
+          }
+        },
+        "effects": [
+          "launch_session"
+        ],
+        "hashProfile": "bridge-plan-semantic-json-v1",
+        "trustDomain": "session"
+      },
+      "state": {
+        "progress": {
+          "measurement": {
+            "unit": "unknown"
+          },
+          "phase": "initializing"
+        },
+        "status": "running"
+      }
+    },
+    "type": "operation_changed"
+  },
+  "cursor": {
+    "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+    "sequence": "1",
+    "streamId": "000003e9-1111-4111-8111-111111111111"
+  },
+  "protocolVersion": 1
+}

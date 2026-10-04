@@ -1,0 +1,30 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "name": "Synthetic renamed profile",
+            "preferredInstallation": {
+              "expected": {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "registered"
+              },
+              "kind": "keep"
+            },
+            "profile": {
+              "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "revision": "synthetic-profile-revision-1",
+              "state": "active"
+            }
+          },
+          "kind": "edit_isolated_profile"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fd3-1111-4111-8111-111111111111"
+}

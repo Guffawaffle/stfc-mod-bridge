@@ -1,0 +1,62 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00001f4c-1111-4111-8111-111111111111",
+              "operationRevision": "1",
+              "semantics": {
+                "action": "register_installation",
+                "capture": {
+                  "input": {
+                    "catalogRevision": "synthetic-catalog-1",
+                    "name": "Synthetic registration",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1"
+                  },
+                  "kind": "register_installation"
+                },
+                "effects": [
+                  "register_installation"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "profile_state"
+              },
+              "state": {
+                "outcome": {
+                  "kind": "changed",
+                  "reason": "applied",
+                  "receipt": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "kind": "installation_registered",
+                    "name": "Synthetic registration"
+                  }
+                },
+                "status": "completed"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f4f-1111-4111-8111-111111111111"
+}

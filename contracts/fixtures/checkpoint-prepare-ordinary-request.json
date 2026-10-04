@@ -1,0 +1,1 @@
+{"protocolVersion":1,"requestId":"11111111-1111-4111-8111-111111111113","body":{"type":"command","command":{"name":"prepare","input":{"intent":{"kind":"launch_ordinary","input":{"target":{"installation":{"kind":"registered","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"profile":{"kind":"ordinary"}}}}}}}}

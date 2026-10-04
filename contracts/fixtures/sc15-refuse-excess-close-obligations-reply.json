@@ -1,0 +1,1431 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "request_host_close",
+        "output": {
+          "kind": "deferred",
+          "obligations": [
+            {
+              "kind": "operation",
+              "operationId": "00007530-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12000,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-0"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007918-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007531-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12001,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-1"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007919-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007532-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12002,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-2"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791a-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007533-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12003,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-3"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791b-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007534-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12004,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-4"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791c-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007535-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12005,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-5"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791d-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007536-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12006,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-6"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791e-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007537-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12007,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-7"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000791f-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007538-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12008,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-8"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007920-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007539-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12009,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-9"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007921-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753a-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12010,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-10"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007922-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753b-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12011,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-11"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007923-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753c-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12012,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-12"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007924-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753d-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12013,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-13"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007925-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753e-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12014,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-14"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007926-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000753f-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12015,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-15"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007927-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007540-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12016,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-16"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007928-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007541-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12017,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-17"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007929-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007542-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12018,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-18"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792a-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007543-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12019,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-19"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792b-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007544-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12020,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-20"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792c-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007545-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12021,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-21"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792d-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007546-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12022,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-22"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792e-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007547-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12023,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-23"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000792f-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007548-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12024,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-24"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007930-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007549-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12025,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-25"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007931-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754a-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12026,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-26"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007932-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754b-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12027,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-27"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007933-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754c-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12028,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-28"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007934-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754d-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12029,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-29"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007935-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754e-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12030,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-30"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007936-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000754f-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12031,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-31"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007937-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007550-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12032,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-32"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007938-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007551-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12033,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-33"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007939-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007552-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12034,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-34"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793a-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007553-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12035,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-35"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793b-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007554-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12036,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-36"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793c-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007555-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12037,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-37"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793d-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007556-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12038,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-38"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793e-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007557-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12039,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-39"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000793f-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007558-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12040,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-40"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007940-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007559-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12041,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-41"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007941-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755a-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12042,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-42"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007942-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755b-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12043,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-43"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007943-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755c-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12044,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-44"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007944-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755d-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12045,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-45"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007945-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755e-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12046,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-46"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007946-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000755f-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12047,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-47"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007947-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007560-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12048,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-48"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007948-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007561-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12049,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-49"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007949-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007562-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12050,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-50"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794a-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007563-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12051,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-51"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794b-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007564-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12052,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-52"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794c-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007565-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12053,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-53"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794d-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007566-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12054,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-54"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794e-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007567-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12055,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-55"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "0000794f-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007568-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12056,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-56"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007950-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007569-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12057,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-57"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007951-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756a-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12058,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-58"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007952-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756b-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12059,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-59"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007953-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756c-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12060,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-60"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007954-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756d-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12061,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-61"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007955-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756e-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12062,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-62"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007956-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "0000756f-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            },
+            {
+              "kind": "session_custody",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 12063,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-full-close-63"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "00007957-1111-4111-8111-111111111111"
+              }
+            },
+            {
+              "kind": "operation",
+              "operationId": "00007530-1111-4111-8111-111111111111",
+              "operationRevision": "3"
+            }
+          ]
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017d1-1111-4111-8111-111111111111"
+}

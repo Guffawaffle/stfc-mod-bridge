@@ -1,0 +1,24 @@
+{
+  "case": "All seven semantic field types are schema driven; sensitive values remain references",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc09-schema-all-field-types-journey",
+  "scenario": "SC-09",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc09-schema-all-field-types-reply",
+      "request": "sc09-schema-all-field-types-request",
+      "type": "exchange"
+    }
+  ]
+}

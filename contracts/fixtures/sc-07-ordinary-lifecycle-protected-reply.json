@@ -1,0 +1,45 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_actions",
+        "output": [
+          {
+            "action": "archive_profile",
+            "availability": {
+              "reasons": [
+                {
+                  "code": "wrong_profile_kind",
+                  "resource": {
+                    "id": "cccccccccccccccccccccccccccccccc",
+                    "kind": "profile"
+                  }
+                }
+              ],
+              "status": "blocked"
+            }
+          },
+          {
+            "action": "delete_profile",
+            "availability": {
+              "reasons": [
+                {
+                  "code": "wrong_profile_kind",
+                  "resource": {
+                    "id": "cccccccccccccccccccccccccccccccc",
+                    "kind": "profile"
+                  }
+                }
+              ],
+              "status": "blocked"
+            }
+          }
+        ]
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000200c-1111-4111-8111-111111111111"
+}

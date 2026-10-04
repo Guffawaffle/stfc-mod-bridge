@@ -1,0 +1,79 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00001771-1111-4111-8111-111111111111",
+              "operationRevision": "3",
+              "semantics": {
+                "action": "launch_ordinary",
+                "capture": {
+                  "catalogRevision": "synthetic-catalog-1",
+                  "kind": "launch_ordinary",
+                  "runtime": {
+                    "kind": "absent"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                },
+                "effects": [
+                  "launch_session"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "session"
+              },
+              "state": {
+                "reason": "interrupted_transaction",
+                "recovery": {
+                  "operationId": "00001771-1111-4111-8111-111111111111",
+                  "target": {
+                    "kind": "launch",
+                    "target": {
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "profile": {
+                        "kind": "ordinary",
+                        "ownerScope": "synthetic-native-owner-1"
+                      }
+                    }
+                  },
+                  "transaction": "synthetic-native-transaction-1"
+                },
+                "status": "recovery_required"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017a0-1111-4111-8111-111111111111"
+}
