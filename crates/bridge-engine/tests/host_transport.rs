@@ -1210,3 +1210,780 @@ fn ready_subscription_delivers_actual_consecutive_kernel_events_before_snapshot_
     drop(handle);
     worker.join().unwrap().unwrap();
 }
+
+#[test]
+fn embedded_kernel_admission_loss_and_deferred_close_keep_real_dispatcher_custody() {
+    let controls = Controls::default();
+    let actor_controls = controls.clone();
+    let (handle, inbox) = owner_channel();
+    let owner =
+        EmbeddedOwner::on_current_thread(inbox, || Ok(FixtureHost::new(actor_controls))).unwrap();
+    let pending = handle
+        .exchange(command(
+            Command::Prepare(Box::new(PrepareInput {
+                intent: preferences(),
+            })),
+            701,
+        ))
+        .unwrap();
+    owner.turn(|_| Ok(DriveControl::Continue));
+    let ReplyBody::Result {
+        result: ResultPayload::Command { command: output },
+    } = reply(&pending).body
+    else {
+        panic!("embedded preparation failed")
+    };
+    let CommandResult::Prepare(plan) = *output else {
+        panic!("wrong embedded preparation result")
+    };
+    let input = commit_input(plan);
+    // Admitted work remains with the actual kernel after its reply observer is
+    // dropped. The synthetic owner still requires external progression consent.
+    drop(
+        handle
+            .exchange(command(Command::Commit(input.clone()), 702))
+            .unwrap(),
+    );
+    owner.turn(|_| Ok(DriveControl::Continue));
+    assert_eq!(controls.audit.lock().unwrap().captures, 1);
+    assert_eq!(controls.audit.lock().unwrap().mutations, 0);
+    owner.signal_close();
+    for _ in 0..3 {
+        assert!(matches!(
+            owner.turn(|_| Ok(DriveControl::Continue)),
+            EmbeddedTurn::Retained { closing: true, .. }
+        ));
+        assert_eq!(controls.audit.lock().unwrap().lease_drops, 0);
+        // A real shell must service a GUI turn here; this test only proves that
+        // the portable wrapper returns while the real kernel keeps its lease.
+    }
+    // Exact replay under close retains the originally admitted operation; it
+    // cannot recapture a plan or execute another mutation.
+    let replay = handle
+        .exchange(command(Command::Commit(input), 703))
+        .unwrap();
+    owner.turn(|_| Ok(DriveControl::Continue));
+    committed(reply(&replay));
+    assert_eq!(controls.audit.lock().unwrap().captures, 1);
+    controls.release.store(true, Ordering::Release);
+    let mut terminal = None;
+    for _ in 0..10 {
+        if let EmbeddedTurn::Closed(exit) = owner.turn(|_| Ok(DriveControl::Continue)) {
+            terminal = Some(exit);
+            break;
+        }
+    }
+    assert_eq!(terminal.unwrap().disposition, CloseDisposition::Ready);
+    let audit = controls.audit.lock().unwrap();
+    assert_eq!(audit.mutations, 1);
+    assert_eq!(audit.lease_drops, 1);
+    assert!(audit.dropped.iter().all(|id| *id == thread::current().id()));
+}
+
+/// A controlled scheduling seam, not an alternate close/admission policy.
+/// Every protocol, cursor and close method delegates to the actual LocalHost.
+/// Pausing progression lets a real Snapshot cursor remain current until the
+/// following versioned close is dispatched. No snapshot/cursor is fabricated.
+struct EmbeddedSupplementHost<H: LocalHost> {
+    inner: H,
+    pause_progress: Arc<AtomicBool>,
+    entries: Arc<AtomicUsize>,
+}
+impl<H: LocalHost> LocalHost for EmbeddedSupplementHost<H> {
+    fn dispatch(&mut self, request: ValidatedRequest) -> Result<ValidatedReply, HostFailure> {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        self.inner.dispatch(request)
+    }
+    fn cursor(&self) -> Cursor {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        self.inner.cursor()
+    }
+    fn pump(&mut self) -> Result<(), HostFailure> {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        if self.pause_progress.load(Ordering::Acquire) {
+            Ok(())
+        } else {
+            self.inner.pump()
+        }
+    }
+    fn events_after(&mut self, after: &Cursor) -> Result<EventBatch, HostFailure> {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        self.inner.events_after(after)
+    }
+    fn request_close(&mut self) -> Result<CloseDisposition, HostFailure> {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        self.inner.request_close()
+    }
+    fn close_disposition(&self) -> Result<CloseDisposition, HostFailure> {
+        self.entries.fetch_add(1, Ordering::AcqRel);
+        self.inner.close_disposition()
+    }
+}
+
+fn embedded_supplement_setup(
+    controls: &Controls,
+) -> (
+    HostHandle,
+    EmbeddedOwner<EmbeddedSupplementHost<FixtureHost>>,
+    Arc<AtomicBool>,
+    Arc<AtomicUsize>,
+) {
+    assert!(
+        controls.root.is_none(),
+        "supplement must remain an in-memory fixture"
+    );
+    let actor_controls = controls.clone();
+    let pause = Arc::new(AtomicBool::new(false));
+    let actor_pause = pause.clone();
+    let entries = Arc::new(AtomicUsize::new(0));
+    let actor_entries = entries.clone();
+    let (handle, inbox) = owner_channel();
+    let owner = EmbeddedOwner::on_current_thread(inbox, || {
+        Ok(EmbeddedSupplementHost {
+            inner: FixtureHost::new(actor_controls),
+            pause_progress: actor_pause,
+            entries: actor_entries,
+        })
+    })
+    .unwrap();
+    (handle, owner, pause, entries)
+}
+
+fn embedded_supplement_reply(pending: &PendingReply) -> Reply {
+    // A missing one-turn reply fails immediately instead of blocking the owner.
+    let frame = pending
+        .try_recv()
+        .expect("one bounded turn must dispatch the request")
+        .expect("fixture dispatch must return a valid protocol reply");
+    decode_reply(frame.as_bytes()).unwrap().into_inner()
+}
+
+fn embedded_supplement_snapshot(reply: Reply) -> Snapshot {
+    let ReplyBody::Result {
+        result: ResultPayload::Query { query },
+    } = reply.body
+    else {
+        panic!("actual kernel Snapshot was rejected")
+    };
+    let QueryResult::Snapshot(snapshot) = *query else {
+        panic!("wrong actual kernel Snapshot result")
+    };
+    snapshot
+}
+
+fn embedded_supplement_close(reply: Reply) -> CloseDisposition {
+    let ReplyBody::Result {
+        result: ResultPayload::Command { command },
+    } = reply.body
+    else {
+        panic!("current-cursor versioned close was rejected")
+    };
+    let CommandResult::RequestHostClose(close) = *command else {
+        panic!("wrong versioned close result")
+    };
+    close
+}
+
+fn embedded_supplement_admit<H: LocalHost + 'static>(
+    owner: &EmbeddedOwner<H>,
+    handle: &HostHandle,
+    controls: &Controls,
+    request_number: u64,
+) -> OperationSnapshot {
+    let before = controls.ticks.load(Ordering::Acquire);
+    let prepared = handle
+        .exchange(command(
+            Command::Prepare(Box::new(PrepareInput {
+                intent: preferences(),
+            })),
+            request_number,
+        ))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: false,
+            failure: None
+        }
+    );
+    assert_eq!(controls.ticks.load(Ordering::Acquire), before);
+    let ReplyBody::Result {
+        result: ResultPayload::Command { command: output },
+    } = embedded_supplement_reply(&prepared).body
+    else {
+        panic!("real preparation failed")
+    };
+    let CommandResult::Prepare(plan) = *output else {
+        panic!("wrong real preparation result")
+    };
+    let committed_reply = handle
+        .exchange(command(
+            Command::Commit(commit_input(plan)),
+            request_number + 1,
+        ))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: false,
+            failure: None
+        }
+    );
+    // The committed reply precedes independent progression in the same turn.
+    let admitted = committed(embedded_supplement_reply(&committed_reply));
+    assert!(matches!(admitted.state, OperationState::Admitted));
+    assert_eq!(controls.ticks.load(Ordering::Acquire), before + 1);
+    let audit = controls.audit.lock().unwrap();
+    assert_eq!(audit.captures, 1);
+    assert_eq!(audit.mutations, 0);
+    assert_eq!(audit.lease_drops, 0);
+    admitted
+}
+
+fn embedded_supplement_assert_safe_drop(controls: &Controls, mutations: usize) {
+    let audit = controls.audit.lock().unwrap();
+    let thread = thread::current().id();
+    assert_eq!(audit.constructed, vec![thread]);
+    assert!(audit.invoked.iter().all(|id| *id == thread));
+    assert_eq!(audit.mutations, mutations);
+    assert_eq!(audit.lease_drops, 1);
+    // One retained lease and its Owner are each destroyed on the owner thread.
+    assert_eq!(audit.dropped.len(), 2);
+    assert!(audit.dropped.iter().all(|id| *id == thread));
+}
+
+/// Count recovery entry without changing the existing fixture's native result.
+/// A zero counter falsifies accidental automatic recovery during shutdown.
+struct EmbeddedSupplementPorts {
+    inner: Owner,
+    recover_calls: Arc<AtomicUsize>,
+}
+impl OperationPorts for EmbeddedSupplementPorts {
+    type Lease = LocalLease;
+    fn capture(
+        &mut self,
+        intent: &MutationIntent,
+        epoch: &HostEpoch,
+    ) -> Result<CapturedOperation, Box<BridgeError>> {
+        self.inner.capture(intent, epoch)
+    }
+    fn acquire(&mut self, keys: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
+        self.inner.acquire(keys)
+    }
+    fn revalidate(
+        &mut self,
+        semantics: &PlanSemantics,
+        lease: &Self::Lease,
+    ) -> Result<(), Box<BridgeError>> {
+        self.inner.revalidate(semantics, lease)
+    }
+    fn recovery_binding(
+        &mut self,
+        operation: &OperationId,
+        semantics: &PlanSemantics,
+        lease: &Self::Lease,
+    ) -> Result<RecoveryRef, Box<BridgeError>> {
+        self.inner.recovery_binding(operation, semantics, lease)
+    }
+    fn advance(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        lease: &Self::Lease,
+        cancellation_requested: bool,
+    ) -> Result<TransactionStep, Box<BridgeError>> {
+        self.inner
+            .advance(operation, recovery, lease, cancellation_requested)
+    }
+    fn recover(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        lease: &Self::Lease,
+    ) -> Result<TransactionStep, Box<BridgeError>> {
+        self.recover_calls.fetch_add(1, Ordering::AcqRel);
+        self.inner.recover(operation, recovery, lease)
+    }
+    fn handoff_session(
+        &mut self,
+        session: &SessionBinding,
+        lease: &Self::Lease,
+    ) -> Result<bool, Box<BridgeError>> {
+        self.inner.handoff_session(session, lease)
+    }
+}
+
+fn embedded_supplement_kernel<J: DurableJournal>(
+    controls: Controls,
+    journal: J,
+    recover_calls: Arc<AtomicUsize>,
+) -> KernelHost<EmbeddedSupplementPorts, J, Clock, Ids> {
+    assert!(
+        controls.root.is_none(),
+        "supplement must not provision a disk fixture"
+    );
+    let epoch = controls.epoch as u64;
+    controls
+        .audit
+        .lock()
+        .unwrap()
+        .constructed
+        .push(thread::current().id());
+    let engine = Engine::open(
+        EmbeddedSupplementPorts {
+            inner: Owner {
+                controls,
+                _local: Rc::new(()),
+            },
+            recover_calls,
+        },
+        journal,
+        Clock,
+        Ids(10),
+        HostConfiguration {
+            epoch: HostEpoch::new(uuid(1 + epoch * 2)).unwrap(),
+            stream: StreamId::new(uuid(2 + epoch * 2)).unwrap(),
+            kind: HostKind::WindowsX64,
+            preparation_lifetime_millis: 60000,
+        },
+    )
+    .unwrap();
+    KernelHost::new(engine)
+}
+
+#[test]
+fn embedded_versioned_close_uses_real_snapshot_and_retires_driver_without_releasing_worker() {
+    let controls = Controls::default();
+    let (handle, owner, pause, entries) = embedded_supplement_setup(&controls);
+    let admitted = embedded_supplement_admit(&owner, &handle, &controls, 10001);
+    let drives = std::cell::Cell::new(0);
+
+    // Negative control: Snapshot is authoritative when sampled, but the normal
+    // following pump advances the real kernel cursor before a later request.
+    let snapshot_reply = handle
+        .exchange(query(Query::Snapshot(EmptyInput {}), 10003))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            drives.set(drives.get() + 1);
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: false,
+            failure: None
+        }
+    );
+    let stale = embedded_supplement_snapshot(embedded_supplement_reply(&snapshot_reply));
+    let stale_close = handle
+        .exchange(command(
+            Command::RequestHostClose(RequestHostCloseInput {
+                expected_cursor: stale.cursor.clone(),
+            }),
+            10004,
+        ))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            drives.set(drives.get() + 1);
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: false,
+            failure: None
+        }
+    );
+    let ReplyBody::Rejected { error } = embedded_supplement_reply(&stale_close).body else {
+        panic!("progressed cursor must refuse stale versioned close")
+    };
+    assert_eq!(error.code, ErrorCode::ResnapshotRequired);
+    assert_eq!(drives.get(), 2, "rejected close must not retire the driver");
+    assert_eq!(controls.audit.lock().unwrap().lease_drops, 0);
+
+    // Pause only fixture progression for the actual snapshot/close exchange.
+    pause.store(true, Ordering::Release);
+    let before = controls.ticks.load(Ordering::Acquire);
+    let snapshot_reply = handle
+        .exchange(query(Query::Snapshot(EmptyInput {}), 10005))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            drives.set(drives.get() + 1);
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: false,
+            failure: None
+        }
+    );
+    let current = embedded_supplement_snapshot(embedded_supplement_reply(&snapshot_reply));
+    assert_ne!(current.cursor, stale.cursor);
+    let operation = current
+        .operations
+        .items
+        .as_slice()
+        .iter()
+        .find(|op| op.operation_id == admitted.operation_id)
+        .unwrap();
+    assert!(matches!(operation.state, OperationState::Running { .. }));
+    let close_reply = handle
+        .exchange(command(
+            Command::RequestHostClose(RequestHostCloseInput {
+                expected_cursor: current.cursor.clone(),
+            }),
+            10006,
+        ))
+        .unwrap();
+    assert_eq!(
+        owner.turn(|pump| {
+            drives.set(drives.get() + 1);
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: true,
+            failure: None
+        }
+    );
+    let CloseDisposition::Deferred { obligations } =
+        embedded_supplement_close(embedded_supplement_reply(&close_reply))
+    else {
+        panic!("real admitted writer must defer versioned close")
+    };
+    assert_eq!(
+        obligations.as_slice(),
+        &[CloseObligation::Operation {
+            operation_id: admitted.operation_id.clone(),
+            operation_revision: operation.operation_revision,
+        }]
+    );
+    assert_eq!(controls.ticks.load(Ordering::Acquire), before);
+    assert_eq!(drives.get(), 4);
+
+    pause.store(false, Ordering::Release);
+    let external_services = std::cell::Cell::new(0);
+    for completed_services in 0..3 {
+        let before = controls.ticks.load(Ordering::Acquire);
+        assert_eq!(
+            owner.turn(|_| {
+                drives.set(drives.get() + 1);
+                panic!("observed versioned close permanently retires driver")
+            }),
+            EmbeddedTurn::Retained {
+                closing: true,
+                failure: None
+            }
+        );
+        assert_eq!(drives.get(), 4);
+        assert_eq!(controls.ticks.load(Ordering::Acquire), before + 1);
+        assert_eq!(controls.audit.lock().unwrap().lease_drops, 0);
+        assert_eq!(external_services.get(), completed_services);
+        // Simulated caller service is possible only after turn() returned.
+        // This counter does not qualify an actual GUI or native run loop.
+        external_services.set(completed_services + 1);
+    }
+    controls.release.store(true, Ordering::Release);
+    let EmbeddedTurn::Closed(exit) = owner.turn(|_| panic!("retired driver stays retired")) else {
+        panic!("real terminal persistence permits owner-thread destruction")
+    };
+    assert_eq!(exit.disposition, CloseDisposition::Ready);
+    assert_eq!(exit.failure, None);
+    embedded_supplement_assert_safe_drop(&controls, 1);
+    let terminal_entries = entries.load(Ordering::Acquire);
+    assert_eq!(
+        owner.turn(|_| panic!("terminal owner cannot run a driver")),
+        EmbeddedTurn::Closed(exit)
+    );
+    assert_eq!(entries.load(Ordering::Acquire), terminal_entries);
+    embedded_supplement_assert_safe_drop(&controls, 1);
+}
+
+#[test]
+fn embedded_driver_error_after_admission_drains_real_kernel_work_to_safe_close() {
+    let controls = Controls::default();
+    let (handle, owner, _pause, _entries) = embedded_supplement_setup(&controls);
+    embedded_supplement_admit(&owner, &handle, &controls, 10101);
+    let before = controls.ticks.load(Ordering::Acquire);
+    assert_eq!(
+        owner.turn(|pump| {
+            pump.tick();
+            pump.tick();
+            Err(HostFailure::UnavailableService)
+        }),
+        EmbeddedTurn::Retained {
+            closing: true,
+            failure: Some(HostFailure::UnavailableService)
+        }
+    );
+    assert_eq!(controls.ticks.load(Ordering::Acquire), before + 1);
+    for _ in 0..3 {
+        let before = controls.ticks.load(Ordering::Acquire);
+        assert_eq!(
+            owner.turn(|_| panic!("errored driver must remain retired")),
+            EmbeddedTurn::Retained {
+                closing: true,
+                failure: Some(HostFailure::UnavailableService)
+            }
+        );
+        assert_eq!(controls.ticks.load(Ordering::Acquire), before + 1);
+        assert_eq!(controls.audit.lock().unwrap().lease_drops, 0);
+    }
+    controls.release.store(true, Ordering::Release);
+    let EmbeddedTurn::Closed(exit) = owner.turn(|_| panic!("error does not revive driver")) else {
+        panic!("recoverable driver error must permit actual safe closure")
+    };
+    assert_eq!(exit.disposition, CloseDisposition::Ready);
+    assert_eq!(exit.failure, Some(HostFailure::UnavailableService));
+    embedded_supplement_assert_safe_drop(&controls, 1);
+}
+
+#[test]
+fn embedded_driver_panic_after_real_admission_taints_custody_even_after_release() {
+    let controls = Controls::default();
+    let (handle, owner, _pause, entries) = embedded_supplement_setup(&controls);
+    embedded_supplement_admit(&owner, &handle, &controls, 10201);
+    let drives = std::cell::Cell::new(0);
+    let before = controls.ticks.load(Ordering::Acquire);
+    assert!(matches!(
+        owner.turn(|pump| {
+            drives.set(drives.get() + 1);
+            pump.tick();
+            panic!("controlled driver panic after real durable admission and progression")
+        }),
+        EmbeddedTurn::Retained {
+            failure: Some(HostFailure::DriverPanicked),
+            ..
+        }
+    ));
+    assert_eq!(controls.ticks.load(Ordering::Acquire), before + 1);
+    let tainted_entries = entries.load(Ordering::Acquire);
+    let tainted_ticks = controls.ticks.load(Ordering::Acquire);
+    controls.release.store(true, Ordering::Release);
+    owner.signal_close();
+    for _ in 0..3 {
+        assert!(matches!(
+            owner.turn(|_| {
+                drives.set(drives.get() + 1);
+                panic!("permanently tainted owner cannot revive driver")
+            }),
+            EmbeddedTurn::Retained {
+                failure: Some(HostFailure::DriverPanicked),
+                ..
+            }
+        ));
+        assert_eq!(drives.get(), 1);
+        assert_eq!(entries.load(Ordering::Acquire), tainted_entries);
+        assert_eq!(controls.ticks.load(Ordering::Acquire), tainted_ticks);
+        let audit = controls.audit.lock().unwrap();
+        assert_eq!(audit.mutations, 0);
+        assert_eq!(audit.lease_drops, 0);
+        assert!(audit.dropped.is_empty());
+    }
+    drop(handle);
+    drop(owner);
+    // Deliberate bounded fixture leak: abandonment preserves the owned lease,
+    // but does not keep servicing it or prove native call-local panic custody.
+    let audit = controls.audit.lock().unwrap();
+    assert_eq!(audit.mutations, 0);
+    assert_eq!(audit.lease_drops, 0);
+    assert!(audit.dropped.is_empty());
+}
+
+#[test]
+fn embedded_real_kernel_safe_recovery_closes_without_running_recovery_or_mutation() {
+    let controls = Controls::default();
+    let actor_controls = controls.clone();
+    let recover_calls = Arc::new(AtomicUsize::new(0));
+    let actor_recover_calls = recover_calls.clone();
+    let entries = Arc::new(AtomicUsize::new(0));
+    let actor_entries = entries.clone();
+    let (handle, inbox) = owner_channel();
+    let owner = EmbeddedOwner::on_current_thread(inbox, || {
+        Ok(EmbeddedSupplementHost {
+            inner: embedded_supplement_kernel(
+                actor_controls,
+                Journal {
+                    rows: vec![],
+                    _local: Rc::new(()),
+                    disk: None,
+                },
+                actor_recover_calls,
+            ),
+            pause_progress: Arc::new(AtomicBool::new(false)),
+            entries: actor_entries,
+        })
+    })
+    .unwrap();
+    let admitted = embedded_supplement_admit(&owner, &handle, &controls, 10301);
+    controls.safe_recovery.store(true, Ordering::Release);
+    owner.signal_close();
+    let EmbeddedTurn::Closed(exit) = owner.turn(|_| panic!("external close retires driver")) else {
+        panic!("actual persisted safe recovery boundary must permit closure")
+    };
+    let CloseDisposition::RecoveryRequired { recoveries } = &exit.disposition else {
+        panic!("safe recovery is not successful completion or Ready")
+    };
+    assert_eq!(recoveries.as_slice().len(), 1);
+    assert_eq!(recoveries.as_slice()[0].operation_id, admitted.operation_id);
+    assert_eq!(exit.failure, None);
+    assert_eq!(recover_calls.load(Ordering::Acquire), 0);
+    embedded_supplement_assert_safe_drop(&controls, 0);
+    let terminal_entries = entries.load(Ordering::Acquire);
+    let terminal_ticks = controls.ticks.load(Ordering::Acquire);
+    assert_eq!(
+        owner.turn(|_| panic!("terminal recovery does not auto-recover")),
+        EmbeddedTurn::Closed(exit)
+    );
+    assert_eq!(entries.load(Ordering::Acquire), terminal_entries);
+    assert_eq!(controls.ticks.load(Ordering::Acquire), terminal_ticks);
+    assert_eq!(recover_calls.load(Ordering::Acquire), 0);
+    embedded_supplement_assert_safe_drop(&controls, 0);
+}
+
+/// Mirrors operation_kernel.rs terminal-persistence failure at the journal port,
+/// using its in-memory Journal seam instead of creating a FileJournal fixture.
+/// Accepted records are observed separately; they prove ordering, not durability.
+struct EmbeddedSupplementFaultJournal {
+    inner: Journal,
+    fail_append: Arc<AtomicBool>,
+    accepted: Arc<Mutex<Vec<JournalRecord>>>,
+    attempts: Arc<AtomicUsize>,
+}
+impl DurableJournal for EmbeddedSupplementFaultJournal {
+    fn records(&self) -> &[JournalRecord] {
+        self.inner.records()
+    }
+    fn append(&mut self, record: &JournalRecord) -> Result<(), KernelFailure> {
+        self.attempts.fetch_add(1, Ordering::AcqRel);
+        if self.fail_append.load(Ordering::Acquire) {
+            return Err(KernelFailure::Storage);
+        }
+        self.inner.append(record)?;
+        self.accepted.lock().unwrap().push(record.clone());
+        Ok(())
+    }
+}
+
+#[test]
+fn embedded_real_kernel_terminal_journal_failure_retains_lease_and_poison_after_fault_clear() {
+    let controls = Controls::default();
+    assert!(controls.root.is_none());
+    let actor_controls = controls.clone();
+    let fail_append = Arc::new(AtomicBool::new(false));
+    let actor_fail = fail_append.clone();
+    let accepted = Arc::new(Mutex::new(Vec::new()));
+    let actor_accepted = accepted.clone();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let actor_attempts = attempts.clone();
+    let entries = Arc::new(AtomicUsize::new(0));
+    let actor_entries = entries.clone();
+    let recover_calls = Arc::new(AtomicUsize::new(0));
+    let actor_recover_calls = recover_calls.clone();
+    let (handle, inbox) = owner_channel();
+    let owner = EmbeddedOwner::on_current_thread(inbox, || {
+        Ok(EmbeddedSupplementHost {
+            inner: embedded_supplement_kernel(
+                actor_controls,
+                EmbeddedSupplementFaultJournal {
+                    inner: Journal {
+                        rows: vec![],
+                        _local: Rc::new(()),
+                        disk: None,
+                    },
+                    fail_append: actor_fail,
+                    accepted: actor_accepted,
+                    attempts: actor_attempts,
+                },
+                actor_recover_calls,
+            ),
+            pause_progress: Arc::new(AtomicBool::new(false)),
+            entries: actor_entries,
+        })
+    })
+    .unwrap();
+    let admitted = embedded_supplement_admit(&owner, &handle, &controls, 10401);
+    let rows_before = accepted.lock().unwrap().len();
+    let attempts_before = attempts.load(Ordering::Acquire);
+    let ticks_before = controls.ticks.load(Ordering::Acquire);
+    fail_append.store(true, Ordering::Release);
+    controls.release.store(true, Ordering::Release);
+    assert_eq!(
+        owner.turn(|pump| {
+            pump.tick();
+            pump.tick();
+            Ok(DriveControl::Continue)
+        }),
+        EmbeddedTurn::Retained {
+            closing: true,
+            failure: Some(HostFailure::Kernel(KernelFailure::Storage))
+        }
+    );
+    assert_eq!(controls.ticks.load(Ordering::Acquire), ticks_before + 1);
+    assert_eq!(controls.audit.lock().unwrap().mutations, 1);
+    assert_eq!(controls.audit.lock().unwrap().lease_drops, 0);
+    assert_eq!(accepted.lock().unwrap().len(), rows_before);
+    assert_eq!(attempts.load(Ordering::Acquire), attempts_before + 1);
+    let rows = accepted.lock().unwrap();
+    let last_operation = rows
+        .iter()
+        .rev()
+        .find_map(|row| match row {
+            JournalRecord::Operation { value }
+                if value.snapshot.operation_id == admitted.operation_id =>
+            {
+                Some(value)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(last_operation.phase, DurablePhase::Executing);
+    assert!(matches!(
+        last_operation.snapshot.state,
+        OperationState::Running { .. }
+    ));
+    drop(rows);
+
+    // A healed port is not recovery authority: Engine::advance remains poisoned.
+    fail_append.store(false, Ordering::Release);
+    owner.signal_close();
+    let retained_entries = entries.load(Ordering::Acquire);
+    for _ in 0..3 {
+        assert_eq!(
+            owner.turn(|_| panic!("kernel failure retires driver")),
+            EmbeddedTurn::Retained {
+                closing: true,
+                failure: Some(HostFailure::Kernel(KernelFailure::Storage))
+            }
+        );
+        assert_eq!(controls.ticks.load(Ordering::Acquire), ticks_before + 1);
+        assert_eq!(attempts.load(Ordering::Acquire), attempts_before + 1);
+        assert_eq!(accepted.lock().unwrap().len(), rows_before);
+        let audit = controls.audit.lock().unwrap();
+        assert_eq!(audit.mutations, 1);
+        assert_eq!(audit.lease_drops, 0);
+        assert!(audit.dropped.is_empty());
+    }
+    // Unlike panic taint, known kernel failure permits safe owner observations,
+    // but cannot advance the effect or publish a safe destruction disposition.
+    assert!(entries.load(Ordering::Acquire) > retained_entries);
+    assert_eq!(recover_calls.load(Ordering::Acquire), 0);
+    drop(handle);
+    drop(owner);
+    let audit = controls.audit.lock().unwrap();
+    assert_eq!(audit.mutations, 1);
+    assert_eq!(audit.lease_drops, 0);
+    assert!(audit.dropped.is_empty());
+}

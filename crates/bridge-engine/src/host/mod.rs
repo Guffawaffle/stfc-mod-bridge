@@ -5,11 +5,13 @@
 //! The private runner retains that host through disconnect and deferred close.
 //! No native loader, store, game, desktop API or synthetic production host is
 //! supplied here. Actual platform provisioning and service adoption are pending.
+mod embedded;
 mod kernel;
 mod transport;
 
 use crate::operations::KernelFailure;
 use bridge_contracts::v1::*;
+pub use embedded::{EmbeddedOwner, EmbeddedTurn};
 pub use kernel::KernelHost;
 use std::{
     marker::PhantomData,
@@ -86,18 +88,27 @@ pub struct OwnerInbox {
 ///
 /// ```compile_fail
 /// use bridge_engine::host::{OwnerThreadPump, LocalHost};
-/// fn transfer<H: LocalHost>(pump: OwnerThreadPump<'_, H>) {
+/// fn transfer<H: LocalHost + Send>(pump: OwnerThreadPump<'_, H>) {
 ///     std::thread::scope(|scope| { scope.spawn(move || drop(pump)); });
 /// }
 /// ```
 pub struct OwnerThreadPump<'a, H: LocalHost> {
     runtime: &'a mut transport::Runtime<H>,
+    tick_budget: Option<&'a mut bool>,
+    close_signal: Option<&'a std::cell::Cell<bool>>,
     _local: PhantomData<Rc<()>>,
 }
 impl<H: LocalHost> OwnerThreadPump<'_, H> {
     /// One request, one owner progression, then bounded event delivery.
     pub fn tick(&mut self) {
-        self.runtime.tick();
+        if let Some(used) = self.tick_budget.as_mut() {
+            if **used {
+                return;
+            }
+            // Reserve before any callback can signal close or reenter.
+            **used = true;
+        }
+        self.runtime.tick_with_close_signal(self.close_signal);
     }
     pub fn request_close(&mut self) {
         self.runtime.arm_close();
@@ -134,6 +145,8 @@ where
         if driver_live {
             let mut pump = OwnerThreadPump {
                 runtime: &mut runtime,
+                tick_budget: None,
+                close_signal: None,
                 _local: PhantomData,
             };
             match catch_unwind(AssertUnwindSafe(|| driver(&mut pump))) {

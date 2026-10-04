@@ -65,6 +65,14 @@ jobs:
         run: node scripts/next/make-runner-plan.mjs --package br-12
       - name: Execute component and browser accessibility gates
         run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-12.plan.json --artifact-dir artifacts/next/runner/br-12 --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Bind capability projections to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-13
+      - name: Execute pure capability projection gate
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-13.plan.json --artifact-dir artifacts/next/runner/br-13 --timeout 330000 --max-level 0 --keep-cache --json
+      - name: Bind portable host adapter foundation to this native host
+        run: node scripts/next/make-runner-plan.mjs --suite host-adapter-foundation --host ${{ matrix.host }}
+      - name: Execute portable host and injected frontend adapter observations
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-21.host-adapter-foundation.${{ matrix.host }}.plan.json --artifact-dir artifacts/next/runner/br-21-foundation --timeout 630000 --max-level 0 --keep-cache --json
       - name: Retain source and host observations
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

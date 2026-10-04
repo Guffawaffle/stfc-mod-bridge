@@ -129,6 +129,26 @@ test('configuration source suite cannot accept the package before actual native 
   const document = readFileSync(path.join(root, 'docs/next/CONFIGURATION_WORKSPACE.md'), 'utf8');
   for (const criterion of selected.suites[0].criteria) assert.ok(document.includes(criterion));
 });
+
+test('portable host foundation requires an actual native probe and cannot accept the Tauri package', () => {
+  for (const actualHost of ['windows-x64', 'macos-arm64-native']) {
+    const selected = select({ suite: 'host-adapter-foundation', host: actualHost }, { actualHost });
+    assert.equal(selected.package.id, 'br-21');
+    assert.equal(selected.packageAcceptance, false);
+    assert.equal(selected.suites[0].packageAcceptanceAvailable, false);
+    assert.deepEqual(selected.observationScope, { kind: 'single-native-host-probe', host: actualHost, requiredHosts: ['windows-x64', 'macos-arm64-native'], matrixAcceptance: false });
+    assert.deepEqual(selected.package.dependsOn, ['br-03', 'br-04', 'br-13']);
+    const inventory = qualificationInputs(selected.suites);
+    for (const input of ['crates/bridge-engine', 'ui/src', 'ui/tests', 'scripts/next', '.github/workflows/next-foundation.yml']) assert.ok(inventory.includes(input));
+    const document = readFileSync(path.join(root, 'docs/next/HOST_ADAPTER_FOUNDATION.md'), 'utf8');
+    for (const criterion of selected.suites[0].criteria) assert.ok(document.includes(criterion));
+  }
+  assert.throws(() => select({ suite: 'host-adapter-foundation', host: 'macos-arm64-native' }), blocked('WRONG_NATIVE_HOST'));
+  assert.throws(() => select({ suite: 'host-adapter-foundation', host: 'any' }), blocked('WRONG_REQUESTED_HOST'));
+  assert.throws(() => select({ package: 'br-21', host: 'native-target-matrix' }), blocked('WRONG_NATIVE_HOST'));
+  const packageFixture = { ...work.packages.find(item => item.id === 'br-21'), host: 'any' };
+  assert.throws(() => select({ package: 'br-21', host: 'any' }, { packages: [packageFixture] }), blocked('PACKAGE_INTEGRATION_UNQUALIFIED'));
+});
 test('receipt requires every selected suite to complete successfully in declared order', () => {
   const suites = [{ id: 'first' }, { id: 'second' }];
   const checks = [{ id: 'first', exitCode: 0 }, { id: 'second', exitCode: 0 }];

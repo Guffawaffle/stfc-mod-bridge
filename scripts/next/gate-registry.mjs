@@ -1,5 +1,15 @@
 // Only implemented gates belong here. The planning graph is not executable evidence.
 export const registry = {
+  'host-adapter-foundation': {
+    host: 'any', nativeProbeHosts: ['windows-x64', 'macos-arm64-native'], timeoutMs: 600000, packageAcceptanceAvailable: false,
+    argv: ['scripts/next/host-adapter-foundation.mjs'],
+    inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
+      'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', '.github/workflows/next-foundation.yml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
+      'scripts/next', 'crates/bridge-engine', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-journal-io',
+      'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/vite.config.ts', 'ui/svelte.config.js', 'ui/src', 'ui/tests'],
+    criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05'],
+    boundary: 'Portable embedded owner, actual current native-architecture controlled host/kernel test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No production owner, native Tauri invocation, GUI or full br-21 acceptance.'
+  },
   'macos-platform-fixtures': {
     host: 'macos-arm64-native', timeoutMs: 600000, packageAcceptanceAvailable: false,
     argv: ['scripts/next/macos-platform-fixtures.mjs'],

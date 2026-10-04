@@ -326,6 +326,13 @@ impl<H: LocalHost> Runtime<H> {
         }
         self.observers.clear();
     }
+    pub(crate) fn custody_unknown(&self) -> bool {
+        self.owner_panicked
+    }
+    pub(crate) fn taint(&mut self, failure: HostFailure) {
+        self.owner_panicked = true;
+        self.fail(failure);
+    }
     pub(crate) fn arm_close(&mut self) {
         if self.closing {
             return;
@@ -336,6 +343,22 @@ impl<H: LocalHost> Runtime<H> {
         }
     }
     pub(crate) fn tick(&mut self) {
+        self.tick_with_close_signal(None);
+    }
+    pub(crate) fn tick_with_close_signal(&mut self, close_signal: Option<&std::cell::Cell<bool>>) {
+        // The blocking runner continues answering queued failure observations
+        // after taint; owner_call still refuses every actual owner method.
+        // An embedded tainted shell performs no later turn at all.
+        let embedded = close_signal.is_some();
+        if self.owner_panicked && embedded {
+            return;
+        }
+        if close_signal.is_some_and(std::cell::Cell::get) {
+            self.arm_close();
+        }
+        if self.owner_panicked && embedded {
+            return;
+        }
         self.observers
             .retain(|observer| observer.state.alive.load(Ordering::Acquire));
         match self.inbox.receiver.try_recv() {
@@ -343,10 +366,24 @@ impl<H: LocalHost> Runtime<H> {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => self.arm_close(),
         }
+        // Dispatch may invoke a recursive platform callback. Observe its close
+        // intent before further progression or another externally driven turn.
+        if close_signal.is_some_and(std::cell::Cell::get) {
+            self.arm_close();
+        }
+        if self.owner_panicked && embedded {
+            return;
+        }
         // Request/reply/subscriber loss never prevents independent advancement.
         if let Err(failure) = self.owner_call(|host| host.pump()) {
             self.fail(failure);
             self.arm_close();
+        }
+        if close_signal.is_some_and(std::cell::Cell::get) {
+            self.arm_close();
+        }
+        if self.owner_panicked && embedded {
+            return;
         }
         self.deliver_events();
     }

@@ -1334,6 +1334,16 @@
       ],
       "gates": [
         {
+          "id": "host-adapter-foundation",
+          "state": "implemented-source-observation-only",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite host-adapter-foundation --host <actual-native-host>",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "single-host-source-observation-only",
+          "receiptRequired": true
+        },
+        {
           "id": "client-transport-conformance",
           "state": "planned-not-implemented",
           "requiredHost": "any",
