@@ -22,6 +22,8 @@ test('unknown enum, oversized strings, unsupported keys and sounds refuse withou
     {kind:'set_public',fieldId:'setting.string',value:{kind:'string',value:scalars}}]);
   const accepted = canonicalData(facade.work.state.edits);
   expect(controller.setPublic('setting.string',{kind:'string',value:scalars+'B'})).toBe(false);
+  expect(controller.state.notice).toBe('This setting allows up to 64 characters. The previous value is retained.');
+  expect(facade.announcements.state.polite.message).toBe(controller.state.notice);
   expect(canonicalData(facade.work.state.edits)).toBe(accepted); dispose();
 });
 test('integer and exact decimal partial input retain shared dirty custody until valid completion', () => {

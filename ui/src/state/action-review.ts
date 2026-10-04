@@ -81,7 +81,10 @@ export class ActionReviewController {
     if (this.disposed || this.transition.kind !== 'review' || !attempt?.plan) return undefined;
     const epoch = this.work.observations.state.cursor?.hostEpoch;
     const confidence = this.work.observations.state.confidence;
-    if (!this.work.hostEpochCurrent(attempt.plan.planRef.hostEpoch)) { this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined; }
+    if (!this.work.hostEpochCurrent(attempt.plan.planRef.hostEpoch)) {
+      if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
+      this.attempt = undefined; this.transition = { kind: 'idle' }; this.say('This review belongs to an earlier connection. Review again.', true); return undefined;
+    }
     if (attempt.provedUnsent) this.releaseOwnedReplay(attempt);
     try { attempt.commit = captureData({ idempotencyKey: this.options.idempotencyKey(), planRef: attempt.plan.planRef }); }
     catch { this.say('Action submission is unavailable.', true); return undefined; }

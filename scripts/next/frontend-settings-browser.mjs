@@ -50,15 +50,25 @@ try{
   await page.route('**/*',route=>{const requested=new URL(route.request().url());if(requested.protocol.startsWith('http')&&requested.origin!==new URL(url).origin){externalRequests.push({origin:requested.origin,pathname:requested.pathname});return route.abort();}return route.continue();});
   await page.goto(new URL('settings-preview/',url).href);await ready();assert.match(await draft(),/edits: 0; buffers: 0; dirty: false/);await observed('initial-explicit-bound-clean',{view:'actual App Settings',ordinaryTarget:true},'settings-initial');
   assert.equal(await page.getByRole('textbox',{name:'Setting Integer',exact:true}).getAttribute('type'),'text');await page.getByLabel('Search settings',{exact:true}).fill('integer');assert.equal(await page.locator('.schema-field').count(),1);await page.getByLabel('Search settings',{exact:true}).fill('');assert.equal(await page.locator('.schema-field').count(),9);
-  const stringInput=page.getByRole('textbox',{name:'Setting String',exact:true}),scalarString='A🚀'.repeat(32);
-  await stringInput.focus();await page.keyboard.press('ControlOrMeta+A');await page.keyboard.press('Backspace');await stringInput.pressSequentially(scalarString);
-  assert.equal(await stringInput.inputValue(),scalarString);const acceptedStringEdits=JSON.parse((await page.getByTestId('settings-preview-edits').textContent())??'');
-  assert.deepEqual(acceptedStringEdits,[{kind:'set_public',fieldId:'setting.string',value:{kind:'string',value:scalarString}}]);
-  await stringInput.pressSequentially('B');assert.deepEqual(JSON.parse((await page.getByTestId('settings-preview-edits').textContent())??''),acceptedStringEdits);
-  await button('Undo staged field change for Setting String').click();assert.match(await draft(),/dirty: false/);
-  await observed('schema-controls-and-search',{fields:9,publicKinds:7,providerSearch:true,unicodeScalarBoundary:64});
+  const stringInput=page.getByRole('textbox',{name:'Setting String',exact:true}),limitNotice='This setting allows up to 64 characters. The previous value is retained.';
+  for(const scalarString of ['A🚀'.repeat(32),'a'.repeat(64)]){
+    await stringInput.focus();await page.keyboard.press('ControlOrMeta+A');await page.keyboard.press('Backspace');await stringInput.pressSequentially(scalarString);
+    assert.equal(await stringInput.inputValue(),scalarString);const acceptedStringEdits=JSON.parse((await page.getByTestId('settings-preview-edits').textContent())??'');
+    assert.deepEqual(acceptedStringEdits,[{kind:'set_public',fieldId:'setting.string',value:{kind:'string',value:scalarString}}]);
+    await stringInput.pressSequentially('B');assert.equal(await stringInput.inputValue(),scalarString);
+    assert.deepEqual(JSON.parse((await page.getByTestId('settings-preview-edits').textContent())??''),acceptedStringEdits);
+    await page.locator('.settings').getByText(limitNotice,{exact:true}).waitFor();await page.getByRole('status').filter({hasText:limitNotice}).waitFor();
+    assert.equal(await button('Review Save').isEnabled(),true);await review();
+    assert.deepEqual(JSON.parse((await page.getByTestId('settings-preview-edits').textContent())??''),acceptedStringEdits);
+    await dialog('Review Save').getByRole('button',{name:'Stay',exact:true}).click();await state('idle');
+    await button('Undo staged change for Setting String').click();assert.match(await draft(),/edits: 0; buffers: 0; dirty: true/);
+    await button('Review Discard').click();await dialog('Review Discard').waitFor();await button('Confirm Discard').click();await state('idle');
+    await page.waitForFunction(()=>document.querySelector('.settings h1')===document.activeElement);assert.match(await draft(),/dirty: false/);
+  }
+  await observed('schema-controls-and-search',{fields:9,publicKinds:7,providerSearch:true,unicodeScalarBoundary:64,asciiBoundary:64,rejectedInputRestoredAndAnnounced:true,reviewUsesVisibleAcceptedValue:true});
+  const numericSyncBaseline=(await methods()).filter(method=>method==='set_draft_changes').length;
   await page.getByRole('textbox',{name:'Setting Integer',exact:true}).fill('-');await navigate('Data Sync');assert.match(await draft(),/buffers: 1; dirty: true/);assert.equal(await button('Review Save').isDisabled(),true);await navigate('Settings');assert.equal(await page.getByRole('textbox',{name:'Setting Integer',exact:true}).inputValue(),'-');await observed('numeric-buffer-retained-across-views',{draftShared:true},'numeric-retained');
-  assert.equal(await button('Review Save').isDisabled(),true);assert.ok(!(await methods()).includes('set_draft_changes'));await button('Reset unfinished value for Setting Integer').click();assert.match(await draft(),/buffers: 0; dirty: false/);await observed('numeric-Save-blocked-and-reset',{noSynchronization:true,resetExplicit:true});
+  assert.equal(await button('Review Save').isDisabled(),true);assert.equal((await methods()).filter(method=>method==='set_draft_changes').length,numericSyncBaseline);await button('Reset unfinished value for Setting Integer').click();assert.match(await draft(),/buffers: 0; dirty: false/);await observed('numeric-Save-blocked-and-reset',{noSynchronization:true,resetExplicit:true});
   await edit();await review();assert.equal((await methods()).filter(row=>row==='commit').length,0);const modal=await dialog('Review Save').evaluate(row=>({native:row instanceof HTMLDialogElement,modal:row.matches(':modal'),focusInside:row.contains(document.activeElement)}));assert.deepEqual(modal,{native:true,modal:true,focusInside:true});for(const key of ['Tab','Shift+Tab']){await page.keyboard.press(key);assert.equal(await dialog('Review Save').evaluate(row=>row.contains(document.activeElement)),true);}await observed('Save-native-review-no-auto-commit',{...modal,keyboardFocusContained:true},'save-review');
   await dialog('Review Save').getByRole('button',{name:'Stay',exact:true}).click();await state('idle');assert.equal(await button('Review Save').evaluate(row=>row===document.activeElement),true);assert.match(await draft(),/dirty: true/);await observed('Save-Stay-restores-opener',{editRetained:true,focusRestored:true});
   await review();await button('Confirm Save').click();await state('observing');assert.match(await draft(),/dirty: true/);await observed('Save-admission-is-not-completion',{terminalNotQueried:true},'save-admitted');

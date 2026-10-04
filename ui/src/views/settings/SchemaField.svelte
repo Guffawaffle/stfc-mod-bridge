@@ -13,6 +13,10 @@
   const notification = $derived(presented.value?.kind === 'notification_policy' ? presented.value.value : undefined);
   const modifiers: readonly Modifier[] = ['control', 'alt', 'shift', 'meta'];
   function set(value: DeepReadonly<PublicConfigValue>): void { controller.setPublic(field.fieldId, value); }
+  function setString(input: HTMLInputElement): void {
+    const accepted = fieldText(presented.value);
+    if (!controller.setPublic(field.fieldId, { kind: 'string', value: input.value })) input.value = accepted;
+  }
   function setChords(value: readonly DeepReadonly<KeyChord>[]): void {
     if (value.length <= 8) set({ kind: 'keybinding', value: value as DeepReadonly<Extract<PublicConfigValue, { kind: 'keybinding' }>['value']> });
   }
@@ -56,7 +60,7 @@
   {:else if field.valueType.kind === 'string'}
     <label for={id}>{label}</label><input {id} type="text" value={fieldText(presented.value)} disabled={blocked}
       maxlength={Math.min(Number(field.valueType.maximumLength), 4096) * 2} aria-describedby={`${id}-description`} aria-invalid={presented.error ? 'true' : undefined}
-      oninput={(event) => set({ kind: 'string', value: event.currentTarget.value })}/>
+      oninput={(event) => setString(event.currentTarget)}/>
     <p class="description">Up to {field.valueType.maximumLength} characters.</p>
   {:else if field.valueType.kind === 'enum'}
     <Select {id} {label} value={fieldText(presented.value)} disabled={blocked} error={presented.error || undefined}

@@ -65,6 +65,8 @@ const criteria = {
     'matching generic preparation after known host replacement cannot install review',
     'known host replacement prevents fresh generic confirmation without replay custody',
     'host replacement during generic admitting publication prevents fresh commit',
+    'obsolete generic review releases its proved-unsent replay before a new host admission',
+    'obsolete generic review cleanup preserves a foreign replacement replay capture',
     'a later listener cannot redisplay review after a reentrant Stay closes it',
     'a replacement listener mounted during nested publication does not receive the superseded review',
     ...['preparing', 'admitting', 'cancelling'].map(name => `synchronous disposal during ${name} publication prevents its outbound invocation`),
@@ -151,7 +153,7 @@ for (const [file, titles] of Object.entries(criteria)) {
   Object.freeze(titles);
 }
 export const managementCriteria = Object.freeze(criteria);
-export const managementCounts = Object.freeze({ tests: 195, files: 9 });
+export const managementCounts = Object.freeze({ tests: 197, files: 9 });
 assert.equal(Object.keys(managementCriteria).length, managementCounts.files);
 assert.equal(Object.values(managementCriteria).reduce((total, titles) => total + titles.length, 0), managementCounts.tests);
 

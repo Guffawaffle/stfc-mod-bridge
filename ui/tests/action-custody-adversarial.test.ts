@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import { BridgeClient, decodeReply, decodeRequest, type DeepReadonly } from '../src/client';
+import { semanticPlanDigest } from '../src/client/relations';
 import type { MutationIntent, OperationSnapshot, Reply, Request, Snapshot } from '../src/generated/protocol';
 import { BridgeFacade, type ActionReviewState } from '../src/state';
 
@@ -37,19 +38,33 @@ function rolledBackOriginal(): OperationSnapshot {
   const value = operation('sc12-game-rollback-required-reply'); value.operationRevision = '4';
   value.state = { status: 'completed', outcome: { kind: 'rolled_back', reason: 'rollback_completed' } }; return value;
 }
+function atHost<T>(value: T, epoch: string): T {
+  return JSON.parse(JSON.stringify(value).replaceAll(snapshot().cursor.hostEpoch, epoch));
+}
 type Pending = { request: DeepReadonly<Request>; resolve: (encoded: string) => void; reject: (failure: unknown) => void; done: boolean };
-function harness(initial: OperationSnapshot[] = []) {
-  let sequence = 0, key = 0;
+function harness(initial: OperationSnapshot[] = [], maximumReplays?: number) {
+  let sequence = 0, key = 0, unsent = false;
   const sent: DeepReadonly<Request>[] = [], pending: Pending[] = [], keys: string[] = [];
   const client = new BridgeClient({ subscribe: () => () => {}, exchange(encoded) {
     const request = decodeRequest(encoded); sent.push(request);
     if (request.body.type === 'command' && request.body.command.name === 'prepare') {
-      const response = reply(request.body.command.input.intent.kind === 'recover_game_update'
+      let response = reply(request.body.command.input.intent.kind === 'recover_game_update'
         ? 'sc12-recover-prior-game-image-reply' : 'sc12-game-update-reply');
-      response.requestId = request.requestId; return Promise.resolve(JSON.stringify(response));
+      const epoch = facade.work.observations.state.cursor?.hostEpoch;
+      if (epoch) response = atHost(response, epoch);
+      response.requestId = request.requestId;
+      if (epoch && epoch !== snapshot().cursor.hostEpoch) {
+        if (response.body.type !== 'result' || response.body.result.type !== 'command' || response.body.result.command.name !== 'prepare') throw new Error('prepare_fixture');
+        const plan = response.body.result.command.output;
+        return semanticPlanDigest(plan.semantics).then(digest => { plan.planRef.reviewDigest = digest; return JSON.stringify(response); });
+      }
+      return Promise.resolve(JSON.stringify(response));
+    }
+    if (request.body.type === 'command' && request.body.command.name === 'commit' && unsent) {
+      unsent = false; throw { code: 'delivery_failed', delivery: 'not_sent' };
     }
     return new Promise<string>((resolve, reject) => pending.push({ request, resolve, reject, done: false }));
-  } }, { requestId: () => (++sequence).toString(16).padStart(8, '0') + '-2222-4222-8222-222222222222' });
+  } }, { requestId: () => (++sequence).toString(16).padStart(8, '0') + '-2222-4222-8222-222222222222', maximumReplays });
   const facade = new BridgeFacade(client, { idempotencyKey: () => {
     const value = (++key).toString(16).padStart(8, '0') + '-1111-4111-8111-111111111111'; keys.push(value); return value;
   } });
@@ -69,6 +84,7 @@ function harness(initial: OperationSnapshot[] = []) {
     const encoded = JSON.stringify(response); decodeReply(encoded); row.done = true; row.resolve(encoded);
   }
   return { client, facade, sent, keys, finish,
+    failNextUnsent() { unsent = true; },
     failCommit() { const row = next('commit'); row.done = true; row.reject({ code: 'disconnected', delivery: 'may_have_reached_backend' }); },
     async start(id = 'sc12-game-update-result-reply') {
       expect(await facade.actions.prepare(intent())).toMatchObject({ kind: 'result' });
@@ -138,6 +154,39 @@ test('host replacement during generic admitting publication prevents fresh commi
     expect(await run.facade.actions.confirm()).toBeUndefined(); expect(replaced).toBe(true);
     expect(run.sent).toHaveLength(1); expect(run.client.pendingCount).toBe(0); expect(run.client.replayCount).toBe(0);
     expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(run.facade.actions.blocksTransitions).toBe(false);
+  } finally { run.dispose(); }
+});
+
+test('obsolete generic review releases its proved-unsent replay before a new host admission', async () => {
+  const run = harness([], 1);
+  try {
+    await run.facade.actions.prepare(intent()); run.failNextUnsent();
+    expect(await run.facade.actions.confirm()).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+    expect(run.facade.actions.state.transition.kind).toBe('review'); expect(run.client.replayCount).toBe(1);
+    const priorKey = run.keys[0]; replaceHost(run);
+    expect(await run.facade.actions.confirm()).toBeUndefined(); expect(run.sent).toHaveLength(2);
+    expect(run.client.replayCount).toBe(0); expect(run.client.pendingCount).toBe(0); expect(run.client.getReplay(priorKey)).toBeUndefined();
+    expect(run.facade.actions.state.transition.kind).toBe('idle'); expect(run.facade.actions.blocksTransitions).toBe(false);
+    expect(run.facade.work.observations.acceptSnapshot(snapshot([], restartedEpoch))).toBe(true);
+    const prepared = await run.facade.actions.prepare(atHost(intent(), restartedEpoch));
+    expect(prepared?.kind === 'fault' ? prepared.fault.code : prepared?.kind).toBe('result');
+    const next = run.facade.actions.confirm(); run.finish('commit', atHost(admitted(), restartedEpoch));
+    expect(await next).toMatchObject({ kind: 'result' }); expect(run.facade.actions.state.transition.kind).toBe('observing');
+    expect(run.client.replayCount).toBe(1); expect(run.keys[1]).not.toBe(priorKey);
+  } finally { run.dispose(); }
+});
+
+test('obsolete generic review cleanup preserves a foreign replacement replay capture', async () => {
+  const run = harness([], 1);
+  try {
+    await run.facade.actions.prepare(intent()); run.failNextUnsent(); await run.facade.actions.confirm();
+    const key = run.keys[0], original = run.client.getReplay(key)!; expect(run.client.forgetReplay(key)).toBe(true);
+    run.failNextUnsent(); expect(await run.client.command('commit', original.input)).toMatchObject({ kind: 'fault', fault: { delivery: 'not_sent' } });
+    const replacement = run.client.getReplay(key); expect(replacement?.request).not.toBe(original.request);
+    replaceHost(run); const before = run.sent.length; expect(await run.facade.actions.confirm()).toBeUndefined();
+    expect(run.sent).toHaveLength(before); expect(run.facade.actions.state.transition.kind).toBe('idle');
+    expect(run.client.getReplay(key)).toBe(replacement); expect(run.client.replayCount).toBe(1);
+    run.facade.dispose(); expect(run.client.getReplay(key)).toBe(replacement);
   } finally { run.dispose(); }
 });
 

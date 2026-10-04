@@ -72,10 +72,13 @@ export class SettingsController {
     return this.facade.stage(edits);
   }
   setPublic(id: string, value: DeepReadonly<PublicConfigValue>): boolean {
+    if (this.blocked) return false;
     const field = this.field(id);
     if (!field || field.sensitivity !== 'public' || field.valueType.kind !== value.kind || ['integer', 'number'].includes(value.kind)) return false;
+    if (field.valueType.kind === 'string' && value.kind === 'string' && BigInt(Array.from(value.value).length) > BigInt(field.valueType.maximumLength)) {
+      this.notice(`This setting allows up to ${field.valueType.maximumLength} characters. The previous value is retained.`); return false;
+    }
     if (field.valueType.kind === 'enum' && value.kind === 'enum' && !field.valueType.values.includes(value.value)
-      || field.valueType.kind === 'string' && value.kind === 'string' && BigInt(Array.from(value.value).length) > BigInt(field.valueType.maximumLength)
       || field.valueType.kind === 'keybinding' && value.kind === 'keybinding' && (value.value.length > (field.valueType.multiple ? 8 : 1) || value.value.some(chord => field.valueType.kind !== 'keybinding' || !field.valueType.keys.includes(chord.key)))
       || field.valueType.kind === 'notification_policy' && value.kind === 'notification_policy' && value.value.kind === 'channels' && !field.valueType.sounds.includes(value.value.sound)) return false;
     const staged = this.stageAll(replaceField(this.facade.work.state.edits, id, { kind: 'set_public', fieldId: id, value }));
