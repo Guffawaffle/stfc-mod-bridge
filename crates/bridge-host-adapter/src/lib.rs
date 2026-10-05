@@ -4,4 +4,5 @@
 //! Platform composition supplies caller/document admission, bounded workers,
 //! independent expiry, response publication and original-thread servicing.
 
+pub mod controller;
 pub mod registration;

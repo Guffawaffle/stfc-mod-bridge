@@ -96,6 +96,47 @@ ACK and after it is consumed but before registry installation, response
 abandonment, permanent mutex poison and real cleanup notification. They do
 not establish native executor, caller, timer or IPC behavior.
 
+## Portable transport controller
+
+`TransportController` binds one already-created engine handle, one trusted
+document epoch and one trusted clock. CLI and Tauri composition can use the
+same controller without adding either frontend to the engine or adapter. It
+creates no local host, native service, worker, thread or timer.
+
+Exchange admission reserves one of 32 jobs and at most 8MiB of original request
+bytes before enqueueing a frame of at most 256KiB. A delivery ticket observes
+the job; dropping it does not release an unresolved engine reply or its quota.
+Root must service replies independently of the requester. Each bounded service
+pass checks each retained reply once. Ready responses remain within the job
+reservation through response construction or explicit abandonment. Only a
+known refusal before enqueue claims `not_sent`; admitted failures remain
+uncertain. Raw bytes pass through unchanged and exchange has no retry path.
+The caller has already allocated the input vector, so native framing and
+framework parsing need their own bounds before allocation.
+
+Subscription and cleanup work retain the registry's real scheduling tokens,
+five-second preparation deadline, engine readiness ACK and bounded close
+waiters. A poll retains its single lease through one read, bounded JSON
+serialization, synchronous raw response construction and a final commit
+callback. Builder or commit failure, unwind or abandonment retires the stream
+instead of silently losing a consumed event. The controller holds no mutex
+across caller response callbacks.
+
+Final readiness and poll checks are point-in-time observations. Production
+root must coordinate caller authorization, document loss, expiry, unsubscribe
+and final response publication under one short admission boundary. A callback
+return alone does not establish a native framework's publication point. Root
+also supplies independent expiry and reply service, bounded work scheduling,
+and original-thread owner retention through Deferred close. Stopping new
+submission preserves existing reply and cleanup work; dropping the controller
+does not prove safe host close.
+
+The separately selected controller integration artifact adds 11 controls over
+actual engine channels and a test-only owned original-thread host. Its
+controlled response barrier tests its explicit callback boundary. These
+controls do not qualify a native executor, caller identity, timer, platform
+publication or production service factory.
+
 ## Qualification boundary
 
 ```powershell
@@ -119,7 +160,7 @@ The source inventory includes the engine's transitive `bridge-toml` and
 `bridge-native` roots. Older observations whose suite inventory omitted a
 compiled transitive root retain that narrower scope; a passing host job does
 not retrospectively complete its source closure.
-The driver retains byte-identical copies of its three selected test executables
+The driver retains byte-identical copies of its four selected test executables
 inside the uploaded observation folder and rechecks them before completion.
 Those copies are evidence payloads; only the original current Cargo artifacts
 are executed. Older archives without those payloads permit log/hash readback
@@ -136,6 +177,7 @@ adapter tests. No synthetic host enters production composition.
 | BR21-FND-04 | Typed raw adapter readiness, bounded quotas, stale-generation fencing, exact capture and conservative delivery classification. |
 | BR21-FND-05 | Current native test binaries and stable source/tool inventories, frontend independence and compile-fail ownership boundaries. |
 | BR21-FND-06 | Real engine ACK, bounded registration/poll/cleanup custody, monotonic retirement and permanent poison refusal in the portable native-side registry. |
+| BR21-FND-07 | Bounded controller admission and retained exchange/response work, exact raw replies, actual registry tokens and lease custody through controlled response construction and commit. |
 
 Real CLI application workflows, native Tauri command/caller/document/ACL
 composition, production journal and service provisioning, Windows WebView2

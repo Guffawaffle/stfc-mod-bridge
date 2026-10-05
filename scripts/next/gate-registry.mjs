@@ -7,8 +7,8 @@ export const registry = {
       'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', '.github/workflows/next-foundation.yml', 'docs/next/HOST_ADAPTER_FOUNDATION.md',
       'scripts/next', 'crates/bridge-engine', 'crates/bridge-host-adapter', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-toml', 'crates/bridge-native', 'crates/bridge-journal-io',
       'contracts', 'ui/package.json', 'ui/tsconfig.json', 'ui/vite.config.ts', 'ui/svelte.config.js', 'ui/src', 'ui/tests'],
-    criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05', 'BR21-FND-06'],
-    boundary: 'Portable embedded owner and host registration registry, actual current native-architecture controlled host/kernel/registration test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No production owner, native Tauri invocation, GUI or full br-21 acceptance.'
+    criteria: ['BR21-FND-01', 'BR21-FND-02', 'BR21-FND-03', 'BR21-FND-04', 'BR21-FND-05', 'BR21-FND-06', 'BR21-FND-07'],
+    boundary: 'Portable embedded owner, registration registry and transport controller, actual current native-architecture controlled host/kernel/registration/controller test artifacts, compile-fail ownership controls and typed frontend adapter with injected invoke promises. No native executor, caller barrier, platform publication, production owner, native Tauri invocation, GUI or full br-21 acceptance.'
   },
   'macos-platform-fixtures': {
     host: 'macos-arm64-native', timeoutMs: 600000, packageAcceptanceAvailable: false,

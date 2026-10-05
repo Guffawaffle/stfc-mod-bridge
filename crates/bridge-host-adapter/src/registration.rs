@@ -48,14 +48,14 @@ pub struct FaultDto {
     delivery: Delivery,
 }
 impl FaultDto {
-    fn not_sent(code: FaultCode) -> Self {
+    pub(crate) fn not_sent(code: FaultCode) -> Self {
         Self {
             schema_version: 1,
             code,
             delivery: Delivery::NotSent,
         }
     }
-    fn uncertain(code: FaultCode) -> Self {
+    pub(crate) fn uncertain(code: FaultCode) -> Self {
         Self {
             schema_version: 1,
             code,
@@ -781,6 +781,12 @@ pub struct PollLease {
     frame: Option<String>,
 }
 impl PollLease {
+    /// Point-in-time eligibility only; root still supplies the caller and
+    /// document publication boundary through its actual native commit.
+    pub(crate) fn check_deliverable(&self, now: Instant) -> Result<(), FaultDto> {
+        self.registry.deliverable(self.ordinal, now)
+    }
+
     pub fn read_one(&mut self, now: Instant) -> Result<(), FaultDto> {
         if self.read {
             return Err(FaultDto::uncertain(FaultCode::DeliveryFailed));

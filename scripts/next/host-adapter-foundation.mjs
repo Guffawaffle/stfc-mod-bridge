@@ -115,6 +115,19 @@ required.bridge_host_adapter = [
   "registration::tests::off_owner_readiness_revoke_after_engine_ack_before_install_is_fenced",
   "registration::tests::close_wait_real_notification_and_drop_follow_actual_global_poll_retirement"
 ];
+required.controller = [
+  "exchange_admission_bounds_precede_enqueue",
+  "exchange_submission_failure_is_not_sent",
+  "exchange_pending_failure_is_uncertain_and_never_retried",
+  "abandoned_exchange_ticket_keeps_job_quota_until_settlement",
+  "reply_bytes_are_exact_and_correlation_is_not_rewritten",
+  "readiness_work_keeps_deadline_and_waits_for_engine_ack",
+  "readiness_candidate_recheck_refuses_retired_key",
+  "poll_response_builder_keeps_single_lease_until_return",
+  "poll_builder_error_or_unwind_retires_stream",
+  "document_epoch_is_immutable_and_shutdown_preserves_pending_work",
+  "controlled_publication_boundary_serializes_retirement_and_publish"
+];
 const frontendRequired = {
   "ui/tests/tauri-transport.test.ts": [
     "snapshot exchange waits for a genuine exact native registration acknowledgement",
@@ -253,11 +266,13 @@ try {
   const engineTargets = ['embedded_host', 'host_transport'].map(name => ({name, kind: 'test',
     manifest: 'crates/bridge-engine/Cargo.toml', source: 'crates/bridge-engine/tests/' + name + '.rs'}));
   const adapterTargets = [{name: 'bridge_host_adapter', kind: 'lib',
-    manifest: 'crates/bridge-host-adapter/Cargo.toml', source: 'crates/bridge-host-adapter/src/lib.rs'}];
+    manifest: 'crates/bridge-host-adapter/Cargo.toml', source: 'crates/bridge-host-adapter/src/lib.rs'},
+  {name: 'controller', kind: 'test', manifest: 'crates/bridge-host-adapter/Cargo.toml',
+    source: 'crates/bridge-host-adapter/tests/controller.rs'}];
   const engineOutput = cargo('compile-current-host-tests', ['test', '--locked', '--offline', '-p', 'bridge-engine', '--target', rust.hostTarget,
     ...engineTargets.flatMap(target => ['--test', target.name]), '--no-run', '--message-format', 'json']);
-  const adapterOutput = cargo('compile-current-registration-tests', ['test', '--locked', '--offline', '-p', 'bridge-host-adapter',
-    '--lib', '--target', rust.hostTarget, '--no-run', '--message-format', 'json']);
+  const adapterOutput = cargo('compile-current-adapter-tests', ['test', '--locked', '--offline', '-p', 'bridge-host-adapter',
+    '--lib', '--test', 'controller', '--target', rust.hostTarget, '--no-run', '--message-format', 'json']);
   const artifacts = [...selectHostArtifacts(engineOutput, {root, targets: engineTargets}),
     ...selectHostArtifacts(adapterOutput, {root, targets: adapterTargets})];
   for (const artifact of artifacts) {
@@ -324,8 +339,8 @@ try {
     host: { platform: process.platform, architecture: process.arch, node: process.version },
     toolchain: { pin: rust.pin, nativeTarget: rust.hostTarget }, inputs, sourcesBefore, sourcesAfter, toolsBefore, toolsAfter,
     requiredTests: required, binaries, checks, ownershipDocs, frontendRequired, frontendInventory, frontendReport, failure,
-    boundary: 'Actual native-architecture portable owner and real kernel and registration tests with controlled ports, retained test binaries, ownership compile-fail controls, and typed frontend poll adapter using injected invoke promises. No native GUI, production owner provisioning or installed runtime qualification.',
-    portableModelObserved: passed, injectedFrontendAdapterObserved: passed, nativeWebviewQualified: false, productionOwnerQualified: false,
+    boundary: 'Actual native-architecture portable owner, real kernel, registration and controller tests with controlled ports, retained test binaries, ownership compile-fail controls, and typed frontend poll adapter using injected invoke promises. The controller has no native executor, caller barrier or platform publication integration. No native GUI, production owner provisioning or installed runtime qualification.',
+    portableModelObserved: passed, portableControllerObserved: passed, injectedFrontendAdapterObserved: passed, nativeWebviewQualified: false, productionOwnerQualified: false,
     physicalOwnerQualified: false, operationPortsAdopted: false, br21Accepted: false, nativeRuntimeQualified: false, releaseQualified: false
   }, null, 2) + '\n');
   console.log(JSON.stringify({ result: passed ? 'passed' : 'failed', tests: binaries.reduce((count, binary) => count + binary.executedTests.length, 0),
