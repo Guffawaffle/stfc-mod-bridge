@@ -180,6 +180,11 @@ export class WorkContext {
         || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
       if (read.draft.status !== 'observed') return conflict();
       const draft = read.draft.value;
+      const current = this.observations.state;
+      if (current.confidence !== 'authoritative' || current.resnapshotRequired || !current.cursor
+        || current.cursor.hostEpoch !== read.cursor.hostEpoch || current.cursor.streamId !== read.cursor.streamId
+        || !current.drafts.some(observed => observed.draft.hostEpoch === draft.draft.hostEpoch && observed.draft.draftId === draft.draft.draftId
+          && bindingEquivalent(observed, draft))) return conflict();
       if (!bindingEquivalent(draft.draft.document, capture.draft.draft.document)
         || !bindingEquivalent({ ...capture.draft, schema: draft.schema }, capture.draft)) return conflict();
       if (bindingEquivalent(draft, capture.draft)) {

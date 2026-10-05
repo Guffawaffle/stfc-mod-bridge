@@ -146,7 +146,7 @@ export class ObservationStore {
     try { return this.closeProblem(disposition) || this.invalidate('close_obligation_mismatch'); }
     catch { return this.invalidate('close_obligation_mismatch'); }
   }
-  private draftProblem(draft: DeepReadonly<DraftSnapshot>, map: Map<string, DeepReadonly<DraftSnapshot>>): ObservationReason | undefined {
+  private draftProblem(draft: DeepReadonly<DraftSnapshot>, map: Map<string, DeepReadonly<DraftSnapshot>>, allowStaleObservation = false): ObservationReason | undefined {
     const key = canonicalData([draft.draft.hostEpoch, draft.draft.draftId]);
     const previous = map.get(key) ?? this.discardedDrafts.get(key);
     const revision = counter(draft.draft.revision);
@@ -156,7 +156,12 @@ export class ObservationStore {
     const previousRevision = counter(previous.draft.revision);
     if (revision < previousRevision) return 'revision_regressed';
     if (this.discardedDrafts.has(key)) return 'revision_reused';
-    if (revision === previousRevision && !bindingEquivalent(previous, draft)) return 'revision_reused';
+    // The owner can observe a changed document without changing this draft's
+    // generation or rebinding its protected references. Only a correlated read
+    // or stream event may report that monotone metadata transition.
+    const becameStale = allowStaleObservation && draft.state === 'stale' && (previous.state === 'clean' || previous.state === 'dirty')
+      && bindingEquivalent({ ...previous, state: 'stale', validation: [] }, draft);
+    if (revision === previousRevision && !bindingEquivalent(previous, draft) && !becameStale) return 'revision_reused';
     return undefined;
   }
   private draftCount(): number { return new Set([...this.drafts.keys(), ...this.discardedDrafts.keys(), ...this.draftWatermarks.keys()]).size; }
@@ -173,7 +178,7 @@ export class ObservationStore {
       if (read.draft.status === 'observed') {
         const draft = read.draft.value;
         if (draft.draft.hostEpoch !== request.hostEpoch || draft.draft.draftId !== request.draftId) return this.invalidate('capture_changed');
-        const problem = this.draftProblem(draft, this.drafts);
+        const problem = this.draftProblem(draft, this.drafts, true);
         if (problem) return this.invalidate(problem);
         const known = this.drafts.get(key);
         if (previous && counter(cursor.sequence) === counter(previous.cursor.sequence)
@@ -297,7 +302,7 @@ export class ObservationStore {
         const fenced = watermark && sameStream(watermark.cursor, event.cursor) && sequence <= counter(watermark.cursor.sequence)
           || discarded && counter(event.body.draft.draft.revision) <= counter(discarded.draft.revision);
         if (!fenced) {
-          const problem = this.draftProblem(event.body.draft, this.drafts);
+          const problem = this.draftProblem(event.body.draft, this.drafts, true);
           if (problem) return this.invalidate(problem);
           this.drafts.set(draftKey, event.body.draft);
           this.draftWatermarks.set(draftKey, Object.freeze({ cursor: event.cursor, missing: false }));

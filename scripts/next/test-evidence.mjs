@@ -94,6 +94,24 @@ export const frontendCriteria = {
     'request capture uses the accepted parser and exact generated request validator',
     'local boundary diagnostics contain only safe codes'
   ],
+  'ui/tests/client-draft-reconciliation.test.ts': [
+    'a current draft read fences only draft payloads and consumes every intervening operation event',
+    'Missing after eventless Discard creates a tombstone even at the same cursor',
+    'Missing and Discard both suppress old buffered draft payload while consuming its sequence',
+    'an older read cannot regress a newer draft event or replace its watermark with Missing',
+    'Missing watermarks share the bounded draft identity budget',
+    'an unchanged authoritative draft preserves unsynchronized edits and unfinished numeric input',
+    'a read cannot automatically clear already synchronized protected references',
+    'current successor reconciliation recovers matching lost public stage ACK without opening or changing a baseline',
+    ...['clean', 'dirty'].flatMap(state => ['event', 'read'].map(route =>
+      `the real same-revision ${state} to stale ${route} keeps draft and protected custody while the global stream remains consumable`)),
+    'unwatermarked draft payloads cannot assert a same-revision stale transition',
+    'a stale read cannot rewrite an observed draft at the exact same read watermark',
+    ...['edits', 'schema', 'apply', 'document', 'resurrection'].map(change =>
+      `same-revision stale allowance still refuses changed ${change} custody`),
+    ...['newer_event', 'missing', 'discard', 'sequence_gap', 'disconnected', 'stream_changed'].map(change =>
+      `synchronous ${change} observation cannot certify an obsolete retained-draft read`)
+  ],
   'ui/tests/client-observation.test.ts': [
     'draft observations accept typed None equivalence without erasing local edits or document identity',
     'terminal operation state accepts omitted None while preserving actual receipt revisions',

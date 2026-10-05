@@ -41,6 +41,14 @@ target, draft and local input custody still match. Missing, mismatched or change
 local custody preserves intent with a conflict; it cannot silently reopen or
 retarget a draft.
 
+A correlated read or consecutive event can mark a clean/dirty draft Stale at
+the same revision while preserving its complete captured document, schema,
+edits, apply timing and protected references. Other same-revision rewrites,
+unwatermarked stale assertions and reverse transitions at that revision refuse. After a read's
+synchronous observation publication, reconciliation also rechecks the current
+authoritative stream and exact stored draft: a newer event, tombstone or
+invalidation cannot authorize adoption of the superseded read.
+
 Staging replaces the complete edit set at an exact draft generation. The actual
 Rust contract codec checks its result, including the complete encoded envelope
 size, before the workspace advances revision or protected custody. An exact

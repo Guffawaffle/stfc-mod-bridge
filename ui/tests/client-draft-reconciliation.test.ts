@@ -224,3 +224,74 @@ test('current successor reconciliation recovers matching lost public stage ACK w
     expect(canonicalData(sent.at(-1)?.body)).toBe(canonicalData({ type: 'query', query: { name: 'get_draft', input: input() } }));
   } finally { facade.dispose(); client.dispose(); }
 });
+
+test.each([['clean', 'event'], ['clean', 'read'], ['dirty', 'event'], ['dirty', 'read']] as const)
+('the real same-revision %s to stale %s keeps draft and protected custody while the global stream remains consumable', (state, route) => {
+  const previous = state === 'clean' ? clean() : staged();
+  if (state === 'dirty') {
+    const reference = frame('sc09-protected-secret-entry-reply').body.result.command.output.outcome.reference;
+    reference.draft = clone(previous.draft);
+    previous.edits.push({ kind: 'replace_secret', fieldId: reference.fieldId, reference });
+  }
+  const stale = clone(previous); stale.state = 'stale'; stale.validation = [];
+  const store = new ObservationStore(); store.acceptSnapshot(snapshot()); store.observeDraft(previous);
+  const work = new WorkContext(store); work.openDraft(previous);
+  if (route === 'event') expect(store.acceptEvent(draftEvent('1', stale))).toBe(true);
+  const current = read(stale, '1');
+  expect(work.finishDraftReconciliation(work.captureDraftReconciliation()!, result(current))).toBe(true);
+  expect(work.state.draft).toEqual(stale); expect(work.state.edits).toEqual(previous.edits); expect(work.state.draftConflict).toBe(true);
+  if (route === 'read') expect(store.acceptEvent(draftEvent('1', stale))).toBe(true);
+  expect(store.acceptEvent(event('2', { type: 'operation_changed', operation: operation() }))).toBe(true);
+  expect(store.state).toMatchObject({ confidence: 'authoritative', cursor: { sequence: '2' }, drafts: [stale] });
+  expect(work.finishDraftReconciliation(work.captureDraftReconciliation()!, result(read(stale, '2')))).toBe(true);
+});
+
+test('unwatermarked draft payloads cannot assert a same-revision stale transition', () => {
+  const previous = staged(), stale = clone(previous); stale.state = 'stale'; stale.validation = [];
+  const store = new ObservationStore(); store.acceptSnapshot(snapshot()); store.observeDraft(previous);
+  expect(store.observeDraft(stale)).toBe(false); expect(store.state.drafts).toEqual([previous]);
+});
+
+test('a stale read cannot rewrite an observed draft at the exact same read watermark', () => {
+  const previous = staged(), stale = clone(previous); stale.state = 'stale'; stale.validation = [];
+  const store = new ObservationStore(); store.acceptSnapshot(snapshot()); store.observeDraft(previous);
+  expect(store.observeDraftResult(input(), read(previous, '1'))).toBe(true);
+  expect(store.observeDraftResult(input(), read(stale, '1'))).toBe(false);
+  expect(store.state.drafts).toEqual([previous]);
+});
+
+test.each(['edits', 'schema', 'apply', 'document', 'resurrection'] as const)('same-revision stale allowance still refuses changed %s custody', change => {
+  const previous = staged(), candidate = clone(previous);
+  candidate.state = 'stale'; candidate.validation = [];
+  if (change === 'edits') candidate.edits = [];
+  if (change === 'schema') candidate.schema.fields[0].deprecated = !candidate.schema.fields[0].deprecated;
+  if (change === 'apply') candidate.apply = [];
+  if (change === 'document') candidate.draft.document.revision = 'foreign-document-revision';
+  if (change === 'resurrection') { previous.state = 'stale'; candidate.state = 'dirty'; }
+  const store = new ObservationStore(); store.acceptSnapshot(snapshot()); store.observeDraft(previous);
+  expect(store.observeDraftResult(input(), read(candidate, '1'))).toBe(false);
+  expect(store.state.drafts).toEqual([previous]);
+});
+
+test.each(['newer_event', 'missing', 'discard', 'sequence_gap', 'disconnected', 'stream_changed'] as const)
+('synchronous %s observation cannot certify an obsolete retained-draft read', change => {
+  const { work, store } = workWithInput(), capture = work.captureDraftReconciliation()!, before = work.state;
+  let armed = true;
+  const stop = store.subscribe(() => {
+    if (armed) return;
+    armed = true;
+    if (change === 'newer_event') store.acceptEvent(draftEvent('1', staged()));
+    else if (change === 'missing') store.observeDraftResult(input(), read(undefined));
+    else if (change === 'discard') store.observeDiscard({ ...input(), previousRevision: clean().draft.revision });
+    else if (change === 'sequence_gap') store.acceptEvent(event('2', { type: 'operation_changed', operation: operation() }));
+    else if (change === 'disconnected') store.invalidate('disconnected');
+    else store.acceptSnapshot({ ...snapshot(), cursor: { ...snapshot().cursor, streamId: '00009005-1111-4111-8111-111111111111' } });
+  });
+  armed = false;
+  try {
+    expect(work.finishDraftReconciliation(capture, result(read(clean())))).toBe(false);
+    expect(work.state.draft).toBe(before.draft); expect(work.state.edits).toBe(before.edits);
+    expect(work.state.publicInputs).toBe(before.publicInputs); expect(work.state.selector).toBe(before.selector);
+    expect(work.state.binding).toBe(before.binding); expect(work.state.draftConflict).toBe(true);
+  } finally { stop(); }
+});
