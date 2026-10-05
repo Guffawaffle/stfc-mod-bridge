@@ -44,10 +44,31 @@ particular, a discretionary-access pass cannot qualify the native fixtures.
 [user-object security](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getuserobjectsecurity),
 [security-information query rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/security-information).
 
+Immediately before bootstrap creation, a separate bounded read of the parent's
+own window-station and current-thread-desktop names forms the explicit
+`station\desktop` request in `STARTUPINFO.lpDesktop`. This read does not depend
+on the advisory DACL observations. Invalid or unavailable names refuse before
+creation. Its UTF-16 allocation remains owned through process creation; the
+three-entry standard-handle allowlist is unchanged. There is one fixed attempt
+and no retry with a null desktop, new user object, altered ACL or privilege.
+The later Node spawn retains its existing null-desktop behavior, keeping this
+comparison at bootstrap startup.
+[STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow).
+
 The child bootstrap is a fixed checked-in PowerShell script. It observes its
 own token before starting pinned Node and compares its user/session/logon and
-current-user LocalAppData observations to the bounded source handshake. Node's
-fixed entry validates the complete selected partial plan, its projection and
+current-user LocalAppData observations to the bounded source handshake.
+
+The versioned closed handshake also carries the requested desktop. Before Node
+starts, the child independently queries its own station and thread desktop,
+records those observations separately from the parent DACL snapshots, and
+requires an ordinal case-insensitive name match. The launcher binds that receipt to
+the request and the exact returned child PID/creation time. Matching names do
+not establish physical user-object handle identity, loader initialization or
+native fixture success; an initialization failure can occur before any child
+receipt exists.
+
+Node's fixed entry validates the complete selected partial plan, its projection and
 three prerequisite receipt hashes against the actual current Git head. It
 retains unique one-link plan/projection copies and invokes the retained plan
 through the pinned LexRunner 2.1.0 JS entry directly. The CLI and manifest must

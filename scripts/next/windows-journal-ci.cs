@@ -89,6 +89,11 @@ namespace StfcBridgeJournalCi {
         public string FailureCode { get; set; }
         public int NativeError { get; set; }
     }
+    public sealed class DesktopContext {
+        public string ObservationKind { get; set; } = "own_process_window_station_and_current_thread_desktop";
+        public string WindowStationName { get; set; }
+        public string ThreadDesktopName { get; set; }
+    }
     public sealed class LaunchObservation {
         public string SchemaVersion { get; set; } = "bridge-windows-journal-ci-launch/v1";
         public string Result { get; set; } = "failed";
@@ -101,6 +106,9 @@ namespace StfcBridgeJournalCi {
         public string DotnetVersion { get; set; } = Environment.Version.ToString();
         public ProbeObservation TokenProbe { get; set; }
         public StartupObjectObservation[] StartupObjects { get; set; }
+        public string RequestedDesktop { get; set; }
+        public DesktopContext ChildDesktopContext { get; set; }
+        public bool ChildDesktopContextMatched { get; set; }
         public FileObservation[] Files { get; set; }
         public uint ChildPid { get; set; }
         public string ChildCreationFiletime { get; set; }
@@ -364,7 +372,7 @@ namespace StfcBridgeJournalCi {
         private static bool IsOrdinary(Context c) { return c!=null&&c.TokenType==1&&!c.Elevated&&(c.ElevationType==1||c.ElevationType==3)&&c.IntegrityRid==8192&&(c.IntegrityAttributes&0x20)!=0&&c.ThreadTokenAbsent&&c.ProcessMachine==0&&c.NativeMachine==0x8664; }
         private static void Ordinary(Context c) { Require(IsOrdinary(c),"ORDINARY_CONTEXT_REQUIRED"); }
         private static void Complete(LaunchObservation value) {
-            Require(value.AssignedBeforeResume&&value.ChildContextMatched&&value.ExitObserved&&value.ChildExitCode==0&&value.StdoutEof&&value.StderrEof&&value.IoThreadsJoined&&value.OwnedJobEmpty
+            Require(value.AssignedBeforeResume&&value.ChildContextMatched&&value.ChildDesktopContextMatched&&value.ExitObserved&&value.ChildExitCode==0&&value.StdoutEof&&value.StderrEof&&value.IoThreadsJoined&&value.OwnedJobEmpty
                 &&value.SourceToolFenceStable&&value.CleanupSettled&&!value.ReaderFailed&&!value.OutputOverflow&&!value.ForcedCleanup&&value.FailureCode==null,"SUCCESS_CUSTODY_REQUIRED");
         }
         private static void SameIdentity(Context source,Context candidate) { Require(source.UserSid==candidate.UserSid&&source.SessionId==candidate.SessionId&&source.AuthenticationId==candidate.AuthenticationId&&SamePath(source.LocalAppData,candidate.LocalAppData),"SAME_USER_PROFILE_REQUIRED"); }
@@ -399,14 +407,41 @@ namespace StfcBridgeJournalCi {
             catch { result.FailureCode="USER_SECURITY_EXCEPTION"; }
             return result;
         }
+        private static void DesktopComponent(string value) {
+            Require(value!=null&&value.Length>0&&value.Length<=512,"DESKTOP_NAME_BOUND");
+            for(int i=0;i<value.Length;i++) { char c=value[i]; Require(!Char.IsControl(c)&&c!='\\'&&c!='/',"DESKTOP_NAME_COMPONENT");
+                if(Char.IsHighSurrogate(c)) { Require(i+1<value.Length&&Char.IsLowSurrogate(value[i+1]),"DESKTOP_NAME_UTF16"); i++; }
+                else Require(!Char.IsLowSurrogate(c),"DESKTOP_NAME_UTF16"); }
+        }
+        private static string DesktopRoute(DesktopContext value) {
+            Require(value!=null&&value.ObservationKind=="own_process_window_station_and_current_thread_desktop","DESKTOP_OBSERVATION_KIND");
+            DesktopComponent(value.WindowStationName); DesktopComponent(value.ThreadDesktopName); return value.WindowStationName+"\\"+value.ThreadDesktopName;
+        }
+        private static void DesktopRequest(string value) {
+            Require(value!=null&&value.Length>=3&&value.Length<=1025,"DESKTOP_REQUEST_BOUND"); string[] parts=value.Split('\\'); Require(parts.Length==2,"DESKTOP_REQUEST_COMPONENTS"); DesktopComponent(parts[0]); DesktopComponent(parts[1]);
+        }
+        private static void DesktopMatches(DesktopContext own,string requested) { DesktopRequest(requested); Require(String.Equals(DesktopRoute(own),requested,StringComparison.OrdinalIgnoreCase),"CHILD_DESKTOP_MISMATCH"); }
+        private static string UserObjectName(IntPtr handle) {
+            Require(handle!=IntPtr.Zero&&handle!=new IntPtr(-1),"OWN_USER_OBJECT_HANDLE");
+            using(var name=new Buffer(1026)) {
+                uint needed; Check(Native.GetUserObjectInformation(handle,2,name.Pointer,1026,out needed),"USER_OBJECT_NAME");
+                Require(needed>=2&&needed<=1026&&needed%2==0&&Marshal.ReadInt16(name.Pointer,(int)needed-2)==0,"USER_OBJECT_NAME_EXTENT");
+                string value=Marshal.PtrToStringUni(name.Pointer,(int)needed/2-1); DesktopComponent(value); return value;
+            }
+        }
+        private static DesktopContext OwnDesktop() {
+            // Borrowed handles are queried, never inherited, switched or closed.
+            var value=new DesktopContext { WindowStationName=UserObjectName(Native.GetProcessWindowStation()),ThreadDesktopName=UserObjectName(Native.GetThreadDesktop(Native.GetCurrentThreadId())) };
+            DesktopRoute(value); Require(ThreadAbsent(Native.GetCurrentThread()),"DESKTOP_THREAD_TOKEN_ABSENT"); return value;
+        }
+        private static DesktopContext DesktopContextFrom(JsonElement input) {
+            Closed(input,new[]{"observationKind","windowStationName","threadDesktopName"});
+            var value=JsonSerializer.Deserialize<DesktopContext>(input.GetRawText(),JsonOptions); DesktopRoute(value); return value;
+        }
         private static void StartupObject(IntPtr handle,Handle token,StartupObjectObservation result) {
             try {
                 Require(handle!=IntPtr.Zero&&handle!=new IntPtr(-1),"PARENT_USER_OBJECT_HANDLE");
-                using(var name=new Buffer(1026)) {
-                    uint needed; Check(Native.GetUserObjectInformation(handle,2,name.Pointer,1026,out needed),"USER_OBJECT_NAME");
-                    Require(needed>=2&&needed<=1026&&needed%2==0&&Marshal.ReadInt16(name.Pointer,(int)needed-2)==0,"USER_OBJECT_NAME_EXTENT");
-                    result.Name=Marshal.PtrToStringUni(name.Pointer,(int)needed/2-1); Require(result.Name.Length>0&&result.Name.Length<=512&&!result.Name.Contains('\0'),"USER_OBJECT_NAME_BOUND");
-                }
+                result.Name=UserObjectName(handle);
                 using(var flags=new Buffer(Marshal.SizeOf<UserObjectFlags>())) {
                     uint needed; Check(Native.GetUserObjectInformation(handle,1,flags.Pointer,(uint)flags.Length,out needed),"USER_OBJECT_FLAGS"); Require(needed==flags.Length,"USER_OBJECT_FLAGS_EXTENT");
                     result.Flags=Marshal.PtrToStructure<UserObjectFlags>(flags.Pointer).Flags;
@@ -482,19 +517,20 @@ namespace StfcBridgeJournalCi {
                 result.Append('\\',character=='"'?2*slashes+1:slashes); result.Append(character); slashes=0; }
             result.Append('\\',2*slashes); result.Append('"'); return result.ToString();
         }
-        private static CreatedProcess Spawn(Handle token,string application,string[] arguments,string root,IntPtr stdin,IntPtr stdout,IntPtr stderr) {
-            var owned=new List<Handle>(); IntPtr attributes=IntPtr.Zero,handles=IntPtr.Zero; bool initialized=false; var custody=new CreatedProcess(); bool createdSuccessfully=false;
+        private static CreatedProcess Spawn(Handle token,string application,string[] arguments,string root,IntPtr stdin,IntPtr stdout,IntPtr stderr,string requestedDesktop=null) {
+            var owned=new List<Handle>(); IntPtr attributes=IntPtr.Zero,handles=IntPtr.Zero,desktop=IntPtr.Zero; bool initialized=false; var custody=new CreatedProcess(); bool createdSuccessfully=false;
             try { foreach(IntPtr input in new[]{stdin,stdout,stderr}) { Require(input!=IntPtr.Zero&&input!=new IntPtr(-1),"STANDARD_HANDLE"); Handle copy; Check(Native.DuplicateHandle(Native.GetCurrentProcess(),input,Native.GetCurrentProcess(),out copy,0,true,2),"STANDARD_HANDLE_COPY"); owned.Add(copy); }
+                if(requestedDesktop!=null) { DesktopRequest(requestedDesktop); desktop=Marshal.StringToHGlobalUni(requestedDesktop); }
                 UIntPtr size=UIntPtr.Zero; Native.InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref size); Require(size.ToUInt64()>0&&size.ToUInt64()<=65536,"ATTRIBUTE_BOUND"); attributes=Marshal.AllocHGlobal((int)size.ToUInt64()); Check(Native.InitializeProcThreadAttributeList(attributes,1,0,ref size),"ATTRIBUTE_INITIALIZE"); initialized=true;
                 handles=Marshal.AllocHGlobal(3*IntPtr.Size); for(int i=0;i<3;i++) Marshal.WriteIntPtr(handles,i*IntPtr.Size,owned[i].DangerousGetHandle());
                 Check(Native.UpdateProcThreadAttribute(attributes,0,new IntPtr(0x20002),handles,new UIntPtr((uint)(3*IntPtr.Size)),IntPtr.Zero,IntPtr.Zero),"HANDLE_LIST");
-                var startup=new StartupInfoEx { Startup=new StartupInfo { Size=(uint)Marshal.SizeOf<StartupInfoEx>(),Flags=0x100,Input=owned[0].DangerousGetHandle(),Output=owned[1].DangerousGetHandle(),Error=owned[2].DangerousGetHandle() },Attributes=attributes };
+                var startup=new StartupInfoEx { Startup=new StartupInfo { Size=(uint)Marshal.SizeOf<StartupInfoEx>(),Desktop=desktop,Flags=0x100,Input=owned[0].DangerousGetHandle(),Output=owned[1].DangerousGetHandle(),Error=owned[2].DangerousGetHandle() },Attributes=attributes };
                 var command=new StringBuilder(String.Join(" ",new[]{application}.Concat(arguments).Select(Quote))); Require(command.Length<=32767,"COMMAND_BOUND"); ProcessInformation process;
                 bool created=token==null?Native.CreateProcess(application,command,IntPtr.Zero,IntPtr.Zero,true,0x08080004,IntPtr.Zero,root,ref startup,out process):Native.CreateProcessAsUser(token,application,command,IntPtr.Zero,IntPtr.Zero,true,0x08080004,IntPtr.Zero,root,ref startup,out process);
                 Check(created,"FIXED_PROCESS_CREATE"); custody.Process.Attach(process.Process); custody.Thread.Attach(process.Thread); custody.Pid=process.Pid; createdSuccessfully=true;
                 Require(!custody.Process.IsInvalid&&!custody.Thread.IsInvalid&&process.Pid!=0,"PROCESS_INFORMATION"); return custody;
             } catch { if(createdSuccessfully&&!custody.Process.IsInvalid) { Native.TerminateProcess(custody.Process,1); Native.WaitForSingleObject(custody.Process,1000); } custody.Process.Dispose(); custody.Thread.Dispose(); throw;
-            } finally { foreach(var handle in owned) handle.Dispose(); if(initialized) Native.DeleteProcThreadAttributeList(attributes); if(attributes!=IntPtr.Zero) Marshal.FreeHGlobal(attributes); if(handles!=IntPtr.Zero) Marshal.FreeHGlobal(handles); }
+            } finally { foreach(var handle in owned) handle.Dispose(); if(initialized) Native.DeleteProcThreadAttributeList(attributes); if(attributes!=IntPtr.Zero) Marshal.FreeHGlobal(attributes); if(handles!=IntPtr.Zero) Marshal.FreeHGlobal(handles); if(desktop!=IntPtr.Zero) Marshal.FreeHGlobal(desktop); }
         }
         private static bool JobEmpty(Handle job) { Accounting value; Check(Native.QueryInformationJobObject(job,1,out value,(uint)Marshal.SizeOf<Accounting>(),IntPtr.Zero),"JOB_ACCOUNTING"); return value.Active==0; }
         private static void Closed(JsonElement value,string[] keys) { Require(value.ValueKind==JsonValueKind.Object,"HANDSHAKE_OBJECT"); var names=new HashSet<string>(StringComparer.Ordinal); foreach(var item in value.EnumerateObject()) Require(names.Add(item.Name)&&keys.Contains(item.Name),"HANDSHAKE_KEYS"); Require(names.Count==keys.Length,"HANDSHAKE_KEYS"); }
@@ -506,14 +542,15 @@ namespace StfcBridgeJournalCi {
             string directory=null; List<FileFence> files=null; Handle process=null,thread=null;
             try { EnvironmentPreflight(); string root=OwningRoot(); files=Fences(root); byte[] raw=ReadHandshake(); Require(raw.Length>0,"HANDSHAKE_EMPTY");
                 using(var document=JsonDocument.Parse(raw,new JsonDocumentOptions { MaxDepth=24,CommentHandling=JsonCommentHandling.Disallow,AllowTrailingCommas=false })) {
-                    var input=document.RootElement; Closed(input,new[]{"schemaVersion","artifactId","sourceContext","selectedContext","launchRoute","files"}); Require(input.GetProperty("schemaVersion").GetString()=="bridge-windows-journal-ci-handshake/v1","HANDSHAKE_SCHEMA");
+                    var input=document.RootElement; Closed(input,new[]{"schemaVersion","artifactId","sourceContext","selectedContext","launchRoute","requestedDesktop","files"}); Require(input.GetProperty("schemaVersion").GetString()=="bridge-windows-journal-ci-handshake/v2","HANDSHAKE_SCHEMA");
                     directory=ArtifactDirectory(root,input.GetProperty("artifactId").GetString(),false); var expected=ContextFrom(input.GetProperty("sourceContext")); var selected=ContextFrom(input.GetProperty("selectedContext")); Ordinary(selected); SameIdentity(expected,selected);
                     string route=input.GetProperty("launchRoute").GetString(); Require(route=="ordinary-own-process"||route=="restricted-primary","HANDSHAKE_ROUTE");
                     if(route=="ordinary-own-process") { Ordinary(expected); Require(selected.ObservationKind=="own_process_token","HANDSHAKE_ROUTE_CONTEXT"); } else Require(selected.ObservationKind=="derived_token_only","HANDSHAKE_ROUTE_CONTEXT");
                     using(var token=OwnToken(false)) { var own=Observe(token,Native.GetCurrentProcess(),Native.GetCurrentThread(),Native.GetCurrentProcessId(),"child_bootstrap_own_process_token"); Ordinary(own); SameIdentity(expected,own); SameIdentity(selected,own);
                         var supplied=input.GetProperty("files"); Require(supplied.ValueKind==JsonValueKind.Array&&supplied.GetArrayLength()==files.Count,"HANDSHAKE_FILES"); int index=0;
                         foreach(var item in supplied.EnumerateArray()) { Closed(item,new[]{"role","route","bytes","sha256","fileIdentity"}); var observed=files[index++].Observation; Require(item.GetProperty("role").GetString()==observed.Role&&SamePath(item.GetProperty("route").GetString(),observed.Route)&&item.GetProperty("bytes").GetInt64()==observed.Bytes&&item.GetProperty("sha256").GetString()==observed.Sha256&&item.GetProperty("fileIdentity").GetString()==observed.FileIdentity,"CHILD_SOURCE_TOOL_BINDING"); }
-                        Save(directory,"child-context.json",new { SchemaVersion="bridge-windows-journal-ci-child-context/v1",Context=own,NodeTokenSelfObserved=false,Native9Observed=false }); }
+                        string requested=input.GetProperty("requestedDesktop").GetString(); DesktopRequest(requested); var desktop=OwnDesktop();
+                        Save(directory,"child-context.json",new { SchemaVersion="bridge-windows-journal-ci-child-context/v2",Context=own,RequestedDesktop=requested,DesktopContext=desktop,NodeTokenSelfObserved=false,Native9Observed=false }); DesktopMatches(desktop,requested); }
                 }
                 Verify(files); string node=files.Single(f=>f.Observation.Role=="node").Observation.Route;
                 var created=Spawn(null,node,new[]{Path.Combine(root,"scripts","next","windows-journal-ci-entry.mjs")},root,Native.GetStdHandle(-10),Native.GetStdHandle(-11),Native.GetStdHandle(-12)); process=created.Process; thread=created.Thread;
@@ -537,12 +574,13 @@ namespace StfcBridgeJournalCi {
                 job=Native.CreateJobObject(IntPtr.Zero,null); Require(!job.IsInvalid,"JOB_CREATE"); var limits=new ExtendedLimits { Basic=new BasicLimits { Flags=0x2000 } }; Check(Native.SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf<ExtendedLimits>()),"JOB_LIMITS");
                 var sa=new SecurityAttributes { Length=Marshal.SizeOf<SecurityAttributes>(),Inherit=0 }; Check(Native.CreatePipe(out inputRead,out inputWrite,ref sa,4096),"INPUT_PIPE"); Check(Native.CreatePipe(out outRead,out outWrite,ref sa,65536),"OUTPUT_PIPE"); Check(Native.CreatePipe(out errRead,out errWrite,ref sa,65536),"ERROR_PIPE");
                 Verify(files); string shell=files.Single(f=>f.Observation.Role=="powershell").Observation.Route;
-                var created=Spawn(candidate,shell,new[]{"-NoLogo","-NoProfile","-NonInteractive","-File",Path.Combine(root,"scripts","next","windows-journal-ci-child.ps1")},root,inputRead.DangerousGetHandle(),outWrite.DangerousGetHandle(),errWrite.DangerousGetHandle()); process=created.Process; thread=created.Thread; result.ChildPid=created.Pid; result.ChildCreationFiletime=Creation(process.DangerousGetHandle());
+                result.RequestedDesktop=DesktopRoute(OwnDesktop());
+                var created=Spawn(candidate,shell,new[]{"-NoLogo","-NoProfile","-NonInteractive","-File",Path.Combine(root,"scripts","next","windows-journal-ci-child.ps1")},root,inputRead.DangerousGetHandle(),outWrite.DangerousGetHandle(),errWrite.DangerousGetHandle(),result.RequestedDesktop); process=created.Process; thread=created.Thread; result.ChildPid=created.Pid; result.ChildCreationFiletime=Creation(process.DangerousGetHandle());
                 Check(Native.AssignProcessToJobObject(job,process),"JOB_ASSIGN_BEFORE_RESUME"); result.AssignedBeforeResume=true;
                 inputRead.Dispose(); outWrite.Dispose(); errWrite.Dispose();
                 stdout=new CapturedPipe(outRead,Path.Combine(directory,"stdout.log"),budget.Add); stderr=new CapturedPipe(errRead,Path.Combine(directory,"stderr.log"),budget.Add); stdout.Start(); stderr.Start();
                 Check(Native.ResumeThread(thread)==1,"CHILD_RESUME");
-                byte[] handshake=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { SchemaVersion="bridge-windows-journal-ci-handshake/v1",ArtifactId=result.ArtifactId,SourceContext=result.TokenProbe.SourceContext,SelectedContext=selected,LaunchRoute=result.LaunchRoute,Files=result.Files },JsonOptions)); Require(handshake.Length<=65536,"HANDSHAKE_BOUND");
+                byte[] handshake=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { SchemaVersion="bridge-windows-journal-ci-handshake/v2",ArtifactId=result.ArtifactId,SourceContext=result.TokenProbe.SourceContext,SelectedContext=selected,LaunchRoute=result.LaunchRoute,RequestedDesktop=result.RequestedDesktop,Files=result.Files },JsonOptions)); Require(handshake.Length<=65536,"HANDSHAKE_BOUND");
                 writer=new HandshakeWriter(inputWrite); writer.Start(handshake);
                 while(timer.ElapsedMilliseconds<WorkMs) { uint wait=Native.WaitForSingleObject(process,100); Require(wait==0||wait==258,"CHILD_WAIT"); if(wait==0) { result.ExitObserved=true; break; } Require(!stdout.Failed&&!stderr.Failed&&!writer.Failed&&!budget.Overflow,"CAPTURE_FAILURE"); }
                 Require(result.ExitObserved,"LAUNCHER_TIMEOUT"); uint exit; Check(Native.GetExitCodeProcess(process,out exit),"CHILD_EXIT_CODE"); result.ChildExitCode=exit; Require(exit==0,"CHILD_NONZERO");
@@ -554,8 +592,9 @@ namespace StfcBridgeJournalCi {
                 result.OutputOverflow=budget.Overflow;
                 Require(result.OwnedJobEmpty&&result.StdoutEof&&result.StderrEof&&!result.ReaderFailed&&!writer.Failed&&writer.Completed&&!result.OutputOverflow,"CAPTURE_CUSTODY_UNSETTLED");
                 using(var childFile=new FileFence("child-context",Path.Combine(directory,"child-context.json"),65536)) using(var document=JsonDocument.Parse(File.ReadAllBytes(childFile.Observation.Route))) {
-                    var child=document.RootElement; Closed(child,new[]{"schemaVersion","context","nodeTokenSelfObserved","native9Observed"}); Require(child.GetProperty("schemaVersion").GetString()=="bridge-windows-journal-ci-child-context/v1"&&!child.GetProperty("nodeTokenSelfObserved").GetBoolean()&&!child.GetProperty("native9Observed").GetBoolean(),"CHILD_RECEIPT_SCHEMA");
-                    Context observed=ContextFrom(child.GetProperty("context")); Ordinary(observed); SameIdentity(result.TokenProbe.SourceContext,observed); Require(observed.Pid==result.ChildPid&&observed.CreationFiletime==result.ChildCreationFiletime,"CHILD_RECEIPT_PROCESS"); result.ChildContextMatched=true; childFile.Verify(); }
+                    var child=document.RootElement; Closed(child,new[]{"schemaVersion","context","requestedDesktop","desktopContext","nodeTokenSelfObserved","native9Observed"}); Require(child.GetProperty("schemaVersion").GetString()=="bridge-windows-journal-ci-child-context/v2"&&!child.GetProperty("nodeTokenSelfObserved").GetBoolean()&&!child.GetProperty("native9Observed").GetBoolean(),"CHILD_RECEIPT_SCHEMA");
+                    Context observed=ContextFrom(child.GetProperty("context")); Ordinary(observed); SameIdentity(result.TokenProbe.SourceContext,observed); Require(observed.Pid==result.ChildPid&&observed.CreationFiletime==result.ChildCreationFiletime,"CHILD_RECEIPT_PROCESS"); result.ChildContextMatched=true;
+                    Require(String.Equals(child.GetProperty("requestedDesktop").GetString(),result.RequestedDesktop,StringComparison.Ordinal),"CHILD_DESKTOP_REQUEST_BINDING"); var desktop=DesktopContextFrom(child.GetProperty("desktopContext")); DesktopMatches(desktop,result.RequestedDesktop); result.ChildDesktopContext=desktop; result.ChildDesktopContextMatched=true; childFile.Verify(); }
                 Verify(files); result.SourceToolFenceStable=true; Require(timer.ElapsedMilliseconds<WorkMs,"LAUNCHER_TIMEOUT"); result.CleanupSettled=true; Complete(result); result.Result="passed";
             } catch(CiFailure error) { result.FailureCode=error.Code; result.NativeError=error.NativeError; if(result.LaunchRoute=="restricted-primary"&&result.TokenProbe!=null&&result.TokenProbe.DerivedAttempted&&!result.TokenProbe.DerivedPredicateAccepted) { result.TokenProbe.FailureCode=error.Code; result.TokenProbe.NativeError=error.NativeError; } }
             catch { result.FailureCode="LAUNCHER_EXCEPTION"; }
@@ -586,6 +625,17 @@ namespace StfcBridgeJournalCi {
         }
         public static string[] ControlTests() {
             var passed=new List<string>(); Action<string,Action> refuses=(name,action)=> { try { action(); } catch(CiFailure) { passed.Add(name); return; } throw new Exception("Expected refusal: "+name); };
+            Func<DesktopContext> desktop=()=>new DesktopContext { WindowStationName="WinSta0",ThreadDesktopName="Default" };
+            Require(DesktopRoute(desktop())=="WinSta0\\Default","DESKTOP_ROUTE_TEST"); passed.Add("own station and desktop compose one explicit route");
+            DesktopMatches(desktop(),"winsta0\\default"); passed.Add("desktop names match ignoring ordinal case");
+            var maximum=desktop(); maximum.WindowStationName=new string('w',512); maximum.ThreadDesktopName=new string('d',512); DesktopRequest(DesktopRoute(maximum)); passed.Add("maximum bounded components retain one separator");
+            foreach(string bad in new[]{null,"",new string('x',513),"embedded\0name","station\\desktop","station/desktop","line\nbreak","unpaired\ud800"}) {
+                refuses("invalid station component "+passed.Count,()=>{var own=desktop(); own.WindowStationName=bad; DesktopRoute(own);});
+                refuses("invalid desktop component "+passed.Count,()=>{var own=desktop(); own.ThreadDesktopName=bad; DesktopRoute(own);}); }
+            foreach(string bad in new[]{null,"","WinSta0","\\Default","WinSta0\\","WinSta0\\Default\\extra"}) refuses("invalid desktop request "+passed.Count,()=>DesktopRequest(bad));
+            refuses("child station mismatch",()=>{var own=desktop(); own.WindowStationName="other"; DesktopMatches(own,"WinSta0\\Default");});
+            refuses("child desktop mismatch",()=>{var own=desktop(); own.ThreadDesktopName="other"; DesktopMatches(own,"WinSta0\\Default");});
+            foreach(string json in new[]{"{\"observationKind\":\"parent\",\"windowStationName\":\"WinSta0\",\"threadDesktopName\":\"Default\"}","{\"observationKind\":\"own_process_window_station_and_current_thread_desktop\",\"windowStationName\":\"WinSta0\"}","{\"observationKind\":\"own_process_window_station_and_current_thread_desktop\",\"windowStationName\":\"WinSta0\",\"threadDesktopName\":\"Default\",\"extra\":true}"}) refuses("closed child desktop observation "+passed.Count,()=>{using(var parsed=JsonDocument.Parse(json)) DesktopContextFrom(parsed.RootElement);});
             Require(ChildMs<WorkMs&&TotalMs-WorkMs>=CleanupMs,"CLEANUP_RESERVE"); passed.Add("work and drain reserve the fixed cleanup allowance");
             Require(CleanupDeadline(1000)==31000&&CleanupDeadline(WorkMs)==TotalMs&&CleanupDeadline(TotalMs+1)==TotalMs,"CLEANUP_DEADLINE"); passed.Add("early, work-horizon and expired cleanup deadlines stay bounded");
             Require(!ReaderCancellationDue(670499,670000,TotalMs)&&ReaderCancellationDue(670500,670000,TotalMs),"READER_GRACE"); passed.Add("reader settlement grace ends at 500 milliseconds");
@@ -603,13 +653,13 @@ namespace StfcBridgeJournalCi {
             var budget=new OutputBudget(); for(int i=0;i<1024;i++) budget.Add(65536); Require(!budget.Overflow,"EXACT_CAPTURE_BOUND"); passed.Add("exact combined capture cap is representable");
             refuses("combined stdout/stderr next byte overflows",()=>budget.Add(1)); Require(budget.Overflow,"OVERFLOW_LATCH");
             refuses("capture block cannot bypass fixed reader allocation",()=>new OutputBudget().Add(65537));
-            Func<LaunchObservation> settled=()=>new LaunchObservation { AssignedBeforeResume=true,ChildContextMatched=true,ExitObserved=true,ChildExitCode=0,StdoutEof=true,StderrEof=true,
+            Func<LaunchObservation> settled=()=>new LaunchObservation { AssignedBeforeResume=true,ChildContextMatched=true,ChildDesktopContextMatched=true,ExitObserved=true,ChildExitCode=0,StdoutEof=true,StderrEof=true,
                 IoThreadsJoined=true,OwnedJobEmpty=true,SourceToolFenceStable=true,CleanupSettled=true };
             Complete(settled()); passed.Add("only complete custody is eligible for success");
             var qualified=settled(); qualified.Result="passed";
             Require(!qualified.PackageAcceptance&&!qualified.FullBr06Accepted&&!qualified.NativeRuntimeQualified&&!qualified.ReleaseQualified,"QUALIFICATION_NOT_GRANTED");
             passed.Add("passed helper custody grants no package, campaign, native or release qualification");
-            var custodyChanges=new Action<LaunchObservation>[] {c=>c.AssignedBeforeResume=false,c=>c.ChildContextMatched=false,c=>c.ExitObserved=false,c=>c.ChildExitCode=1,
+            var custodyChanges=new Action<LaunchObservation>[] {c=>c.AssignedBeforeResume=false,c=>c.ChildContextMatched=false,c=>c.ChildDesktopContextMatched=false,c=>c.ExitObserved=false,c=>c.ChildExitCode=1,
                 c=>c.StdoutEof=false,c=>c.StderrEof=false,c=>c.IoThreadsJoined=false,c=>c.OwnedJobEmpty=false,c=>c.SourceToolFenceStable=false,c=>c.CleanupSettled=false,
                 c=>c.ReaderFailed=true,c=>c.OutputOverflow=true,c=>c.ForcedCleanup=true,c=>c.FailureCode="TIMEOUT"};
             for(int i=0;i<custodyChanges.Length;i++) { int index=i; refuses("zero exit cannot rehabilitate missing custody "+i,()=>{var c=settled(); custodyChanges[index](c); Complete(c);}); }
