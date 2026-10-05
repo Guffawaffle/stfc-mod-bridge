@@ -149,10 +149,13 @@ impl Drop for ProtectedValue {
     }
 }
 
+/// One allocation attempt per requested identity, with closed refusal instead
+/// of retry or fabricated identity. Already issued IDs remain burned when the
+/// enclosing operation refuses.
 pub trait ConfigurationIds {
-    fn draft_id(&mut self) -> DraftId;
-    fn private_id(&mut self) -> PrivateValueId;
-    fn secret_id(&mut self) -> SecretRefId;
+    fn draft_id(&mut self) -> ConfigurationResult<DraftId>;
+    fn private_id(&mut self) -> ConfigurationResult<PrivateValueId>;
+    fn secret_id(&mut self) -> ConfigurationResult<SecretRefId>;
 }
 
 /// The owner must have resolved the canonical route and verified the full

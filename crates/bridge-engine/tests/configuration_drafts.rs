@@ -447,3 +447,528 @@ fn read_cannot_substitute_ordinary_target_for_requested_isolated_profile() {
     ));
     assert_eq!(s.borrow().effects, 0);
 }
+
+type AllocationFixture = (
+    Workspace,
+    std::rc::Rc<std::cell::RefCell<State>>,
+    std::rc::Rc<std::cell::RefCell<IdentityControl>>,
+);
+
+fn allocation_fixture(
+    entry: Option<ProtectedEntryOutcome>,
+    captures: Vec<ProtectedEntryOutcome>,
+) -> AllocationFixture {
+    let ids = std::rc::Rc::new(std::cell::RefCell::new(IdentityControl::default()));
+    let (workspace, state, _) = workspace_with_options(
+        "",
+        vec![],
+        entry,
+        false,
+        false,
+        FixtureOptions {
+            ids: ids.clone(),
+            captures,
+            ..FixtureOptions::default()
+        },
+    );
+    (workspace, state, ids)
+}
+
+fn assert_allocation_keeps_persistence(
+    state: &std::rc::Rc<std::cell::RefCell<State>>,
+    binding: &DocumentBinding,
+) {
+    let state = state.borrow();
+    assert_eq!(&state.read.binding, binding);
+    assert!(state.read.bytes.is_empty());
+    assert_eq!((state.effects, state.steps, state.drops), (0, 0, 0));
+    assert!(state.backups.is_empty());
+    assert!(state.backup_bytes.is_empty());
+}
+
+fn allocation_request(draft: &DraftRef, kind: SensitiveInputKind) -> RequestSensitiveInputInput {
+    RequestSensitiveInputInput {
+        draft: draft.clone(),
+        field_id: field(match kind {
+            SensitiveInputKind::Private => "sync.endpoint",
+            SensitiveInputKind::Secret => "sync.token",
+        }),
+        sensitivity: kind,
+    }
+}
+
+fn allocation_edit(outcome: SensitiveInputOutcome) -> ConfigurationEdit {
+    match outcome {
+        SensitiveInputOutcome::CapturedPrivate { reference } => ConfigurationEdit::SetPrivate {
+            field_id: reference.field_id.clone(),
+            reference,
+        },
+        SensitiveInputOutcome::CapturedSecret { reference } => ConfigurationEdit::ReplaceSecret {
+            field_id: reference.field_id.clone(),
+            reference,
+        },
+        _ => panic!("controlled protected capture"),
+    }
+}
+
+#[test]
+fn draft_identity_allocation_failure_publishes_no_draft_and_does_not_retry() {
+    let (mut workspace, state, ids) = allocation_fixture(None, vec![]);
+    let binding = state.borrow().read.binding.clone();
+    ids.borrow_mut().outcomes.push_back((
+        IdentityKind::Draft,
+        Err(ConfigurationFailure::NativeUnavailable),
+    ));
+    assert_eq!(
+        workspace.open_draft(&OpenDraftInput {
+            document: binding.clone()
+        }),
+        Err(ConfigurationFailure::NativeUnavailable),
+    );
+    assert_eq!(ids.borrow().calls, vec![IdentityKind::Draft]);
+    let unpublished = DraftRef {
+        draft_id: DraftId::new(id(20001)).unwrap(),
+        host_epoch: workspace.host_epoch().clone(),
+        revision: RevisionCounter::new(0),
+        document: binding.clone(),
+    };
+    assert_eq!(
+        workspace.draft(&unpublished),
+        Err(ConfigurationFailure::Stale)
+    );
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Draft, Ok(70001)));
+    let opened = open(&mut workspace, &state);
+    assert_eq!(opened.draft.draft_id, DraftId::new(id(70001)).unwrap());
+    assert_eq!(
+        ids.borrow().calls,
+        vec![IdentityKind::Draft, IdentityKind::Draft]
+    );
+    assert_allocation_keeps_persistence(&state, &binding);
+}
+
+#[test]
+fn saved_private_allocation_failure_publishes_no_partial_vault_and_burns_issued_ids() {
+    use std::{cell::RefCell, rc::Rc};
+    let ids = Rc::new(RefCell::new(IdentityControl::default()));
+    ids.borrow_mut().outcomes.extend([
+        (IdentityKind::Private, Ok(71001)),
+        (
+            IdentityKind::Private,
+            Err(ConfigurationFailure::NativeUnavailable),
+        ),
+    ]);
+    let sync = Rc::new(RefCell::new(vec![SyncFixture {
+        id: "allocation-subject".into(),
+        endpoint: "\"saved-endpoint\"".into(),
+        proxy: "\"saved-proxy\"".into(),
+    }]));
+    let (mut workspace, state, _) = workspace_with_options(
+        "",
+        vec![],
+        None,
+        false,
+        false,
+        FixtureOptions {
+            ids: ids.clone(),
+            sync,
+            ..FixtureOptions::default()
+        },
+    );
+    let binding = state.borrow().read.binding.clone();
+    let selector = TargetSelector {
+        installation: InstallationSelector::Registered {
+            id: InstallationId::new("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(),
+            directory_assertion: None,
+            revision_assertion: None,
+        },
+        profile: ProfileSelector::Ordinary {
+            catalog_id_assertion: None,
+        },
+    };
+    assert_eq!(
+        workspace.read_configuration(&selector),
+        Err(ConfigurationFailure::NativeUnavailable)
+    );
+    assert_eq!(
+        ids.borrow().calls,
+        vec![IdentityKind::Private, IdentityKind::Private]
+    );
+    let draft = open(&mut workspace, &state);
+    let unpublished = PrivateValueRef {
+        value_id: PrivateValueId::new(id(71001)).unwrap(),
+        document: binding.clone(),
+        field_id: field("sync.endpoint"),
+        revision: binding.revision.clone(),
+        captured_for: None,
+    };
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &draft.draft,
+            vec![ConfigurationEdit::SetPrivate {
+                field_id: field("sync.endpoint"),
+                reference: Box::new(unpublished),
+            }]
+        ),
+        Err(ConfigurationFailure::ProtectedRefInvalid),
+    );
+    assert_eq!(workspace.draft(&draft.draft).unwrap(), draft);
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Private, Ok(71001)));
+    assert_eq!(
+        workspace.read_configuration(&selector),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(
+        ids.borrow().calls.len(),
+        4,
+        "collision refuses before a second allocation"
+    );
+    let projected = workspace.read_configuration(&selector).unwrap();
+    let destination = &projected.sync.as_slice()[0];
+    assert_ne!(
+        destination.endpoint.value_id,
+        PrivateValueId::new(id(71001)).unwrap()
+    );
+    let ProxyChoice::Custom { reference: proxy } = &destination.desired_proxy else {
+        panic!("proxy")
+    };
+    assert_ne!(destination.endpoint.value_id, proxy.value_id);
+    assert_eq!(
+        ids.borrow().calls.len(),
+        6,
+        "no failed projection entry was reused"
+    );
+    assert_allocation_keeps_persistence(&state, &binding);
+}
+
+fn assert_capture_identity_failure(kind: SensitiveInputKind, failure: ConfigurationFailure) {
+    let entry = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"refused-capture\"".to_vec()).unwrap(),
+    );
+    let (mut workspace, state, ids) = allocation_fixture(Some(entry), vec![]);
+    let binding = state.borrow().read.binding.clone();
+    let draft = open(&mut workspace, &state);
+    let identity_kind = match kind {
+        SensitiveInputKind::Private => IdentityKind::Private,
+        SensitiveInputKind::Secret => IdentityKind::Secret,
+    };
+    ids.borrow_mut()
+        .outcomes
+        .push_back((identity_kind, Err(failure)));
+    let request = allocation_request(&draft.draft, kind);
+    assert_eq!(workspace.request_sensitive_input(&request), Err(failure));
+    assert_eq!(workspace.draft(&draft.draft).unwrap(), draft);
+    assert_eq!(ids.borrow().calls, vec![IdentityKind::Draft, identity_kind]);
+    // The captured ProtectedValue was consumed by the refused call. It drops
+    // through its wiping owner rather than becoming reusable entry/vault state.
+    let next = workspace.request_sensitive_input(&request).unwrap();
+    assert!(matches!(
+        next.outcome,
+        SensitiveInputOutcome::Unavailable { .. }
+    ));
+    assert_eq!(
+        ids.borrow().calls.len(),
+        2,
+        "unavailable entry has no identity to allocate"
+    );
+    let phantom = match kind {
+        SensitiveInputKind::Private => ConfigurationEdit::SetPrivate {
+            field_id: request.field_id.clone(),
+            reference: Box::new(PrivateValueRef {
+                value_id: PrivateValueId::new(id(20002)).unwrap(),
+                document: binding.clone(),
+                field_id: request.field_id,
+                revision: binding.revision.clone(),
+                captured_for: Some(Box::new(draft.draft.clone())),
+            }),
+        },
+        SensitiveInputKind::Secret => ConfigurationEdit::ReplaceSecret {
+            field_id: request.field_id.clone(),
+            reference: Box::new(SecretRef {
+                secret_id: SecretRefId::new(id(20002)).unwrap(),
+                draft: draft.draft.clone(),
+                field_id: request.field_id,
+            }),
+        },
+    };
+    assert_eq!(
+        stage(&mut workspace, &draft.draft, vec![phantom]),
+        Err(ConfigurationFailure::ProtectedRefInvalid)
+    );
+    assert_eq!(workspace.draft(&draft.draft).unwrap(), draft);
+    assert_allocation_keeps_persistence(&state, &binding);
+}
+
+#[test]
+fn captured_private_identity_failure_consumes_capture_without_publishing_reference() {
+    assert_capture_identity_failure(
+        SensitiveInputKind::Private,
+        ConfigurationFailure::NativeUnavailable,
+    );
+}
+
+#[test]
+fn captured_secret_identity_failure_preserves_closed_error_and_publishes_no_reference() {
+    assert_capture_identity_failure(
+        SensitiveInputKind::Secret,
+        ConfigurationFailure::InvalidOwnerResult,
+    );
+}
+
+fn assert_transfer_identity_failure(kind: SensitiveInputKind) {
+    let entry = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"retained-capture\"".to_vec()).unwrap(),
+    );
+    let (mut workspace, state, ids) = allocation_fixture(Some(entry), vec![]);
+    let binding = state.borrow().read.binding.clone();
+    let clean = open(&mut workspace, &state);
+    let previous_ack = stage(&mut workspace, &clean.draft, vec![boolean(true)]).unwrap();
+    let before = previous_ack.snapshot.clone();
+    let captured = workspace
+        .request_sensitive_input(&allocation_request(&before.draft, kind))
+        .unwrap();
+    let edit = allocation_edit(captured.outcome);
+    let identity_kind = match kind {
+        SensitiveInputKind::Private => IdentityKind::Private,
+        SensitiveInputKind::Secret => IdentityKind::Secret,
+    };
+    ids.borrow_mut()
+        .outcomes
+        .push_back((identity_kind, Err(ConfigurationFailure::NativeUnavailable)));
+    let input = SetDraftChangesInput {
+        draft: before.draft.clone(),
+        edits: list(vec![edit]),
+    };
+    let preflight_calls = std::cell::Cell::new(0);
+    assert_eq!(
+        workspace.set_draft_changes(input.clone(), |_| {
+            preflight_calls.set(preflight_calls.get() + 1);
+            Ok(())
+        }),
+        Err(ConfigurationFailure::NativeUnavailable),
+    );
+    assert_eq!(preflight_calls.get(), 0);
+    assert_eq!(workspace.draft(&before.draft).unwrap(), before);
+    let calls_after_failure = ids.borrow().calls.clone();
+    assert_eq!(
+        stage(&mut workspace, &clean.draft, vec![boolean(true)]).unwrap(),
+        previous_ack
+    );
+    assert_eq!(
+        ids.borrow().calls,
+        calls_after_failure,
+        "prior acknowledgment remains replayable"
+    );
+    let accepted = stage(
+        &mut workspace,
+        &before.draft,
+        input.edits.as_slice().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        accepted.snapshot.draft.revision.get(),
+        before.draft.revision.get() + 1
+    );
+    assert_eq!(accepted.protected_transfers.as_slice().len(), 1);
+    let allocated_calls = ids.borrow().calls.len();
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &before.draft,
+            input.edits.as_slice().to_vec()
+        )
+        .unwrap(),
+        accepted
+    );
+    assert_eq!(
+        ids.borrow().calls.len(),
+        allocated_calls,
+        "lost acknowledgment replay allocates nothing"
+    );
+    let candidate = prepare(&mut workspace, &accepted.snapshot);
+    assert!(
+        std::str::from_utf8(candidate.candidate_bytes().unwrap())
+            .unwrap()
+            .contains("retained-capture")
+    );
+    assert_allocation_keeps_persistence(&state, &binding);
+}
+
+#[test]
+fn private_transfer_identity_failure_preserves_capture_draft_and_previous_acknowledgment() {
+    assert_transfer_identity_failure(SensitiveInputKind::Private);
+}
+
+#[test]
+fn secret_transfer_identity_failure_preserves_capture_draft_and_previous_acknowledgment() {
+    assert_transfer_identity_failure(SensitiveInputKind::Secret);
+}
+
+#[test]
+fn partial_transfer_allocation_failure_keeps_payloads_and_burns_unpublished_successor_id() {
+    let private = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"retained-endpoint\"".to_vec()).unwrap(),
+    );
+    let secret = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"retained-secret\"".to_vec()).unwrap(),
+    );
+    let (mut workspace, state, ids) = allocation_fixture(Some(private), vec![secret]);
+    let binding = state.borrow().read.binding.clone();
+    let draft = open(&mut workspace, &state);
+    let private = allocation_edit(
+        workspace
+            .request_sensitive_input(&allocation_request(
+                &draft.draft,
+                SensitiveInputKind::Private,
+            ))
+            .unwrap()
+            .outcome,
+    );
+    let secret = allocation_edit(
+        workspace
+            .request_sensitive_input(&allocation_request(
+                &draft.draft,
+                SensitiveInputKind::Secret,
+            ))
+            .unwrap()
+            .outcome,
+    );
+    let input = SetDraftChangesInput {
+        draft: draft.draft.clone(),
+        edits: list(vec![private.clone(), secret]),
+    };
+    ids.borrow_mut().outcomes.extend([
+        (IdentityKind::Private, Ok(72001)),
+        (
+            IdentityKind::Secret,
+            Err(ConfigurationFailure::NativeUnavailable),
+        ),
+    ]);
+    let preflight_calls = std::cell::Cell::new(0);
+    assert_eq!(
+        workspace.set_draft_changes(input.clone(), |_| {
+            preflight_calls.set(preflight_calls.get() + 1);
+            Ok(())
+        }),
+        Err(ConfigurationFailure::NativeUnavailable)
+    );
+    assert_eq!(preflight_calls.get(), 0);
+    assert_eq!(workspace.draft(&draft.draft).unwrap(), draft);
+    let ConfigurationEdit::SetPrivate { mut reference, .. } = private else {
+        panic!("private")
+    };
+    reference.value_id = PrivateValueId::new(id(72001)).unwrap();
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &draft.draft,
+            vec![ConfigurationEdit::SetPrivate {
+                field_id: field("sync.endpoint"),
+                reference
+            }]
+        ),
+        Err(ConfigurationFailure::ProtectedRefInvalid)
+    );
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Private, Ok(72001)));
+    let calls_before_collision = ids.borrow().calls.len();
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &draft.draft,
+            input.edits.as_slice().to_vec()
+        ),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(ids.borrow().calls.len(), calls_before_collision + 1);
+    assert_eq!(workspace.draft(&draft.draft).unwrap(), draft);
+    ids.borrow_mut().outcomes.extend([
+        (IdentityKind::Private, Ok(72002)),
+        (IdentityKind::Secret, Ok(72003)),
+    ]);
+    let accepted = stage(
+        &mut workspace,
+        &draft.draft,
+        input.edits.as_slice().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(accepted.protected_transfers.as_slice().len(), 2);
+    assert_eq!(accepted.snapshot.draft.revision.get(), 1);
+    let calls_after_acceptance = ids.borrow().calls.len();
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &draft.draft,
+            input.edits.as_slice().to_vec()
+        )
+        .unwrap(),
+        accepted
+    );
+    assert_eq!(ids.borrow().calls.len(), calls_after_acceptance);
+    let candidate = prepare(&mut workspace, &accepted.snapshot);
+    let text = std::str::from_utf8(candidate.candidate_bytes().unwrap()).unwrap();
+    assert!(text.contains("retained-endpoint"));
+    assert!(text.contains("retained-secret"));
+    assert_allocation_keeps_persistence(&state, &binding);
+}
+
+#[test]
+fn discarded_draft_identity_remains_burned_across_draft_and_protected_id_kinds() {
+    let entry = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"collision-capture\"".to_vec()).unwrap(),
+    );
+    let (mut workspace, state, ids) = allocation_fixture(Some(entry), vec![]);
+    let binding = state.borrow().read.binding.clone();
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Draft, Ok(73001)));
+    let first = open(&mut workspace, &state);
+    workspace
+        .discard_draft(&DiscardDraftInput {
+            draft: first.draft.clone(),
+        })
+        .unwrap();
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Draft, Ok(73001)));
+    assert_eq!(
+        workspace.open_draft(&OpenDraftInput {
+            document: binding.clone()
+        }),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(
+        workspace.draft(&first.draft),
+        Err(ConfigurationFailure::Stale)
+    );
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Draft, Ok(73002)));
+    let current = open(&mut workspace, &state);
+    ids.borrow_mut()
+        .outcomes
+        .push_back((IdentityKind::Private, Ok(73001)));
+    assert_eq!(
+        workspace.request_sensitive_input(&allocation_request(
+            &current.draft,
+            SensitiveInputKind::Private
+        )),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(workspace.draft(&current.draft).unwrap(), current);
+    assert_eq!(
+        ids.borrow().calls,
+        vec![
+            IdentityKind::Draft,
+            IdentityKind::Draft,
+            IdentityKind::Draft,
+            IdentityKind::Private
+        ]
+    );
+    assert_allocation_keeps_persistence(&state, &binding);
+}

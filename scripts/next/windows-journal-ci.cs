@@ -94,6 +94,36 @@ namespace StfcBridgeJournalCi {
         public string WindowStationName { get; set; }
         public string ThreadDesktopName { get; set; }
     }
+    public class StartupSecurityPayload {
+        public string Result { get; set; } = "unavailable";
+        public string AclState { get; set; } = "unavailable";
+        public uint Bytes { get; set; }
+        public string DataBase64 { get; set; }
+        public string Sha256 { get; set; }
+        public string FailureCode { get; set; }
+        public uint NativeError { get; set; }
+    }
+    public sealed class TokenDefaultDaclObservation : StartupSecurityPayload {
+        public string ObservationKind { get; set; } = "selected_primary_token_default_dacl";
+        public string SelectedTokenObservationKind { get; set; }
+        public uint TokenInformationClass { get; set; } = 6;
+        public uint ReturnedBytes { get; set; }
+    }
+    public sealed class OwnedChildSecurityObservation : StartupSecurityPayload {
+        public string ObservationKind { get; set; } = "owned_child_kernel_object_security";
+        public string Role { get; set; }
+        public string Phase { get; set; } = "assigned_before_resume";
+        public uint Pid { get; set; }
+        public string CreationFiletime { get; set; }
+        public uint InitialThreadId { get; set; }
+        public uint ObjectType { get; set; } = 6;
+        public uint RequestedInformation { get; set; } = 7;
+    }
+    public sealed class StartupSecurityObservation {
+        public string SchemaVersion { get; set; } = "bridge-windows-journal-ci-startup-security/v1";
+        public TokenDefaultDaclObservation SelectedTokenDefaultDacl { get; set; }
+        public OwnedChildSecurityObservation[] OwnedChildObjects { get; set; }
+    }
     public sealed class LaunchObservation {
         public string SchemaVersion { get; set; } = "bridge-windows-journal-ci-launch/v1";
         public string Result { get; set; } = "failed";
@@ -109,6 +139,8 @@ namespace StfcBridgeJournalCi {
         public string RequestedDesktop { get; set; }
         public DesktopContext ChildDesktopContext { get; set; }
         public bool ChildDesktopContextMatched { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public StartupSecurityObservation StartupSecurity { get; set; }
         public FileObservation[] Files { get; set; }
         public uint ChildPid { get; set; }
         public string ChildCreationFiletime { get; set; }
@@ -190,6 +222,9 @@ namespace StfcBridgeJournalCi {
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool DuplicateTokenEx(Handle source, uint rights, IntPtr attributes, int level, int type, out Handle duplicate);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool AccessCheck(IntPtr descriptor, Handle token, uint desired, ref GenericMapping mapping, IntPtr privileges, ref uint privilegeBytes, out uint granted, out bool accessStatus);
         [DllImport("advapi32.dll")] internal static extern bool IsValidSecurityDescriptor(IntPtr descriptor);
+        [DllImport("advapi32.dll")] internal static extern bool IsValidAcl(IntPtr acl);
+        [DllImport("advapi32.dll")] internal static extern uint GetSecurityInfo(IntPtr handle, uint objectType, uint information, out IntPtr owner, out IntPtr group, out IntPtr dacl, out IntPtr sacl, out IntPtr descriptor);
+        [DllImport("kernel32.dll")] internal static extern IntPtr LocalFree(IntPtr allocation);
         [DllImport("advapi32.dll")] internal static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool GetSecurityDescriptorControl(IntPtr descriptor, out ushort control, out uint revision);
         [DllImport("user32.dll", SetLastError=true)] internal static extern IntPtr GetProcessWindowStation();
@@ -286,7 +321,7 @@ namespace StfcBridgeJournalCi {
     internal sealed class CreatedProcess {
         // Both wrappers exist before the native create call. Returned handles enter
         // custody before validation, allocations or other fallible operations.
-        internal readonly Handle Process=new Handle(); internal readonly Handle Thread=new Handle(); internal uint Pid;
+        internal readonly Handle Process=new Handle(); internal readonly Handle Thread=new Handle(); internal uint Pid, Tid;
     }
     internal sealed class OutputBudget {
         private long bytes; internal volatile bool Overflow;
@@ -296,6 +331,7 @@ namespace StfcBridgeJournalCi {
     public static class WindowsJournalCi {
         private const uint Query=0x8, Duplicate=0x2, Assign=0x1, AdjustDefault=0x80, Impersonate=0x4;
         private const int ChildMs=650000, WorkMs=670000, TotalMs=700000, CleanupMs=30000, ReaderGraceMs=500;
+        private const int SecurityBytes=4096, SecurityDiagnosticBytes=24576, ReceiptBytes=65536;
         private static readonly JsonSerializerOptions JsonOptions=new JsonSerializerOptions { PropertyNamingPolicy=JsonNamingPolicy.CamelCase,WriteIndented=true,MaxDepth=24 };
         private static readonly string[] SourceNames={"windows-journal-ci.ps1","windows-journal-ci.cs","windows-journal-ci-child.ps1","windows-journal-ci-entry.mjs","windows-journal-ci-entry-policy.mjs"};
         internal static void Require(bool value,string code) { if(!value) throw new CiFailure(code); }
@@ -386,6 +422,118 @@ namespace StfcBridgeJournalCi {
                     probe.DerivedPredicateAccepted=true; return candidate;
                 } catch { candidate.Dispose(); throw; }
             }
+        }
+        // Microsoft TOKEN_DEFAULT_DACL contains a borrowed PACL in the query
+        // output. Enforce containment before any dereference; IsValidAcl has no
+        // extended error and must never receive NULL. AclSize includes free space.
+        private static void SecurityRange(ulong basis,uint returned,ulong pointer,uint lower,uint bytes) {
+            Require(bytes>=8&&returned<=SecurityBytes+IntPtr.Size&&returned>=bytes&&pointer>=basis,"SECURITY_POINTER_EXTENT");
+            ulong offset=pointer-basis; Require(offset>=lower&&offset<=returned-bytes,"SECURITY_POINTER_EXTENT");
+            Require(basis<=UInt64.MaxValue-returned,"SECURITY_POINTER_OVERFLOW");
+        }
+        private static ushort U16(byte[] data,int offset) { Require(offset>=0&&offset<=data.Length-2,"SECURITY_HEADER_EXTENT"); return BitConverter.ToUInt16(data,offset); }
+        private static uint U32(byte[] data,int offset) { Require(offset>=0&&offset<=data.Length-4,"SECURITY_HEADER_EXTENT"); return BitConverter.ToUInt32(data,offset); }
+        private static string AclBytes(byte[] data) {
+            Require(data!=null&&data.Length>=8&&data.Length<=SecurityBytes&&(data[0]==2||data[0]==4)&&U16(data,2)==data.Length,"SECURITY_ACL_HEADER");
+            int count=U16(data,4),offset=8; Require(count<=128,"SECURITY_ACL_COUNT");
+            for(int i=0;i<count;i++) { Require(offset<=data.Length-4,"SECURITY_ACE_HEADER"); int bytes=U16(data,offset+2);
+                Require(bytes>=4&&bytes%4==0&&bytes<=data.Length-offset,"SECURITY_ACE_EXTENT"); offset+=bytes; }
+            return count==0?"empty":"populated";
+        }
+        private static void RelativeSid(byte[] data,uint offset) {
+            if(offset==0) return; Require(offset>=20&&offset%4==0&&offset<=(uint)data.Length-8,"SECURITY_SID_OFFSET");
+            int index=(int)offset; Require(data[index]==1&&data[index+1]<=15&&8+4*data[index+1]<=data.Length-index,"SECURITY_SID_EXTENT");
+        }
+        private static string DescriptorBytes(byte[] data) {
+            Require(data!=null&&data.Length>=20&&data.Length<=SecurityBytes&&data[0]==1&&(U16(data,2)&0x8000)!=0,"SECURITY_DESCRIPTOR_HEADER");
+            RelativeSid(data,U32(data,4)); RelativeSid(data,U32(data,8)); Require(U32(data,12)==0&&(U16(data,2)&0x10)==0,"SECURITY_SACL_NOT_REQUESTED");
+            uint offset=U32(data,16); bool present=(U16(data,2)&4)!=0;
+            if(!present) { Require(offset==0,"SECURITY_ABSENT_DACL_OFFSET"); return "absent"; }
+            if(offset==0) return "null";
+            Require(offset>=20&&offset%4==0&&offset<=(uint)data.Length-8,"SECURITY_DACL_OFFSET"); int bytes=U16(data,(int)offset+2);
+            Require(bytes>=8&&bytes<=data.Length-offset,"SECURITY_DACL_EXTENT"); byte[] acl=new byte[bytes]; Array.Copy(data,(int)offset,acl,0,bytes); return AclBytes(acl);
+        }
+        private static void SecurityUnavailable(StartupSecurityPayload value,string code,uint error=0) {
+            value.Result="unavailable"; value.AclState="unavailable"; value.Bytes=0; value.DataBase64=null; value.Sha256=null; value.FailureCode=code; value.NativeError=error;
+        }
+        private static void SecurityObserved(StartupSecurityPayload value,byte[] data,string state) {
+            Require(data==null||data.Length<=SecurityBytes,"SECURITY_SNAPSHOT_BOUND"); value.Result="observed"; value.AclState=state; value.Bytes=(uint)(data==null?0:data.Length);
+            value.DataBase64=data==null?null:Convert.ToBase64String(data); value.Sha256=data==null?null:Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(); value.FailureCode=null; value.NativeError=0;
+        }
+        private static byte[] SecurityPayload(StartupSecurityPayload value,bool token) {
+            Require(value!=null,"SECURITY_PAYLOAD_REQUIRED");
+            if(value.Result=="unavailable") { Require(value.AclState=="unavailable"&&value.Bytes==0&&value.DataBase64==null&&value.Sha256==null&&Regex.IsMatch(value.FailureCode??"",@"^[A-Z0-9_]{1,64}$"),"SECURITY_UNAVAILABLE_STATE"); return null; }
+            Require(value.Result=="observed"&&value.FailureCode==null&&value.NativeError==0,"SECURITY_OBSERVED_STATE");
+            if(token&&value.AclState=="null") { Require(value.Bytes==0&&value.DataBase64==null&&value.Sha256==null,"SECURITY_NULL_DEFAULT_DACL"); return null; }
+            Require(value.Bytes>0&&value.Bytes<=SecurityBytes&&value.DataBase64!=null&&value.DataBase64.Length<=4*((SecurityBytes+2)/3)&&Regex.IsMatch(value.Sha256??"",@"^[0-9a-f]{64}$"),"SECURITY_PAYLOAD_BOUND");
+            byte[] buffer=new byte[SecurityBytes]; int count; Require(Convert.TryFromBase64String(value.DataBase64,buffer,out count)&&count==value.Bytes,"SECURITY_PAYLOAD_ENCODING");
+            byte[] raw=new byte[count]; Array.Copy(buffer,raw,count); Require(Convert.ToHexString(SHA256.HashData(raw)).ToLowerInvariant()==value.Sha256,"SECURITY_PAYLOAD_HASH");
+            Require((token?AclBytes(raw):DescriptorBytes(raw))==value.AclState,"SECURITY_ACL_STATE"); return raw;
+        }
+        private static void SecurityIdentity(OwnedChildSecurityObservation value,string role,uint pid,string created,uint tid) {
+            Require(value!=null&&value.ObservationKind=="owned_child_kernel_object_security"&&value.Role==role&&value.Phase=="assigned_before_resume"&&value.ObjectType==6&&value.RequestedInformation==7,"SECURITY_OBJECT_ROLE_PHASE");
+            Require(pid>0&&tid>0&&Regex.IsMatch(created??"",@"^[1-9][0-9]{0,19}$")&&value.Pid==pid&&value.CreationFiletime==created&&value.InitialThreadId==tid,"SECURITY_OBJECT_IDENTITY"); SecurityPayload(value,false);
+        }
+        private static void SecurityClosed(JsonElement value,string[] metadata) { Closed(value,metadata.Concat(new[]{"result","aclState","bytes","dataBase64","sha256","failureCode","nativeError"}).ToArray()); }
+        private static StartupSecurityObservation SecurityFrom(JsonElement input,string selectedKind,uint pid,string created,uint tid,bool assigned) {
+            Closed(input,new[]{"schemaVersion","selectedTokenDefaultDacl","ownedChildObjects"});
+            SecurityClosed(input.GetProperty("selectedTokenDefaultDacl"),new[]{"observationKind","selectedTokenObservationKind","tokenInformationClass","returnedBytes"});
+            var objects=input.GetProperty("ownedChildObjects"); Require(objects.ValueKind==JsonValueKind.Null||objects.ValueKind==JsonValueKind.Array,"SECURITY_OBJECT_ARRAY");
+            Require(assigned==(objects.ValueKind==JsonValueKind.Array),"SECURITY_OBJECT_PHASE_PRESENCE");
+            if(objects.ValueKind==JsonValueKind.Array) { Require(objects.GetArrayLength()==2,"SECURITY_OBJECT_CARDINALITY"); foreach(var item in objects.EnumerateArray()) SecurityClosed(item,new[]{"observationKind","role","phase","pid","creationFiletime","initialThreadId","objectType","requestedInformation"}); }
+            var value=JsonSerializer.Deserialize<StartupSecurityObservation>(input.GetRawText(),JsonOptions);
+            Require(value.SchemaVersion=="bridge-windows-journal-ci-startup-security/v1"&&value.SelectedTokenDefaultDacl.ObservationKind=="selected_primary_token_default_dacl"&&value.SelectedTokenDefaultDacl.SelectedTokenObservationKind==selectedKind&&(selectedKind=="own_process_token"||selectedKind=="derived_token_only")&&value.SelectedTokenDefaultDacl.TokenInformationClass==6,"SECURITY_TOKEN_BINDING");
+            var token=value.SelectedTokenDefaultDacl; SecurityPayload(token,true);
+            if(token.Result=="observed") Require(token.ReturnedBytes>=IntPtr.Size+token.Bytes&&token.ReturnedBytes<=SecurityBytes+IntPtr.Size&&(token.AclState!="null"||token.ReturnedBytes==IntPtr.Size),"SECURITY_TOKEN_RETURNED_EXTENT");
+            if(value.OwnedChildObjects!=null) { SecurityIdentity(value.OwnedChildObjects[0],"process",pid,created,tid); SecurityIdentity(value.OwnedChildObjects[1],"thread",pid,created,tid); }
+            return value;
+        }
+        private static TokenDefaultDaclObservation DefaultDacl(Handle primary,Context selected) {
+            var result=new TokenDefaultDaclObservation { SelectedTokenObservationKind=selected.ObservationKind }; Handle owned=null;
+            try {
+                if(primary==null) { Check(Native.OpenProcessToken(Native.GetCurrentProcess(),Query,out owned),"DEFAULT_DACL_OWN_TOKEN"); Require(!owned.IsInvalid,"DEFAULT_DACL_TOKEN_HANDLE"); primary=owned;
+                    Ordinary(selected); Require(Dword(primary,8)==1&&Dword(primary,20)==0&&Dword(primary,18)==selected.ElevationType&&Dword(primary,12)==selected.SessionId&&ThreadAbsent(Native.GetCurrentThread()),"DEFAULT_DACL_OWN_CONTEXT");
+                    uint extent; using(var user=TokenData(primary,1,4096,out extent)) { Require(extent>=Marshal.SizeOf<SidAttributes>(),"DEFAULT_DACL_USER_HEADER"); Require(SidText(Sid(user,extent,Marshal.ReadIntPtr(user.Pointer),Marshal.SizeOf<SidAttributes>()))==selected.UserSid,"DEFAULT_DACL_OWN_USER"); }
+                    using(var integrity=TokenData(primary,25,4096,out extent)) { Require(extent>=Marshal.SizeOf<SidAttributes>(),"DEFAULT_DACL_INTEGRITY_HEADER"); var label=Marshal.PtrToStructure<SidAttributes>(integrity.Pointer); byte[] sid=Sid(integrity,extent,label.Sid,Marshal.SizeOf<SidAttributes>());
+                        Require(sid.Length==12&&sid.Take(8).SequenceEqual(new byte[]{1,1,0,0,0,0,0,16})&&BitConverter.ToUInt32(sid,8)==selected.IntegrityRid&&label.Attributes==selected.IntegrityAttributes,"DEFAULT_DACL_OWN_INTEGRITY"); }
+                    using(var stats=TokenData(primary,10,Marshal.SizeOf<TokenStatistics>(),out extent)) { Require(extent==Marshal.SizeOf<TokenStatistics>(),"DEFAULT_DACL_STATISTICS_EXTENT"); var row=Marshal.PtrToStructure<TokenStatistics>(stats.Pointer); Require(unchecked((uint)row.AuthenticationId.High).ToString("x8")+row.AuthenticationId.Low.ToString("x8")==selected.AuthenticationId,"DEFAULT_DACL_OWN_LOGON"); }
+                }
+                using(var data=new Buffer(SecurityBytes+IntPtr.Size)) { uint returned; bool queried=Native.GetTokenInformation(primary,6,data.Pointer,(uint)data.Length,out returned); int error=Marshal.GetLastWin32Error(); result.ReturnedBytes=returned;
+                    if(!queried) throw new CiFailure("DEFAULT_DACL_QUERY",error); Require(returned>=IntPtr.Size&&returned<=data.Length,"DEFAULT_DACL_RETURNED_EXTENT"); IntPtr acl=Marshal.ReadIntPtr(data.Pointer);
+                    if(acl==IntPtr.Zero) { Require(returned==IntPtr.Size,"DEFAULT_DACL_NULL_EXTENT"); SecurityObserved(result,null,"null"); }
+                    else { ulong basis=unchecked((ulong)data.Pointer.ToInt64()),pointer=unchecked((ulong)acl.ToInt64()); SecurityRange(basis,returned,pointer,(uint)IntPtr.Size,8); uint bytes=unchecked((ushort)Marshal.ReadInt16(acl,2)); Require(bytes>=8&&bytes<=SecurityBytes,"DEFAULT_DACL_ACL_BOUND"); SecurityRange(basis,returned,pointer,(uint)IntPtr.Size,bytes);
+                        byte[] raw=new byte[bytes]; Marshal.Copy(acl,raw,0,raw.Length); string state=AclBytes(raw); Require(Native.IsValidAcl(acl),"DEFAULT_DACL_INVALID_ACL"); SecurityObserved(result,raw,state); }
+                }
+            } catch(CiFailure error) { SecurityUnavailable(result,error.Code,unchecked((uint)error.NativeError)); } catch { SecurityUnavailable(result,"DEFAULT_DACL_EXCEPTION"); }
+            finally { if(owned!=null) owned.Dispose(); } return result;
+        }
+        private static OwnedChildSecurityObservation OwnedSecurity(Handle handle,string role,uint pid,string created,uint tid) {
+            var result=new OwnedChildSecurityObservation { Role=role,Pid=pid,CreationFiletime=created,InitialThreadId=tid }; IntPtr descriptor=IntPtr.Zero;
+            try { IntPtr owner,group,dacl,sacl; uint error=Native.GetSecurityInfo(handle.DangerousGetHandle(),6,7,out owner,out group,out dacl,out sacl,out descriptor);
+                // GetSecurityInfo returns its DWORD error directly. Its descriptor
+                // is self-relative and owns all component pointers; LocalFree once.
+                if(error!=0) { SecurityUnavailable(result,"OWNED_SECURITY_QUERY",error); return result; }
+                Require(descriptor!=IntPtr.Zero&&Native.IsValidSecurityDescriptor(descriptor),"OWNED_SECURITY_DESCRIPTOR"); ushort control; uint revision; Check(Native.GetSecurityDescriptorControl(descriptor,out control,out revision),"OWNED_SECURITY_CONTROL"); Require((control&0x8000)!=0&&revision==1,"OWNED_SECURITY_SELF_RELATIVE");
+                uint bytes=Native.GetSecurityDescriptorLength(descriptor); Require(bytes>=20&&bytes<=SecurityBytes,"OWNED_SECURITY_BOUND"); byte[] raw=new byte[bytes]; Marshal.Copy(descriptor,raw,0,raw.Length); SecurityObserved(result,raw,DescriptorBytes(raw));
+            } catch(CiFailure error) { SecurityUnavailable(result,error.Code,unchecked((uint)error.NativeError)); } catch { SecurityUnavailable(result,"OWNED_SECURITY_EXCEPTION"); }
+            finally { try { if(descriptor!=IntPtr.Zero&&Native.LocalFree(descriptor)!=IntPtr.Zero&&result.Result=="observed") SecurityUnavailable(result,"OWNED_SECURITY_LOCAL_FREE"); }
+                catch { if(result.Result=="observed") SecurityUnavailable(result,"OWNED_SECURITY_FREE_EXCEPTION"); } } return result;
+        }
+        private static int SerializedBytes(object value) { return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(value,JsonOptions)+"\n"); }
+        private static void SecurityBudget(int diagnosticBytes,int receiptBytes) { Require(diagnosticBytes>=0&&receiptBytes>=0&&diagnosticBytes<=SecurityDiagnosticBytes&&receiptBytes<=ReceiptBytes,"STARTUP_SECURITY_RECEIPT_BOUND"); }
+        private static void ValidateStartupSecurity(LaunchObservation result,uint tid) {
+            SecurityBudget(SerializedBytes(result.StartupSecurity),SerializedBytes(result));
+            string selectedKind=result.LaunchRoute=="ordinary-own-process"?"own_process_token":result.LaunchRoute=="restricted-primary"?"derived_token_only":null;
+            using(var parsed=JsonDocument.Parse(JsonSerializer.Serialize(result.StartupSecurity,JsonOptions))) SecurityFrom(parsed.RootElement,selectedKind,result.ChildPid,result.ChildCreationFiletime,tid,result.AssignedBeforeResume);
+        }
+        private static void FitStartupSecurity(LaunchObservation result,uint tid) {
+            if(result.StartupSecurity==null) return;
+            try { ValidateStartupSecurity(result,tid); }
+            catch { try { SecurityUnavailable(result.StartupSecurity.SelectedTokenDefaultDacl,"STARTUP_SECURITY_RECEIPT_BOUND"); if(result.StartupSecurity.OwnedChildObjects!=null) foreach(var item in result.StartupSecurity.OwnedChildObjects) SecurityUnavailable(item,"STARTUP_SECURITY_RECEIPT_BOUND");
+                // Optional observations cannot make an otherwise bounded receipt
+                // fail. If even their fixed metadata cannot fit, omit the bundle.
+                ValidateStartupSecurity(result,tid); }
+                catch { result.StartupSecurity=null; } }
         }
         // Read-only snapshots of the parent's current objects. These neither select
         // the child's desktop nor establish MIC, loader or native-test success.
@@ -527,7 +675,7 @@ namespace StfcBridgeJournalCi {
                 var startup=new StartupInfoEx { Startup=new StartupInfo { Size=(uint)Marshal.SizeOf<StartupInfoEx>(),Desktop=desktop,Flags=0x100,Input=owned[0].DangerousGetHandle(),Output=owned[1].DangerousGetHandle(),Error=owned[2].DangerousGetHandle() },Attributes=attributes };
                 var command=new StringBuilder(String.Join(" ",new[]{application}.Concat(arguments).Select(Quote))); Require(command.Length<=32767,"COMMAND_BOUND"); ProcessInformation process;
                 bool created=token==null?Native.CreateProcess(application,command,IntPtr.Zero,IntPtr.Zero,true,0x08080004,IntPtr.Zero,root,ref startup,out process):Native.CreateProcessAsUser(token,application,command,IntPtr.Zero,IntPtr.Zero,true,0x08080004,IntPtr.Zero,root,ref startup,out process);
-                Check(created,"FIXED_PROCESS_CREATE"); custody.Process.Attach(process.Process); custody.Thread.Attach(process.Thread); custody.Pid=process.Pid; createdSuccessfully=true;
+                Check(created,"FIXED_PROCESS_CREATE"); custody.Process.Attach(process.Process); custody.Thread.Attach(process.Thread); custody.Pid=process.Pid; custody.Tid=process.Tid; createdSuccessfully=true;
                 Require(!custody.Process.IsInvalid&&!custody.Thread.IsInvalid&&process.Pid!=0,"PROCESS_INFORMATION"); return custody;
             } catch { if(createdSuccessfully&&!custody.Process.IsInvalid) { Native.TerminateProcess(custody.Process,1); Native.WaitForSingleObject(custody.Process,1000); } custody.Process.Dispose(); custody.Thread.Dispose(); throw;
             } finally { foreach(var handle in owned) handle.Dispose(); if(initialized) Native.DeleteProcThreadAttributeList(attributes); if(attributes!=IntPtr.Zero) Marshal.FreeHGlobal(attributes); if(handles!=IntPtr.Zero) Marshal.FreeHGlobal(handles); if(desktop!=IntPtr.Zero) Marshal.FreeHGlobal(desktop); }
@@ -561,7 +709,7 @@ namespace StfcBridgeJournalCi {
         }
         public static LaunchObservation Run() {
             var result=new LaunchObservation(); string root=null,directory=null; List<FileFence> files=null; Handle candidate=null,job=null,process=null,thread=null,inputRead=null,inputWrite=null,outRead=null,outWrite=null,errRead=null,errWrite=null;
-            CapturedPipe stdout=null,stderr=null; HandshakeWriter writer=null; var timer=Stopwatch.StartNew(); var budget=new OutputBudget();
+            CapturedPipe stdout=null,stderr=null; HandshakeWriter writer=null; uint childTid=0; var timer=Stopwatch.StartNew(); var budget=new OutputBudget();
             try { EnvironmentPreflight(); root=OwningRoot(); files=Fences(root); result.Files=files.Select(f=>f.Observation).ToArray(); result.PowerShellVersion=FileVersionInfo.GetVersionInfo(OwnExecutable()).ProductVersion;
                 result.TokenProbe=new ProbeObservation(); Context selected;
                 using(var source=OwnToken(false)) result.TokenProbe.SourceContext=Observe(source,Native.GetCurrentProcess(),Native.GetCurrentThread(),Native.GetCurrentProcessId(),"own_process_token");
@@ -575,8 +723,10 @@ namespace StfcBridgeJournalCi {
                 var sa=new SecurityAttributes { Length=Marshal.SizeOf<SecurityAttributes>(),Inherit=0 }; Check(Native.CreatePipe(out inputRead,out inputWrite,ref sa,4096),"INPUT_PIPE"); Check(Native.CreatePipe(out outRead,out outWrite,ref sa,65536),"OUTPUT_PIPE"); Check(Native.CreatePipe(out errRead,out errWrite,ref sa,65536),"ERROR_PIPE");
                 Verify(files); string shell=files.Single(f=>f.Observation.Role=="powershell").Observation.Route;
                 result.RequestedDesktop=DesktopRoute(OwnDesktop());
-                var created=Spawn(candidate,shell,new[]{"-NoLogo","-NoProfile","-NonInteractive","-File",Path.Combine(root,"scripts","next","windows-journal-ci-child.ps1")},root,inputRead.DangerousGetHandle(),outWrite.DangerousGetHandle(),errWrite.DangerousGetHandle(),result.RequestedDesktop); process=created.Process; thread=created.Thread; result.ChildPid=created.Pid; result.ChildCreationFiletime=Creation(process.DangerousGetHandle());
+                result.StartupSecurity=new StartupSecurityObservation { SelectedTokenDefaultDacl=DefaultDacl(candidate,selected) };
+                var created=Spawn(candidate,shell,new[]{"-NoLogo","-NoProfile","-NonInteractive","-File",Path.Combine(root,"scripts","next","windows-journal-ci-child.ps1")},root,inputRead.DangerousGetHandle(),outWrite.DangerousGetHandle(),errWrite.DangerousGetHandle(),result.RequestedDesktop); process=created.Process; thread=created.Thread; result.ChildPid=created.Pid; childTid=created.Tid; result.ChildCreationFiletime=Creation(process.DangerousGetHandle());
                 Check(Native.AssignProcessToJobObject(job,process),"JOB_ASSIGN_BEFORE_RESUME"); result.AssignedBeforeResume=true;
+                result.StartupSecurity.OwnedChildObjects=new[]{OwnedSecurity(process,"process",result.ChildPid,result.ChildCreationFiletime,childTid),OwnedSecurity(thread,"thread",result.ChildPid,result.ChildCreationFiletime,childTid)};
                 inputRead.Dispose(); outWrite.Dispose(); errWrite.Dispose();
                 stdout=new CapturedPipe(outRead,Path.Combine(directory,"stdout.log"),budget.Add); stderr=new CapturedPipe(errRead,Path.Combine(directory,"stderr.log"),budget.Add); stdout.Start(); stderr.Start();
                 Check(Native.ResumeThread(thread)==1,"CHILD_RESUME");
@@ -619,6 +769,7 @@ namespace StfcBridgeJournalCi {
                 if(stdout!=null) stdout.CloseUnstarted(); if(stderr!=null) stderr.CloseUnstarted(); if(writer!=null) writer.CloseUnstarted();
                 foreach(var handle in new[]{candidate,process,thread,inputRead,writer==null?inputWrite:null,outWrite,errWrite,job}) if(handle!=null) handle.Dispose();
                 if(stdout==null&&outRead!=null) outRead.Dispose(); if(stderr==null&&errRead!=null) errRead.Dispose(); result.CompletedAt=DateTime.UtcNow.ToString("O");
+                FitStartupSecurity(result,childTid);
                 if(directory!=null) try { Save(directory,"launcher.json",result); } catch { result.Result="failed"; result.FailureCode="RECEIPT_WRITE_FAILED"; }
             }
             return result;
@@ -663,6 +814,66 @@ namespace StfcBridgeJournalCi {
                 c=>c.StdoutEof=false,c=>c.StderrEof=false,c=>c.IoThreadsJoined=false,c=>c.OwnedJobEmpty=false,c=>c.SourceToolFenceStable=false,c=>c.CleanupSettled=false,
                 c=>c.ReaderFailed=true,c=>c.OutputOverflow=true,c=>c.ForcedCleanup=true,c=>c.FailureCode="TIMEOUT"};
             for(int i=0;i<custodyChanges.Length;i++) { int index=i; refuses("zero exit cannot rehabilitate missing custody "+i,()=>{var c=settled(); custodyChanges[index](c); Complete(c);}); }
+            // Synthetic bytes exercise parsing and bounds only. No native query,
+            // process creation, access decision or security mutation occurs here.
+            Func<int,int,byte[]> acl=(bytes,count)=> { var data=new byte[bytes]; data[0]=2; Array.Copy(BitConverter.GetBytes((ushort)bytes),0,data,2,2); Array.Copy(BitConverter.GetBytes((ushort)count),0,data,4,2);
+                if(count==1&&bytes>=28) { data[10]=20; data[16]=1; data[17]=1; data[23]=5; data[24]=32; } return data; };
+            Require(AclBytes(acl(8,0))=="empty","SECURITY_EMPTY_ACL_TEST"); passed.Add("zero ACEs are an empty ACL rather than NULL");
+            Require(AclBytes(acl(28,1))=="populated","SECURITY_POPULATED_ACL_TEST"); passed.Add("one bounded ACE is a populated ACL");
+            var freeAcl=acl(SecurityBytes,0); freeAcl[0]=4; Require(AclBytes(freeAcl)=="empty","SECURITY_ACL_FREE_SPACE_TEST"); passed.Add("ACL revision four and bounded free space are retained");
+            refuses("ACL header shorter than eight bytes",()=>AclBytes(new byte[7])); refuses("ACL next byte exceeds snapshot cap",()=>AclBytes(new byte[SecurityBytes+1]));
+            var badAclChanges=new Action<byte[]>[] {c=>c[0]=1,c=>c[2]=27,c=>c[4]=129,c=>c[10]=0,c=>c[10]=6,c=>c[10]=24,c=>c[4]=2};
+            for(int i=0;i<badAclChanges.Length;i++) { int index=i; refuses("ACL revision, size, count or ACE extent "+i,()=>{var data=acl(28,1); badAclChanges[index](data); AclBytes(data);}); }
+            SecurityRange(100,(uint)(IntPtr.Size+8),(ulong)(100+IntPtr.Size),(uint)IntPtr.Size,8); passed.Add("PACL starts after the pointer header and ends at returned extent");
+            var badRanges=new Action[] {()=>SecurityRange(100,16,99,8,8),()=>SecurityRange(100,16,100,8,8),()=>SecurityRange(100,16,109,8,8),()=>SecurityRange(100,7,108,8,8),
+                ()=>SecurityRange(100,(uint)(SecurityBytes+IntPtr.Size+1),108,8,8),()=>SecurityRange(UInt64.MaxValue-7,16,UInt64.MaxValue-7,0,8),()=>SecurityRange(100,16,108,8,7)};
+            for(int i=0;i<badRanges.Length;i++) { int index=i; refuses("borrowed PACL pointer containment or overflow "+i,badRanges[index]); }
+            Func<string,byte[]> descriptor=state=> { byte[] dacl=state=="empty"?acl(8,0):state=="populated"?acl(28,1):null; var data=new byte[20+(dacl==null?0:dacl.Length)]; data[0]=1; data[3]=0x80;
+                if(state!="absent") data[2]=4; if(dacl!=null) { data[16]=20; Array.Copy(dacl,0,data,20,dacl.Length); } return data; };
+            foreach(string state in new[]{"absent","null","empty","populated"}) { Require(DescriptorBytes(descriptor(state))==state,"SECURITY_DESCRIPTOR_STATE_TEST"); passed.Add("self-relative descriptor keeps DACL state "+state); }
+            refuses("security descriptor short header",()=>DescriptorBytes(new byte[19])); refuses("security descriptor next byte exceeds cap",()=>DescriptorBytes(new byte[SecurityBytes+1]));
+            var badDescriptorChanges=new Action<byte[]>[] {c=>c[0]=0,c=>c[3]=0,c=>c[2]|=0x10,c=>c[12]=20,c=>c[16]=16,c=>c[16]=21,c=>c[16]=44,
+                c=>Array.Copy(BitConverter.GetBytes(UInt32.MaxValue),0,c,16,4),c=>c[22]=255,c=>c[4]=20,c=>c[8]=47,c=>c[2]=0};
+            for(int i=0;i<badDescriptorChanges.Length;i++) { int index=i; refuses("self-relative flags, SACL, SID or DACL offset "+i,()=>{var data=descriptor("populated"); badDescriptorChanges[index](data); DescriptorBytes(data);}); }
+            var nullDefault=new TokenDefaultDaclObservation(); SecurityObserved(nullDefault,null,"null"); SecurityPayload(nullDefault,true); passed.Add("NULL token default DACL has no fabricated ACL bytes or hash");
+            var unavailable=new TokenDefaultDaclObservation(); SecurityUnavailable(unavailable,"QUERY_REFUSED",UInt32.MaxValue); SecurityPayload(unavailable,true); Require(unavailable.NativeError==UInt32.MaxValue,"SECURITY_DIRECT_DWORD_TEST"); passed.Add("unavailable observation retains a direct unsigned native error");
+            var emptyDefault=new TokenDefaultDaclObservation(); SecurityObserved(emptyDefault,acl(8,0),"empty"); SecurityPayload(emptyDefault,true); passed.Add("empty token default DACL requires exact bounded bytes and hash");
+            var badPayloadChanges=new Action<TokenDefaultDaclObservation>[] {c=>c.Result="unsupported",c=>c.FailureCode="QUERY_REFUSED",c=>c.NativeError=5,c=>c.AclState="null",c=>c.Bytes=9,
+                c=>c.Bytes=(uint)(SecurityBytes+1),c=>c.DataBase64="*",c=>c.Sha256=new string('0',64),c=>c.AclState="populated"};
+            for(int i=0;i<badPayloadChanges.Length;i++) { int index=i; refuses("security payload state, extent, encoding or hash "+i,()=>{var value=new TokenDefaultDaclObservation(); SecurityObserved(value,acl(8,0),"empty"); badPayloadChanges[index](value); SecurityPayload(value,true);}); }
+            refuses("unavailable observation cannot carry observed data",()=>{var value=new TokenDefaultDaclObservation(); SecurityUnavailable(value,"QUERY_REFUSED"); value.DataBase64="AA=="; SecurityPayload(value,true);});
+            refuses("security payload cannot be missing",()=>SecurityPayload(null,true));
+            Func<StartupSecurityObservation> security=()=> { var value=new StartupSecurityObservation { SelectedTokenDefaultDacl=new TokenDefaultDaclObservation { SelectedTokenObservationKind="own_process_token",ReturnedBytes=(uint)(IntPtr.Size+8) },
+                    OwnedChildObjects=new[]{new OwnedChildSecurityObservation { Role="process",Pid=11,CreationFiletime="12",InitialThreadId=13 },new OwnedChildSecurityObservation { Role="thread",Pid=11,CreationFiletime="12",InitialThreadId=13 }} };
+                SecurityObserved(value.SelectedTokenDefaultDacl,acl(8,0),"empty"); foreach(var item in value.OwnedChildObjects) SecurityObserved(item,descriptor("empty"),"empty"); return value; };
+            Action<StartupSecurityObservation,string,bool> parseSecurity=(value,kind,assigned)=> { using(var parsed=JsonDocument.Parse(JsonSerializer.Serialize(value,JsonOptions))) SecurityFrom(parsed.RootElement,kind,11,"12",13,assigned); };
+            parseSecurity(security(),"own_process_token",true); passed.Add("closed security bundle binds process and thread to the returned child identity");
+            var derivedSecurity=security(); derivedSecurity.SelectedTokenDefaultDacl.SelectedTokenObservationKind="derived_token_only"; parseSecurity(derivedSecurity,"derived_token_only",true); passed.Add("derived default DACL binds to the selected candidate route");
+            var beforeAssignment=security(); beforeAssignment.OwnedChildObjects=null; parseSecurity(beforeAssignment,"own_process_token",false); passed.Add("no owned-child snapshots are claimed before Job assignment");
+            var badSecurityChanges=new Action<StartupSecurityObservation>[] {c=>c.SchemaVersion="other",c=>c.SelectedTokenDefaultDacl.ObservationKind="parent",c=>c.SelectedTokenDefaultDacl.SelectedTokenObservationKind="derived_token_only",
+                c=>c.SelectedTokenDefaultDacl.TokenInformationClass=5,c=>c.SelectedTokenDefaultDacl.ReturnedBytes=(uint)IntPtr.Size,c=>c.OwnedChildObjects=null,c=>c.OwnedChildObjects=c.OwnedChildObjects.Take(1).ToArray(),
+                c=>Array.Reverse(c.OwnedChildObjects),c=>c.OwnedChildObjects[0].Role="other",c=>c.OwnedChildObjects[0].Phase="after_resume",c=>c.OwnedChildObjects[0].Pid=12,
+                c=>c.OwnedChildObjects[0].CreationFiletime="13",c=>c.OwnedChildObjects[1].InitialThreadId=14,c=>c.OwnedChildObjects[0].ObjectType=1,c=>c.OwnedChildObjects[1].RequestedInformation=4};
+            for(int i=0;i<badSecurityChanges.Length;i++) { int index=i; refuses("security bundle schema, route, role, phase or returned identity "+i,()=>{var value=security(); badSecurityChanges[index](value); parseSecurity(value,"own_process_token",true);}); }
+            refuses("owned-child snapshots require Job assignment",()=>parseSecurity(security(),"own_process_token",false));
+            string securityJson=JsonSerializer.Serialize(security(),JsonOptions);
+            foreach(string json in new[]{securityJson.Replace("\"ownedChildObjects\":","\"extra\": true, \"ownedChildObjects\":"),securityJson.Replace("\"schemaVersion\":","\"schemaVersion\": \"duplicate\", \"schemaVersion\":"),securityJson.Replace("\"schemaVersion\"","\"missingSchema\"")})
+                refuses("closed security bundle unknown, duplicate or missing field "+passed.Count,()=>{using(var parsed=JsonDocument.Parse(json)) SecurityFrom(parsed.RootElement,"own_process_token",11,"12",13,true);});
+            foreach(string json in new[]{securityJson.Replace("\"tokenInformationClass\":","\"extra\": true, \"tokenInformationClass\":"),securityJson.Replace("\"objectType\":","\"extra\": true, \"objectType\":")})
+                refuses("closed token and owned-object security records "+passed.Count,()=>{using(var parsed=JsonDocument.Parse(json)) SecurityFrom(parsed.RootElement,"own_process_token",11,"12",13,true);});
+            refuses("NULL token default requires pointer-sized returned data",()=>{var value=security(); SecurityObserved(value.SelectedTokenDefaultDacl,null,"null"); value.SelectedTokenDefaultDacl.ReturnedBytes=(uint)(IntPtr.Size+1); parseSecurity(value,"own_process_token",true);});
+            SecurityBudget(SecurityDiagnosticBytes,ReceiptBytes); passed.Add("exact optional-diagnostic and aggregate receipt caps are accepted");
+            refuses("next optional-diagnostic byte exceeds cap",()=>SecurityBudget(SecurityDiagnosticBytes+1,ReceiptBytes)); refuses("next aggregate receipt byte exceeds cap",()=>SecurityBudget(SecurityDiagnosticBytes,ReceiptBytes+1));
+            refuses("negative serialized byte count is invalid",()=>SecurityBudget(-1,0));
+            Func<LaunchObservation> securityLaunch=()=> { var value=settled(); value.Result="passed"; value.LaunchRoute="ordinary-own-process"; value.ChildPid=11; value.ChildCreationFiletime="12"; value.StartupSecurity=security(); return value; };
+            var optional=securityLaunch(); SecurityUnavailable(optional.StartupSecurity.SelectedTokenDefaultDacl,"QUERY_REFUSED",5); foreach(var item in optional.StartupSecurity.OwnedChildObjects) SecurityUnavailable(item,"QUERY_REFUSED",5);
+            FitStartupSecurity(optional,13); Complete(optional); Require(optional.Result=="passed"&&optional.StartupSecurity.SelectedTokenDefaultDacl.NativeError==5&&!optional.NativeRuntimeQualified,"SECURITY_OPTIONAL_OUTCOME_TEST"); passed.Add("unavailable startup observations preserve launch custody and qualification boundaries");
+            var crowded=securityLaunch(); crowded.PowerShellVersion=""; crowded.PowerShellVersion=new string('x',ReceiptBytes-SerializedBytes(crowded)+1); FitStartupSecurity(crowded,13); Complete(crowded);
+            Require(crowded.Result=="passed"&&crowded.StartupSecurity!=null&&crowded.StartupSecurity.SelectedTokenDefaultDacl.Result=="unavailable"&&SerializedBytes(crowded)<=ReceiptBytes,"SECURITY_OPTIONAL_BUDGET_TEST"); passed.Add("optional raw snapshots are discarded before aggregate receipt overflow changes outcome");
+            var oversizedBaseline=securityLaunch(); oversizedBaseline.PowerShellVersion=new string('x',ReceiptBytes); FitStartupSecurity(oversizedBaseline,13); Complete(oversizedBaseline);
+            Require(oversizedBaseline.Result=="passed"&&oversizedBaseline.StartupSecurity==null&&SerializedBytes(oversizedBaseline)>ReceiptBytes,"SECURITY_BASELINE_BOUND_TEST"); passed.Add("diagnostic omission does not relax the original fail-closed aggregate receipt cap");
+            var malformedOptional=securityLaunch(); malformedOptional.StartupSecurity.OwnedChildObjects[0]=null; FitStartupSecurity(malformedOptional,13); Complete(malformedOptional);
+            Require(malformedOptional.Result=="passed"&&malformedOptional.StartupSecurity==null,"SECURITY_OPTIONAL_EXCEPTION_TEST"); passed.Add("optional diagnostic normalization failure preserves the launch result");
             return passed.ToArray();
         }
     }

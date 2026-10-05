@@ -251,7 +251,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 return Ok(reference.clone());
             }
         }
-        let value_id = self.ids.private_id();
+        let value_id = self.ids.private_id()?;
         self.issue_id(value_id.as_str().to_owned())?;
         Ok(PrivateValueRef {
             value_id,
@@ -274,7 +274,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         self.toml.validate(read.text()?)?;
         let schema = self.schemas.resolve(&read.binding.schema)?;
         schema.validate(&read.binding.schema)?;
-        let draft_id = self.ids.draft_id();
+        let draft_id = self.ids.draft_id()?;
         self.issue_id(draft_id.as_str().to_owned())?;
         let snapshot = DraftSnapshot {
             draft: DraftRef {
@@ -371,7 +371,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 self.toml.normalize(value.source()?)?;
                 match input.sensitivity {
                     SensitiveInputKind::Private => {
-                        let value_id = self.ids.private_id();
+                        let value_id = self.ids.private_id()?;
                         self.issue_id(value_id.as_str().to_owned())?;
                         let reference = PrivateValueRef {
                             value_id: value_id.clone(),
@@ -393,7 +393,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                         }
                     }
                     SensitiveInputKind::Secret => {
-                        let secret_id = self.ids.secret_id();
+                        let secret_id = self.ids.secret_id()?;
                         self.issue_id(secret_id.as_str().to_owned())?;
                         let reference = SecretRef {
                             secret_id: secret_id.clone(),
@@ -479,7 +479,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 }
                 match reference {
                     MutableReference::Private(old) => {
-                        let value_id = self.ids.private_id();
+                        let value_id = self.ids.private_id()?;
                         self.issue_id(value_id.as_str().to_owned())?;
                         let mut new = old.clone();
                         new.value_id = value_id;
@@ -491,7 +491,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                         *old = new;
                     }
                     MutableReference::Secret(old) => {
-                        let secret_id = self.ids.secret_id();
+                        let secret_id = self.ids.secret_id()?;
                         self.issue_id(secret_id.as_str().to_owned())?;
                         let mut new = old.clone();
                         new.secret_id = secret_id;

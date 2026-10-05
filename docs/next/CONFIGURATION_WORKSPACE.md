@@ -27,6 +27,14 @@ transfer for repeated use. Foreign, forged, discarded and wrong-host references
 do not acquire custody. Protected bytes remain actor-local and are cleared on
 drop; native entry protection is the adapter's responsibility.
 
+Identity allocation is fallible. A native entropy refusal publishes no draft,
+protected reference or change acknowledgement and returns a closed failure.
+IDs already issued during an incomplete operation remain burned; refusal does
+not restore collision eligibility or trigger a retry. The application provider
+uses one fresh sixteen-byte native entropy draw for each requested ID and the
+canonical contract constructor. Entropy refusal and invalid constructor output
+remain distinct failures.
+
 `SchemaSource` supplies adopted producer encodings, aliases and precedence,
 platform policy, Sync projection and mutations, migration, owned paths and
 complete candidate validation. A UI field list cannot establish this policy.
@@ -74,13 +82,18 @@ node scripts/next/configuration-workspace.mjs
 
 The command accepts no overrides. It uses the tracked Node and Rust releases,
 the scoped Rust child context, locked/offline dependencies and the actual native
-Windows x64 or Apple Silicon target. It checks engine formatting and strict
-all-target Clippy, then selects all four configuration test executables from
-that invocation's Cargo JSON compiler artifacts. It verifies owning manifest
+Windows x64 or Apple Silicon target. It checks engine and application formatting
+and strict all-target Clippy, then selects all four configuration test
+executables and the application-provider library test executable from their
+current invocations' Cargo JSON compiler artifacts. It verifies owning manifest
 and source, physical confinement to the owning native target directory, native
 executable architecture and byte hashes. It inventories and executes every
 required test, refusing missing, duplicate, ignored or filtered tests. Current
-inventories cover 10 draft, 11 semantics, 13 transaction and 4 recovery tests.
+inventories cover 18 draft, 11 semantics, 13 transaction, 4 recovery and 16
+application-provider tests. Provider controls cover one draw, refusal, closed
+constructor errors and absence of retry/cache; the supported-host test also
+calls the actual current-host clock and entropy providers. Passing on one host
+does not establish provider execution on the other host.
 
 Fresh draft synchronization always advances one revision, including unchanged
 edits after Stay or failed preparation. Exact lost-ack replay returns its original

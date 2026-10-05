@@ -5,7 +5,11 @@ use bridge_contracts::v1::*;
 use bridge_engine::configuration::*;
 use bridge_toml::{TomlOverride, TomlPath, TomlSnapshot, TomlTable};
 use sha2::{Digest, Sha256 as Hasher};
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, VecDeque},
+    rc::Rc,
+};
 
 pub fn list<T, const N: usize>(values: Vec<T>) -> BoundedList<T, N> {
     BoundedList::new(values).unwrap()
@@ -35,26 +39,47 @@ pub fn field(id: &str) -> FieldId {
 pub fn path(id: &str) -> TomlPath {
     TomlPath::new(id.split('.').map(str::to_owned).collect()).unwrap()
 }
-pub struct Ids(u32);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityKind {
+    Draft,
+    Private,
+    Secret,
+}
+#[derive(Default)]
+pub struct IdentityControl {
+    pub calls: Vec<IdentityKind>,
+    pub outcomes: VecDeque<(IdentityKind, ConfigurationResult<u32>)>,
+}
+pub struct Ids {
+    next: u32,
+    control: Rc<RefCell<IdentityControl>>,
+}
 impl Ids {
-    fn next(&mut self) -> String {
-        self.0 += 1;
-        id(self.0)
+    fn allocate(&mut self, kind: IdentityKind) -> ConfigurationResult<String> {
+        let mut control = self.control.borrow_mut();
+        control.calls.push(kind);
+        if let Some((expected, outcome)) = control.outcomes.pop_front() {
+            assert_eq!(kind, expected, "unexpected identity allocation or retry");
+            return outcome.map(id);
+        }
+        self.next += 1;
+        Ok(id(self.next))
     }
 }
 impl ConfigurationIds for Ids {
-    fn draft_id(&mut self) -> DraftId {
-        DraftId::new(self.next()).unwrap()
+    fn draft_id(&mut self) -> ConfigurationResult<DraftId> {
+        Ok(DraftId::new(self.allocate(IdentityKind::Draft)?).unwrap())
     }
-    fn private_id(&mut self) -> PrivateValueId {
-        PrivateValueId::new(self.next()).unwrap()
+    fn private_id(&mut self) -> ConfigurationResult<PrivateValueId> {
+        Ok(PrivateValueId::new(self.allocate(IdentityKind::Private)?).unwrap())
     }
-    fn secret_id(&mut self) -> SecretRefId {
-        SecretRefId::new(self.next()).unwrap()
+    fn secret_id(&mut self) -> ConfigurationResult<SecretRefId> {
+        Ok(SecretRefId::new(self.allocate(IdentityKind::Secret)?).unwrap())
     }
 }
 pub struct Entry {
     pub outcome: Option<ProtectedEntryOutcome>,
+    pub additional: VecDeque<ProtectedEntryOutcome>,
 }
 impl SensitiveEntry for Entry {
     fn capture(
@@ -64,6 +89,7 @@ impl SensitiveEntry for Entry {
         Ok(self
             .outcome
             .take()
+            .or_else(|| self.additional.pop_front())
             .unwrap_or(ProtectedEntryOutcome::Unavailable(
                 SensitiveInputUnavailableReason::ProtectedEntryUnavailable,
             )))
@@ -566,6 +592,8 @@ pub struct FixtureOptions {
     pub mutations: Vec<SemanticMutation>,
     pub additional_owned: Vec<TomlPath>,
     pub candidate: Option<(String, TomlSnapshot)>,
+    pub ids: Rc<RefCell<IdentityControl>>,
+    pub captures: Vec<ProtectedEntryOutcome>,
 }
 pub fn workspace_with_options(
     text: &str,
@@ -678,8 +706,14 @@ pub fn workspace_with_options(
             codec,
             schemas,
             Owner(state.clone()),
-            Entry { outcome: entry },
-            Ids(20000),
+            Entry {
+                outcome: entry,
+                additional: options.captures.into(),
+            },
+            Ids {
+                next: 20000,
+                control: options.ids,
+            },
         ),
         state,
         calls,

@@ -8,5 +8,5 @@ $sourcePath = [IO.Path]::Combine($PSScriptRoot, '..', 'windows-journal-ci.cs')
 $sourceText = [IO.File]::ReadAllText($sourcePath, [Text.UTF8Encoding]::new($false, $true))
 Add-Type -TypeDefinition $sourceText -ErrorAction Stop
 $passed = [StfcBridgeJournalCi.WindowsJournalCi]::ControlTests()
-if ($passed.Count -ne 78) { throw 'The complete fixed control inventory did not execute.' }
+if ($passed.Count -ne 163) { throw 'The complete fixed control inventory did not execute.' }
 [Console]::Out.WriteLine((@{ result = 'passed'; tests = $passed; native9Observed = $false; hostedCiProved = $false } | ConvertTo-Json -Depth 4 -Compress))

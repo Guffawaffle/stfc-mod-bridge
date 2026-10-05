@@ -4,9 +4,11 @@
 //! establish durable host identity, permission, exclusions or native custody.
 
 use bridge_contracts::v1::{
-    HostEpoch, InvalidPrimitive, OperationId, PlanId, StreamId, UtcTimestamp,
+    DraftId, HostEpoch, InvalidPrimitive, OperationId, PlanId, PrivateValueId, SecretRefId,
+    StreamId, UtcTimestamp,
 };
 use bridge_domain::platform::{PlatformError, PlatformErrorCode};
+use bridge_engine::configuration::{ConfigurationFailure, ConfigurationIds, ConfigurationResult};
 use bridge_engine::operations::{ClockReading, HostClock, IdentitySource, ProviderFailure};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use time::{OffsetDateTime, SignedDuration, format_description::well_known::Rfc3339};
@@ -138,7 +140,8 @@ fn contract_utc(
     UtcTimestamp::new(encoded).map_err(|_| failure)
 }
 
-/// Independent native entropy for each host, stream, plan or operation ID.
+/// Independent native entropy for each host, stream, plan, operation or
+/// configuration ID.
 ///
 /// Every call makes one sixteen-byte native draw, sets only UUID v4/variant
 /// bits, and validates the canonical lowercase value. No uniqueness assertion,
@@ -182,6 +185,20 @@ impl IdentitySource for NativeIdentitySource {
     }
 }
 
+impl ConfigurationIds for NativeIdentitySource {
+    fn draft_id(&mut self) -> ConfigurationResult<DraftId> {
+        ConfigurationIds::draft_id(&mut self.source)
+    }
+
+    fn private_id(&mut self) -> ConfigurationResult<PrivateValueId> {
+        ConfigurationIds::private_id(&mut self.source)
+    }
+
+    fn secret_id(&mut self) -> ConfigurationResult<SecretRefId> {
+        ConfigurationIds::secret_id(&mut self.source)
+    }
+}
+
 #[derive(Debug)]
 struct Identities<R> {
     draw: R,
@@ -210,6 +227,32 @@ impl<R: FnMut() -> Result<[u8; 16], PlatformError>> Identities<R> {
     ) -> Result<T, ProviderFailure> {
         let bytes = (self.draw)().map_err(|_| ProviderFailure::EntropyUnavailable)?;
         validate(uuid_v4(bytes)).map_err(|_| ProviderFailure::InvalidIdentity)
+    }
+
+    fn configuration_identity<T>(
+        &mut self,
+        validate: impl FnOnce(String) -> Result<T, InvalidPrimitive>,
+    ) -> ConfigurationResult<T> {
+        self.identity(validate).map_err(|failure| match failure {
+            ProviderFailure::EntropyUnavailable => ConfigurationFailure::NativeUnavailable,
+            // Invalid constructor output is not an unavailable entropy draw.
+            // Any other provider failure is also invalid for this identity port.
+            _ => ConfigurationFailure::InvalidOwnerResult,
+        })
+    }
+}
+
+impl<R: FnMut() -> Result<[u8; 16], PlatformError>> ConfigurationIds for Identities<R> {
+    fn draft_id(&mut self) -> ConfigurationResult<DraftId> {
+        self.configuration_identity(DraftId::new)
+    }
+
+    fn private_id(&mut self) -> ConfigurationResult<PrivateValueId> {
+        self.configuration_identity(PrivateValueId::new)
+    }
+
+    fn secret_id(&mut self) -> ConfigurationResult<SecretRefId> {
+        self.configuration_identity(SecretRefId::new)
     }
 }
 
@@ -282,6 +325,30 @@ mod tests {
         PlatformErrorCode::NativeFailure,
         PlatformErrorCode::UnknownObservation,
     ];
+
+    #[derive(Clone, Copy)]
+    enum ConfigurationIdKind {
+        Draft,
+        Private,
+        Secret,
+    }
+
+    const CONFIGURATION_ID_KINDS: [ConfigurationIdKind; 3] = [
+        ConfigurationIdKind::Draft,
+        ConfigurationIdKind::Private,
+        ConfigurationIdKind::Secret,
+    ];
+
+    fn configuration_id(
+        source: &mut impl ConfigurationIds,
+        kind: ConfigurationIdKind,
+    ) -> ConfigurationResult<String> {
+        match kind {
+            ConfigurationIdKind::Draft => source.draft_id().map(|id| id.as_str().to_owned()),
+            ConfigurationIdKind::Private => source.private_id().map(|id| id.as_str().to_owned()),
+            ConfigurationIdKind::Secret => source.secret_id().map(|id| id.as_str().to_owned()),
+        }
+    }
 
     fn reading(monotonic_millis: u64, utc: &str) -> ClockReading {
         ClockReading {
@@ -628,6 +695,136 @@ mod tests {
         assert_eq!(calls.get(), 1);
     }
 
+    #[test]
+    fn configuration_identity_kinds_draw_once_per_request_without_a_uniqueness_policy() {
+        let calls = Cell::new(0);
+        let mut samples = [
+            [0; 16],
+            [0xff; 16],
+            std::array::from_fn(|i| i as u8),
+            [0; 16],
+        ]
+        .into_iter();
+        let mut source = Identities {
+            draw: || {
+                calls.set(calls.get() + 1);
+                Ok(samples.next().unwrap())
+            },
+        };
+        for (index, (kind, expected)) in [
+            (
+                ConfigurationIdKind::Draft,
+                "00000000-0000-4000-8000-000000000000",
+            ),
+            (
+                ConfigurationIdKind::Private,
+                "ffffffff-ffff-4fff-bfff-ffffffffffff",
+            ),
+            (
+                ConfigurationIdKind::Secret,
+                "00010203-0405-4607-8809-0a0b0c0d0e0f",
+            ),
+            (
+                ConfigurationIdKind::Draft,
+                "00000000-0000-4000-8000-000000000000",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(configuration_id(&mut source, kind).unwrap(), expected);
+            assert_eq!(calls.get(), index + 1);
+        }
+    }
+
+    #[test]
+    fn every_configuration_entropy_failure_refuses_without_retry_or_validation() {
+        for code in PLATFORM_FAILURES {
+            let calls = Cell::new(0);
+            let mut source = Identities {
+                draw: || {
+                    calls.set(calls.get() + 1);
+                    Err(PlatformError {
+                        code,
+                        native_code: Some(-913),
+                    })
+                },
+            };
+            for (index, kind) in CONFIGURATION_ID_KINDS.into_iter().enumerate() {
+                assert_eq!(
+                    configuration_id(&mut source, kind),
+                    Err(ConfigurationFailure::NativeUnavailable)
+                );
+                assert_eq!(calls.get(), index + 1);
+            }
+            let result = source.configuration_identity(|_| -> Result<DraftId, InvalidPrimitive> {
+                panic!("failed entropy must never reach configuration identity validation")
+            });
+            assert_eq!(result, Err(ConfigurationFailure::NativeUnavailable));
+            assert_eq!(calls.get(), 4);
+        }
+    }
+
+    #[test]
+    fn configuration_identity_failure_does_not_retry_or_cache_between_requests() {
+        for kind in CONFIGURATION_ID_KINDS {
+            let calls = Cell::new(0);
+            let mut source = Identities {
+                draw: || {
+                    let call = calls.get() + 1;
+                    calls.set(call);
+                    match call {
+                        1 => Err(PlatformError::new(PlatformErrorCode::FeatureUnavailable)),
+                        2 => Ok([0xff; 16]),
+                        3 => Ok([0; 16]),
+                        _ => panic!("configuration identity must not request another draw"),
+                    }
+                },
+            };
+            assert_eq!(
+                configuration_id(&mut source, kind),
+                Err(ConfigurationFailure::NativeUnavailable)
+            );
+            assert_eq!(calls.get(), 1);
+            assert_eq!(
+                configuration_id(&mut source, kind).unwrap(),
+                "ffffffff-ffff-4fff-bfff-ffffffffffff"
+            );
+            assert_eq!(calls.get(), 2);
+            assert_eq!(
+                configuration_id(&mut source, kind).unwrap(),
+                "00000000-0000-4000-8000-000000000000"
+            );
+            assert_eq!(calls.get(), 3);
+        }
+    }
+
+    #[test]
+    fn configuration_identity_validation_refusal_is_not_entropy_unavailability() {
+        for kind in CONFIGURATION_ID_KINDS {
+            let calls = Cell::new(0);
+            let mut source = Identities {
+                draw: || {
+                    calls.set(calls.get() + 1);
+                    Ok([0; 16])
+                },
+            };
+            let result = match kind {
+                ConfigurationIdKind::Draft => source
+                    .configuration_identity(|_| Err::<DraftId, _>(InvalidPrimitive))
+                    .map(|_| ()),
+                ConfigurationIdKind::Private => source
+                    .configuration_identity(|_| Err::<PrivateValueId, _>(InvalidPrimitive))
+                    .map(|_| ()),
+                ConfigurationIdKind::Secret => source
+                    .configuration_identity(|_| Err::<SecretRefId, _>(InvalidPrimitive))
+                    .map(|_| ()),
+            };
+            assert_eq!(result, Err(ConfigurationFailure::InvalidOwnerResult));
+            assert_eq!(calls.get(), 1);
+        }
+    }
+
     #[cfg(any(
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "macos", target_arch = "aarch64")
@@ -648,6 +845,9 @@ mod tests {
         assert!(source.stream_id().is_ok());
         assert!(source.plan_id().is_ok());
         assert!(source.operation_id().is_ok());
+        assert!(ConfigurationIds::draft_id(&mut source).is_ok());
+        assert!(ConfigurationIds::private_id(&mut source).is_ok());
+        assert!(ConfigurationIds::secret_id(&mut source).is_ok());
     }
 
     #[cfg(not(any(
@@ -670,6 +870,18 @@ mod tests {
         assert_eq!(
             source.operation_id(),
             Err(ProviderFailure::EntropyUnavailable)
+        );
+        assert_eq!(
+            ConfigurationIds::draft_id(&mut source),
+            Err(ConfigurationFailure::NativeUnavailable)
+        );
+        assert_eq!(
+            ConfigurationIds::private_id(&mut source),
+            Err(ConfigurationFailure::NativeUnavailable)
+        );
+        assert_eq!(
+            ConfigurationIds::secret_id(&mut source),
+            Err(ConfigurationFailure::NativeUnavailable)
         );
     }
 }

@@ -55,6 +55,47 @@ The later Node spawn retains its existing null-desktop behavior, keeping this
 comparison at bootstrap startup.
 [STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow).
 
+Immediately before that spawn, the launcher's optional `startupSecurity` bundle
+queries `TokenDefaultDacl` on the exact selected candidate, or a query-only
+handle to its own primary token on the ordinary route. The ordinary handle's
+token type, elevation, integrity and user/session/logon identity must match the
+selected context before its default DACL is recorded. The pointer header,
+borrowed ACL pointer, returned extent and ACL header are bounded before native
+dereferencing or copying; ACE extents are checked in the bounded managed copy.
+A successful NULL default DACL, an empty ACL,
+a populated ACL and an unavailable observation remain distinct.
+[GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation),
+[TOKEN_DEFAULT_DACL](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_default_dacl),
+[ACL](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-acl),
+[IsValidAcl](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-isvalidacl).
+
+After the returned child handles enter the owned Job and before `ResumeThread`,
+the same launcher-only bundle records read-only owner/group/DACL snapshots for
+the owned process and initial thread. `GetSecurityInfo(SE_KERNEL_OBJECT, 7)`
+returns its error as a DWORD; the receipt retains that unsigned value directly.
+Each fixed process/thread role and `assigned_before_resume` phase is bound to
+the returned PID, process creation time and initial thread ID. The allocated
+self-relative descriptor is copied within the snapshot bound and passed once
+to `LocalFree` in `finally`; a reported free failure makes an otherwise observed
+snapshot unavailable. Its component pointers are never freed
+individually. No SACL is queried and no privilege or permission changes occur.
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo),
+[self-relative security descriptors](https://learn.microsoft.com/en-us/windows/win32/secauthz/absolute-and-self-relative-security-descriptors),
+[LocalFree](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-localfree).
+
+Each new raw snapshot is limited to 4096 bytes, with exact byte count and SHA-256
+binding. The closed diagnostic bundle is limited to 24576 serialized UTF-8
+bytes, including its trailing newline. The existing aggregate launcher receipt
+limit remains 65536 bytes. Optional raw observations become unavailable if
+necessary to fit that receipt; the entire optional bundle is omitted if even
+its validated metadata cannot fit. This does not relax the aggregate receipt
+limit or change launch/custody success criteria. These observations neither
+identify a failed DLL nor establish the cause of an initialization exit, an
+access decision, loader success or native fixture qualification. The child
+handshake and later Node spawn remain unchanged. The 163 pure controls include
+synthetic pointer, ACL, self-relative descriptor, closed state/role/identity and
+receipt-budget cases; they do not execute native queries or launch a child.
+
 The child bootstrap is a fixed checked-in PowerShell script. It observes its
 own token before starting pinned Node and compares its user/session/logon and
 current-user LocalAppData observations to the bounded source handshake.
