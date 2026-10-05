@@ -123,6 +123,7 @@ export async function createManagementSession(mode: ManagementMode): Promise<Man
     document.binding = clone(runtimeInput.configuration.document);
     initialDraft.draft.document = clone(document.binding);
     initialDraft.schema = clone(document.schema);
+    const draft = clone(initialDraft);
     const history = await query('sc10-configuration-history-reply', 'configuration_history'), redacted = await query('sc16-redacted-preview-reply', 'diagnostic_preview'), paths = await query('sc16-explicit-path-disclosure-reply', 'diagnostic_preview');
     const destination = await command('sc16-capture-export-destination-reply', 'request_export_destination') as CommandOutput<'request_export_destination'>;
     const cancelledDestination = await command('sc16-destination-cancelled-reply', 'request_export_destination') as CommandOutput<'request_export_destination'>;
@@ -243,6 +244,12 @@ export async function createManagementSession(mode: ManagementMode): Promise<Man
                 case 'hello':
                     output = await query('sc-01-hello-windows-x64-reply', 'hello');
                     break;
+                case 'get_draft':
+                    if (current.input.hostEpoch !== epoch)
+                        return { type: 'rejected', error: { code: 'plan_host_mismatch', retryDisposition: 'after_resnapshot', violations: [] } };
+                    output = { cursor: clone(snapshot.cursor), draft: current.input.draftId === draft.draft.draftId
+                        ? { status: 'observed', evidence: clone(evidence), value: clone(draft) } : { status: 'missing', evidence: clone(evidence) } };
+                    break;
                 case 'get_actions': {
                     if (!scopeKnown(current.input.scope) || current.input.scope.kind === 'session')
                         refuse();
@@ -335,7 +342,7 @@ export async function createManagementSession(mode: ManagementMode): Promise<Man
             case 'open_draft':
                 if (!bindingEquivalent(current.input.document, initialDraft.draft.document))
                     refuse();
-                output = initialDraft;
+                output = clone(draft);
                 break;
             default: refuse();
         }

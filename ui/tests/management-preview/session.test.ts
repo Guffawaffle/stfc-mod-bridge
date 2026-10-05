@@ -27,6 +27,19 @@ test('Management preview modes validate every golden provenance hash and recorde
         }
     }
 });
+
+test('Management mock current-draft queries retain exact namespace and cursor with truthful Missing and foreign-host refusal',async()=>{
+    const run=await start();try{
+        const draft=run.session.facade.work.state.draft!,lookup={hostEpoch:draft.draft.hostEpoch,draftId:draft.draft.draftId};
+        const observed=await settle(run.session,run.session.client.query('get_draft',lookup));
+        expect(observed).toMatchObject({kind:'result',value:{cursor:run.session.facade.work.observations.state.cursor,draft:{status:'observed',value:draft}}});
+        expect(await settle(run.session,run.session.client.query('get_draft',{...lookup,draftId:'00009004-1111-4111-8111-111111111111'})))
+            .toMatchObject({kind:'result',value:{cursor:{sequence:'0'},draft:{status:'missing'}}});
+        expect(await settle(run.session,run.session.client.query('get_draft',{...lookup,hostEpoch:'00009003-1111-4111-8111-111111111111'})))
+            .toMatchObject({kind:'rejected',error:{code:'plan_host_mismatch'}});
+        expect(run.session.facade.work.state.draft).toEqual(draft);expect(run.session.delivery.lastFault).toBeUndefined();
+    }finally{run.dispose();}
+});
 test('Management preview duplicate profile review preserves immutable identity and future-launch preference', async () => {
     const { session, controller, dispose } = await start();
     try {
@@ -208,7 +221,9 @@ test('Management preview cancelled destination and absent metadata do not create
         expect(unavailable.controller.application).toBeUndefined();
         expect(unavailable.controller.runtime).toBeUndefined();
         await unavailable.controller.checkBridge();
-        expect(unavailable.session.records.map(row => row.method)).toEqual(['snapshot']);
+        expect(unavailable.session.records.map(row => row.method)).toEqual(['snapshot', 'get_draft']);
+        expect(decodeRequest(unavailable.session.records[1].request).body).toMatchObject({ type: 'query', query: { name: 'get_draft', input: {
+            hostEpoch: unavailable.session.facade.work.state.draft!.draft.hostEpoch, draftId: unavailable.session.facade.work.state.draft!.draft.draftId } } });
     }
     finally {
         unavailable.dispose();

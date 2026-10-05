@@ -1,4 +1,4 @@
-import type { CloseDisposition, Cursor, DiscardedDraft, DraftSnapshot, Event, EventBatch, GetOperationResult, OperationSnapshot, Snapshot } from '../generated/protocol';
+import type { CloseDisposition, Cursor, DiscardedDraft, DraftSnapshot, Event, EventBatch, GetDraftInput, GetDraftResult, GetOperationResult, OperationSnapshot, Snapshot } from '../generated/protocol';
 import { captureData, canonicalData, type DeepReadonly } from './wire';
 import { BridgeClient, type ClientFault, type ClientOutcome, type CallOptions } from './client';
 import { bindingEquivalent, operationRecoveryMatches, semanticPlanKey } from './relations';
@@ -6,7 +6,7 @@ import { bindingEquivalent, operationRecoveryMatches, semanticPlanKey } from './
 export type ObservationReason = 'epoch_changed' | 'stream_changed' | 'sequence_gap' | 'contradictory_duplicate' | 'duplicate_event'
   | 'unverifiable_duplicate' | 'revision_regressed' | 'revision_reused' | 'capture_changed' | 'terminal_changed'
   | 'pending_operation_omitted' | 'partial_inventory' | 'snapshot_invalidated' | 'buffer_limit'
-  | 'observation_limit' | 'malformed_event' | 'resume_mismatch' | 'disconnected' | 'close_obligation_mismatch' | 'discard_revision_mismatch';
+  | 'observation_limit' | 'malformed_event' | 'resume_mismatch' | 'disconnected' | 'close_obligation_mismatch' | 'discard_revision_mismatch' | 'draft_read_regressed';
 export interface ObservationState {
   readonly confidence: 'uninitialized' | 'authoritative' | 'partial' | 'stale';
   readonly resnapshotRequired: boolean;
@@ -44,6 +44,9 @@ export class ObservationStore {
   private operations = new Map<string, DeepReadonly<OperationSnapshot>>();
   private drafts = new Map<string, DeepReadonly<DraftSnapshot>>();
   private readonly discardedDrafts = new Map<string, DeepReadonly<DraftSnapshot>>();
+  // These cursors fence only their draft payload. Global event/operation
+  // sequence custody is retained until every intervening event is consumed.
+  private readonly draftWatermarks = new Map<string, { readonly cursor: DeepReadonly<Cursor>; readonly missing: boolean }>();
   private readonly digests = new Map<string, string>();
   private buffer: DeepReadonly<Event>[] = [];
   private buffering = false;
@@ -147,13 +150,46 @@ export class ObservationStore {
     const key = canonicalData([draft.draft.hostEpoch, draft.draft.draftId]);
     const previous = map.get(key) ?? this.discardedDrafts.get(key);
     const revision = counter(draft.draft.revision);
-    if (!previous) return map.size + this.discardedDrafts.size >= this.maximumDrafts ? 'observation_limit' : undefined;
+    if (!previous) return this.draftWatermarks.get(key)?.missing ? 'revision_reused'
+      : !this.draftWatermarks.has(key) && this.draftCount() >= this.maximumDrafts ? 'observation_limit' : undefined;
     if (!bindingEquivalent(previous.draft.document, draft.draft.document)) return 'capture_changed';
     const previousRevision = counter(previous.draft.revision);
     if (revision < previousRevision) return 'revision_regressed';
-    if (this.discardedDrafts.has(key) && revision === previousRevision) return 'revision_reused';
+    if (this.discardedDrafts.has(key)) return 'revision_reused';
     if (revision === previousRevision && !bindingEquivalent(previous, draft)) return 'revision_reused';
     return undefined;
+  }
+  private draftCount(): number { return new Set([...this.drafts.keys(), ...this.discardedDrafts.keys(), ...this.draftWatermarks.keys()]).size; }
+  /** An authoritative read never advances the shared stream cursor. */
+  observeDraftResult(input: GetDraftInput | DeepReadonly<GetDraftInput>, result: GetDraftResult | DeepReadonly<GetDraftResult>): boolean {
+    try {
+      const request = captureData(input), read = captureData(result), cursor = read.cursor;
+      counter(cursor.sequence);
+      if (cursor.hostEpoch !== request.hostEpoch) return this.invalidate('epoch_changed');
+      if (this.cursor && !sameStream(this.cursor, cursor)) return this.invalidate(this.cursor.hostEpoch !== cursor.hostEpoch ? 'epoch_changed' : 'stream_changed');
+      const key = canonicalData([request.hostEpoch, request.draftId]), previous = this.draftWatermarks.get(key);
+      if (previous && (!sameStream(previous.cursor, cursor) || counter(cursor.sequence) < counter(previous.cursor.sequence))) return this.invalidate('draft_read_regressed');
+      if (read.draft.status !== 'observed' && read.draft.status !== 'missing') return false;
+      if (read.draft.status === 'observed') {
+        const draft = read.draft.value;
+        if (draft.draft.hostEpoch !== request.hostEpoch || draft.draft.draftId !== request.draftId) return this.invalidate('capture_changed');
+        const problem = this.draftProblem(draft, this.drafts);
+        if (problem) return this.invalidate(problem);
+        const known = this.drafts.get(key);
+        if (previous && counter(cursor.sequence) === counter(previous.cursor.sequence)
+          && (previous.missing || !known || !bindingEquivalent(known, draft))) return this.invalidate('revision_reused');
+        this.drafts.set(key, draft);
+      } else {
+        // Discard has no event in this contract, so Missing may truthfully
+        // follow an observed payload at the very same stream sequence.
+        if (!this.drafts.has(key) && !this.discardedDrafts.has(key) && !previous && this.draftCount() >= this.maximumDrafts) return this.invalidate('observation_limit');
+        const draft = this.drafts.get(key);
+        if (draft) this.discardedDrafts.set(key, draft);
+        this.drafts.delete(key);
+      }
+      this.draftWatermarks.set(key, Object.freeze({ cursor, missing: read.draft.status === 'missing' }));
+      this.publish(); return true;
+    } catch { return this.invalidate('malformed_event'); }
   }
   observeDraft(input: DraftSnapshot | DeepReadonly<DraftSnapshot>): boolean {
     try {
@@ -184,7 +220,10 @@ export class ObservationStore {
     } catch { return this.invalidate('malformed_event'); }
   }
   forgetDiscardedDraft(hostEpoch: string, draftId: string): boolean {
-    return this.discardedDrafts.delete(canonicalData([hostEpoch, draftId]));
+    const key = canonicalData([hostEpoch, draftId]);
+    const removed = this.discardedDrafts.delete(key);
+    const watermarkRemoved = this.draftWatermarks.get(key)?.missing === true && this.draftWatermarks.delete(key);
+    return removed || watermarkRemoved;
   }
   acceptSnapshot(input: Snapshot | DeepReadonly<Snapshot>): boolean {
     const refuse = (reason: ObservationReason): false => { this.buffering = false; this.buffer = []; return this.invalidate(reason); };
@@ -253,11 +292,16 @@ export class ObservationStore {
         if (problem) return this.invalidate(problem);
         this.operations.set(event.body.operation.operationId, event.body.operation);
       } else if (event.body.type === 'draft_changed') {
-        const problem = this.draftProblem(event.body.draft, this.drafts);
-        if (problem) return this.invalidate(problem);
         const draftKey = canonicalData([event.body.draft.draft.hostEpoch, event.body.draft.draft.draftId]);
-        this.discardedDrafts.delete(draftKey);
-        this.drafts.set(draftKey, event.body.draft);
+        const watermark = this.draftWatermarks.get(draftKey), discarded = this.discardedDrafts.get(draftKey);
+        const fenced = watermark && sameStream(watermark.cursor, event.cursor) && sequence <= counter(watermark.cursor.sequence)
+          || discarded && counter(event.body.draft.draft.revision) <= counter(discarded.draft.revision);
+        if (!fenced) {
+          const problem = this.draftProblem(event.body.draft, this.drafts);
+          if (problem) return this.invalidate(problem);
+          this.drafts.set(draftKey, event.body.draft);
+          this.draftWatermarks.set(draftKey, Object.freeze({ cursor: event.cursor, missing: false }));
+        }
       } else if (event.body.type === 'host_close_deferred' && !this.closeProblem({ kind: 'deferred', obligations: event.body.obligations })) {
         return this.invalidate('close_obligation_mismatch');
       }
@@ -318,6 +362,20 @@ export class ObservationSession {
   }
   refresh(options: CallOptions = {}): Promise<ClientOutcome<Snapshot>> {
     return this.requestSnapshot(options);
+  }
+  /** Retained-draft reads belong to the ready subscription generation. */
+  async readDraft(input: GetDraftInput | DeepReadonly<GetDraftInput>, options: CallOptions = {}): Promise<ClientOutcome<GetDraftResult>> {
+    if (this.disposed) return { kind: 'fault', fault: { code: 'disposed', delivery: 'not_sent' } };
+    if (!this.stop || this.subscribing || !this.store.state.cursor || this.store.state.confidence === 'stale') {
+      return { kind: 'fault', fault: { code: 'stale_stream', delivery: 'not_sent' } };
+    }
+    const generation = this.generation;
+    const outcome = await this.client.query('get_draft', input, options);
+    if (this.disposed || generation !== this.generation) {
+      const request = outcome.kind === 'fault' ? outcome.fault.request : outcome.request;
+      return { kind: 'fault', fault: { code: this.disposed ? 'disposed' : 'stale_stream', delivery: 'may_have_reached_backend', ...(request ? { request } : {}) } };
+    }
+    return outcome;
   }
   private requestSnapshot(options: CallOptions, buffering = false): Promise<ClientOutcome<Snapshot>> {
     if (this.disposed) return Promise.resolve({ kind: 'fault', fault: { code: 'disposed', delivery: 'not_sent' } });

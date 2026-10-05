@@ -237,6 +237,14 @@ export function checkTranscript(steps) {
         if (observation.value?.operationId !== invocation.input.operationId) reject('transcript_operation_binding');
         observeOperation(observation.value);
       } else if (observation.status === 'missing' && [...admissions.values()].some(value => value.operationId === invocation.input.operationId)) reject('transcript_admitted_operation_missing');
+    } else if (!rejected && family === 'query' && invocation.name === 'get_draft') {
+      cursorShape(output.cursor);
+      if (output.cursor.hostEpoch !== invocation.input.hostEpoch || output.cursor.hostEpoch !== cursor.hostEpoch
+        || output.cursor.streamId !== cursor.streamId || !object(output.draft)) reject('transcript_draft_binding');
+      if (output.draft.status === 'observed' && (output.draft.value?.draft?.draftId !== invocation.input.draftId
+        || output.draft.value?.draft?.hostEpoch !== invocation.input.hostEpoch)) reject('transcript_draft_binding');
+      // This per-draft read may be ahead of buffered global events. It cannot
+      // advance their cursor or make an intervening operation event disappear.
     } else if (!rejected && family === 'query' && invocation.name === 'snapshot') {
       if (!equal(output.cursor, cursor)) reject('transcript_snapshot_cursor');
       // This inventory has no filter/pagination selector. A complete result

@@ -29,7 +29,7 @@ const inputs = [
   'crates/bridge-engine', 'crates/bridge-app', 'crates/bridge-contracts', 'crates/bridge-domain',
   'crates/bridge-native', 'crates/bridge-toml', 'crates/bridge-platform-windows', 'crates/bridge-platform-macos',
   'crates/bridge-journal-io',
-  'contracts/fixtures/sc08-open-clean-draft-reply.json'
+  'contracts'
 ];
 const sourcesBefore = fingerprintInputRecords(root, inputs);
 const required = {
@@ -51,7 +51,8 @@ const required = {
     'private_transfer_identity_failure_preserves_capture_draft_and_previous_acknowledgment',
     'secret_transfer_identity_failure_preserves_capture_draft_and_previous_acknowledgment',
     'partial_transfer_allocation_failure_keeps_payloads_and_burns_unpublished_successor_id',
-    'discarded_draft_identity_remains_burned_across_draft_and_protected_id_kinds'
+    'discarded_draft_identity_remains_burned_across_draft_and_protected_id_kinds',
+    'current_generation_lookup_is_immutable_and_preflight_refusals_keep_local_custody'
   ],
   configuration_semantics: [
     'semantic_equality_keeps_source_spelling_comments_and_unknown_keys',
@@ -86,6 +87,20 @@ const required = {
     'restart_recovery_uses_captured_digest_without_protected_payload_recreation',
     'foreign_destination_or_recovery_target_is_not_overwritten',
     'unstarted_recovery_proves_no_effect_and_invalidates_previous_host_drafts'
+  ],
+  configuration_services: [
+    'encoded_dispatch_read_history_stage_current_successor_missing_discard',
+    'immutable_getter_returns_clean_dirty_invalid_stale_without_io_or_ids',
+    'get_draft_foreign_host_refuses_before_lookup_and_same_host_absence_is_missing',
+    'metadata_requires_injected_protected_entry_and_save_restore_remain_unavailable',
+    'draft_and_operation_changes_share_one_consecutive_kernel_event_sequence',
+    'protected_capture_and_transfer_never_escape_replies_events_or_journal',
+    'failed_stage_reply_preflight_keeps_revision_and_original_protected_ref',
+    'failed_open_event_reservation_publishes_neither_draft_nor_cursor',
+    'read_projection_preflight_failure_preserves_all_existing_draft_states',
+    'construction_rejects_foreign_workspace_and_services_cannot_advertise_kernel_controls',
+    'closing_and_poisoned_engines_refuse_configuration_effects_but_getter_stays_immutable',
+    'real_host_handle_reconciles_staged_draft_and_discard_on_original_owner_thread'
   ],
   bridge_app: [
     'providers::tests::clock_samples_elapsed_then_wall_once_and_accepts_zero_elapsed',
@@ -193,12 +208,14 @@ try {
   cargo('format', ['fmt', '-p', 'bridge-engine', '-p', 'bridge-app', '--', '--check']);
   cargo('clippy', ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '-p', 'bridge-app', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
   const names = Object.keys(required);
-  const engineNames = names.filter(name => name !== 'bridge_app');
+  const engineNames = names.filter(name => name !== 'bridge_app' && name !== 'configuration_services');
   const output = cargo('compile-current-configuration-tests', ['test', '--locked', '--offline', '-p', 'bridge-engine', '--target', rust.hostTarget,
     ...engineNames.flatMap(name => ['--test', name]), '--no-run', '--message-format', 'json']);
   const providerOutput = cargo('compile-current-configuration-providers', ['test', '--locked', '--offline', '-p', 'bridge-app',
     '--target', rust.hostTarget, '--lib', '--no-run', '--message-format', 'json']);
-  const messages = [output, providerOutput].flatMap(text => {
+  const serviceOutput = cargo('compile-current-configuration-services', ['test', '--locked', '--offline', '-p', 'bridge-app',
+    '--target', rust.hostTarget, '--test', 'configuration_services', '--no-run', '--message-format', 'json']);
+  const messages = [output, providerOutput, serviceOutput].flatMap(text => {
     const current = text.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
     assert.equal(current.filter(message => message.reason === 'build-finished' && message.success === true).length, 1,
       'Require each current Cargo invocation to finish successfully');
@@ -206,16 +223,18 @@ try {
   });
   const artifacts = messages.filter(message => message.reason === 'compiler-artifact' && message.executable && message.profile.test
     && ((message.target.kind.includes('test') && engineNames.includes(message.target.name))
-      || (message.target.name === 'bridge_app' && message.target.kind.includes('lib'))));
-  assert.equal(artifacts.length, names.length, 'Current Cargo invocations must identify all four configuration and one provider test executable exactly once');
+      || (message.target.name === 'bridge_app' && message.target.kind.includes('lib'))
+      || (message.target.name === 'configuration_services' && message.target.kind.includes('test'))));
+  assert.equal(artifacts.length, names.length, 'Current Cargo invocations must identify all four configuration, one service and one provider test executable exactly once');
   for (const target of names) {
     const selected = artifacts.filter(artifact => artifact.target.name === target);
     assert.equal(selected.length, 1, `Require one current ${target} compiler artifact`);
     const artifact = selected[0];
     const provider = target === 'bridge_app';
-    assert.equal(realpathSync.native(artifact.manifest_path), realpathSync.native(path.join(root, `crates/${provider ? 'bridge-app' : 'bridge-engine'}/Cargo.toml`)));
+    const application = provider || target === 'configuration_services';
+    assert.equal(realpathSync.native(artifact.manifest_path), realpathSync.native(path.join(root, `crates/${application ? 'bridge-app' : 'bridge-engine'}/Cargo.toml`)));
     assert.equal(realpathSync.native(artifact.target.src_path), realpathSync.native(path.join(root,
-      provider ? 'crates/bridge-app/src/lib.rs' : `crates/bridge-engine/tests/${target}.rs`)));
+      provider ? 'crates/bridge-app/src/lib.rs' : `crates/${application ? 'bridge-app' : 'bridge-engine'}/tests/${target}.rs`)));
     const relation = relative(artifact.executable);
     assert.ok(relation.startsWith(`target/${rust.hostTarget}/`), 'Test artifact must remain inside the owning native target directory');
     const executable = ownedArtifactPath(root, relation), bytes = readFileSync(executable);
@@ -259,8 +278,8 @@ try {
     host: { platform: process.platform, architecture: process.arch, node: process.version },
     toolchain: { pin: rust.pin, nativeTarget: rust.hostTarget }, inputs, sourcesBefore, sourcesAfter, toolsBefore, toolsAfter,
     requiredTests: required, binaries, checks, failure,
-    boundary: 'Actual native-architecture engine and application-provider test executables: portable model, preparation and orchestration with synthetic DocumentOwner, SchemaSource, SensitiveEntry and TomlPreparation ports, controlled entropy refusal and current-host native clock/entropy calls; no native configuration ownership or runtime qualification',
-    portableModelObserved: passed, nativeTomlInvocationQualified: false, producerPolicyQualified: false,
+    boundary: 'Actual native-architecture engine, configuration-service and application-provider test executables: portable workspace, encoded dispatcher read/stage/current-draft reconciliation, shared kernel events, preparation and orchestration with synthetic DocumentOwner, SchemaSource, SensitiveEntry and TomlPreparation ports, controlled entropy refusal and current-host native clock/entropy calls; no native configuration ownership or runtime qualification',
+    portableModelObserved: passed, configurationDispatcherObserved: passed, nativeTomlInvocationQualified: false, producerPolicyQualified: false,
     physicalOwnerQualified: false, operationPortsAdopted: false, br14Accepted: false, nativeRuntimeQualified: false, releaseQualified: false
   }, null, 2) + '\n');
   console.log(JSON.stringify({ result: passed ? 'passed' : 'failed', tests: binaries.reduce((count, binary) => count + binary.executedTests.length, 0),

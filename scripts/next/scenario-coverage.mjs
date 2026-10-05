@@ -9,7 +9,7 @@ const required = Object.freeze({
   'SC-05': ['action:create_profile', 'action:edit_ordinary_profile', 'action:edit_isolated_profile', 'query:list_profiles'],
   'SC-06': ['command:request_import_discovery', 'query:list_import_sources', 'setup:windows_user_import'],
   'SC-07': ['action:archive_profile', 'action:restore_profile', 'action:delete_profile'],
-  'SC-08': ['command:open_draft', 'command:set_draft_changes', 'command:discard_draft'],
+  'SC-08': ['command:open_draft', 'command:set_draft_changes', 'command:discard_draft', 'query:get_draft'],
   'SC-09': ['query:read_configuration', 'command:set_draft_changes', 'command:request_sensitive_input'],
   'SC-10': ['action:save_configuration', 'action:restore_configuration', 'query:configuration_history'],
   'SC-11': ['query:check_runtime_release', ...['install','update','repair','adopt','remove','stop_managing','switch_source'].map(value => `action:runtime_${value}`)],

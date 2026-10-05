@@ -645,6 +645,26 @@ fn reply_kind_matches(request: &RequestBody, reply: &ReplyBody) -> bool {
     match (request, reply) {
         (_, ReplyBody::Rejected { .. }) => true,
         (
+            RequestBody::Query {
+                query: Query::GetDraft(input),
+            },
+            ReplyBody::Result {
+                result: ResultPayload::Query { query: output },
+            },
+        ) => match output.as_ref() {
+            QueryResult::GetDraft(result) => {
+                result.cursor.host_epoch == input.host_epoch
+                    && match &result.draft {
+                        Observation::Observed { value, .. } => {
+                            value.draft.host_epoch == input.host_epoch
+                                && value.draft.draft_id == input.draft_id
+                        }
+                        _ => true,
+                    }
+            }
+            _ => false,
+        },
+        (
             RequestBody::Query { query: input },
             ReplyBody::Result {
                 result: ResultPayload::Query { query: output },
@@ -726,5 +746,83 @@ fn reply_kind_matches(request: &RequestBody, reply: &ReplyBody) -> bool {
                 )
         ),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod draft_reply_tests {
+    use super::*;
+
+    #[test]
+    fn current_draft_reply_refuses_codec_valid_selector_substitution() {
+        let request = decode_request(include_bytes!(
+            "../../../../contracts/fixtures/sc08-get-current-dirty-draft-request.json"
+        ))
+        .unwrap()
+        .into_inner();
+        let original = decode_reply(include_bytes!(
+            "../../../../contracts/fixtures/sc08-get-current-dirty-draft-reply.json"
+        ))
+        .unwrap()
+        .into_inner();
+        assert!(reply_kind_matches(&request.body, &original.body));
+        for foreign_host in [false, true] {
+            let mut forged = original.clone();
+            let ReplyBody::Result {
+                result: ResultPayload::Query { query },
+            } = &mut forged.body
+            else {
+                panic!()
+            };
+            let QueryResult::GetDraft(result) = query.as_mut() else {
+                panic!()
+            };
+            let Observation::Observed { value, .. } = &mut result.draft else {
+                panic!()
+            };
+            if foreign_host {
+                let host = HostEpoch::new("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee").unwrap();
+                value.draft.host_epoch = host.clone();
+                result.cursor.host_epoch = host;
+            } else {
+                value.draft.draft_id =
+                    DraftId::new("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee").unwrap();
+            }
+            let validated = decode_reply(&serde_json::to_vec(&forged).unwrap()).unwrap();
+            assert!(!reply_kind_matches(
+                &request.body,
+                &validated.as_inner().body
+            ));
+        }
+    }
+
+    #[test]
+    fn missing_draft_reply_still_requires_the_requested_host() {
+        let request = decode_request(include_bytes!(
+            "../../../../contracts/fixtures/sc08-get-missing-draft-request.json"
+        ))
+        .unwrap()
+        .into_inner();
+        let mut reply = decode_reply(include_bytes!(
+            "../../../../contracts/fixtures/sc08-get-missing-draft-reply.json"
+        ))
+        .unwrap()
+        .into_inner();
+        assert!(reply_kind_matches(&request.body, &reply.body));
+        let ReplyBody::Result {
+            result: ResultPayload::Query { query },
+        } = &mut reply.body
+        else {
+            panic!()
+        };
+        let QueryResult::GetDraft(result) = query.as_mut() else {
+            panic!()
+        };
+        result.cursor.host_epoch = HostEpoch::new("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee").unwrap();
+        let validated = decode_reply(&serde_json::to_vec(&reply).unwrap()).unwrap();
+        assert!(!reply_kind_matches(
+            &request.body,
+            &validated.as_inner().body
+        ));
     }
 }

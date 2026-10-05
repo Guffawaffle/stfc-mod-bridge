@@ -1,17 +1,17 @@
 {
   "schemaVersion": "bridge-browser-scenario-manifest/v1",
-  "scripts": 150,
-  "fixtures": 458,
-  "sourceIndexSha256": "9567c3d2cecdc85007fe09230ab3554e2b2363446d63e2a7840d78d8d57a8362",
-  "sourceProtocolManifestSha256": "7e82722972957d5ef8a50da33790f5046e36c68d4b96b5825c2553ce20156e4d",
-  "browserValidatorManifestSha256": "e6ea539d9e296cee53b009ba893d8b7fd7aeecf5fb161b454a0ea37f5f8a545c",
+  "scripts": 156,
+  "fixtures": 470,
+  "sourceIndexSha256": "6dbf09eaf1a808b6ef464a7889d9487d42ef547f7cfe4f08c9397ba7a7e3bddb",
+  "sourceProtocolManifestSha256": "f30c9af41e6b53ffc00ac29bd660c6b83492f3f68e98c0206dc3882dcbfec3fd",
+  "browserValidatorManifestSha256": "07be65280ce80a60789a4564f6e379fbacd76707cde2d37bd95ae468e6474d73",
   "correlationSlots": [
     "requestId"
   ],
   "files": [
     {
       "path": "ui/scenarios/catalog.json",
-      "sha256": "2247558c8067809c65af86876778996c269ceb4e1bb83277b68e53b606263879"
+      "sha256": "3fc06d531c1eb26946586ad81db521551ec8e0a6c6ec75a210aa8213aaf406ef"
     }
   ],
   "engineExecutionQualified": false,

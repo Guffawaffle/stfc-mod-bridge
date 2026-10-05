@@ -14,6 +14,33 @@ Settings and Data Sync share the captured draft. The host must compose target
 navigation and close decisions so Save succeeds before changing target, Discard
 only releases draft intent, and Stay preserves the original target.
 
+`bridge-app::configuration::ConfigurationServices` composes one privately owned
+workspace with the operation ports inside the engine. `ApplicationServices`
+exposes typed Read, History, Open, Stage, Discard and protected-entry methods;
+the encoded dispatcher supplies their reply evidence and the single kernel
+event stream. The engine validates the fixed service epoch and freezes the
+implemented-command inventory at construction. Protected entry is advertised
+only when the injected entry port declares availability. Save and Restore remain
+unavailable until their opaque preparation and retained worker custody are
+adopted; delegating other operation ports does not qualify configuration writes.
+
+Before publishing a document observation, draft or protected transfer, the
+service preflights the complete reply and every consecutive `DraftChanged`
+event against the codec and host observation budget. A refused preflight keeps
+the prior workspace and cursor. Fresh Open and Stage emit draft changes; exact
+lost-ack Stage replay emits no duplicate event. Discard removes the draft and
+returns its exact receipt without inventing a successor.
+
+`get_draft` is an immutable lookup by host epoch and draft ID. It returns the
+actual clean, dirty, invalid or stale generation, or Missing for a same-host
+absent ID, without native owner I/O or identity allocation. Foreign hosts refuse
+before lookup. Its cursor is a per-draft read watermark and cannot advance the
+client's global event cursor past intervening operation events. Reconciliation
+adopts only an actual same-document snapshot while the renderer's captured
+target, draft and local input custody still match. Missing, mismatched or changed
+local custody preserves intent with a conflict; it cannot silently reopen or
+retarget a draft.
+
 Staging replaces the complete edit set at an exact draft generation. The actual
 Rust contract codec checks its result, including the complete encoded envelope
 size, before the workspace advances revision or protected custody. An exact
@@ -58,7 +85,8 @@ create-new semantics. Terminal replay performs no additional writes or revision
 bumps. An exact matching Save installs a clean successor baseline once; newer
 local edits remain stale and available for an explicit recovery choice.
 
-The composition layer must implement `OperationPorts` adoption. It must persist
+The composition layer must still implement configuration `OperationPorts`
+preparation and worker custody. It must persist
 executing admission and the owner's exact recovery binding before invoking
 `begin_configuration`, and retain the actual lease through advancement and a
 verified terminal or safe recovery boundary. Observation loss or caller
@@ -84,13 +112,18 @@ The command accepts no overrides. It uses the tracked Node and Rust releases,
 the scoped Rust child context, locked/offline dependencies and the actual native
 Windows x64 or Apple Silicon target. It checks engine and application formatting
 and strict all-target Clippy, then selects all four configuration test
-executables and the application-provider library test executable from their
+executables, the configuration-service integration test executable and the
+application-provider library test executable from their
 current invocations' Cargo JSON compiler artifacts. It verifies owning manifest
 and source, physical confinement to the owning native target directory, native
 executable architecture and byte hashes. It inventories and executes every
 required test, refusing missing, duplicate, ignored or filtered tests. Current
-inventories cover 18 draft, 11 semantics, 13 transaction, 4 recovery and 16
-application-provider tests. Provider controls cover one draw, refusal, closed
+inventories cover 19 draft, 11 semantics, 13 transaction, 4 recovery, 12 service
+and 16 application-provider tests, for 75 tests across six executables. Service
+controls use the real encoded dispatcher and original-thread host handle, check
+immutable getter correlation, command availability, shared event sequencing,
+protected non-disclosure and refusal before workspace publication. Provider
+controls cover one draw, refusal, closed
 constructor errors and absence of retry/cache; the supported-host test also
 calls the actual current-host clock and entropy providers. Passing on one host
 does not establish provider execution on the other host.
@@ -134,12 +167,15 @@ The remaining integration and acceptance seams are:
 - Implement ordinary-user physical `DocumentOwner` and native `SensitiveEntry`
   adapters with private staging, exclusion, flush, backup, create-new, atomic
   replacement and exact Restore/recovery custody on both required platforms.
-- Adopt the workspace into `OperationPorts`, dispatcher, replay, events and
-  close/recovery orchestration without wiring synthetic support into production.
+- Adopt opaque configuration preparation into `OperationPorts` and retained
+  workers, replay and close/recovery orchestration without wiring synthetic
+  support into production. The read/stage dispatcher and event composition above
+  do not establish Save/Restore custody.
 - Retain prerequisite native receipts, independent candidate review and the
   package qualification evidence required by the operating contract.
 
-A passing portable receipt therefore keeps `br14Accepted`, native TOML,
+A passing portable receipt observes the configuration read/stage dispatcher but
+keeps `br14Accepted`, native TOML,
 producer policy, physical owner, `OperationPorts` adoption, native runtime and
 release qualification false. Root owns suite registry and campaign admission;
 this script does not create or modify either.
@@ -155,5 +191,7 @@ The source criteria are BR14-01 (exact sparse/no-change preparation), BR14-02
 (captured draft/protected-reference transfer and retry), BR14-04 (physical
 revision/backup revalidation before durable begin), BR14-05 (cancellation,
 terminal reconciliation and retained draft), and BR14-06 (identity-only restart
-recovery and fail-closed executable/evidence inventory). Their portable tests
+recovery and fail-closed executable/evidence inventory), and BR14-07 (one
+engine-owned service workspace, current-draft correlation, shared event stream
+and reply/event preflight before publication). Their portable tests
 leave the native integration boundaries above unqualified.

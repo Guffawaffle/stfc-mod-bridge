@@ -150,6 +150,14 @@ export async function createHomeSession(mode: HomeMode, options: { draftOutcome?
     instructions = 'Choose Synthetic install A and Synthetic profile · isolated 2, Use target, then Use existing isolated data. Review launch → Confirm action gives admission; Refresh action outcome observes the accepted completion.';
   } else if (mode === 'dirty_draft') {
     dirty = draftValue(await sources.reply('sc08-stage-dirty-draft-reply'));
+    const observed = await sources.reply('sc09-schema-all-field-types-reply');
+    if (observed.body.type !== 'result' || observed.body.result.type !== 'query' || observed.body.result.query.name !== 'read_configuration'
+      || observed.body.result.query.output.status !== 'observed') throw new Error('home_draft_evidence');
+    const getDraft: Request = { protocolVersion: 1, requestId: '00009000-1111-4111-8111-111111111111', body: { type: 'query', query: {
+      name: 'get_draft', input: { hostEpoch: dirty.draft.hostEpoch, draftId: dirty.draft.draftId } } } };
+    const currentDraft: Reply = { protocolVersion: 1, requestId: getDraft.requestId, body: { type: 'result', result: { type: 'query', query: {
+      name: 'get_draft', output: { cursor: snapshot.cursor, draft: { status: 'observed', evidence: observed.body.result.query.output.evidence, value: dirty } } } } } };
+    steps.push(exchange(getDraft, currentDraft));
     if (draftOutcome === 'discard') steps.push(exchange(await sources.request('sc08-discard-draft-request'), await sources.reply('sc08-discard-draft-reply')));
     else {
       const synchronize = await sources.request('sc10-restage-dirty-draft-request');

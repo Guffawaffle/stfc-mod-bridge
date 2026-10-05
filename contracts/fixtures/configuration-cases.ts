@@ -4,7 +4,7 @@ import type {
   PublicConfigValue, Request, Reply, SaveApplicationPreferencesInput, SchemaBinding, PlanSemantics, DraftRef, SetDraftChangesResult, PrivateValueRef, SecretRef
 } from '../../ui/src/generated/protocol.js';
 import { commandReply, commandRequest, ordinaryBinding, ordinarySelector, protocolEvent, queryReply, queryRequest, rejectedReply, syntheticId } from './helpers.ts';
-import { cursor, digest, eventFixture, hostEpoch, inventory, observed, operation, prepared, refusalFixture, replyFixture, requestFixture, unavailable } from './authoring.ts';
+import { cursor, digest, eventFixture, evidence, hostEpoch, inventory, observed, operation, prepared, refusalFixture, replyFixture, requestFixture, unavailable } from './authoring.ts';
 import type { FixtureHooks, GoldenCatalog, GoldenFixture, GoldenTranscript, ScenarioId } from './model.ts';
 
 export const schemaBinding: SchemaBinding = {
@@ -97,6 +97,32 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
     commandReply(requestId, { name: 'discard_draft', output: { draftId: dirtyDraft.draft.draftId, hostEpoch, previousRevision: '2' } }), ['discard']);
   const invalidDraft: DraftSnapshot = { ...dirtyDraft, edits: [{ kind: 'set_public', fieldId: 'setting.integer', value: { kind: 'string', value: 'still editable' } }], apply: ['next_launch'], state: 'invalid', validation: [{ fieldId: 'setting.integer', code: 'invalid_type' }] };
   const staleDraft: DraftSnapshot = { ...dirtyDraft, state: 'stale' };
+  const draftReadCursor = { ...cursor, sequence: '7' };
+  for (const [index, draft] of [cleanDraft, dirtyDraft, invalidDraft, staleDraft].entries()) {
+    const lookupId = syntheticId(2950 + index);
+    pair(`sc08-get-current-${draft.state}-draft`, 'SC-08', 'Read the current scoped successor without opening or restaging a draft',
+      queryRequest(lookupId, { name: 'get_draft', input: { hostEpoch, draftId: draft.draft.draftId } }),
+      queryReply(lookupId, { name: 'get_draft', output: { cursor: draftReadCursor, draft: observed(draft) } }), [draft.state, 'reconcile']);
+  }
+  pair('sc08-get-missing-draft', 'SC-08', 'A same-host discarded draft is missing without creating a replacement',
+    queryRequest(syntheticId(2954), { name: 'get_draft', input: { hostEpoch, draftId: dirtyDraft.draft.draftId } }),
+    queryReply(syntheticId(2954), { name: 'get_draft', output: { cursor: draftReadCursor, draft: { status: 'missing', evidence } } }), ['missing', 'reconcile']);
+  pair('sc08-get-foreign-host-draft', 'SC-08', 'A foreign host lookup refuses before consulting draft custody',
+    queryRequest(syntheticId(2955), { name: 'get_draft', input: { hostEpoch: syntheticId(2990), draftId: dirtyDraft.draft.draftId } }),
+    rejectedReply(syntheticId(2955), { code: 'plan_host_mismatch', retryDisposition: 'after_resnapshot', violations: [] }), ['foreign-host']);
+  fixtures.push(refusalFixture('sc08-get-draft-cursor-epoch-mismatch', 'SC-08', 'A draft observation cannot carry a cursor from a different host', 'reply',
+    queryReply(syntheticId(2956), { name: 'get_draft', output: { cursor: { ...draftReadCursor, hostEpoch: syntheticId(2990) }, draft: observed(dirtyDraft) } })));
+  const extraLookup = queryRequest(syntheticId(2957), { name: 'get_draft', input: { hostEpoch, draftId: dirtyDraft.draft.draftId } });
+  fixtures.push(refusalFixture('sc08-get-draft-extra-selector', 'SC-08', 'The immutable lookup has no caller-selected revision or target substitution', 'request',
+    { ...extraLookup, body: { type: 'query', query: { name: 'get_draft', input: { hostEpoch, draftId: dirtyDraft.draft.draftId, revision: '2' } } } }, false));
+  const mismatchedRequest = requestFixture('sc08-get-draft-mismatch-request', 'SC-08', 'An individually valid read cannot substitute another draft',
+    queryRequest(syntheticId(2958), { name: 'get_draft', input: { hostEpoch, draftId: syntheticId(2991) } }));
+  const mismatchedReply = replyFixture('sc08-get-draft-mismatch-reply', 'SC-08', 'An individually valid read cannot substitute another draft',
+    queryReply(syntheticId(2958), { name: 'get_draft', output: { cursor: draftReadCursor, draft: observed(dirtyDraft) } }));
+  fixtures.push(mismatchedRequest, mismatchedReply);
+  transcripts.push({ id: 'sc08-get-draft-mismatch-journey', scenario: 'SC-08', case: 'Cross-message draft identity is exact',
+    steps: [{ type: 'boundary', reason: 'initial', cursor }, { type: 'exchange', request: mismatchedRequest.id, reply: mismatchedReply.id }],
+    expected: { accepted: false, code: 'transcript_draft_binding' } });
   for (const draft of [cleanDraft, dirtyDraft, invalidDraft, staleDraft]) fixtures.push(eventFixture(`sc08-${draft.state}-event`, 'SC-08', `Retain ${draft.state} draft state explicitly`, protocolEvent({ ...cursor, sequence: '1' }, { type: 'draft_changed', draft }), [draft.state]));
   const foreignEvent = protocolEvent({ ...cursor, hostEpoch: syntheticId(2200), sequence: '1' }, { type: 'draft_changed', draft: dirtyDraft });
   fixtures.push(refusalFixture('sc08-foreign-host-draft-event', 'SC-08', 'Draft events cannot cross their captured host epoch', 'event', foreignEvent));
@@ -127,6 +153,8 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
     commandRequest(requestId, { name: 'set_draft_changes', input: { draft: cleanDraft.draft, edits } }),
     commandReply(requestId, { name: 'set_draft_changes', output: stageAcknowledgement(cleanDraft.draft, mixedDraft) }), ['mixed-timing']);
   const sensitiveLeak: DraftSnapshot = { ...invalidDraft, edits: [{ kind: 'set_public', fieldId: 'sync.token', value: { kind: 'string', value: 'synthetic-leak-marker' } }], validation: [{ fieldId: 'sync.token', code: 'secret_reference_required' }] };
+  fixtures.push(refusalFixture('sc09-get-draft-secret-echo', 'SC-09', 'A current-draft read cannot expose protected payloads as public edits', 'reply',
+    queryReply(syntheticId(2959), { name: 'get_draft', output: { cursor: draftReadCursor, draft: observed(sensitiveLeak) } })));
   fixtures.push(refusalFixture('sc09-invalid-draft-secret-echo', 'SC-09', 'Even invalid draft projections cannot expose a secret field as a public value', 'reply', commandReply(id(), { name: 'set_draft_changes', output: stageAcknowledgement(cleanDraft.draft, sensitiveLeak) })));
   const aliasCollision = clone(snapshot);
   aliasCollision.schema.fields[1].aliases = [aliasCollision.schema.fields[0].path];

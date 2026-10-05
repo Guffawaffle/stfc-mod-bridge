@@ -33,7 +33,10 @@ test('Home preview every mode validates exact composed wire frames and hashes al
         expect(step.request.requestId).toBe(step.reply.requestId);
       }
       expect(run.facade.work.state.selector).toBeUndefined(); await connect(run);
-      expect(run.requests.map(record => record.method)).toEqual(['snapshot']); expect(run.transport.state.lastFault).toBeUndefined();
+      expect(run.requests.map(record => record.method)).toEqual(mode === 'dirty_draft' ? ['snapshot', 'get_draft'] : ['snapshot']);
+      if (mode === 'dirty_draft') expect(decodeRequest(run.requests[1].frame).body).toMatchObject({ type: 'query', query: { name: 'get_draft', input: {
+        hostEpoch: run.facade.work.state.draft!.draft.hostEpoch, draftId: run.facade.work.state.draft!.draft.draftId } } });
+      expect(run.transport.state.lastFault).toBeUndefined();
     } finally { run.dispose(); }
   }
 });
@@ -114,7 +117,16 @@ test('Home preview dirty draft survives view navigation and Stay then exact revi
   try {
     await connect(run); const retained = canonicalData(run.facade.work.state.draft); const edits = canonicalData(run.facade.work.state.edits);
     run.facade.navigate('engineering'); run.facade.navigate('home'); expect(canonicalData(run.facade.work.state.draft)).toBe(retained); expect(canonicalData(run.facade.work.state.edits)).toBe(edits);
-    expect(run.facade.requestTarget(selector(run, true))).toBe(false); expect(run.facade.stay()).toBe(true); expect(run.requests).toHaveLength(1);
+    expect(run.facade.requestTarget(selector(run, true))).toBe(false); expect(run.facade.stay()).toBe(true);
+    expect(run.requests.map(row => row.method)).toEqual(['snapshot', 'get_draft']);
+    const getDraft = decodeRequest(run.requests[1].frame);
+    expect(getDraft.body).toEqual({ type: 'query', query: { name: 'get_draft', input: {
+      hostEpoch: run.facade.work.state.draft!.draft.hostEpoch, draftId: run.facade.work.state.draft!.draft.draftId } } });
+    const read = run.script.steps[1];
+    if (read.type !== 'exchange') throw new Error('home_draft_read_step');
+    const reply = decodeReply(JSON.stringify(read.reply));
+    expect(reply.body).toMatchObject({ type: 'result', result: { type: 'query', query: { name: 'get_draft', output: {
+      cursor: run.facade.work.observations.state.cursor, draft: { status: 'observed', value: run.facade.work.state.draft } } } } });
     expect(run.facade.requestTarget(selector(run, true))).toBe(false); await settled(run, run.facade.prepareSave());
     expect(run.facade.state.transition.kind).toBe('review'); expect(run.facade.work.state.draft?.draft.revision).toBe('3');
     expect(run.facade.state.transition.kind === 'review' && run.facade.state.transition.plan).toEqual(frame('sc10-save-restaged-draft-reply').body.result.command.output);

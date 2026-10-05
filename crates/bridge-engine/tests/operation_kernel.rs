@@ -2,6 +2,7 @@
 //! filesystem state. These fixtures exercise no game, account or platform API.
 use bridge_contracts::v1::*;
 use bridge_engine::operations::*;
+use bridge_engine::services::ApplicationServices;
 use std::{
     collections::BTreeMap,
     fs::{File, OpenOptions},
@@ -334,6 +335,7 @@ impl Owner {
         }
     }
 }
+impl ApplicationServices for Owner {}
 impl OperationPorts for Owner {
     type Lease = Lease;
     fn capture(
@@ -671,7 +673,7 @@ fn request(body: RequestBody) -> ValidatedRequest {
     )
     .unwrap()
 }
-fn command<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+fn command<P: OperationPorts + ApplicationServices, J: DurableJournal, I: IdentitySource>(
     engine: &mut Engine<P, J, Clock, I>,
     command: Command,
 ) -> ReplyBody {
@@ -681,12 +683,12 @@ fn command<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
         .into_inner()
         .body
 }
-fn prepare<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+fn prepare<P: OperationPorts + ApplicationServices, J: DurableJournal, I: IdentitySource>(
     engine: &mut Engine<P, J, Clock, I>,
 ) -> PreparedPlan {
     prepare_for(engine, intent())
 }
-fn prepare_for<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+fn prepare_for<P: OperationPorts + ApplicationServices, J: DurableJournal, I: IdentitySource>(
     engine: &mut Engine<P, J, Clock, I>,
     intent: MutationIntent,
 ) -> PreparedPlan {
@@ -700,7 +702,7 @@ fn prepare_for<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
         _ => panic!("preparation rejected"),
     }
 }
-fn commit<P: OperationPorts, J: DurableJournal, I: IdentitySource>(
+fn commit<P: OperationPorts + ApplicationServices, J: DurableJournal, I: IdentitySource>(
     engine: &mut Engine<P, J, Clock, I>,
     input: CommitInput,
 ) -> OperationSnapshot {
@@ -2768,6 +2770,7 @@ impl IndependentLaunchOwner {
         }
     }
 }
+impl ApplicationServices for IndependentLaunchOwner {}
 impl OperationPorts for IndependentLaunchOwner {
     type Lease = Lease;
     fn capture(
@@ -2966,7 +2969,7 @@ impl OperationPorts for IndependentLaunchOwner {
     }
 }
 
-fn assert_complete_close_boundary<P: OperationPorts>(
+fn assert_complete_close_boundary<P: OperationPorts + ApplicationServices>(
     engine: &mut Engine<P, FileJournal, Clock, Ids>,
     expected: &[(OperationId, SessionBinding)],
 ) {

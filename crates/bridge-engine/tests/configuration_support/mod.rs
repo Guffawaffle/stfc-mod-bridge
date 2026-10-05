@@ -6,7 +6,7 @@ use bridge_engine::configuration::*;
 use bridge_toml::{TomlOverride, TomlPath, TomlSnapshot, TomlTable};
 use sha2::{Digest, Sha256 as Hasher};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeMap, VecDeque},
     rc::Rc,
 };
@@ -80,8 +80,12 @@ impl ConfigurationIds for Ids {
 pub struct Entry {
     pub outcome: Option<ProtectedEntryOutcome>,
     pub additional: VecDeque<ProtectedEntryOutcome>,
+    pub unavailable: bool,
 }
 impl SensitiveEntry for Entry {
+    fn is_available(&self) -> bool {
+        !self.unavailable
+    }
     fn capture(
         &mut self,
         _: &RequestSensitiveInputInput,
@@ -359,6 +363,8 @@ impl SchemaSource for Schemas {
 }
 pub struct State {
     pub read: DocumentRead,
+    pub resolves: Cell<usize>,
+    pub reads: Cell<usize>,
     pub effects: usize,
     pub busy: bool,
     pub fail_backup: bool,
@@ -386,6 +392,7 @@ impl DocumentOwner for Owner {
     type Transaction = Tx;
     fn resolve(&mut self, _: &TargetSelector) -> ConfigurationResult<DocumentRead> {
         let s = self.0.borrow();
+        s.resolves.set(s.resolves.get() + 1);
         Ok(DocumentRead {
             binding: s.read.binding.clone(),
             bytes: s.read.bytes.clone(),
@@ -393,6 +400,7 @@ impl DocumentOwner for Owner {
     }
     fn read(&mut self, _: &DocumentBinding) -> ConfigurationResult<DocumentRead> {
         let s = self.0.borrow();
+        s.reads.set(s.reads.get() + 1);
         Ok(DocumentRead {
             binding: s.read.binding.clone(),
             bytes: s.read.bytes.clone(),
@@ -594,6 +602,7 @@ pub struct FixtureOptions {
     pub candidate: Option<(String, TomlSnapshot)>,
     pub ids: Rc<RefCell<IdentityControl>>,
     pub captures: Vec<ProtectedEntryOutcome>,
+    pub entry_unavailable: bool,
 }
 pub fn workspace_with_options(
     text: &str,
@@ -636,6 +645,8 @@ pub fn workspace_with_options(
         };
     }
     let state = Rc::new(RefCell::new(State {
+        resolves: Cell::new(0),
+        reads: Cell::new(0),
         read: DocumentRead {
             binding: binding.clone(),
             bytes: text.as_bytes().to_vec(),
@@ -709,6 +720,7 @@ pub fn workspace_with_options(
             Entry {
                 outcome: entry,
                 additional: options.captures.into(),
+                unavailable: options.entry_unavailable,
             },
             Ids {
                 next: 20000,

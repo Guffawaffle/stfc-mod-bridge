@@ -4,6 +4,7 @@ mod bindings;
 pub mod journal;
 mod ports;
 
+use crate::services::{ApplicationResult, ApplicationServices};
 use bridge_contracts::v1::*;
 pub use journal::{DurableOperation, DurablePhase, FileJournal, JournalRecord};
 pub use ports::*;
@@ -92,7 +93,12 @@ impl ClockState {
 /// The host owns this value through safe shutdown. Dropping a request, renderer,
 /// channel or client handle has no relationship to worker exclusion ownership.
 /// Actual process death drops workers; restart uses retained journal evidence.
-pub struct Engine<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> {
+pub struct Engine<
+    P: OperationPorts + ApplicationServices,
+    J: DurableJournal,
+    C: HostClock,
+    I: IdentitySource,
+> {
     ports: P,
     journal: J,
     clock: C,
@@ -109,9 +115,12 @@ pub struct Engine<P: OperationPorts, J: DurableJournal, C: HostClock, I: Identit
     closing: bool,
     poisoned: bool,
     observation_budget: usize,
+    service_commands: Vec<CommandId>,
 }
 
-impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engine<P, J, C, I> {
+impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I: IdentitySource>
+    Engine<P, J, C, I>
+{
     pub fn open(
         ports: P,
         journal: J,
@@ -136,6 +145,25 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             return Err(KernelFailure::InvalidPortResult);
         }
         if host.preparation_lifetime_millis == 0 {
+            return Err(KernelFailure::InvalidPortResult);
+        }
+        if ports
+            .configuration_host_epoch()
+            .is_some_and(|epoch| epoch != &host.epoch)
+        {
+            return Err(KernelFailure::InvalidPortResult);
+        }
+        let implemented = ports.implemented_commands();
+        if implemented.iter().enumerate().any(|(index, command)| {
+            !matches!(
+                command,
+                CommandId::OpenDraft
+                    | CommandId::SetDraftChanges
+                    | CommandId::DiscardDraft
+                    | CommandId::RequestSensitiveInput
+            ) || implemented[..index].contains(command)
+        }) || (!implemented.is_empty() && ports.configuration_host_epoch().is_none())
+        {
             return Err(KernelFailure::InvalidPortResult);
         }
         let mut operations: BTreeMap<OperationId, DurableOperation> = BTreeMap::new();
@@ -196,6 +224,7 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             closing: false,
             poisoned: false,
             observation_budget,
+            service_commands: implemented,
         };
         let interrupted = engine
             .operations
@@ -243,15 +272,21 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
 
     pub fn dispatch(&mut self, request: ValidatedRequest) -> Result<ValidatedReply, KernelFailure> {
         let request = request.into_inner();
-        let result = match request.body {
-            RequestBody::Command { command } => {
-                self.command(command).map(|command| ResultPayload::Command {
-                    command: Box::new(command),
-                })
+        let result = if let Some(result) = self.application_request(&request)? {
+            result
+        } else {
+            match request.body {
+                RequestBody::Command { command } => {
+                    self.command(command).map(|command| ResultPayload::Command {
+                        command: Box::new(command),
+                    })
+                }
+                RequestBody::Query { query } => {
+                    self.query(query).map(|query| ResultPayload::Query {
+                        query: Box::new(query),
+                    })
+                }
             }
-            RequestBody::Query { query } => self.query(query).map(|query| ResultPayload::Query {
-                query: Box::new(query),
-            }),
         };
         let body = match result {
             Ok(result) => ReplyBody::Result { result },
@@ -263,6 +298,215 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
             body,
         };
         validated_reply(reply)
+    }
+
+    fn application_request(
+        &mut self,
+        request: &Request,
+    ) -> Result<Option<ApplicationResult<ResultPayload>>, KernelFailure> {
+        let is_application = matches!(
+            &request.body,
+            RequestBody::Command {
+                command: Command::OpenDraft(_)
+                    | Command::SetDraftChanges(_)
+                    | Command::DiscardDraft(_)
+                    | Command::RequestSensitiveInput(_)
+            } | RequestBody::Query {
+                query: Query::ReadConfiguration(_)
+                    | Query::ConfigurationHistory(_)
+                    | Query::GetDraft(_)
+            }
+        );
+        if !is_application {
+            return Ok(None);
+        }
+        if let RequestBody::Command { command } = &request.body {
+            let id = match command {
+                Command::OpenDraft(_) => CommandId::OpenDraft,
+                Command::SetDraftChanges(_) => CommandId::SetDraftChanges,
+                Command::DiscardDraft(_) => CommandId::DiscardDraft,
+                Command::RequestSensitiveInput(_) => CommandId::RequestSensitiveInput,
+                _ => unreachable!("application command classification"),
+            };
+            if !self.service_commands.contains(&id) {
+                return Ok(Some(Err(error(ErrorCode::UnsupportedCapability))));
+            }
+        }
+        if let RequestBody::Query {
+            query: Query::GetDraft(input),
+        } = &request.body
+        {
+            if input.host_epoch != self.host.epoch {
+                return Ok(Some(Err(
+                    crate::configuration::ConfigurationFailure::HostMismatch.bridge_error(),
+                )));
+            }
+        } else if let Err(error) = self.require_open() {
+            return Ok(Some(Err(error)));
+        }
+        let evidence = if matches!(&request.body, RequestBody::Query { .. }) {
+            match self.evidence() {
+                Ok(evidence) => Some(evidence),
+                Err(error) => return Ok(Some(Err(error))),
+            }
+        } else {
+            None
+        };
+        let cursor = self.cursor();
+        let budget = self.observation_budget;
+        let mut preflight_failure = None;
+        let mut prepared_payload = None;
+        let mut prepared_events = vec![];
+        let mut preflight = |payload: ResultPayload, changed: &[DraftSnapshot]| {
+            if prepared_payload.is_some() {
+                preflight_failure = Some(KernelFailure::InvalidPortResult);
+                return Err(error(ErrorCode::InternalFailure));
+            }
+            match preflight_application(&request.request_id, &cursor, budget, &payload, changed) {
+                Ok(events) => {
+                    prepared_payload = Some(payload);
+                    prepared_events = events;
+                    Ok(())
+                }
+                Err(failure) => {
+                    preflight_failure = Some(failure);
+                    Err(error(ErrorCode::InternalFailure))
+                }
+            }
+        };
+        let result = match &request.body {
+            RequestBody::Command { command } => match command {
+                Command::OpenDraft(input) => self
+                    .ports
+                    .open_draft(input, &mut |snapshot| {
+                        if snapshot.draft.document != input.document
+                            || snapshot.draft.host_epoch != cursor.host_epoch
+                        {
+                            return Err(error(ErrorCode::InvalidRequest));
+                        }
+                        preflight(
+                            command_payload(CommandResult::OpenDraft(snapshot.clone())),
+                            std::slice::from_ref(snapshot),
+                        )
+                    })
+                    .map(|snapshot| command_payload(CommandResult::OpenDraft(snapshot))),
+                Command::SetDraftChanges(input) => self
+                    .ports
+                    .set_draft_changes(input.clone(), &mut |receipt, changed| {
+                        if receipt.accepted != *input
+                            || receipt.snapshot.draft.host_epoch != cursor.host_epoch
+                        {
+                            return Err(error(ErrorCode::InvalidRequest));
+                        }
+                        preflight(
+                            command_payload(CommandResult::SetDraftChanges(Box::new(
+                                receipt.clone(),
+                            ))),
+                            if changed {
+                                std::slice::from_ref(&receipt.snapshot)
+                            } else {
+                                &[]
+                            },
+                        )
+                    })
+                    .map(|receipt| {
+                        command_payload(CommandResult::SetDraftChanges(Box::new(receipt)))
+                    }),
+                Command::DiscardDraft(input) => self
+                    .ports
+                    .discard_draft(input, &mut |receipt| {
+                        if receipt.draft_id != input.draft.draft_id
+                            || receipt.host_epoch != cursor.host_epoch
+                            || receipt.previous_revision != input.draft.revision
+                        {
+                            return Err(error(ErrorCode::InvalidRequest));
+                        }
+                        preflight(
+                            command_payload(CommandResult::DiscardDraft(receipt.clone())),
+                            &[],
+                        )
+                    })
+                    .map(|receipt| command_payload(CommandResult::DiscardDraft(receipt))),
+                Command::RequestSensitiveInput(input) => self
+                    .ports
+                    .request_sensitive_input(input, &mut |receipt| {
+                        if receipt.binding != *input {
+                            return Err(error(ErrorCode::InvalidRequest));
+                        }
+                        preflight(
+                            command_payload(CommandResult::RequestSensitiveInput(receipt.clone())),
+                            &[],
+                        )
+                    })
+                    .map(|receipt| command_payload(CommandResult::RequestSensitiveInput(receipt))),
+                _ => unreachable!("application command classification"),
+            },
+            RequestBody::Query { query } => match query {
+                Query::ReadConfiguration(input) => self
+                    .ports
+                    .read_configuration(input, &mut |snapshot, changed| {
+                        preflight(
+                            query_payload(QueryResult::ReadConfiguration(Observation::Observed {
+                                value: snapshot.clone(),
+                                evidence: evidence.clone().expect("query evidence"),
+                            })),
+                            changed,
+                        )
+                    })
+                    .map(|snapshot| {
+                        query_payload(QueryResult::ReadConfiguration(Observation::Observed {
+                            value: snapshot,
+                            evidence: evidence.clone().expect("query evidence"),
+                        }))
+                    }),
+                Query::ConfigurationHistory(input) => self
+                    .ports
+                    .configuration_history(input)
+                    .and_then(|inventory| {
+                        let payload = query_payload(QueryResult::ConfigurationHistory(
+                            Observation::Observed {
+                                value: inventory,
+                                evidence: evidence.clone().expect("query evidence"),
+                            },
+                        ));
+                        preflight(payload.clone(), &[])?;
+                        Ok(payload)
+                    }),
+                Query::GetDraft(input) => self.ports.get_draft(input).and_then(|draft| {
+                    if draft.as_ref().is_some_and(|snapshot| {
+                        snapshot.draft.host_epoch != cursor.host_epoch
+                            || snapshot.draft.draft_id != input.draft_id
+                    }) {
+                        return Err(error(ErrorCode::InvalidRequest));
+                    }
+                    let evidence = evidence.clone().expect("query evidence");
+                    let payload = query_payload(QueryResult::GetDraft(GetDraftResult {
+                        cursor: cursor.clone(),
+                        draft: match draft {
+                            Some(value) => Observation::Observed { value, evidence },
+                            None => Observation::Missing { evidence },
+                        },
+                    }));
+                    preflight(payload.clone(), &[])?;
+                    Ok(payload)
+                }),
+                _ => unreachable!("application query classification"),
+            },
+        };
+        if let Some(failure) = preflight_failure {
+            return Err(failure);
+        }
+        if let Ok(payload) = &result {
+            if prepared_payload.as_ref() != Some(payload) {
+                return Err(KernelFailure::InvalidPortResult);
+            }
+            // No fallible work follows publication by the workspace. All
+            // envelopes and every consecutive cursor were validated above.
+            for event in prepared_events {
+                self.publish_event(event);
+            }
+        }
+        Ok(Some(result))
     }
 
     fn command(&mut self, command: Command) -> Result<CommandResult, Box<BridgeError>> {
@@ -290,12 +534,16 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
                 supported_versions: [ProtocolVersion],
                 host_epoch: self.host.epoch.clone(),
                 host_kind: self.host.kind,
-                implemented_commands: list(vec![
-                    CommandId::Prepare,
-                    CommandId::Commit,
-                    CommandId::CancelOperation,
-                    CommandId::RequestHostClose,
-                ]),
+                implemented_commands: list({
+                    let mut commands = vec![
+                        CommandId::Prepare,
+                        CommandId::Commit,
+                        CommandId::CancelOperation,
+                        CommandId::RequestHostClose,
+                    ];
+                    commands.extend(self.service_commands.iter().copied());
+                    commands
+                }),
             })),
             Query::GetOperation(input) => {
                 let evidence = self.evidence()?;
@@ -1018,24 +1266,32 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Engi
     }
 
     fn emit_operation(&mut self, id: &OperationId) -> Result<(), KernelFailure> {
-        self.sequence = self
-            .sequence
-            .checked_add(1)
-            .ok_or(KernelFailure::CounterExhausted)?;
+        let mut cursor = self.cursor();
+        cursor.sequence = Sequence::new(
+            self.sequence
+                .checked_add(1)
+                .ok_or(KernelFailure::CounterExhausted)?,
+        );
         let event = Event {
             protocol_version: ProtocolVersion,
-            cursor: self.cursor(),
+            cursor,
             body: EventBody::OperationChanged {
                 operation: Box::new(self.operations[id].snapshot.clone()),
             },
         };
         let bytes = serde_json::to_vec(&event).map_err(|_| KernelFailure::InvalidPortResult)?;
         decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+        self.publish_event(event);
+        Ok(())
+    }
+    /// Only prevalidated events reach the shared emitter. Application services
+    /// supply projections, never sequence numbers or a second event stream.
+    fn publish_event(&mut self, event: Event) {
+        self.sequence = event.cursor.sequence.get();
         self.events.push_back(event);
         if self.events.len() > EVENT_RETENTION {
             self.events.pop_front();
         }
-        Ok(())
     }
     fn require_open(&self) -> Result<(), Box<BridgeError>> {
         if self.poisoned {
@@ -1092,6 +1348,63 @@ fn unknown_progress(phase: &str) -> Progress {
 fn validated_reply(reply: Reply) -> Result<ValidatedReply, KernelFailure> {
     let bytes = serde_json::to_vec(&reply).map_err(|_| KernelFailure::InvalidPortResult)?;
     decode_reply(&bytes).map_err(|_| KernelFailure::InvalidPortResult)
+}
+fn command_payload(command: CommandResult) -> ResultPayload {
+    ResultPayload::Command {
+        command: Box::new(command),
+    }
+}
+fn query_payload(query: QueryResult) -> ResultPayload {
+    ResultPayload::Query {
+        query: Box::new(query),
+    }
+}
+fn preflight_application(
+    request_id: &RequestId,
+    cursor: &Cursor,
+    budget: usize,
+    payload: &ResultPayload,
+    changed: &[DraftSnapshot],
+) -> Result<Vec<Event>, KernelFailure> {
+    let reply = Reply {
+        protocol_version: ProtocolVersion,
+        request_id: ReplyRequestId::new(Some(request_id.clone())),
+        body: ReplyBody::Result {
+            result: payload.clone(),
+        },
+    };
+    let bytes = serde_json::to_vec(&reply).map_err(|_| KernelFailure::InvalidPortResult)?;
+    if bytes.len() > budget {
+        return Err(KernelFailure::Capacity);
+    }
+    decode_reply(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+    let mut next = cursor.clone();
+    let mut events = Vec::with_capacity(changed.len());
+    for draft in changed {
+        if draft.draft.host_epoch != cursor.host_epoch {
+            return Err(KernelFailure::InvalidPortResult);
+        }
+        next.sequence = Sequence::new(
+            next.sequence
+                .get()
+                .checked_add(1)
+                .ok_or(KernelFailure::CounterExhausted)?,
+        );
+        let event = Event {
+            protocol_version: ProtocolVersion,
+            cursor: next.clone(),
+            body: EventBody::DraftChanged {
+                draft: Box::new(draft.clone()),
+            },
+        };
+        let bytes = serde_json::to_vec(&event).map_err(|_| KernelFailure::InvalidPortResult)?;
+        if bytes.len() > budget {
+            return Err(KernelFailure::Capacity);
+        }
+        decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+        events.push(event);
+    }
+    Ok(events)
 }
 fn validate_command_output(command: CommandResult) -> Result<(), KernelFailure> {
     validated_reply(Reply {

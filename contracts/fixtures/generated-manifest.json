@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "contracts/fixtures/index.json",
-      "sha256": "9567c3d2cecdc85007fe09230ab3554e2b2363446d63e2a7840d78d8d57a8362"
+      "sha256": "6dbf09eaf1a808b6ef464a7889d9487d42ef547f7cfe4f08c9397ba7a7e3bddb"
     },
     {
       "path": "contracts/fixtures/sc-01-discovery-invalid-journey.transcript.json",
@@ -1226,6 +1226,98 @@
       "sha256": "d016bf0c76f48689f3c0de0dfe63bc0aee927f09707de87767d8dc414fc8ad43"
     },
     {
+      "path": "contracts/fixtures/sc08-get-current-clean-draft-journey.transcript.json",
+      "sha256": "65c845b7911a2267c6c9640677d78b84d47a10991a656b37fb4eccb5e6596f78"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-clean-draft-reply.json",
+      "sha256": "f9a7d50b7bdeeec768e6fce072caab9a5d34b2c4e76d7a374f54829d80a7235c"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-clean-draft-request.json",
+      "sha256": "ee2faff7e52ac0ded761cc5e5d21b5d304b07b1df76459a20dcb1dda9a3ed7e8"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-dirty-draft-journey.transcript.json",
+      "sha256": "d6278688e362565d2c8f4caf29e14d22956ff0eddec49961abde7ce03e70b1c4"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-dirty-draft-reply.json",
+      "sha256": "2ecbf701faf51d0609fff269dad0067ecd62be55aee8b8ff413e43932b60df06"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-dirty-draft-request.json",
+      "sha256": "88afe8370d89ccf4246dc21ab1cf290682fd7a616543e324632cc5d2431d50e6"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-invalid-draft-journey.transcript.json",
+      "sha256": "6f675629b3e233d900809e15b7cea995c39ff0636785df932be76522919d53d7"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-invalid-draft-reply.json",
+      "sha256": "d7132e5f1fc88eac4386f5b3bdb0c2406aad6fc53a6d05e8d206ced515bf6655"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-invalid-draft-request.json",
+      "sha256": "8f8a287066cf859cc45e4a724a65e1a9710312624e76da27e2646014fa0a1baf"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-stale-draft-journey.transcript.json",
+      "sha256": "c876ea1214580070e9335270304fe8465e973d231d9c37e77b69b5fcb30520de"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-stale-draft-reply.json",
+      "sha256": "6badb065bc2cfd0b6fc18a07b503e222221eb3bca6ab3f3809794e89abc83bd4"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-current-stale-draft-request.json",
+      "sha256": "22542340b87312cdc4833d96b547a2696c5e6f78173f65811e79bc536993b0f0"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-draft-cursor-epoch-mismatch.json",
+      "sha256": "d7c01675931e5b5de5895f68be1530d52e0cf91794e6971ed539d988c715dc60"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-draft-extra-selector.json",
+      "sha256": "c5f84541933343b30dfd0378f4975c81a8a9917618525fbbdc91183a4636babc"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-draft-mismatch-journey.transcript.json",
+      "sha256": "ae5e028828d40785ab365d1b1e78ba7014087b0a43c54d17aac4d4eaac258d35"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-draft-mismatch-reply.json",
+      "sha256": "bf16450ca629c46fbf58f52a807ebf9e67f20db9942f7bbb74cf8e2e6adbdd5c"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-draft-mismatch-request.json",
+      "sha256": "9dacd83ab94a96743310be787ee7a7fc38644b969492c38c361ec3feae442338"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-foreign-host-draft-journey.transcript.json",
+      "sha256": "9a043f74052bddb837476ce6b4b7e0f06e029df6fc40e9397a151678ed7ec388"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-foreign-host-draft-reply.json",
+      "sha256": "9f1642616f024e6f1b5a12ecf7068841d2798a0c5c0ae1d86ea0bc345ead51a5"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-foreign-host-draft-request.json",
+      "sha256": "2d76f9583c32098448d862e20f0817f185bdde66109b59851acfb52972ccd2f4"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-missing-draft-journey.transcript.json",
+      "sha256": "4f25f659a0773f4522fbddc97fa8a726143dfcaf2b0d484ed02fde8aac813597"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-missing-draft-reply.json",
+      "sha256": "b7dc0551b52c61b4bf47cfdaa2f353fe83bd3b1af702958eed3d1e3da6c8869f"
+    },
+    {
+      "path": "contracts/fixtures/sc08-get-missing-draft-request.json",
+      "sha256": "5c5f702e80f3512f9ac288fa39924258c1f5e1a140485d8e50e1860902de96cc"
+    },
+    {
       "path": "contracts/fixtures/sc08-invalid-event.json",
       "sha256": "3e5c3963b6aaf7ad3fb35dffdfbf62ccebf7883150dcd1f39b1e1efd272636e4"
     },
@@ -1256,6 +1348,10 @@
     {
       "path": "contracts/fixtures/sc08-stale-event.json",
       "sha256": "5aa9c79d4a36f2e6a494b1ebed4005c3ab7d87017514350c87db89bba3b508d6"
+    },
+    {
+      "path": "contracts/fixtures/sc09-get-draft-secret-echo.json",
+      "sha256": "f2ae917c2e23d35cb1adefb8fb4f4a053286a39ba0dc549366a04c6dbcb32052"
     },
     {
       "path": "contracts/fixtures/sc09-invalid-draft-secret-echo.json",
@@ -3029,7 +3125,7 @@
     },
     {
       "path": "contracts/fixtures/configuration-cases.ts",
-      "sha256": "4226c04637690befb4157d9bdb40b9c3229c460cc4d18b0365d07ba5cd7a3c4d"
+      "sha256": "40e8d65723fd381755c834a4f89121b3e709f6f3d4283c816711edb5214b245b"
     },
     {
       "path": "contracts/fixtures/distribution-cases.ts",

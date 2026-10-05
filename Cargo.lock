@@ -192,6 +192,9 @@ dependencies = [
  "bridge-engine",
  "bridge-platform-macos",
  "bridge-platform-windows",
+ "bridge-toml",
+ "serde_json",
+ "sha2 0.11.0",
  "time",
 ]
 

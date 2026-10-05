@@ -1,4 +1,4 @@
-import { BridgeClient, ObservationSession, WorkContext, type CallOptions, type ClientOutcome, type CommitReplay, type DeepReadonly, type DraftReview, type BaselineReopen, type PublicInputBinding, type ObservationState, type RequestMetadata, type WorkspaceView, type WorkState, canonicalData } from '../client';
+import { BridgeClient, ObservationSession, WorkContext, type CallOptions, type ClientOutcome, type CommitReplay, type DeepReadonly, type DraftReconciliation, type DraftReview, type BaselineReopen, type PublicInputBinding, type ObservationState, type RequestMetadata, type WorkspaceView, type WorkState, canonicalData } from '../client';
 import { bindingEquivalent, semanticPlanKey } from '../client/relations';
 import type { CancelDisposition, CommitInput, ConfigurationEdit, DocumentBinding, DraftSnapshot, OperationSnapshot, PreparedPlan, TargetSelector } from '../generated/protocol';
 import { AnnouncementController, FocusController } from './controllers';
@@ -62,14 +62,24 @@ export class BridgeFacade {
     finally { this.lifecycle.signal.removeEventListener('abort', abort); options.signal?.removeEventListener('abort', abort); }
   }
   async connect(options: CallOptions = {}) {
+    const draft = this.work.captureDraftReconciliation();
     const outcome = await this.observe(value => this.session.start(value), options);
     if (!this.disposed) this.announceConnection(outcome.kind === 'result');
+    if (!this.disposed && outcome.kind === 'result' && draft) await this.reconcileDraft(draft, options);
     return outcome;
   }
   async refresh(options: CallOptions = {}) {
+    const draft = this.work.captureDraftReconciliation();
     const outcome = await this.observe(value => this.session.refresh(value), options);
     if (!this.disposed) this.announceConnection(outcome.kind === 'result');
+    if (!this.disposed && outcome.kind === 'result' && draft) await this.reconcileDraft(draft, options);
     return outcome;
+  }
+  private async reconcileDraft(capture: DraftReconciliation, options: CallOptions): Promise<void> {
+    const input = { hostEpoch: capture.draft.draft.hostEpoch, draftId: capture.draft.draft.draftId };
+    const outcome = await this.observe(value => this.session.readDraft(input, value), options);
+    if (this.disposed) return;
+    if (!this.work.finishDraftReconciliation(capture, outcome)) this.say('Current draft could not be reconciled. Changes and unfinished input are retained.', true);
   }
   private announceConnection(received: boolean): void {
     const confidence = this.work.observations.state.confidence;

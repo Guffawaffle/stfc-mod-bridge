@@ -228,6 +228,13 @@ export class BridgeClient {
           && result.query.output.operation.status === 'observed' && request.body.query.input.operationId !== result.query.output.operation.value.operationId) {
           finish(this.fault('correlation', 'may_have_reached_backend', metadata)); return;
         }
+        if (request.body.type === 'query' && request.body.query.name === 'get_draft' && result.type === 'query' && result.query.name === 'get_draft') {
+          const input = request.body.query.input, output = result.query.output;
+          if (output.cursor.hostEpoch !== input.hostEpoch || output.draft.status === 'observed'
+            && (output.draft.value.draft.hostEpoch !== input.hostEpoch || output.draft.value.draft.draftId !== input.draftId)) {
+            finish(this.fault('correlation', 'may_have_reached_backend', metadata)); return;
+          }
+        }
         if (request.body.type === 'query' && request.body.query.name === 'diagnostic_preview' && result.type === 'query' && result.query.name === 'diagnostic_preview') {
           if (!diagnosticPreviewMatches(request.body.query.input, result.query.output)) {
             finish(this.fault('correlation', 'may_have_reached_backend', metadata)); return;

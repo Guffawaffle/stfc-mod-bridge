@@ -59,6 +59,9 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
     pub fn host_epoch(&self) -> &HostEpoch {
         &self.host
     }
+    pub fn sensitive_entry_available(&self) -> bool {
+        self.entry.is_available()
+    }
     fn issue_id(&mut self, id: String) -> ConfigurationResult<String> {
         if self.used_ids.len() >= 65536 || !self.used_ids.insert(id.clone()) {
             return Err(ConfigurationFailure::Capacity);
@@ -69,9 +72,18 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         &mut self,
         target: &TargetSelector,
     ) -> ConfigurationResult<DocumentSnapshot> {
+        self.read_configuration_with_preflight(target, |_, _| Ok(()))
+    }
+    /// Validate the exact observation and stale-draft events before publishing
+    /// document projections or protected handles into this actor-local store.
+    pub fn read_configuration_with_preflight(
+        &mut self,
+        target: &TargetSelector,
+        preflight: impl FnOnce(&DocumentSnapshot, &[DraftSnapshot]) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<DocumentSnapshot> {
         let read = self.owner.resolve(target)?;
         validate_resolved_target(target, &read.binding.target)?;
-        self.observe(read)
+        self.observe(read, preflight)
     }
     pub fn refresh_document(
         &mut self,
@@ -81,9 +93,13 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         if &read.binding != expected {
             return Err(ConfigurationFailure::Stale);
         }
-        self.observe(read)
+        self.observe(read, |_, _| Ok(()))
     }
-    fn observe(&mut self, read: DocumentRead) -> ConfigurationResult<DocumentSnapshot> {
+    fn observe(
+        &mut self,
+        read: DocumentRead,
+        preflight: impl FnOnce(&DocumentSnapshot, &[DraftSnapshot]) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<DocumentSnapshot> {
         let text = read.text()?;
         let schema = self.schemas.resolve(&read.binding.schema)?;
         schema.validate(&read.binding.schema)?;
@@ -210,21 +226,31 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             preservation: PreservationState::Supported,
             sync: bounded(sync)?,
         };
-        // Final contract verification is supplied by the dispatcher envelope.
+        let stale = self
+            .drafts
+            .values()
+            .filter(|d| {
+                d.snapshot.draft.document.document_id == read.binding.document_id
+                    && d.snapshot.draft.document != read.binding
+                    && !matches!(d.snapshot.state, DraftState::Invalid | DraftState::Stale)
+            })
+            .map(|record| {
+                let mut snapshot = record.snapshot.clone();
+                snapshot.state = DraftState::Stale;
+                snapshot.validation = bounded(vec![]).expect("empty validation");
+                snapshot
+            })
+            .collect::<Vec<_>>();
+        preflight(&snapshot, &stale)?;
         for (id, value) in additions {
             self.vault.insert(id, value);
         }
-        for record in self
-            .drafts
-            .values_mut()
-            .filter(|d| d.snapshot.draft.document.document_id == read.binding.document_id)
-        {
-            if record.snapshot.draft.document != read.binding
-                && record.snapshot.state != DraftState::Invalid
-            {
-                record.snapshot.state = DraftState::Stale;
-                record.snapshot.validation = bounded(vec![])?;
-            }
+        for snapshot in stale {
+            let record = self
+                .drafts
+                .get_mut(&snapshot.draft.draft_id)
+                .expect("preflighted stored draft");
+            record.snapshot = snapshot;
         }
         self.documents
             .insert(read.binding.document_id.clone(), read);
@@ -262,6 +288,13 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         })
     }
     pub fn open_draft(&mut self, input: &OpenDraftInput) -> ConfigurationResult<DraftSnapshot> {
+        self.open_draft_with_preflight(input, |_| Ok(()))
+    }
+    pub fn open_draft_with_preflight(
+        &mut self,
+        input: &OpenDraftInput,
+        preflight: impl FnOnce(&DraftSnapshot) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<DraftSnapshot> {
         super::types::validate_command(Command::OpenDraft(input.clone()))?;
         if self.drafts.len() >= MAX_DRAFTS {
             return Err(ConfigurationFailure::Capacity);
@@ -290,6 +323,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             validation: bounded(vec![])?,
         };
         super::types::validate_result(CommandResult::OpenDraft(snapshot.clone()))?;
+        preflight(&snapshot)?;
         self.drafts.insert(
             draft_id,
             DraftRecord {
@@ -316,6 +350,21 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
     pub fn draft(&self, draft: &DraftRef) -> ConfigurationResult<DraftSnapshot> {
         Ok(self.current(draft)?.snapshot.clone())
     }
+    /// Immutable current-generation reconciliation. Host identity is checked
+    /// before lookup; neither a missing ID nor an old revision triggers I/O.
+    pub fn current_draft(
+        &self,
+        host_epoch: &HostEpoch,
+        draft_id: &DraftId,
+    ) -> ConfigurationResult<Option<DraftSnapshot>> {
+        if host_epoch != &self.host {
+            return Err(ConfigurationFailure::HostMismatch);
+        }
+        Ok(self
+            .drafts
+            .get(draft_id)
+            .map(|record| record.snapshot.clone()))
+    }
     /// Completion refresh is bound to the captured Save, never current UI
     /// selection. A later local stage cannot be erased by an older completion.
     pub fn draft_after_save(&self, captured: &DraftRef) -> ConfigurationResult<DraftSnapshot> {
@@ -340,6 +389,13 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         &mut self,
         input: &RequestSensitiveInputInput,
     ) -> ConfigurationResult<SensitiveInputResult> {
+        self.request_sensitive_input_with_preflight(input, |_| Ok(()))
+    }
+    pub fn request_sensitive_input_with_preflight(
+        &mut self,
+        input: &RequestSensitiveInputInput,
+        preflight: impl FnOnce(&SensitiveInputResult) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<SensitiveInputResult> {
         super::types::validate_command(Command::RequestSensitiveInput(input.clone()))?;
         let record = self.current(&input.draft)?;
         let field = record
@@ -360,6 +416,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         if self.vault.len() >= MAX_PROTECTED_ENTRIES || self.used_ids.len() >= 65536 {
             return Err(ConfigurationFailure::Capacity);
         }
+        let mut addition = None;
         let outcome = match self.entry.capture(input)? {
             ProtectedEntryOutcome::Cancelled => SensitiveInputOutcome::Cancelled,
             ProtectedEntryOutcome::Unavailable(reason) => {
@@ -380,14 +437,14 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                             revision: input.draft.document.revision.clone(),
                             captured_for: Some(Box::new(input.draft.clone())),
                         };
-                        self.vault.insert(
+                        addition = Some((
                             value_id.as_str().to_owned(),
                             VaultEntry {
                                 reference: VaultReference::Private(reference.clone()),
                                 value,
                                 saved_subject: None,
                             },
-                        );
+                        ));
                         SensitiveInputOutcome::CapturedPrivate {
                             reference: Box::new(reference),
                         }
@@ -400,14 +457,14 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                             draft: input.draft.clone(),
                             field_id: input.field_id.clone(),
                         };
-                        self.vault.insert(
+                        addition = Some((
                             secret_id.as_str().to_owned(),
                             VaultEntry {
                                 reference: VaultReference::Secret(reference.clone()),
                                 value,
                                 saved_subject: None,
                             },
-                        );
+                        ));
                         SensitiveInputOutcome::CapturedSecret {
                             reference: Box::new(reference),
                         }
@@ -415,10 +472,16 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 }
             }
         };
-        Ok(SensitiveInputResult {
+        let result = SensitiveInputResult {
             binding: input.clone(),
             outcome,
-        })
+        };
+        super::types::validate_result(CommandResult::RequestSensitiveInput(result.clone()))?;
+        preflight(&result)?;
+        if let Some((id, entry)) = addition {
+            self.vault.insert(id, entry);
+        }
+        Ok(result)
     }
     /// Preflight serializes the actual reply envelope (including correlation
     /// and cursor) before any revision or vault payload ownership changes.
@@ -603,16 +666,26 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         &mut self,
         input: &DiscardDraftInput,
     ) -> ConfigurationResult<DiscardedDraft> {
+        self.discard_draft_with_preflight(input, |_| Ok(()))
+    }
+    pub fn discard_draft_with_preflight(
+        &mut self,
+        input: &DiscardDraftInput,
+        preflight: impl FnOnce(&DiscardedDraft) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<DiscardedDraft> {
         super::types::validate_command(Command::DiscardDraft(input.clone()))?;
         self.current(&input.draft)?;
-        self.drafts.remove(&input.draft.draft_id);
-        self.vault
-            .retain(|_, e| !entry_belongs(e, &input.draft.draft_id));
-        Ok(DiscardedDraft {
+        let result = DiscardedDraft {
             draft_id: input.draft.draft_id.clone(),
             host_epoch: self.host.clone(),
             previous_revision: input.draft.revision,
-        })
+        };
+        super::types::validate_result(CommandResult::DiscardDraft(result.clone()))?;
+        preflight(&result)?;
+        self.drafts.remove(&input.draft.draft_id);
+        self.vault
+            .retain(|_, e| !entry_belongs(e, &input.draft.draft_id));
+        Ok(result)
     }
     pub(crate) fn baseline(
         &self,

@@ -6,7 +6,7 @@
   "files": [
     {
       "path": "contracts/generated/aggregate.schema.json",
-      "sha256": "897ee4bf7cc0e95b0b988ad7552c95127dda00c77a15a5d3a73f94fdb18bd5cc"
+      "sha256": "28795f36a863650dc5b5ad489652b673ec4a2896e8e9275b10295e2670d1ae75"
     },
     {
       "path": "contracts/generated/event.schema.json",
@@ -14,15 +14,15 @@
     },
     {
       "path": "contracts/generated/reply.schema.json",
-      "sha256": "bbb5dd51c44dafb1628d9bdbc86e724bbf68d815d6f02f57c281a69f772b20ea"
+      "sha256": "ac1eba71490cc148ac674633da8b4a48a30eb1654a054806f4b257b529f189b5"
     },
     {
       "path": "contracts/generated/request.schema.json",
-      "sha256": "a3502ecc6c35102e8348d2e99ef7a5ccea64d48b4b16d9234349783a7ba016e9"
+      "sha256": "ef5a5688bb3aa5a87004008f63220acc0a4b5cc19eba6fe3fd234c43230539db"
     },
     {
       "path": "ui/src/generated/protocol.ts",
-      "sha256": "7bbd669337517b4a00e88db4f6e71b877f9fb61c59b21a42b9c66741f73fabc9"
+      "sha256": "39f648e832c710045fe0488acd68b65db32830e176b92f09daf6ba045f074dc1"
     }
   ],
   "generationBoundary": "wire/schema/types; no native or operation execution qualification"

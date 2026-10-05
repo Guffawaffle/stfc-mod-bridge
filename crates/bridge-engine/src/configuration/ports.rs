@@ -65,6 +65,11 @@ pub enum ProtectedEntryOutcome {
     Unavailable(SensitiveInputUnavailableReason),
 }
 pub trait SensitiveEntry {
+    /// Capability of this injected entry port. Unimplemented/headless ports
+    /// must keep the default; an outcome still reports per-request refusal.
+    fn is_available(&self) -> bool {
+        false
+    }
     /// Native/headless protected entry. No renderer string is accepted here.
     fn capture(
         &mut self,

@@ -2,3 +2,4 @@
 pub mod configuration;
 pub mod host;
 pub mod operations;
+pub mod services;

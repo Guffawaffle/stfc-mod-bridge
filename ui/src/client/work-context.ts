@@ -1,4 +1,4 @@
-import type { ConfigurationEdit, DiscardedDraft, DocumentBinding, DraftRef, DraftSnapshot, FieldDefinition, OperationSnapshot, ResolvedTarget, SetDraftChangesResult, TargetSelector } from '../generated/protocol';
+import type { ConfigurationEdit, DiscardedDraft, DocumentBinding, DraftRef, DraftSnapshot, FieldDefinition, GetDraftResult, OperationSnapshot, ResolvedTarget, SetDraftChangesResult, TargetSelector } from '../generated/protocol';
 import type { ClientOutcome } from './client';
 import { canonicalData, captureData, decodeRequest, type DeepReadonly } from './wire';
 import { ObservationStore } from './observation';
@@ -56,6 +56,14 @@ export interface DraftReview {
   readonly edits: readonly DeepReadonly<ConfigurationEdit>[];
   readonly generation: number;
   readonly publicInputs: readonly PublicInputBuffer[];
+}
+export interface DraftReconciliation {
+  readonly draft: DeepReadonly<DraftSnapshot>;
+  readonly edits: readonly DeepReadonly<ConfigurationEdit>[];
+  readonly publicInputs: readonly PublicInputBuffer[];
+  readonly generation: number;
+  readonly selector?: DeepReadonly<TargetSelector>;
+  readonly binding?: DeepReadonly<ResolvedTarget>;
 }
 
 /** Shared presentation context; captured operations remain in their own store. */
@@ -146,6 +154,46 @@ export class WorkContext {
     if (bindingEquivalent(this.draft, detached)) return true;
     if (this.dirty || this.transitionBusy) { this.draftConflict = true; this.publish(); return false; }
     return this.openDraft(detached);
+  }
+  /** Capture before connection/snapshot awaits, including unsynchronized input. */
+  captureDraftReconciliation(): DraftReconciliation | undefined {
+    if (!this.draft || this.baselineReopen) return undefined;
+    return Object.freeze({ draft: this.draft, edits: this.edits, publicInputs: this.publicInputs, generation: this.generation,
+      ...(this.selector ? { selector: this.selector } : {}), ...(this.binding ? { binding: this.binding } : {}) });
+  }
+  finishDraftReconciliation(capture: DraftReconciliation, outcome: ClientOutcome<GetDraftResult>): boolean {
+    const retained = () => !!this.draft && this.draft.draft.hostEpoch === capture.draft.draft.hostEpoch
+      && this.draft.draft.draftId === capture.draft.draft.draftId;
+    const conflict = (): false => { if (retained()) { this.draftConflict = true; this.publish(); } return false; };
+    if (!retained()) return false;
+    try {
+      if (outcome.kind !== 'result' || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
+      const input = { hostEpoch: capture.draft.draft.hostEpoch, draftId: capture.draft.draft.draftId }, read = captureData(outcome.value);
+      if (!this.observations.observeDraftResult(input, read)) return conflict();
+      // Store publication can invoke callers synchronously; recapture local
+      // custody after it as well as after the asynchronous query.
+      if (!retained()) return false;
+      if (capture.generation !== this.generation || canonicalData(this.draft) !== canonicalData(capture.draft)
+        || canonicalData(this.edits) !== canonicalData(capture.edits) || canonicalData(this.publicInputs) !== canonicalData(capture.publicInputs)
+        || canonicalData(this.selector ?? null) !== canonicalData(capture.selector ?? null)
+        || (this.binding && capture.binding ? !bindingEquivalent(this.binding, capture.binding) : this.binding !== capture.binding)
+        || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
+      if (read.draft.status !== 'observed') return conflict();
+      const draft = read.draft.value;
+      if (!bindingEquivalent(draft.draft.document, capture.draft.draft.document)
+        || !bindingEquivalent({ ...capture.draft, schema: draft.schema }, capture.draft)) return conflict();
+      if (bindingEquivalent(draft, capture.draft)) {
+        this.draftConflict = draft.state === 'stale'; this.publish(); return true;
+      }
+      // A matching public edit successor can recover a lost stage ACK. Changed
+      // protected refs require its explicit transfer receipt; never infer one.
+      const unsynchronized = canonicalData(capture.edits) !== canonicalData(capture.draft.edits);
+      const protectedEdits = capture.edits.some(edit => edit.kind === 'set_private' || edit.kind === 'replace_secret'
+        || edit.kind === 'add_sync_destination' || edit.kind === 'set_sync_proxy' && edit.value.kind === 'custom');
+      const editsChanged = canonicalData(capture.edits) !== canonicalData(draft.edits);
+      if (this.transitionBusy || capture.publicInputs.length || (unsynchronized || protectedEdits) && editsChanged) return conflict();
+      this.draft = draft; this.edits = draft.edits; this.draftConflict = draft.state === 'stale'; this.generation++; this.publish(); return true;
+    } catch { return conflict(); }
   }
   stage(edits: readonly ConfigurationEdit[] | readonly DeepReadonly<ConfigurationEdit>[]): boolean {
     if (!this.draft || this.transitionBusy || this.draftConflict || !this.hostEpochCurrent(this.draft.draft.hostEpoch)) return false;

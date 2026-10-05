@@ -1,6 +1,7 @@
 //! Development source proof: actual local runner/kernel with deliberately
 //! synthetic canonical owners. No native service, game, account or store proof.
 use bridge_contracts::v1::*;
+use bridge_engine::services::ApplicationServices;
 use bridge_engine::{host::*, operations::*};
 use std::{
     fs::{self, OpenOptions},
@@ -136,6 +137,7 @@ impl Drop for Owner {
             .push(thread::current().id());
     }
 }
+impl ApplicationServices for Owner {}
 impl OperationPorts for Owner {
     type Lease = LocalLease;
     fn capture(
@@ -1466,6 +1468,7 @@ struct EmbeddedSupplementPorts {
     inner: Owner,
     recover_calls: Arc<AtomicUsize>,
 }
+impl ApplicationServices for EmbeddedSupplementPorts {}
 impl OperationPorts for EmbeddedSupplementPorts {
     type Lease = LocalLease;
     fn capture(

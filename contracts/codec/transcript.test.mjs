@@ -598,6 +598,23 @@ test('deferred close covers safe recovery together with session custody or anoth
   }
 });
 
+test('current draft read watermark does not skip intervening operation events', () => {
+  const read = exchange('get_draft', { hostEpoch: epoch, draftId: id(930) }, {
+    cursor: cursor('7'), draft: { status: 'missing', evidence }
+  }, 'query');
+  const event = changedEvent('1', running('2'));
+  independentlyValid(read); independentlyValid(event);
+  const result = checkTranscript([...base(), read, event]);
+  assert.equal(result.eventCount, 1);
+  assert.equal(result.operationCount, 1);
+  const foreign = clone(read); foreign.reply.body.result.query.output.cursor.hostEpoch = id(931);
+  independentlyValid(foreign);
+  refuses([...base(), foreign], 'transcript_draft_binding');
+  const stream = clone(read); stream.reply.body.result.query.output.cursor.streamId = id(932);
+  independentlyValid(stream);
+  refuses([...base(), stream], 'transcript_draft_binding');
+});
+
 test('closed bounded step metadata and redacted errors never echo synthetic sensitive values', () => {
   refuses([], 'transcript_steps', -1);
   refuses(new Array(1), 'transcript_step_shape', 0);

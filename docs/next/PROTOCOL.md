@@ -11,6 +11,14 @@ one TypeScript declaration file and a byte-digest manifest. Generated output is
 checked for exact drift; there is no handwritten frontend DTO/schema copy.
 Schemas contain only local references and generation has no network retrieval.
 
+The unreleased v1 client and dispatcher add `get_draft` together. Its input is
+the immutable host epoch and draft ID; its output is the actual current draft
+observation and actor cursor. It never opens another draft or allocates an ID.
+Old closed-union decoders reject this query rather than interpreting it as an
+existing command. This paired change does not promise compatibility with an
+older draft client. A draft read watermark does not advance the global event
+cursor: every operation and draft event must still be consumed in order.
+
 ## Framing and validation
 
 One message is one UTF-8 JSON value, bounded to 256 KiB and 32 nested containers.

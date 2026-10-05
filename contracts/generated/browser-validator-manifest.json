@@ -1,7 +1,7 @@
 {
   "schemaVersion": "bridge-browser-validators/v1",
   "protocolVersion": 1,
-  "sourceProtocolManifestSha256": "7e82722972957d5ef8a50da33790f5046e36c68d4b96b5825c2553ce20156e4d",
+  "sourceProtocolManifestSha256": "f30c9af41e6b53ffc00ac29bd660c6b83492f3f68e98c0206dc3882dcbfec3fd",
   "toolchain": {
     "ajv": "8.20.0",
     "formats": "3.0.1",
@@ -20,11 +20,11 @@
   "schemas": [
     {
       "path": "contracts/generated/request.schema.json",
-      "sha256": "a3502ecc6c35102e8348d2e99ef7a5ccea64d48b4b16d9234349783a7ba016e9"
+      "sha256": "ef5a5688bb3aa5a87004008f63220acc0a4b5cc19eba6fe3fd234c43230539db"
     },
     {
       "path": "contracts/generated/reply.schema.json",
-      "sha256": "bbb5dd51c44dafb1628d9bdbc86e724bbf68d815d6f02f57c281a69f772b20ea"
+      "sha256": "ac1eba71490cc148ac674633da8b4a48a30eb1654a054806f4b257b529f189b5"
     },
     {
       "path": "contracts/generated/event.schema.json",
@@ -44,7 +44,7 @@
   "files": [
     {
       "path": "ui/src/generated/validators.mjs",
-      "sha256": "502efc3950ab0b9bc0d0ef7380e3d54126876e6b7d20138bb476dfd1de9f87e3"
+      "sha256": "e0a3d61456d669c29ef548936651ec3ec72207e16b9bdd2493fe79b71bd31ff9"
     },
     {
       "path": "ui/src/generated/validators.d.mts",

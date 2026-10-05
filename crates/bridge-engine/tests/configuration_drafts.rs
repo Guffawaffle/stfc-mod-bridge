@@ -4,6 +4,119 @@ use bridge_engine::configuration::*;
 use configuration_support::*;
 
 #[test]
+fn current_generation_lookup_is_immutable_and_preflight_refusals_keep_local_custody() {
+    let ids = std::rc::Rc::new(std::cell::RefCell::new(IdentityControl::default()));
+    let entry = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(b"\"local-only-secret\"".to_vec()).unwrap(),
+    );
+    let (mut workspace, state, codec_calls) = workspace_with_options(
+        "",
+        vec![],
+        Some(entry),
+        false,
+        false,
+        FixtureOptions {
+            ids: ids.clone(),
+            ..FixtureOptions::default()
+        },
+    );
+    let host = workspace.host_epoch().clone();
+    let missing = DraftId::new(id(9000)).unwrap();
+    assert_eq!(workspace.current_draft(&host, &missing).unwrap(), None);
+    assert_eq!(
+        workspace.current_draft(&HostEpoch::new(id(999)).unwrap(), &missing),
+        Err(ConfigurationFailure::HostMismatch)
+    );
+    assert!(ids.borrow().calls.is_empty());
+    assert!(codec_calls.borrow().is_empty());
+    assert_eq!(
+        state.borrow().reads.get() + state.borrow().resolves.get(),
+        0
+    );
+    let document = state.borrow().read.binding.clone();
+    let refused_id = std::cell::RefCell::new(None);
+    assert_eq!(
+        workspace.open_draft_with_preflight(
+            &OpenDraftInput {
+                document: document.clone()
+            },
+            |snapshot| {
+                *refused_id.borrow_mut() = Some(snapshot.draft.draft_id.clone());
+                Err(ConfigurationFailure::Capacity)
+            }
+        ),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(
+        workspace
+            .current_draft(&host, &refused_id.into_inner().unwrap())
+            .unwrap(),
+        None
+    );
+    let draft = workspace.open_draft(&OpenDraftInput { document }).unwrap();
+    let captured = std::cell::RefCell::new(None);
+    assert_eq!(
+        workspace.request_sensitive_input_with_preflight(
+            &RequestSensitiveInputInput {
+                draft: draft.draft.clone(),
+                field_id: field("sync.token"),
+                sensitivity: SensitiveInputKind::Secret,
+            },
+            |receipt| {
+                let SensitiveInputOutcome::CapturedSecret { reference } = &receipt.outcome else {
+                    panic!("capture")
+                };
+                *captured.borrow_mut() = Some(reference.clone());
+                Err(ConfigurationFailure::Capacity)
+            }
+        ),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(
+        stage(
+            &mut workspace,
+            &draft.draft,
+            vec![ConfigurationEdit::ReplaceSecret {
+                field_id: field("sync.token"),
+                reference: captured.into_inner().unwrap(),
+            }]
+        ),
+        Err(ConfigurationFailure::ProtectedRefInvalid),
+        "failed capture did not publish a vault entry"
+    );
+    assert_eq!(
+        workspace.discard_draft_with_preflight(
+            &DiscardDraftInput {
+                draft: draft.draft.clone()
+            },
+            |_| Err(ConfigurationFailure::Capacity)
+        ),
+        Err(ConfigurationFailure::Capacity)
+    );
+    let before = (
+        state.borrow().reads.get(),
+        state.borrow().resolves.get(),
+        ids.borrow().calls.len(),
+        codec_calls.borrow().len(),
+    );
+    assert_eq!(
+        workspace
+            .current_draft(&host, &draft.draft.draft_id)
+            .unwrap(),
+        Some(draft)
+    );
+    assert_eq!(
+        before,
+        (
+            state.borrow().reads.get(),
+            state.borrow().resolves.get(),
+            ids.borrow().calls.len(),
+            codec_calls.borrow().len()
+        )
+    );
+}
+
+#[test]
 fn missing_open_stage_discard_do_not_mutate_document() {
     let (mut w, s, _) = workspace("", vec![], None, false, false);
     let d = open(&mut w, &s);

@@ -1460,6 +1460,22 @@
       ],
       "type": "object"
     },
+    "GetDraftInput": {
+      "additionalProperties": false,
+      "properties": {
+        "draftId": {
+          "$ref": "#/definitions/DraftId"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        }
+      },
+      "required": [
+        "hostEpoch",
+        "draftId"
+      ],
+      "type": "object"
+    },
     "GetOperationInput": {
       "additionalProperties": false,
       "properties": {
@@ -3287,6 +3303,23 @@
             },
             "name": {
               "const": "get_operation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/GetDraftInput"
+            },
+            "name": {
+              "const": "get_draft",
               "type": "string"
             }
           },

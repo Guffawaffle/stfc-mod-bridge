@@ -111,20 +111,21 @@
       "scenario": "SC-07"
     },
     {
-      "accepted": 10,
-      "codecRefusals": 2,
+      "accepted": 24,
+      "codecRefusals": 4,
       "features": [
         "command:discard_draft",
         "command:open_draft",
-        "command:set_draft_changes"
+        "command:set_draft_changes",
+        "query:get_draft"
       ],
-      "pairedExchanges": 3,
-      "pairedTranscripts": 3,
+      "pairedExchanges": 9,
+      "pairedTranscripts": 10,
       "scenario": "SC-08"
     },
     {
       "accepted": 14,
-      "codecRefusals": 4,
+      "codecRefusals": 5,
       "features": [
         "command:request_sensitive_input",
         "command:set_draft_changes",
@@ -3404,6 +3405,204 @@
       ]
     },
     {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-clean-draft-request",
+      "kind": "request",
+      "path": "sc08-get-current-clean-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "clean",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-clean-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-current-clean-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "clean",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-dirty-draft-request",
+      "kind": "request",
+      "path": "sc08-get-current-dirty-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "dirty",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-dirty-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-current-dirty-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "dirty",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-invalid-draft-request",
+      "kind": "request",
+      "path": "sc08-get-current-invalid-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "invalid",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-invalid-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-current-invalid-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "invalid",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-stale-draft-request",
+      "kind": "request",
+      "path": "sc08-get-current-stale-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "stale",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-current-stale-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-current-stale-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "stale",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "A same-host discarded draft is missing without creating a replacement",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-missing-draft-request",
+      "kind": "request",
+      "path": "sc08-get-missing-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "missing",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "A same-host discarded draft is missing without creating a replacement",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-missing-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-missing-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "missing",
+        "reconcile"
+      ]
+    },
+    {
+      "case": "A foreign host lookup refuses before consulting draft custody",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-foreign-host-draft-request",
+      "kind": "request",
+      "path": "sc08-get-foreign-host-draft-request.json",
+      "scenario": "SC-08",
+      "tags": [
+        "foreign-host"
+      ]
+    },
+    {
+      "case": "A foreign host lookup refuses before consulting draft custody",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-foreign-host-draft-reply",
+      "kind": "reply",
+      "path": "sc08-get-foreign-host-draft-reply.json",
+      "scenario": "SC-08",
+      "tags": [
+        "foreign-host"
+      ]
+    },
+    {
+      "case": "A draft observation cannot carry a cursor from a different host",
+      "expectedSemantic": false,
+      "expectedWire": true,
+      "id": "sc08-get-draft-cursor-epoch-mismatch",
+      "kind": "reply",
+      "path": "sc08-get-draft-cursor-epoch-mismatch.json",
+      "scenario": "SC-08",
+      "tags": [
+        "codec-refusal"
+      ]
+    },
+    {
+      "case": "The immutable lookup has no caller-selected revision or target substitution",
+      "expectedSemantic": false,
+      "expectedWire": false,
+      "id": "sc08-get-draft-extra-selector",
+      "kind": "request",
+      "path": "sc08-get-draft-extra-selector.json",
+      "scenario": "SC-08",
+      "tags": [
+        "codec-refusal"
+      ]
+    },
+    {
+      "case": "An individually valid read cannot substitute another draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-draft-mismatch-request",
+      "kind": "request",
+      "path": "sc08-get-draft-mismatch-request.json",
+      "scenario": "SC-08",
+      "tags": []
+    },
+    {
+      "case": "An individually valid read cannot substitute another draft",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc08-get-draft-mismatch-reply",
+      "kind": "reply",
+      "path": "sc08-get-draft-mismatch-reply.json",
+      "scenario": "SC-08",
+      "tags": []
+    },
+    {
       "case": "Retain clean draft state explicitly",
       "expectedSemantic": true,
       "expectedWire": true,
@@ -3523,6 +3722,18 @@
       "scenario": "SC-09",
       "tags": [
         "mixed-timing"
+      ]
+    },
+    {
+      "case": "A current-draft read cannot expose protected payloads as public edits",
+      "expectedSemantic": false,
+      "expectedWire": true,
+      "id": "sc09-get-draft-secret-echo",
+      "kind": "reply",
+      "path": "sc09-get-draft-secret-echo.json",
+      "scenario": "SC-09",
+      "tags": [
+        "codec-refusal"
       ]
     },
     {
@@ -7596,6 +7807,70 @@
       },
       "id": "sc08-discard-draft-journey",
       "path": "sc08-discard-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-current-clean-draft-journey",
+      "path": "sc08-get-current-clean-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-current-dirty-draft-journey",
+      "path": "sc08-get-current-dirty-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-current-invalid-draft-journey",
+      "path": "sc08-get-current-invalid-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-current-stale-draft-journey",
+      "path": "sc08-get-current-stale-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "A same-host discarded draft is missing without creating a replacement",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-missing-draft-journey",
+      "path": "sc08-get-missing-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "A foreign host lookup refuses before consulting draft custody",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc08-get-foreign-host-draft-journey",
+      "path": "sc08-get-foreign-host-draft-journey.transcript.json",
+      "scenario": "SC-08"
+    },
+    {
+      "case": "Cross-message draft identity is exact",
+      "expected": {
+        "accepted": false,
+        "code": "transcript_draft_binding"
+      },
+      "id": "sc08-get-draft-mismatch-journey",
+      "path": "sc08-get-draft-mismatch-journey.transcript.json",
       "scenario": "SC-08"
     },
     {

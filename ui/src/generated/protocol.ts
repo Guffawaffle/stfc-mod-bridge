@@ -2369,24 +2369,28 @@ export type QueryResult =
       output: GetOperationResult;
     }
   | {
+      name: 'get_draft';
+      output: GetDraftResult;
+    }
+  | {
       name: 'snapshot';
       output: Snapshot;
     }
   | {
       name: 'list_profiles';
-      output: Observation7;
-    }
-  | {
-      name: 'list_installations';
       output: Observation8;
     }
   | {
+      name: 'list_installations';
+      output: Observation9;
+    }
+  | {
       name: 'list_sessions';
-      output: Observation11;
+      output: Observation12;
     }
   | {
       name: 'list_import_sources';
-      output: Observation12;
+      output: Observation13;
     }
   | {
       name: 'get_actions';
@@ -2394,23 +2398,23 @@ export type QueryResult =
     }
   | {
       name: 'read_configuration';
-      output: Observation13;
+      output: Observation14;
     }
   | {
       name: 'configuration_history';
-      output: Observation15;
-    }
-  | {
-      name: 'check_runtime_release';
       output: Observation16;
     }
   | {
-      name: 'check_game_update';
+      name: 'check_runtime_release';
       output: Observation17;
     }
   | {
-      name: 'check_bridge_update';
+      name: 'check_game_update';
       output: Observation18;
+    }
+  | {
+      name: 'check_bridge_update';
+      output: Observation19;
     }
   | {
       name: 'resume_events';
@@ -2456,6 +2460,29 @@ export type Observation2 =
       evidence: Evidence;
       status: 'observed';
       value: OperationSnapshot;
+    }
+  | {
+      evidence: Evidence;
+      status: 'missing';
+    }
+  | {
+      evidence: Evidence;
+      reason: ObservationReason;
+      status: 'unknown';
+    }
+  | {
+      reason: ObservationReason;
+      status: 'unavailable';
+    };
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Observation6".
+ */
+export type Observation6 =
+  | {
+      evidence: Evidence;
+      status: 'observed';
+      value: DraftSnapshot;
     }
   | {
       evidence: Evidence;
@@ -2576,9 +2603,9 @@ export type AvailabilityReasonCode =
 export type BoundedList_CapabilityProjection_128 = CapabilityProjection[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation8".
+ * via the `definition` "Observation9".
  */
-export type Observation8 =
+export type Observation9 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2599,9 +2626,9 @@ export type Observation8 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation9".
+ * via the `definition` "Observation10".
  */
-export type Observation9 =
+export type Observation10 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2622,9 +2649,9 @@ export type Observation9 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation10".
+ * via the `definition` "Observation11".
  */
-export type Observation10 =
+export type Observation11 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2659,9 +2686,9 @@ export type BoundedList_InstallationProjection_128 = InstallationProjection[];
 export type BoundedList_OperationSnapshot_128 = OperationSnapshot[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation6".
+ * via the `definition` "Observation7".
  */
-export type Observation6 =
+export type Observation7 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2682,9 +2709,9 @@ export type Observation6 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation7".
+ * via the `definition` "Observation8".
  */
-export type Observation7 =
+export type Observation8 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2712,9 +2739,9 @@ export type Observation7 =
 export type BoundedList_ProfileProjection_128 = ProfileProjection[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation11".
+ * via the `definition` "Observation12".
  */
-export type Observation11 =
+export type Observation12 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2742,9 +2769,9 @@ export type Observation11 =
 export type BoundedList_SessionProjection_128 = SessionProjection[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation12".
+ * via the `definition` "Observation13".
  */
-export type Observation12 =
+export type Observation13 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -2969,9 +2996,9 @@ export type BoundedList_AvailabilityReason_16 =
 export type BoundedList_ActionProjection_64 = ActionProjection[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation13".
+ * via the `definition` "Observation14".
  */
-export type Observation13 =
+export type Observation14 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3036,9 +3063,9 @@ export type PreservationState =
 export type BoundedList_SyncFeed_128 = SyncFeed[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation14".
+ * via the `definition` "Observation15".
  */
-export type Observation14 =
+export type Observation15 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3066,9 +3093,9 @@ export type Observation14 =
 export type BoundedList_SyncDestination_128 = SyncDestination[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation15".
+ * via the `definition` "Observation16".
  */
-export type Observation15 =
+export type Observation16 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3096,9 +3123,9 @@ export type Observation15 =
 export type BoundedList_BackupReceiptRef_128 = BackupReceiptRef[];
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation16".
+ * via the `definition` "Observation17".
  */
-export type Observation16 =
+export type Observation17 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3119,9 +3146,9 @@ export type Observation16 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation17".
+ * via the `definition` "Observation18".
  */
-export type Observation17 =
+export type Observation18 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3142,9 +3169,9 @@ export type Observation17 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation18".
+ * via the `definition` "Observation19".
  */
-export type Observation18 =
+export type Observation19 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3181,19 +3208,19 @@ export type DiagnosticFact =
     }
   | {
       kind: 'session';
-      value: Observation19;
-    }
-  | {
-      kind: 'runtime';
       value: Observation20;
     }
   | {
+      kind: 'runtime';
+      value: Observation21;
+    }
+  | {
       kind: 'game';
-      value: Observation9;
+      value: Observation10;
     }
   | {
       kind: 'bridge';
-      value: Observation21;
+      value: Observation22;
     }
   | {
       kind: 'capability';
@@ -3205,9 +3232,9 @@ export type DiagnosticFact =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation19".
+ * via the `definition` "Observation20".
  */
-export type Observation19 =
+export type Observation20 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3228,9 +3255,9 @@ export type Observation19 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation20".
+ * via the `definition` "Observation21".
  */
-export type Observation20 =
+export type Observation21 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3251,9 +3278,9 @@ export type Observation20 =
     };
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Observation21".
+ * via the `definition` "Observation22".
  */
-export type Observation21 =
+export type Observation22 =
   | {
       evidence: Evidence;
       status: 'observed';
@@ -3337,7 +3364,7 @@ export type CommandResult =
     }
   | {
       name: 'request_import_discovery';
-      output: Observation12;
+      output: Observation13;
     }
   | {
       name: 'request_sensitive_input';
@@ -3517,6 +3544,10 @@ export type Query =
   | {
       input: GetOperationInput;
       name: 'get_operation';
+    }
+  | {
+      input: GetDraftInput;
+      name: 'get_draft';
     }
   | {
       input: EmptyInput;
@@ -4519,16 +4550,28 @@ export interface GetOperationResult {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "GetDraftResult".
+ */
+export interface GetDraftResult {
+  /**
+   * The actor watermark of this immutable draft observation. Consumers must
+   * still process every event in the global stream through this sequence.
+   */
+  cursor: Cursor;
+  draft: Observation6;
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "Snapshot".
  */
 export interface Snapshot {
   capabilities: Inventory5;
   cursor: Cursor;
-  installations: Observation8;
+  installations: Observation9;
   operations: Inventory4;
-  preferences: Observation6;
-  profiles: Observation7;
-  sessions: Observation11;
+  preferences: Observation7;
+  profiles: Observation8;
+  sessions: Observation12;
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -4581,9 +4624,9 @@ export interface Inventory2 {
  */
 export interface InstallationProjection {
   binding: InstallationBinding;
-  client: Observation9;
+  client: Observation10;
   name: DisplayName;
-  update: Observation10;
+  update: Observation11;
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -4673,7 +4716,7 @@ export interface SyncDestination {
   feeds: BoundedList_SyncFeed_128;
   id: DestinationId;
   mode: SyncMode;
-  resolvedProxy: Observation14;
+  resolvedProxy: Observation15;
   secretConfigured: boolean;
 }
 /**
@@ -4850,6 +4893,14 @@ export interface TargetSelector {
  */
 export interface GetOperationInput {
   operationId: OperationId;
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "GetDraftInput".
+ */
+export interface GetDraftInput {
+  draftId: DraftId;
+  hostEpoch: HostEpoch;
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

@@ -20,6 +20,12 @@ pub struct GetOperationInput {
     pub operation_id: OperationId,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GetDraftInput {
+    pub host_epoch: HostEpoch,
+    pub draft_id: DraftId,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "name",
     content = "input",
@@ -30,6 +36,7 @@ pub enum Query {
     Hello(EmptyInput),
     ResolveTarget(ResolveTargetInput),
     GetOperation(GetOperationInput),
+    GetDraft(GetDraftInput),
     Snapshot(EmptyInput),
     ListProfiles(ListProfilesInput),
     ListInstallations(EmptyInput),
@@ -233,6 +240,14 @@ pub struct GetOperationResult {
     pub operation: Observation<OperationSnapshot>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GetDraftResult {
+    /// The actor watermark of this immutable draft observation. Consumers must
+    /// still process every event in the global stream through this sequence.
+    pub cursor: Cursor,
+    pub draft: Observation<DraftSnapshot>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "name",
     content = "output",
@@ -243,6 +258,7 @@ pub enum QueryResult {
     Hello(HelloResult),
     ResolveTarget(ResolveTargetResult),
     GetOperation(Box<GetOperationResult>),
+    GetDraft(GetDraftResult),
     Snapshot(Snapshot),
     ListProfiles(Observation<Inventory<ProfileProjection>>),
     ListInstallations(Observation<Inventory<InstallationProjection>>),
@@ -402,6 +418,9 @@ impl Reply {
                         Observation::Observed { value, .. } => value.valid(),
                         _ => true,
                     },
+                    QueryResult::GetDraft(output) => observation_valid(&output.draft, |draft| {
+                        draft.valid() && draft.draft.host_epoch == output.cursor.host_epoch
+                    }),
                     QueryResult::Snapshot(output) => output.valid(),
                     QueryResult::ListProfiles(output) => {
                         observation_valid(output, Inventory::valid)

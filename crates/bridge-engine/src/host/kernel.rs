@@ -1,14 +1,22 @@
 //! A local adapter of the existing kernel, not another admission policy.
 use super::{HostFailure, LocalHost};
 use crate::operations::{DurableJournal, Engine, HostClock, IdentitySource, OperationPorts};
+use crate::services::ApplicationServices;
 use bridge_contracts::v1::*;
 
-pub struct KernelHost<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> {
+pub struct KernelHost<
+    P: OperationPorts + ApplicationServices,
+    J: DurableJournal,
+    C: HostClock,
+    I: IdentitySource,
+> {
     engine: Engine<P, J, C, I>,
     last_advanced: Option<OperationId>,
 }
 
-impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> KernelHost<P, J, C, I> {
+impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I: IdentitySource>
+    KernelHost<P, J, C, I>
+{
     pub fn new(engine: Engine<P, J, C, I>) -> Self {
         Self {
             engine,
@@ -29,8 +37,8 @@ impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> Kern
     }
 }
 
-impl<P: OperationPorts, J: DurableJournal, C: HostClock, I: IdentitySource> LocalHost
-    for KernelHost<P, J, C, I>
+impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I: IdentitySource>
+    LocalHost for KernelHost<P, J, C, I>
 {
     fn dispatch(&mut self, request: ValidatedRequest) -> Result<ValidatedReply, HostFailure> {
         self.engine.dispatch(request).map_err(HostFailure::Kernel)

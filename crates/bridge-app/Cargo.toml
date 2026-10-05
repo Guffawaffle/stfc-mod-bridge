@@ -20,3 +20,8 @@ bridge-platform-macos.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+bridge-toml.workspace = true
+sha2.workspace = true

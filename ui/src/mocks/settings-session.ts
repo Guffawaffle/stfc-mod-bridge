@@ -1,6 +1,6 @@
-import { BridgeClient, canonicalData, captureData, decodeReply, decodeRequest, type DeepReadonly } from '../client';
+import { BridgeClient, canonicalData, captureData, decodeEvent, decodeReply, decodeRequest, type DeepReadonly } from '../client';
 import { semanticPlanDigest } from '../client/relations';
-import type { CommitInput, ConfigurationEdit, DocumentSnapshot, DraftSnapshot, OperationSnapshot, PreparedPlan, PrivateValueRef, Reply, Request, Snapshot, TargetSelector } from '../generated/protocol';
+import type { CommitInput, ConfigurationEdit, DocumentSnapshot, DraftSnapshot, Event, OperationSnapshot, PreparedPlan, PrivateValueRef, Reply, Request, Snapshot, TargetSelector } from '../generated/protocol';
 import { BridgeFacade } from '../state';
 import { ManualClock } from './clock';
 import { stageAcknowledgement } from '../../../contracts/fixtures/configuration-cases';
@@ -38,12 +38,18 @@ export async function createSettingsSession(mode:SettingsMode):Promise<SettingsS
   const secretTemplate=(await source('sc09-protected-secret-entry-reply')).body.result.command.output.outcome.reference;
   const rejection=(await source('sc10-save-backup-unavailable-reply')).body;
   const clock=new ManualClock(), records:SettingsRecord[]=[], listeners=new Set<(state:SettingsDelivery)=>void>();
-  let draft=clone(clean), plan:PreparedPlan|undefined, operation:OperationSnapshot|undefined, committed:CommitInput|undefined;
+  const events=new Set<(frame:string)=>void>();
+  let draft:DraftSnapshot|undefined=clone(clean), plan:PreparedPlan|undefined, operation:OperationSnapshot|undefined, committed:CommitInput|undefined;
   let sequence=0, lifecycle=0, pending=0, processing=0, disposed=false, fault:SettingsDelivery['lastFault'], lost=false, applied=false;
   const selector:TargetSelector={installation:{kind:'registered',id:'a'.repeat(32)},profile:{kind:'ordinary'}};
   const state=():SettingsDelivery=>Object.freeze({requests:records.length,pending,processing:processing>0,disposed,...(fault?{lastFault:fault}:{})});
   const publish=()=>{for(const listener of listeners) listener(state());};
   function refuse():never {fault='unexpected_request';publish();throw {code:'delivery_failed',delivery:'not_sent'};}
+  function emit(body:Event['body']):void {
+    snapshot.cursor={...snapshot.cursor,sequence:(BigInt(snapshot.cursor.sequence)+1n).toString()};
+    const encoded=JSON.stringify({protocolVersion:1,cursor:clone(snapshot.cursor),body});decodeEvent(encoded);
+    for(const listener of [...events]) listener(encoded);
+  }
   function applyDocument():void {
     if(applied||!operation||!plan||plan.semantics.capture.kind!=='save_configuration') return;
     applied=true; const capture=plan.semantics.capture.input.draft;
@@ -79,11 +85,18 @@ export async function createSettingsSession(mode:SettingsMode):Promise<SettingsS
   async function respond(request:DeepReadonly<Request>):Promise<{body:Reply['body'];drop?:boolean}> {
     if(request.body.type==='query') {
       const query=request.body.query;let output:unknown;
-      if(query.name==='snapshot') output=snapshot;
+      if(query.name==='snapshot') output={...clone(snapshot),operations:{...clone(snapshot.operations),items:operation?[clone(operation)]:[]}};
+      else if(query.name==='get_draft') {
+        if(query.input.hostEpoch!==snapshot.cursor.hostEpoch) return {body:{type:'rejected',error:{code:'plan_host_mismatch',retryDisposition:'after_resnapshot',violations:[]}}};
+        // Use the real synthetic event sequence, independent of request IDs
+        // or draft revisions. Reading never emits or advances it.
+        output={cursor:clone(snapshot.cursor),draft:draft&&draft.draft.draftId===query.input.draftId
+          ?{status:'observed',evidence:clone(read.evidence),value:clone(draft)}:{status:'missing',evidence:clone(read.evidence)}};
+      }
       else if(query.name==='read_configuration') {if(!equal(query.input.target,selector)) refuse();output={...read,value:clone(document)};}
       else if(query.name==='get_operation') {
         if(!operation||!plan||query.input.operationId!==operation.operationId) refuse();applyDocument();
-        operation={...operation,operationRevision:'3',state:clone(terminalTemplate.state)};
+        if(operation.state.status!=='completed') {operation={...operation,operationRevision:'3',state:clone(terminalTemplate.state)};emit({type:'operation_changed',operation:clone(operation)});}
         output={operation:{...read,value:clone(operation)}};
       } else refuse();
       return {body:{type:'result',result:{type:'query',query:{name:query.name,output} as any}}};
@@ -91,37 +104,38 @@ export async function createSettingsSession(mode:SettingsMode):Promise<SettingsS
     const command=request.body.command;let output:unknown,drop=false;
     if(command.name==='open_draft') {
       if(!equal(command.input.document,document.binding)) refuse();
-      if(!equal(draft.draft.document,document.binding)||draft.state!=='clean') draft={...clone(clean),draft:{...clone(clean.draft),draftId:uid(4000+ ++lifecycle),document:clone(document.binding)},schema:clone(document.schema)};
+      if(!draft||!equal(draft.draft.document,document.binding)||draft.state!=='clean') {draft={...clone(clean),draft:{...clone(clean.draft),draftId:uid(4000+ ++lifecycle),document:clone(document.binding)},schema:clone(document.schema)};emit({type:'draft_changed',draft:clone(draft)});}
       output=clone(draft);
     } else if(command.name==='request_sensitive_input') {
-      if(!equal(command.input.draft,draft.draft)) refuse();const field=draft.schema.fields.find(field=>field.fieldId===command.input.fieldId);
+      if(!draft||!equal(command.input.draft,draft.draft)) refuse();const field=draft.schema.fields.find(field=>field.fieldId===command.input.fieldId);
       if(!field||field.sensitivity!==command.input.sensitivity) refuse();
       const reference=command.input.sensitivity==='private'?{...clone(privateTemplate),fieldId:field.fieldId,document:clone(draft.draft.document),capturedFor:clone(draft.draft),valueId:uid(4200+records.length)}
         :{...clone(secretTemplate),fieldId:field.fieldId,draft:clone(draft.draft),secretId:uid(4200+records.length)};
       output={binding:command.input,outcome:{status:command.input.sensitivity==='private'?'captured_private':'captured_secret',reference}};
     } else if(command.name==='set_draft_changes') {
-      if(!equal(command.input.draft,draft.draft)) refuse();
-      const apply=[...new Set(command.input.edits.flatMap(edit=>'fieldId' in edit?draft.schema.fields.filter(field=>field.fieldId===edit.fieldId).map(field=>field.apply):['next_launch' as const]))];
+      if(!draft||!equal(command.input.draft,draft.draft)) refuse();
+      const currentDraft=draft;
+      const apply=[...new Set(command.input.edits.flatMap(edit=>'fieldId' in edit?currentDraft.schema.fields.filter(field=>field.fieldId===edit.fieldId).map(field=>field.apply):['next_launch' as const]))];
       if(apply.length>3) refuse();
       const candidate={...clone(draft),edits:clone(command.input.edits) as ConfigurationEdit[],apply:apply as DraftSnapshot['apply'],state:command.input.edits.length?'dirty':'clean',validation:[]} as DraftSnapshot;
-      const acknowledgement=stageAcknowledgement(draft.draft,candidate);draft=clone(acknowledgement.snapshot);output=acknowledgement;
+      const acknowledgement=stageAcknowledgement(draft.draft,candidate);draft=clone(acknowledgement.snapshot);output=acknowledgement;emit({type:'draft_changed',draft:clone(draft)});
     } else if(command.name==='prepare') {
-      if(command.input.intent.kind!=='save_configuration'||!equal(command.input.intent.input.draft,draft.draft)) refuse();
+      if(!draft||command.input.intent.kind!=='save_configuration'||!equal(command.input.intent.input.draft,draft.draft)) refuse();
       if(mode==='save_failed'||mode==='stale') return {body:{...clone(rejection),error:{...clone(rejection.error),code:mode==='stale'?'stale_revision':'backup_unavailable'}}};
       plan=clone(planTemplate);if(plan.semantics.capture.kind!=='save_configuration') refuse();
       plan.semantics.capture.input.draft=clone(draft);plan.planRef.planId=uid(4400+records.length);plan.planRef.reviewDigest=await semanticPlanDigest(plan.semantics);output=clone(plan);
     } else if(command.name==='commit') {
       if(!plan||!equal(command.input.planRef,plan.planRef)) refuse();
       if(committed) {if(!equal(command.input,committed)) refuse();}
-      else {committed=clone(command.input);operation={...clone(terminalTemplate),semantics:clone(plan.semantics),operationRevision:'1',state:{status:'admitted'}};}
+      else {committed=clone(command.input);operation={...clone(terminalTemplate),semantics:clone(plan.semantics),operationRevision:'1',state:{status:'admitted'}};emit({type:'operation_changed',operation:clone(operation)});}
       output=clone(operation); if(mode==='uncertain'&&!lost){lost=true;drop=true;}
     } else if(command.name==='discard_draft') {
-      if(!equal(command.input.draft,draft.draft)||committed) refuse();
-      output={draftId:draft.draft.draftId,hostEpoch:draft.draft.hostEpoch,previousRevision:draft.draft.revision};draft={...clone(clean),draft:{...clone(clean.draft),draftId:uid(4000+ ++lifecycle),document:clone(document.binding)},schema:clone(document.schema)};
+      if(!draft||!equal(command.input.draft,draft.draft)||committed) refuse();
+      output={draftId:draft.draft.draftId,hostEpoch:draft.draft.hostEpoch,previousRevision:draft.draft.revision};draft=undefined;
     } else refuse();
     return {body:{type:'result',result:{type:'command',command:{name:command.name,output} as any}},drop};
   }
-  const client=new BridgeClient({subscribe:()=>()=>{},exchange(raw,{signal}) {
+  const client=new BridgeClient({subscribe:onEvent=>{events.add(onEvent);return()=>{events.delete(onEvent);};},exchange(raw,{signal}) {
     if(disposed||signal.aborted||records.length>=256||pending>=64) return Promise.reject({code:'delivery_failed',delivery:'not_sent'});
     let request:DeepReadonly<Request>;try{request=decodeRequest(raw);}catch{fault='invalid_request';publish();return Promise.reject({code:'delivery_failed',delivery:'not_sent'});}
     processing++;const index=records.length;records.push({method:request.body.type==='query'?request.body.query.name:request.body.command.name,request:raw,delivery:'received'});publish();
@@ -138,5 +152,5 @@ export async function createSettingsSession(mode:SettingsMode):Promise<SettingsS
   const facade=new BridgeFacade(client,{idempotencyKey:()=>uid(6000+lifecycle)});facade.requestTarget(selector);facade.work.bindTarget(document.binding.target);facade.work.openDraft(clean);facade.work.observations.observeDraft(clean);facade.navigate('settings');
   return {mode,facade,client,clock,provenance:captureData(provenance),get records(){return captureData(records);},get delivery(){return state();},subscribe(listener){listeners.add(listener);listener(state());return()=>listeners.delete(listener);},
     async settle(){for(let turn=0;turn<128&&!disposed;turn++){for(let loop=0;loop<16;loop++)await Promise.resolve();await new Promise<void>(resolve=>setTimeout(resolve,0));if(processing)continue;if(!clock.pendingCount)return;if(client.pendingCount&&!pending)continue;clock.runNext();}if(!disposed&&clock.pendingCount)throw new Error('settings_settle_limit');},
-    dispose(){if(disposed)return;disposed=true;facade.dispose();client.dispose();clock.dispose();publish();listeners.clear();}};
+    dispose(){if(disposed)return;disposed=true;facade.dispose();client.dispose();clock.dispose();publish();listeners.clear();events.clear();}};
 }

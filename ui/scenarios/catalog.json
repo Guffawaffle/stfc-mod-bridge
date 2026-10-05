@@ -12848,6 +12848,1872 @@
       }
     },
     {
+      "id": "sc08-get-current-clean-draft-journey",
+      "scenario": "SC-08",
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "get_draft",
+                  "output": {
+                    "cursor": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "sequence": "7",
+                      "streamId": "000003e9-1111-4111-8111-111111111111"
+                    },
+                    "draft": {
+                      "evidence": {
+                        "observationId": "000003ea-1111-4111-8111-111111111111",
+                        "observedAt": "2026-10-03T11:00:00Z",
+                        "source": "native_live"
+                      },
+                      "status": "observed",
+                      "value": {
+                        "apply": [],
+                        "draft": {
+                          "document": {
+                            "baseline": {
+                              "kind": "missing"
+                            },
+                            "documentId": "000007d0-1111-4111-8111-111111111111",
+                            "revision": "synthetic-document-1",
+                            "schema": {
+                              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "providerId": "guffawaffle",
+                              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "schemaId": "stfc-community-mod.config-schema",
+                              "schemaVersion": "1.0.0"
+                            },
+                            "target": {
+                              "installation": {
+                                "kind": "registered",
+                                "nativeTargetRef": "synthetic-native-target-1",
+                                "physicalId": "synthetic-installation-physical-1",
+                                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "registrationRevision": "synthetic-installation-revision-1"
+                              },
+                              "profile": {
+                                "kind": "ordinary",
+                                "ownerScope": "synthetic-native-owner-1"
+                              }
+                            }
+                          },
+                          "draftId": "000007d1-1111-4111-8111-111111111111",
+                          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                          "revision": "1"
+                        },
+                        "edits": [],
+                        "schema": {
+                          "binding": {
+                            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "providerId": "guffawaffle",
+                            "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "schemaId": "stfc-community-mod.config-schema",
+                            "schemaVersion": "1.0.0"
+                          },
+                          "fields": [
+                            {
+                              "aliases": [],
+                              "apply": "immediate",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "boolean",
+                                "value": false
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.boolean",
+                              "path": [
+                                "setting",
+                                "boolean"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.boolean"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "boolean"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "integer",
+                                "value": "1"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.integer",
+                              "path": [
+                                "setting",
+                                "integer"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.integer"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "integer",
+                                "maximum": "9223372036854775807",
+                                "minimum": "-9223372036854775808"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "restart_required",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "number",
+                                "value": "1.5"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.number",
+                              "path": [
+                                "setting",
+                                "number"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.number"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "number",
+                                "maximum": "5.25",
+                                "minimum": "-2.5"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "string",
+                                "value": "Synthetic long display label for text scaling"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.string",
+                              "path": [
+                                "setting",
+                                "string"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.string"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "64"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "enum",
+                                "value": "off"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.enum",
+                              "path": [
+                                "setting",
+                                "enum"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.enum"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "enum",
+                                "values": [
+                                  "off",
+                                  "summary"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "keybinding",
+                                "value": [
+                                  {
+                                    "key": "SPACE",
+                                    "modifiers": []
+                                  }
+                                ]
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.keys",
+                              "path": [
+                                "setting",
+                                "keys"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.keys"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "keys": [
+                                  "SPACE",
+                                  "K"
+                                ],
+                                "kind": "keybinding",
+                                "multiple": true
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "notification_policy",
+                                "value": {
+                                  "kind": "disabled"
+                                }
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.notification",
+                              "path": [
+                                "setting",
+                                "notification"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.notification"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "notification_policy",
+                                "sounds": [
+                                  "none",
+                                  "warning"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.endpoint",
+                              "path": [
+                                "sync",
+                                "endpoint"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.endpoint"
+                              ],
+                              "sensitivity": "private",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.token",
+                              "path": [
+                                "sync",
+                                "token"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.token"
+                              ],
+                              "sensitivity": "secret",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            }
+                          ],
+                          "sync": [
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "creatable",
+                              "feeds": [
+                                "battlelog",
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "legacy",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "existing_configuration_only",
+                              "feeds": [
+                                "battlelog"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": false,
+                              "mode": "sidecar",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "hidden",
+                              "feeds": [
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "majel",
+                              "secretFieldId": "sync.token"
+                            }
+                          ]
+                        },
+                        "state": "clean",
+                        "validation": []
+                      }
+                    }
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b86-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b86-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-current-clean-draft-reply",
+          "sha256": "f9a7d50b7bdeeec768e6fce072caab9a5d34b2c4e76d7a374f54829d80a7235c"
+        },
+        {
+          "id": "sc08-get-current-clean-draft-request",
+          "sha256": "ee2faff7e52ac0ded761cc5e5d21b5d304b07b1df76459a20dcb1dda9a3ed7e8"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-current-clean-draft-journey.transcript.json",
+        "sha256": "65c845b7911a2267c6c9640677d78b84d47a10991a656b37fb4eccb5e6596f78"
+      }
+    },
+    {
+      "id": "sc08-get-current-dirty-draft-journey",
+      "scenario": "SC-08",
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "get_draft",
+                  "output": {
+                    "cursor": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "sequence": "7",
+                      "streamId": "000003e9-1111-4111-8111-111111111111"
+                    },
+                    "draft": {
+                      "evidence": {
+                        "observationId": "000003ea-1111-4111-8111-111111111111",
+                        "observedAt": "2026-10-03T11:00:00Z",
+                        "source": "native_live"
+                      },
+                      "status": "observed",
+                      "value": {
+                        "apply": [
+                          "immediate"
+                        ],
+                        "draft": {
+                          "document": {
+                            "baseline": {
+                              "kind": "missing"
+                            },
+                            "documentId": "000007d0-1111-4111-8111-111111111111",
+                            "revision": "synthetic-document-1",
+                            "schema": {
+                              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "providerId": "guffawaffle",
+                              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "schemaId": "stfc-community-mod.config-schema",
+                              "schemaVersion": "1.0.0"
+                            },
+                            "target": {
+                              "installation": {
+                                "kind": "registered",
+                                "nativeTargetRef": "synthetic-native-target-1",
+                                "physicalId": "synthetic-installation-physical-1",
+                                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "registrationRevision": "synthetic-installation-revision-1"
+                              },
+                              "profile": {
+                                "kind": "ordinary",
+                                "ownerScope": "synthetic-native-owner-1"
+                              }
+                            }
+                          },
+                          "draftId": "000007d1-1111-4111-8111-111111111111",
+                          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                          "revision": "2"
+                        },
+                        "edits": [
+                          {
+                            "fieldId": "setting.boolean",
+                            "kind": "set_public",
+                            "value": {
+                              "kind": "boolean",
+                              "value": true
+                            }
+                          }
+                        ],
+                        "schema": {
+                          "binding": {
+                            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "providerId": "guffawaffle",
+                            "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "schemaId": "stfc-community-mod.config-schema",
+                            "schemaVersion": "1.0.0"
+                          },
+                          "fields": [
+                            {
+                              "aliases": [],
+                              "apply": "immediate",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "boolean",
+                                "value": false
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.boolean",
+                              "path": [
+                                "setting",
+                                "boolean"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.boolean"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "boolean"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "integer",
+                                "value": "1"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.integer",
+                              "path": [
+                                "setting",
+                                "integer"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.integer"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "integer",
+                                "maximum": "9223372036854775807",
+                                "minimum": "-9223372036854775808"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "restart_required",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "number",
+                                "value": "1.5"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.number",
+                              "path": [
+                                "setting",
+                                "number"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.number"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "number",
+                                "maximum": "5.25",
+                                "minimum": "-2.5"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "string",
+                                "value": "Synthetic long display label for text scaling"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.string",
+                              "path": [
+                                "setting",
+                                "string"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.string"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "64"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "enum",
+                                "value": "off"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.enum",
+                              "path": [
+                                "setting",
+                                "enum"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.enum"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "enum",
+                                "values": [
+                                  "off",
+                                  "summary"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "keybinding",
+                                "value": [
+                                  {
+                                    "key": "SPACE",
+                                    "modifiers": []
+                                  }
+                                ]
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.keys",
+                              "path": [
+                                "setting",
+                                "keys"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.keys"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "keys": [
+                                  "SPACE",
+                                  "K"
+                                ],
+                                "kind": "keybinding",
+                                "multiple": true
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "notification_policy",
+                                "value": {
+                                  "kind": "disabled"
+                                }
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.notification",
+                              "path": [
+                                "setting",
+                                "notification"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.notification"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "notification_policy",
+                                "sounds": [
+                                  "none",
+                                  "warning"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.endpoint",
+                              "path": [
+                                "sync",
+                                "endpoint"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.endpoint"
+                              ],
+                              "sensitivity": "private",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.token",
+                              "path": [
+                                "sync",
+                                "token"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.token"
+                              ],
+                              "sensitivity": "secret",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            }
+                          ],
+                          "sync": [
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "creatable",
+                              "feeds": [
+                                "battlelog",
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "legacy",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "existing_configuration_only",
+                              "feeds": [
+                                "battlelog"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": false,
+                              "mode": "sidecar",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "hidden",
+                              "feeds": [
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "majel",
+                              "secretFieldId": "sync.token"
+                            }
+                          ]
+                        },
+                        "state": "dirty",
+                        "validation": []
+                      }
+                    }
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b87-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b87-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-current-dirty-draft-reply",
+          "sha256": "2ecbf701faf51d0609fff269dad0067ecd62be55aee8b8ff413e43932b60df06"
+        },
+        {
+          "id": "sc08-get-current-dirty-draft-request",
+          "sha256": "88afe8370d89ccf4246dc21ab1cf290682fd7a616543e324632cc5d2431d50e6"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-current-dirty-draft-journey.transcript.json",
+        "sha256": "d6278688e362565d2c8f4caf29e14d22956ff0eddec49961abde7ce03e70b1c4"
+      }
+    },
+    {
+      "id": "sc08-get-current-invalid-draft-journey",
+      "scenario": "SC-08",
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "get_draft",
+                  "output": {
+                    "cursor": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "sequence": "7",
+                      "streamId": "000003e9-1111-4111-8111-111111111111"
+                    },
+                    "draft": {
+                      "evidence": {
+                        "observationId": "000003ea-1111-4111-8111-111111111111",
+                        "observedAt": "2026-10-03T11:00:00Z",
+                        "source": "native_live"
+                      },
+                      "status": "observed",
+                      "value": {
+                        "apply": [
+                          "next_launch"
+                        ],
+                        "draft": {
+                          "document": {
+                            "baseline": {
+                              "kind": "missing"
+                            },
+                            "documentId": "000007d0-1111-4111-8111-111111111111",
+                            "revision": "synthetic-document-1",
+                            "schema": {
+                              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "providerId": "guffawaffle",
+                              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "schemaId": "stfc-community-mod.config-schema",
+                              "schemaVersion": "1.0.0"
+                            },
+                            "target": {
+                              "installation": {
+                                "kind": "registered",
+                                "nativeTargetRef": "synthetic-native-target-1",
+                                "physicalId": "synthetic-installation-physical-1",
+                                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "registrationRevision": "synthetic-installation-revision-1"
+                              },
+                              "profile": {
+                                "kind": "ordinary",
+                                "ownerScope": "synthetic-native-owner-1"
+                              }
+                            }
+                          },
+                          "draftId": "000007d1-1111-4111-8111-111111111111",
+                          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                          "revision": "2"
+                        },
+                        "edits": [
+                          {
+                            "fieldId": "setting.integer",
+                            "kind": "set_public",
+                            "value": {
+                              "kind": "string",
+                              "value": "still editable"
+                            }
+                          }
+                        ],
+                        "schema": {
+                          "binding": {
+                            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "providerId": "guffawaffle",
+                            "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "schemaId": "stfc-community-mod.config-schema",
+                            "schemaVersion": "1.0.0"
+                          },
+                          "fields": [
+                            {
+                              "aliases": [],
+                              "apply": "immediate",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "boolean",
+                                "value": false
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.boolean",
+                              "path": [
+                                "setting",
+                                "boolean"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.boolean"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "boolean"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "integer",
+                                "value": "1"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.integer",
+                              "path": [
+                                "setting",
+                                "integer"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.integer"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "integer",
+                                "maximum": "9223372036854775807",
+                                "minimum": "-9223372036854775808"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "restart_required",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "number",
+                                "value": "1.5"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.number",
+                              "path": [
+                                "setting",
+                                "number"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.number"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "number",
+                                "maximum": "5.25",
+                                "minimum": "-2.5"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "string",
+                                "value": "Synthetic long display label for text scaling"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.string",
+                              "path": [
+                                "setting",
+                                "string"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.string"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "64"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "enum",
+                                "value": "off"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.enum",
+                              "path": [
+                                "setting",
+                                "enum"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.enum"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "enum",
+                                "values": [
+                                  "off",
+                                  "summary"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "keybinding",
+                                "value": [
+                                  {
+                                    "key": "SPACE",
+                                    "modifiers": []
+                                  }
+                                ]
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.keys",
+                              "path": [
+                                "setting",
+                                "keys"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.keys"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "keys": [
+                                  "SPACE",
+                                  "K"
+                                ],
+                                "kind": "keybinding",
+                                "multiple": true
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "notification_policy",
+                                "value": {
+                                  "kind": "disabled"
+                                }
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.notification",
+                              "path": [
+                                "setting",
+                                "notification"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.notification"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "notification_policy",
+                                "sounds": [
+                                  "none",
+                                  "warning"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.endpoint",
+                              "path": [
+                                "sync",
+                                "endpoint"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.endpoint"
+                              ],
+                              "sensitivity": "private",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.token",
+                              "path": [
+                                "sync",
+                                "token"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.token"
+                              ],
+                              "sensitivity": "secret",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            }
+                          ],
+                          "sync": [
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "creatable",
+                              "feeds": [
+                                "battlelog",
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "legacy",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "existing_configuration_only",
+                              "feeds": [
+                                "battlelog"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": false,
+                              "mode": "sidecar",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "hidden",
+                              "feeds": [
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "majel",
+                              "secretFieldId": "sync.token"
+                            }
+                          ]
+                        },
+                        "state": "invalid",
+                        "validation": [
+                          {
+                            "code": "invalid_type",
+                            "fieldId": "setting.integer"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b88-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b88-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-current-invalid-draft-reply",
+          "sha256": "d7132e5f1fc88eac4386f5b3bdb0c2406aad6fc53a6d05e8d206ced515bf6655"
+        },
+        {
+          "id": "sc08-get-current-invalid-draft-request",
+          "sha256": "8f8a287066cf859cc45e4a724a65e1a9710312624e76da27e2646014fa0a1baf"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-current-invalid-draft-journey.transcript.json",
+        "sha256": "6f675629b3e233d900809e15b7cea995c39ff0636785df932be76522919d53d7"
+      }
+    },
+    {
+      "id": "sc08-get-current-stale-draft-journey",
+      "scenario": "SC-08",
+      "case": "Read the current scoped successor without opening or restaging a draft",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "get_draft",
+                  "output": {
+                    "cursor": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "sequence": "7",
+                      "streamId": "000003e9-1111-4111-8111-111111111111"
+                    },
+                    "draft": {
+                      "evidence": {
+                        "observationId": "000003ea-1111-4111-8111-111111111111",
+                        "observedAt": "2026-10-03T11:00:00Z",
+                        "source": "native_live"
+                      },
+                      "status": "observed",
+                      "value": {
+                        "apply": [
+                          "immediate"
+                        ],
+                        "draft": {
+                          "document": {
+                            "baseline": {
+                              "kind": "missing"
+                            },
+                            "documentId": "000007d0-1111-4111-8111-111111111111",
+                            "revision": "synthetic-document-1",
+                            "schema": {
+                              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                              "providerId": "guffawaffle",
+                              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                              "schemaId": "stfc-community-mod.config-schema",
+                              "schemaVersion": "1.0.0"
+                            },
+                            "target": {
+                              "installation": {
+                                "kind": "registered",
+                                "nativeTargetRef": "synthetic-native-target-1",
+                                "physicalId": "synthetic-installation-physical-1",
+                                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "registrationRevision": "synthetic-installation-revision-1"
+                              },
+                              "profile": {
+                                "kind": "ordinary",
+                                "ownerScope": "synthetic-native-owner-1"
+                              }
+                            }
+                          },
+                          "draftId": "000007d1-1111-4111-8111-111111111111",
+                          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                          "revision": "2"
+                        },
+                        "edits": [
+                          {
+                            "fieldId": "setting.boolean",
+                            "kind": "set_public",
+                            "value": {
+                              "kind": "boolean",
+                              "value": true
+                            }
+                          }
+                        ],
+                        "schema": {
+                          "binding": {
+                            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "providerId": "guffawaffle",
+                            "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "schemaId": "stfc-community-mod.config-schema",
+                            "schemaVersion": "1.0.0"
+                          },
+                          "fields": [
+                            {
+                              "aliases": [],
+                              "apply": "immediate",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "boolean",
+                                "value": false
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.boolean",
+                              "path": [
+                                "setting",
+                                "boolean"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.boolean"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "boolean"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "integer",
+                                "value": "1"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.integer",
+                              "path": [
+                                "setting",
+                                "integer"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.integer"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "integer",
+                                "maximum": "9223372036854775807",
+                                "minimum": "-9223372036854775808"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "restart_required",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "number",
+                                "value": "1.5"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.number",
+                              "path": [
+                                "setting",
+                                "number"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.number"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "number",
+                                "maximum": "5.25",
+                                "minimum": "-2.5"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "string",
+                                "value": "Synthetic long display label for text scaling"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.string",
+                              "path": [
+                                "setting",
+                                "string"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.string"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "64"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "enum",
+                                "value": "off"
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.enum",
+                              "path": [
+                                "setting",
+                                "enum"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.enum"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "enum",
+                                "values": [
+                                  "off",
+                                  "summary"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "keybinding",
+                                "value": [
+                                  {
+                                    "key": "SPACE",
+                                    "modifiers": []
+                                  }
+                                ]
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.keys",
+                              "path": [
+                                "setting",
+                                "keys"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.keys"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "keys": [
+                                  "SPACE",
+                                  "K"
+                                ],
+                                "kind": "keybinding",
+                                "multiple": true
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "defaultValue": {
+                                "kind": "notification_policy",
+                                "value": {
+                                  "kind": "disabled"
+                                }
+                              },
+                              "deprecated": false,
+                              "fieldId": "setting.notification",
+                              "path": [
+                                "setting",
+                                "notification"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "setting.notification"
+                              ],
+                              "sensitivity": "public",
+                              "valueType": {
+                                "kind": "notification_policy",
+                                "sounds": [
+                                  "none",
+                                  "warning"
+                                ]
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.endpoint",
+                              "path": [
+                                "sync",
+                                "endpoint"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.endpoint"
+                              ],
+                              "sensitivity": "private",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            },
+                            {
+                              "aliases": [],
+                              "apply": "next_launch",
+                              "category": "settings",
+                              "deprecated": false,
+                              "fieldId": "sync.token",
+                              "path": [
+                                "sync",
+                                "token"
+                              ],
+                              "platforms": [
+                                "windows",
+                                "macos"
+                              ],
+                              "searchTerms": [
+                                "sync.token"
+                              ],
+                              "sensitivity": "secret",
+                              "valueType": {
+                                "kind": "string",
+                                "maximumLength": "4096"
+                              }
+                            }
+                          ],
+                          "sync": [
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "creatable",
+                              "feeds": [
+                                "battlelog",
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "legacy",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "existing_configuration_only",
+                              "feeds": [
+                                "battlelog"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": false,
+                              "mode": "sidecar",
+                              "secretFieldId": "sync.token"
+                            },
+                            {
+                              "endpointFieldId": "sync.endpoint",
+                              "exposure": "hidden",
+                              "feeds": [
+                                "missions"
+                              ],
+                              "fields": [
+                                "sync.endpoint",
+                                "sync.token"
+                              ],
+                              "inheritsGlobalProxy": true,
+                              "mode": "majel",
+                              "secretFieldId": "sync.token"
+                            }
+                          ]
+                        },
+                        "state": "stale",
+                        "validation": []
+                      }
+                    }
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b89-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b89-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-current-stale-draft-reply",
+          "sha256": "6badb065bc2cfd0b6fc18a07b503e222221eb3bca6ab3f3809794e89abc83bd4"
+        },
+        {
+          "id": "sc08-get-current-stale-draft-request",
+          "sha256": "22542340b87312cdc4833d96b547a2696c5e6f78173f65811e79bc536993b0f0"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-current-stale-draft-journey.transcript.json",
+        "sha256": "c876ea1214580070e9335270304fe8465e973d231d9c37e77b69b5fcb30520de"
+      }
+    },
+    {
+      "id": "sc08-get-missing-draft-journey",
+      "scenario": "SC-08",
+      "case": "A same-host discarded draft is missing without creating a replacement",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "get_draft",
+                  "output": {
+                    "cursor": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "sequence": "7",
+                      "streamId": "000003e9-1111-4111-8111-111111111111"
+                    },
+                    "draft": {
+                      "evidence": {
+                        "observationId": "000003ea-1111-4111-8111-111111111111",
+                        "observedAt": "2026-10-03T11:00:00Z",
+                        "source": "native_live"
+                      },
+                      "status": "missing"
+                    }
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b8a-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b8a-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-missing-draft-reply",
+          "sha256": "b7dc0551b52c61b4bf47cfdaa2f353fe83bd3b1af702958eed3d1e3da6c8869f"
+        },
+        {
+          "id": "sc08-get-missing-draft-request",
+          "sha256": "5c5f702e80f3512f9ac288fa39924258c1f5e1a140485d8e50e1860902de96cc"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-missing-draft-journey.transcript.json",
+        "sha256": "4f25f659a0773f4522fbddc97fa8a726143dfcaf2b0d484ed02fde8aac813597"
+      }
+    },
+    {
+      "id": "sc08-get-foreign-host-draft-journey",
+      "scenario": "SC-08",
+      "case": "A foreign host lookup refuses before consulting draft custody",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "error": {
+                "code": "plan_host_mismatch",
+                "retryDisposition": "after_resnapshot",
+                "violations": []
+              },
+              "type": "rejected"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b8b-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {
+                  "draftId": "000007d1-1111-4111-8111-111111111111",
+                  "hostEpoch": "00000bae-1111-4111-8111-111111111111"
+                },
+                "name": "get_draft"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "00000b8b-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc08-get-foreign-host-draft-reply",
+          "sha256": "9f1642616f024e6f1b5a12ecf7068841d2798a0c5c0ae1d86ea0bc345ead51a5"
+        },
+        {
+          "id": "sc08-get-foreign-host-draft-request",
+          "sha256": "2d76f9583c32098448d862e20f0817f185bdde66109b59851acfb52972ccd2f4"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc08-get-foreign-host-draft-journey.transcript.json",
+        "sha256": "9a043f74052bddb837476ce6b4b7e0f06e029df6fc40e9397a151678ed7ec388"
+      }
+    },
+    {
       "id": "sc09-schema-all-field-types-journey",
       "scenario": "SC-09",
       "case": "All seven semantic field types are schema driven; sensitive values remain references",

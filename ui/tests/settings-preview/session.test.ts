@@ -19,6 +19,34 @@ test('Settings preview modes bind every source hash and validate every recorded 
   for(const mode of settingsModes){const {session,dispose}=await start(mode);try{for(const source of session.provenance)expect(source.sha256).toBe(createHash('sha256').update(readFileSync(new URL(source.id+'.json',fixtures))).digest('hex'));
     for(const record of session.records){expect(()=>decodeRequest(record.request)).not.toThrow();if(record.reply)expect(()=>decodeReply(record.reply!)).not.toThrow();}expect(session.delivery.lastFault).toBeUndefined();expect(session.facade.work.state.selector?.profile.kind).toBe('ordinary');}finally{dispose();}}
 });
+
+test('Settings mock current-draft reads use retained successors and the actual event cursor, then preserve local input on Missing',async()=>{
+  const {session,controller,dispose}=await start();try{
+    const initial=session.facade.work.state.draft!, lookup={hostEpoch:initial.draft.hostEpoch,draftId:initial.draft.draftId};
+    const first=await settle(session,session.client.query('get_draft',lookup));
+    expect(first).toMatchObject({kind:'result',value:{cursor:{sequence:'0'},draft:{status:'observed',value:initial}}});
+    expect(controller.setPublic('setting.boolean',{kind:'boolean',value:true})).toBe(true);
+    const acknowledgement=await settle(session,session.client.command('set_draft_changes',{draft:initial.draft,edits:session.facade.work.state.edits}));
+    if(acknowledgement.kind!=='result')throw new Error('synthetic stage refused');
+    expect(session.facade.work.state.draft?.draft.revision).toBe('1');
+    await settle(session,session.facade.refresh());
+    expect(session.facade.work.state.draft).toEqual(acknowledgement.value.snapshot);
+    const successor=await settle(session,session.client.query('get_draft',lookup));
+    expect(successor).toMatchObject({kind:'result',value:{cursor:{sequence:'1'},draft:{status:'observed',value:acknowledgement.value.snapshot}}});
+    expect(controller.setNumeric('setting.integer','-')).toBe(false);const retained=session.facade.work.state;
+    const discarded=await settle(session,session.client.command('discard_draft',{draft:acknowledgement.value.snapshot.draft}));
+    expect(discarded.kind).toBe('result');
+    await settle(session,session.facade.refresh());
+    const missing=await settle(session,session.client.query('get_draft',lookup));
+    expect(missing).toMatchObject({kind:'result',value:{cursor:{sequence:'1'},draft:{status:'missing'}}});
+    expect(session.facade.work.state.draft).toBe(retained.draft);expect(session.facade.work.state.edits).toBe(retained.edits);
+    expect(session.facade.work.state.publicInputs).toBe(retained.publicInputs);expect(session.facade.work.state.draftConflict).toBe(true);
+    expect(session.records.some(row=>row.method==='open_draft')).toBe(false);
+    expect(await settle(session,session.client.query('get_draft',{...lookup,hostEpoch:'00009003-1111-4111-8111-111111111111'})))
+      .toMatchObject({kind:'rejected',error:{code:'plan_host_mismatch'}});
+    expect(session.delivery.lastFault).toBeUndefined();
+  }finally{dispose();}
+});
 test('Settings preview Save remains admitted until exact completion then reopens authoritative clean baseline',async()=>{
   const {session,controller,dispose}=await start();try{controller.setPublic('setting.boolean',{kind:'boolean',value:true});await settle(session,session.facade.prepareSaveInPlace());expect(session.facade.state.transition.kind).toBe('review');
     await settle(session,session.facade.commitSave());expect(session.facade.state.transition.kind).toBe('observing');expect(session.facade.work.state.dirty).toBe(true);

@@ -112,9 +112,9 @@ export const registry = {
       'docs/next/CONFIGURATION_WORKSPACE.md', 'scripts/next/configuration-workspace.mjs', 'scripts/next/input-tree.mjs',
       'scripts/next/owned-artifact.mjs', 'scripts/next/rust-context.mjs', 'crates/bridge-engine', 'crates/bridge-app', 'crates/bridge-contracts',
       'crates/bridge-domain', 'crates/bridge-native', 'crates/bridge-toml', 'crates/bridge-platform-windows',
-      'crates/bridge-platform-macos', 'crates/bridge-journal-io', 'contracts/fixtures/sc08-open-clean-draft-reply.json'],
-    criteria: ['BR14-01', 'BR14-02', 'BR14-03', 'BR14-04', 'BR14-05', 'BR14-06'],
-    boundary: 'Actual native-host test artifacts for portable draft, semantic preparation, transaction and restart models, application-provider entropy controls and current-host clock/entropy calls, with strict Clippy and stable source/tool/binary inventories. Synthetic owner/schema/sensitive-entry/TOML ports; actual native configuration owner, producer adoption, OperationPorts composition and package acceptance remain unqualified.'
+      'crates/bridge-platform-macos', 'crates/bridge-journal-io', 'contracts'],
+    criteria: ['BR14-01', 'BR14-02', 'BR14-03', 'BR14-04', 'BR14-05', 'BR14-06', 'BR14-07'],
+    boundary: 'Actual native-host test artifacts for portable draft, encoded dispatcher read/stage/current-draft reconciliation, shared kernel events, semantic preparation, transaction and restart models, application-provider entropy controls and current-host clock/entropy calls, with strict Clippy and stable source/tool/binary inventories. Synthetic owner/schema/sensitive-entry/TOML ports; actual native configuration owner, producer adoption, Save/Restore OperationPorts custody and package acceptance remain unqualified.'
   },
   'frontend-home-targets': {
     host: 'any', timeoutMs: 600000,

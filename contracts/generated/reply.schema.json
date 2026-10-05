@@ -1259,7 +1259,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation12"
+              "$ref": "#/definitions/Observation13"
             }
           },
           "required": [
@@ -1889,7 +1889,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Observation19"
+              "$ref": "#/definitions/Observation20"
             }
           },
           "required": [
@@ -1906,7 +1906,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Observation20"
+              "$ref": "#/definitions/Observation21"
             }
           },
           "required": [
@@ -1923,7 +1923,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Observation9"
+              "$ref": "#/definitions/Observation10"
             }
           },
           "required": [
@@ -1940,7 +1940,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Observation21"
+              "$ref": "#/definitions/Observation22"
             }
           },
           "required": [
@@ -3314,6 +3314,27 @@
       ],
       "type": "string"
     },
+    "GetDraftResult": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Cursor"
+            }
+          ],
+          "description": "The actor watermark of this immutable draft observation. Consumers must\nstill process every event in the global stream through this sequence."
+        },
+        "draft": {
+          "$ref": "#/definitions/Observation6"
+        }
+      },
+      "required": [
+        "cursor",
+        "draft"
+      ],
+      "type": "object"
+    },
     "GetOperationResult": {
       "additionalProperties": false,
       "properties": {
@@ -3505,13 +3526,13 @@
           "$ref": "#/definitions/InstallationBinding"
         },
         "client": {
-          "$ref": "#/definitions/Observation9"
+          "$ref": "#/definitions/Observation10"
         },
         "name": {
           "$ref": "#/definitions/DisplayName"
         },
         "update": {
-          "$ref": "#/definitions/Observation10"
+          "$ref": "#/definitions/Observation11"
         }
       },
       "required": [
@@ -4155,7 +4176,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/NativeGameRecoveryRef"
+              "$ref": "#/definitions/GameClientBinding"
             }
           },
           "required": [
@@ -4235,7 +4256,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Inventory3"
+              "$ref": "#/definitions/NativeGameRecoveryRef"
             }
           },
           "required": [
@@ -4315,7 +4336,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Inventory6"
+              "$ref": "#/definitions/Inventory3"
             }
           },
           "required": [
@@ -4395,7 +4416,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/DocumentSnapshot"
+              "$ref": "#/definitions/Inventory6"
             }
           },
           "required": [
@@ -4475,7 +4496,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/PrivateValueRef"
+              "$ref": "#/definitions/DocumentSnapshot"
             }
           },
           "required": [
@@ -4555,7 +4576,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Inventory7"
+              "$ref": "#/definitions/PrivateValueRef"
             }
           },
           "required": [
@@ -4635,7 +4656,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/RuntimeReleaseSelectionRef"
+              "$ref": "#/definitions/Inventory7"
             }
           },
           "required": [
@@ -4715,7 +4736,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/CheckedGameUpdateRef"
+              "$ref": "#/definitions/RuntimeReleaseSelectionRef"
             }
           },
           "required": [
@@ -4795,7 +4816,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/BridgeReleaseSelectionRef"
+              "$ref": "#/definitions/CheckedGameUpdateRef"
             }
           },
           "required": [
@@ -4875,7 +4896,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/SessionBinding"
+              "$ref": "#/definitions/BridgeReleaseSelectionRef"
             }
           },
           "required": [
@@ -5035,7 +5056,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/RuntimeOwnership"
+              "$ref": "#/definitions/SessionBinding"
             }
           },
           "required": [
@@ -5103,6 +5124,86 @@
       ]
     },
     "Observation21": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/RuntimeOwnership"
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Observation22": {
       "oneOf": [
         {
           "additionalProperties": false,
@@ -5435,7 +5536,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/ApplicationPreferencesSnapshot"
+              "$ref": "#/definitions/DraftSnapshot"
             }
           },
           "required": [
@@ -5515,7 +5616,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Inventory"
+              "$ref": "#/definitions/ApplicationPreferencesSnapshot"
             }
           },
           "required": [
@@ -5595,7 +5696,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/Inventory2"
+              "$ref": "#/definitions/Inventory"
             }
           },
           "required": [
@@ -5675,7 +5776,7 @@
               "type": "string"
             },
             "value": {
-              "$ref": "#/definitions/GameClientBinding"
+              "$ref": "#/definitions/Inventory2"
             }
           },
           "required": [
@@ -7503,6 +7604,23 @@
           "additionalProperties": false,
           "properties": {
             "name": {
+              "const": "get_draft",
+              "type": "string"
+            },
+            "output": {
+              "$ref": "#/definitions/GetDraftResult"
+            }
+          },
+          "required": [
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
               "const": "snapshot",
               "type": "string"
             },
@@ -7524,7 +7642,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation7"
+              "$ref": "#/definitions/Observation8"
             }
           },
           "required": [
@@ -7541,7 +7659,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation8"
+              "$ref": "#/definitions/Observation9"
             }
           },
           "required": [
@@ -7558,7 +7676,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation11"
+              "$ref": "#/definitions/Observation12"
             }
           },
           "required": [
@@ -7575,7 +7693,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation12"
+              "$ref": "#/definitions/Observation13"
             }
           },
           "required": [
@@ -7609,7 +7727,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation13"
+              "$ref": "#/definitions/Observation14"
             }
           },
           "required": [
@@ -7626,7 +7744,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation15"
+              "$ref": "#/definitions/Observation16"
             }
           },
           "required": [
@@ -7643,7 +7761,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation16"
+              "$ref": "#/definitions/Observation17"
             }
           },
           "required": [
@@ -7660,7 +7778,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation17"
+              "$ref": "#/definitions/Observation18"
             }
           },
           "required": [
@@ -7677,7 +7795,7 @@
               "type": "string"
             },
             "output": {
-              "$ref": "#/definitions/Observation18"
+              "$ref": "#/definitions/Observation19"
             }
           },
           "required": [
@@ -9309,19 +9427,19 @@
           "$ref": "#/definitions/Cursor"
         },
         "installations": {
-          "$ref": "#/definitions/Observation8"
+          "$ref": "#/definitions/Observation9"
         },
         "operations": {
           "$ref": "#/definitions/Inventory4"
         },
         "preferences": {
-          "$ref": "#/definitions/Observation6"
-        },
-        "profiles": {
           "$ref": "#/definitions/Observation7"
         },
+        "profiles": {
+          "$ref": "#/definitions/Observation8"
+        },
         "sessions": {
-          "$ref": "#/definitions/Observation11"
+          "$ref": "#/definitions/Observation12"
         }
       },
       "required": [
@@ -9396,7 +9514,7 @@
           "$ref": "#/definitions/SyncMode"
         },
         "resolvedProxy": {
-          "$ref": "#/definitions/Observation14"
+          "$ref": "#/definitions/Observation15"
         },
         "secretConfigured": {
           "type": "boolean"
