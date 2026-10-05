@@ -28,6 +28,22 @@ this route.
 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken),
 [CreateProcessAsUserW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw).
 
+Before spawn, the launcher records the parent's current window-station and
+thread-desktop names, flags and bounded owner/group/DACL and mandatory-label
+snapshots. A query-only duplicate of the selected token supplies a read-only
+`AccessCheck(MAXIMUM_ALLOWED)` against the captured DACL, with the documented
+object-specific generic mapping. Refused, unsupported or oversized observations
+remain unavailable; they do not change the launch route. The duplicate is never
+attached to a thread, borrowed user-object handles are never closed, and no
+desktop, ACL or privilege is changed. The fixed `Probe()` uses the same token
+selection for local read-only observations without launching a child.
+These snapshots describe parent objects; they do not prove the child's actual
+assignment, mandatory-integrity authorization or DLL initialization. In
+particular, a discretionary-access pass cannot qualify the native fixtures.
+[AccessCheck](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-accesscheck),
+[user-object security](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getuserobjectsecurity),
+[security-information query rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/security-information).
+
 The child bootstrap is a fixed checked-in PowerShell script. It observes its
 own token before starting pinned Node and compares its user/session/logon and
 current-user LocalAppData observations to the bounded source handshake. Node's

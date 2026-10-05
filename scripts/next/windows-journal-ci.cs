@@ -52,10 +52,42 @@ namespace StfcBridgeJournalCi {
         public Context DerivedContext { get; set; }
         public bool DerivedAttempted { get; set; }
         public bool DerivedPredicateAccepted { get; set; }
+        public StartupObjectObservation[] StartupObjects { get; set; }
         public string FailureCode { get; set; }
         public int NativeError { get; set; }
         public bool ChildLaunched { get; set; } = false;
         public bool HostedCiProved { get; set; } = false;
+    }
+    public sealed class SecuritySnapshot {
+        public uint RequestedInformation { get; set; }
+        public uint RequiredBytes { get; set; }
+        public string Result { get; set; } = "unavailable";
+        public string DescriptorBase64 { get; set; }
+        public string Sha256 { get; set; }
+        public string FailureCode { get; set; }
+        public int NativeError { get; set; }
+        internal byte[] Raw;
+    }
+    public sealed class StartupObjectObservation {
+        public string ObservationKind { get; set; } = "parent_current_user_object";
+        public string Role { get; set; }
+        public string Name { get; set; }
+        public uint Flags { get; set; }
+        public string SelectedTokenObservationKind { get; set; }
+        public uint AccessCheckTokenType { get; set; }
+        public SecuritySnapshot OwnerGroupDacl { get; set; }
+        public SecuritySnapshot MandatoryLabel { get; set; }
+        public string MappingKind { get; set; }
+        public uint DesiredAccess { get; set; } = 0x02000000;
+        public bool DaclCheckApiSucceeded { get; set; }
+        public bool? DaclAccessStatus { get; set; }
+        public uint? DaclGrantedAccess { get; set; }
+        public string PrivilegeSetBase64 { get; set; }
+        public bool DaclOnly { get { return true; } }
+        public bool ChildObjectAssignmentObserved { get { return false; } }
+        public bool DesktopSelected { get { return false; } }
+        public string FailureCode { get; set; }
+        public int NativeError { get; set; }
     }
     public sealed class LaunchObservation {
         public string SchemaVersion { get; set; } = "bridge-windows-journal-ci-launch/v1";
@@ -68,6 +100,7 @@ namespace StfcBridgeJournalCi {
         public string LaunchRoute { get; set; }
         public string DotnetVersion { get; set; } = Environment.Version.ToString();
         public ProbeObservation TokenProbe { get; set; }
+        public StartupObjectObservation[] StartupObjects { get; set; }
         public FileObservation[] Files { get; set; }
         public uint ChildPid { get; set; }
         public string ChildCreationFiletime { get; set; }
@@ -113,6 +146,8 @@ namespace StfcBridgeJournalCi {
         public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
     }
     [StructLayout(LayoutKind.Sequential)] internal struct SecurityAttributes { public int Length; public IntPtr Descriptor; public int Inherit; }
+    [StructLayout(LayoutKind.Sequential)] internal struct GenericMapping { public uint Read, Write, Execute, All; }
+    [StructLayout(LayoutKind.Sequential)] internal struct UserObjectFlags { public int Inherit, Reserved; public uint Flags; }
     [StructLayout(LayoutKind.Sequential)] internal struct StartupInfo {
         public uint Size; public IntPtr Reserved, Desktop, Title;
         public uint X, Y, XSize, YSize, XChars, YChars, Fill, Flags; public ushort Show, ReservedSize;
@@ -136,6 +171,7 @@ namespace StfcBridgeJournalCi {
         [DllImport("kernel32.dll")] internal static extern IntPtr GetCurrentProcess();
         [DllImport("kernel32.dll")] internal static extern IntPtr GetCurrentThread();
         [DllImport("kernel32.dll")] internal static extern uint GetCurrentProcessId();
+        [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
         [DllImport("kernel32.dll", SetLastError=true)] internal static extern bool GetProcessTimes(IntPtr p, out FileTime created, out FileTime exited, out FileTime kernel, out FileTime user);
         [DllImport("kernel32.dll", SetLastError=true)] internal static extern bool IsWow64Process2(IntPtr p, out ushort machine, out ushort native);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool OpenProcessToken(IntPtr p, uint rights, out Handle token);
@@ -143,6 +179,15 @@ namespace StfcBridgeJournalCi {
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool GetTokenInformation(Handle token, int type, IntPtr data, uint capacity, out uint returned);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool CreateWellKnownSid(int type, IntPtr domain, IntPtr sid, ref uint capacity);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool CreateRestrictedToken(Handle source, uint flags, uint disableCount, ref SidAttributes disable, uint deleteCount, IntPtr deleted, uint restrictCount, IntPtr restricted, out Handle result);
+        [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool DuplicateTokenEx(Handle source, uint rights, IntPtr attributes, int level, int type, out Handle duplicate);
+        [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool AccessCheck(IntPtr descriptor, Handle token, uint desired, ref GenericMapping mapping, IntPtr privileges, ref uint privilegeBytes, out uint granted, out bool accessStatus);
+        [DllImport("advapi32.dll")] internal static extern bool IsValidSecurityDescriptor(IntPtr descriptor);
+        [DllImport("advapi32.dll")] internal static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
+        [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool GetSecurityDescriptorControl(IntPtr descriptor, out ushort control, out uint revision);
+        [DllImport("user32.dll", SetLastError=true)] internal static extern IntPtr GetProcessWindowStation();
+        [DllImport("user32.dll", SetLastError=true)] internal static extern IntPtr GetThreadDesktop(uint threadId);
+        [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] internal static extern bool GetUserObjectInformation(IntPtr handle, int index, IntPtr data, uint bytes, out uint needed);
+        [DllImport("user32.dll", SetLastError=true)] internal static extern bool GetUserObjectSecurity(IntPtr handle, ref uint information, IntPtr descriptor, uint bytes, out uint needed);
         [DllImport("advapi32.dll", SetLastError=true)] internal static extern bool SetTokenInformation(Handle token, int type, ref SidAttributes value, uint bytes);
         [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] internal static extern bool LookupPrivilegeValue(string system, string name, out Luid luid);
         [DllImport("shell32.dll", CharSet=CharSet.Unicode)] internal static extern int SHGetKnownFolderPath(ref Guid id, uint flags, Handle token, out IntPtr path);
@@ -334,7 +379,79 @@ namespace StfcBridgeJournalCi {
                 } catch { candidate.Dispose(); throw; }
             }
         }
-        public static string Probe() { var probe=new ProbeObservation(); try { using(var candidate=Prepare(probe)) {} } catch(CiFailure error) { probe.FailureCode=error.Code; probe.NativeError=error.NativeError; } catch { probe.FailureCode="PROBE_EXCEPTION"; }
+        // Read-only snapshots of the parent's current objects. These neither select
+        // the child's desktop nor establish MIC, loader or native-test success.
+        private static SecuritySnapshot Snapshot(IntPtr handle,uint information) {
+            var result=new SecuritySnapshot { RequestedInformation=information };
+            try {
+                uint needed; bool sized=Native.GetUserObjectSecurity(handle,ref information,IntPtr.Zero,0,out needed); int sizeError=Marshal.GetLastWin32Error(); result.RequiredBytes=needed;
+                if(sized||sizeError!=122) throw new CiFailure("USER_SECURITY_SIZE_QUERY",sizeError); Require(needed>=20&&needed<=4096,"USER_SECURITY_BOUND");
+                using(var buffer=new Buffer((int)needed)) {
+                    uint returned; bool read=Native.GetUserObjectSecurity(handle,ref information,buffer.Pointer,needed,out returned); int readError=Marshal.GetLastWin32Error(); result.RequiredBytes=returned;
+                    if(!read) throw new CiFailure("USER_SECURITY_QUERY",readError);
+                    Require(returned>=20&&returned<=needed&&Native.IsValidSecurityDescriptor(buffer.Pointer),"USER_SECURITY_EXTENT");
+                    ushort control; uint revision; Check(Native.GetSecurityDescriptorControl(buffer.Pointer,out control,out revision),"USER_SECURITY_CONTROL"); Require((control&0x8000)!=0&&revision==1,"USER_SECURITY_SELF_RELATIVE");
+                    uint length=Native.GetSecurityDescriptorLength(buffer.Pointer); Require(length>=20&&length<=returned,"USER_SECURITY_LENGTH");
+                    result.Raw=new byte[(int)length]; Marshal.Copy(buffer.Pointer,result.Raw,0,result.Raw.Length);
+                    result.DescriptorBase64=Convert.ToBase64String(result.Raw); result.Sha256=Convert.ToHexString(SHA256.HashData(result.Raw)).ToLowerInvariant(); result.Result="observed";
+                }
+            } catch(CiFailure error) { result.FailureCode=error.Code; result.NativeError=error.NativeError; }
+            catch { result.FailureCode="USER_SECURITY_EXCEPTION"; }
+            return result;
+        }
+        private static void StartupObject(IntPtr handle,Handle token,StartupObjectObservation result) {
+            try {
+                Require(handle!=IntPtr.Zero&&handle!=new IntPtr(-1),"PARENT_USER_OBJECT_HANDLE");
+                using(var name=new Buffer(1026)) {
+                    uint needed; Check(Native.GetUserObjectInformation(handle,2,name.Pointer,1026,out needed),"USER_OBJECT_NAME");
+                    Require(needed>=2&&needed<=1026&&needed%2==0&&Marshal.ReadInt16(name.Pointer,(int)needed-2)==0,"USER_OBJECT_NAME_EXTENT");
+                    result.Name=Marshal.PtrToStringUni(name.Pointer,(int)needed/2-1); Require(result.Name.Length>0&&result.Name.Length<=512&&!result.Name.Contains('\0'),"USER_OBJECT_NAME_BOUND");
+                }
+                using(var flags=new Buffer(Marshal.SizeOf<UserObjectFlags>())) {
+                    uint needed; Check(Native.GetUserObjectInformation(handle,1,flags.Pointer,(uint)flags.Length,out needed),"USER_OBJECT_FLAGS"); Require(needed==flags.Length,"USER_OBJECT_FLAGS_EXTENT");
+                    result.Flags=Marshal.PtrToStructure<UserObjectFlags>(flags.Pointer).Flags;
+                }
+                result.OwnerGroupDacl=Snapshot(handle,7); result.MandatoryLabel=Snapshot(handle,0x10);
+                GenericMapping mapping;
+                if(result.Role=="window-station") {
+                    bool interactive=String.Equals(result.Name,"WinSta0",StringComparison.OrdinalIgnoreCase); result.MappingKind=interactive?"interactive-window-station":"noninteractive-window-station";
+                    mapping=interactive?new GenericMapping { Read=0x20303,Write=0x2001c,Execute=0x20060,All=0xf037f }:new GenericMapping { Read=0x20103,Write=0x2000c,Execute=0x20060,All=0xf016f };
+                } else { Require(result.Role=="desktop","FIXED_USER_OBJECT_ROLE"); result.MappingKind="desktop"; mapping=new GenericMapping { Read=0x20041,Write=0x200be,Execute=0x20100,All=0xf01ff }; }
+                Require(result.OwnerGroupDacl.Result=="observed","DACL_SNAPSHOT_UNAVAILABLE");
+                using(var descriptor=new Buffer(result.OwnerGroupDacl.Raw.Length)) using(var privileges=new Buffer(4096)) {
+                    Marshal.Copy(result.OwnerGroupDacl.Raw,0,descriptor.Pointer,descriptor.Length); uint bytes=4096,granted; bool status;
+                    Check(Native.AccessCheck(descriptor.Pointer,token,result.DesiredAccess,ref mapping,privileges.Pointer,ref bytes,out granted,out status),"PARENT_OBJECT_DACL_CHECK");
+                    result.DaclCheckApiSucceeded=true; result.DaclAccessStatus=status; result.DaclGrantedAccess=granted;
+                    Require(bytes>=8&&bytes<=4096,"ACCESS_CHECK_PRIVILEGE_EXTENT"); uint count=unchecked((uint)Marshal.ReadInt32(privileges.Pointer)); Require(count<=128&&8+(long)count*12<=bytes,"ACCESS_CHECK_PRIVILEGE_COUNT");
+                    byte[] used=new byte[8+(int)count*12]; Marshal.Copy(privileges.Pointer,used,0,used.Length); result.PrivilegeSetBase64=Convert.ToBase64String(used);
+                }
+            } catch(CiFailure error) { result.FailureCode=error.Code; result.NativeError=error.NativeError; }
+            catch { result.FailureCode="PARENT_OBJECT_OBSERVATION_EXCEPTION"; }
+        }
+        private static StartupObjectObservation[] StartupObjects(Handle primary,Context selected) {
+            var result=new[]{new StartupObjectObservation { Role="window-station",SelectedTokenObservationKind=selected.ObservationKind },new StartupObjectObservation { Role="desktop",SelectedTokenObservationKind=selected.ObservationKind }};
+            Handle owned=null,duplicate=null;
+            try {
+                if(primary==null) {
+                    Check(Native.OpenProcessToken(Native.GetCurrentProcess(),Query|Duplicate|Impersonate,out owned),"STARTUP_OWN_QUERY_DUPLICATE_TOKEN"); Require(!owned.IsInvalid,"STARTUP_OWN_TOKEN_HANDLE"); primary=owned;
+                    var current=Observe(primary,Native.GetCurrentProcess(),Native.GetCurrentThread(),Native.GetCurrentProcessId(),"own_process_token"); Ordinary(current); SameIdentity(selected,current);
+                }
+                Check(Native.DuplicateTokenEx(primary,Query,IntPtr.Zero,2,2,out duplicate),"STARTUP_ACCESS_CHECK_DUPLICATE"); Require(!duplicate.IsInvalid,"STARTUP_DUPLICATE_HANDLE"); uint type=Dword(duplicate,8); Require(type==2,"STARTUP_ACCESS_CHECK_TOKEN_TYPE");
+                foreach(var item in result) item.AccessCheckTokenType=type;
+                // GetProcessWindowStation/GetThreadDesktop return borrowed handles.
+                // No impersonation, desktop switch, security write or handle close.
+                StartupObject(Native.GetProcessWindowStation(),duplicate,result[0]); StartupObject(Native.GetThreadDesktop(Native.GetCurrentThreadId()),duplicate,result[1]);
+                Require(ThreadAbsent(Native.GetCurrentThread()),"STARTUP_THREAD_TOKEN_ABSENT");
+            } catch(CiFailure error) { foreach(var item in result) { item.FailureCode=error.Code; item.NativeError=error.NativeError; } }
+            catch { foreach(var item in result) item.FailureCode="STARTUP_OBSERVATION_EXCEPTION"; }
+            finally { if(duplicate!=null) duplicate.Dispose(); if(owned!=null) owned.Dispose(); }
+            return result;
+        }
+        public static string Probe() { var probe=new ProbeObservation(); try {
+                using(var source=OwnToken(false)) probe.SourceContext=Observe(source,Native.GetCurrentProcess(),Native.GetCurrentThread(),Native.GetCurrentProcessId(),"own_process_token");
+                if(IsOrdinary(probe.SourceContext)) probe.StartupObjects=StartupObjects(null,probe.SourceContext);
+                else using(var candidate=Prepare(probe)) { probe.StartupObjects=StartupObjects(candidate,probe.DerivedContext); }
+            } catch(CiFailure error) { probe.FailureCode=error.Code; probe.NativeError=error.NativeError; } catch { probe.FailureCode="PROBE_EXCEPTION"; }
             return JsonSerializer.Serialize(probe,JsonOptions); }
         private static void EnvironmentPreflight() {
             foreach(System.Collections.DictionaryEntry row in Environment.GetEnvironmentVariables()) { string key=((string)row.Key).ToUpperInvariant(),value=(string)row.Value;
@@ -416,6 +533,7 @@ namespace StfcBridgeJournalCi {
                 else { result.LaunchRoute="restricted-primary"; candidate=Prepare(result.TokenProbe); selected=result.TokenProbe.DerivedContext; }
                 result.ArtifactId=Guid.NewGuid().ToString("D"); directory=ArtifactDirectory(root,result.ArtifactId,true);
                 result.ReceiptPath="artifacts/next/windows-journal-ci/"+result.ArtifactId+"/launcher.json";
+                result.StartupObjects=StartupObjects(candidate,selected);
                 job=Native.CreateJobObject(IntPtr.Zero,null); Require(!job.IsInvalid,"JOB_CREATE"); var limits=new ExtendedLimits { Basic=new BasicLimits { Flags=0x2000 } }; Check(Native.SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf<ExtendedLimits>()),"JOB_LIMITS");
                 var sa=new SecurityAttributes { Length=Marshal.SizeOf<SecurityAttributes>(),Inherit=0 }; Check(Native.CreatePipe(out inputRead,out inputWrite,ref sa,4096),"INPUT_PIPE"); Check(Native.CreatePipe(out outRead,out outWrite,ref sa,65536),"OUTPUT_PIPE"); Check(Native.CreatePipe(out errRead,out errWrite,ref sa,65536),"ERROR_PIPE");
                 Verify(files); string shell=files.Single(f=>f.Observation.Role=="powershell").Observation.Route;
