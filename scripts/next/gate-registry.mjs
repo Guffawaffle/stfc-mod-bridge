@@ -15,9 +15,9 @@ export const registry = {
     argv: ['scripts/next/macos-platform-fixtures.mjs'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
       '.github/workflows/next-foundation.yml', 'docs/next/MAC_PLATFORM_FIXTURES.md', 'docs/next/NATIVE_QUALIFICATION.md',
-      'scripts/next', 'crates/bridge-platform-macos', 'crates/bridge-domain', 'crates/bridge-contracts'],
+      'scripts/next', 'crates/bridge-platform-macos', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io'],
     criteria: ['BR07-FIX-01', 'BR07-FIX-02', 'BR07-FIX-03', 'BR07-FIX-04', 'BR07-FIX-05', 'BR07-FIX-06', 'BR07-FIX-07', 'BR07-FIX-08'],
-    boundary: 'Selected native Apple Silicon private fixtures only: exact source/tools/artifact inventories, one APFS volume, owned helper containment, native provider calls and ownership docs. Excludes Keychain, GUI, installed game, full br-07 acceptance and release qualification.'
+    boundary: 'Selected native Apple Silicon private fixtures only: exact source/tools/artifact inventories with retained executable copies, one APFS volume, owned helper containment, native provider calls, isolated private-journal custody and ownership docs. Excludes production journal namespace/adoption, cross-process journal exclusion, killed-process WAL recovery, Keychain, GUI, installed game, full br-07 acceptance and release qualification.'
   },
   'scope-contract': {
     host: 'any',

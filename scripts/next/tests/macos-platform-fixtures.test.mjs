@@ -3,9 +3,35 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fork, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { macFixtureAdmission, macMachO, macArtifactInventory, macPsRows,
   macPsObservation, macDfVolume, macAclAbsent, MacSupervisorAdmission, macBoundedDiagnostic,
-  macFixtureCommandRouting, macCaptureChild } from '../macos-platform-fixtures.mjs';
+  macFixtureCommandRouting, macCaptureChild, macDocEvidence } from '../macos-platform-fixtures.mjs';
+
+test('native doc parser requires both journal ownership blocks and refuses duplicate proof', async () => {
+  const items = [
+    ['filesystem.rs', 'filesystem::RetainedDirectory', '::RetainedDirectory;'],
+    ['filesystem.rs', 'filesystem::ReadOnlyFile', '::ReadOnlyFile;'],
+    ['filesystem.rs', 'filesystem::StagedReplacement', '::StagedReplacement;'],
+    ['process.rs', 'process::ExactProcessGuard', '::ExactProcessGuard;'],
+    ['secrets.rs', 'secrets::Plaintext', '::Plaintext;'],
+    ['private_journal.rs', 'private_journal::NativePrivateJournalStorage', 'require_send::<bridge_platform_macos::NativePrivateJournalStorage>();'],
+    ['private_journal.rs', 'private_journal::NativePrivateJournalStorage', 'require_sync::<bridge_platform_macos::NativePrivateJournalStorage>();']
+  ];
+  const rows = items.map(([file, item, needle]) => {
+    const source = readFileSync(new URL(`../../../crates/bridge-platform-macos/src/${file}`, import.meta.url), 'utf8').split(/\r?\n/);
+    const body = source.findIndex(line => line.includes(needle));
+    assert.ok(body > 0);
+    let begin = body;
+    while (begin >= 0 && !/^\/\/\/ ```compile_fail\s*$/.test(source[begin])) begin--;
+    assert.ok(begin >= 0);
+    return `test src/${file} - ${item} (line ${begin + 1}) - compile fail ... ok`;
+  });
+  const summary = '\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n';
+  assert.equal((await macDocEvidence(rows.join('\n') + summary)).length, 7);
+  await assert.rejects(macDocEvidence([...rows.slice(0, 6), rows[5]].join('\n') + summary), { code: 'MAC_FIXTURE_DOC_ORIGIN' });
+  await assert.rejects(macDocEvidence(rows.slice(0, 6).join('\n') + summary), { code: 'MAC_FIXTURE_DOC_INVENTORY' });
+});
 
 // Portable parsing/refusal and Node invocation assertions do not execute the
 // native harness, authenticate CI metadata or qualify an Apple Silicon host.

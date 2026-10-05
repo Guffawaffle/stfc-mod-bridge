@@ -266,6 +266,7 @@ name = "bridge-platform-macos"
 version = "0.1.0"
 dependencies = [
  "bridge-domain",
+ "bridge-journal-io",
  "libc",
  "sha2 0.11.0",
 ]

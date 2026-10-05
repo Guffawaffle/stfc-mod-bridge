@@ -10,6 +10,13 @@ pub mod format;
 pub mod providers;
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+mod private_journal;
+#[cfg(any(test, all(target_os = "macos", target_arch = "aarch64")))]
+mod private_journal_policy;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub use private_journal::NativePrivateJournalStorage;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub mod bundle;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod cf;

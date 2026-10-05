@@ -2,8 +2,8 @@
 
 `macos-platform-fixtures` is a limited native observation suite for Bridge issue
 244 (`br-07`). Its entry point is `scripts/next/macos-platform-fixtures.mjs`.
-It supplies **25 default controlled tests, 12 individually selected native tests,
-and 5 native compile-fail documentation blocks**. The full `macos-platform` gate
+It supplies **40 default controlled tests, 17 individually selected native tests,
+and 7 native compile-fail documentation blocks**. The full `macos-platform` gate
 and package acceptance remain separate requirements.
 
 The suite refuses public arguments, foreign hosts, Intel/Rosetta execution,
@@ -71,6 +71,13 @@ Executable observations require a complete thin 64-bit little-endian arm64
 Mach-O executable and a bounded valid load-command table. Universal, Intel,
 wrong-type and incomplete artifacts refuse this narrow protocol.
 
+The three current libtest executables also receive exclusively created copies
+under the retained private fixture directory. Bounded descriptor reads and
+writes bind each copy's bytes to the current compiler artifact; its complete
+Mach-O, length, digest and private identity are observed and checked again
+before success. The original executable remains the execution route. Its
+retained copy has the same bytes, and is uploaded with the fixture receipts.
+
 ## Private filesystem fixture
 
 One exclusively created UUID leaf under owned
@@ -127,11 +134,13 @@ The format binary has exactly the sixteen names in `macFormatNames`. Its four
 Keychain-purpose/reference cases parse synthetic identifiers and access no
 Keychain. Execution requires 16 passed and zero ignored/filtered cases.
 
-The native library discovery has exactly nine controlled provider names in
-`macControlledNames` and two ignored names in `macProviderNames`. The foreign
-host refusal test must be absent. Default library execution explicitly skips
-the two native cases: 9 passed, 0 ignored, 2 filtered. Each native provider case
-then runs with `--ignored --exact --test-threads=1`: 1 passed, 10 filtered.
+The native library discovery has nine controlled provider names in
+`macControlledNames`, fifteen controlled journal-policy names in
+`macJournalPolicyNames`, two ignored names in `macProviderNames` and five ignored
+journal cases in `macJournalNativeNames`. The foreign host refusal test must be
+absent. Default library execution explicitly skips all seven native cases:
+24 passed, 0 ignored, 7 filtered. Each native library case then runs separately
+with `--ignored --exact --test-threads=1`: 1 passed, 30 filtered.
 
 The two selected provider names are:
 
@@ -141,6 +150,28 @@ The two selected provider names are:
 The clock observes advancement over 5ms, without suspend or UTC proof. The RNG
 case observes actual API success and owned-sample wiping without logging random
 bytes or asserting statistical entropy.
+
+The five retained-journal cases use private test-only construction beneath the
+internally supplied `BRIDGE_MACOS_NATIVE_FIXTURE_ROOT`. Each creates its own
+random nonce namespace and retains its tree. They cover roundtrip/reopen and
+process-local reservation, mode-change refusal without repair, multiple-link
+refusal without unlinking, replacement by a directory containing the same
+bytes, and retry after faults injected after each completed constructor flush
+stage. The last case does not inject a kernel fsync error or power loss. The
+cases spawn no process and establish no cross-process exclusion or crash
+recovery. They bypass production home/Library discovery and cannot qualify the
+zero-argument production namespace route.
+
+Production source uses native `getpwuid_r` home discovery and retained
+root-to-home descriptors, allowing independently observed system-volume
+transitions before the captured local APFS home. From home through the private
+leaf it requires that captured device. It refuses root/set-ID/thread credential
+overrides, links, Finder aliases, unsafe ownership/modes, unknown observations
+and extended private ACLs; existing OS ancestry permits only restrictive DENY
+ACL entries. Existing permissions are never repaired. A restrictive creation
+umask can cause refusal. Lifetime BSD flock is cooperative; it cannot prevent
+malicious same-user namespace or byte changes. These are implementation
+constraints awaiting native qualification, not observations of this machine.
 
 The native integration inventory contains exactly eleven ignored cases. Ten
 are selected separately, each requiring 1 passed and 10 filtered:
@@ -168,12 +199,14 @@ corpus qualification. The focus case runs on a normal libtest worker with one
 test thread; it observes refusal/unavailable or NoWindow/Denied, without GUI
 focus transfer or consent/menu integration.
 
-Exactly five actual rustdoc compile-fail rows must bind the current block/item
+Exactly seven actual rustdoc compile-fail rows must bind the current block/item
 identity: `filesystem::RetainedDirectory`, `filesystem::ReadOnlyFile`,
 `filesystem::StagedReplacement`, `process::ExactProcessGuard` and
 `secrets::Plaintext`. Displayed line numbers must fall within the matching
-current source block. These docs reject a combined `Send + Sync` transfer bound;
-they are not two independent negative proofs. Zero/ignored/unknown doctest rows
+current source block. Those five docs reject a combined `Send + Sync` transfer
+bound. The journal owner adds separate blocks rejecting `Send` and `Sync`, each
+bound to its own source block even though both report the same item.
+Zero/ignored/unknown doctest rows
 fail, and `cargo test --all-targets` is not documentation execution.
 
 ## Owned process disposal and fixed start barrier
@@ -277,7 +310,7 @@ child and never qualify universal descendant disposal.
 The fresh leaf retains a versioned observation, exact source records/head,
 actual host/UID/job routing, tool routes/versions/hashes, current Cargo artifact
 origins, Mach-O/executable/helper records, closed inventories, each checked
-execution/filter count, five documentation blocks, private mode/ACL/volume/case
+execution/filter count, seven documentation blocks, private mode/ACL/volume/case
 facts, supervisor pre-anchor cancellation/barrier/readiness/disposal/absence records and bounded separate
 command stdout/stderr. Whole environments, entropy, credentials and unrelated
 disk/process rows are excluded. Failed or unknown reached observations are
@@ -288,7 +321,7 @@ retained before refusal. Pre-admission refusals create no private fixture tree.
 | BR07-FIX-01 | Exact source/tool/artifact/binary origin and inventories |
 | BR07-FIX-02 | Ordinary-user private fixture provisioning and bounded retention |
 | BR07-FIX-03 | Descriptor/ancestry/alias/case behavior on the selected volume |
-| BR07-FIX-04 | Staging/permissions, stale/hard-link refusals and successful flush calls |
+| BR07-FIX-04 | Staging/permissions, stale/hard-link refusals, isolated retained-journal custody and completed flush-stage retries |
 | BR07-FIX-05 | Exact self/owned-helper generation, bytes and observed exit |
 | BR07-FIX-06 | Private CFBundle, unsigned trust refusal and worker-thread refusal |
 | BR07-FIX-07 | Continuous-time/RNG native success and controlled ownership/error docs |
@@ -303,6 +336,8 @@ Remaining unavailable includes Keychain/login/locked-user setup, signed-main and
 known-signer/revocation corpus, native GUI/menu/shortcut/consent composition,
 installed game sessions, suspend, both APFS case modes, comprehensive ACL/xattr
 matrix, producer ABI/platform-service/production journal/bootstrap composition,
-actual crash/new-namespace/power-loss recovery and full `br-07` acceptance.
+production journal home/firmlink discovery and ACL observations, contained
+cross-process journal exclusion and killed-process WAL reopening, actual
+crash/new-namespace/power-loss recovery and full `br-07` acceptance.
 Successful flush syscalls establish neither hardware durability nor production
 exclusion. Windows execution/cross compilation supplies no native Mac result.

@@ -42,10 +42,34 @@ export const macControlledNames = Object.freeze([
   'random_buffer_is_initialized_before_fill_and_success_is_returned_exactly',
   'random_failure_wipes_partial_output_and_preserves_native_status', 'successful_random_call_wipes_the_discarded_local_copy'
 ].map(name => `providers::tests::${name}`));
+export const macJournalPolicyNames = Object.freeze([
+  'native_home_is_bounded_by_the_initialized_native_buffer',
+  'native_home_rejects_lexical_redirection_without_normalization',
+  'fixed_route_must_fit_path_and_component_limits',
+  'only_ordinary_unmodified_process_credentials_are_accepted',
+  'private_entries_require_exact_owner_modes_and_native_kinds',
+  'acl_absence_must_be_observed_and_never_inferred',
+  'ancestors_allow_only_observed_deny_acl_tags',
+  'file_lengths_and_seek_offsets_have_checked_closed_bounds',
+  'reservation_blocks_other_threads_until_observed_drop',
+  'failed_reservation_does_not_release_the_existing_owner',
+  'refusal_releases_only_successful_operations',
+  'refusal_remains_latched_after_unwind_or_reentrant_admission',
+  'constructor_flush_always_runs_the_complete_order_including_reopen',
+  'constructor_fault_stops_and_retry_starts_at_the_first_leaf_flush',
+  'invalid_flush_bounds_never_call_native_flush'
+].map(name => `private_journal_policy::tests::${name}`));
 export const macProviderNames = Object.freeze([
   'providers::tests::native_continuous_milliseconds_are_readable_and_advance',
   'providers::tests::native_secure_random_returns_an_owned_sample_without_logging_it'
 ]);
+export const macJournalNativeNames = Object.freeze([
+  'native_private_journal_roundtrip_reopen_and_refused_owner_reservation',
+  'native_private_journal_mode_change_refuses_without_existing_permission_repair',
+  'native_private_journal_multiple_links_refuse_without_unlinking',
+  'native_private_journal_same_byte_version_directory_replacement_refuses',
+  'native_private_journal_completed_constructor_flush_faults_retry_the_full_protocol'
+].map(name => `private_journal::native_fixtures::${name}`));
 export const macNativeNames = Object.freeze([
   'native_descriptor_identity_and_parent_replacement_refusal', 'native_symlink_ancestor_and_finder_alias_are_refused',
   'native_case_semantics_follow_the_captured_volume', 'native_staged_exchange_retains_backup_and_explicit_permissions',
@@ -56,10 +80,12 @@ export const macNativeNames = Object.freeze([
 ]);
 export const macFixtureInputs = Object.freeze([...new Set([...controlInputs, 'AGENTS.md', 'Cargo.toml', 'Cargo.lock',
   'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/MAC_PLATFORM_FIXTURES.md',
-  '.github/workflows/next-foundation.yml', 'scripts/next', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-platform-macos'])].sort());
+  '.github/workflows/next-foundation.yml', 'scripts/next', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-platform-macos'])].sort());
 const docItems = [
   ['filesystem.rs', 'filesystem::RetainedDirectory'], ['filesystem.rs', 'filesystem::ReadOnlyFile'],
-  ['filesystem.rs', 'filesystem::StagedReplacement'], ['process.rs', 'process::ExactProcessGuard'], ['secrets.rs', 'secrets::Plaintext']
+  ['filesystem.rs', 'filesystem::StagedReplacement'], ['process.rs', 'process::ExactProcessGuard'], ['secrets.rs', 'secrets::Plaintext'],
+  ['private_journal.rs', 'private_journal::NativePrivateJournalStorage', 'require_send::<bridge_platform_macos::NativePrivateJournalStorage>();'],
+  ['private_journal.rs', 'private_journal::NativePrivateJournalStorage', 'require_sync::<bridge_platform_macos::NativePrivateJournalStorage>();']
 ];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -462,12 +488,12 @@ async function runSupervised(operation, context, retain) {
   return report;
 }
 
-async function macDocEvidence(stdout) {
+export async function macDocEvidence(stdout) {
   const blocks = [];
-  for (const [file, item] of docItems) {
+  for (const [file, item, needle] of docItems) {
     const source = `crates/${PACKAGE}/src/${file}`, lines = (await readFile(ownedArtifactPath(ROOT, source), 'utf8')).split(/\r?\n/);
     const matches = [];
-    for (let index = 0; index < lines.length; index++) if (/^\/\/\/ ```compile_fail\s*$/.test(lines[index])) { const begin = index + 1; let end = index + 1; while (end < lines.length && !/^\/\/\/ ```\s*$/.test(lines[end])) end++; requireProof(end < lines.length, 'MAC_FIXTURE_DOC_BLOCK'); if (lines.slice(index + 1, end).join('\n').includes(`::${item.split('::')[1]};`)) matches.push({ source, item, begin, end: end + 1 }); }
+    for (let index = 0; index < lines.length; index++) if (/^\/\/\/ ```compile_fail\s*$/.test(lines[index])) { const begin = index + 1; let end = index + 1; while (end < lines.length && !/^\/\/\/ ```\s*$/.test(lines[end])) end++; requireProof(end < lines.length, 'MAC_FIXTURE_DOC_BLOCK'); if (lines.slice(index + 1, end).join('\n').includes(needle ?? `::${item.split('::')[1]};`)) matches.push({ source, item, begin, end: end + 1 }); }
     requireProof(matches.length === 1, 'MAC_FIXTURE_DOC_BLOCK'); blocks.push(matches[0]);
   }
   const rows = stdout.split(/\r?\n/).filter(line => line.startsWith('test ') && !line.startsWith('test result:'));
@@ -478,9 +504,10 @@ async function macDocEvidence(stdout) {
     requireProof(match, 'MAC_FIXTURE_DOC_RESULT');
     const reported = match[1].startsWith('src/') ? `crates/${PACKAGE}/${match[1]}` : match[1];
     const block = blocks.find(block => block.source === reported && block.item === match[2] && Number(match[3]) >= block.begin && Number(match[3]) <= block.end);
-    requireProof(block && !seen.has(block.item), 'MAC_FIXTURE_DOC_ORIGIN'); seen.add(block.item); block.observedLine = Number(match[3]);
+    const identity = block && `${block.source}:${block.begin}`;
+    requireProof(block && !seen.has(identity), 'MAC_FIXTURE_DOC_ORIGIN'); seen.add(identity); block.observedLine = Number(match[3]);
   }
-  nativeTestResult(stdout, 5); return blocks;
+  nativeTestResult(stdout, docItems.length); return blocks;
 }
 
 async function main() {
@@ -550,7 +577,19 @@ async function main() {
     async function compile(name, kind, source, selection, test) {
       const verb = test ? 'test' : 'build', args = [verb, '--locked', '-p', PACKAGE, ...selection, ...(test ? ['--no-run'] : []), '--message-format', 'json'];
       const artifact = macCompilerArtifact(await cargo(`compile-${name}`, args), { name, kind, source, test });
-      const binary = { ...await observeFile(artifact.executable, { native: true }), target: name, compilerArtifact: artifact }; observation.binaries.push(binary); return binary;
+      const binary = { ...await observeFile(artifact.executable, { native: true }), target: name, compilerArtifact: artifact };
+      if (test) {
+        await rootFence(directory, directoryHandle, fixtureIdentity);
+        const payloadPath = ownedArtifactPath(ROOT, `${relative(directory)}/payload-${name}`, 'file', { allowMissing: true });
+        const payloadHandle = await open(payloadPath, 'wx+', 0o700);
+        try {
+          await copyBoundHelper(binary, payloadHandle);
+          binary.retainedPayload = await observeFile(payloadPath, { native: true, privateFile: true, retained: payloadHandle });
+          requireProof(binary.retainedPayload.sha256 === binary.sha256 && binary.retainedPayload.bytes === binary.bytes, 'MAC_FIXTURE_TEST_PAYLOAD_COPY');
+        } finally { await payloadHandle.close(); }
+        await rootFence(directory, directoryHandle, fixtureIdentity);
+      }
+      observation.binaries.push(binary); return binary;
     }
     const library = await compile('bridge_platform_macos', 'lib', `crates/${PACKAGE}/src/lib.rs`, ['--lib'], true);
     const format = await compile('format', 'test', `crates/${PACKAGE}/tests/format.rs`, ['--test', 'format'], true);
@@ -563,13 +602,15 @@ async function main() {
     const nativeEnvironment = { ...environment, BRIDGE_MACOS_NATIVE_FIXTURE_ROOT: directory, BRIDGE_MACOS_OWNED_CHILD: helper.physicalPath, BRIDGE_MACOS_OWNED_CHILD_SHA256: helper.sha256 };
     async function testRun(id, binary, argv, passed, filtered = 0) { await assertFileFence(binary, { native: true }); const value = await command(binary.physicalPath, argv, nativeEnvironment, 30000); const check = { id, executable: binary.physicalPath, argv, cwd: ROOT, ...value }; observation.checks.push(check); await save(id, check); requireProof(value.closed && !value.error && value.exitCode === 0 && value.signal === null, 'MAC_FIXTURE_TEST_FAILED'); if (passed !== null) { nativeTestResult(value.stdout, passed, filtered); observation.executions.push({ id, binarySha256: binary.sha256, argv, passed, filtered }); } return value.stdout; }
     observation.inventories = {
-      library: nativeTestInventory(await testRun('list-library', library, ['--list'], null), [...macControlledNames, ...macProviderNames]),
+      library: nativeTestInventory(await testRun('list-library', library, ['--list'], null), [...macControlledNames, ...macJournalPolicyNames, ...macProviderNames, ...macJournalNativeNames]),
       format: nativeTestInventory(await testRun('list-format', format, ['--list'], null), macFormatNames),
       native: nativeTestInventory(await testRun('list-native', native, ['--list'], null), [...macNativeNames, EXCLUDED])
     };
-    await testRun('execute-library-controlled', library, ['--test-threads=1', ...macProviderNames.flatMap(name => ['--skip', name])], 9, 2);
+    const libraryNativeNames = [...macProviderNames, ...macJournalNativeNames];
+    const libraryCount = macControlledNames.length + macJournalPolicyNames.length + libraryNativeNames.length;
+    await testRun('execute-library-controlled', library, ['--test-threads=1', ...libraryNativeNames.flatMap(name => ['--skip', name])], macControlledNames.length + macJournalPolicyNames.length, libraryNativeNames.length);
     await testRun('execute-format', format, ['--test-threads=1'], 16);
-    for (const name of macProviderNames) await testRun(`execute-${name.replaceAll('::', '-')}`, library, [name, '--ignored', '--exact', '--test-threads=1'], 1, 10);
+    for (const name of libraryNativeNames) await testRun(`execute-${name.replaceAll('::', '-')}`, library, [name, '--ignored', '--exact', '--test-threads=1'], 1, libraryCount - 1);
     const context = { directory, fixtureIdentity, helper, helperHandle, testBinary: native, tools, environment, sourcesSha256: observation.source.beforeSha256 };
     for (const operation of [...PRE_ANCHOR_CASES, 'fixed-failure', 'deadline', 'disconnect']) await runSupervised(operation, context, async report => { const index = observation.supervisor.findIndex(item => item.operation === operation); if (index < 0) observation.supervisor.push(report); else observation.supervisor[index] = report; await save(`supervisor-${operation}`, report); });
     for (const name of macNativeNames) {
@@ -583,13 +624,19 @@ async function main() {
     await volumeFence(selectedVolume, volumeHandle, volumeIdentity, fixtureIdentity.dev);
     await rootFence(directory, directoryHandle, fixtureIdentity); observation.volume.selectorReobserved = true;
     macAclAbsent(await run('fixture-acl-after', SYSTEM.ls, ['-lde', directory], 10000, { privateOutput: true }), 'directory'); await assertFileFence(helper, { native: true, privateFile: true, retained: helperHandle });
-    for (const binary of observation.binaries) await assertFileFence(binary, { native: true });
+    for (const binary of observation.binaries) {
+      await assertFileFence(binary, { native: true });
+      if (binary.retainedPayload) await assertFileFence(binary.retainedPayload, { native: true, privateFile: true });
+    }
     observation.tools.after = {}; for (const [name, tool] of Object.entries(tools)) observation.tools.after[name] = await assertFileFence(tool);
     const after = fingerprintInputRecords(ROOT, macFixtureInputs); assert.deepEqual(after, before, 'Fixture source changed'); observation.source.after = after; observation.source.afterSha256 = sha(JSON.stringify(after));
     requireProof((await run('source-head-after', git, ['--no-optional-locks', 'rev-parse', 'HEAD'])).trim() === sourceHead, 'MAC_FIXTURE_SOURCE_CHANGED');
-    observation.result = 'passed'; observation.nativeFixtureSubsetExecuted = true; observation.counts = { defaultControlled: 25, selectedNative: 12, compileFailDocBlocks: 5, supervisorDisposalSelfChecks: 3, supervisorPreAnchorCancellationChecks: 3 };
+    observation.result = 'passed'; observation.nativeFixtureSubsetExecuted = true; observation.counts = {
+      defaultControlled: macControlledNames.length + macJournalPolicyNames.length + macFormatNames.length,
+      selectedNative: libraryNativeNames.length + macNativeNames.length, compileFailDocBlocks: docItems.length,
+      supervisorDisposalSelfChecks: 3, supervisorPreAnchorCancellationChecks: 3 };
   } catch (error) { observation.failure = { code: typeof error.code === 'string' && /^[A-Z0-9_]{1,128}$/.test(error.code) ? error.code : 'MAC_FIXTURE_REFUSED' }; }
-  finally { observation.completedAt = new Date().toISOString(); observation.boundary = 'Native fixture subset only. No Keychain execution, installed game, account/signing setup, production journal/actor custody, suspend, both-volume case coverage, universal crash cleanup, hardware durability, full br-07 or release acceptance.'; await save('macos-platform-fixtures', observation); await helperHandle?.close(); await volumeHandle?.close(); await directoryHandle?.close(); }
+  finally { observation.completedAt = new Date().toISOString(); observation.boundary = 'Native fixture subset only, including isolated retained-journal descriptors. No Keychain execution, installed game, account/signing setup, production journal namespace or actor adoption, cross-process journal exclusion, killed-process WAL recovery, suspend, both-volume case coverage, universal crash cleanup, hardware durability, full br-07 or release acceptance.'; await save('macos-platform-fixtures', observation); await helperHandle?.close(); await volumeHandle?.close(); await directoryHandle?.close(); }
   console.log(JSON.stringify({ result: observation.result, code: observation.failure?.code, receipt: directory ? path.join(directory, 'macos-platform-fixtures.json') : null, counts: observation.counts, packageAcceptance: false, nativeFixtureSubsetExecuted: observation.nativeFixtureSubsetExecuted, nativeRuntimeQualified: false, releaseQualified: false }));
   if (observation.result !== 'passed') process.exitCode = 2;
 }
