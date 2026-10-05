@@ -93,7 +93,7 @@ export const registry = {
     host: 'windows-x64', timeoutMs: 600000, packageAcceptanceAvailable: false,
     argv: ['scripts/next/windows-private-journal-fixtures.mjs'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json',
-      '.github/workflows/next-foundation.yml', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/NATIVE_QUALIFICATION.md',
+      '.github/workflows/next-foundation.yml', 'docs/next/PRIVATE_JOURNAL_STORAGE.md', 'docs/next/WINDOWS_PLATFORM.md', 'docs/next/NATIVE_QUALIFICATION.md', 'docs/next/WINDOWS_JOURNAL_CI.md',
       'scripts/next', 'contracts', 'crates/bridge-platform-windows', 'crates/bridge-engine', 'crates/bridge-domain', 'crates/bridge-contracts', 'crates/bridge-journal-io', 'crates/bridge-toml', 'crates/bridge-native'],
     criteria: ['BR06-WJ01', 'BR06-WJ02', 'BR06-WJ03', 'BR06-WJ04', 'BR06-WJ05', 'BR06-WJ06', 'BR06-WJ07', 'BR06-WJ08', 'BR06-WJ09'],
     boundary: 'Selected retained Windows private-journal fixtures only: fresh test namespace, exact source/tools/artifact inventories, actual ACL/sharing/constructor-flush and child interruption observations. Broader custody-loss and namespace matrix, production owner adoption, full br-06, installed game, power-loss durability and release remain unqualified.'

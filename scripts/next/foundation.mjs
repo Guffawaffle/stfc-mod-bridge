@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { verifyDependencyBoundary, selectShellArtifact } from './foundation-checks.mjs';
 import { rustContext } from './rust-context.mjs';
+import { resolveHostTool } from './host-tools.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const host = process.platform === 'win32' && process.arch === 'x64' ? 'windows-x64' : process.platform === 'darwin' && process.arch === 'arm64' ? 'macos-arm64-native' : `${process.platform}-${process.arch}`;
@@ -63,7 +64,8 @@ async function browserStartup() {
   }
 }
 
-run('dispatcher-tests', ['--test', 'scripts/next/tests/qualification.test.mjs', 'scripts/next/tests/prerequisites.test.mjs', 'scripts/next/tests/input-tree.test.mjs', 'scripts/next/tests/foundation.test.mjs', 'scripts/next/tests/host-artifacts.test.mjs', 'scripts/next/tests/host-tools.test.mjs', 'scripts/next/tests/rust-context.test.mjs', 'scripts/next/tests/macos-platform-fixtures.test.mjs', 'scripts/next/tests/windows-private-journal-evidence.test.mjs', 'scripts/next/tests/windows-private-journal-context.test.mjs']);
+run('dispatcher-tests', ['--test', 'scripts/next/tests/qualification.test.mjs', 'scripts/next/tests/prerequisites.test.mjs', 'scripts/next/tests/input-tree.test.mjs', 'scripts/next/tests/foundation.test.mjs', 'scripts/next/tests/host-artifacts.test.mjs', 'scripts/next/tests/host-tools.test.mjs', 'scripts/next/tests/rust-context.test.mjs', 'scripts/next/tests/macos-platform-fixtures.test.mjs', 'scripts/next/tests/windows-private-journal-evidence.test.mjs', 'scripts/next/tests/windows-private-journal-context.test.mjs', 'scripts/next/tests/windows-normal-archive.test.mjs', 'scripts/next/tests/windows-journal-ci-entry.test.mjs']);
+if (host === 'windows-x64') runTool('windows-journal-ci-controls', resolveHostTool('pwsh.exe', process.env), ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'scripts/next/tests/windows-journal-ci-control.test.ps1'], process.env, 60000);
 run('frontend-typecheck', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'check']);
 run('frontend-tests', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'test']);
 run('frontend-build', ['scripts/next/pnpm.mjs', '--dir', 'ui', 'build']);

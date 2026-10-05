@@ -91,6 +91,18 @@ engine/contracts development edges and JobObjects fixture feature must be absent
 from that normal closure. Test namespace/role markers must not appear in the
 normal archive. No single absent string or source guard proves this boundary.
 
+Cargo may hard-link its top-level normal archive to the hashed `debug/deps`
+archive. The driver admits only that exact two-name pair, derived from the
+selected current compiler-artifact row and this run's fresh isolated target.
+Both owned regular routes must have the same file identity and exactly two
+links; both open descriptors and routes are checked before and after bounded
+reading and at later command fences. Separate single-link copy outputs are
+also admissible. The standalone emitted metadata route is ancillary and is
+not independently scanned or alias-qualified. The exclusion scan and retained
+normal evidence copy cover the complete selected archive. The test executable
+and every retained copy still require a single link. These disk observations
+are neither a writer exclusion nor an attestation of a mapped image.
+
 Ordinary-user qualification requires observed privilege context; Runner/Codex
 startup is insufficient. Each selected process emits a separate closed context
 row as its first test statement, querying its own process/current-thread token,
@@ -98,8 +110,18 @@ creation FILETIME and native architecture before journal effects. The driver
 binds its PID to the actual spawn result. Only a primary non-elevated token at
 medium integrity with no current-thread token permits journal work. This is
 an observation of that test process, not Node's token or an account identity.
-Copies of the selected test executable and isolated normal library artifacts
+Copies of the selected test executable and isolated normal library archive
 are retained as evidence and never executed in place of the original artifacts.
+
+Hosted Windows CI uses a fixed same-user context launcher before binding and
+executing this partial gate. It observes its own source token and the child
+bootstrap's token separately. An already ordinary source uses its own process
+context; an elevated source must produce a restricted primary token at medium
+integrity that also reports non-elevated. Any failed context, launch or custody
+observation refuses the run. The launcher creates no account, changes no UAC
+policy or ACL, and has no elevated fallback. The native cases remain the final
+observations of their own privilege context. See
+[`WINDOWS_JOURNAL_CI.md`](WINDOWS_JOURNAL_CI.md) for the separate CI boundary.
 Until fresh native receipts exist, the cases above
 describe implemented checks awaiting observation. Full `br-06` selection remains
 blocked by `PACKAGE_INTEGRATION_UNQUALIFIED`, and a partial receipt cannot satisfy

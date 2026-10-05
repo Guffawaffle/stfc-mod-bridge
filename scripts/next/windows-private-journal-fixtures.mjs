@@ -13,6 +13,7 @@ import {selectHostArtifacts} from './host-artifacts.mjs';
 import {NATIVE_TESTS} from './windows-private-journal-evidence.mjs';
 import {parseJournalFixtureOutput,parseJournalFixtureSuite} from './windows-private-journal-context.mjs';
 import {INVENTORY} from './windows-private-journal-inventory.mjs';
+import {selectNormalArchive,readNormalArchive} from './windows-normal-archive.mjs';
 
 const root=path.resolve(import.meta.dirname,'../..');
 const relative=value=>path.relative(root,value).replaceAll('\\','/');
@@ -21,7 +22,7 @@ const FILE_CAP=256*1024*1024, OUTPUT_CAP=8*1024*1024, SUITE_MS=540000;
 let artifactCreationAttempted=false,nativeFixtureInvocationAttempted=false;
 const inputs=Object.freeze([
   'Cargo.toml','Cargo.lock','rust-toolchain.toml','.cargo/config.toml','dependencies/next-toolchain.json',
-  'docs/next/PRIVATE_JOURNAL_STORAGE.md','docs/next/WINDOWS_PLATFORM.md','docs/next/NATIVE_QUALIFICATION.md',
+  'docs/next/PRIVATE_JOURNAL_STORAGE.md','docs/next/WINDOWS_PLATFORM.md','docs/next/NATIVE_QUALIFICATION.md','docs/next/WINDOWS_JOURNAL_CI.md',
   '.github/workflows/next-foundation.yml','docs/next/campaign.json',
   'docs/plans/rust-tauri-cross-platform/work-packages.json','scripts/next',
   'crates/bridge-platform-windows','crates/bridge-journal-io','crates/bridge-domain',
@@ -139,13 +140,21 @@ async function main(){
   artifactCreationAttempted=true;
   mkdirSync(directory,{recursive:true});ownedArtifactPath(root,relative(directory),'directory');
   const save=(name,data)=>{const bytes=Buffer.isBuffer(data)?data:Buffer.from(data);const selected=ownedArtifactPath(root,`${relative(directory)}/${name}`,'file',{allowMissing:true});writeFileSync(selected,bytes,{flag:'wx'});return {path:relative(selected),bytes:bytes.length,sha256:sha(bytes)};};
-  let toolsAfter=[],sourcesAfter=null,headBefore=null,headAfter=null,treeBefore=null,treeAfter=null,failure=null,normalExclusion=null,ownershipDocs=null,suite=null,passed=false;
+  let toolsAfter=[],sourcesAfter=null,headBefore=null,headAfter=null,treeBefore=null,treeAfter=null,failure=null,normalExclusion=null,normalArchiveSelection=null,ownershipDocs=null,suite=null,passed=false;
   const tool=(role,route)=>({...boundedFile(realpathSync.native(route)).observation,role,route,physical:realpathSync.native(route)});
   const fence=()=>{
     assert.deepEqual(fingerprintInputRecords(root,inputs),sourcesBefore,'Source changed');
     assert.deepEqual(toolsBefore.map(item=>tool(item.role,item.route)),toolsBefore,'Tool routes/bytes changed');
     for(const binary of binaries){
-      const observed=boundedFile(ownedArtifactPath(root,relative(binary.executable)),{privateArtifact:true}).observation;
+      let observed;
+      if(binary.artifactRole==='isolated-normal-library-archive'){
+        assert.ok(normalArchiveSelection!==null);assert.equal(binary.executable,normalArchiveSelection.selected);assert.equal(binary.executed,false);
+        observed=readNormalArchive(normalArchiveSelection).observation;
+        assert.deepEqual(observed,binary.archiveObservation,'Normal Cargo archive pair changed');
+      }else{
+        assert.equal(binary.artifactRole,'executed-test-executable');
+        observed=boundedFile(ownedArtifactPath(root,relative(binary.executable)),{privateArtifact:true}).observation;
+      }
       assert.equal(observed.bytes,binary.bytes);assert.equal(observed.sha256,binary.sha256);
       const retained=boundedFile(ownedArtifactPath(root,binary.retainedCopy.path),{privateArtifact:true}).observation;
       assert.equal(retained.bytes,binary.bytes);assert.equal(retained.sha256,binary.sha256);assert.equal(binary.retainedCopy.executed,false);
@@ -208,17 +217,16 @@ async function main(){
     const ownNormal=normalArtifacts.filter(item=>item.package_id===platformPackage.id&&item.target.name==='bridge_platform_windows');assert.equal(ownNormal.length,1);
     assert.deepEqual(ownNormal[0].target.kind,['lib']);assert.equal(ownNormal[0].executable,null);assert.deepEqual(ownNormal[0].features,[]);
     assert.equal(realpathSync.native(ownNormal[0].target.src_path),ownedArtifactPath(root,'crates/bridge-platform-windows/src/lib.rs'));
-    assert.ok(ownNormal[0].filenames.length>=1&&ownNormal[0].filenames.length<=8);
-    const normalFiles=ownNormal[0].filenames.filter(file=>/\.(?:rlib|rmeta)$/.test(file));assert.equal(normalFiles.filter(file=>file.endsWith('.rlib')).length,1);
+    normalArchiveSelection=selectNormalArchive({root,normalTarget,hostTarget:rust.hostTarget,platformPackage,compilerArtifact:ownNormal[0]});
     const needles=['STFCModBridgeNextFixtures','BRIDGE_PRIVATE_JOURNAL_FIXTURE ','BRIDGE_PRIVATE_JOURNAL_CHILD ',INVENTORY.helper,...NATIVE_TESTS,
       'BRIDGE_WINDOWS_JOURNAL_CONTEXT ','bridge-windows-journal-context/v1','native_journal_preflight','observe_native_journal_context','CreateJobObjectW','SetInformationJobObject'];
     const absent=[];
-    for(const filename of normalFiles){
-      const relation=path.relative(normalTarget,filename);assert.ok(relation&&!relation.startsWith('..')&&!path.isAbsolute(relation));
-      const executable=ownedArtifactPath(root,relative(filename)),read=boundedFile(executable,{privateArtifact:true});
+    {
+      const executable=normalArchiveSelection.selected,read=readNormalArchive(normalArchiveSelection);
       for(const needle of needles) for(const encoding of ['utf8','utf16le']) assert.equal(read.bytes.includes(Buffer.from(needle,encoding)),false,'Fixture byte route leaked into isolated normal library');
-      const retainedCopy={...save(`normal-library-${absent.length+1}${path.extname(filename)}`,read.bytes),executed:false};
-      const record={target:'isolated-normal-library',executable,bytes:read.observation.bytes,sha256:read.observation.sha256,retainedCopy,compilerArtifact:ownNormal[0]};binaries.push(record);absent.push(record);
+      const retainedCopy={...save('normal-library.rlib',read.bytes),executed:false};
+      const record={target:'isolated-normal-library',artifactRole:'isolated-normal-library-archive',executed:false,executable,bytes:read.observation.bytes,sha256:read.observation.sha256,archiveObservation:read.observation,retainedCopy,compilerArtifact:ownNormal[0]};binaries.push(record);absent.push(record);
+      fence();
     }
     const ownerSource=text(boundedFile(ownedArtifactPath(root,'crates/bridge-platform-windows/src/private_journal.rs')).bytes);
     assert.match(ownerSource,/#\[cfg\(test\)\]\s*mod native_fixtures;/);assert.match(ownerSource,/pub fn open\(\) -> Result<Self, StorageFailure>\s*\{\s*Self::open_namespace\(Namespace::Production\)/);
@@ -231,7 +239,7 @@ async function main(){
     const executable=ownedArtifactPath(root,relation),read=boundedFile(executable,{privateArtifact:true}),headers=peHeaders(read.bytes);
     for(const needle of needles.slice(0,4)) assert.ok(read.bytes.includes(Buffer.from(needle,'utf8')),'Positive test-artifact fixture byte witness required');
     const retainedCopy={...save('compiled-library.test-artifact',read.bytes),executed:false};
-    const binary={target:'bridge_platform_windows',architecture:headers.architecture,executable,bytes:read.observation.bytes,sha256:read.observation.sha256,retainedCopy,headers,compilerArtifact:artifact,discoveredTests:[],executedDefault:[]};binaries.push(binary);
+    const binary={target:'bridge_platform_windows',artifactRole:'executed-test-executable',architecture:headers.architecture,executable,bytes:read.observation.bytes,sha256:read.observation.sha256,retainedCopy,headers,compilerArtifact:artifact,discoveredTests:[],executedDefault:[]};binaries.push(binary);
     const inventory=text(run('list-current-tests',executable,INVENTORY.listArgs,{timeout:60000}).stdout);
     const lines=inventory.split(/\r?\n/).filter(Boolean),names=lines.filter(line=>line.endsWith(': test')).map(line=>line.slice(0,-6));
     assert.equal(new Set(names).size,names.length);assert.deepEqual([...names].sort(),[...INVENTORY.all38].sort());assert.equal(lines.at(-1),'38 tests, 0 benchmarks');assert.equal(lines.length,39);binary.discoveredTests=names;
