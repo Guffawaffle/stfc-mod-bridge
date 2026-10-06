@@ -1623,7 +1623,7 @@ fn sealed_object(
         })
     })
 }
-fn descriptor_bytes(file: &File) -> Result<Vec<u8>, StorageFailure> {
+fn fixture_descriptor(file: &File) -> Result<LocalAllocation, StorageFailure> {
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
     let status = unsafe {
         GetSecurityInfo(
@@ -1645,7 +1645,43 @@ fn descriptor_bytes(file: &File) -> Result<Vec<u8>, StorageFailure> {
     if !(20..=4096).contains(&length) {
         return Err(StorageFailure::Unsafe);
     }
+    if !(unsafe { IsValidSecurityDescriptor(descriptor) }).as_bool() {
+        return Err(StorageFailure::Unsafe);
+    }
+    Ok(allocation)
+}
+fn descriptor_bytes(file: &File) -> Result<Vec<u8>, StorageFailure> {
+    let allocation = fixture_descriptor(file)?;
+    let length =
+        unsafe { GetSecurityDescriptorLength(PSECURITY_DESCRIPTOR(allocation.0)) } as usize;
+    // SAFETY: the owned native descriptor was validated and bounded above.
     Ok(unsafe { std::slice::from_raw_parts(allocation.0.cast::<u8>(), length) }.to_vec())
+}
+fn fixture_dacl_bytes(allocation: &LocalAllocation) -> Result<Vec<u8>, StorageFailure> {
+    let descriptor = PSECURITY_DESCRIPTOR(allocation.0);
+    let length = unsafe { GetSecurityDescriptorLength(descriptor) } as usize;
+    let mut present = BOOL::default();
+    let mut defaulted = BOOL::default();
+    let mut dacl = ptr::null_mut();
+    unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) }
+        .map_err(win_failure)?;
+    if !present.as_bool()
+        || defaulted.as_bool()
+        || !within(dacl.cast(), size_of::<ACL>(), allocation.0, length)
+    {
+        return Err(StorageFailure::Unsafe);
+    }
+    // SAFETY: the complete ACL header lies in the owned descriptor allocation.
+    let header = unsafe { ptr::read_unaligned(dacl) };
+    let acl_length = header.AclSize as usize;
+    if acl_length < size_of::<ACL>()
+        || !within(dacl.cast(), acl_length, allocation.0, length)
+        || !(unsafe { IsValidAcl(dacl) }).as_bool()
+    {
+        return Err(StorageFailure::Unsafe);
+    }
+    // SAFETY: the valid ACL's full declared extent is bounded by its owner.
+    Ok(unsafe { std::slice::from_raw_parts(dacl.cast::<u8>(), acl_length) }.to_vec())
 }
 fn sealed_contents(object: &SealedFixtureObject) -> Result<Vec<u8>, StorageFailure> {
     if object.directory || stamp(&object.file)? != object.identity {
@@ -1740,19 +1776,48 @@ fn change_dacl(object: &SealedFixtureObject, variant: DaclVariant) -> Result<(),
         } else {
             PROTECTED_DACL_SECURITY_INFORMATION
         };
-    let status = unsafe {
-        windows::Win32::Security::Authorization::SetSecurityInfo(
-            file_handle(&object.file),
-            SE_FILE_OBJECT,
-            flags,
-            None,
-            None,
-            Some(dacl),
-            None,
-        )
-    };
-    if status.0 != 0 {
-        return Err(StorageFailure::Unavailable);
+    let raw_leaf_inheritance =
+        !object.directory && matches!(variant, DaclVariant::WrongInheritance);
+    if raw_leaf_inheritance {
+        // SetSecurityInfo normalizes inheritance flags on a leaf. The closed
+        // negative fixture needs those exact invalid flags to persist, not an
+        // API-success observation followed by a canonical descriptor.
+        // SAFETY: this sealed fixture handle retains WRITE_DAC, and the complete
+        // owned descriptor remains live through the synchronous native call.
+        let status = unsafe {
+            windows::Wdk::Storage::FileSystem::NtSetSecurityObject(
+                file_handle(&object.file),
+                flags.0,
+                PSECURITY_DESCRIPTOR(allocation.0),
+            )
+        };
+        if status.0 != 0 {
+            return Err(StorageFailure::Unavailable);
+        }
+    } else {
+        let status = unsafe {
+            windows::Win32::Security::Authorization::SetSecurityInfo(
+                file_handle(&object.file),
+                SE_FILE_OBJECT,
+                flags,
+                None,
+                None,
+                Some(dacl),
+                None,
+            )
+        };
+        if status.0 != 0 {
+            return Err(StorageFailure::Unavailable);
+        }
+    }
+    let observed = fixture_descriptor(&object.file)?;
+    if raw_leaf_inheritance && fixture_dacl_bytes(&observed)? != fixture_dacl_bytes(&allocation)? {
+        return Err(StorageFailure::Unsafe);
+    }
+    // Every declared negative seed must actually be noncanonical before the
+    // reopen/live-drift operation can establish refusal without repair.
+    if inspect_descriptor(&observed, &sid, object.directory).is_ok() {
+        return Err(StorageFailure::Unsafe);
     }
     if stamp(&object.file)? != object.identity {
         return Err(StorageFailure::Unsafe);

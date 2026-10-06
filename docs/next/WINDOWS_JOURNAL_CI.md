@@ -178,3 +178,16 @@ the selected archive exclusion, default cases and ownership doctests, and
 complete retained custody and raw command evidence. Full `br-06`, production
 journal adoption, native application/game and release qualification remain
 separate incomplete boundaries.
+
+Negative DACL fixtures query the seeded descriptor and require an actual
+noncanonical policy before attempting reopen or live drift. For the closed WAL
+leaf inheritance case, `NtSetSecurityObject` preserves the exact invalid ACE
+flags that `SetSecurityInfo` normalizes away. Its complete DACL must match the
+requested DACL on readback. This changes only test-fixture seeding; production
+descriptor checks and namespace/reparse policy remain unchanged.
+
+Hosted retention excludes each invocation's Cargo `test-target` cache. The
+selected test executable and normal archive retain separate byte-verified
+copies, alongside command receipts, raw streams and parsed fixture records.
+Excluding build intermediates does not accept a failed fixture or remove its
+original executable identity from the receipt.

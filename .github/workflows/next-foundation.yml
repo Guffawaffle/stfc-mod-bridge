@@ -82,5 +82,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: next-foundation-${{ matrix.host }}-${{ github.sha }}
-          path: artifacts/next/
+          path: |
+            artifacts/next/
+            !artifacts/next/windows-private-journal-fixtures/**/test-target/**
           retention-days: 14
