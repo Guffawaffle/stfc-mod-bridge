@@ -57,6 +57,11 @@ export const frontendCriteria = {
   'ui/tests/client-configuration-completion.test.ts': [
     'completed Save then exact DraftChanged adopts the receipt baseline and clears only captured intent',
     'an early clean read defers without a watermark and later receipt reconciliation consumes every event',
+    'an early NoChange cleanup defers edits and its watermark until the exact completion arrives',
+    'an explicitly requested empty staging successor reconciles lost ACK at the captured old baseline',
+    ...['document_revision', 'file_identity'].map(reuse => `a Changed receipt cannot reuse the captured ${reuse}`),
+    ...['save_configuration', 'restore_configuration'].map(kind =>
+      `NoChange ${kind} cannot claim candidate bytes different from the captured baseline`),
     ...['no_receipt', 'document_id', 'target', 'schema', 'digest', 'backup', 'action', 'domain', 'reason'].map(mismatch =>
       `a schema-valid completed Save with mismatched ${mismatch} cannot authorize baseline adoption`),
     ...['revision', 'state', 'edits', 'schema', 'document'].map(mismatch =>

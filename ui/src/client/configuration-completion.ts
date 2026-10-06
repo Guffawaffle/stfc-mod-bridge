@@ -7,14 +7,17 @@ export function configurationCompletionValid(operation: DeepReadonly<OperationSn
   const capture = operation.semantics.capture, state = operation.state;
   if ((capture.kind !== 'save_configuration' && capture.kind !== 'restore_configuration')
     || operation.semantics.action !== capture.kind || operation.semantics.trustDomain !== 'configuration' || state.status !== 'completed') return false;
-  if (state.outcome.kind === 'no_change') return state.outcome.reason === 'already_satisfied';
-  if (state.outcome.kind !== 'changed' || state.outcome.reason !== 'applied' || state.outcome.receipt?.kind !== 'configuration_written') return false;
   const expected = capture.kind === 'save_configuration' ? capture.input.draft.draft.document : capture.input.document;
   const digest = capture.kind === 'save_configuration' ? capture.input.candidateDigest : capture.input.backup.retainedDigest;
+  if (state.outcome.kind === 'no_change') return state.outcome.reason === 'already_satisfied'
+    && digest === (expected.baseline.kind === 'existing' ? expected.baseline.contentDigest
+      : 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  if (state.outcome.kind !== 'changed' || state.outcome.reason !== 'applied' || state.outcome.receipt?.kind !== 'configuration_written') return false;
   const { document, backup } = state.outcome.receipt;
-  return document.documentId === expected.documentId && bindingEquivalent(document.target, expected.target)
+  return document.documentId === expected.documentId && document.revision !== expected.revision && bindingEquivalent(document.target, expected.target)
     && bindingEquivalent({ ...expected, schema: document.schema }, expected)
     && document.baseline.kind === 'existing' && document.baseline.contentDigest === digest
+    && (expected.baseline.kind !== 'existing' || document.baseline.fileIdentity !== expected.baseline.fileIdentity)
     && (expected.baseline.kind === 'missing' ? backup == null
       : backup != null && bindingEquivalent(backup.document, expected) && backup.retainedDigest === expected.baseline.contentDigest);
 }

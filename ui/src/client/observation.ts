@@ -1,4 +1,4 @@
-import type { CloseDisposition, Cursor, DiscardedDraft, DraftSnapshot, Event, EventBatch, GetDraftInput, GetDraftResult, GetOperationResult, OperationSnapshot, Snapshot } from '../generated/protocol';
+import type { CloseDisposition, Cursor, DiscardedDraft, DraftSnapshot, Event, EventBatch, GetDraftInput, GetDraftResult, GetOperationResult, OperationSnapshot, SetDraftChangesInput, Snapshot } from '../generated/protocol';
 import { captureData, canonicalData, type DeepReadonly } from './wire';
 import { BridgeClient, type ClientFault, type ClientOutcome, type CallOptions } from './client';
 import { bindingEquivalent, operationRecoveryMatches, semanticPlanKey } from './relations';
@@ -173,7 +173,7 @@ export class ObservationStore {
   }
   private draftCount(): number { return new Set([...this.drafts.keys(), ...this.discardedDrafts.keys(), ...this.draftWatermarks.keys()]).size; }
   /** An authoritative read never advances the shared stream cursor. */
-  observeDraftResult(input: GetDraftInput | DeepReadonly<GetDraftInput>, result: GetDraftResult | DeepReadonly<GetDraftResult>): boolean {
+  observeDraftResult(input: GetDraftInput | DeepReadonly<GetDraftInput>, result: GetDraftResult | DeepReadonly<GetDraftResult>, emptyStage?: DeepReadonly<SetDraftChangesInput>): boolean {
     try {
       const request = captureData(input), read = captureData(result), cursor = read.cursor;
       counter(cursor.sequence);
@@ -189,7 +189,12 @@ export class ObservationStore {
         // A correlated read can precede its completed operation observation.
         // Refuse it without a watermark or stream invalidation; the caller can
         // retry after exact receipt evidence arrives. It grants no completion.
-        if (retained && !bindingEquivalent(retained.draft.document, draft.draft.document)
+        const sameDocument = retained && bindingEquivalent(retained.draft.document, draft.draft.document);
+        // Explicit empty staging can reconcile a lost ACK at the old baseline.
+        // It accounts only for that captured local intent, never a Save result.
+        const requestedEmptyStage = retained && sameDocument && emptyStage?.edits.length === 0
+          && bindingEquivalent(emptyStage.draft, retained.draft);
+        if (retained && (!sameDocument || retained.edits.length > 0 && !requestedEmptyStage)
           && possibleSavedDraftSuccessor(retained, draft) && !this.savedCompletion(retained, draft)) return false;
         const problem = this.draftProblem(draft, this.drafts, true);
         if (problem) return this.invalidate(problem);

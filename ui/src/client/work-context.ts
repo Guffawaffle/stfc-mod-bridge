@@ -170,7 +170,9 @@ export class WorkContext {
     try {
       if (outcome.kind !== 'result' || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
       const input = { hostEpoch: capture.draft.draft.hostEpoch, draftId: capture.draft.draft.draftId }, read = captureData(outcome.value);
-      if (!this.observations.observeDraftResult(input, read)) return conflict();
+      const emptyStage = !this.transitionBusy && !capture.publicInputs.length && !capture.edits.length && capture.draft.edits.length
+        ? { draft: capture.draft.draft, edits: [] as [] } : undefined;
+      if (!this.observations.observeDraftResult(input, read, emptyStage)) return conflict();
       // Store publication can invoke callers synchronously; recapture local
       // custody after it as well as after the asynchronous query.
       if (!retained()) return false;

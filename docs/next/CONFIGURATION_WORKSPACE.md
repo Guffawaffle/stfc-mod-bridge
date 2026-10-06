@@ -52,12 +52,14 @@ retarget a draft.
 
 A changed Save receipt must retain the captured document ID, physical target and
 schema, prove the candidate digest, and account for the exact prior baseline
-backup. Its clean draft advances one revision and clears only that capture's
+backup, with a fresh document revision and replacement file identity. Its clean draft advances one revision and clears only that capture's
 edits, validation and apply metadata. NoChange cleans a captured dirty draft at
-the same baseline; an already clean empty draft needs no revision bump. Reads
+the same baseline and candidate digest; an already clean empty draft needs no revision bump. Reads
 which arrive before matching completion evidence defer without changing the
 draft watermark or global cursor. Later reads still consume intervening operation
-events. Newer unsynchronized edits, unfinished public input and synchronous
+events. NoChange cleanup also waits for completion evidence. An explicitly
+requested empty staging successor may reconcile a lost acknowledgement at the
+captured old baseline without claiming a completed Save. Newer unsynchronized edits, unfinished public input and synchronous
 custody changes preserve local intent. Exact completion may retire synchronized
 protected references; it never invents transfers or revives a discarded draft.
 

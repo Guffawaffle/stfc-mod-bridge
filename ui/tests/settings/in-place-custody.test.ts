@@ -58,6 +58,7 @@ function harness(hooks: Hooks = {}, options: { noChange?: boolean; maximumReplay
         }
         case 'prepare': {
           plan = planSource(); plan.semantics.capture.input.draft = clone(draft);
+          if (options.noChange) plan.semantics.capture.input.candidateDigest = 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
           plan.planRef.planId = id(sequence++); plan.planRef.reviewDigest = await semanticPlanDigest(plan.semantics);
           reply = source('sc10-save-reviewed-draft-reply'); reply.body.result.command.output = clone(plan); break;
         }
