@@ -396,12 +396,48 @@ namespace StfcBridgeJournalCi {
         }
         private static Handle OwnToken(bool restriction=true) { Handle token; uint rights=restriction?Query|Duplicate|Assign|AdjustDefault|Impersonate:Query|Impersonate;
             Check(Native.OpenProcessToken(Native.GetCurrentProcess(),rights,out token),"OWN_PRIMARY_TOKEN"); Require(!token.IsInvalid,"OWN_TOKEN_HANDLE"); return token; }
+        private static byte[] UserDefaultDacl(byte[] acl,byte[] user) {
+            Require(AclBytes(acl)=="populated","RESTRICT_DEFAULT_DACL_POPULATED");
+            Require(user!=null&&user.Length>=12&&user.Length<=68&&user[0]==1&&user[1]>0&&user[1]<=15&&user.Length==8+4*user[1],"RESTRICT_DEFAULT_USER_SID");
+            int count=U16(acl,4),end=8;
+            for(int i=0;i<count;i++) {
+                int bytes=U16(acl,end+2);
+                // Preserve every existing ACE, including denials. Only an exact
+                // explicit GENERIC_ALL grant to this token's own user is reused.
+                if(acl[end]==0&&acl[end+1]==0&&bytes==8+user.Length&&U32(acl,end+4)==0x10000000&&acl.Skip(end+8).Take(user.Length).SequenceEqual(user)) return (byte[])acl.Clone();
+                end+=bytes;
+            }
+            int aceBytes=8+user.Length,total=end+aceBytes;
+            Require(count<128&&total<=SecurityBytes,"RESTRICT_DEFAULT_DACL_BOUND");
+            byte[] result=new byte[total]; Array.Copy(acl,result,end);
+            Array.Copy(BitConverter.GetBytes((ushort)total),0,result,2,2); Array.Copy(BitConverter.GetBytes((ushort)(count+1)),0,result,4,2);
+            result[end]=0; result[end+1]=0; Array.Copy(BitConverter.GetBytes((ushort)aceBytes),0,result,end+2,2);
+            Array.Copy(BitConverter.GetBytes(0x10000000u),0,result,end+4,4); Array.Copy(user,0,result,end+8,user.Length);
+            Require(AclBytes(result)=="populated","RESTRICT_DEFAULT_DACL_RESULT"); return result;
+        }
+        [DllImport("advapi32.dll", EntryPoint="SetTokenInformation", SetLastError=true)]
+        private static extern bool SetNewTokenDefaultDacl(Handle token,int kind,IntPtr header,uint length);
+        private static void OwnUserDefaultDacl(Handle token) {
+            uint length; byte[] user;
+            using(var data=TokenData(token,1,4096,out length)) { Require(length>=Marshal.SizeOf<SidAttributes>(),"RESTRICT_DEFAULT_USER_HEADER"); user=Sid(data,length,Marshal.ReadIntPtr(data.Pointer),Marshal.SizeOf<SidAttributes>()); }
+            var context=new Context { ObservationKind="derived_token_only" }; var before=DefaultDacl(token,context);
+            Require(before.Result=="observed"&&before.AclState=="populated","RESTRICT_DEFAULT_DACL_REQUIRED");
+            byte[] expected=UserDefaultDacl(SecurityPayload(before,true),user);
+            using(var acl=new Buffer(expected.Length)) using(var header=new Buffer(IntPtr.Size)) {
+                Marshal.Copy(expected,0,acl.Pointer,expected.Length); Marshal.WriteIntPtr(header.Pointer,acl.Pointer);
+                Require(Native.IsValidAcl(acl.Pointer),"RESTRICT_DEFAULT_DACL_INVALID");
+                // Only the newly owned derived token changes. The caller token,
+                // desktop, existing objects and privilege/group restrictions do not.
+                Check(SetNewTokenDefaultDacl(token,6,header.Pointer,(uint)IntPtr.Size),"RESTRICT_DEFAULT_DACL_SET");
+            }
+            var after=DefaultDacl(token,context); Require(after.Result=="observed"&&after.AclState=="populated"&&SecurityPayload(after,true).SequenceEqual(expected),"RESTRICT_DEFAULT_DACL_READBACK");
+        }
         private static Handle Candidate(Handle source) {
             using(var admin=new Buffer(68)) using(var medium=new Buffer(68)) {
                 uint adminBytes=68,mediumBytes=68; Check(Native.CreateWellKnownSid(26,IntPtr.Zero,admin.Pointer,ref adminBytes),"ADMIN_SID"); Check(Native.CreateWellKnownSid(67,IntPtr.Zero,medium.Pointer,ref mediumBytes),"MEDIUM_SID");
                 Require(adminBytes<=68&&mediumBytes==12,"FIXED_SID_EXTENT"); var disabled=new SidAttributes { Sid=admin.Pointer,Attributes=0 }; Handle result;
                 Check(Native.CreateRestrictedToken(source,5,1,ref disabled,0,IntPtr.Zero,0,IntPtr.Zero,out result),"RESTRICT_OWN_TOKEN");
-                try { var label=new SidAttributes { Sid=medium.Pointer,Attributes=0x20 }; Check(Native.SetTokenInformation(result,25,ref label,(uint)(Marshal.SizeOf<SidAttributes>()+mediumBytes)),"LOWER_NEW_TOKEN_MEDIUM"); return result; }
+                try { var label=new SidAttributes { Sid=medium.Pointer,Attributes=0x20 }; Check(Native.SetTokenInformation(result,25,ref label,(uint)(Marshal.SizeOf<SidAttributes>()+mediumBytes)),"LOWER_NEW_TOKEN_MEDIUM"); OwnUserDefaultDacl(result); return result; }
                 catch { result.Dispose(); throw; }
             }
         }
@@ -874,6 +910,29 @@ namespace StfcBridgeJournalCi {
             Require(oversizedBaseline.Result=="passed"&&oversizedBaseline.StartupSecurity==null&&SerializedBytes(oversizedBaseline)>ReceiptBytes,"SECURITY_BASELINE_BOUND_TEST"); passed.Add("diagnostic omission does not relax the original fail-closed aggregate receipt cap");
             var malformedOptional=securityLaunch(); malformedOptional.StartupSecurity.OwnedChildObjects[0]=null; FitStartupSecurity(malformedOptional,13); Complete(malformedOptional);
             Require(malformedOptional.Result=="passed"&&malformedOptional.StartupSecurity==null,"SECURITY_OPTIONAL_EXCEPTION_TEST"); passed.Add("optional diagnostic normalization failure preserves the launch result");
+            byte[] defaultUser=new byte[]{1,4,0,0,0,0,0,5,21,0,0,0,1,0,0,0,2,0,0,0,3,0,0,0};
+            Func<byte,byte[],uint,byte[]> defaultAce=(type,sid,mask)=> { byte[] bytes=new byte[8+sid.Length]; bytes[0]=type; Array.Copy(BitConverter.GetBytes((ushort)bytes.Length),0,bytes,2,2); Array.Copy(BitConverter.GetBytes(mask),0,bytes,4,4); Array.Copy(sid,0,bytes,8,sid.Length); return bytes; };
+            Func<byte[][],byte[]> defaultAcl=aces=> { byte[] bytes=new byte[8+aces.Sum(ace=>ace.Length)]; bytes[0]=2; Array.Copy(BitConverter.GetBytes((ushort)bytes.Length),0,bytes,2,2); Array.Copy(BitConverter.GetBytes((ushort)aces.Length),0,bytes,4,2); int end=8; foreach(var ace in aces) { Array.Copy(ace,0,bytes,end,ace.Length); end+=ace.Length; } return bytes; };
+            byte[] systemSid=new byte[]{1,1,0,0,0,0,0,5,18,0,0,0};
+            byte[] originalDefault=defaultAcl(new[]{defaultAce(1,defaultUser,0x40000000),defaultAce(0,systemSid,0x10000000)}),originalCopy=(byte[])originalDefault.Clone();
+            byte[] ownDefault=UserDefaultDacl(originalDefault,defaultUser);
+            Require(U16(ownDefault,4)==3&&ownDefault.Skip(8).Take(originalDefault.Length-8).SequenceEqual(originalDefault.Skip(8))&&originalDefault.SequenceEqual(originalCopy),"DEFAULT_DACL_PRESERVE_TEST"); passed.Add("own user grant preserves existing denies and other principals without mutating input");
+            Require(ownDefault.Skip(originalDefault.Length).SequenceEqual(defaultAce(0,defaultUser,0x10000000)),"DEFAULT_DACL_OWN_GRANT_TEST"); passed.Add("new explicit grant targets only the captured token user");
+            byte[] again=UserDefaultDacl(ownDefault,defaultUser); Require(again.SequenceEqual(ownDefault)&&!Object.ReferenceEquals(again,ownDefault),"DEFAULT_DACL_IDEMPOTENT_TEST"); passed.Add("existing exact own user grant is reused as independent bytes");
+            byte[] inheritedOwn=defaultAce(0,defaultUser,0x10000000); inheritedOwn[1]=0x10;
+            Require(U16(UserDefaultDacl(defaultAcl(new[]{inheritedOwn}),defaultUser),4)==2,"DEFAULT_DACL_INHERITED_TEST"); passed.Add("inherited grant does not substitute for the explicit own user grant");
+            Require(U16(UserDefaultDacl(defaultAcl(new[]{defaultAce(0,defaultUser,0xa0000000)}),defaultUser),4)==2,"DEFAULT_DACL_PARTIAL_TEST"); passed.Add("partial read execute user access does not satisfy the full own object grant");
+            refuses("empty default DACL is not widened",()=>UserDefaultDacl(defaultAcl(Array.Empty<byte[]>()),defaultUser));
+            refuses("NULL default DACL is not widened",()=>UserDefaultDacl(null,defaultUser));
+            foreach(byte[] badUser in new byte[][] { null,Array.Empty<byte>(),new byte[12],defaultUser.Take(23).ToArray(),new byte[72] }) refuses("malformed own user SID "+passed.Count,()=>UserDefaultDacl(originalDefault,badUser));
+            byte[] maxCountDefault=defaultAcl(Enumerable.Repeat(defaultAce(0,systemSid,0x10000000),128).ToArray());
+            refuses("default DACL ACE count remains bounded",()=>UserDefaultDacl(maxCountDefault,defaultUser));
+            byte[] maxBytesDefault=new byte[SecurityBytes]; maxBytesDefault[0]=2; Array.Copy(BitConverter.GetBytes((ushort)SecurityBytes),0,maxBytesDefault,2,2); maxBytesDefault[4]=1; Array.Copy(BitConverter.GetBytes((ushort)(SecurityBytes-8)),0,maxBytesDefault,10,2);
+            refuses("default DACL appended grant remains within byte budget",()=>UserDefaultDacl(maxBytesDefault,defaultUser));
+            byte[] malformedDefault=(byte[])originalDefault.Clone(); malformedDefault[10]=0;
+            refuses("malformed existing ACE is refused before token write",()=>UserDefaultDacl(malformedDefault,defaultUser));
+            byte[] paddedDefault=new byte[originalDefault.Length+16]; Array.Copy(originalDefault,paddedDefault,originalDefault.Length); Array.Copy(BitConverter.GetBytes((ushort)paddedDefault.Length),0,paddedDefault,2,2);
+            Require(UserDefaultDacl(paddedDefault,defaultUser).SequenceEqual(ownDefault),"DEFAULT_DACL_SLACK_TEST"); passed.Add("unused ACL capacity is excluded when appending the own user grant");
             return passed.ToArray();
         }
     }

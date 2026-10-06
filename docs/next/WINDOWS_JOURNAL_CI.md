@@ -18,6 +18,27 @@ deny-only, no additional restricting SID list, and medium integrity applied
 only to the derived token. The derived token must satisfy the complete ordinary
 predicate before launch and retain the source user, session and logon identity.
 
+Before that derived token is used, the launcher adds one explicit `GENERIC_ALL`
+ACE for its own captured user SID to its populated default DACL. Existing ACEs,
+including denials, remain in their original order. An exact existing explicit
+grant is reused. NULL, empty, unavailable, malformed or over-budget ACLs refuse;
+the written ACL must read back byte-for-byte. This changes only the newly owned
+token's defaults for objects created with it. The caller token, existing
+objects, desktop ACLs, user profile, group restrictions and privileges remain
+unchanged. The ordinary predicate and same-user/session/logon checks still run
+after preparation, and the child observes its own context independently.
+
+The retained hosted failure used a default ACL with full access for SYSTEM and
+Administrators, and only read/execute access for the logon SID. Administrators
+was deny-only in the derived token. A controlled local experiment using that
+ACL shape reproduced `0xC0000142` before the PowerShell bootstrap; invoking the
+new default-DACL preparation on a separate derived token allowed the same
+fixed child to start, observe its ordinary context and settle its owned job.
+This supports the narrow correction; it does not qualify the actual hosted
+route, the journal fixtures or a released application.
+[TokenDefaultDacl](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-token_information_class),
+[SetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-settokeninformation).
+
 The API documentation does not guarantee that these restrictions clear
 `TokenElevation` on a UAC-disabled administrator. The launcher queries it and
 refuses if it remains elevated. Launch privilege failures also refuse; neither
@@ -92,9 +113,10 @@ its validated metadata cannot fit. This does not relax the aggregate receipt
 limit or change launch/custody success criteria. These observations neither
 identify a failed DLL nor establish the cause of an initialization exit, an
 access decision, loader success or native fixture qualification. The child
-handshake and later Node spawn remain unchanged. The 163 pure controls include
+handshake and later Node spawn remain unchanged. The 179 pure controls include
 synthetic pointer, ACL, self-relative descriptor, closed state/role/identity and
-receipt-budget cases; they do not execute native queries or launch a child.
+receipt-budget and own-user default-ACL preservation, idempotence and refusal
+cases; they do not execute native queries or launch a child.
 
 The child bootstrap is a fixed checked-in PowerShell script. It observes its
 own token before starting pinned Node and compares its user/session/logon and
