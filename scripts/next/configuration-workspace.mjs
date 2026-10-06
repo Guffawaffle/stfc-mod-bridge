@@ -80,7 +80,12 @@ const required = {
     'stages_between_prepare_and_admission_invalidate_exact_old_plan_without_effect',
     'stage_after_acquisition_before_durable_begin_still_refuses_old_plan',
     'explicit_restore_validates_backup_and_backs_up_current_document',
-    'backup_tamper_between_restore_prepare_and_admission_refuses_before_stage'
+    'backup_tamper_between_restore_prepare_and_admission_refuses_before_stage',
+    'repeated_held_lease_revalidation_never_reacquires_and_begin_moves_once',
+    'held_lease_physical_and_schema_refusals_retain_candidate_before_begin',
+    'held_restore_backup_refusal_preserves_exact_candidate_and_owner_lease',
+    'foreign_recovery_binding_refuses_without_consuming_candidate_or_beginning',
+    'native_begin_errors_keep_exact_candidate_for_recovery_without_retry'
   ],
   configuration_recovery: [
     'ambiguous_replacement_stays_recovery_required_with_exact_custody',

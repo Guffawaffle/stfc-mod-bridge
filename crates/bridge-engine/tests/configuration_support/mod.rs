@@ -7,7 +7,7 @@ use bridge_toml::{TomlOverride, TomlPath, TomlSnapshot, TomlTable};
 use sha2::{Digest, Sha256 as Hasher};
 use std::{
     cell::{Cell, RefCell},
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     rc::Rc,
 };
 
@@ -245,6 +245,8 @@ pub struct Schemas {
     pub sync: Rc<RefCell<Vec<SyncFixture>>>,
     pub mutations: Vec<SemanticMutation>,
     pub additional_owned: Vec<TomlPath>,
+    pub unavailable: Rc<Cell<bool>>,
+    pub owner_state: Rc<RefCell<State>>,
 }
 pub struct SyncFixture {
     pub id: String,
@@ -253,7 +255,10 @@ pub struct SyncFixture {
 }
 impl SchemaSource for Schemas {
     fn resolve(&mut self, binding: &SchemaBinding) -> ConfigurationResult<AdoptedSchema> {
-        if &self.schema.schema.binding == binding {
+        let state = self.owner_state.borrow();
+        let leases = state.live_leases.iter().copied().collect();
+        state.schema_lease_observations.borrow_mut().push(leases);
+        if !self.unavailable.get() && &self.schema.schema.binding == binding {
             Ok(self.schema.clone())
         } else {
             Err(ConfigurationFailure::UnsupportedSchema)
@@ -373,12 +378,31 @@ pub struct State {
     pub drops: usize,
     pub backups: Vec<BackupReceiptRef>,
     pub backup_bytes: BTreeMap<BackupId, Vec<u8>>,
+    pub acquisitions: usize,
+    pub live_leases: BTreeSet<usize>,
+    pub lease_observations: Vec<(&'static str, usize)>,
+    pub schema_lease_observations: RefCell<Vec<Vec<usize>>>,
+    pub begins: usize,
+    pub begin_failure: Option<ConfigurationFailure>,
 }
 pub struct Owner(pub Rc<RefCell<State>>);
-pub struct Lease(Rc<RefCell<State>>);
+pub struct Lease {
+    state: Rc<RefCell<State>>,
+    pub id: usize,
+}
 impl Drop for Lease {
     fn drop(&mut self) {
-        self.0.borrow_mut().drops += 1;
+        let mut state = self.state.borrow_mut();
+        assert!(state.live_leases.remove(&self.id));
+        state.drops += 1;
+    }
+}
+impl Owner {
+    fn observe_lease(&self, lease: &Lease, call: &'static str) {
+        assert!(Rc::ptr_eq(&self.0, &lease.state), "foreign owner lease");
+        let mut state = self.0.borrow_mut();
+        assert!(state.live_leases.contains(&lease.id), "lease is not live");
+        state.lease_observations.push((call, lease.id));
     }
 }
 pub struct Tx {
@@ -407,13 +431,21 @@ impl DocumentOwner for Owner {
         })
     }
     fn acquire(&mut self, _: &DocumentBinding) -> ConfigurationResult<Lease> {
-        if self.0.borrow().busy {
+        let mut state = self.0.borrow_mut();
+        state.acquisitions += 1;
+        if state.busy {
             Err(ConfigurationFailure::Busy)
         } else {
-            Ok(Lease(self.0.clone()))
+            let id = state.acquisitions;
+            assert!(state.live_leases.insert(id));
+            Ok(Lease {
+                state: self.0.clone(),
+                id,
+            })
         }
     }
-    fn revalidate(&mut self, expected: &DocumentBinding, _: &Lease) -> ConfigurationResult<()> {
+    fn revalidate(&mut self, expected: &DocumentBinding, lease: &Lease) -> ConfigurationResult<()> {
+        self.observe_lease(lease, "revalidate");
         if &self.0.borrow().read.binding == expected {
             Ok(())
         } else {
@@ -424,8 +456,9 @@ impl DocumentOwner for Owner {
         &mut self,
         operation: &OperationId,
         prepared: &PreparedConfiguration,
-        _: &Lease,
+        lease: &Lease,
     ) -> ConfigurationResult<RecoveryRef> {
+        self.observe_lease(lease, "recovery_binding");
         Ok(RecoveryRef {
             operation_id: operation.clone(),
             transaction: NativeTransactionRef::new("synthetic-owned-transaction").unwrap(),
@@ -438,8 +471,19 @@ impl DocumentOwner for Owner {
         &mut self,
         p: &PreparedConfiguration,
         _: &RecoveryRef,
-        _: &Lease,
+        lease: &Lease,
     ) -> ConfigurationResult<Tx> {
+        self.observe_lease(lease, "begin");
+        let mut state = self.0.borrow_mut();
+        state.begins += 1;
+        if let Some(failure) = &state.begin_failure {
+            let failure = *failure;
+            if failure == ConfigurationFailure::RecoveryRequired {
+                // Simulate native mutation followed by unresolved disposition.
+                state.effects += 1;
+            }
+            return Err(failure);
+        }
         Ok(Tx {
             document: p.baseline().clone(),
             digest: p.candidate_digest().clone(),
@@ -450,9 +494,10 @@ impl DocumentOwner for Owner {
     fn advance(
         &mut self,
         t: &mut Tx,
-        _: &Lease,
+        lease: &Lease,
         cancel: bool,
     ) -> ConfigurationResult<OwnerOutcome> {
+        self.observe_lease(lease, "advance");
         let mut s = self.0.borrow_mut();
         s.steps += 1;
         if cancel && t.step == 0 {
@@ -505,8 +550,9 @@ impl DocumentOwner for Owner {
         &mut self,
         p: &RecoveryConfiguration,
         _: &RecoveryRef,
-        _: &Lease,
+        lease: &Lease,
     ) -> ConfigurationResult<OwnerOutcome> {
+        self.observe_lease(lease, "recover");
         let s = self.0.borrow();
         if s.read.binding == p.baseline && s.effects == 0 {
             return Ok(OwnerOutcome::CancelledBeforeCommit);
@@ -546,8 +592,9 @@ impl DocumentOwner for Owner {
     fn revalidate_backup(
         &mut self,
         receipt: &BackupReceiptRef,
-        _: &Lease,
+        lease: &Lease,
     ) -> ConfigurationResult<()> {
+        self.observe_lease(lease, "backup");
         self.backup(receipt).map(|_| ())
     }
 }
@@ -603,6 +650,7 @@ pub struct FixtureOptions {
     pub ids: Rc<RefCell<IdentityControl>>,
     pub captures: Vec<ProtectedEntryOutcome>,
     pub entry_unavailable: bool,
+    pub schema_unavailable: Rc<Cell<bool>>,
 }
 pub fn workspace_with_options(
     text: &str,
@@ -659,6 +707,12 @@ pub fn workspace_with_options(
         drops: 0,
         backups: vec![],
         backup_bytes: BTreeMap::new(),
+        acquisitions: 0,
+        live_leases: BTreeSet::new(),
+        lease_observations: vec![],
+        schema_lease_observations: RefCell::new(vec![]),
+        begins: 0,
+        begin_failure: None,
     }));
     let fields = f
         .schema
@@ -689,6 +743,8 @@ pub fn workspace_with_options(
         sync,
         mutations: options.mutations,
         additional_owned: options.additional_owned,
+        unavailable: options.schema_unavailable,
+        owner_state: state.clone(),
     };
     let mut codec = Codec::new(text, overrides);
     let initial = codec.snapshots.get_mut(text).unwrap();

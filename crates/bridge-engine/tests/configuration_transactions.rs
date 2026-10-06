@@ -12,7 +12,8 @@ fn admitted(
         .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &prepared, &lease)
         .unwrap();
     (
-        w.begin_configuration(prepared, recovery, &lease).unwrap(),
+        w.begin_configuration(&mut Some(prepared), recovery, &lease)
+            .unwrap(),
         lease,
     )
 }
@@ -271,10 +272,16 @@ fn stage_after_acquisition_before_durable_begin_still_refuses_old_plan() {
         .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
         .unwrap();
     let newer = stage(&mut w, &staged.snapshot.draft, vec![boolean(false)]).unwrap();
+    let identity = candidate_identity(&p);
+    let mut slot = Some(p);
     assert!(matches!(
-        w.begin_configuration(p, recovery, &lease),
+        w.begin_configuration(&mut slot, recovery, &lease),
         Err(ConfigurationFailure::Stale)
     ));
+    assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+    assert_eq!(s.borrow().begins, 0);
+    assert_eq!(s.borrow().acquisitions, 1);
+    assert!(s.borrow().live_leases.contains(&lease.id));
     assert_eq!(s.borrow().effects, 0);
     assert_eq!(w.draft(&newer.snapshot.draft).unwrap(), newer.snapshot);
 }
@@ -334,4 +341,264 @@ fn backup_tamper_between_restore_prepare_and_admission_refuses_before_stage() {
     ));
     assert_eq!(s.borrow().read.bytes, text.as_bytes());
     assert_eq!(s.borrow().effects, 0);
+}
+
+fn candidate_identity(p: &PreparedConfiguration) -> (usize, usize, Sha256) {
+    let bytes = p.candidate_bytes().unwrap();
+    (
+        bytes.as_ptr() as usize,
+        bytes.len(),
+        p.candidate_digest().clone(),
+    )
+}
+
+#[test]
+fn repeated_held_lease_revalidation_never_reacquires_and_begin_moves_once() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let lease = w.acquire_configuration(&p).unwrap();
+    let recovery = w
+        .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
+        .unwrap();
+    s.borrow_mut().lease_observations.clear();
+    s.borrow().schema_lease_observations.borrow_mut().clear();
+    w.revalidate_configuration(&p, &lease).unwrap();
+    w.revalidate_configuration(&p, &lease).unwrap();
+    let mut slot = Some(p);
+    let mut tx = w
+        .begin_configuration(&mut slot, recovery.clone(), &lease)
+        .unwrap();
+    assert!(slot.is_none());
+    assert_eq!(s.borrow().acquisitions, 1);
+    assert_eq!(s.borrow().begins, 1);
+    assert_eq!(
+        s.borrow().lease_observations,
+        vec![
+            ("revalidate", lease.id),
+            ("revalidate", lease.id),
+            ("revalidate", lease.id),
+            ("begin", lease.id)
+        ]
+    );
+    assert_eq!(
+        *s.borrow().schema_lease_observations.borrow(),
+        vec![vec![lease.id]; 3]
+    );
+    let observations = s.borrow().lease_observations.clone();
+    let schema_observations = s.borrow().schema_lease_observations.borrow().clone();
+    assert!(matches!(
+        w.begin_configuration(&mut slot, recovery, &lease),
+        Err(ConfigurationFailure::InvalidInput)
+    ));
+    assert_eq!(s.borrow().lease_observations, observations);
+    assert_eq!(
+        *s.borrow().schema_lease_observations.borrow(),
+        schema_observations
+    );
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert!(matches!(
+        w.advance_configuration(&mut tx, &lease, false).unwrap(),
+        Some(CompletionOutcome::Changed { .. })
+    ));
+    assert_eq!(s.borrow().begins, 1);
+    assert_eq!(s.borrow().drops, 0);
+    assert!(
+        s.borrow()
+            .lease_observations
+            .iter()
+            .all(|(_, id)| *id == lease.id)
+    );
+    drop(tx);
+    drop(lease);
+    assert!(s.borrow().live_leases.is_empty());
+    assert_eq!(s.borrow().drops, 1);
+}
+
+#[test]
+fn held_lease_physical_and_schema_refusals_retain_candidate_before_begin() {
+    for physical in [true, false] {
+        let unavailable = std::rc::Rc::new(std::cell::Cell::new(false));
+        let (mut w, s, _) = workspace_with_options(
+            "",
+            vec![],
+            None,
+            false,
+            false,
+            FixtureOptions {
+                schema_unavailable: unavailable.clone(),
+                ..FixtureOptions::default()
+            },
+        );
+        let d = open(&mut w, &s);
+        let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+        let p = prepare(&mut w, &staged.snapshot);
+        let identity = candidate_identity(&p);
+        let lease = w.acquire_configuration(&p).unwrap();
+        let recovery = w
+            .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
+            .unwrap();
+        if physical {
+            s.borrow_mut().read.binding.baseline = DocumentBaseline::Existing {
+                file_identity: NativeFileIdentity::new("foreign-appearing-file").unwrap(),
+                content_digest: hash(b""),
+            };
+        } else {
+            unavailable.set(true);
+        }
+        let expected = if physical {
+            ConfigurationFailure::Stale
+        } else {
+            ConfigurationFailure::UnsupportedSchema
+        };
+        assert_eq!(w.revalidate_configuration(&p, &lease), Err(expected));
+        let mut slot = Some(p);
+        assert!(
+            matches!(w.begin_configuration(&mut slot, recovery, &lease),Err(failure) if failure == expected)
+        );
+        assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+        assert_eq!(s.borrow().begins, 0);
+        assert_eq!(s.borrow().effects, 0);
+        assert_eq!(s.borrow().acquisitions, 1);
+        assert_eq!(s.borrow().drops, 0);
+        assert!(
+            s.borrow()
+                .lease_observations
+                .iter()
+                .all(|(_, id)| *id == lease.id)
+        );
+        assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    }
+}
+
+#[test]
+fn held_restore_backup_refusal_preserves_exact_candidate_and_owner_lease() {
+    let text = "setting.boolean = true\n";
+    let (mut w, s, _) = workspace(
+        text,
+        vec![override_("setting.boolean", "true")],
+        None,
+        false,
+        false,
+    );
+    let backup = retain_backup(&s, "setting.boolean = false\n");
+    let p = w
+        .prepare_restore(&RestoreConfigurationInput {
+            document: s.borrow().read.binding.clone(),
+            backup: backup.clone(),
+        })
+        .unwrap();
+    let identity = candidate_identity(&p);
+    let lease = w.acquire_configuration(&p).unwrap();
+    let recovery = w
+        .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
+        .unwrap();
+    s.borrow_mut()
+        .backup_bytes
+        .insert(backup.backup_id, b"tampered".to_vec());
+    assert_eq!(
+        w.revalidate_configuration(&p, &lease),
+        Err(ConfigurationFailure::BackupUnavailable)
+    );
+    let mut slot = Some(p);
+    assert!(matches!(
+        w.begin_configuration(&mut slot, recovery, &lease),
+        Err(ConfigurationFailure::BackupUnavailable)
+    ));
+    assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+    assert_eq!(s.borrow().begins, 0);
+    assert_eq!(s.borrow().effects, 0);
+    assert_eq!(s.borrow().acquisitions, 1);
+    assert_eq!(s.borrow().drops, 0);
+    assert!(
+        s.borrow()
+            .lease_observations
+            .iter()
+            .any(|(call, id)| *call == "backup" && *id == lease.id)
+    );
+    assert_eq!(s.borrow().read.bytes, text.as_bytes());
+}
+
+#[test]
+fn foreign_recovery_binding_refuses_without_consuming_candidate_or_beginning() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let identity = candidate_identity(&p);
+    let lease = w.acquire_configuration(&p).unwrap();
+    let mut recovery = w
+        .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
+        .unwrap();
+    let mut foreign = p.baseline().clone();
+    foreign.document_id = DocumentId::new(id(999)).unwrap();
+    recovery.target = RecoveryTarget::Configuration { document: foreign };
+    let mut slot = Some(p);
+    assert!(matches!(
+        w.begin_configuration(&mut slot, recovery, &lease),
+        Err(ConfigurationFailure::InvalidOwnerResult)
+    ));
+    assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+    assert_eq!(s.borrow().begins, 0);
+    assert_eq!(s.borrow().effects, 0);
+    assert_eq!(s.borrow().acquisitions, 1);
+    assert_eq!(s.borrow().drops, 0);
+}
+
+#[test]
+fn native_begin_errors_keep_exact_candidate_for_recovery_without_retry() {
+    for failure in [
+        ConfigurationFailure::InvalidOwnerResult,
+        ConfigurationFailure::RecoveryRequired,
+    ] {
+        let (mut w, s, _) = workspace("", vec![], None, false, false);
+        let d = open(&mut w, &s);
+        let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+        let p = prepare(&mut w, &staged.snapshot);
+        let scope = RecoveryConfiguration::from_capture(&PreparedCapture::SaveConfiguration {
+            input: p.save_capture().unwrap(),
+        })
+        .unwrap();
+        let identity = candidate_identity(&p);
+        let lease = w.acquire_configuration(&p).unwrap();
+        let recovery = w
+            .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
+            .unwrap();
+        s.borrow_mut().begin_failure = Some(failure);
+        let mut slot = Some(p);
+        assert!(
+            matches!(w.begin_configuration(&mut slot,recovery.clone(),&lease),Err(observed) if observed==failure)
+        );
+        assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+        assert_eq!(s.borrow().begins, 1);
+        assert_eq!(s.borrow().acquisitions, 1);
+        assert_eq!(s.borrow().drops, 0);
+        assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+        let effects = s.borrow().effects;
+        let recovered = w.recover_configuration(&scope, &recovery, &lease);
+        if failure == ConfigurationFailure::RecoveryRequired {
+            assert_eq!(effects, 1);
+            assert_eq!(recovered, Err(ConfigurationFailure::RecoveryRequired));
+        } else {
+            assert_eq!(effects, 0);
+            assert!(matches!(
+                recovered,
+                Ok(Some(CompletionOutcome::CancelledBeforeCommit { .. }))
+            ));
+        }
+        assert_eq!(s.borrow().effects, effects);
+        assert_eq!(s.borrow().begins, 1);
+        assert_eq!(candidate_identity(slot.as_ref().unwrap()), identity);
+        assert!(
+            s.borrow()
+                .lease_observations
+                .iter()
+                .all(|(_, id)| *id == lease.id)
+        );
+        drop(slot);
+        assert_eq!(s.borrow().drops, 0);
+        drop(lease);
+        assert_eq!(s.borrow().drops, 1);
+    }
 }

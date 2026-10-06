@@ -405,15 +405,26 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
     ) -> ConfigurationResult<O::Lease> {
         self.revalidate_prepared_draft(prepared)?;
         let lease = self.owner.acquire(prepared.baseline())?;
-        self.owner.revalidate(prepared.baseline(), &lease)?;
+        self.revalidate_configuration(prepared, &lease)?;
+        Ok(lease)
+    }
+    /// Revalidate captured intent and native subjects under the caller's exact
+    /// held lease. This never acquires a replacement exclusion.
+    pub fn revalidate_configuration(
+        &mut self,
+        prepared: &PreparedConfiguration,
+        lease: &O::Lease,
+    ) -> ConfigurationResult<()> {
+        self.revalidate_prepared_draft(prepared)?;
+        self.owner.revalidate(prepared.baseline(), lease)?;
         if let Some(backup) = prepared.restore_source() {
-            self.owner.revalidate_backup(backup, &lease)?;
+            self.owner.revalidate_backup(backup, lease)?;
         }
         // Schema/runtime adoption remains exact at admission.
         self.schemas
             .resolve(prepared.destination_schema())?
             .validate(prepared.destination_schema())?;
-        Ok(lease)
+        Ok(())
     }
     fn revalidate_prepared_draft(
         &self,
@@ -445,26 +456,30 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
     }
     /// Root's OperationPorts adapter invokes this only after durable executing
     /// admission and retains the actual owner lease through the terminal step.
+    /// Every error leaves the exact candidate in the supplied slot. An error
+    /// from native begin does not establish no effect or authorize a retry;
+    /// unresolved disposition must use the durable recovery binding.
     pub fn begin_configuration(
         &mut self,
-        prepared: PreparedConfiguration,
+        prepared: &mut Option<PreparedConfiguration>,
         recovery: RecoveryRef,
         lease: &O::Lease,
     ) -> ConfigurationResult<ConfigurationTransaction<O::Transaction>> {
-        self.revalidate_prepared_draft(&prepared)?;
-        if !matches!(&recovery.target,RecoveryTarget::Configuration { document } if document == prepared.baseline())
+        let captured = prepared
+            .as_ref()
+            .ok_or(ConfigurationFailure::InvalidInput)?;
+        self.revalidate_configuration(captured, lease)?;
+        if !matches!(&recovery.target,RecoveryTarget::Configuration { document } if document == captured.baseline())
         {
             return Err(ConfigurationFailure::InvalidOwnerResult);
         }
-        self.owner.revalidate(prepared.baseline(), lease)?;
-        if let Some(backup) = prepared.restore_source() {
-            self.owner.revalidate_backup(backup, lease)?;
-        }
-        let native = if prepared.changed {
-            Some(self.owner.begin(&prepared, &recovery, lease)?)
+        let native = if captured.changed {
+            Some(self.owner.begin(captured, &recovery, lease)?)
         } else {
             None
         };
+        // No fallible work after native success and the one custody transfer.
+        let prepared = prepared.take().expect("validated occupied candidate slot");
         Ok(ConfigurationTransaction {
             prepared,
             native,

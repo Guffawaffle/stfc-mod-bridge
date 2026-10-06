@@ -14,7 +14,9 @@ fn ambiguous_replacement_stays_recovery_required_with_exact_custody() {
         .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
         .unwrap();
     s.borrow_mut().ambiguous = true;
-    let mut tx = w.begin_configuration(p, recovery, &lease).unwrap();
+    let mut tx = w
+        .begin_configuration(&mut Some(p), recovery, &lease)
+        .unwrap();
     w.advance_configuration(&mut tx, &lease, false).unwrap();
     assert!(matches!(
         w.advance_configuration(&mut tx, &lease, false),
@@ -37,7 +39,9 @@ fn restart_recovery_uses_captured_digest_without_protected_payload_recreation() 
     let recovery = w
         .configuration_recovery_binding(&OperationId::new(id(501)).unwrap(), &p, &lease)
         .unwrap();
-    let mut tx = w.begin_configuration(p, recovery.clone(), &lease).unwrap();
+    let mut tx = w
+        .begin_configuration(&mut Some(p), recovery.clone(), &lease)
+        .unwrap();
     w.advance_configuration(&mut tx, &lease, false).unwrap();
     w.advance_configuration(&mut tx, &lease, false).unwrap();
     // Dropping candidate/draft host custody does not recreate secrets. Recovery

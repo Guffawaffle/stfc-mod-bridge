@@ -95,6 +95,15 @@ physical/revision identity under the retained lease. A losing writer performs no
 stage, backup or journal work. Staging newer intent before acquisition or before
 durable begin invalidates an old plan. Restore also revalidates the exact
 retained backup subject under the lease; a preparation-time digest is no lock.
+`revalidate_configuration` checks the captured draft, physical baseline,
+retained Restore backup and adopted destination schema under the same held
+lease without acquiring again. `begin_configuration` borrows a retained
+`Option<PreparedConfiguration>` slot through every check and native begin.
+Errors preserve the exact candidate allocation; success takes it once into
+the transaction. An empty slot refuses before owner entry. A native-begin
+error does not prove no effect or authorize retry: unresolved disposition
+retains candidate and lease for deterministic recovery using the durable
+recovery binding. These portable seams do not enable dispatcher Save/Restore.
 Replacement requires a fresh file identity, the reviewed candidate digest and
 an exact prior-byte backup for an existing baseline. Meaningful first Save uses
 create-new semantics. Terminal replay performs no additional writes or revision
