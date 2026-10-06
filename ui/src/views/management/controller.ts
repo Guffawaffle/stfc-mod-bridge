@@ -42,6 +42,7 @@ export class ManagementController {
     private listeners = new Set<(state: ManagementState) => void>();
     private stop: () => void;
     private actionReads = new Map<string, number>();
+    private actionNoticeRead?: object;
     constructor(readonly facade: BridgeFacade, readonly inputs: ManagementInputs = {}) { this.stop = facade.subscribe(state => { const key = canonicalData([state.work.selector ?? null, state.work.binding ?? null, state.work.draft?.draft.document ?? null, state.observations.cursor?.hostEpoch ?? null, state.observations.confidence, state.observations.snapshot?.profiles ?? null, state.observations.snapshot?.installations ?? null, state.observations.snapshot?.preferences ?? null]); if (key !== this.key) {
         this.key = key;
         this.invalidate();
@@ -62,7 +63,7 @@ export class ManagementController {
             break;
         listener(published);
     } }
-    private invalidate(): void { this.generation++; this.abort.abort(); this.abort = new AbortController(); this.actionReads.clear(); this.set({ busy: false, notice: '', availability: Object.freeze({}) }); }
+    private invalidate(): void { this.generation++; this.abort.abort(); this.abort = new AbortController(); this.actionReads.clear(); this.actionNoticeRead = undefined; this.set({ busy: false, notice: '', availability: Object.freeze({}) }); }
     private currentGeneration(generation: number): boolean { return !this.disposed && generation === this.generation; }
     private usable(): boolean { return !this.disposed && this.facade.work.observations.state.confidence === 'authoritative' && !this.facade.work.state.draftConflict; }
     private async observe<T>(execute: (options: CallOptions) => Promise<T>, options: CallOptions): Promise<T> {
@@ -98,14 +99,17 @@ export class ManagementController {
             return;
         const captured = captureData(scope), generation = this.generation;
         const reads = new Map(actions.map(action => { const key = scopeKey(captured, action), read = (this.actionReads.get(key) ?? 0) + 1; this.actionReads.set(key, read); return [key, read]; }));
+        const ownsRead = () => [...reads].some(([key, read]) => this.actionReads.get(key) === read);
+        const noticeRead = {};
+        this.actionNoticeRead = noticeRead;
         const waiting = { ...this.current.availability };
         for (const action of actions)
             delete waiting[scopeKey(captured, action)];
         this.set({ ...this.current, availability: Object.freeze(waiting) });
-        if (!this.currentGeneration(generation))
+        if (!this.currentGeneration(generation) || !ownsRead())
             return;
         const result = await this.observe(value => this.facade.client.query('get_actions', { scope: captured, actions: [...actions] }, value), options);
-        if (!this.currentGeneration(generation))
+        if (!this.currentGeneration(generation) || !ownsRead())
             return;
         const values = { ...this.current.availability };
         for (const action of actions) {
@@ -119,7 +123,7 @@ export class ManagementController {
                     values[key] = matches[0];
             }
         }
-        this.set({ ...this.current, availability: Object.freeze(values), notice: result.kind === 'result' ? '' : 'Action availability is unavailable. Refresh the captured scope.' });
+        this.set({ ...this.current, availability: Object.freeze(values), notice: this.actionNoticeRead === noticeRead ? result.kind === 'result' ? '' : 'Action availability is unavailable. Refresh the captured scope.' : this.current.notice });
     }
     async review(intent: DeepReadonly<MutationIntent> | MutationIntent, scope: DeepReadonly<ActionScope>, focusKey: string, options: CallOptions = {}): Promise<boolean> {
         if (!this.usable() || !this.scopeCurrent(scope) || !this.intentScopeMatches(intent, scope) || this.facade.work.state.dirty || this.facade.work.state.transitionBusy || !available(this.projection(scope, intent.kind)))

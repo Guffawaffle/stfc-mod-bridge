@@ -22,7 +22,7 @@ with zero errors and warnings, then only the frozen focused Vitest files in
 `frontend-management-evidence.mjs`. The inventory includes Management and
 Support tests, cancellation, recovery custody, adversarial action custody and
 diagnostic integrity, plus the closed Management/Support preview-session cases.
-The frozen inventory covers 201 assertions across nine files, including eleven
+The frozen inventory covers 206 assertions across nine files, including twelve
 preview-session cases. Its exact authored count is exported as `managementCounts`
 in `frontend-management-evidence.mjs`. Counts come from the executed JSON report;
 writing an inventory or a document establishes no passing coverage.
@@ -73,6 +73,12 @@ the same typed fixture boundary. Neither supplies native operation authority.
 | BR20-04 | History uses the shared current document and retained producer backup. Operations distinguish admission, completion, cancellation requested/too late and recorded game/Bridge recovery. Duplicate requests, reentrant publication, disposal and late replies cannot replace custody. | Browser checks exercise main History navigation, restore review, pending cancellation and recorded recovery reviews. Source tests cover exact replay, revision correlation and original/replacement custody. Durable admission, native cancellation boundaries, lease lifetime, forced-death recovery and safe close require separate engine/native proof. |
 | BR20-05 | Support verifies a redacted preview by default, requires explicit fresh path disclosure and an opaque backend-captured destination, and stops at reviewed export preparation. | Browser checks exercise redaction, chooser-before-review, fresh disclosure and cancelled destination. Source tests cover digest/scope/privacy drift, Rust Option None, async hash abandonment and disclosure resets. Real chooser/export and comprehensive native secret/account filtering remain unqualified. |
 | BR20-06 | Normal Management UI excludes private custody and filesystem paths. The actual App retains labels, review focus, responsive layouts, dark/forced-color themes, reduced motion and enlarged text. Production excludes development fixture hosts. | Pinned-browser checks capture desktop and compact 200% text, geometry, focus and screenshots. The separate production build inspects its module graph. Installed WebView2/WKWebView, Narrator/VoiceOver and native window behavior require independent host evidence. |
+
+Availability reads reconcile each action independently. A fully superseded read
+cannot publish a result, error or message, and a reentrant refresh prevents its
+obsolete outbound request. A partially superseded read may still update its
+retained actions; only the newest availability read may publish the shared
+availability message. This read custody does not cancel an admitted operation.
 
 ## Actual App preview and browser evidence
 

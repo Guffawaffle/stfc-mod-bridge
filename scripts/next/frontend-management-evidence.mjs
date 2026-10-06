@@ -129,11 +129,16 @@ const criteria = {
     'management availability preserves unavailable native route public feedback',
   ],
   'ui/tests/management/observation.test.ts': [
+    'late superseded availability failure cannot replace the newer successful read message',
+    'late superseded availability success cannot clear the newer failed read message',
+    'partially superseded availability updates only retained actions and preserves the newest message',
+    'a reentrant newer availability read prevents a fully superseded outbound request',
     'a replaced document baseline clears old complete backup history',
     'changed provider preference invalidates an in-flight old release check',
     'null and omitted optional profile preferences preserve exact observed identity',
   ],
   'ui/tests/management-preview/session.test.ts': [
+    'Management mock current-draft queries retain exact namespace and cursor with truthful Missing and foreign-host refusal',
     'Management preview modes validate every golden provenance hash and recorded wire frame',
     'Management preview duplicate profile review preserves immutable identity and future-launch preference',
     'Management preview native import discovery uses exact observed destination owner and explicit approval',
@@ -154,7 +159,7 @@ for (const [file, titles] of Object.entries(criteria)) {
   Object.freeze(titles);
 }
 export const managementCriteria = Object.freeze(criteria);
-export const managementCounts = Object.freeze({ tests: 201, files: 9 });
+export const managementCounts = Object.freeze({ tests: 206, files: 9 });
 assert.equal(Object.keys(managementCriteria).length, managementCounts.files);
 assert.equal(Object.values(managementCriteria).reduce((total, titles) => total + titles.length, 0), managementCounts.tests);
 
