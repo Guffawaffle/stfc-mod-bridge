@@ -233,6 +233,20 @@ impl<P: OperationPorts, T, S, O, E, I> OperationPorts for ConfigurationServices<
     ) -> Result<bool, Box<BridgeError>> {
         self.operations.handoff_session(session, custody, lease)
     }
+    fn completion_pending(&self, custody: &Self::Custody) -> bool {
+        self.operations.completion_pending(custody)
+    }
+    fn publish_completion(
+        &mut self,
+        operation: &OperationSnapshot,
+        custody: &mut Self::Custody,
+        lease: &Self::Lease,
+        commit: &mut CompletionCommit<'_>,
+    ) -> Result<(), Box<BridgeError>> {
+        refuse_configuration(&operation.semantics)?;
+        self.operations
+            .publish_completion(operation, custody, lease, commit)
+    }
 }
 fn refuse_configuration(semantics: &PlanSemantics) -> ApplicationResult<()> {
     if matches!(

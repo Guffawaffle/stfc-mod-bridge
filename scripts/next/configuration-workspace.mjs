@@ -85,7 +85,13 @@ const required = {
     'held_lease_physical_and_schema_refusals_retain_candidate_before_begin',
     'held_restore_backup_refusal_preserves_exact_candidate_and_owner_lease',
     'foreign_recovery_binding_refuses_without_consuming_candidate_or_beginning',
-    'native_begin_errors_keep_exact_candidate_for_recovery_without_retry'
+    'native_begin_errors_keep_exact_candidate_for_recovery_without_retry',
+    'completed_write_keeps_dirty_draft_until_durable_callback_and_publishes_once',
+    'newer_edit_after_completion_refusal_is_preserved_as_stale_without_writer_replay',
+    'owner_read_refusal_after_native_completion_keeps_intent_and_cached_native_outcome',
+    'no_change_cleanup_waits_for_commit_and_does_not_create_file_backup_or_stage',
+    'restore_completion_preserves_matching_local_edits_until_stale_publication',
+    'completion_refusal_preserves_protected_payload_until_exact_clean_publication'
   ],
   configuration_recovery: [
     'ambiguous_replacement_stays_recovery_required_with_exact_custody',

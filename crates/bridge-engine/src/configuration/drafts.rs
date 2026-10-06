@@ -9,6 +9,31 @@ struct DraftRecord {
     snapshot: DraftSnapshot,
     acknowledgment: Option<SetDraftChangesResult>,
 }
+impl DraftRecord {
+    fn projection(&self) -> Self {
+        Self {
+            baseline: DocumentRead {
+                binding: self.baseline.binding.clone(),
+                bytes: self.baseline.bytes.clone(),
+            },
+            snapshot: self.snapshot.clone(),
+            acknowledgment: self.acknowledgment.clone(),
+        }
+    }
+}
+pub(crate) struct CompletionPublication {
+    drafts: Vec<(DraftId, DraftRecord)>,
+    clear_vault: Vec<DraftId>,
+    document: Option<DocumentRead>,
+}
+impl CompletionPublication {
+    pub(crate) fn snapshots(&self) -> Vec<DraftSnapshot> {
+        self.drafts
+            .iter()
+            .map(|(_, record)| record.snapshot.clone())
+            .collect()
+    }
+}
 enum VaultReference {
     Private(PrivateValueRef),
     Secret(SecretRef),
@@ -707,17 +732,24 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             .value
             .source()
     }
-    pub(crate) fn install_completion(
-        &mut self,
+    pub(crate) fn prepare_completion(
+        &self,
         captured: Option<&DraftSnapshot>,
         outcome: &CompletionOutcome,
-    ) -> ConfigurationResult<()> {
+        read: Option<&DocumentRead>,
+    ) -> ConfigurationResult<CompletionPublication> {
+        let mut publication = CompletionPublication {
+            drafts: vec![],
+            clear_vault: vec![],
+            document: None,
+        };
         if matches!(outcome, CompletionOutcome::NoChange { .. }) {
             if let Some(captured) = captured
-                && let Some(record) = self.drafts.get_mut(&captured.draft.draft_id)
-                && &record.snapshot == captured
-                && !record.snapshot.edits.as_slice().is_empty()
+                && let Some(original) = self.drafts.get(&captured.draft.draft_id)
+                && &original.snapshot == captured
+                && !original.snapshot.edits.as_slice().is_empty()
             {
+                let mut record = original.projection();
                 record.snapshot.draft.revision = RevisionCounter::new(
                     record
                         .snapshot
@@ -732,30 +764,36 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 record.snapshot.validation = bounded(vec![])?;
                 record.snapshot.state = DraftState::Clean;
                 record.acknowledgment = None;
-                self.vault
-                    .retain(|_, entry| !entry_belongs(entry, &captured.draft.draft_id));
+                super::types::validate_result(CommandResult::OpenDraft(record.snapshot.clone()))?;
+                publication
+                    .drafts
+                    .push((captured.draft.draft_id.clone(), record));
+                publication
+                    .clear_vault
+                    .push(captured.draft.draft_id.clone());
             }
-            return Ok(());
+            return Ok(publication);
         }
         let CompletionOutcome::Changed {
             receipt: Some(receipt),
             ..
         } = outcome
         else {
-            return Ok(());
+            return Ok(publication);
         };
         let EffectReceipt::ConfigurationWritten { document, .. } = receipt.as_ref() else {
             return Err(ConfigurationFailure::InvalidOwnerResult);
         };
-        let read = self.owner.read(document)?;
+        let read = read.ok_or(ConfigurationFailure::InvalidOwnerResult)?;
         if &read.binding != document {
             return Err(ConfigurationFailure::RecoveryRequired);
         }
         read.text()?;
-        for record in self.drafts.values_mut().filter(|record| {
+        for original in self.drafts.values().filter(|record| {
             record.snapshot.draft.document.document_id == document.document_id
                 && record.snapshot.draft.document.target == document.target
         }) {
+            let mut record = original.projection();
             if captured.is_some_and(|snapshot| snapshot == &record.snapshot) {
                 record.snapshot.draft.revision = RevisionCounter::new(
                     record
@@ -776,17 +814,42 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                 record.snapshot.validation = bounded(vec![])?;
                 record.snapshot.state = DraftState::Clean;
                 record.acknowledgment = None;
-                let id = &record.snapshot.draft.draft_id;
-                self.vault.retain(|_, entry| !entry_belongs(entry, id));
+                publication
+                    .clear_vault
+                    .push(record.snapshot.draft.draft_id.clone());
             } else if record.snapshot.draft.document != *document
                 && record.snapshot.state != DraftState::Invalid
             {
                 record.snapshot.state = DraftState::Stale;
                 record.snapshot.validation = bounded(vec![])?;
             }
+            if record.snapshot != original.snapshot {
+                super::types::validate_result(CommandResult::OpenDraft(record.snapshot.clone()))?;
+                publication
+                    .drafts
+                    .push((record.snapshot.draft.draft_id.clone(), record));
+            }
         }
-        self.documents.insert(document.document_id.clone(), read);
-        Ok(())
+        publication.document = Some(DocumentRead {
+            binding: read.binding.clone(),
+            bytes: read.bytes.clone(),
+        });
+        Ok(publication)
+    }
+    pub(crate) fn publish_completion(&mut self, publication: CompletionPublication) {
+        for (id, record) in publication.drafts {
+            self.drafts.insert(id, record);
+        }
+        self.vault.retain(|_, entry| {
+            !publication
+                .clear_vault
+                .iter()
+                .any(|id| entry_belongs(entry, id))
+        });
+        if let Some(read) = publication.document {
+            self.documents
+                .insert(read.binding.document_id.clone(), read);
+        }
     }
     pub fn owner_mut(&mut self) -> &mut O {
         &mut self.owner

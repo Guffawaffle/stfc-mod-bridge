@@ -171,6 +171,24 @@ pub trait OperationPorts {
         custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>>;
+    /// Local successors still need publication even if the native writer is
+    /// already at a safe durable boundary. Such custody cannot be released.
+    fn completion_pending(&self, _custody: &Self::Custody) -> bool {
+        false
+    }
+    /// Supply every local draft successor to the kernel's durable commit
+    /// callback exactly once, then publish locally with no fallible work.
+    /// A refused callback must leave local state and pending custody intact.
+    /// The port receives no cursor, sequence, journal or kernel controls.
+    fn publish_completion(
+        &mut self,
+        _operation: &OperationSnapshot,
+        _custody: &mut Self::Custody,
+        _lease: &Self::Lease,
+        commit: &mut CompletionCommit<'_>,
+    ) -> Result<(), Box<BridgeError>> {
+        commit(&[])
+    }
     /// A session lease can leave host custody only after an actual canonical
     /// native/runtime handoff. UI/window closure alone cannot perform a handoff.
     fn handoff_session(
@@ -180,6 +198,8 @@ pub trait OperationPorts {
         lease: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>>;
 }
+
+pub type CompletionCommit<'a> = dyn FnMut(&[DraftSnapshot]) -> Result<(), Box<BridgeError>> + 'a;
 
 /// Bounded storage interface. Success means the record and all prior records
 /// are durable. Errors have unknown persistence disposition; poison the host.

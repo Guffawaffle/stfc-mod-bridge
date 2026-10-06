@@ -832,6 +832,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         };
         self.observation_capacity(&operation, true)
             .map_err(|_| error(ErrorCode::OperationBusy))?;
+        let event = self
+            .operation_event(&snapshot)
+            .map_err(|_| error(ErrorCode::OperationBusy))?;
         // Admission consumes this preparation even when persistence disposition
         // becomes unknown. A fresh key must Prepare again; durable replay above
         // still returns the original operation without touching local custody.
@@ -861,8 +864,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         }
         self.idempotency.insert(input.idempotency_key, id.clone());
         self.operations.insert(id.clone(), operation);
-        self.emit_operation(&id)
-            .map_err(|_| error(ErrorCode::InternalFailure))?;
+        self.publish_event(event);
         Ok(snapshot)
     }
 
@@ -1025,18 +1027,36 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                 };
             }
         }
+        if operation.phase == DurablePhase::Recovery
+            && self
+                .workers
+                .get(id)
+                .is_some_and(|worker| self.ports.completion_pending(&worker.custody))
+        {
+            operation.safe_owner_boundary = false;
+        }
         let complete_at_owner = operation.phase == DurablePhase::Terminal;
         let session_custody = operation.session_custody.clone();
-        match self.persist_change(operation) {
+        let persisted = if complete_at_owner {
+            self.persist_completion(operation)
+        } else {
+            self.persist_change(operation)
+        };
+        match persisted {
             Ok(()) => {}
-            Err(KernelFailure::Capacity) if complete_at_owner && !self.poisoned => {
+            Err(KernelFailure::Capacity | KernelFailure::InvalidPortResult)
+                if complete_at_owner && !self.poisoned =>
+            {
                 // The native owner has already reached a durable complete
                 // boundary. A publication budget failure cannot turn that into
                 // false failure or indefinitely Running. Admission reserved this
                 // exact recovery projection before any native effects.
                 let mut recovery = self.operations[id].clone();
                 recovery.phase = DurablePhase::Recovery;
-                recovery.safe_owner_boundary = true;
+                recovery.safe_owner_boundary = !self
+                    .workers
+                    .get(id)
+                    .is_some_and(|worker| self.ports.completion_pending(&worker.custody));
                 recovery.session_custody = session_custody;
                 recovery.snapshot.state = OperationState::RecoveryRequired {
                     recovery: Box::new(recovery.recovery.clone()),
@@ -1280,6 +1300,20 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
     }
 
     fn persist_change(&mut self, mut operation: DurableOperation) -> Result<(), KernelFailure> {
+        self.prepare_change(&mut operation)?;
+        let event = self.operation_event(&operation.snapshot)?;
+        if let Err(failure) = self.journal.append(&JournalRecord::Operation {
+            value: Box::new(operation.clone()),
+        }) {
+            self.poisoned = true;
+            return Err(failure);
+        }
+        let id = operation.snapshot.operation_id.clone();
+        self.operations.insert(id, operation);
+        self.publish_event(event);
+        Ok(())
+    }
+    fn prepare_change(&self, operation: &mut DurableOperation) -> Result<(), KernelFailure> {
         operation.snapshot.operation_revision = RevisionCounter::new(
             operation
                 .snapshot
@@ -1288,25 +1322,84 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                 .checked_add(1)
                 .ok_or(KernelFailure::CounterExhausted)?,
         );
-        validate_durable(&operation)?;
-        self.observation_capacity(&operation, false)?;
-        self.observation_capacity(&operation, true)?;
+        validate_durable(operation)?;
+        self.observation_capacity(operation, false)?;
+        self.observation_capacity(operation, true)?;
         validate_transition(
             &self.operations[&operation.snapshot.operation_id],
-            &operation,
+            operation,
         )?;
-        if let Err(failure) = self.journal.append(&JournalRecord::Operation {
-            value: Box::new(operation.clone()),
-        }) {
-            self.poisoned = true;
+        Ok(())
+    }
+    fn persist_completion(&mut self, mut operation: DurableOperation) -> Result<(), KernelFailure> {
+        self.prepare_change(&mut operation)?;
+        let event = self.operation_event(&operation.snapshot)?;
+        let id = operation.snapshot.operation_id.clone();
+        let worker = self
+            .workers
+            .get_mut(&id)
+            .ok_or(KernelFailure::InvalidPortResult)?;
+        let mut attempts = 0;
+        let mut failure = None;
+        let mut committed = false;
+        let mut draft_events = vec![];
+        let journal = &mut self.journal;
+        let poisoned = &mut self.poisoned;
+        let budget = self.observation_budget;
+        let result = self.ports.publish_completion(
+            &operation.snapshot,
+            &mut worker.custody,
+            &worker.lease,
+            &mut |changed| {
+                attempts += 1;
+                let check = (|| {
+                    if attempts != 1 {
+                        return Err(KernelFailure::InvalidPortResult);
+                    }
+                    draft_events = preflight_draft_events(&event.cursor, budget, changed)?;
+                    if let Err(error) = journal.append(&JournalRecord::Operation {
+                        value: Box::new(operation.clone()),
+                    }) {
+                        *poisoned = true;
+                        return Err(error);
+                    }
+                    committed = true;
+                    Ok(())
+                })();
+                if let Err(error_value) = check {
+                    failure = Some(error_value);
+                    return Err(error(ErrorCode::InternalFailure));
+                }
+                Ok(())
+            },
+        );
+        if let Some(failure) = failure {
+            if committed {
+                self.poisoned = true;
+            }
             return Err(failure);
         }
-        let id = operation.snapshot.operation_id.clone();
-        self.operations.insert(id.clone(), operation);
-        self.emit_operation(&id)
+        if result.is_err()
+            || attempts != 1
+            || !committed
+            || self.ports.completion_pending(&worker.custody)
+        {
+            if committed {
+                self.poisoned = true;
+            }
+            return Err(KernelFailure::InvalidPortResult);
+        }
+        // Port publication follows the durable callback with no fallible work.
+        // Only prevalidated envelopes reach the emitter after local publication.
+        self.operations.insert(id, operation);
+        self.publish_event(event);
+        for event in draft_events {
+            self.publish_event(event);
+        }
+        Ok(())
     }
 
-    fn emit_operation(&mut self, id: &OperationId) -> Result<(), KernelFailure> {
+    fn operation_event(&self, snapshot: &OperationSnapshot) -> Result<Event, KernelFailure> {
         let mut cursor = self.cursor();
         cursor.sequence = Sequence::new(
             self.sequence
@@ -1317,13 +1410,15 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             protocol_version: ProtocolVersion,
             cursor,
             body: EventBody::OperationChanged {
-                operation: Box::new(self.operations[id].snapshot.clone()),
+                operation: Box::new(snapshot.clone()),
             },
         };
         let bytes = serde_json::to_vec(&event).map_err(|_| KernelFailure::InvalidPortResult)?;
+        if bytes.len() > self.observation_budget {
+            return Err(KernelFailure::Capacity);
+        }
         decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
-        self.publish_event(event);
-        Ok(())
+        Ok(event)
     }
     /// Only prevalidated events reach the shared emitter. Application services
     /// supply projections, never sequence numbers or a second event stream.
@@ -1419,6 +1514,22 @@ fn preflight_application(
         return Err(KernelFailure::Capacity);
     }
     decode_reply(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+    preflight_draft_events(cursor, budget, changed)
+}
+fn preflight_draft_events(
+    cursor: &Cursor,
+    budget: usize,
+    changed: &[DraftSnapshot],
+) -> Result<Vec<Event>, KernelFailure> {
+    if changed.len() > crate::configuration::MAX_DRAFTS
+        || changed.iter().enumerate().any(|(i, draft)| {
+            changed[..i]
+                .iter()
+                .any(|other| other.draft.draft_id == draft.draft.draft_id)
+        })
+    {
+        return Err(KernelFailure::InvalidPortResult);
+    }
     let mut next = cursor.clone();
     let mut events = Vec::with_capacity(changed.len());
     for draft in changed {

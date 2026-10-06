@@ -101,6 +101,8 @@ pub struct ConfigurationTransaction<X> {
     phase: ConfigurationPhase,
     cancellable: bool,
     terminal: Option<CompletionOutcome>,
+    completion_document: Option<DocumentRead>,
+    published: bool,
 }
 impl<X> ConfigurationTransaction<X> {
     pub fn recovery(&self) -> &RecoveryRef {
@@ -108,6 +110,9 @@ impl<X> ConfigurationTransaction<X> {
     }
     pub fn status(&self) -> (ConfigurationPhase, bool) {
         (self.phase, self.cancellable && self.terminal.is_none())
+    }
+    pub fn completion_pending(&self) -> bool {
+        self.terminal.is_some() && !self.published
     }
 }
 
@@ -487,6 +492,8 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             phase: ConfigurationPhase::Admitted,
             cancellable: true,
             terminal: None,
+            completion_document: None,
+            published: false,
         })
     }
     pub fn advance_configuration(
@@ -504,7 +511,6 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             let outcome = CompletionOutcome::NoChange {
                 reason: CompletionReason::AlreadySatisfied,
             };
-            self.install_completion(transaction.prepared.draft.as_ref(), &outcome)?;
             transaction.terminal = Some(outcome.clone());
             return Ok(Some(outcome));
         };
@@ -530,11 +536,56 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             },
             owner,
         )?;
-        self.install_completion(transaction.prepared.draft.as_ref(), &outcome)?;
         transaction.terminal = Some(outcome.clone());
-        // Exactly captured drafts install the clean baseline once. Later local
-        // edits remain in a stale draft and require an explicit recovery choice.
         Ok(Some(outcome))
+    }
+    /// Prepare all local successors, invoke the kernel's durable commit, then
+    /// publish infallibly. Refusal keeps terminal/candidate/lease custody and
+    /// every current local edit. No native advancement is repeated.
+    pub fn publish_configuration_completion(
+        &mut self,
+        transaction: &mut ConfigurationTransaction<O::Transaction>,
+        _lease: &O::Lease,
+        commit: impl FnOnce(&[DraftSnapshot]) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<()> {
+        if transaction.published {
+            return Ok(());
+        }
+        let outcome = transaction
+            .terminal
+            .as_ref()
+            .ok_or(ConfigurationFailure::InvalidInput)?;
+        if let CompletionOutcome::Changed {
+            receipt: Some(receipt),
+            ..
+        } = outcome
+        {
+            let EffectReceipt::ConfigurationWritten { document, .. } = receipt.as_ref() else {
+                return Err(ConfigurationFailure::InvalidOwnerResult);
+            };
+            if transaction.completion_document.is_none() {
+                let read = self.owner.read(document)?;
+                if &read.binding != document
+                    || !matches!(&document.baseline, DocumentBaseline::Existing { content_digest, .. } if content_digest == &digest(&read.bytes))
+                {
+                    return Err(ConfigurationFailure::RecoveryRequired);
+                }
+                read.text()?;
+                transaction.completion_document = Some(read);
+            }
+        }
+        let publication = self.prepare_completion(
+            transaction.prepared.draft.as_ref(),
+            outcome,
+            transaction.completion_document.as_ref(),
+        )?;
+        let changed = publication.snapshots();
+        commit(&changed)?;
+        // The exclusive workspace borrow spans projection, durable commit and
+        // publication. No local command can interleave after the preflight.
+        self.publish_completion(publication);
+        transaction.published = true;
+        Ok(())
     }
     pub fn acquire_configuration_recovery(
         &mut self,

@@ -68,6 +68,9 @@ const names = run('list-tests', executable, ['--list']).split(/\r?\n/)
   .filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
 assert.ok(names.length >= 20 && new Set(names).size === names.length, 'Expected complete unique kernel test inventory');
 const recovery = [
+  'configuration_completion::draft_event_capacity_refusal_retains_pending_completion_lease_and_native_result',
+  'configuration_completion::terminal_wal_failure_keeps_dirty_draft_and_lease_without_local_publication',
+  'configuration_completion::repeated_commit_or_post_commit_error_poison_host_and_retain_custody',
   'opaque_custody::unsafe_work_and_unknown_wal_disposition_keep_token_lease_and_context_together',
   'opaque_custody::restart_reacquires_exact_recovery_custody_once_and_invalid_pairs_drop_in_order',
   'opaque_custody::session_handoff_reacquires_custody_and_keeps_it_on_failed_persistence',
@@ -87,6 +90,7 @@ const recovery = [
 ];
 for (const name of recovery) assert.ok(names.includes(name), `Missing required recovery test ${name}`);
 const requiredOperations = [
+  'configuration_completion::terminal_wal_precedes_local_publication_and_consecutive_operation_draft_events',
   'opaque_custody::capture_and_failed_admission_retain_or_destroy_only_the_exact_token',
   'opaque_custody::exact_expiry_retires_custody_but_forged_refs_and_clock_failure_do_not',
   'opaque_custody::admission_is_single_use_after_cancel_or_completion_but_exact_replay_survives',

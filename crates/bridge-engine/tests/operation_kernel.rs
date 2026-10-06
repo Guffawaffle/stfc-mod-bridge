@@ -18,6 +18,8 @@ use std::{
 type FixtureEngine = Engine<Owner, FileJournal, Clock, Ids>;
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
+#[path = "operation_support/completion.rs"]
+mod configuration_completion;
 #[path = "operation_support/custody.rs"]
 mod opaque_custody;
 

@@ -43,6 +43,8 @@ fn missing_meaningful_save_commits_sparse_bytes_without_backup() {
         Some(outcome)
     );
     assert_eq!(s.borrow().effects, effects);
+    w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+        .unwrap();
     let clean = w.draft_after_save(&staged.snapshot.draft).unwrap();
     assert_eq!(clean.state, DraftState::Clean);
     assert!(clean.edits.as_slice().is_empty());
@@ -175,6 +177,8 @@ fn cancellation_before_first_step_has_no_effect_and_late_cancel_is_committed() {
             .advance_configuration(&mut tx, &lease, true)
             .unwrap()
             .unwrap();
+        w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+            .unwrap();
         if before {
             assert!(matches!(
                 outcome,
@@ -213,6 +217,8 @@ fn semantically_empty_save_clears_exact_draft_once_and_keeps_missing_baseline() 
         w.advance_configuration(&mut tx, &lease, false).unwrap(),
         Some(CompletionOutcome::NoChange { .. })
     ));
+    w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+        .unwrap();
     let clean = w.draft_after_save(&staged.snapshot.draft).unwrap();
     assert_eq!(clean.draft.document, staged.snapshot.draft.document);
     assert_eq!(
@@ -235,6 +241,8 @@ fn older_commit_preserves_newer_local_edits_as_stale() {
     let newer = stage(&mut w, &staged.snapshot.draft, vec![boolean(false)]).unwrap();
     w.advance_configuration(&mut tx, &lease, false).unwrap();
     w.advance_configuration(&mut tx, &lease, false).unwrap();
+    w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+        .unwrap();
     let retained = w.draft(&newer.snapshot.draft).unwrap();
     assert_eq!(retained.edits, newer.snapshot.edits);
     assert_eq!(retained.draft, newer.snapshot.draft);
@@ -601,4 +609,266 @@ fn native_begin_errors_keep_exact_candidate_for_recovery_without_retry() {
         drop(lease);
         assert_eq!(s.borrow().drops, 1);
     }
+}
+
+#[test]
+fn completed_write_keeps_dirty_draft_until_durable_callback_and_publishes_once() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    let outcome = w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert!(tx.completion_pending());
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    let steps = s.borrow().steps;
+    let effects = s.borrow().effects;
+    let mut projected = None;
+    assert_eq!(
+        w.publish_configuration_completion(&mut tx, &lease, |changed| {
+            assert_eq!(s.borrow().steps, steps);
+            assert_eq!(s.borrow().drops, 0);
+            assert!(s.borrow().live_leases.contains(&lease.id));
+            assert_eq!(changed.len(), 1);
+            assert_eq!(changed[0].state, DraftState::Clean);
+            projected = Some(changed[0].clone());
+            Err(ConfigurationFailure::PersistenceFailed)
+        }),
+        Err(ConfigurationFailure::PersistenceFailed)
+    );
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    let reads = s.borrow().reads.get();
+    assert_eq!(
+        w.advance_configuration(&mut tx, &lease, true).unwrap(),
+        outcome
+    );
+    assert_eq!(s.borrow().steps, steps);
+    w.publish_configuration_completion(&mut tx, &lease, |changed| {
+        assert_eq!(changed, &[projected.clone().unwrap()]);
+        assert_eq!(s.borrow().effects, effects);
+        assert_eq!(s.borrow().reads.get(), reads);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        w.draft_after_save(&staged.snapshot.draft).unwrap(),
+        projected.unwrap()
+    );
+    assert!(!tx.completion_pending());
+    w.publish_configuration_completion(&mut tx, &lease, |_| {
+        panic!("publication replay must not invoke commit")
+    })
+    .unwrap();
+    assert_eq!(s.borrow().effects, effects);
+    assert_eq!(s.borrow().drops, 0);
+}
+
+#[test]
+fn newer_edit_after_completion_refusal_is_preserved_as_stale_without_writer_replay() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert_eq!(
+        w.publish_configuration_completion(&mut tx, &lease, |_| Err(
+            ConfigurationFailure::Capacity
+        )),
+        Err(ConfigurationFailure::Capacity)
+    );
+    let newer = stage(&mut w, &staged.snapshot.draft, vec![boolean(false)]).unwrap();
+    let steps = s.borrow().steps;
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    w.publish_configuration_completion(&mut tx, &lease, |changed| {
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].state, DraftState::Stale);
+        assert_eq!(changed[0].edits, newer.snapshot.edits);
+        assert_eq!(changed[0].draft, newer.snapshot.draft);
+        assert_eq!(s.borrow().steps, steps);
+        Ok(())
+    })
+    .unwrap();
+    let retained = w.draft(&newer.snapshot.draft).unwrap();
+    assert_eq!(retained.state, DraftState::Stale);
+    assert_eq!(retained.edits, newer.snapshot.edits);
+    assert_eq!(s.borrow().begins, 1);
+}
+
+#[test]
+fn owner_read_refusal_after_native_completion_keeps_intent_and_cached_native_outcome() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(true)]).unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    let outcome = w.advance_configuration(&mut tx, &lease, false).unwrap();
+    let original = s.borrow().read.binding.clone();
+    s.borrow_mut().read.binding.revision = OpaqueRevision::new("foreign-after-write").unwrap();
+    assert_eq!(
+        w.publish_configuration_completion(&mut tx, &lease, |_| panic!(
+            "foreign read must refuse before commit"
+        )),
+        Err(ConfigurationFailure::RecoveryRequired)
+    );
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    assert!(tx.completion_pending());
+    let steps = s.borrow().steps;
+    assert_eq!(
+        w.advance_configuration(&mut tx, &lease, false).unwrap(),
+        outcome
+    );
+    assert_eq!(s.borrow().steps, steps);
+    s.borrow_mut().read.binding = original;
+    w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+        .unwrap();
+    assert_eq!(
+        w.draft_after_save(&staged.snapshot.draft).unwrap().state,
+        DraftState::Clean
+    );
+    assert_eq!(s.borrow().begins, 1);
+}
+
+#[test]
+fn no_change_cleanup_waits_for_commit_and_does_not_create_file_backup_or_stage() {
+    let (mut w, s, _) = workspace("", vec![], None, false, false);
+    let d = open(&mut w, &s);
+    let staged = stage(
+        &mut w,
+        &d.draft,
+        vec![ConfigurationEdit::RemoveOverride {
+            field_id: field("setting.boolean"),
+        }],
+    )
+    .unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert_eq!(
+        w.publish_configuration_completion(&mut tx, &lease, |changed| {
+            assert_eq!(changed.len(), 1);
+            assert_eq!(changed[0].draft.document, staged.snapshot.draft.document);
+            Err(ConfigurationFailure::Capacity)
+        }),
+        Err(ConfigurationFailure::Capacity)
+    );
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    assert_eq!(s.borrow().effects, 0);
+    assert_eq!(s.borrow().begins, 0);
+    assert!(s.borrow().backups.is_empty());
+    assert!(s.borrow().read.bytes.is_empty());
+    w.publish_configuration_completion(&mut tx, &lease, |_| Ok(()))
+        .unwrap();
+    let clean = w.draft_after_save(&staged.snapshot.draft).unwrap();
+    assert_eq!(clean.state, DraftState::Clean);
+    assert_eq!(
+        clean.draft.revision.get(),
+        staged.snapshot.draft.revision.get() + 1
+    );
+    w.publish_configuration_completion(&mut tx, &lease, |_| panic!("already published"))
+        .unwrap();
+}
+
+#[test]
+fn restore_completion_preserves_matching_local_edits_until_stale_publication() {
+    let text = "setting.boolean = true\n";
+    let (mut w, s, _) = workspace(
+        text,
+        vec![override_("setting.boolean", "true")],
+        None,
+        false,
+        false,
+    );
+    let d = open(&mut w, &s);
+    let staged = stage(&mut w, &d.draft, vec![boolean(false)]).unwrap();
+    let backup = retain_backup(&s, "setting.boolean = false\n");
+    let p = w
+        .prepare_restore(&RestoreConfigurationInput {
+            document: d.draft.document.clone(),
+            backup,
+        })
+        .unwrap();
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    w.publish_configuration_completion(&mut tx, &lease, |changed| {
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].state, DraftState::Stale);
+        assert_eq!(changed[0].edits, staged.snapshot.edits);
+        assert!(s.borrow().live_leases.contains(&lease.id));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        w.draft(&staged.snapshot.draft).unwrap().state,
+        DraftState::Stale
+    );
+    assert_eq!(s.borrow().drops, 0);
+}
+
+#[test]
+fn completion_refusal_preserves_protected_payload_until_exact_clean_publication() {
+    let marker = "synthetic-completion-private-marker";
+    let entry = ProtectedEntryOutcome::Captured(
+        ProtectedValue::new(format!("\"{marker}\"").into_bytes()).unwrap(),
+    );
+    let (mut w, s, _) = workspace("", vec![], Some(entry), false, false);
+    let d = open(&mut w, &s);
+    let captured = w
+        .request_sensitive_input(&RequestSensitiveInputInput {
+            draft: d.draft.clone(),
+            field_id: field("sync.token"),
+            sensitivity: SensitiveInputKind::Secret,
+        })
+        .unwrap();
+    let SensitiveInputOutcome::CapturedSecret { reference } = captured.outcome else {
+        panic!("secret capture");
+    };
+    let staged = stage(
+        &mut w,
+        &d.draft,
+        vec![ConfigurationEdit::ReplaceSecret {
+            field_id: field("sync.token"),
+            reference,
+        }],
+    )
+    .unwrap();
+    let p = prepare(&mut w, &staged.snapshot);
+    let (mut tx, lease) = admitted(&mut w, p);
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    w.advance_configuration(&mut tx, &lease, false).unwrap();
+    assert_eq!(
+        w.publish_configuration_completion(&mut tx, &lease, |changed| {
+            assert!(!serde_json::to_string(changed).unwrap().contains(marker));
+            Err(ConfigurationFailure::PersistenceFailed)
+        }),
+        Err(ConfigurationFailure::PersistenceFailed)
+    );
+    assert_eq!(w.draft(&staged.snapshot.draft).unwrap(), staged.snapshot);
+    let retained = prepare(&mut w, &staged.snapshot);
+    assert!(
+        std::str::from_utf8(retained.candidate_bytes().unwrap())
+            .unwrap()
+            .contains(marker)
+    );
+    drop(retained);
+    w.publish_configuration_completion(&mut tx, &lease, |changed| {
+        assert!(!serde_json::to_string(changed).unwrap().contains(marker));
+        assert_eq!(s.borrow().drops, 0);
+        Ok(())
+    })
+    .unwrap();
+    let clean = w.draft_after_save(&staged.snapshot.draft).unwrap();
+    assert!(clean.edits.as_slice().is_empty());
+    assert!(!serde_json::to_string(&clean).unwrap().contains(marker));
+    assert!(matches!(
+        w.prepare_save(&SaveConfigurationInput {
+            draft: staged.snapshot.draft
+        }),
+        Err(ConfigurationFailure::Stale)
+    ));
 }

@@ -107,7 +107,13 @@ recovery binding. These portable seams do not enable dispatcher Save/Restore.
 Replacement requires a fresh file identity, the reviewed candidate digest and
 an exact prior-byte backup for an existing baseline. Meaningful first Save uses
 create-new semantics. Terminal replay performs no additional writes or revision
-bumps. An exact matching Save installs a clean successor baseline once; newer
+bumps. Native completion remains retained in the transaction and does not
+publish local drafts or clear protected references. Repeated advancement returns
+that exact outcome without invoking the writer again. The workspace prepares
+every local successor and committed-document read, then invokes the kernel's
+durable commit callback before infallible publication. Callback or read refusal
+preserves local intent and the same candidate/lease; retries rebuild projections
+against current local edits. An exact matching Save installs a clean successor baseline once; newer
 local edits remain stale and available for an explicit recovery choice.
 
 The composition layer must still implement configuration `OperationPorts`
@@ -119,6 +125,17 @@ cancellation cannot release a writing lease. Precommit cancellation may report
 no effect; a late request cannot undo a committed result or interrupt a
 synchronous native ABI call. Ambiguous promotion retains recovery-required
 custody. Normal host exit must honor the kernel's close obligations.
+
+The kernel prevalidates the terminal operation, snapshot budgets and every
+consecutive OperationChanged/DraftChanged envelope before the terminal append.
+Local publication follows a successful append; event emission then uses only
+prevalidated envelopes. Pending local completion keeps the worker even when
+the native owner reached a safe boundary. Unknown append disposition poisons
+the host without publishing a local successor. Repeated commit callbacks,
+post-commit refusal or incomplete local publication poison and retain custody.
+The composed operation port forwards these hooks; concrete configuration
+custody variants and receipt-bound frontend reconciliation remain prerequisites
+to Save/Restore availability.
 
 Restart recovery consumes identity-only `RecoveryConfiguration` captured from
 the durable operation, including baseline, destination schema and candidate
@@ -143,8 +160,8 @@ current invocations' Cargo JSON compiler artifacts. It verifies owning manifest
 and source, physical confinement to the owning native target directory, native
 executable architecture and byte hashes. It inventories and executes every
 required test, refusing missing, duplicate, ignored or filtered tests. Current
-inventories cover 19 draft, 11 semantics, 13 transaction, 4 recovery, 12 service
-and 16 application-provider tests, for 75 tests across six executables. Service
+inventories cover 19 draft, 11 semantics, 24 transaction, 4 recovery, 12 service
+and 16 application-provider tests, for 86 tests across six executables. Service
 controls use the real encoded dispatcher and original-thread host handle, check
 immutable getter correlation, command availability, shared event sequencing,
 protected non-disclosure and refusal before workspace publication. Provider
