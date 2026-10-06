@@ -24,7 +24,7 @@ function sourceFiles(relative) {
 const sessionSource = readFileSync(ownedArtifactPath(root, 'ui/src/app/gallery/session.ts'), 'utf8');
 const fixtureFiles = [...sessionSource.matchAll(/from ['"](?:\.\.\/)+contracts\/fixtures\/([^'"]+\.json)\?raw['"]/g)]
   .map(match => `contracts/fixtures/${match[1]}`).sort();
-assert.equal(fixtureFiles.length, 11, 'Gallery fixture closure must remain explicitly reviewed');
+assert.equal(fixtureFiles.length, 12, 'Gallery fixture closure must remain explicitly reviewed');
 assert.equal(new Set(fixtureFiles).size, fixtureFiles.length);
 const fixtureIndex = JSON.parse(readFileSync(ownedArtifactPath(root, 'contracts/fixtures/index.json'), 'utf8'));
 const fixtureManifest = JSON.parse(readFileSync(ownedArtifactPath(root, 'contracts/fixtures/generated-manifest.json'), 'utf8'));
