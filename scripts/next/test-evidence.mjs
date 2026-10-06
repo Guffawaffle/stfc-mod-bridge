@@ -59,6 +59,9 @@ export const frontendCriteria = {
     'an early clean read defers without a watermark and later receipt reconciliation consumes every event',
     'an early NoChange cleanup defers edits and its watermark until the exact completion arrives',
     'an explicitly requested empty staging successor reconciles lost ACK at the captured old baseline',
+    'an event-first clean projection cannot clear this renderer intent without a completed operation',
+    ...['while_pending', 'reentrant'].map(timing =>
+      `obsolete empty staging intent cannot clear newer edits on a ${timing} read retry`),
     ...['document_revision', 'file_identity'].map(reuse => `a Changed receipt cannot reuse the captured ${reuse}`),
     ...['save_configuration', 'restore_configuration'].map(kind =>
       `NoChange ${kind} cannot claim candidate bytes different from the captured baseline`),

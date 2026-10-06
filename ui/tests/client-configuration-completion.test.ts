@@ -80,6 +80,34 @@ test('an explicitly requested empty staging successor reconciles lost ACK at the
   expect(work.state.draft?.draft.document).toEqual(old.draft.document);
 });
 
+test('an event-first clean projection cannot clear this renderer intent without a completed operation', () => {
+  const { store, work } = setup(), old = before(), capture = work.captureDraftReconciliation()!, retained = work.state;
+  const clean = { ...clone(old), draft: { ...old.draft, revision: (BigInt(old.draft.revision) + 1n).toString() }, edits: [], apply: [], validation: [], state: 'clean' } as DraftSnapshot;
+  expect(store.acceptEvent(event('1', { type: 'draft_changed', draft: clean }))).toBe(true);
+  expect(work.finishDraftReconciliation(capture, result(read(clean, '1')))).toBe(false);
+  expect(work.state.draft).toBe(retained.draft); expect(work.state.edits).toBe(retained.edits); expect(store.state.operations).toEqual([]);
+  expect(work.requestClose()).toBe(false); expect(work.state.closeRequested).toBe(false);
+});
+
+test.each(['while_pending', 'reentrant'] as const)('obsolete empty staging intent cannot clear newer edits on a %s read retry', timing => {
+  const { store, work } = setup(), old = before(); expect(work.stage([])).toBe(true);
+  const stale = work.captureDraftReconciliation()!;
+  const clean = { ...clone(old), draft: { ...old.draft, revision: (BigInt(old.draft.revision) + 1n).toString() }, edits: [], apply: [], validation: [], state: 'clean' } as DraftSnapshot;
+  let changed = false;
+  const release = store.subscribe(state => {
+    if (timing === 'reentrant' && !changed && state.drafts[0]?.state === 'clean') {
+      changed = true; expect(work.stage(old.edits)).toBe(true);
+    }
+  });
+  if (timing === 'while_pending') expect(work.stage(old.edits)).toBe(true);
+  expect(work.finishDraftReconciliation(stale, result(read(clean, '1')))).toBe(false);
+  expect(work.state.edits).toEqual(old.edits);
+  if (timing === 'while_pending') expect(store.state.drafts).toEqual([old]);
+  expect(work.finishDraftReconciliation(work.captureDraftReconciliation()!, result(read(clean, '1')))).toBe(false);
+  expect(work.state.draft).toEqual(old); expect(work.state.edits).toEqual(old.edits); expect(store.state.operations).toEqual([]);
+  release();
+});
+
 test.each(['document_revision', 'file_identity'] as const)('a Changed receipt cannot reuse the captured %s', reuse => {
   const operation = completed(); if (operation.semantics.capture.kind !== 'save_configuration' || operation.state.status !== 'completed'
     || operation.state.outcome.kind !== 'changed' || operation.state.outcome.receipt?.kind !== 'configuration_written') throw new Error('fixture');

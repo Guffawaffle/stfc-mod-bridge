@@ -4,7 +4,7 @@ import { canonicalData, captureData, decodeRequest, type DeepReadonly } from './
 import { ObservationStore } from './observation';
 import { bindingEquivalent } from './relations';
 import { draftAcknowledgementMatches } from './draft-acknowledgement';
-import { configurationCompletionValid } from './configuration-completion';
+import { configurationCompletionValid, possibleSavedDraftSuccessor } from './configuration-completion';
 
 export type WorkspaceView = 'home' | 'engineering' | 'settings' | 'data_sync' | 'history' | 'diagnostics' | 'preferences';
 export type Navigation = { readonly kind: 'target'; readonly selector: DeepReadonly<TargetSelector> } | { readonly kind: 'close' };
@@ -170,17 +170,21 @@ export class WorkContext {
     try {
       if (outcome.kind !== 'result' || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
       const input = { hostEpoch: capture.draft.draft.hostEpoch, draftId: capture.draft.draft.draftId }, read = captureData(outcome.value);
+      const captureCurrent = () => retained() && capture.generation === this.generation && canonicalData(this.draft) === canonicalData(capture.draft)
+        && canonicalData(this.edits) === canonicalData(capture.edits) && canonicalData(this.publicInputs) === canonicalData(capture.publicInputs)
+        && canonicalData(this.selector ?? null) === canonicalData(capture.selector ?? null)
+        && (this.binding && capture.binding ? bindingEquivalent(this.binding, capture.binding) : this.binding === capture.binding)
+        && this.hostEpochCurrent(capture.draft.draft.hostEpoch);
+      // Local staging intent must still be current before it can authorize any
+      // store observation, as well as after synchronous observer publication.
+      if (!captureCurrent()) return conflict();
       const emptyStage = !this.transitionBusy && !capture.publicInputs.length && !capture.edits.length && capture.draft.edits.length
         ? { draft: capture.draft.draft, edits: [] as [] } : undefined;
       if (!this.observations.observeDraftResult(input, read, emptyStage)) return conflict();
       // Store publication can invoke callers synchronously; recapture local
       // custody after it as well as after the asynchronous query.
       if (!retained()) return false;
-      if (capture.generation !== this.generation || canonicalData(this.draft) !== canonicalData(capture.draft)
-        || canonicalData(this.edits) !== canonicalData(capture.edits) || canonicalData(this.publicInputs) !== canonicalData(capture.publicInputs)
-        || canonicalData(this.selector ?? null) !== canonicalData(capture.selector ?? null)
-        || (this.binding && capture.binding ? !bindingEquivalent(this.binding, capture.binding) : this.binding !== capture.binding)
-        || !this.hostEpochCurrent(capture.draft.draft.hostEpoch)) return conflict();
+      if (!captureCurrent()) return conflict();
       if (read.draft.status !== 'observed') return conflict();
       const draft = read.draft.value;
       const current = this.observations.state;
@@ -189,6 +193,11 @@ export class WorkContext {
         || !current.drafts.some(observed => observed.draft.hostEpoch === draft.draft.hostEpoch && observed.draft.draftId === draft.draft.draftId
           && bindingEquivalent(observed, draft))) return conflict();
       const completion = this.observations.savedCompletion(capture.draft, draft);
+      // An event may already have replaced the store's predecessor. Renderer
+      // cleanup must still account for this renderer's own captured intent.
+      const emptyStageSuccessor = !!emptyStage && bindingEquivalent(draft.draft.document, capture.draft.draft.document)
+        && possibleSavedDraftSuccessor(capture.draft, draft);
+      if (capture.draft.edits.length && !draft.edits.length && !completion && !emptyStageSuccessor) return conflict();
       if (!bindingEquivalent(draft.draft.document, capture.draft.draft.document) && !completion
         || !bindingEquivalent({ ...capture.draft, schema: draft.schema }, capture.draft)) return conflict();
       if (bindingEquivalent(draft, capture.draft)) {
