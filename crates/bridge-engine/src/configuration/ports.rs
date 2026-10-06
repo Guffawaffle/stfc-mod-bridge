@@ -6,6 +6,12 @@ use bridge_contracts::v1::*;
 pub trait DocumentOwner {
     type Lease;
     type Transaction;
+    /// Availability of this injected composition, not platform qualification.
+    /// Production owners keep the default until their writer and recovery
+    /// composition is implemented and independently qualified on that host.
+    fn operations_available(&self) -> bool {
+        false
+    }
     fn resolve(&mut self, target: &TargetSelector) -> ConfigurationResult<DocumentRead>;
     fn read(&mut self, expected: &DocumentBinding) -> ConfigurationResult<DocumentRead>;
     /// All-or-none nonblocking canonical document, installation and profile

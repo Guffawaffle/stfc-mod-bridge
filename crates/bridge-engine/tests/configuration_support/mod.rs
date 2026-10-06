@@ -367,6 +367,8 @@ impl SchemaSource for Schemas {
     }
 }
 pub struct State {
+    pub operations_available: bool,
+    pub before_begin: Option<Box<dyn Fn()>>,
     pub read: DocumentRead,
     pub resolves: Cell<usize>,
     pub reads: Cell<usize>,
@@ -414,6 +416,9 @@ pub struct Tx {
 impl DocumentOwner for Owner {
     type Lease = Lease;
     type Transaction = Tx;
+    fn operations_available(&self) -> bool {
+        self.0.borrow().operations_available
+    }
     fn resolve(&mut self, _: &TargetSelector) -> ConfigurationResult<DocumentRead> {
         let s = self.0.borrow();
         s.resolves.set(s.resolves.get() + 1);
@@ -473,6 +478,9 @@ impl DocumentOwner for Owner {
         _: &RecoveryRef,
         lease: &Lease,
     ) -> ConfigurationResult<Tx> {
+        if let Some(check) = &self.0.borrow().before_begin {
+            check();
+        }
         self.observe_lease(lease, "begin");
         let mut state = self.0.borrow_mut();
         state.begins += 1;
@@ -642,6 +650,9 @@ pub fn workspace_with_sync(
 }
 #[derive(Default)]
 pub struct FixtureOptions {
+    pub host_epoch: Option<HostEpoch>,
+    pub owner_state: Option<Rc<RefCell<State>>>,
+    pub operations_available: bool,
     pub sync: Rc<RefCell<Vec<SyncFixture>>>,
     pub tables: Vec<TomlTable>,
     pub mutations: Vec<SemanticMutation>,
@@ -692,28 +703,32 @@ pub fn workspace_with_options(
             content_digest: hash(text.as_bytes()),
         };
     }
-    let state = Rc::new(RefCell::new(State {
-        resolves: Cell::new(0),
-        reads: Cell::new(0),
-        read: DocumentRead {
-            binding: binding.clone(),
-            bytes: text.as_bytes().to_vec(),
-        },
-        effects: 0,
-        busy: false,
-        fail_backup: false,
-        ambiguous: false,
-        steps: 0,
-        drops: 0,
-        backups: vec![],
-        backup_bytes: BTreeMap::new(),
-        acquisitions: 0,
-        live_leases: BTreeSet::new(),
-        lease_observations: vec![],
-        schema_lease_observations: RefCell::new(vec![]),
-        begins: 0,
-        begin_failure: None,
-    }));
+    let state = options.owner_state.unwrap_or_else(|| {
+        Rc::new(RefCell::new(State {
+            operations_available: options.operations_available,
+            before_begin: None,
+            resolves: Cell::new(0),
+            reads: Cell::new(0),
+            read: DocumentRead {
+                binding: binding.clone(),
+                bytes: text.as_bytes().to_vec(),
+            },
+            effects: 0,
+            busy: false,
+            fail_backup: false,
+            ambiguous: false,
+            steps: 0,
+            drops: 0,
+            backups: vec![],
+            backup_bytes: BTreeMap::new(),
+            acquisitions: 0,
+            live_leases: BTreeSet::new(),
+            lease_observations: vec![],
+            schema_lease_observations: RefCell::new(vec![]),
+            begins: 0,
+            begin_failure: None,
+        }))
+    });
     let fields = f
         .schema
         .fields
@@ -769,7 +784,9 @@ pub fn workspace_with_options(
     let calls = codec.calls.clone();
     (
         ConfigurationWorkspace::new(
-            HostEpoch::new(id(42)).unwrap(),
+            options
+                .host_epoch
+                .unwrap_or_else(|| HostEpoch::new(id(42)).unwrap()),
             codec,
             schemas,
             Owner(state.clone()),

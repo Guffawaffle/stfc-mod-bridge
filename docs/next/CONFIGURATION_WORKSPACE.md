@@ -181,14 +181,18 @@ The command accepts no overrides. It uses the tracked Node and Rust releases,
 the scoped Rust child context, locked/offline dependencies and the actual native
 Windows x64 or Apple Silicon target. It checks engine and application formatting
 and strict all-target Clippy, then selects all four configuration test
-executables, the configuration-service integration test executable and the
+executables, both configuration-service/operation integration executables and the
 application-provider library test executable from their
 current invocations' Cargo JSON compiler artifacts. It verifies owning manifest
 and source, physical confinement to the owning native target directory, native
 executable architecture and byte hashes. It inventories and executes every
 required test, refusing missing, duplicate, ignored or filtered tests. Current
-inventories cover 19 draft, 11 semantics, 24 transaction, 4 recovery, 12 service
-and 16 application-provider tests, for 86 tests across six executables. Service
+inventories cover 19 draft, 11 semantics, 24 transaction, 4 recovery, 12 service,
+18 configuration-operation and 16 application-provider tests, for 104 tests
+across seven executables. Configuration-operation controls compose the actual
+kernel and FileJournal with synthetic owners: read-only capture, exact retained
+leases, WAL before begin, stale/losing admission, cancellation, uncertain begin,
+terminal retry, protected non-disclosure and identity-only restart. Service
 controls use the real encoded dispatcher and original-thread host handle, check
 immutable getter correlation, command availability, shared event sequencing,
 protected non-disclosure and refusal before workspace publication. Provider
@@ -236,14 +240,20 @@ The remaining integration and acceptance seams are:
 - Implement ordinary-user physical `DocumentOwner` and native `SensitiveEntry`
   adapters with private staging, exclusion, flush, backup, create-new, atomic
   replacement and exact Restore/recovery custody on both required platforms.
-- Adopt opaque configuration preparation into `OperationPorts` and retained
-  workers, replay and close/recovery orchestration without wiring synthetic
-  support into production. The read/stage dispatcher and event composition above
-  do not establish Save/Restore custody.
+- Connect the portable opaque `OperationPorts` custody to qualified native
+  document owners. The existing `ConfigurationServices` workspace now supplies
+  Save/Restore capture, all-or-none owner acquisition, revalidation, retained
+  worker custody, terminal publication and identity-only recovery. An uncertain
+  begin keeps its candidate slot and enters recovery without invoking begin
+  again. This composition introduces no second workspace or serialized private
+  candidate. `DocumentOwner::operations_available()` defaults to false; synthetic
+  test owners opt in explicitly. Production owners must retain the default until
+  their actual writer/recovery composition passes the required host qualification.
 - Retain prerequisite native receipts, independent candidate review and the
   package qualification evidence required by the operating contract.
 
-A passing portable receipt observes the configuration read/stage dispatcher but
+A passing portable receipt observes the configuration read/stage dispatcher and
+sets `sourceOperationPortsAdopted` for the composed synthetic-owner controls. It
 keeps `br14Accepted`, native TOML,
 producer policy, physical owner, `OperationPorts` adoption, native runtime and
 release qualification false. Root owns suite registry and campaign admission;

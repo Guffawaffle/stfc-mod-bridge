@@ -99,6 +99,26 @@ const required = {
     'foreign_destination_or_recovery_target_is_not_overwritten',
     'unstarted_recovery_proves_no_effect_and_invalidates_previous_host_drafts'
   ],
+  configuration_operations: [
+    'admission_binding_refusal_allows_fresh_identity_without_authorizing_old_start',
+    'ambiguous_terminal_append_restart_does_not_replay_committed_writer',
+    'cancelled_admission_has_no_begin_or_local_edit_loss',
+    'capture_is_read_only_exact_and_host_bound',
+    'changed_draft_after_preparation_refuses_without_begin',
+    'composed_save_obeys_wal_retains_one_lease_and_publishes_once',
+    'failed_executing_append_prevents_begin_and_restart_proves_unstarted',
+    'failed_or_uncertain_begin_never_retries_native_begin',
+    'forced_death_during_stage_reacquires_identity_only_and_retains_unresolved_custody',
+    'foreign_capture_semantics_resources_lease_and_recovery_refuse',
+    'losing_admission_retains_draft_and_creates_no_writer_artifact',
+    'newer_edit_after_native_start_is_preserved_as_stale',
+    'no_change_save_cleans_exact_edits_without_materializing_missing_file',
+    'physical_and_schema_changes_refuse_under_admission_lease',
+    'protected_save_cleans_only_after_disk_terminal_and_never_serializes_payload',
+    'publication_refusal_retries_cached_terminal_without_advancing_writer',
+    'refused_terminal_append_keeps_private_custody_and_restart_inspects_exact_result',
+    'restore_revalidates_retained_backup_before_begin_and_preserves_local_draft'
+  ],
   configuration_services: [
     'encoded_dispatch_read_history_stage_current_successor_missing_discard',
     'immutable_getter_returns_clean_dirty_invalid_stale_without_io_or_ids',
@@ -219,13 +239,14 @@ try {
   cargo('format', ['fmt', '-p', 'bridge-engine', '-p', 'bridge-app', '--', '--check']);
   cargo('clippy', ['clippy', '--locked', '--offline', '-p', 'bridge-engine', '-p', 'bridge-app', '--all-targets', '--target', rust.hostTarget, '--', '-D', 'warnings']);
   const names = Object.keys(required);
-  const engineNames = names.filter(name => name !== 'bridge_app' && name !== 'configuration_services');
+  const serviceNames = ['configuration_services', 'configuration_operations'];
+  const engineNames = names.filter(name => name !== 'bridge_app' && !serviceNames.includes(name));
   const output = cargo('compile-current-configuration-tests', ['test', '--locked', '--offline', '-p', 'bridge-engine', '--target', rust.hostTarget,
     ...engineNames.flatMap(name => ['--test', name]), '--no-run', '--message-format', 'json']);
   const providerOutput = cargo('compile-current-configuration-providers', ['test', '--locked', '--offline', '-p', 'bridge-app',
     '--target', rust.hostTarget, '--lib', '--no-run', '--message-format', 'json']);
   const serviceOutput = cargo('compile-current-configuration-services', ['test', '--locked', '--offline', '-p', 'bridge-app',
-    '--target', rust.hostTarget, '--test', 'configuration_services', '--no-run', '--message-format', 'json']);
+    '--target', rust.hostTarget, ...serviceNames.flatMap(name => ['--test', name]), '--no-run', '--message-format', 'json']);
   const messages = [output, providerOutput, serviceOutput].flatMap(text => {
     const current = text.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
     assert.equal(current.filter(message => message.reason === 'build-finished' && message.success === true).length, 1,
@@ -235,14 +256,14 @@ try {
   const artifacts = messages.filter(message => message.reason === 'compiler-artifact' && message.executable && message.profile.test
     && ((message.target.kind.includes('test') && engineNames.includes(message.target.name))
       || (message.target.name === 'bridge_app' && message.target.kind.includes('lib'))
-      || (message.target.name === 'configuration_services' && message.target.kind.includes('test'))));
-  assert.equal(artifacts.length, names.length, 'Current Cargo invocations must identify all four configuration, one service and one provider test executable exactly once');
+      || (serviceNames.includes(message.target.name) && message.target.kind.includes('test'))));
+  assert.equal(artifacts.length, names.length, 'Current Cargo invocations must identify all four configuration, two service and one provider test executable exactly once');
   for (const target of names) {
     const selected = artifacts.filter(artifact => artifact.target.name === target);
     assert.equal(selected.length, 1, `Require one current ${target} compiler artifact`);
     const artifact = selected[0];
     const provider = target === 'bridge_app';
-    const application = provider || target === 'configuration_services';
+    const application = provider || serviceNames.includes(target);
     assert.equal(realpathSync.native(artifact.manifest_path), realpathSync.native(path.join(root, `crates/${application ? 'bridge-app' : 'bridge-engine'}/Cargo.toml`)));
     assert.equal(realpathSync.native(artifact.target.src_path), realpathSync.native(path.join(root,
       provider ? 'crates/bridge-app/src/lib.rs' : `crates/${application ? 'bridge-app' : 'bridge-engine'}/tests/${target}.rs`)));
@@ -289,9 +310,9 @@ try {
     host: { platform: process.platform, architecture: process.arch, node: process.version },
     toolchain: { pin: rust.pin, nativeTarget: rust.hostTarget }, inputs, sourcesBefore, sourcesAfter, toolsBefore, toolsAfter,
     requiredTests: required, binaries, checks, failure,
-    boundary: 'Actual native-architecture engine, configuration-service and application-provider test executables: portable workspace, encoded dispatcher read/stage/current-draft reconciliation, shared kernel events, preparation and orchestration with synthetic DocumentOwner, SchemaSource, SensitiveEntry and TomlPreparation ports, controlled entropy refusal and current-host native clock/entropy calls; no native configuration ownership or runtime qualification',
+    boundary: 'Actual native-architecture engine, configuration-service/operation and application-provider test executables: portable workspace, encoded dispatcher read/stage/current-draft reconciliation, shared kernel events, opaque Save/Restore custody and retained leases through FileJournal admission, begin, terminal publication and restart with synthetic DocumentOwner, SchemaSource, SensitiveEntry and TomlPreparation ports, controlled entropy refusal and current-host native clock/entropy calls; no native configuration ownership or runtime qualification',
     portableModelObserved: passed, configurationDispatcherObserved: passed, nativeTomlInvocationQualified: false, producerPolicyQualified: false,
-    physicalOwnerQualified: false, operationPortsAdopted: false, br14Accepted: false, nativeRuntimeQualified: false, releaseQualified: false
+    sourceOperationPortsAdopted: passed, physicalOwnerQualified: false, operationPortsAdopted: false, br14Accepted: false, nativeRuntimeQualified: false, releaseQualified: false
   }, null, 2) + '\n');
   console.log(JSON.stringify({ result: passed ? 'passed' : 'failed', tests: binaries.reduce((count, binary) => count + binary.executedTests.length, 0),
     receipt, br14Accepted: false, nativeRuntimeQualified: false, releaseQualified: false }));

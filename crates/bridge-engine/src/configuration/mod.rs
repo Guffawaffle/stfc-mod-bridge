@@ -15,5 +15,8 @@ pub use schema::{
     SyncProjectedProxy, SyncProjection,
 };
 pub use toml::{CanonicalToml, TomlPreparation};
-pub use transaction::{ConfigurationTransaction, PreparedConfiguration, RecoveryConfiguration};
+pub use transaction::{
+    ConfigurationRecoveryTransaction, ConfigurationTransaction, PreparedConfiguration,
+    RecoveryConfiguration,
+};
 pub use types::*;

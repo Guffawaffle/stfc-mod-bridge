@@ -114,11 +114,50 @@ impl<X> ConfigurationTransaction<X> {
     pub fn completion_pending(&self) -> bool {
         self.terminal.is_some() && !self.published
     }
+    pub fn terminal_outcome(&self) -> Option<&CompletionOutcome> {
+        self.terminal.as_ref()
+    }
+}
+
+/// Recovery publication custody contains public identities and inspected
+/// results only. No prepared candidate or old protected entry is reconstructed.
+pub struct ConfigurationRecoveryTransaction {
+    captured: RecoveryConfiguration,
+    draft: Option<DraftSnapshot>,
+    terminal: Option<CompletionOutcome>,
+    completion_document: Option<DocumentRead>,
+    published: bool,
+}
+impl ConfigurationRecoveryTransaction {
+    pub fn from_capture(capture: &PreparedCapture) -> ConfigurationResult<Self> {
+        Ok(Self {
+            captured: RecoveryConfiguration::from_capture(capture)?,
+            draft: match capture {
+                PreparedCapture::SaveConfiguration { input } => Some(input.draft.clone()),
+                _ => None,
+            },
+            terminal: None,
+            completion_document: None,
+            published: false,
+        })
+    }
+    pub fn identities(&self) -> &RecoveryConfiguration {
+        &self.captured
+    }
+    pub fn completion_pending(&self) -> bool {
+        self.terminal.is_some() && !self.published
+    }
+    pub fn terminal_outcome(&self) -> Option<&CompletionOutcome> {
+        self.terminal.as_ref()
+    }
 }
 
 impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I: ConfigurationIds>
     ConfigurationWorkspace<T, S, O, E, I>
 {
+    pub fn configuration_operations_available(&self) -> bool {
+        self.owner.operations_available()
+    }
     pub fn prepare_save(
         &mut self,
         input: &SaveConfigurationInput,
@@ -548,13 +587,26 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
         _lease: &O::Lease,
         commit: impl FnOnce(&[DraftSnapshot]) -> ConfigurationResult<()>,
     ) -> ConfigurationResult<()> {
-        if transaction.published {
+        self.publish_configuration_outcome(
+            transaction.prepared.draft.as_ref(),
+            transaction.terminal.as_ref(),
+            &mut transaction.completion_document,
+            &mut transaction.published,
+            commit,
+        )
+    }
+    fn publish_configuration_outcome(
+        &mut self,
+        draft: Option<&DraftSnapshot>,
+        terminal: Option<&CompletionOutcome>,
+        completion_document: &mut Option<DocumentRead>,
+        published: &mut bool,
+        commit: impl FnOnce(&[DraftSnapshot]) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<()> {
+        if *published {
             return Ok(());
         }
-        let outcome = transaction
-            .terminal
-            .as_ref()
-            .ok_or(ConfigurationFailure::InvalidInput)?;
+        let outcome = terminal.ok_or(ConfigurationFailure::InvalidInput)?;
         if let CompletionOutcome::Changed {
             receipt: Some(receipt),
             ..
@@ -563,7 +615,7 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
             let EffectReceipt::ConfigurationWritten { document, .. } = receipt.as_ref() else {
                 return Err(ConfigurationFailure::InvalidOwnerResult);
             };
-            if transaction.completion_document.is_none() {
+            if completion_document.is_none() {
                 let read = self.owner.read(document)?;
                 if &read.binding != document
                     || !matches!(&document.baseline, DocumentBaseline::Existing { content_digest, .. } if content_digest == &digest(&read.bytes))
@@ -571,21 +623,63 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
                     return Err(ConfigurationFailure::RecoveryRequired);
                 }
                 read.text()?;
-                transaction.completion_document = Some(read);
+                *completion_document = Some(read);
             }
         }
-        let publication = self.prepare_completion(
-            transaction.prepared.draft.as_ref(),
-            outcome,
-            transaction.completion_document.as_ref(),
-        )?;
+        let publication = self.prepare_completion(draft, outcome, completion_document.as_ref())?;
         let changed = publication.snapshots();
         commit(&changed)?;
         // The exclusive workspace borrow spans projection, durable commit and
         // publication. No local command can interleave after the preflight.
         self.publish_completion(publication);
-        transaction.published = true;
+        *published = true;
         Ok(())
+    }
+    /// A live transaction keeps its candidate/native handle while inspecting
+    /// uncertain owner disposition. A cached terminal is never reinspected.
+    pub fn recover_configuration_transaction(
+        &mut self,
+        transaction: &mut ConfigurationTransaction<O::Transaction>,
+        lease: &O::Lease,
+    ) -> ConfigurationResult<Option<CompletionOutcome>> {
+        if let Some(outcome) = &transaction.terminal {
+            return Ok(Some(outcome.clone()));
+        }
+        let identities = RecoveryConfiguration {
+            baseline: transaction.prepared.baseline.clone(),
+            destination_schema: transaction.prepared.destination_schema.clone(),
+            candidate_digest: transaction.prepared.candidate_digest.clone(),
+        };
+        let outcome = self.recover_configuration(&identities, &transaction.recovery, lease)?;
+        transaction.terminal = outcome.clone();
+        Ok(outcome)
+    }
+    pub fn advance_configuration_recovery(
+        &mut self,
+        transaction: &mut ConfigurationRecoveryTransaction,
+        recovery: &RecoveryRef,
+        lease: &O::Lease,
+    ) -> ConfigurationResult<Option<CompletionOutcome>> {
+        if let Some(outcome) = &transaction.terminal {
+            return Ok(Some(outcome.clone()));
+        }
+        let outcome = self.recover_configuration(&transaction.captured, recovery, lease)?;
+        transaction.terminal = outcome.clone();
+        Ok(outcome)
+    }
+    pub fn publish_configuration_recovery_completion(
+        &mut self,
+        transaction: &mut ConfigurationRecoveryTransaction,
+        _lease: &O::Lease,
+        commit: impl FnOnce(&[DraftSnapshot]) -> ConfigurationResult<()>,
+    ) -> ConfigurationResult<()> {
+        self.publish_configuration_outcome(
+            transaction.draft.as_ref(),
+            transaction.terminal.as_ref(),
+            &mut transaction.completion_document,
+            &mut transaction.published,
+            commit,
+        )
     }
     pub fn acquire_configuration_recovery(
         &mut self,
