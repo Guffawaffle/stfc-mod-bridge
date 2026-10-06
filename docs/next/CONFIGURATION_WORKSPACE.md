@@ -21,16 +21,20 @@ the encoded dispatcher supplies their reply evidence and the single kernel
 event stream. The engine validates the fixed service epoch and freezes the
 implemented-command inventory at construction. Protected entry is advertised
 only when the injected entry port declares availability. Save and Restore remain
-unavailable until their opaque preparation and retained worker custody are
-adopted; delegating other operation ports does not qualify configuration writes.
+unavailable by default; their injected document owner must explicitly declare
+availability after the actual native composition is qualified. Delegating other
+operation ports does not qualify configuration writes.
 
 The generic operation kernel now moves an unconstrained opaque custody token
 from capture to preparation to one admitted worker, and reconstructs separate
 recovery-only custody from durable identities after restart. The composed
-service delegates the same token directly; it creates no second workspace or
-side map. This is a prerequisite foundation. Save/Restore capture, acquisition,
-revalidation, advancement and recovery still refuse UnsupportedCapability until
-their concrete configuration writer adopts retained begin and completion paths.
+service owns an opaque sum of delegated custody, prepared configuration,
+admitted transaction or identity-only recovery. Each lease retains its actual
+owner and is paired with its capture by a private local token. Semantic and
+resource substitutions refuse before owner entry. Configuration capture,
+acquisition, revalidation, advancement and recovery use the original workspace;
+other operations delegate their original custody. There is no second workspace
+or side map, and no synthetic owner is wired into production.
 
 Before publishing a document observation, draft or protected transfer, the
 service preflights the complete reply and every consecutive `DraftChanged`
@@ -124,7 +128,7 @@ Errors preserve the exact candidate allocation; success takes it once into
 the transaction. An empty slot refuses before owner entry. A native-begin
 error does not prove no effect or authorize retry: unresolved disposition
 retains candidate and lease for deterministic recovery using the durable
-recovery binding. These portable seams do not enable dispatcher Save/Restore.
+recovery binding. These portable seams do not enable production Save/Restore.
 Replacement requires a fresh file identity, the reviewed candidate digest and
 an exact prior-byte backup for an existing baseline. Meaningful first Save uses
 create-new semantics. Terminal replay performs no additional writes or revision
@@ -137,8 +141,7 @@ preserves local intent and the same candidate/lease; retries rebuild projections
 against current local edits. An exact matching Save installs a clean successor baseline once; newer
 local edits remain stale and available for an explicit recovery choice.
 
-The composition layer must still implement configuration `OperationPorts`
-preparation and worker custody. It must persist
+The configuration `OperationPorts` composition uses the kernel to persist
 executing admission and the owner's exact recovery binding before invoking
 `begin_configuration`, and retain the actual lease through advancement and a
 verified terminal or safe recovery boundary. Observation loss or caller
@@ -161,7 +164,7 @@ the native owner reached a safe boundary. Unknown append disposition poisons
 the host without publishing a local successor. Repeated commit callbacks,
 post-commit refusal or incomplete local publication poison and retain custody.
 The composed operation port forwards these hooks; concrete configuration
-custody variants remain prerequisites to Save/Restore availability. Receipt-bound
+qualified native owners remain prerequisites to production Save/Restore availability. Receipt-bound
 frontend reconciliation does not enable the native configuration writer.
 
 Restart recovery consumes identity-only `RecoveryConfiguration` captured from
@@ -255,7 +258,7 @@ The remaining integration and acceptance seams are:
 A passing portable receipt observes the configuration read/stage dispatcher and
 sets `sourceOperationPortsAdopted` for the composed synthetic-owner controls. It
 keeps `br14Accepted`, native TOML,
-producer policy, physical owner, `OperationPorts` adoption, native runtime and
+producer policy, physical owner, production `OperationPorts` adoption, native runtime and
 release qualification false. Root owns suite registry and campaign admission;
 this script does not create or modify either.
 
