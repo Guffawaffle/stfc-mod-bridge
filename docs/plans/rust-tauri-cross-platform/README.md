@@ -22,7 +22,9 @@ A static study of the maintainer's Windows x64 launcher v0.4.2 supplied five imp
 
 These are acceptance refinements within existing future packages. They add no packages or dependency edges and do not reopen completed foundation criteria. They preserve the three trust domains, canonical Profiles game updating, exact native pairing and independent platform signing. Tauri updater support is an implementation candidate, not a release acceptance result. Checksum/staging/atomic-replacement messages reinforce existing transaction requirements without proving the other launcher's guarantees.
 
-The next implementation remains retained capture-to-worker custody, followed by configuration completion and canonical native writer integration. The plan does not create another game updater or add UI styling/profile-system work from the other launcher.
+Retained capture-to-worker custody and configuration completion now have local component evidence. Production writer availability remains disabled until canonical physical writer/exclusion/backup/recovery and producer schema/runtime participation are integrated and qualified. The immediate sequence is to verify the corrected ordinary Windows fixture build on the hosted route, investigate the native journal constructor refusal, then continue that configuration integration. Local build isolation and synthetic operation controls do not qualify native journal construction, abrupt native-process recovery or installed releases.
+
+Keep status and failure summaries compact, reuse verified evidence while its source and artifacts remain unchanged, investigate only the failing boundary, and focus required independent reviews on the change. Continue dependency-ready work when a native host or boundary prevents a particular package's acceptance. The plan does not create another game updater or add UI styling/profile-system work from the other launcher; Windows x64 and Apple Silicon macOS retain separate release qualification.
 
 ## Architecture and ownership
 
