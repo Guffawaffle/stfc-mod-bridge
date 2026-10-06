@@ -65,6 +65,9 @@ const names = run('list-tests', executable, ['--list']).split(/\r?\n/)
   .filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
 assert.ok(names.length >= 20 && new Set(names).size === names.length, 'Expected complete unique kernel test inventory');
 const recovery = [
+  'opaque_custody::unsafe_work_and_unknown_wal_disposition_keep_token_lease_and_context_together',
+  'opaque_custody::restart_reacquires_exact_recovery_custody_once_and_invalid_pairs_drop_in_order',
+  'opaque_custody::session_handoff_reacquires_custody_and_keeps_it_on_failed_persistence',
   'interrupted_work_blocks_conflicts_and_foreign_bytes_remain_unresolved',
   'interruption_at_staging_reconciles_to_durable_rollback',
   'disk_journal_is_exclusive_and_complete_corruption_never_becomes_success',
@@ -81,6 +84,12 @@ const recovery = [
 ];
 for (const name of recovery) assert.ok(names.includes(name), `Missing required recovery test ${name}`);
 const requiredOperations = [
+  'opaque_custody::capture_and_failed_admission_retain_or_destroy_only_the_exact_token',
+  'opaque_custody::exact_expiry_retires_custody_but_forged_refs_and_clock_failure_do_not',
+  'opaque_custody::admission_is_single_use_after_cancel_or_completion_but_exact_replay_survives',
+  'opaque_custody::equal_preparations_keep_distinct_tokens_and_busy_refusal_retains_second',
+  'opaque_custody::expiry_pruning_drops_only_expired_tokens_and_never_recycles_plan_identity',
+  'opaque_custody::observation_reservation_refusal_keeps_prepared_token_until_exact_expiry',
   'ordinary_directory_prepare_accepts_owner_resolved_registered_capture_without_effects',
   'isolated_directory_prepare_accepts_owner_resolved_registered_capture_without_effects',
   'ordinary_registered_prepare_refuses_changed_kind_id_and_revision_before_effects',

@@ -138,6 +138,26 @@ test('changed key input rejects before old-host plan admission, and fresh old-ho
   refuses([boundary(), commit()], 'transcript_unobserved_plan');
 });
 
+test('admission consumes a plan for fresh keys after lost reply, cancellation and completion', () => {
+  for (const outcome of ['cancelled_before_commit', 'no_change', 'changed']) {
+    const lost = commit(); lost.delivery = 'lost';
+    const terminal = completed('2', outcome);
+    const steps = [boundary(), prepare(), lost, observe(terminal)];
+    const fresh = {planRef: plan.planRef, idempotencyKey:id(950)};
+    assert.doesNotThrow(() => checkTranscript([...steps, commit(undefined, fresh, 'plan_expired'), commit(terminal)]));
+    const duplicate = {...clone(committed), operationId:id(951)};
+    refuses([...steps, commit(duplicate, fresh)], 'transcript_consumed_plan');
+    refuses([...steps, commit(undefined, fresh, 'operation_busy')], 'transcript_consumed_plan');
+  }
+});
+
+test('pre-admission refusal retains a plan and equal independent preparations remain usable', () => {
+  assert.doesNotThrow(() => checkTranscript([boundary(), prepare(), commit(undefined, undefined, 'operation_busy'), commit()]));
+  const independent = clone(plan); independent.planRef.planId = id(952);
+  const other = {...clone(committed), operationId:id(953)};
+  assert.doesNotThrow(() => checkTranscript([...base(), prepare(independent), commit(other, {planRef:independent.planRef, idempotencyKey:id(954)})]));
+});
+
 test('prepared action/ref and captured target/artifact semantics stay bound across commit and observations', () => {
   const wrongAction = clone(plan); wrongAction.semantics.action = 'focus_session';
   refuses([boundary(), prepare(wrongAction)], 'transcript_prepare_action');

@@ -5,6 +5,13 @@ progress and dispose an owned `LocalHost` on its original thread. The engine
 has no Tauri or frontend dependency. The existing blocking runner continues
 to serve the same dispatcher and retains its own lifecycle behavior.
 
+The controlled transport also carries a nonclone, non-Debug, non-Serialize and
+non-Send operation custody token through the actual original-thread kernel.
+Abandoned replies/subscriptions and deferred close retain it until the owner
+settles work. Temporal observations require token destruction while the lease
+and provider context remain alive, on that same owner thread. This is portable
+component evidence, without production native writer or caller qualification.
+
 An embedded turn consumes at most one inbox request, one owner progression
 and bounded event delivery. The pump reserves its budget before callbacks;
 repeated ticks do no extra work. A driver that does not tick receives one

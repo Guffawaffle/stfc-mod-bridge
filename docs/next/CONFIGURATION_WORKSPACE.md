@@ -24,6 +24,14 @@ only when the injected entry port declares availability. Save and Restore remain
 unavailable until their opaque preparation and retained worker custody are
 adopted; delegating other operation ports does not qualify configuration writes.
 
+The generic operation kernel now moves an unconstrained opaque custody token
+from capture to preparation to one admitted worker, and reconstructs separate
+recovery-only custody from durable identities after restart. The composed
+service delegates the same token directly; it creates no second workspace or
+side map. This is a prerequisite foundation. Save/Restore capture, acquisition,
+revalidation, advancement and recovery still refuse UnsupportedCapability until
+their concrete configuration writer adopts retained begin and completion paths.
+
 Before publishing a document observation, draft or protected transfer, the
 service preflights the complete reply and every consecutive `DraftChanged`
 event against the codec and host observation budget. A refused preflight keeps

@@ -149,12 +149,13 @@ impl<
 }
 
 impl<P: OperationPorts, T, S, O, E, I> OperationPorts for ConfigurationServices<P, T, S, O, E, I> {
+    type Custody = P::Custody;
     type Lease = P::Lease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         host: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         if matches!(
             intent,
             MutationIntent::SaveConfiguration(_) | MutationIntent::RestoreConfiguration(_)
@@ -163,53 +164,74 @@ impl<P: OperationPorts, T, S, O, E, I> OperationPorts for ConfigurationServices<
         }
         self.operations.capture(intent, host)
     }
-    fn acquire(&mut self, resources: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
-        self.operations.acquire(resources)
+    fn acquire(
+        &mut self,
+        semantics: &PlanSemantics,
+        custody: &Self::Custody,
+        resources: &[ResourceKey],
+    ) -> Result<Self::Lease, Box<BridgeError>> {
+        refuse_configuration(semantics)?;
+        self.operations.acquire(semantics, custody, resources)
+    }
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        refuse_configuration(&operation.semantics)?;
+        self.operations
+            .acquire_recovery(operation, recovery, resources)
     }
     fn revalidate(
         &mut self,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<(), Box<BridgeError>> {
         refuse_configuration(semantics)?;
-        self.operations.revalidate(semantics, lease)
+        self.operations.revalidate(semantics, custody, lease)
     }
     fn recovery_binding(
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
         refuse_configuration(semantics)?;
         self.operations
-            .recovery_binding(operation, semantics, lease)
+            .recovery_binding(operation, semantics, custody, lease)
     }
     fn advance(
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
         cancellation_requested: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         refuse_configuration(&operation.semantics)?;
         self.operations
-            .advance(operation, recovery, lease, cancellation_requested)
+            .advance(operation, recovery, custody, lease, cancellation_requested)
     }
     fn recover(
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         refuse_configuration(&operation.semantics)?;
-        self.operations.recover(operation, recovery, lease)
+        self.operations.recover(operation, recovery, custody, lease)
     }
     fn handoff_session(
         &mut self,
         session: &SessionBinding,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>> {
-        self.operations.handoff_session(session, lease)
+        self.operations.handoff_session(session, custody, lease)
     }
 }
 fn refuse_configuration(semantics: &PlanSemantics) -> ApplicationResult<()> {

@@ -153,6 +153,14 @@ commit after response loss returns the original operation and its status;
 conflicting key reuse rejects. An already admitted durable operation survives
 as recovery evidence even though its old preparation token is no longer valid.
 
+Admission consumes the preparation's opaque owner token and transfers it once
+to the worker. Fresh keys cannot reuse that PlanRef after cancellation or
+completion; exact-key replay remains first. Live pre-admission refusals preserve
+the token for retry, while exact expiry retires it. The worker retains custody
+through uncertain persistence, recovery and session obligations, and destroys
+it before its lease and provider context. Restart reconstructs recovery-only
+state from exact durable identities, never old protected preparation bytes.
+
 The first implementation hosts the engine inside the CLI or Tauri process;
 there is no implicit daemon. A writing worker retains its native/resource leases
 through completion or a proven safe recovery boundary. Duplicate activation,

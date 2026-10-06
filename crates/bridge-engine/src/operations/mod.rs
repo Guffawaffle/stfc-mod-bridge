@@ -46,12 +46,16 @@ pub struct HostConfiguration {
     pub preparation_lifetime_millis: u64,
 }
 
-struct Preparation {
+struct Preparation<T> {
+    custody: T,
     plan: PreparedPlan,
     resources: Vec<ResourceKey>,
     deadline: u64,
 }
-struct Worker<L> {
+struct Worker<T, L> {
+    // Rust drops fields in declaration order: owner state must be destroyed
+    // before its lease, while the canonical exclusions are still retained.
+    custody: T,
     lease: L,
 }
 
@@ -99,17 +103,18 @@ pub struct Engine<
     C: HostClock,
     I: IdentitySource,
 > {
+    // These maps must drop before the provider context used by opaque custody.
+    preparations: BTreeMap<PlanId, Preparation<P::Custody>>,
+    workers: BTreeMap<OperationId, Worker<P::Custody, P::Lease>>,
     ports: P,
     journal: J,
     clock: C,
     clock_state: ClockState,
     ids: I,
     host: HostConfiguration,
-    preparations: BTreeMap<PlanId, Preparation>,
     issued_plans: BTreeSet<PlanId>,
     operations: BTreeMap<OperationId, DurableOperation>,
     idempotency: BTreeMap<IdempotencyKey, OperationId>,
-    workers: BTreeMap<OperationId, Worker<P::Lease>>,
     events: VecDeque<Event>,
     sequence: u64,
     closing: bool,
@@ -671,7 +676,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         if self.preparations.len() >= MAX_PREPARATIONS {
             return Err(error(ErrorCode::OperationBusy));
         }
-        let captured = self.ports.capture(&intent, &self.host.epoch)?;
+        let (captured, custody) = self.ports.capture(&intent, &self.host.epoch)?;
         bindings::validate_capture(&intent, &captured)
             .map_err(|_| error(ErrorCode::InternalFailure))?;
         let resources = normalize_resources(captured.resources)
@@ -720,6 +725,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         self.preparations.insert(
             plan.plan_ref.plan_id.clone(),
             Preparation {
+                custody,
                 plan: plan.clone(),
                 resources,
                 deadline: deadline.monotonic_millis,
@@ -753,6 +759,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             return Err(error(ErrorCode::InvalidRequest));
         }
         if prepared.deadline <= self.read_clock()?.monotonic_millis {
+            self.preparations.remove(&input.plan_ref.plan_id);
             return Err(error(ErrorCode::PlanExpired));
         }
         if self.operations.len() >= MAX_OPERATIONS {
@@ -780,17 +787,23 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         if self.operations.contains_key(&id) {
             return Err(error(ErrorCode::InternalFailure));
         }
-        let lease = self.ports.acquire(&resources)?;
+        let lease = self
+            .ports
+            .acquire(&semantics, &prepared.custody, &resources)?;
         if normalize_resources(lease.resources().to_vec()).is_err()
             || lease.resources() != resources.as_slice()
         {
             return Err(error(ErrorCode::InternalFailure));
         }
-        self.ports.revalidate(&semantics, &lease)?;
+        self.ports
+            .revalidate(&semantics, &prepared.custody, &lease)?;
         if deadline <= self.read_clock()?.monotonic_millis {
+            self.preparations.remove(&input.plan_ref.plan_id);
             return Err(error(ErrorCode::PlanExpired));
         }
-        let recovery = self.ports.recovery_binding(&id, &semantics, &lease)?;
+        let recovery = self
+            .ports
+            .recovery_binding(&id, &semantics, &prepared.custody, &lease)?;
         let snapshot = OperationSnapshot {
             operation_id: id.clone(),
             operation_revision: RevisionCounter::new(1),
@@ -819,7 +832,20 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         };
         self.observation_capacity(&operation, true)
             .map_err(|_| error(ErrorCode::OperationBusy))?;
-        self.workers.insert(id.clone(), Worker { lease });
+        // Admission consumes this preparation even when persistence disposition
+        // becomes unknown. A fresh key must Prepare again; durable replay above
+        // still returns the original operation without touching local custody.
+        let prepared = self
+            .preparations
+            .remove(&input.plan_ref.plan_id)
+            .expect("validated preparation remains owned until admission");
+        self.workers.insert(
+            id.clone(),
+            Worker {
+                custody: prepared.custody,
+                lease,
+            },
+        );
         if self
             .journal
             .append(&JournalRecord::Operation {
@@ -868,11 +894,12 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         }
         let worker = self
             .workers
-            .get(id)
+            .get_mut(id)
             .ok_or(KernelFailure::InvalidPortResult)?;
         let step = self.ports.advance(
             &operation.snapshot,
             &operation.recovery,
+            &mut worker.custody,
             &worker.lease,
             operation.cancellation_requested,
         );
@@ -894,19 +921,27 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             return Err(KernelFailure::InvalidPortResult);
         }
         if !self.workers.contains_key(id) {
-            let lease = self
+            let (custody, lease) = self
                 .ports
-                .acquire(&operation.resources)
+                .acquire_recovery(
+                    &operation.snapshot,
+                    &operation.recovery,
+                    &operation.resources,
+                )
                 .map_err(|_| KernelFailure::InvalidPortResult)?;
-            if lease.resources() != operation.resources.as_slice() {
+            let worker = Worker { custody, lease };
+            if worker.lease.resources() != operation.resources.as_slice() {
                 return Err(KernelFailure::InvalidPortResult);
             }
-            self.workers.insert(id.clone(), Worker { lease });
+            self.workers.insert(id.clone(), worker);
         }
-        let worker = &self.workers[id];
-        let step = self
-            .ports
-            .recover(&operation.snapshot, &operation.recovery, &worker.lease);
+        let worker = self.workers.get_mut(id).expect("recovery custody retained");
+        let step = self.ports.recover(
+            &operation.snapshot,
+            &operation.recovery,
+            &mut worker.custody,
+            &worker.lease,
+        );
         self.finish_step(id, step)
     }
 
@@ -1149,18 +1184,24 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             .clone()
             .ok_or(KernelFailure::InvalidPortResult)?;
         if !self.workers.contains_key(id) {
-            let lease = self
+            let (custody, lease) = self
                 .ports
-                .acquire(&operation.resources)
+                .acquire_recovery(
+                    &operation.snapshot,
+                    &operation.recovery,
+                    &operation.resources,
+                )
                 .map_err(|_| KernelFailure::InvalidPortResult)?;
-            if lease.resources() != operation.resources.as_slice() {
+            let worker = Worker { custody, lease };
+            if worker.lease.resources() != operation.resources.as_slice() {
                 return Err(KernelFailure::InvalidPortResult);
             }
-            self.workers.insert(id.clone(), Worker { lease });
+            self.workers.insert(id.clone(), worker);
         }
+        let worker = self.workers.get_mut(id).expect("session custody retained");
         if !self
             .ports
-            .handoff_session(&session, &self.workers[id].lease)
+            .handoff_session(&session, &mut worker.custody, &worker.lease)
             .map_err(|_| KernelFailure::InvalidPortResult)?
         {
             return Ok(false);

@@ -18,6 +18,9 @@ use std::{
 type FixtureEngine = Engine<Owner, FileJournal, Clock, Ids>;
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
+#[path = "operation_support/custody.rs"]
+mod opaque_custody;
+
 fn uuid(n: u64) -> String {
     format!("00000000-0000-4000-8000-{n:012x}")
 }
@@ -337,28 +340,32 @@ impl Owner {
 }
 impl ApplicationServices for Owner {}
 impl OperationPorts for Owner {
+    type Custody = ();
     type Lease = Lease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         _: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         if let MutationIntent::SaveApplicationPreferences(input) = intent {
-            return Ok(CapturedOperation {
-                semantics: PlanSemantics {
-                    hash_profile: HashProfile::BridgePlanSemanticJsonV1,
-                    action: ActionId::SaveApplicationPreferences,
-                    capture: PreparedCapture::SaveApplicationPreferences {
-                        input: input.clone(),
+            return Ok((
+                CapturedOperation {
+                    semantics: PlanSemantics {
+                        hash_profile: HashProfile::BridgePlanSemanticJsonV1,
+                        action: ActionId::SaveApplicationPreferences,
+                        capture: PreparedCapture::SaveApplicationPreferences {
+                            input: input.clone(),
+                        },
+                        trust_domain: TrustDomain::ApplicationState,
+                        effects: BoundedList::new(vec![ProposedEffect::SaveApplicationPreferences])
+                            .unwrap(),
                     },
-                    trust_domain: TrustDomain::ApplicationState,
-                    effects: BoundedList::new(vec![ProposedEffect::SaveApplicationPreferences])
-                        .unwrap(),
+                    resources: vec![ResourceKey::Application {
+                        identity: ApplicationIdentity::new("fixture-application").unwrap(),
+                    }],
                 },
-                resources: vec![ResourceKey::Application {
-                    identity: ApplicationIdentity::new("fixture-application").unwrap(),
-                }],
-            });
+                (),
+            ));
         }
         let mut semantics = semantics();
         if self.directory_capture.load(Ordering::SeqCst) {
@@ -367,12 +374,20 @@ impl OperationPorts for Owner {
             };
             target.installation = directory_binding(&target.installation);
         }
-        Ok(CapturedOperation {
-            semantics,
-            resources: resources(),
-        })
+        Ok((
+            CapturedOperation {
+                semantics,
+                resources: resources(),
+            },
+            (),
+        ))
     }
-    fn acquire(&mut self, resources: &[ResourceKey]) -> Result<Lease, Box<BridgeError>> {
+    fn acquire(
+        &mut self,
+        _: &PlanSemantics,
+        _: &Self::Custody,
+        resources: &[ResourceKey],
+    ) -> Result<Lease, Box<BridgeError>> {
         self.counts.lock().unwrap().acquisition += 1;
         let mut files = Vec::new();
         for resource in resources {
@@ -397,7 +412,22 @@ impl OperationPorts for Owner {
             counts: self.counts.clone(),
         })
     }
-    fn revalidate(&mut self, _: &PlanSemantics, _: &Lease) -> Result<(), Box<BridgeError>> {
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        let _ = recovery;
+        self.acquire(&operation.semantics, &(), resources)
+            .map(|lease| ((), lease))
+    }
+    fn revalidate(
+        &mut self,
+        _: &PlanSemantics,
+        _: &Self::Custody,
+        _: &Lease,
+    ) -> Result<(), Box<BridgeError>> {
         self.counts.lock().unwrap().revalidation += 1;
         if self.stale.load(Ordering::SeqCst) {
             Err(error(ErrorCode::StaleRevision))
@@ -409,6 +439,7 @@ impl OperationPorts for Owner {
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        _: &Self::Custody,
         _: &Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
         self.counts.lock().unwrap().bindings += 1;
@@ -443,6 +474,7 @@ impl OperationPorts for Owner {
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        _: &mut Self::Custody,
         _: &Lease,
         cancellation: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
@@ -526,6 +558,7 @@ impl OperationPorts for Owner {
         &mut self,
         _: &OperationSnapshot,
         recovery: &RecoveryRef,
+        _: &mut Self::Custody,
         _: &Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         self.counts.lock().unwrap().recovery += 1;
@@ -570,7 +603,12 @@ impl OperationPorts for Owner {
             }),
         }
     }
-    fn handoff_session(&mut self, _: &SessionBinding, _: &Lease) -> Result<bool, Box<BridgeError>> {
+    fn handoff_session(
+        &mut self,
+        _: &SessionBinding,
+        _: &mut Self::Custody,
+        _: &Lease,
+    ) -> Result<bool, Box<BridgeError>> {
         if !self.handoff.load(Ordering::SeqCst) {
             return Ok(false);
         }
@@ -2772,12 +2810,13 @@ impl IndependentLaunchOwner {
 }
 impl ApplicationServices for IndependentLaunchOwner {}
 impl OperationPorts for IndependentLaunchOwner {
+    type Custody = ();
     type Lease = Lease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         _: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         let MutationIntent::LaunchIsolated(input) = intent else {
             return Err(error(ErrorCode::UnsupportedCapability));
         };
@@ -2790,24 +2829,32 @@ impl OperationPorts for IndependentLaunchOwner {
         if self.directory_capture {
             target.installation = directory_binding(&target.installation);
         }
-        Ok(CapturedOperation {
-            semantics: PlanSemantics {
-                hash_profile: HashProfile::BridgePlanSemanticJsonV1,
-                action: ActionId::LaunchIsolated,
-                capture: PreparedCapture::LaunchIsolated {
-                    target,
-                    catalog_revision: OpaqueRevision::new("catalog:1").unwrap(),
-                    runtime: RuntimeExpectation::Absent,
-                    store_mode: StoreMode::Existing,
-                    unrecognized_runtime_choice: UnrecognizedRuntimeChoice::Reject,
+        Ok((
+            CapturedOperation {
+                semantics: PlanSemantics {
+                    hash_profile: HashProfile::BridgePlanSemanticJsonV1,
+                    action: ActionId::LaunchIsolated,
+                    capture: PreparedCapture::LaunchIsolated {
+                        target,
+                        catalog_revision: OpaqueRevision::new("catalog:1").unwrap(),
+                        runtime: RuntimeExpectation::Absent,
+                        store_mode: StoreMode::Existing,
+                        unrecognized_runtime_choice: UnrecognizedRuntimeChoice::Reject,
+                    },
+                    trust_domain: TrustDomain::Session,
+                    effects: BoundedList::new(vec![ProposedEffect::LaunchSession]).unwrap(),
                 },
-                trust_domain: TrustDomain::Session,
-                effects: BoundedList::new(vec![ProposedEffect::LaunchSession]).unwrap(),
+                resources: independent_resources(index),
             },
-            resources: independent_resources(index),
-        })
+            (),
+        ))
     }
-    fn acquire(&mut self, resources: &[ResourceKey]) -> Result<Lease, Box<BridgeError>> {
+    fn acquire(
+        &mut self,
+        _: &PlanSemantics,
+        _: &Self::Custody,
+        resources: &[ResourceKey],
+    ) -> Result<Lease, Box<BridgeError>> {
         self.counts.lock().unwrap().acquisition += 1;
         let mut files = Vec::new();
         for resource in resources {
@@ -2843,9 +2890,20 @@ impl OperationPorts for IndependentLaunchOwner {
             counts: self.counts.clone(),
         })
     }
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        let _ = recovery;
+        self.acquire(&operation.semantics, &(), resources)
+            .map(|lease| ((), lease))
+    }
     fn revalidate(
         &mut self,
         semantics: &PlanSemantics,
+        _: &Self::Custody,
         lease: &Lease,
     ) -> Result<(), Box<BridgeError>> {
         self.counts.lock().unwrap().revalidation += 1;
@@ -2860,6 +2918,7 @@ impl OperationPorts for IndependentLaunchOwner {
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        _: &Self::Custody,
         _: &Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
         let index = independent_index(&semantics.capture);
@@ -2885,6 +2944,7 @@ impl OperationPorts for IndependentLaunchOwner {
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        _: &mut Self::Custody,
         lease: &Lease,
         _: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
@@ -2941,6 +3001,7 @@ impl OperationPorts for IndependentLaunchOwner {
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        _: &mut Self::Custody,
         lease: &Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         self.counts.lock().unwrap().recovery += 1;
@@ -2964,7 +3025,12 @@ impl OperationPorts for IndependentLaunchOwner {
         );
         Ok(self.complete(&record))
     }
-    fn handoff_session(&mut self, _: &SessionBinding, _: &Lease) -> Result<bool, Box<BridgeError>> {
+    fn handoff_session(
+        &mut self,
+        _: &SessionBinding,
+        _: &mut Self::Custody,
+        _: &Lease,
+    ) -> Result<bool, Box<BridgeError>> {
         Ok(false)
     }
 }

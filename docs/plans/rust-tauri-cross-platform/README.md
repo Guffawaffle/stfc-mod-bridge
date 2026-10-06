@@ -212,4 +212,4 @@ Do not execute this cross-repo scheduling projection as a bulk gate or merge com
 
 Runner coordination uses explicit `databasePath: D:/dev/stfc-workspace/.smartergpt/runner/coordination.db`. Destructive mutations and automatic Lex frame emission remain disabled. Continuity belongs to Bridge's scoped `docs/architecture` and `workspace/tooling` modules. Shadow LexSona constraints were read for planning; there is no Run application or observed implementation outcome.
 
-The next implementation package is 00, followed by workspace foundation 01 and protocol/fixtures 02. At that point, UI mocks, the operation kernel and native prerequisite work can proceed independently within the concurrency and ownership rules above.
+The original 2026-10-03 implementation order began with package 00, followed by workspace foundation 01 and protocol/fixtures 02. UI mocks, the operation kernel and native prerequisite work then became independent within the concurrency and ownership rules above. The dated refinement near the top records the current next work.

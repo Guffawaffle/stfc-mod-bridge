@@ -4,6 +4,15 @@ Owner: br-02, [issue #236](https://github.com/Guffawaffle/stfc-mod-bridge/issues
 Status: implementation in progress; codec checkpoints do not accept
 the full protocol/scenario package or qualify any native capability.
 
+Prepared plans are single-use on admission, including a lost admission reply.
+An exact admitted Commit input replays the original durable operation before
+host, expiry, preparation or close lookup. A fresh key with a consumed current-
+host PlanRef refuses PlanExpired, even after cancellation or completion; obtain
+a new plan. Pre-admission refusal retains a live preparation. Expiry retires
+only the exact preparation; foreign-host and forged refs do not evict it.
+This intentionally tightens earlier fresh-key reuse without changing v1 DTOs.
+The independent transcript checker enforces consumption and replay ordering.
+
 Rust DTOs in `crates/bridge-contracts/src/v1` own requests, replies, events and
 their schemas. Schemars explicitly exports Draft 7 deserialize schemas. The
 root-owned exporter and `scripts/next/generate-protocol.mjs` generate schemas,

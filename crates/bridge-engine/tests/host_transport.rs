@@ -4,6 +4,7 @@ use bridge_contracts::v1::*;
 use bridge_engine::services::ApplicationServices;
 use bridge_engine::{host::*, operations::*};
 use std::{
+    cell::Cell,
     fs::{self, OpenOptions},
     io::Write,
     marker::PhantomData,
@@ -76,6 +77,10 @@ struct Audit {
     captures: usize,
     lease_drops: usize,
     mutations: usize,
+    owner_drops: usize,
+    custody_created: Vec<ThreadId>,
+    custody_used: Vec<ThreadId>,
+    custody_drops: Vec<(ThreadId, bool, bool)>,
 }
 #[derive(Clone, Default)]
 struct Controls {
@@ -104,10 +109,55 @@ fn marker(controls: &Controls, leaf: &str) {
         file.sync_all().unwrap();
     }
 }
+const LOCAL_PRIVATE: &str = "owner-thread-private-custody-9e13a";
+// This value cannot be cloned, serialized, debug-formatted or sent. It is part
+// of the actual factory-created kernel, not an isolated ownership example.
+struct LocalCustody {
+    controls: Controls,
+    lease_live: Rc<Cell<bool>>,
+    owner_drops_at_capture: usize,
+    private: &'static str,
+    uses: usize,
+}
+impl LocalCustody {
+    fn new(controls: &Controls) -> Self {
+        let mut audit = controls.audit.lock().unwrap();
+        audit.custody_created.push(thread::current().id());
+        Self {
+            controls: controls.clone(),
+            lease_live: Rc::new(Cell::new(false)),
+            owner_drops_at_capture: audit.owner_drops,
+            private: LOCAL_PRIVATE,
+            uses: 0,
+        }
+    }
+    fn touch(&mut self, lease: &LocalLease) {
+        assert_eq!(self.private, LOCAL_PRIVATE);
+        assert!(Rc::ptr_eq(&self.lease_live, &lease.live));
+        assert!(lease.live.get());
+        self.uses += 1;
+        self.controls
+            .audit
+            .lock()
+            .unwrap()
+            .custody_used
+            .push(thread::current().id());
+    }
+}
+impl Drop for LocalCustody {
+    fn drop(&mut self) {
+        let mut audit = self.controls.audit.lock().unwrap();
+        let context_live = audit.owner_drops == self.owner_drops_at_capture;
+        audit
+            .custody_drops
+            .push((thread::current().id(), self.lease_live.get(), context_live));
+    }
+}
 struct LocalLease {
     keys: Vec<ResourceKey>,
     controls: Controls,
     _local: Rc<()>,
+    live: Rc<Cell<bool>>,
 }
 impl ResourceLease for LocalLease {
     fn resources(&self) -> &[ResourceKey] {
@@ -116,6 +166,7 @@ impl ResourceLease for LocalLease {
 }
 impl Drop for LocalLease {
     fn drop(&mut self) {
+        self.live.set(false);
         marker(&self.controls, "retained-lease-dropped");
         let mut audit = self.controls.audit.lock().unwrap();
         audit.lease_drops += 1;
@@ -128,6 +179,7 @@ struct Owner {
 }
 impl Drop for Owner {
     fn drop(&mut self) {
+        self.controls.audit.lock().unwrap().owner_drops += 1;
         marker(&self.controls, "retained-owner-dropped");
         self.controls
             .audit
@@ -139,48 +191,77 @@ impl Drop for Owner {
 }
 impl ApplicationServices for Owner {}
 impl OperationPorts for Owner {
+    type Custody = LocalCustody;
     type Lease = LocalLease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         _: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         let MutationIntent::SaveApplicationPreferences(input) = intent else {
             return Err(error(ErrorCode::UnsupportedCapability));
         };
         let mut audit = self.controls.audit.lock().unwrap();
         audit.captures += 1;
         audit.invoked.push(thread::current().id());
-        Ok(CapturedOperation {
-            semantics: PlanSemantics {
-                hash_profile: HashProfile::BridgePlanSemanticJsonV1,
-                action: ActionId::SaveApplicationPreferences,
-                capture: PreparedCapture::SaveApplicationPreferences {
-                    input: input.clone(),
+        drop(audit);
+        Ok((
+            CapturedOperation {
+                semantics: PlanSemantics {
+                    hash_profile: HashProfile::BridgePlanSemanticJsonV1,
+                    action: ActionId::SaveApplicationPreferences,
+                    capture: PreparedCapture::SaveApplicationPreferences {
+                        input: input.clone(),
+                    },
+                    trust_domain: TrustDomain::ApplicationState,
+                    effects: BoundedList::new(vec![ProposedEffect::SaveApplicationPreferences])
+                        .unwrap(),
                 },
-                trust_domain: TrustDomain::ApplicationState,
-                effects: BoundedList::new(vec![ProposedEffect::SaveApplicationPreferences])
-                    .unwrap(),
+                resources: vec![ResourceKey::Application {
+                    identity: ApplicationIdentity::new("synthetic-host-fixture").unwrap(),
+                }],
             },
-            resources: vec![ResourceKey::Application {
-                identity: ApplicationIdentity::new("synthetic-host-fixture").unwrap(),
-            }],
-        })
+            LocalCustody::new(&self.controls),
+        ))
     }
-    fn acquire(&mut self, keys: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
+    fn acquire(
+        &mut self,
+        _: &PlanSemantics,
+        custody: &Self::Custody,
+        keys: &[ResourceKey],
+    ) -> Result<Self::Lease, Box<BridgeError>> {
+        custody.lease_live.set(true);
         Ok(LocalLease {
             keys: keys.to_vec(),
             controls: self.controls.clone(),
             _local: Rc::new(()),
+            live: custody.lease_live.clone(),
         })
     }
-    fn revalidate(&mut self, _: &PlanSemantics, _: &Self::Lease) -> Result<(), Box<BridgeError>> {
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        assert_eq!(operation.operation_id, recovery.operation_id);
+        let custody = LocalCustody::new(&self.controls);
+        let lease = self.acquire(&operation.semantics, &custody, resources)?;
+        Ok((custody, lease))
+    }
+    fn revalidate(
+        &mut self,
+        _: &PlanSemantics,
+        _: &Self::Custody,
+        _: &Self::Lease,
+    ) -> Result<(), Box<BridgeError>> {
         Ok(())
     }
     fn recovery_binding(
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        _: &Self::Custody,
         _: &Self::Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
         let PreparedCapture::SaveApplicationPreferences { input } = &semantics.capture else {
@@ -198,9 +279,11 @@ impl OperationPorts for Owner {
         &mut self,
         operation: &OperationSnapshot,
         _: &RecoveryRef,
-        _: &Self::Lease,
+        custody: &mut Self::Custody,
+        lease: &Self::Lease,
         _: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
+        custody.touch(lease);
         if self.controls.owner_panic.load(Ordering::Acquire) {
             struct CallLocal(Controls);
             impl Drop for CallLocal {
@@ -258,8 +341,10 @@ impl OperationPorts for Owner {
         &mut self,
         _: &OperationSnapshot,
         _: &RecoveryRef,
-        _: &Self::Lease,
+        custody: &mut Self::Custody,
+        lease: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
+        custody.touch(lease);
         if self
             .controls
             .root
@@ -279,6 +364,7 @@ impl OperationPorts for Owner {
     fn handoff_session(
         &mut self,
         _: &SessionBinding,
+        _: &mut Self::Custody,
         _: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>> {
         Ok(false)
@@ -294,6 +380,11 @@ impl DurableJournal for Journal {
         self.disk.as_ref().map_or(&self.rows, FileJournal::records)
     }
     fn append(&mut self, row: &JournalRecord) -> Result<(), KernelFailure> {
+        assert!(
+            !String::from_utf8(serde_json::to_vec(row).unwrap())
+                .unwrap()
+                .contains(LOCAL_PRIVATE)
+        );
         if let Some(disk) = &mut self.disk {
             return disk.append(row);
         }
@@ -730,6 +821,61 @@ fn last_handle_disconnect_defers_drop_until_worker_reaches_real_fixture_boundary
     let exit = worker.join().unwrap().unwrap();
     assert_eq!(exit.disposition, CloseDisposition::Ready);
     assert_eq!(controls.audit.lock().unwrap().lease_drops, 1);
+}
+
+#[test]
+fn opaque_custody_survives_abandoned_transport_and_close_on_original_owner_thread() {
+    let controls = Controls::default();
+    let (handle, worker) = spawn(&controls);
+    let subscription = handle.subscribe(None).unwrap();
+    subscription.ready_timeout(WAIT).unwrap().unwrap();
+    let plan = prepare(&handle, 400);
+    assert!(
+        !String::from_utf8(serde_json::to_vec(&plan).unwrap())
+            .unwrap()
+            .contains(LOCAL_PRIVATE)
+    );
+    let input = commit_input(plan);
+    drop(
+        handle
+            .exchange(command(Command::Commit(input.clone()), 401))
+            .unwrap(),
+    );
+    drop(subscription);
+    wait_until(|| controls.ticks.load(Ordering::Acquire) > 2);
+    assert!(controls.audit.lock().unwrap().custody_drops.is_empty());
+    let observed = exchange(&handle, command(Command::Commit(input), 402));
+    assert!(
+        !String::from_utf8(serde_json::to_vec(&observed).unwrap())
+            .unwrap()
+            .contains(LOCAL_PRIVATE)
+    );
+    let close = handle
+        .request_close()
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(close, CloseDisposition::Deferred { .. }));
+    drop(handle);
+    wait_until(|| controls.ticks.load(Ordering::Acquire) > 4);
+    assert!(!worker.is_finished());
+    assert!(controls.audit.lock().unwrap().custody_drops.is_empty());
+    controls.release.store(true, Ordering::Release);
+    assert_eq!(
+        worker.join().unwrap().unwrap().disposition,
+        CloseDisposition::Ready
+    );
+    let audit = controls.audit.lock().unwrap();
+    let owner = audit.constructed[0];
+    assert_ne!(owner, thread::current().id());
+    assert_eq!(audit.captures, 1);
+    assert_eq!(audit.custody_created, vec![owner]);
+    assert!(!audit.custody_used.is_empty());
+    assert!(audit.custody_used.iter().all(|thread| *thread == owner));
+    assert_eq!(audit.custody_drops, vec![(owner, true, true)]);
+    assert_eq!(audit.lease_drops, 1);
+    assert_eq!(audit.owner_drops, 1);
 }
 
 #[test]
@@ -1470,57 +1616,77 @@ struct EmbeddedSupplementPorts {
 }
 impl ApplicationServices for EmbeddedSupplementPorts {}
 impl OperationPorts for EmbeddedSupplementPorts {
+    type Custody = LocalCustody;
     type Lease = LocalLease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         epoch: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         self.inner.capture(intent, epoch)
     }
-    fn acquire(&mut self, keys: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
-        self.inner.acquire(keys)
+    fn acquire(
+        &mut self,
+        semantics: &PlanSemantics,
+        custody: &Self::Custody,
+        keys: &[ResourceKey],
+    ) -> Result<Self::Lease, Box<BridgeError>> {
+        self.inner.acquire(semantics, custody, keys)
+    }
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        self.inner.acquire_recovery(operation, recovery, resources)
     }
     fn revalidate(
         &mut self,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<(), Box<BridgeError>> {
-        self.inner.revalidate(semantics, lease)
+        self.inner.revalidate(semantics, custody, lease)
     }
     fn recovery_binding(
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
-        self.inner.recovery_binding(operation, semantics, lease)
+        self.inner
+            .recovery_binding(operation, semantics, custody, lease)
     }
     fn advance(
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
         cancellation_requested: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         self.inner
-            .advance(operation, recovery, lease, cancellation_requested)
+            .advance(operation, recovery, custody, lease, cancellation_requested)
     }
     fn recover(
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         self.recover_calls.fetch_add(1, Ordering::AcqRel);
-        self.inner.recover(operation, recovery, lease)
+        self.inner.recover(operation, recovery, custody, lease)
     }
     fn handoff_session(
         &mut self,
         session: &SessionBinding,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>> {
-        self.inner.handoff_session(session, lease)
+        self.inner.handoff_session(session, custody, lease)
     }
 }
 

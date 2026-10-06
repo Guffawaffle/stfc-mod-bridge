@@ -62,6 +62,11 @@ impl DurableJournal for Journal {
         &self.records
     }
     fn append(&mut self, record: &JournalRecord) -> Result<(), KernelFailure> {
+        assert!(
+            !String::from_utf8(serde_json::to_vec(record).unwrap())
+                .unwrap()
+                .contains(OPERATION_PRIVATE)
+        );
         if self.audit.fail.get() {
             return Err(KernelFailure::Storage);
         }
@@ -71,19 +76,25 @@ impl DurableJournal for Journal {
     }
 }
 struct Operations;
-struct OperationLease(Vec<ResourceKey>);
+const OPERATION_PRIVATE: &str = "composed-private-operation-custody-e28b";
+struct OperationCustody {
+    visits: Rc<Cell<usize>>,
+    private: &'static str,
+}
+struct OperationLease(Vec<ResourceKey>, Rc<Cell<usize>>);
 impl ResourceLease for OperationLease {
     fn resources(&self) -> &[ResourceKey] {
         &self.0
     }
 }
 impl OperationPorts for Operations {
+    type Custody = OperationCustody;
     type Lease = OperationLease;
     fn capture(
         &mut self,
         intent: &MutationIntent,
         _: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>> {
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
         if !matches!(intent, MutationIntent::LaunchOrdinary(_)) {
             return Err(error(ErrorCode::UnsupportedCapability));
         }
@@ -115,23 +126,58 @@ impl OperationPorts for Operations {
                 owner: owner_scope.clone(),
             },
         ];
-        Ok(CapturedOperation {
-            semantics: plan.semantics,
-            resources,
-        })
+        Ok((
+            CapturedOperation {
+                semantics: plan.semantics,
+                resources,
+            },
+            OperationCustody {
+                visits: Rc::new(Cell::new(0)),
+                private: OPERATION_PRIVATE,
+            },
+        ))
     }
-    fn acquire(&mut self, resources: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
-        Ok(OperationLease(resources.to_vec()))
+    fn acquire(
+        &mut self,
+        _: &PlanSemantics,
+        custody: &Self::Custody,
+        resources: &[ResourceKey],
+    ) -> Result<Self::Lease, Box<BridgeError>> {
+        assert_eq!(custody.private, OPERATION_PRIVATE);
+        assert_eq!(custody.visits.get(), 0);
+        Ok(OperationLease(resources.to_vec(), custody.visits.clone()))
     }
-    fn revalidate(&mut self, _: &PlanSemantics, _: &Self::Lease) -> Result<(), Box<BridgeError>> {
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+        let _ = recovery;
+        let custody = OperationCustody {
+            visits: Rc::new(Cell::new(0)),
+            private: OPERATION_PRIVATE,
+        };
+        let lease = self.acquire(&operation.semantics, &custody, resources)?;
+        Ok((custody, lease))
+    }
+    fn revalidate(
+        &mut self,
+        _: &PlanSemantics,
+        custody: &Self::Custody,
+        lease: &Self::Lease,
+    ) -> Result<(), Box<BridgeError>> {
+        assert!(Rc::ptr_eq(&custody.visits, &lease.1));
         Ok(())
     }
     fn recovery_binding(
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
-        _: &Self::Lease,
+        custody: &Self::Custody,
+        lease: &Self::Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>> {
+        assert!(Rc::ptr_eq(&custody.visits, &lease.1));
         let PreparedCapture::LaunchOrdinary { target, .. } = &semantics.capture else {
             panic!("launch only")
         };
@@ -147,9 +193,13 @@ impl OperationPorts for Operations {
         &mut self,
         _: &OperationSnapshot,
         _: &RecoveryRef,
-        _: &Self::Lease,
+        custody: &mut Self::Custody,
+        lease: &Self::Lease,
         _: bool,
     ) -> Result<TransactionStep, Box<BridgeError>> {
+        assert!(Rc::ptr_eq(&custody.visits, &lease.1));
+        assert_eq!(custody.visits.get(), 0);
+        custody.visits.set(1);
         Ok(TransactionStep::Complete {
             outcome: CompletionOutcome::NoChange {
                 reason: CompletionReason::AlreadySatisfied,
@@ -161,6 +211,7 @@ impl OperationPorts for Operations {
         &mut self,
         _: &OperationSnapshot,
         _: &RecoveryRef,
+        _: &mut Self::Custody,
         _: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>> {
         Err(error(ErrorCode::UnsupportedCapability))
@@ -168,6 +219,7 @@ impl OperationPorts for Operations {
     fn handoff_session(
         &mut self,
         _: &SessionBinding,
+        _: &mut Self::Custody,
         _: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>> {
         Ok(false)
@@ -209,6 +261,11 @@ fn request(body: RequestBody) -> ValidatedRequest {
 #[track_caller]
 fn dispatch(engine: &mut TestEngine, body: RequestBody) -> Reply {
     let reply = engine.dispatch(request(body)).unwrap().into_inner();
+    assert!(
+        !String::from_utf8(serde_json::to_vec(&reply).unwrap())
+            .unwrap()
+            .contains(OPERATION_PRIVATE)
+    );
     assert_eq!(
         reply.request_id,
         ReplyRequestId::new(Some(RequestId::new(id(100)).unwrap()))
@@ -598,7 +655,7 @@ fn draft_and_operation_changes_share_one_consecutive_kernel_event_sequence() {
     else {
         panic!("prepare")
     };
-    let CommandResult::Commit(_) = command_result(dispatch(
+    let CommandResult::Commit(operation) = command_result(dispatch(
         &mut engine,
         cmd(Command::Commit(CommitInput {
             plan_ref: plan.plan_ref,
@@ -633,6 +690,12 @@ fn draft_and_operation_changes_share_one_consecutive_kernel_event_sequence() {
         observed(lookup(&mut engine, &draft.draft)).state,
         DraftState::Stale
     );
+    // The generic service must pass the same opaque token into advancement,
+    // even after independent configuration observations change the workspace.
+    assert!(matches!(
+        engine.advance(&operation.operation_id).unwrap().state,
+        OperationState::Completed { .. }
+    ));
 }
 
 #[test]
@@ -865,55 +928,74 @@ fn construction_rejects_foreign_workspace_and_services_cannot_advertise_kernel_c
         }
     }
     impl OperationPorts for Dishonest {
+        type Custody = OperationCustody;
         type Lease = OperationLease;
         fn capture(
             &mut self,
             i: &MutationIntent,
             h: &HostEpoch,
-        ) -> Result<CapturedOperation, Box<BridgeError>> {
+        ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>> {
             self.0.capture(i, h)
         }
-        fn acquire(&mut self, r: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>> {
-            self.0.acquire(r)
+        fn acquire(
+            &mut self,
+            semantics: &PlanSemantics,
+            custody: &Self::Custody,
+            r: &[ResourceKey],
+        ) -> Result<Self::Lease, Box<BridgeError>> {
+            self.0.acquire(semantics, custody, r)
+        }
+        fn acquire_recovery(
+            &mut self,
+            operation: &OperationSnapshot,
+            recovery: &RecoveryRef,
+            resources: &[ResourceKey],
+        ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>> {
+            self.0.acquire_recovery(operation, recovery, resources)
         }
         fn revalidate(
             &mut self,
             s: &PlanSemantics,
+            custody: &Self::Custody,
             l: &Self::Lease,
         ) -> Result<(), Box<BridgeError>> {
-            self.0.revalidate(s, l)
+            self.0.revalidate(s, custody, l)
         }
         fn recovery_binding(
             &mut self,
             o: &OperationId,
             s: &PlanSemantics,
+            custody: &Self::Custody,
             l: &Self::Lease,
         ) -> Result<RecoveryRef, Box<BridgeError>> {
-            self.0.recovery_binding(o, s, l)
+            self.0.recovery_binding(o, s, custody, l)
         }
         fn advance(
             &mut self,
             o: &OperationSnapshot,
             r: &RecoveryRef,
+            custody: &mut Self::Custody,
             l: &Self::Lease,
             c: bool,
         ) -> Result<TransactionStep, Box<BridgeError>> {
-            self.0.advance(o, r, l, c)
+            self.0.advance(o, r, custody, l, c)
         }
         fn recover(
             &mut self,
             o: &OperationSnapshot,
             r: &RecoveryRef,
+            custody: &mut Self::Custody,
             l: &Self::Lease,
         ) -> Result<TransactionStep, Box<BridgeError>> {
-            self.0.recover(o, r, l)
+            self.0.recover(o, r, custody, l)
         }
         fn handoff_session(
             &mut self,
             s: &SessionBinding,
+            custody: &mut Self::Custody,
             l: &Self::Lease,
         ) -> Result<bool, Box<BridgeError>> {
-            self.0.handoff_session(s, l)
+            self.0.handoff_session(s, custody, l)
         }
     }
     assert!(matches!(

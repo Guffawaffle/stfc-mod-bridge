@@ -102,6 +102,10 @@ pub enum TransactionStep {
 }
 
 pub trait OperationPorts {
+    /// Local owner state, moved from preparation to the admitted worker exactly
+    /// once. It is never a DTO, digest input or journal record. No cloning,
+    /// serialization, debugging or cross-thread transfer is required.
+    type Custody;
     type Lease: ResourceLease;
 
     /// Read-only capture. Preparation must not reserve native resources or create
@@ -110,15 +114,30 @@ pub trait OperationPorts {
         &mut self,
         intent: &MutationIntent,
         host: &HostEpoch,
-    ) -> Result<CapturedOperation, Box<BridgeError>>;
+    ) -> Result<(CapturedOperation, Self::Custody), Box<BridgeError>>;
     /// All-or-none nonblocking acquisition through the canonical native owner.
     /// A refusal must have no mutation side effects.
-    fn acquire(&mut self, resources: &[ResourceKey]) -> Result<Self::Lease, Box<BridgeError>>;
+    fn acquire(
+        &mut self,
+        semantics: &PlanSemantics,
+        custody: &Self::Custody,
+        resources: &[ResourceKey],
+    ) -> Result<Self::Lease, Box<BridgeError>>;
+    /// Reconstruct recovery-only custody from exact durable identities; never
+    /// recapture a draft or recreate old protected preparation bytes. Return
+    /// custody before lease so the engine can destroy it while exclusions live.
+    fn acquire_recovery(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        resources: &[ResourceKey],
+    ) -> Result<(Self::Custody, Self::Lease), Box<BridgeError>>;
     /// Recheck physical identity, revisions and complete captured authority while
     /// every required owner exclusion is retained. Never silently substitute.
     fn revalidate(
         &mut self,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<(), Box<BridgeError>>;
     /// Supply an exact owner transaction binding, without mutation side effects.
@@ -129,6 +148,7 @@ pub trait OperationPorts {
         &mut self,
         operation: &OperationId,
         semantics: &PlanSemantics,
+        custody: &Self::Custody,
         lease: &Self::Lease,
     ) -> Result<RecoveryRef, Box<BridgeError>>;
     /// Called only after durable executing state. It must not acknowledge a
@@ -138,6 +158,7 @@ pub trait OperationPorts {
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
         cancellation_requested: bool,
     ) -> Result<TransactionStep, Box<BridgeError>>;
@@ -147,6 +168,7 @@ pub trait OperationPorts {
         &mut self,
         operation: &OperationSnapshot,
         recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<TransactionStep, Box<BridgeError>>;
     /// A session lease can leave host custody only after an actual canonical
@@ -154,6 +176,7 @@ pub trait OperationPorts {
     fn handoff_session(
         &mut self,
         session: &SessionBinding,
+        custody: &mut Self::Custody,
         lease: &Self::Lease,
     ) -> Result<bool, Box<BridgeError>>;
 }

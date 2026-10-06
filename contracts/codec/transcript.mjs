@@ -62,6 +62,7 @@ export function checkTranscript(steps) {
   const epochs = new Set();
   const streamSequences = new Map();
   const plans = new Map();
+  const consumedPlans = new Set();
   const operations = new Map();
   const admissions = new Map();
   const summary = { boundaryCount: 0, exchangeCount: 0, eventCount: 0, operationCount: 0, lostReplyCount: 0 };
@@ -215,12 +216,15 @@ export function checkTranscript(steps) {
         }
       } else if (input.planRef.hostEpoch !== cursor.hostEpoch) {
         if (!rejected || errorCode !== 'plan_host_mismatch') reject('transcript_old_host_plan');
+      } else if (consumedPlans.has(input.planRef.planId)) {
+        if (!rejected || errorCode !== 'plan_expired') reject('transcript_consumed_plan');
       } else if (!rejected) {
         const plan = plans.get(input.planRef.planId);
         if (!plan || !equal(plan.planRef, input.planRef)) reject('transcript_unobserved_plan');
         if (!semanticsEqual(plan.semantics, output.semantics)) reject('transcript_capture_changed');
         observeOperation(output);
         admissions.set(input.idempotencyKey, { input: identity, operationId: output.operationId });
+        consumedPlans.add(input.planRef.planId);
       } else if (errorCode === 'idempotency_conflict') reject('transcript_unobserved_admission');
     } else if (!rejected && family === 'command' && invocation.name === 'prepare') {
       if (!object(output.planRef) || !object(output.semantics) || output.planRef.hostEpoch !== cursor.hostEpoch) reject('transcript_plan_binding');

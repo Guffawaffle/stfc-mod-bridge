@@ -54,6 +54,7 @@ const required = {
     "embedded_deferred_progress_requires_service_outside_the_owner_turn"
   ],
   "host_transport": [
+    "opaque_custody_survives_abandoned_transport_and_close_on_original_owner_thread",
     "non_send_owner_lease_and_journal_construct_invoke_and_drop_on_actor_thread",
     "caller_thread_factory_and_borrowed_pump_drain_work_on_that_same_thread",
     "strict_framing_rejects_duplicates_invalid_utf8_and_oversize_before_owner_capture",

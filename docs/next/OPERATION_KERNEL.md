@@ -7,6 +7,30 @@ dispatch, prepared-plan capture, admission/replay, worker progression,
 cancellation, close dispositions, event cursors and durable restart recovery.
 Native domain services and canonical platform consumers remain later packages.
 
+`OperationPorts::Custody` carries opaque local owner state without Clone, Debug,
+Serialize or Send requirements. Capture returns it alongside semantic values;
+Preparation owns it until successful admission moves it once into Worker. The
+worker retains this exact token with the lease through advancement, recovery,
+session handoff and unknown persistence disposition. Worker destroys custody
+before its lease; Engine destroys preparations/workers before their provider
+context. Custody never enters a plan digest, DTO or journal record.
+
+Admission consumes a preparation. A fresh idempotency key cannot reuse its
+PlanRef after cancellation or completion; it must Prepare again. This tightens
+the earlier reusable-plan behavior. Exact-key durable replay still takes
+precedence and returns the original operation across expiry, close and restart.
+Pre-admission refusal retains a live preparation for retry. Exact expiry removes
+its token; forged or foreign-host refs and unavailable clocks cannot retire it.
+Issued identities remain burned. Unknown admission persistence consumes the
+preparation and retains the worker token/lease in the poisoned engine.
+
+Restart and missing-worker session handoff use `acquire_recovery` with the exact
+durable operation, recovery reference and normalized resources. The owner
+reconstructs recovery-only state, without recapturing drafts or old protected
+bytes. In-process recovery reuses retained worker custody. The engine immediately
+owns recovery pairs in custody-before-lease field order before validating them.
+These controlled-port proofs do not qualify any canonical native writer.
+
 Time sampling and plan/operation identities use fallible backend-only ports.
 Fresh plans expire on host-local monotonic milliseconds, including suspension;
 UTC is an evidence/display projection. Deadline calculation uses one supplied

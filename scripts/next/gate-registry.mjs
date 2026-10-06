@@ -66,14 +66,14 @@ export const registry = {
     argv: ['scripts/next/kernel.mjs', 'operation'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine', 'crates/bridge-journal-io'],
     criteria: ['BR04-01', 'BR04-02', 'BR04-03', 'BR04-04', 'BR04-05', 'BR04-06'],
-    boundary: 'Actual current native engine test artifact, strict Clippy and synthetic canonical owner contention/capture/replay/cancel/close/event tests. No native domain services, installed game or release qualification.'
+    boundary: 'Actual current native engine test artifact, strict Clippy and synthetic canonical owner contention/capture/single-use admission/replay/cancel/close/event tests, including nonclone opaque token retention and destruction under live lease/provider custody. No native domain services, installed game or release qualification.'
   },
   'crash-recovery': {
     host: 'any', timeoutMs: 300000,
     argv: ['scripts/next/kernel.mjs', 'recovery'],
     inputs: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml', 'dependencies/next-toolchain.json', 'docs/next/OPERATION_KERNEL.md', 'scripts/next', 'crates/bridge-contracts', 'crates/bridge-domain', 'crates/bridge-engine', 'crates/bridge-journal-io'],
     criteria: ['BR04-04', 'BR04-05', 'BR04-06', 'BR04-07'],
-    boundary: 'Actual private fixture filesystem journal/fault tests and child kill/restart at admission/staging/native commit. Port-owned game recovery, platform private-directory provisioning and canonical native exclusion remain unqualified.'
+    boundary: 'Actual private fixture filesystem journal/fault tests, opaque worker token retention and exact recovery-only reacquisition, and child kill/restart at admission/staging/native commit. Port-owned game recovery, platform private-directory provisioning and canonical native exclusion remain unqualified.'
   },
   'native-ffi-contract': {
     host: 'any', nativeProbeHosts: ['windows-x64', 'macos-arm64-native'], timeoutMs: 600000,
