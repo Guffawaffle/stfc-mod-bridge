@@ -368,6 +368,10 @@ impl SchemaSource for Schemas {
 }
 pub struct State {
     pub operations_available: bool,
+    pub settlement_required: bool,
+    pub settlement_pending: bool,
+    pub settlement_calls: usize,
+    pub settled: BTreeSet<OperationId>,
     pub before_begin: Option<Box<dyn Fn()>>,
     pub read: DocumentRead,
     pub resolves: Cell<usize>,
@@ -418,6 +422,28 @@ impl DocumentOwner for Owner {
     type Transaction = Tx;
     fn operations_available(&self) -> bool {
         self.0.borrow().operations_available
+    }
+    fn requires_terminal_settlement(&self) -> bool {
+        self.0.borrow().settlement_required
+    }
+    fn settle_terminal(
+        &mut self,
+        captured: &RecoveryConfiguration,
+        recovery: &RecoveryRef,
+        _: &CompletionOutcome,
+        lease: &Lease,
+    ) -> ConfigurationResult<bridge_engine::operations::SettlementStep> {
+        self.observe_lease(lease, "settle");
+        assert!(
+            matches!(&recovery.target, RecoveryTarget::Configuration { document } if document == &captured.baseline)
+        );
+        let mut state = self.0.borrow_mut();
+        state.settlement_calls += 1;
+        if state.settlement_pending {
+            return Ok(bridge_engine::operations::SettlementStep::Pending);
+        }
+        state.settled.insert(recovery.operation_id.clone());
+        Ok(bridge_engine::operations::SettlementStep::Settled)
     }
     fn resolve(&mut self, _: &TargetSelector) -> ConfigurationResult<DocumentRead> {
         let s = self.0.borrow();
@@ -706,6 +732,10 @@ pub fn workspace_with_options(
     let state = options.owner_state.unwrap_or_else(|| {
         Rc::new(RefCell::new(State {
             operations_available: options.operations_available,
+            settlement_required: false,
+            settlement_pending: false,
+            settlement_calls: 0,
+            settled: BTreeSet::new(),
             before_begin: None,
             resolves: Cell::new(0),
             reads: Cell::new(0),

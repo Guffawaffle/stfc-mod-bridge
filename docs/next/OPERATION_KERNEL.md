@@ -127,6 +127,33 @@ replacement, close obligations and real subprocess kills at admitted, staging
 and committed boundaries. A native owner supplies the exact recovery binding
 before admission and reconciles its effects; missing custody is unavailable.
 
+Canonical producers which publish durable admission reservations opt into
+terminal settlement. That policy is immutable in every operation WAL record.
+Completion still invokes the terminal/draft commit callback exactly once and
+publishes local successors without fallible post-commit work. A subsequent
+host pump calls only the owner's idempotent settlement port under the retained
+exclusion; it does not repeat native begin, advance, recovery or publication.
+Refusal or pending settlement retains custody, blocks conflicting admissions
+and keeps normal close deferred with the exact terminal operation ID/revision.
+Safe recovery and session handoff cannot discard that separate obligation.
+
+After durable producer settlement, a separate WAL acknowledgment binds the
+terminal operation ID and its current revision. It emits no duplicate operation
+or draft event and changes no completion outcome. Unknown acknowledgment
+persistence poisons the host while retaining custody. Restart either reads the
+acknowledgment or reacquires exact exclusions and asks the producer to inspect
+its reservation/tombstone; it never replays the completed mutation. Cancellation
+before begin and an admitted-operation restart also require settlement.
+Unknown, duplicate, nonterminal or wrong-revision acknowledgments refuse open.
+
+The new required `settlement_required` field intentionally refuses older
+development operation records which omit that policy; there is no automatic
+false default, migration or journal deletion. Host-only WAL/storage fixtures
+retain their existing framing. Production owner composition, enumeration of
+producer reservations with no operation WAL, cross-process writer admission and
+native Windows/Apple Silicon proof remain separate dependencies. Owners with no
+durable reservation keep the false policy; this is not native qualification.
+
 `FileJournal::open_retained` owns a `bridge-journal-io::JournalStorage` for its
 entire lifetime. The storage owner validates custody and length, truncates a
 torn tail and acknowledges durable synchronization. Reads stop at the 128 MiB

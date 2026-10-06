@@ -189,6 +189,30 @@ pub trait OperationPorts {
     ) -> Result<(), Box<BridgeError>> {
         commit(&[])
     }
+    /// Pure admission policy, captured once in the WAL before execution. Owners
+    /// which publish durable reservations must opt in. The default is only for
+    /// compositions with no such reservation, not evidence of native safety.
+    fn requires_terminal_settlement(
+        &self,
+        _semantics: &PlanSemantics,
+        _custody: &Self::Custody,
+    ) -> bool {
+        false
+    }
+    /// Called under retained or exactly reacquired exclusions after terminal
+    /// WAL and local completion publication. Never begin/advance/recover a
+    /// mutation here. Settle the captured reservation durably and idempotently,
+    /// including cancellation before begin and a restart after physical
+    /// settlement but before the kernel acknowledgment. Errors retain custody.
+    fn settle_terminal(
+        &mut self,
+        _operation: &OperationSnapshot,
+        _recovery: &RecoveryRef,
+        _custody: &mut Self::Custody,
+        _lease: &Self::Lease,
+    ) -> Result<SettlementStep, Box<BridgeError>> {
+        Err(super::error(ErrorCode::UnsupportedCapability))
+    }
     /// A session lease can leave host custody only after an actual canonical
     /// native/runtime handoff. UI/window closure alone cannot perform a handoff.
     fn handoff_session(
@@ -200,6 +224,13 @@ pub trait OperationPorts {
 }
 
 pub type CompletionCommit<'a> = dyn FnMut(&[DraftSnapshot]) -> Result<(), Box<BridgeError>> + 'a;
+
+/// Reservation settlement is independent of the already committed outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettlementStep {
+    Pending,
+    Settled,
+}
 
 /// Bounded storage interface. Success means the record and all prior records
 /// are durable. Errors have unknown persistence disposition; poison the host.

@@ -399,6 +399,83 @@ fn capture_is_read_only_exact_and_host_bound() {
     drop(custody);
     assert_eq!(fixture.state.borrow().begins, 0);
 }
+
+#[test]
+fn composed_terminal_settlement_retains_lease_after_once_only_draft_publication() {
+    let (fixture, mut workspace) = Fixture::new();
+    let draft = stage_boolean(&mut workspace, &fixture.state);
+    fixture.state.borrow_mut().settlement_required = true;
+    fixture.state.borrow_mut().settlement_pending = true;
+    let mut kernel = fixture.kernel(workspace, MAX_MESSAGE_BYTES);
+    let plan = prepare(&mut kernel, save(&draft));
+    let admitted = commit(&mut kernel, &plan);
+    kernel.advance(&admitted.operation_id).unwrap();
+    let completed = kernel.advance(&admitted.operation_id).unwrap();
+    assert!(matches!(completed.state, OperationState::Completed { .. }));
+    let published = lookup(&mut kernel, &draft.draft);
+    assert_eq!(published.state, DraftState::Clean);
+    let cursor = kernel.cursor();
+    assert_eq!(fixture.state.borrow().settlement_calls, 0);
+    assert_eq!(fixture.state.borrow().drops, 0);
+    assert_eq!(kernel.advance(&admitted.operation_id).unwrap(), completed);
+    assert!(matches!(
+        kernel.close_disposition().unwrap(),
+        CloseDisposition::Deferred { .. }
+    ));
+    assert_eq!(kernel.cursor(), cursor);
+    assert_eq!(lookup(&mut kernel, &draft.draft), published);
+    fixture.state.borrow_mut().settlement_pending = false;
+    assert_eq!(kernel.advance(&admitted.operation_id).unwrap(), completed);
+    assert_eq!(kernel.cursor(), cursor);
+    assert_eq!(lookup(&mut kernel, &draft.draft), published);
+    assert_eq!(fixture.state.borrow().begins, 1);
+    assert_eq!(fixture.state.borrow().drops, 1);
+    assert_eq!(fixture.state.borrow().settlement_calls, 2);
+    assert_eq!(kernel.close_disposition().unwrap(), CloseDisposition::Ready);
+}
+
+#[test]
+fn composed_terminal_restart_and_prebegin_cancel_only_settle_exact_reservations() {
+    for cancel in [false, true] {
+        let (fixture, mut workspace) = Fixture::new();
+        let draft = stage_boolean(&mut workspace, &fixture.state);
+        fixture.state.borrow_mut().settlement_required = true;
+        let mut kernel = fixture.kernel(workspace, MAX_MESSAGE_BYTES);
+        let plan = prepare(&mut kernel, save(&draft));
+        let admitted = commit(&mut kernel, &plan);
+        if cancel {
+            command(
+                &mut kernel,
+                Command::CancelOperation(CancelOperationInput {
+                    operation_id: admitted.operation_id.clone(),
+                    expected_operation_revision: admitted.operation_revision,
+                }),
+            )
+            .unwrap();
+        } else {
+            kernel.advance(&admitted.operation_id).unwrap();
+            kernel.advance(&admitted.operation_id).unwrap();
+        }
+        let terminal = kernel.operation(&admitted.operation_id).unwrap().clone();
+        drop(kernel);
+        let mut restarted = fixture.restart();
+        assert_eq!(restarted.advance(&admitted.operation_id).unwrap(), terminal);
+        assert_eq!(fixture.state.borrow().begins, usize::from(!cancel));
+        assert_eq!(fixture.state.borrow().settlement_calls, 1);
+        assert!(
+            fixture
+                .state
+                .borrow()
+                .settled
+                .contains(&admitted.operation_id)
+        );
+        assert_eq!(restarted.cursor().sequence.get(), 0);
+        assert_eq!(
+            restarted.close_disposition().unwrap(),
+            CloseDisposition::Ready
+        );
+    }
+}
 #[test]
 fn losing_admission_retains_draft_and_creates_no_writer_artifact() {
     let (fixture, mut workspace) = Fixture::new();

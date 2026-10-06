@@ -37,14 +37,28 @@ pub struct DurableOperation {
     pub cancellation_requested: bool,
     pub cancellable: bool,
     pub safe_owner_boundary: bool,
+    /// Immutable admission policy. Missing fields in older development WALs
+    /// are refused rather than silently discarding an owner obligation.
+    pub settlement_required: bool,
     pub session_custody: Option<SessionBinding>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum JournalRecord {
-    Host { epoch: HostEpoch, stream: StreamId },
-    Operation { value: Box<DurableOperation> },
+    Host {
+        epoch: HostEpoch,
+        stream: StreamId,
+    },
+    Operation {
+        value: Box<DurableOperation>,
+    },
+    /// Separate from terminal/draft publication. The canonical owner has
+    /// durably settled the exact reservation before this acknowledgment.
+    Settlement {
+        operation_id: OperationId,
+        operation_revision: RevisionCounter,
+    },
 }
 
 /// One WAL codec over an opaque retained storage owner. Native application

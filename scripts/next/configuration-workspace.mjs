@@ -106,6 +106,8 @@ const required = {
     'capture_is_read_only_exact_and_host_bound',
     'changed_draft_after_preparation_refuses_without_begin',
     'composed_save_obeys_wal_retains_one_lease_and_publishes_once',
+    'composed_terminal_settlement_retains_lease_after_once_only_draft_publication',
+    'composed_terminal_restart_and_prebegin_cancel_only_settle_exact_reservations',
     'failed_executing_append_prevents_begin_and_restart_proves_unstarted',
     'failed_or_uncertain_begin_never_retries_native_begin',
     'forced_death_during_stage_reacquires_identity_only_and_retains_unresolved_custody',

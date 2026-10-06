@@ -551,6 +551,41 @@ impl<
             None => result.map_err(ConfigurationFailure::bridge_error),
         }
     }
+    fn requires_terminal_settlement(
+        &self,
+        semantics: &PlanSemantics,
+        custody: &Self::Custody,
+    ) -> bool {
+        match &custody.kind {
+            CustodyKind::Delegated(inner) => self
+                .operations
+                .requires_terminal_settlement(semantics, inner),
+            _ => self.workspace.configuration_requires_terminal_settlement(),
+        }
+    }
+    fn settle_terminal(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        custody: &mut Self::Custody,
+        lease: &Self::Lease,
+    ) -> Result<SettlementStep, Box<BridgeError>> {
+        custody.check(&operation.semantics, lease)?;
+        custody.check_recovery(operation, recovery)?;
+        if self.completion_pending(custody) {
+            return Err(invalid());
+        }
+        match (&mut custody.kind, &lease.kind) {
+            (CustodyKind::Delegated(inner), LeaseKind::Delegated(owner)) => self
+                .operations
+                .settle_terminal(operation, recovery, inner, owner),
+            (_, LeaseKind::Configuration(owner)) => self
+                .workspace
+                .settle_configuration_terminal(operation, recovery, owner)
+                .map_err(ConfigurationFailure::bridge_error),
+            _ => Err(invalid()),
+        }
+    }
     fn handoff_session(
         &mut self,
         session: &SessionBinding,

@@ -12,6 +12,23 @@ pub trait DocumentOwner {
     fn operations_available(&self) -> bool {
         false
     }
+    /// Durable reservation owners opt in; availability is a separate native
+    /// qualification boundary. Captured by the operation kernel at admission.
+    fn requires_terminal_settlement(&self) -> bool {
+        false
+    }
+    /// Idempotent post-terminal reservation settlement under exact canonical
+    /// exclusions. This never repeats begin/advance or local draft publication.
+    /// A cancelled-before-begin operation still has an admission reservation.
+    fn settle_terminal(
+        &mut self,
+        _captured: &RecoveryConfiguration,
+        _recovery: &RecoveryRef,
+        _outcome: &CompletionOutcome,
+        _lease: &Self::Lease,
+    ) -> ConfigurationResult<crate::operations::SettlementStep> {
+        Err(ConfigurationFailure::NativeUnavailable)
+    }
     fn resolve(&mut self, target: &TargetSelector) -> ConfigurationResult<DocumentRead>;
     fn read(&mut self, expected: &DocumentBinding) -> ConfigurationResult<DocumentRead>;
     /// All-or-none nonblocking canonical document, installation and profile

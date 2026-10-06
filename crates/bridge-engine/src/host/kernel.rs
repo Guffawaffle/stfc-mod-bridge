@@ -59,7 +59,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         let QueryResult::Snapshot(snapshot) = query.as_ref() else {
             return Err(HostFailure::InvalidObservation);
         };
-        let ready: Vec<_> = snapshot
+        let mut ready: Vec<_> = snapshot
             .operations
             .items
             .as_slice()
@@ -74,6 +74,8 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             })
             .map(|operation| operation.operation_id.clone())
             .collect();
+        ready.extend(self.engine.pending_settlements());
+        ready.sort();
         let next = ready
             .iter()
             .find(|id| self.last_advanced.as_ref().is_none_or(|last| *id > last))

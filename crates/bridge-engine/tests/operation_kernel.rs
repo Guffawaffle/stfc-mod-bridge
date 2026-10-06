@@ -16,6 +16,10 @@ use std::{
 };
 
 type FixtureEngine = Engine<Owner, FileJournal, Clock, Ids>;
+
+mod terminal_settlement {
+    include!("operation_support/settlement.rs");
+}
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
 #[path = "operation_support/completion.rs"]
@@ -221,6 +225,7 @@ struct Counts {
     mutation: usize,
     recovery: usize,
     lease_drops: usize,
+    settlement: usize,
 }
 struct Lease {
     resources: Vec<ResourceKey>,
@@ -254,6 +259,9 @@ struct Owner {
     include_session_receipt: Arc<AtomicBool>,
     wrong_session_custody: Arc<AtomicBool>,
     directory_capture: Arc<AtomicBool>,
+    settlement_required: Arc<AtomicBool>,
+    settlement_pending: Arc<AtomicBool>,
+    settlement_fail: Arc<AtomicBool>,
 }
 fn durable_write(path: &Path, bytes: &[u8]) {
     let mut file = OpenOptions::new()
@@ -283,6 +291,9 @@ impl Owner {
             include_session_receipt: Arc::new(AtomicBool::new(false)),
             wrong_session_custody: Arc::new(AtomicBool::new(false)),
             directory_capture: Arc::new(AtomicBool::new(false)),
+            settlement_required: Arc::new(AtomicBool::new(false)),
+            settlement_pending: Arc::new(AtomicBool::new(false)),
+            settlement_fail: Arc::new(AtomicBool::new(false)),
         }
     }
     fn tx(&self, recovery: &RecoveryRef) -> PathBuf {
@@ -604,6 +615,40 @@ impl OperationPorts for Owner {
                 safe_owner_boundary: self.safe_recovery.load(Ordering::SeqCst),
             }),
         }
+    }
+    fn requires_terminal_settlement(&self, _: &PlanSemantics, _: &()) -> bool {
+        self.settlement_required.load(Ordering::SeqCst)
+    }
+    fn settle_terminal(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        _: &mut (),
+        lease: &Lease,
+    ) -> Result<SettlementStep, Box<BridgeError>> {
+        assert!(matches!(operation.state, OperationState::Completed { .. }));
+        assert_eq!(operation.operation_id, recovery.operation_id);
+        assert!(!lease.resources.is_empty());
+        self.counts.lock().unwrap().settlement += 1;
+        if self.settlement_fail.load(Ordering::SeqCst) {
+            return Err(error(ErrorCode::NativeUnavailable));
+        }
+        if self.settlement_pending.load(Ordering::SeqCst) {
+            return Ok(SettlementStep::Pending);
+        }
+        // Synthetic owner tombstone proves idempotent inspection across a
+        // crash between owner settlement and the kernel's acknowledgment.
+        let marker = self
+            .root
+            .join(format!("{}.settled", recovery.operation_id.as_str()));
+        if !marker.exists() {
+            durable_write(&marker, recovery.transaction.as_str().as_bytes());
+        }
+        assert_eq!(
+            std::fs::read(marker).unwrap(),
+            recovery.transaction.as_str().as_bytes()
+        );
+        Ok(SettlementStep::Settled)
     }
     fn handoff_session(
         &mut self,

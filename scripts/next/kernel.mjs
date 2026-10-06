@@ -68,6 +68,13 @@ const names = run('list-tests', executable, ['--list']).split(/\r?\n/)
   .filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
 assert.ok(names.length >= 20 && new Set(names).size === names.length, 'Expected complete unique kernel test inventory');
 const recovery = [
+  'terminal_settlement::refusal_retains_terminal_custody_and_conflicts_without_republishing_or_reexecuting',
+  'terminal_settlement::terminal_restart_reacquires_settlement_without_native_recovery_or_completion_replay',
+  'terminal_settlement::busy_restart_reacquisition_keeps_completed_observation_available',
+  'terminal_settlement::cancellation_and_admission_restart_settle_without_beginning_native_work',
+  'terminal_settlement::session_handoff_and_safe_recovery_cannot_discard_an_unsettled_reservation',
+  'terminal_settlement::settlement_ack_failure_retains_custody_and_restart_inspects_the_owner_tombstone',
+  'terminal_settlement::invalid_or_duplicate_settlement_records_and_changed_admission_policy_fail_closed',
   'configuration_completion::single_event_replay_capacity_refusal_precedes_wal_and_local_publication',
   'configuration_completion::draft_event_capacity_refusal_retains_pending_completion_lease_and_native_result',
   'configuration_completion::terminal_wal_failure_keeps_dirty_draft_and_lease_without_local_publication',
@@ -91,6 +98,7 @@ const recovery = [
 ];
 for (const name of recovery) assert.ok(names.includes(name), `Missing required recovery test ${name}`);
 const requiredOperations = [
+  'terminal_settlement::host_pump_drives_terminal_settlement_even_after_the_observer_disconnects',
   'configuration_completion::terminal_wal_precedes_local_publication_and_consecutive_operation_draft_events',
   'opaque_custody::capture_and_failed_admission_retain_or_destroy_only_the_exact_token',
   'opaque_custody::exact_expiry_retires_custody_but_forged_refs_and_clock_failure_do_not',

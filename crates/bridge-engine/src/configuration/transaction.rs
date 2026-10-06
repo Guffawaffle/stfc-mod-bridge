@@ -158,6 +158,27 @@ impl<T: TomlPreparation, S: SchemaSource, O: DocumentOwner, E: SensitiveEntry, I
     pub fn configuration_operations_available(&self) -> bool {
         self.owner.operations_available()
     }
+    pub fn configuration_requires_terminal_settlement(&self) -> bool {
+        self.owner.requires_terminal_settlement()
+    }
+    pub fn settle_configuration_terminal(
+        &mut self,
+        operation: &OperationSnapshot,
+        recovery: &RecoveryRef,
+        lease: &O::Lease,
+    ) -> ConfigurationResult<crate::operations::SettlementStep> {
+        let captured = RecoveryConfiguration::from_capture(&operation.semantics.capture)?;
+        let OperationState::Completed { outcome } = &operation.state else {
+            return Err(ConfigurationFailure::InvalidInput);
+        };
+        if operation.operation_id != recovery.operation_id
+            || !matches!(&recovery.target, RecoveryTarget::Configuration { document } if document == &captured.baseline)
+        {
+            return Err(ConfigurationFailure::InvalidInput);
+        }
+        self.owner
+            .settle_terminal(&captured, recovery, outcome, lease)
+    }
     pub fn prepare_save(
         &mut self,
         input: &SaveConfigurationInput,

@@ -114,6 +114,7 @@ pub struct Engine<
     host: HostConfiguration,
     issued_plans: BTreeSet<PlanId>,
     operations: BTreeMap<OperationId, DurableOperation>,
+    settled: BTreeSet<OperationId>,
     idempotency: BTreeMap<IdempotencyKey, OperationId>,
     events: VecDeque<Event>,
     sequence: u64,
@@ -172,6 +173,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             return Err(KernelFailure::InvalidPortResult);
         }
         let mut operations: BTreeMap<OperationId, DurableOperation> = BTreeMap::new();
+        let mut settled = BTreeSet::new();
         let mut idempotency = BTreeMap::new();
         let mut epochs = BTreeSet::new();
         let mut streams = BTreeSet::new();
@@ -206,6 +208,21 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                     }
                     operations.insert(id.clone(), *value.clone());
                 }
+                JournalRecord::Settlement {
+                    operation_id,
+                    operation_revision,
+                } => {
+                    let operation = operations
+                        .get(operation_id)
+                        .ok_or(KernelFailure::CorruptJournal)?;
+                    if operation.phase != DurablePhase::Terminal
+                        || !operation.settlement_required
+                        || &operation.snapshot.operation_revision != operation_revision
+                        || !settled.insert(operation_id.clone())
+                    {
+                        return Err(KernelFailure::CorruptJournal);
+                    }
+                }
             }
         }
         journal.append(&JournalRecord::Host {
@@ -222,6 +239,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             preparations: BTreeMap::new(),
             issued_plans: BTreeSet::new(),
             operations,
+            settled,
             idempotency,
             workers: BTreeMap::new(),
             events: VecDeque::new(),
@@ -273,6 +291,20 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
 
     pub fn operation(&self, id: &OperationId) -> Option<&OperationSnapshot> {
         self.operations.get(id).map(|o| &o.snapshot)
+    }
+
+    /// Internal host work queue, including committed outcomes whose producer
+    /// reservation still needs settlement. No renderer-controlled policy.
+    pub fn pending_settlements(&self) -> Vec<OperationId> {
+        self.operations
+            .values()
+            .filter(|o| o.phase == DurablePhase::Terminal && self.settlement_pending(o))
+            .map(|o| o.snapshot.operation_id.clone())
+            .collect()
+    }
+
+    fn settlement_pending(&self, operation: &DurableOperation) -> bool {
+        operation.settlement_required && !self.settled.contains(&operation.snapshot.operation_id)
     }
 
     pub fn dispatch(&mut self, request: ValidatedRequest) -> Result<ValidatedReply, KernelFailure> {
@@ -774,7 +806,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             {
                 return Err(recovery_error(operation.recovery.clone()));
             }
-            if (operation.phase != DurablePhase::Terminal || operation.session_custody.is_some())
+            if (operation.phase != DurablePhase::Terminal
+                || operation.session_custody.is_some()
+                || self.settlement_pending(operation))
                 && overlaps(&resources, &operation.resources)
             {
                 return Err(error(ErrorCode::OperationBusy));
@@ -828,6 +862,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             cancellation_requested: false,
             cancellable: true,
             safe_owner_boundary: false,
+            settlement_required: self
+                .ports
+                .requires_terminal_settlement(&snapshot.semantics, &prepared.custody),
             session_custody: None,
         };
         self.observation_capacity(&operation, true)
@@ -880,6 +917,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             .cloned()
             .ok_or(KernelFailure::InvalidPortResult)?;
         if operation.phase == DurablePhase::Terminal {
+            self.settle_terminal(id)?;
             return Ok(operation.snapshot);
         }
         if operation.phase == DurablePhase::Recovery {
@@ -945,6 +983,60 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             &worker.lease,
         );
         self.finish_step(id, step)
+    }
+
+    fn settle_terminal(&mut self, id: &OperationId) -> Result<(), KernelFailure> {
+        let operation = &self.operations[id];
+        if !self.settlement_pending(operation) {
+            return Ok(());
+        }
+        if !self.workers.contains_key(id) {
+            let Ok((custody, lease)) = self.ports.acquire_recovery(
+                &operation.snapshot,
+                &operation.recovery,
+                &operation.resources,
+            ) else {
+                // Busy/unavailable reacquisition leaves the durable obligation
+                // pending; observing the committed outcome stays available.
+                return Ok(());
+            };
+            let worker = Worker { custody, lease };
+            if worker.lease.resources() != operation.resources.as_slice() {
+                return Err(KernelFailure::InvalidPortResult);
+            }
+            self.workers.insert(id.clone(), worker);
+        }
+        let worker = self
+            .workers
+            .get_mut(id)
+            .expect("settlement custody retained");
+        match self.ports.settle_terminal(
+            &operation.snapshot,
+            &operation.recovery,
+            &mut worker.custody,
+            &worker.lease,
+        ) {
+            // A producer refusal cannot retract committed terminal publication.
+            // Retain exclusions and retry only settlement on a later host pump.
+            Err(_) | Ok(SettlementStep::Pending) => return Ok(()),
+            Ok(SettlementStep::Settled) => {}
+        }
+        if self
+            .journal
+            .append(&JournalRecord::Settlement {
+                operation_id: id.clone(),
+                operation_revision: operation.snapshot.operation_revision,
+            })
+            .is_err()
+        {
+            self.poisoned = true;
+            return Err(KernelFailure::Storage);
+        }
+        self.settled.insert(id.clone());
+        if operation.session_custody.is_none() {
+            self.workers.remove(id);
+        }
+        Ok(())
     }
 
     fn finish_step(
@@ -1067,10 +1159,11 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             Err(failure) => return Err(failure),
         }
         let operation = &self.operations[id];
-        if operation.phase == DurablePhase::Terminal && operation.session_custody.is_none()
-            || operation.phase == DurablePhase::Recovery
-                && operation.safe_owner_boundary
-                && operation.session_custody.is_none()
+        if !self.settlement_pending(operation)
+            && (operation.phase == DurablePhase::Terminal && operation.session_custody.is_none()
+                || operation.phase == DurablePhase::Recovery
+                    && operation.safe_owner_boundary
+                    && operation.session_custody.is_none())
         {
             self.workers.remove(id);
         }
@@ -1104,7 +1197,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                 operation.safe_owner_boundary = true;
                 self.persist_change(operation)
                     .map_err(|_| error(ErrorCode::PersistenceFailed))?;
-                self.workers.remove(&id);
+                if !self.settlement_pending(&self.operations[&id]) {
+                    self.workers.remove(&id);
+                }
                 Ok(CancelDisposition::CancelledBeforeCommit {
                     operation: self.operations[&id].snapshot.clone(),
                 })
@@ -1157,7 +1252,8 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                     session: session.clone(),
                 });
             }
-            if operation.phase != DurablePhase::Terminal {
+            let settlement_pending = self.settlement_pending(operation);
+            if operation.phase != DurablePhase::Terminal || settlement_pending {
                 // Deferred is a complete projection of every pending operation,
                 // including recovery already at a durable owner boundary. A
                 // separate session/worker blocker must not hide those IDs.
@@ -1167,8 +1263,10 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                 });
             }
             match operation.phase {
-                DurablePhase::Terminal => {}
-                DurablePhase::Recovery if operation.safe_owner_boundary && !self.poisoned => {
+                DurablePhase::Terminal if !settlement_pending => {}
+                DurablePhase::Recovery
+                    if operation.safe_owner_boundary && !self.poisoned && !settlement_pending =>
+                {
                     recoveries.push(operation.recovery.clone())
                 }
                 _ => exit_deferred = true,
@@ -1229,8 +1327,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
         operation.session_custody = None;
         self.persist_change(operation)?;
         let operation = &self.operations[id];
-        if operation.phase == DurablePhase::Terminal
-            || operation.phase == DurablePhase::Recovery && operation.safe_owner_boundary
+        if !self.settlement_pending(operation)
+            && (operation.phase == DurablePhase::Terminal
+                || operation.phase == DurablePhase::Recovery && operation.safe_owner_boundary)
         {
             // Session handoff settles the lifetime obligation, not an unsafe
             // transaction recovery obligation retained after host restart.
@@ -1695,6 +1794,7 @@ fn validate_transition(
     next: &DurableOperation,
 ) -> Result<(), KernelFailure> {
     if previous.commit != next.commit
+        || previous.settlement_required != next.settlement_required
         || previous.resources != next.resources
         || previous.recovery != next.recovery
         || previous.snapshot.operation_id != next.snapshot.operation_id
