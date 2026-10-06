@@ -465,7 +465,10 @@ fn admission_is_single_use_after_cancel_or_completion_but_exact_replay_survives(
         a.token_drop(1, true);
         let before = bytes(&f);
         rejected(
-            command(&mut engine, Command::Commit(commit_input(plan, 901))),
+            command(
+                &mut engine,
+                Command::Commit(commit_input(plan.clone(), 901)),
+            ),
             ErrorCode::PlanExpired,
         );
         assert_eq!(bytes(&f), before);
@@ -479,6 +482,10 @@ fn admission_is_single_use_after_cancel_or_completion_but_exact_replay_survives(
             &mut engine,
             Command::RequestHostClose(RequestHostCloseInput { expected_cursor }),
         );
+        rejected(
+            command(&mut engine, Command::Commit(commit_input(plan, 901))),
+            ErrorCode::OperationBusy,
+        );
         assert_eq!(commit(&mut engine, input.clone()), replay);
         drop(engine);
         let mut restarted = open(&f, &a, journal(&f), 2);
@@ -486,6 +493,42 @@ fn admission_is_single_use_after_cancel_or_completion_but_exact_replay_survives(
         assert_eq!(a.count("capture:"), 1);
         assert_eq!(a.count("recovery_token:"), 0);
     }
+    // The close gate also precedes consumed-plan lookup while work is pending.
+    let f = Fixture::new();
+    let a = Audit::default();
+    let mut engine = open(&f, &a, journal(&f), 1);
+    let plan = prepare(&mut engine);
+    let input = commit_input(plan.clone(), 900);
+    let admitted = commit(&mut engine, input.clone());
+    let expected_cursor = engine.cursor();
+    match command(
+        &mut engine,
+        Command::RequestHostClose(RequestHostCloseInput { expected_cursor }),
+    ) {
+        ReplyBody::Result {
+            result: ResultPayload::Command { command },
+        } => assert!(matches!(
+            *command,
+            CommandResult::RequestHostClose(CloseDisposition::Deferred { .. })
+        )),
+        other => panic!("expected deferred close, got {other:?}"),
+    }
+    let before = bytes(&f);
+    rejected(
+        command(&mut engine, Command::Commit(commit_input(plan, 901))),
+        ErrorCode::OperationBusy,
+    );
+    assert_eq!(commit(&mut engine, input.clone()), admitted);
+    assert_eq!(bytes(&f), before);
+    assert_eq!(a.count("acquire:"), 1);
+    assert_eq!(a.count("token_drop:"), 0);
+    engine.advance(&admitted.operation_id).unwrap();
+    engine.advance(&admitted.operation_id).unwrap();
+    assert!(matches!(
+        commit(&mut engine, input).state,
+        OperationState::Completed { .. }
+    ));
+    a.token_drop(1, true);
 }
 
 #[test]
@@ -527,9 +570,31 @@ fn unsafe_work_and_unknown_wal_disposition_keep_token_lease_and_context_together
             assert_eq!(f.counts().native_journal, 0);
         }
         rejected(
+            command(&mut engine, Command::Commit(input.clone())),
+            ErrorCode::PersistenceFailed,
+        );
+        let mut fresh = input.clone();
+        fresh.idempotency_key = IdempotencyKey::new(uuid(901)).unwrap();
+        rejected(
+            command(&mut engine, Command::Commit(fresh.clone())),
+            ErrorCode::PersistenceFailed,
+        );
+        let expected_cursor = engine.cursor();
+        // Close latches before projecting obligations, even if projection itself
+        // refuses persistence. Poison still has precedence over the close gate.
+        let _ = command(
+            &mut engine,
+            Command::RequestHostClose(RequestHostCloseInput { expected_cursor }),
+        );
+        rejected(
+            command(&mut engine, Command::Commit(fresh)),
+            ErrorCode::PersistenceFailed,
+        );
+        rejected(
             command(&mut engine, Command::Commit(input)),
             ErrorCode::PersistenceFailed,
         );
+        assert_eq!(a.count("acquire:"), 1);
         drop(engine);
         absent_marker(&std::fs::read(f.root.join("engine.journal")).unwrap());
         a.token_drop(1, true);

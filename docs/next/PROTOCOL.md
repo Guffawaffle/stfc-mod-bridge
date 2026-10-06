@@ -6,12 +6,17 @@ the full protocol/scenario package or qualify any native capability.
 
 Prepared plans are single-use on admission, including a lost admission reply.
 An exact admitted Commit input replays the original durable operation before
-host, expiry, preparation or close lookup. A fresh key with a consumed current-
-host PlanRef refuses PlanExpired, even after cancellation or completion; obtain
-a new plan. Pre-admission refusal retains a live preparation. Expiry retires
+host, expiry, preparation or close lookup; unavailable persistence can still
+refuse an exact replay. A fresh key with a consumed current-host PlanRef refuses
+PlanExpired on an open, healthy host, even after cancellation or completion;
+obtain a new plan. PersistenceFailed and an armed host's OperationBusy precede
+fresh-key plan lookup. Pre-admission refusal retains a live preparation. Expiry retires
 only the exact preparation; foreign-host and forged refs do not evict it.
 This intentionally tightens earlier fresh-key reuse without changing v1 DTOs.
-The independent transcript checker enforces consumption and replay ordering.
+The independent transcript checker enforces consumption and replay ordering,
+including successful close requests scoped to their host epoch. A persistence
+refusal preserves prior relationships and proves no admission or internal
+poison state.
 
 Rust DTOs in `crates/bridge-contracts/src/v1` own requests, replies, events and
 their schemas. Schemars explicitly exports Draft 7 deserialize schemas. The

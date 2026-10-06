@@ -158,6 +158,52 @@ test('pre-admission refusal retains a plan and equal independent preparations re
   assert.doesNotThrow(() => checkTranscript([...base(), prepare(independent), commit(other, {planRef:independent.planRef, idempotencyKey:id(954)})]));
 });
 
+test('host close precedes fresh-key consumed-plan and old-host lookup, but exact replay survives', () => {
+  const fresh = { planRef: plan.planRef, idempotencyKey: id(955) };
+  for (const deferred of [true, false]) {
+    const latest = deferred ? committed : completed('2', 'no_change');
+    const closing = close(deferred
+      ? { kind: 'deferred', obligations: [{ kind: 'operation', operationId: latest.operationId, operationRevision: latest.operationRevision }] }
+      : { kind: 'ready' });
+    closing.delivery = 'lost';
+    const prefix = [...base(), observe(latest), closing];
+    const valid = [...prefix, commit(undefined, fresh, 'operation_busy'), commit(latest)];
+    valid.filter(step => step.type === 'exchange').forEach(independentlyValid);
+    assert.doesNotThrow(() => checkTranscript(valid));
+    refuses([...prefix, commit(undefined, fresh, 'plan_expired')], 'transcript_closed_host_commit');
+    refuses([...prefix, commit({ ...clone(latest), operationId: id(956) }, fresh)], 'transcript_closed_host_commit');
+    // Reconnect does not undo closure; a distinct host epoch does.
+    assert.doesNotThrow(() => checkTranscript([...prefix, boundary('reconnect'), commit(undefined, fresh, 'operation_busy')]));
+    const restarted = [...prefix, boundary('restart', cursor('0', nextEpoch, nextStream))];
+    assert.doesNotThrow(() => checkTranscript([...restarted, commit(undefined, fresh, 'plan_host_mismatch'), commit(latest)]));
+    const newPlan = clone(plan); newPlan.planRef = { ...newPlan.planRef, hostEpoch: nextEpoch, planId: id(957) };
+    const newOperation = { ...clone(committed), operationId: id(958) };
+    assert.doesNotThrow(() => checkTranscript([...restarted, prepare(newPlan), commit(newOperation, { planRef: newPlan.planRef, idempotencyKey: id(959) })]));
+    const closedAgain = [...restarted, close(deferred
+      ? { kind: 'deferred', obligations: [{ kind: 'operation', operationId: latest.operationId, operationRevision: latest.operationRevision }] }
+      : { kind: 'ready' }, cursor('0', nextEpoch, nextStream))];
+    assert.doesNotThrow(() => checkTranscript([...closedAgain, commit(undefined, fresh, 'operation_busy')]));
+  }
+});
+
+test('persistence refusals preserve consumed plans and replay identity without claiming poison or admission', () => {
+  const fresh = { planRef: plan.planRef, idempotencyKey: id(960) };
+  for (const closed of [false, true]) {
+    const prefix = [...base(), ...(closed ? [close({ kind: 'deferred', obligations: [
+      { kind: 'operation', operationId: committed.operationId, operationRevision: committed.operationRevision }
+    ] })] : [])];
+    const refused = [...prefix, commit(undefined, fresh, 'persistence_failed'), commit(undefined, undefined, 'persistence_failed')];
+    refused.filter(step => step.type === 'exchange').forEach(independentlyValid);
+    assert.doesNotThrow(() => checkTranscript(refused));
+    // A refusal is no new admission, and it cannot erase the old exact mapping.
+    refuses([...refused, commit(committed, fresh)], closed ? 'transcript_closed_host_commit' : 'transcript_consumed_plan');
+    const conflicting = { planRef: { ...plan.planRef, reviewDigest: 'sha256:' + 'f'.repeat(64) }, idempotencyKey: key };
+    assert.doesNotThrow(() => checkTranscript([...refused, commit(undefined, conflicting, 'idempotency_conflict')]));
+    refuses([...refused, commit(undefined, conflicting, 'persistence_failed')], 'transcript_idempotency_conflict');
+    assert.doesNotThrow(() => checkTranscript([...refused, boundary('restart', cursor('0', nextEpoch, nextStream)), commit()]));
+  }
+});
+
 test('prepared action/ref and captured target/artifact semantics stay bound across commit and observations', () => {
   const wrongAction = clone(plan); wrongAction.semantics.action = 'focus_session';
   refuses([boundary(), prepare(wrongAction)], 'transcript_prepare_action');

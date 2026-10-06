@@ -63,6 +63,7 @@ export function checkTranscript(steps) {
   const streamSequences = new Map();
   const plans = new Map();
   const consumedPlans = new Set();
+  const closingEpochs = new Set();
   const operations = new Map();
   const admissions = new Map();
   const summary = { boundaryCount: 0, exchangeCount: 0, eventCount: 0, operationCount: 0, lostReplyCount: 0 };
@@ -211,9 +212,21 @@ export function checkTranscript(steps) {
         if (identity !== admitted.input) {
           if (!rejected || errorCode !== 'idempotency_conflict') reject('transcript_idempotency_conflict');
         } else {
-          if (rejected || output.operationId !== admitted.operationId) reject('transcript_replay_operation');
-          observeOperation(output);
+          // A persistence refusal supplies no trustworthy new operation
+          // observation. It does not erase the durable replay relationship.
+          if (rejected) {
+            if (errorCode !== 'persistence_failed') reject('transcript_replay_operation');
+          } else {
+            if (output.operationId !== admitted.operationId) reject('transcript_replay_operation');
+            observeOperation(output);
+          }
         }
+      } else if (rejected && errorCode === 'persistence_failed') {
+        // require_open checks persistence before closure and plan lookup. The
+        // wire refusal cannot establish why persistence is unavailable or
+        // whether the preparation was consumed; preserve observed mappings.
+      } else if (closingEpochs.has(cursor.hostEpoch)) {
+        if (!rejected || errorCode !== 'operation_busy') reject('transcript_closed_host_commit');
       } else if (input.planRef.hostEpoch !== cursor.hostEpoch) {
         if (!rejected || errorCode !== 'plan_host_mismatch') reject('transcript_old_host_plan');
       } else if (consumedPlans.has(input.planRef.planId)) {
@@ -298,6 +311,9 @@ export function checkTranscript(steps) {
     } else if (!rejected && family === 'command' && invocation.name === 'request_host_close') {
       if (!equal(invocation.input.expectedCursor, cursor)) reject('transcript_close_cursor');
       checkClose(output);
+      // Delivery loss does not undo the modeled successful close request.
+      // A deferred close latches the same gate as Ready and RecoveryRequired.
+      closingEpochs.add(cursor.hostEpoch);
     }
     summary.exchangeCount += 1;
     if (step.delivery === 'lost') summary.lostReplyCount += 1;
