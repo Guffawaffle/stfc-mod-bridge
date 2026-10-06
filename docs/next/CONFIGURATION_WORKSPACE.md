@@ -44,10 +44,29 @@ actual clean, dirty, invalid or stale generation, or Missing for a same-host
 absent ID, without native owner I/O or identity allocation. Foreign hosts refuse
 before lookup. Its cursor is a per-draft read watermark and cannot advance the
 client's global event cursor past intervening operation events. Reconciliation
-adopts only an actual same-document snapshot while the renderer's captured
-target, draft and local input custody still match. Missing, mismatched or changed
+adopts an actual same-document snapshot, or the exact clean successor proven by
+a completed Save's full capture and configuration receipt, while the renderer's
+captured target, draft and local input custody still match. Missing, mismatched or changed
 local custody preserves intent with a conflict; it cannot silently reopen or
 retarget a draft.
+
+A changed Save receipt must retain the captured document ID, physical target and
+schema, prove the candidate digest, and account for the exact prior baseline
+backup. Its clean draft advances one revision and clears only that capture's
+edits, validation and apply metadata. NoChange cleans a captured dirty draft at
+the same baseline; an already clean empty draft needs no revision bump. Reads
+which arrive before matching completion evidence defer without changing the
+draft watermark or global cursor. Later reads still consume intervening operation
+events. Newer unsynchronized edits, unfinished public input and synchronous
+custody changes preserve local intent. Exact completion may retire synchronized
+protected references; it never invents transfers or revives a discarded draft.
+
+At the same host, queued navigation waits for the exact cleaned draft as well as
+the completed operation. A refused or delayed draft query retains the review and
+submission; retry observes rather than preparing or committing another Save.
+Durable completion remains observable after host replacement, but old draft and
+protected custody cannot be adopted into the new host. Restore marks matching
+drafts Stale at their old binding and preserves edits for explicit recovery.
 
 A correlated read or consecutive event can mark a clean/dirty draft Stale at
 the same revision while preserving its complete captured document, schema,
@@ -140,8 +159,8 @@ the native owner reached a safe boundary. Unknown append disposition poisons
 the host without publishing a local successor. Repeated commit callbacks,
 post-commit refusal or incomplete local publication poison and retain custody.
 The composed operation port forwards these hooks; concrete configuration
-custody variants and receipt-bound frontend reconciliation remain prerequisites
-to Save/Restore availability.
+custody variants remain prerequisites to Save/Restore availability. Receipt-bound
+frontend reconciliation does not enable the native configuration writer.
 
 Restart recovery consumes identity-only `RecoveryConfiguration` captured from
 the durable operation, including baseline, destination schema and candidate

@@ -96,7 +96,13 @@ export async function createSettingsSession(mode:SettingsMode):Promise<SettingsS
       else if(query.name==='read_configuration') {if(!equal(query.input.target,selector)) refuse();output={...read,value:clone(document)};}
       else if(query.name==='get_operation') {
         if(!operation||!plan||query.input.operationId!==operation.operationId) refuse();applyDocument();
-        if(operation.state.status!=='completed') {operation={...operation,operationRevision:'3',state:clone(terminalTemplate.state)};emit({type:'operation_changed',operation:clone(operation)});}
+        if(operation.state.status!=='completed') {
+          const capture=plan.semantics.capture;
+          if (capture.kind!=='save_configuration' || !draft || !equal(draft, capture.input.draft)) refuse();
+          draft={...draft,draft:{...draft.draft,revision:(BigInt(draft.draft.revision)+1n).toString(),document:clone(document.binding)},edits:[],apply:[],validation:[],state:'clean'};
+          operation={...operation,operationRevision:'3',state:clone(terminalTemplate.state)};
+          emit({type:'operation_changed',operation:clone(operation)});emit({type:'draft_changed',draft:clone(draft)});
+        }
         output={operation:{...read,value:clone(operation)}};
       } else refuse();
       return {body:{type:'result',result:{type:'query',query:{name:query.name,output} as any}}};

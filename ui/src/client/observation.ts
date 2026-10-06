@@ -2,6 +2,7 @@ import type { CloseDisposition, Cursor, DiscardedDraft, DraftSnapshot, Event, Ev
 import { captureData, canonicalData, type DeepReadonly } from './wire';
 import { BridgeClient, type ClientFault, type ClientOutcome, type CallOptions } from './client';
 import { bindingEquivalent, operationRecoveryMatches, semanticPlanKey } from './relations';
+import { configurationCompletionValid, possibleSavedDraftSuccessor, savedDraftSuccessor } from './configuration-completion';
 
 export type ObservationReason = 'epoch_changed' | 'stream_changed' | 'sequence_gap' | 'contradictory_duplicate' | 'duplicate_event'
   | 'unverifiable_duplicate' | 'revision_regressed' | 'revision_reused' | 'capture_changed' | 'terminal_changed'
@@ -88,6 +89,8 @@ export class ObservationStore {
   }
   private operationProblem(operation: DeepReadonly<OperationSnapshot>, map: Map<string, DeepReadonly<OperationSnapshot>>): ObservationReason | undefined {
     if (!operationRecoveryMatches(operation)) return 'capture_changed';
+    if (operation.state.status === 'completed' && (operation.semantics.capture.kind === 'save_configuration' || operation.semantics.capture.kind === 'restore_configuration')
+      && ['changed', 'no_change'].includes(operation.state.outcome.kind) && !configurationCompletionValid(operation)) return 'capture_changed';
     const revision = counter(operation.operationRevision);
     const previous = map.get(operation.operationId);
     if (!previous) return map.size >= this.maximumOperations ? 'observation_limit' : undefined;
@@ -152,10 +155,10 @@ export class ObservationStore {
     const revision = counter(draft.draft.revision);
     if (!previous) return this.draftWatermarks.get(key)?.missing ? 'revision_reused'
       : !this.draftWatermarks.has(key) && this.draftCount() >= this.maximumDrafts ? 'observation_limit' : undefined;
-    if (!bindingEquivalent(previous.draft.document, draft.draft.document)) return 'capture_changed';
     const previousRevision = counter(previous.draft.revision);
     if (revision < previousRevision) return 'revision_regressed';
     if (this.discardedDrafts.has(key)) return 'revision_reused';
+    if (!bindingEquivalent(previous.draft.document, draft.draft.document) && !this.savedCompletion(previous, draft)) return 'capture_changed';
     // The owner can observe a changed document without changing this draft's
     // generation or rebinding its protected references. Only a correlated read
     // or stream event may report that monotone metadata transition.
@@ -163,6 +166,10 @@ export class ObservationStore {
       && bindingEquivalent({ ...previous, state: 'stale', validation: [] }, draft);
     if (revision === previousRevision && !bindingEquivalent(previous, draft) && !becameStale) return 'revision_reused';
     return undefined;
+  }
+  savedCompletion(previous: DraftSnapshot | DeepReadonly<DraftSnapshot>, next: DraftSnapshot | DeepReadonly<DraftSnapshot>, operationId?: string): DeepReadonly<OperationSnapshot> | undefined {
+    if (!this.cursor || this.cursor.hostEpoch !== previous.draft.hostEpoch || next.draft.hostEpoch !== previous.draft.hostEpoch) return undefined;
+    return [...this.operations.values()].find(operation => (operationId === undefined || operation.operationId === operationId) && savedDraftSuccessor(previous, next, operation));
   }
   private draftCount(): number { return new Set([...this.drafts.keys(), ...this.discardedDrafts.keys(), ...this.draftWatermarks.keys()]).size; }
   /** An authoritative read never advances the shared stream cursor. */
@@ -178,6 +185,12 @@ export class ObservationStore {
       if (read.draft.status === 'observed') {
         const draft = read.draft.value;
         if (draft.draft.hostEpoch !== request.hostEpoch || draft.draft.draftId !== request.draftId) return this.invalidate('capture_changed');
+        const retained = this.drafts.get(key);
+        // A correlated read can precede its completed operation observation.
+        // Refuse it without a watermark or stream invalidation; the caller can
+        // retry after exact receipt evidence arrives. It grants no completion.
+        if (retained && !bindingEquivalent(retained.draft.document, draft.draft.document)
+          && possibleSavedDraftSuccessor(retained, draft) && !this.savedCompletion(retained, draft)) return false;
         const problem = this.draftProblem(draft, this.drafts, true);
         if (problem) return this.invalidate(problem);
         const known = this.drafts.get(key);

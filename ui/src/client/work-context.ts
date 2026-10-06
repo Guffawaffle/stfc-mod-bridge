@@ -4,6 +4,7 @@ import { canonicalData, captureData, decodeRequest, type DeepReadonly } from './
 import { ObservationStore } from './observation';
 import { bindingEquivalent } from './relations';
 import { draftAcknowledgementMatches } from './draft-acknowledgement';
+import { configurationCompletionValid } from './configuration-completion';
 
 export type WorkspaceView = 'home' | 'engineering' | 'settings' | 'data_sync' | 'history' | 'diagnostics' | 'preferences';
 export type Navigation = { readonly kind: 'target'; readonly selector: DeepReadonly<TargetSelector> } | { readonly kind: 'close' };
@@ -185,7 +186,8 @@ export class WorkContext {
         || current.cursor.hostEpoch !== read.cursor.hostEpoch || current.cursor.streamId !== read.cursor.streamId
         || !current.drafts.some(observed => observed.draft.hostEpoch === draft.draft.hostEpoch && observed.draft.draftId === draft.draft.draftId
           && bindingEquivalent(observed, draft))) return conflict();
-      if (!bindingEquivalent(draft.draft.document, capture.draft.draft.document)
+      const completion = this.observations.savedCompletion(capture.draft, draft);
+      if (!bindingEquivalent(draft.draft.document, capture.draft.draft.document) && !completion
         || !bindingEquivalent({ ...capture.draft, schema: draft.schema }, capture.draft)) return conflict();
       if (bindingEquivalent(draft, capture.draft)) {
         this.draftConflict = draft.state === 'stale'; this.publish(); return true;
@@ -196,7 +198,8 @@ export class WorkContext {
       const protectedEdits = capture.edits.some(edit => edit.kind === 'set_private' || edit.kind === 'replace_secret'
         || edit.kind === 'add_sync_destination' || edit.kind === 'set_sync_proxy' && edit.value.kind === 'custom');
       const editsChanged = canonicalData(capture.edits) !== canonicalData(draft.edits);
-      if (this.transitionBusy || capture.publicInputs.length || (unsynchronized || protectedEdits) && editsChanged) return conflict();
+      if (this.transitionBusy || capture.publicInputs.length || unsynchronized && (!!completion || editsChanged)
+        || protectedEdits && !completion && editsChanged) return conflict();
       this.draft = draft; this.edits = draft.edits; this.draftConflict = draft.state === 'stale'; this.generation++; this.publish(); return true;
     } catch { return conflict(); }
   }
@@ -331,12 +334,23 @@ export class WorkContext {
     if (outcome.kind !== 'result') return this.failedReview();
     const operation = outcome.value;
     const capture = operation.semantics.capture;
-    if (capture.kind !== 'save_configuration' || !bindingEquivalent(capture.input.draft.draft, review.draft.draft)
+    if (capture.kind !== 'save_configuration' || !bindingEquivalent(capture.input.draft, review.draft)
       || canonicalData(capture.input.draft.edits) !== canonicalData(review.edits)
-      || operation.state.status !== 'completed' || !['changed', 'no_change'].includes(operation.state.outcome.kind)) return this.failedReview();
+      || !configurationCompletionValid(operation)) return this.failedReview();
     if (!this.observations.observeOperation(operation)) return this.failedReview();
     if (!this.matchesReview(review)) return false;
-    this.completeReview(review, 'save'); return true;
+    const observed = this.observations.state;
+    // Durable completion survives host replacement; old edit custody is never
+    // rebound into that host. Its exact receipt can retire the old review,
+    // while in-place reopening remains fenced by the original host below.
+    if (!this.hostEpochCurrent(review.draft.draft.hostEpoch)) {
+      const document = operation.state.status === 'completed' && operation.state.outcome.kind === 'changed'
+        && operation.state.outcome.receipt?.kind === 'configuration_written' ? operation.state.outcome.receipt.document : review.draft.draft.document;
+      this.completeReview(review, 'save', document); return true;
+    }
+    const successor = observed.drafts.find(draft => this.observations.savedCompletion(review.draft, draft, operation.operationId));
+    if (!successor) return false;
+    this.completeReview(review, 'save', successor.draft.document); return true;
   }
   /** Discard acknowledgement is bound to the reviewed backend draft revision. */
   finishDiscard(review: DraftReview, outcome: ClientOutcome<DiscardedDraft>): boolean {
@@ -346,10 +360,10 @@ export class WorkContext {
       || outcome.value.hostEpoch !== review.draft.draft.hostEpoch || outcome.value.previousRevision !== review.draft.draft.revision) return this.failedReview();
     this.completeReview(review, 'discard'); return true;
   }
-  private completeReview(review: DraftReview, reason: BaselineReopen['reason']): void {
+  private completeReview(review: DraftReview, reason: BaselineReopen['reason'], document = review.draft.draft.document): void {
     if (review.purpose.kind === 'navigation') { this.applyNavigation(review.purpose.navigation); return; }
     this.draft = undefined; this.edits = Object.freeze([]); this.publicInputs = Object.freeze([]); this.draftConflict = false; this.activeReview = undefined; this.generation++;
-    this.baselineReopen = Object.freeze({ reason, selector: review.purpose.selector, document: review.draft.draft.document,
+    this.baselineReopen = Object.freeze({ reason, selector: review.purpose.selector, document,
       hostEpoch: review.draft.draft.hostEpoch, generation: this.generation });
     this.baselineReview = review;
     // Completion releases operation custody; this separate owner reserves only
@@ -376,6 +390,7 @@ export class WorkContext {
       if (outcome.kind === 'result') {
         const draft = captureData(outcome.value), epoch = this.observations.state.cursor?.hostEpoch;
         if (draft.state === 'clean' && !draft.edits.length && !draft.validation.length
+          && (reopen.reason !== 'save' || bindingEquivalent(draft.draft.document, reopen.document))
           && draft.draft.hostEpoch === reopen.hostEpoch && (epoch === undefined || epoch === reopen.hostEpoch) && this.hostEpochCurrent(reopen.hostEpoch)
           && draft.draft.document.documentId === reopen.document.documentId
           && bindingEquivalent({ ...reopen.document, target: draft.draft.document.target }, reopen.document)
@@ -396,8 +411,10 @@ export class WorkContext {
   private matchesReview(review: DraftReview): boolean {
     const purposeMatches = review.purpose.kind === 'navigation'
       ? this.pendingNavigation === review.purpose.navigation
-      : !this.pendingNavigation && canonicalData(this.selector) === canonicalData(review.purpose.selector);
+      : !this.pendingNavigation && canonicalData(this.selector) === canonicalData(review.purpose.selector)
+        && !!this.binding && bindingEquivalent(this.binding, review.purpose.target);
     return this.transitionBusy && this.activeReview === review && purposeMatches && !!this.draft && review.generation === this.generation
+      && (!this.binding || bindingEquivalent(this.binding, review.draft.draft.document.target))
       && canonicalData(review.draft) === canonicalData(this.draft) && canonicalData(review.edits) === canonicalData(this.edits)
       && canonicalData(review.publicInputs) === canonicalData(this.publicInputs);
   }

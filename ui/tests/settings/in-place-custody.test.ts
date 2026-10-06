@@ -75,6 +75,11 @@ function harness(hooks: Hooks = {}, options: { noChange?: boolean; maximumReplay
           operation.state = options.noChange
             ? source('sc15-terminal-no-change-reply').body.result.query.output.operation.value.state
             : operationSource().state;
+          if (draft.draft.document.revision !== operation.state.outcome.receipt?.document.revision && !options.noChange) {
+            draft = { ...draft, draft: { ...draft.draft, revision: (BigInt(draft.draft.revision) + 1n).toString(), document: clone(operation.state.outcome.receipt.document) }, edits: [], apply: [], validation: [], state: 'clean' };
+          } else if (options.noChange && draft.edits.length) {
+            draft = { ...draft, draft: { ...draft.draft, revision: (BigInt(draft.draft.revision) + 1n).toString() }, edits: [], apply: [], validation: [], state: 'clean' };
+          }
           baseline = documentSource();
           if (!options.noChange) {
             baseline.value.binding = clone(operation.state.outcome.receipt.document);
@@ -90,6 +95,11 @@ function harness(hooks: Hooks = {}, options: { noChange?: boolean; maximumReplay
         case 'read_configuration': {
           reply = source('sc09-schema-all-field-types-reply'); reply.body.result.query.output = clone(baseline); break;
         }
+        case 'get_draft': {
+          reply = source('sc08-get-current-clean-draft-reply');
+          reply.body.result.query.output.cursor = { ...source('sc15-complete-empty-snapshot-reply').body.result.query.output.cursor, sequence: '3' };
+          reply.body.result.query.output.draft.value = clone(draft); break;
+        }
         case 'open_draft': {
           draft = { ...clean(), draft: { ...clean().draft, draftId: id(sequence++), document: clone(input(request).document) } };
           reply = source('sc08-open-clean-draft-reply'); reply.body.result.command.output = clone(draft); break;
@@ -101,6 +111,7 @@ function harness(hooks: Hooks = {}, options: { noChange?: boolean; maximumReplay
     },
   }, { clock, requestId: () => id(sequence++), maximumReplays: options.maximumReplays });
   const facade = new BridgeFacade(client, { idempotencyKey: options.idempotencyKey ?? (() => id(sequence++)) });
+  facade.work.observations.acceptSnapshot(source('sc15-complete-empty-snapshot-reply').body.result.query.output);
   facade.work.requestTarget(selector()); facade.work.bindTarget(clean().draft.document.target);
   facade.work.navigate('settings'); facade.work.openDraft(clean()); facade.work.observations.observeDraft(clean());
   facade.stage(options.noChange ? [] : edits());
@@ -275,7 +286,7 @@ test('reentrant host replacement during baseline draft observation preserves con
   expect(facade.work.state.selector).toBe(selected); expect(facade.work.state.binding).toBe(binding);
   expect(facade.state.notice).toContain('Changes saved. Current settings are unavailable.'); expect(client.replayCount).toBe(0);
   expect(facade.work.observations.state.operations).toMatchObject([{ state: { status: 'completed', outcome: { kind: 'changed' } } }]);
-  expect(sent.map(method)).toEqual(['set_draft_changes', 'prepare', 'commit', 'get_operation', 'read_configuration', 'open_draft']);
+  expect(sent.map(method)).toEqual(['set_draft_changes', 'prepare', 'commit', 'get_operation', 'get_draft', 'read_configuration', 'open_draft']);
   expect(facade.stage(edits())).toBe(false); stop(); facade.dispose();
 });
 
@@ -342,10 +353,15 @@ test('in-place terminal failure retains the reviewed draft and never starts a ba
 });
 
 test('a late baseline token cannot release or replace a newer observation owner', () => {
-  const { facade } = harness(), work = facade.work, review = work.beginReview('in_place')!;
-  const operation = operationSource();
-  operation.semantics.capture.input.draft = { ...clone(review.draft), edits: clone(review.edits), state: 'dirty', apply: ['immediate'] };
+  const { facade } = harness(), work = facade.work, initial = work.beginReview('in_place')!;
+  const acknowledged = stageAcknowledgement(initial.draft.draft, JSON.parse(JSON.stringify({ ...initial.draft, edits: initial.edits, state: 'dirty', apply: ['immediate'] })));
   const request = { requestId: id(990), kind: 'command' as const, method: 'commit' as const };
+  const review = work.finishDraftSynchronization(initial, { kind: 'result', value: acknowledged, request })!;
+  work.observations.observeDraft(review.draft);
+  const operation = operationSource();
+  operation.semantics.capture.input.draft = clone(review.draft);
+  work.observations.observeOperation(operation);
+  work.observations.observeDraft({ ...review.draft, draft: { ...review.draft.draft, revision: (BigInt(review.draft.draft.revision) + 1n).toString(), document: operation.state.outcome.receipt.document }, edits: [], apply: [], validation: [], state: 'clean' });
   expect(work.finishSave(review, { kind: 'result', value: operation, request })).toBe(true);
   const old = work.beginBaselineReopen()!;
   work.finishBaselineReopen(old, { kind: 'fault', fault: { code: 'timeout', delivery: 'may_have_reached_backend' } });

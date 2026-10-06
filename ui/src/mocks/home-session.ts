@@ -172,6 +172,16 @@ export async function createHomeSession(mode: HomeMode, options: { draftOutcome?
       const admitted: Reply = { protocolVersion: 1, requestId: commit.requestId, body: { type: 'result', result: { type: 'command', command: {
         name: 'commit', output: { ...operation, operationRevision: '1', state: { status: 'admitted' } } } } } };
       steps.push(exchange(commit, admitted), exchange(await sources.request('sc10-save-restaged-result-request'), completed));
+      const capture = operation.semantics.capture;
+      if (capture.kind !== 'save_configuration' || operation.state.status !== 'completed'
+        || operation.state.outcome.kind !== 'changed' || operation.state.outcome.receipt?.kind !== 'configuration_written') throw new Error('home_save_completion');
+      const saved: DraftSnapshot = { ...capture.input.draft, draft: { ...capture.input.draft.draft,
+        revision: (BigInt(capture.input.draft.draft.revision) + 1n).toString(), document: operation.state.outcome.receipt.document },
+        edits: [], apply: [], validation: [], state: 'clean' };
+      const completionRead: Reply = { ...currentDraft, body: { type: 'result', result: { type: 'query', query: {
+        name: 'get_draft', output: { cursor: { ...snapshot.cursor, sequence: '2' }, draft: {
+          status: 'observed', evidence: observed.body.result.query.output.evidence, value: saved } } } } } };
+      steps.push(exchange(getDraft, completionRead));
     }
     const targetCapture = planValue(await sources.reply('sc-03-profile-one-prepare-reply')).semantics.capture;
     if (targetCapture.kind !== 'launch_isolated') throw new Error('home_dirty_target');

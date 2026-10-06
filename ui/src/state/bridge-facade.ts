@@ -26,6 +26,7 @@ export class BridgeFacade {
   private discardReview?: DraftReview;
   private reopening?: BaselineReopen;
   private baselineTask?: Promise<boolean>;
+  private completionRead?: { attempt: SaveAttempt; controller: AbortController; task: Promise<void> };
   private settling = false;
   private disposed = false;
   private lifecycle = new AbortController();
@@ -278,12 +279,33 @@ export class BridgeFacade {
     this.settling = true; let reopen = false;
     try {
       const saved = this.work.finishSave(attempt.review, { kind: 'result', value: operation, request: attempt.request });
+      if (!saved && this.work.state.transitionBusy) {
+        this.readCompletionDraft(attempt);
+        this.say('Save completed. Waiting for its current draft observation.');
+        return;
+      }
       reopen = saved && attempt.review.purpose.kind === 'in_place';
+      if (this.completionRead?.attempt === attempt) this.completionRead.controller.abort();
       this.releaseOwnedReplay(attempt);
       this.attempt = undefined; this.transition = { kind: 'idle' };
       this.say(saved ? 'Changes saved.' : 'Save did not apply the reviewed changes. Changes retained.', !saved);
     } finally { this.settling = false; }
     if (reopen) this.baselineTask = this.reloadBaseline();
+  }
+  private readCompletionDraft(attempt: SaveAttempt): void {
+    if (this.completionRead?.attempt === attempt) return;
+    this.completionRead?.controller.abort();
+    const controller = new AbortController();
+    const task = Promise.resolve().then(async () => {
+      if (this.disposed || this.attempt !== attempt) return;
+      const { hostEpoch, draftId } = attempt.review.draft.draft;
+      const outcome = await this.observe(value => this.client.query('get_draft', { hostEpoch, draftId }, value), { signal: controller.signal });
+      if (this.disposed || this.attempt !== attempt || controller.signal.aborted) return;
+      if (outcome.kind !== 'result' || !this.work.observations.observeDraftResult({ hostEpoch, draftId }, outcome.value)) {
+        this.say('Save completed, but its current draft could not be confirmed. Changes are retained.', true);
+      }
+    }).finally(() => { if (this.completionRead?.controller === controller) this.completionRead = undefined; });
+    this.completionRead = { attempt, controller, task };
   }
   private releaseOwnedReplay(attempt: SaveAttempt, unsent = false): boolean {
     if (!attempt.ownsReplay || !attempt.replayCapture || !attempt.commit) return true;
@@ -302,6 +324,7 @@ export class BridgeFacade {
     if (this.disposed || this.attempt !== attempt) return;
     if (outcome.kind === 'result') {
       this.work.observations.observeOperationResult(id, outcome.value);
+      if (this.completionRead?.attempt === attempt) await this.completionRead.task;
       if (this.baselineTask) await this.baselineTask;
     }
     else this.say('Save observation is unavailable. Changes retained.', true);

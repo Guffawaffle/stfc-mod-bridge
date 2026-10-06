@@ -54,6 +54,25 @@ export function vitestEvidence(report, { root, required }) {
 }
 
 export const frontendCriteria = {
+  'ui/tests/client-configuration-completion.test.ts': [
+    'completed Save then exact DraftChanged adopts the receipt baseline and clears only captured intent',
+    'an early clean read defers without a watermark and later receipt reconciliation consumes every event',
+    ...['no_receipt', 'document_id', 'target', 'schema', 'digest', 'backup', 'action', 'domain', 'reason'].map(mismatch =>
+      `a schema-valid completed Save with mismatched ${mismatch} cannot authorize baseline adoption`),
+    ...['revision', 'state', 'edits', 'schema', 'document'].map(mismatch =>
+      `a completed receipt cannot clear intent using a mismatched clean successor ${mismatch}`),
+    ...['typed_edits', 'unfinished_input', 'changed_generation', 'reentrant_input'].map(change =>
+      `receipt reconciliation preserves newer local ${change}`),
+    ...['changed', 'no_change'].map(kind =>
+      `exact ${kind} completion retires synchronized protected refs without transferring them`),
+    'same-host completed Save retains queued navigation until the exact cleaned successor arrives',
+    'identical clean no-change captures remain correlated to the current Save operation ID',
+    ...['discard', 'missing'].map(removal => `receipt evidence cannot resurrect a draft removed by ${removal}`),
+    'same-host reconnect uses the retained exact completion without replaying Save or reopening a document',
+    'Restore completion preserves stale draft bindings and protected intent rather than adopting its receipt baseline',
+    ...['refused', 'old_dirty'].map(failure =>
+      `facade retains Save custody on a ${failure} completion read and retries observation without another mutation`)
+  ],
   'ui/tests/client-calls.test.ts': [
     ...['open_draft', 'set_draft_changes', 'request_sensitive_input', 'request_export_destination'].flatMap(method => [
       `typed binding echo accepts Rust None equivalence: ${method}`,

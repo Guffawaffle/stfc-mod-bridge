@@ -29,6 +29,14 @@ function event(sequence = '1', change?: (event: any) => void): DeepReadonly<Even
   change?.(frame); return decodeEvent(JSON.stringify(frame));
 }
 const metadata = Object.freeze({ requestId: '00000001-1111-4111-8111-111111111111', kind: 'command' as const, method: 'commit' as const });
+function publishSavedDraft(work: WorkContext, saved: DeepReadonly<OperationSnapshot>): void {
+  const capture = saved.semantics.capture;
+  if (capture.kind !== 'save_configuration' || saved.state.status !== 'completed' || saved.state.outcome.kind !== 'changed' || saved.state.outcome.receipt?.kind !== 'configuration_written') throw new Error('fixture');
+  work.observations.acceptSnapshot(snapshot());
+  work.observations.observeOperation(saved);
+  const before = capture.input.draft;
+  work.observations.observeDraft({ ...before, draft: { ...before.draft, revision: (BigInt(before.draft.revision) + 1n).toString(), document: saved.state.outcome.receipt.document }, edits: [], apply: [], validation: [], state: 'clean' });
+}
 
 test.each(['9007199254740992', '9007199254740993', '18446744073709551615'])('counter remains exact beyond Number range: %s', value => expect(counter(value).toString()).toBe(value));
 test.each(['01', '-1', '1.0', '1e3', '18446744073709551616'])('counter refuses %s', value => expect(() => counter(value)).toThrow('counter'));
@@ -456,6 +464,7 @@ test('save applies selection only after exact reviewed draft has completed autho
   const review = work.beginReview()!;
   expect(work.finishSave(review, { kind: 'result', value: { ...saved, state: { status: 'admitted' } }, request: metadata })).toBe(false);
   expect(work.state.closeRequested).toBe(false); expect(work.state.draft).toBeDefined();
+  publishSavedDraft(work, saved);
   expect(work.finishSave(work.beginReview()!, { kind: 'result', value: saved, request: metadata })).toBe(true);
   expect(work.state.closeRequested).toBe(true); expect(work.observations.state.operations).toEqual([saved]);
 });
@@ -469,6 +478,7 @@ test('save reconciles typed DraftRef None but keeps captured edits exact', () =>
     || reply.body.result.query.output.operation.status !== 'observed' || reply.body.result.query.output.operation.value.semantics.capture.kind !== 'save_configuration') throw new Error('fixture');
   const backendDraft = reply.body.result.query.output.operation.value.semantics.capture.input.draft;
   const work = new WorkContext(); work.openDraft(backendDraft); work.requestClose();
+  publishSavedDraft(work, saved);
   expect(work.finishSave(work.beginReview()!, { kind: 'result', value: saved, request: metadata })).toBe(true);
   expect(work.state.closeRequested).toBe(true);
   const edited = new WorkContext(); edited.openDraft(backendDraft); expect(backendDraft.edits.length).toBeGreaterThan(0);

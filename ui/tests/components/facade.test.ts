@@ -5,6 +5,8 @@ import type { DraftSnapshot, OperationSnapshot } from '../../src/generated/proto
 import { BridgeFacade, FocusController, AnnouncementController } from '../../src/state';
 import { render } from 'svelte/server';
 import { UnsavedChanges } from '../../src/navigation';
+import { stageAcknowledgement } from '../../../contracts/fixtures/configuration-cases';
+import { semanticPlanDigest } from '../../src/client/relations';
 
 const root = new URL('../../../contracts/fixtures/', import.meta.url);
 const raw = (name: string) => readFileSync(new URL(name + '.json', root), 'utf8');
@@ -37,6 +39,14 @@ function harness(change?: (request: any, reply: any) => any, initialDraft = 'sc0
       else if (method === 'prepare') reply = frame('sc10-save-reviewed-draft-reply');
       else if (method === 'commit') reply = { protocolVersion: 1, requestId: null, body: { type: 'result', result: { type: 'command', command: { name: 'commit', output: { ...operation(), operationRevision: '1', state: { status: 'admitted' } } } } } };
       else if (method === 'get_operation') reply = frame('sc10-save-verified-result-reply');
+      else if (method === 'get_draft') {
+        const saved = operation();
+        if (saved.semantics.capture.kind !== 'save_configuration' || saved.state.status !== 'completed' || saved.state.outcome.kind !== 'changed' || saved.state.outcome.receipt?.kind !== 'configuration_written') throw new Error('fixture');
+        const before = saved.semantics.capture.input.draft;
+        reply = frame('sc08-get-current-clean-draft-reply');
+        reply.body.result.query.output.cursor.sequence = '3';
+        reply.body.result.query.output.draft.value = { ...before, draft: { ...before.draft, revision: (BigInt(before.draft.revision) + 1n).toString(), document: saved.state.outcome.receipt.document }, state: 'clean', edits: [], apply: [], validation: [] };
+      }
       else if (method === 'discard_draft') reply = frame('sc08-discard-draft-reply');
       else throw new Error(method);
       const altered = change?.(request, reply);
@@ -44,6 +54,7 @@ function harness(change?: (request: any, reply: any) => any, initialDraft = 'sc0
     },
   }, { requestId: () => (++id).toString(16).padStart(8, '0') + '-2222-4222-8222-222222222222', clock, maximumReplays: options.maximumReplays });
   const facade = new BridgeFacade(client, { idempotencyKey: options.idempotencyKey ?? (() => '00000001-1111-4111-8111-111111111111') });
+  facade.work.observations.acceptSnapshot(frame('sc15-complete-empty-snapshot-reply').body.result.query.output);
   if (options.navigation === 'in_place') {
     facade.work.requestTarget(frame('sc09-schema-all-field-types-request').body.query.input.target);
     facade.work.bindTarget(draft(initialDraft).draft.document.target);
@@ -199,13 +210,36 @@ test('facade post-timeout replay rejection cannot prove the original submission 
 
 test('facade two authoritative completed Saves reuse a bounded one-entry replay capacity', async () => {
   let operationSequence = 0;
-  const { facade, client, sent } = harness((request, reply) => {
-    if (request.body.command?.name === 'commit') reply.body.result.command.output = { ...operation(), operationId: (++operationSequence).toString(16).padStart(8, '0') + '-3333-4333-8333-333333333333' };
-    return reply;
+  let captured: any, completed: any;
+  const { facade, client, sent } = harness(async (request, reply) => {
+    if (request.body.command?.name === 'set_draft_changes') {
+      const input = request.body.command.input;
+      const candidate: DraftSnapshot = JSON.parse(JSON.stringify({ ...draft('sc08-stage-dirty-draft-reply'), draft: input.draft, edits: input.edits }));
+      reply.body.result.command.output = stageAcknowledgement(input.draft, candidate);
+      captured = reply.body.result.command.output.snapshot;
+    } else if (request.body.command?.name === 'prepare') {
+      const plan = reply.body.result.command.output;
+      plan.semantics.capture.input.draft = captured;
+      plan.planRef.reviewDigest = await semanticPlanDigest(plan.semantics);
+    } else if (request.body.command?.name === 'commit') {
+      completed = structuredClone(operation());
+      completed.operationId = (++operationSequence).toString(16).padStart(8, '0') + '-3333-4333-8333-333333333333';
+      completed.semantics.capture.input.draft = captured;
+      completed.state.outcome.receipt.document.documentId = captured.draft.document.documentId;
+      reply.body.result.command.output = completed;
+    } else if (request.body.query?.name === 'get_operation') reply.body.result.query.output.operation.value = completed;
+    else if (request.body.query?.name === 'get_draft') reply.body.result.query.output.draft.value = { ...captured, draft: { ...captured.draft, revision: (BigInt(captured.draft.revision) + 1n).toString(), document: completed.state.outcome.receipt.document }, edits: [], apply: [], validation: [], state: 'clean' };
+    return JSON.stringify({ ...reply, requestId: request.requestId });
   }, undefined, undefined, { maximumReplays: 1, idempotencyKey: keySequence(), navigation: 'target' });
   for (let iteration = 0; iteration < 2; iteration++) {
-    if (iteration) { expect(facade.work.openDraft(draft('sc08-open-clean-draft-reply'))).toBe(true); facade.stage(edits()); facade.requestTarget(target()); }
+    if (iteration) {
+      const next = structuredClone(draft('sc08-open-clean-draft-reply')) as DraftSnapshot;
+      next.draft.draftId = '00009901-3333-4333-8333-333333333333';
+      next.draft.document.documentId = '00009902-3333-4333-8333-333333333333';
+      expect(facade.work.openDraft(next)).toBe(true); facade.stage(edits()); facade.requestTarget(target());
+    }
     await facade.prepareSave(); expect(await facade.commitSave()).toMatchObject({ kind: 'result' });
+    await facade.reconcileSave();
     expect(facade.state.transition.kind).toBe('idle'); expect(facade.state.notice).toBe('Changes saved.');
     expect(facade.state.work.pendingNavigation).toBeUndefined(); expect(client.replayCount).toBe(0);
   }
