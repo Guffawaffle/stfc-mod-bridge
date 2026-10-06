@@ -77,6 +77,14 @@ current test executable, retained executable/process identity and unique
 kill-on-close Job containment. Kill plus observed exit does not prove that no
 destructor ran.
 
+Before startup, the owned child must match the retained executable's physical
+name and native architecture. Cleanup keeps that same `Child` handle, observes
+exit and pipe EOF, joins readers, revalidates the retained executable and checks
+the process creation FILETIME again. It does not repeat the image-name query
+after exit, when that query can fail even for a valid retained process handle.
+No PID is reopened or substituted during cleanup; unavailable or mismatched
+creation-time observations still fail the cleanup result.
+
 The parser validates bounded raw UTF-8, closed JSON members, exact libtest
 completion, prescribed row order and native failure witnesses. Declared FILETIME
 and volume u64 values are preserved exactly; receipt JSON labels their decimal

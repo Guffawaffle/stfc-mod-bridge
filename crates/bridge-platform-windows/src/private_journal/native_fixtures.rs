@@ -335,10 +335,7 @@ struct ChildBinding {
     hash: [u8; 32],
     bytes: u64,
 }
-fn process_identity(
-    child: &Child,
-    subject: &RetainedTestExecutable,
-) -> Result<ProcessIdentity, StorageFailure> {
+fn process_creation(child: &Child) -> Result<u64, StorageFailure> {
     let handle = HANDLE(child.as_raw_handle());
     let mut created = FILETIME::default();
     let mut exited = FILETIME::default();
@@ -346,6 +343,14 @@ fn process_identity(
     let mut user = FILETIME::default();
     unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) }
         .map_err(win_failure)?;
+    Ok((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}
+fn process_identity(
+    child: &Child,
+    subject: &RetainedTestExecutable,
+) -> Result<ProcessIdentity, StorageFailure> {
+    let creation = process_creation(child)?;
+    let handle = HANDLE(child.as_raw_handle());
     let mut image = vec![0u16; MAX_PATH_UNITS + 1];
     let mut count = MAX_PATH_UNITS as u32;
     unsafe {
@@ -372,10 +377,7 @@ fn process_identity(
     if native_machine != IMAGE_FILE_MACHINE_AMD64 || process_machine != IMAGE_FILE_MACHINE_UNKNOWN {
         return Err(StorageFailure::Unsafe);
     }
-    Ok(ProcessIdentity {
-        creation: (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime),
-        image,
-    })
+    Ok(ProcessIdentity { creation, image })
 }
 struct PipeState {
     bytes: Mutex<Vec<u8>>,
@@ -884,8 +886,12 @@ impl OwnedFixtureChild {
             if capsule.subject.revalidate().is_err() {
                 result.reader_error = true;
             }
+            // Image-name queries can fail after actual exit. This is the same
+            // continuously owned Child handle whose image and native architecture
+            // were validated before startup, not a reopened PID. Revalidate its
+            // creation time and the continuously retained executable separately.
             if let (Some(child), Some(expected)) = (&capsule.child, &capsule.process)
-                && process_identity(child, &capsule.subject).as_ref() != Ok(expected)
+                && process_creation(child) != Ok(expected.creation)
             {
                 result.wait_error = true;
             }
