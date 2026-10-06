@@ -190,6 +190,17 @@ describe('scripted mock oracle', () => {
       expect((await pending).kind).toBe('result');
     }
     expect(transport.state.replayCount).toBe(1);
+    const firstPlan = frame<Reply>('sc14-prepare-reply');
+    const independentPlan = frame<Reply>('sc14-prepare-independent-busy-reply');
+    if (firstPlan.body.type !== 'result' || firstPlan.body.result.type !== 'command' || firstPlan.body.result.command.name !== 'prepare'
+      || independentPlan.body.type !== 'result' || independentPlan.body.result.type !== 'command' || independentPlan.body.result.command.name !== 'prepare') throw new Error('expected_independent_preparations');
+    expect(independentPlan.body.result.command.output.semantics).toEqual(firstPlan.body.result.command.output.semantics);
+    expect(independentPlan.body.result.command.output.planRef.planId).not.toBe(firstPlan.body.result.command.output.planRef.planId);
+    const preparing = invoke(api, transport.expectedRequest!);
+    clock.advanceBy(100);
+    expect(await preparing).toMatchObject({ kind: 'result', value: independentPlan.body.result.command.output });
+    expect(transport.state.replayCount).toBe(1);
+    expect(transport.expectedRequest).toMatchObject({ body: { type: 'command', command: { name: 'commit', input: { planRef: independentPlan.body.result.command.output.planRef } } } });
     const refused = invoke(api, transport.expectedRequest!);
     clock.advanceBy(100);
     expect(await refused).toMatchObject({ kind: 'rejected', error: { code: 'operation_busy', retryDisposition: 'after_user_choice' } });
