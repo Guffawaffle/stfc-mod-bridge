@@ -23,7 +23,10 @@ function run(id, executable, argv, timeout = 180000) {
   const observation = { id, executable, argv, cwd: root, exitCode: result.status,
     error: result.error?.code ?? null, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   checks.push(observation);
-  writeFileSync(path.join(directory, `${id}.json`), JSON.stringify(observation, null, 2) + '\n');
+  // Rust's qualified test name stays exact in the receipt and invocation; its
+  // module separators cannot be Windows filename components.
+  const fileId = id.includes('::') ? `qualified-${createHash('sha256').update(id).digest('hex')}` : id;
+  writeFileSync(path.join(directory, `${fileId}.json`), JSON.stringify(observation, null, 2) + '\n');
   assert.equal(result.status, 0, `Kernel ${id} failed; inspect its retained observation`);
   assert.ok(!result.error);
   return observation.stdout;
