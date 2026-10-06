@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { registry } from '../../../scripts/next/gate-registry.mjs';
 
 const directory = import.meta.dirname;
 const root = path.resolve(directory, '../../..');
@@ -46,7 +47,21 @@ check('All required native host coverage and unresolved bindings remain explicit
   for (const p of work.packages) {
     assert.ok(p.writeScope.length && p.gates.length && p.acceptanceCriteria.length);
     assert.ok(!p.requiredHosts.includes('macos-x86_64-native'));
-    assert.ok(p.gates.every(g => g.state === 'planned-not-implemented' && g.availability === 'not-established'));
+    for (const g of p.gates) {
+      if (g.state === 'planned-not-implemented') {
+        assert.equal(g.availability, 'not-established');
+      } else {
+        const partialStates = {
+          'implemented-awaiting-native-observation': 'not-established',
+          'implemented-source-observation-only': 'single-host-source-observation-only'
+        };
+        assert.ok(Object.hasOwn(partialStates, g.state));
+        assert.equal(g.availability, partialStates[g.state]);
+        assert.equal(registry[g.id]?.packageAcceptanceAvailable, false,
+          `${g.id}: partial implementation must not grant package acceptance`);
+        assert.equal(g.receiptRequired, true);
+      }
+    }
     for (const g of p.gates.filter(g => g.requiredHost.startsWith('macos') || g.requiredHost === 'native-target-matrix')) {
       assert.equal(g.cwdResolution, 'required-on-matching-native-host-before-execution');
     }
@@ -67,6 +82,18 @@ check('UI autonomy and shared write ownership are enforced by the plan', () => {
   assert.ok(byId.get('br-12').sharedResources.includes('frontend-composition'));
   assert.ok(byId.get('br-26').sharedResources.includes('frontend-composition'));
   assert.deepEqual(byId.get('br-30').dependsOn, ['br-27', 'br-29']);
+});
+check('Refined lessons retain the existing package graph and authority boundaries', () => {
+  const refinement = work.implementationRefinement;
+  assert.equal(work.packages.length, 30);
+  assert.equal(work.packages.reduce((sum, p) => sum + p.dependsOn.length, 0), 68);
+  assert.equal(Object.keys(refinement.packageMapping).length, 5);
+  for (const ids of Object.values(refinement.packageMapping)) {
+    assert.ok(ids.every(id => work.packages.some(p => p.id === id)));
+    assert.ok(!ids.some(id => ['br-00', 'br-01', 'br-02', 'br-03', 'br-04', 'br-12', 'br-13'].includes(id)));
+  }
+  assert.ok(work.accepted.namedProfileLaunch.includes('current OS user'));
+  assert.deepEqual(execution.epic.acceptanceCriteria, spec.acceptanceCriteria);
 });
 check('Planning validation cannot claim implementation or execution acceptance', () => {
   assert.equal(work.disposition, 'planning-only-not-execution-authority');
@@ -109,8 +136,12 @@ write('runner/verification.json', {
   nodeVersion: process.version, bridgeRoot: root, baseline: work.repositories,
   packageCount: work.packages.length, dependencyEdges: work.packages.reduce((sum, p) => sum + p.dependsOn.length, 0), dependencyLevels: order.levels.length,
   artifactSha256: Object.fromEntries(['feature-spec.json', 'work-packages.json', 'runner/execution-plan.json', 'runner/plan.json', 'runner/planning-state.json'].map(name => [name, digest(name)])),
+  controlInputSha256: {
+    'docs/plans/rust-tauri-cross-platform/verify-plan.mjs': digest('verify-plan.mjs'),
+    'scripts/next/gate-registry.mjs': createHash('sha256').update(readFileSync(path.join(root, 'scripts/next/gate-registry.mjs'))).digest('hex')
+  },
   checks, commands, implementationGatesExecuted: 0, runsCreated: 0, attemptsCreated: 0,
-  proofBoundary: 'Schema, cross-artifact coverage and dependency order are validated. Future qualification commands remain unimplemented. No product implementation, native build, runtime qualification or release eligibility follows from this result.',
+  proofBoundary: 'Schema, cross-artifact coverage and dependency order are validated. Gate declarations distinguish initial plans from explicitly partial component implementations; zero-execution counters describe planning validation and acceptance requires separately bound receipts. No product implementation, native build, runtime qualification or release eligibility follows from this planning result.',
   priorProbe: { command: 'lexrunner --no-emit-frames gate run <plan> --dry-run --keep-cache --json', result: 'input-size-budget-exceeded', tokensEstimated: 5392, defaultLimit: 5000, resolution: 'Explicit 6000-token plan-input allowance; no gates run.' }
 });
 console.log(JSON.stringify({ runnerVersion, packages: work.packages.length, edges: schema.diagnostics.edges, levels: order.levels.length, planningChecks: checks.length, implementationGatesExecuted: 0 }));

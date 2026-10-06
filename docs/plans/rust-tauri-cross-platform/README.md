@@ -4,7 +4,25 @@ This plan replaces the Bridge application with a Rust backend and a replaceable 
 
 Intel Mac host support is excluded by user direction. The user's expectation that the game will deprecate Intel support is not treated as a verified product announcement. On Apple Silicon, the selected game process still determines the architecture of injected runtime code. An arm64 Bridge shell cannot establish compatibility with a game running under translation.
 
-The plan contains 30 work packages and 68 dependency edges. LexRunner 2.1.0 validated the scheduling projection and produced 10 dependency levels. These results establish planning structure; implementation gates remain unimplemented. No implementation Run, Attempt, issue, branch, build, deployment or game cycle was created for this plan.
+The plan contains 30 work packages and 68 dependency edges. The initial 2026-10-03 validation used LexRunner 2.1.0 and produced 10 dependency levels. Planning validation establishes scheduling structure and runs no implementation gates. The initial inventory and zero-execution counters retained below describe plan construction, not current implementation status; current acceptance comes from separately bound execution receipts.
+
+## Implementation refinement, 2026-10-05
+
+We are continuing our Bridge. Named profiles use canonical Profiles runtime isolation under the current OS user; routine launches do not require a separate OS account or stored OS-account credentials. Native consent for importing another user's saved setup remains a separate flow.
+
+A static study of the maintainer's Windows x64 launcher v0.4.2 supplied five implementation ideas. The MSI SHA-256 is `b2f125ce2cba6120110de834fd6ad35276a8b6e6f3ed024fb3b4d6337850544c`; the extracted executable is `57eac414d43766ceea9f822fd8dd0151a6ecf73c31a46ad07e5a32a20ea7aa32`. We read the embedded frontend and native messages without executing the installer, application or foreign JavaScript. These observations do not qualify its native transactions or Mac build. The user reports an Apple Silicon build exists; our own platform qualification remains independent.
+
+| Refinement | Existing package owners | Required behavior |
+| --- | --- | --- |
+| Completion-based update observation | 22, 24, 26 | One scheduler per host; shared manual/automatic in-flight checks, configurable/disabled cadence, per-family timeouts, backoff, outcome and observation age. Concrete family ports join at integration. Offline local launch stays usable. |
+| Latest-read reconciliation | 20, 26 | Late results, errors and loading-state completion cannot replace newer support reads or targets. Abandoned reads do not cancel admitted operations. |
+| Structured diagnostics | 20, 22 | Bounded records with time, severity, component, operation correlation, phase and reason code; opt-in debug detail and exact allowlisted preview/export. Logs are separate from the recovery journal. |
+| Fork/development feeds | 15, 23, 24 | Explicit configurable feeds without rebuilding, while retaining stable provider/application authority and captured transaction identity. Preferences do not silently switch installed sources or keys. |
+| Official Bridge updater evaluation | 23, 24 | Evaluate the [Tauri updater](https://v2.tauri.app/plugin/updater/) behind the desktop port. Keep engine policy independent and record a safe durable handoff before an installer can exit the host. |
+
+These are acceptance refinements within existing future packages. They add no packages or dependency edges and do not reopen completed foundation criteria. They preserve the three trust domains, canonical Profiles game updating, exact native pairing and independent platform signing. Tauri updater support is an implementation candidate, not a release acceptance result. Checksum/staging/atomic-replacement messages reinforce existing transaction requirements without proving the other launcher's guarantees.
+
+The next implementation remains retained capture-to-worker custody, followed by configuration completion and canonical native writer integration. The plan does not create another game updater or add UI styling/profile-system work from the other launcher.
 
 ## Architecture and ownership
 

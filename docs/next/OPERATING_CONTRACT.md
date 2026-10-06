@@ -78,6 +78,11 @@ Canonical ordinary-profile identity belongs to the current native OS user;
 isolated identity belongs to its immutable catalog ID. Platform availability
 and unsupported operations are explicit results, not successful empty defaults.
 
+Named game profiles run under the current OS user through the canonical
+profile-aware runtime. Routine profile launches do not create per-profile OS
+accounts or collect/store their credentials. Importing another user's saved
+setup and any native OS consent for that import remain separate operations.
+
 ## One explicit target
 
 Shuttle Bay and Engineering are views over the same selected profile and

@@ -1,7 +1,7 @@
 {
   "budget": {
     "prompts": 1,
-    "tokens_estimated": 5400
+    "tokens_estimated": 5420
   },
   "dryRun": true,
   "execution": {
@@ -96,6 +96,10 @@
     "itemCount": 30,
     "schemaVersion": "1.0.0",
     "target": "main"
+  },
+  "selection": {
+    "onlyGate": null,
+    "onlyItem": null
   },
   "tiers": {
     "assignments": {

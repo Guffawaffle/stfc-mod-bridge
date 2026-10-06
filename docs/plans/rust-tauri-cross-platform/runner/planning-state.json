@@ -38,5 +38,5 @@
       "detail": "No new issues/branches/PRs created by planning. Bind each package to its owning repo issue before implementation; branch change/worktree creation requires user authorization."
     }
   ],
-  "workPackageSha256": "bc821d2c6dee426ce9f2b412745f9dd1564a1edc33a8c0d4676d4dc589a1e4b6"
+  "workPackageSha256": "057482b4dbab2c916859ebe32038aa71a93324be7d66d56acde61eb72b679b4d"
 }

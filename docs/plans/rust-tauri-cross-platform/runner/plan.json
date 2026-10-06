@@ -173,7 +173,7 @@
           "env": {
             "BRIDGE_PLAN_DISPOSITION": "planning-only",
             "BRIDGE_REQUIRED_HOST": "windows-x64",
-            "BRIDGE_REQUIRED_SUITES": "windows-platform",
+            "BRIDGE_REQUIRED_SUITES": "windows-platform,windows-private-journal-fixtures",
             "BRIDGE_WORK_PACKAGE": "br-06"
           },
           "runtime": "local",
@@ -197,7 +197,7 @@
           "env": {
             "BRIDGE_PLAN_DISPOSITION": "planning-only",
             "BRIDGE_REQUIRED_HOST": "macos-arm64-native",
-            "BRIDGE_REQUIRED_SUITES": "macos-platform",
+            "BRIDGE_REQUIRED_SUITES": "macos-platform,macos-platform-fixtures",
             "BRIDGE_WORK_PACKAGE": "br-07"
           },
           "runtime": "local",
@@ -546,7 +546,7 @@
           "env": {
             "BRIDGE_PLAN_DISPOSITION": "planning-only",
             "BRIDGE_REQUIRED_HOST": "native-target-matrix",
-            "BRIDGE_REQUIRED_SUITES": "client-transport-conformance,headless-workflow",
+            "BRIDGE_REQUIRED_SUITES": "host-adapter-foundation,client-transport-conformance,headless-workflow",
             "BRIDGE_WORK_PACKAGE": "br-21"
           },
           "runtime": "local",

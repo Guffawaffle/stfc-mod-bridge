@@ -3,7 +3,7 @@
   "sourceSpec": {
     "schemaVersion": "0.1.0",
     "title": "Frontend-independent Rust Bridge for Windows and macOS",
-    "description": "Fresh Rust application engine and replaceable web frontend in a thin Tauri shell. UI iteration is a primary product goal: all first-release flows must run against deterministic typed mocks without game/native/backend dependencies. Windows x64 and Apple Silicon macOS are independently planned and qualified. Intel Mac host support is outside this release; actual game process architecture on Apple Silicon still governs injected payload pairing. Existing behavior and test scenarios inform requirements; C#/WPF implementation preservation is not a constraint. Canonical Profiles and producer ownership remain separate.",
+    "description": "Fresh Rust application engine and replaceable web frontend in a thin Tauri shell. UI iteration is a primary product goal: all first-release flows must run against deterministic typed mocks without game/native/backend dependencies. Windows x64 and Apple Silicon macOS are independently planned and qualified. Intel Mac host support is outside this release; actual game process architecture on Apple Silicon still governs injected payload pairing. Existing behavior and test scenarios inform requirements; C#/WPF implementation preservation is not a constraint. Canonical Profiles and producer ownership remain separate. Named profile launches use canonical current-OS-user runtime isolation, without per-profile OS-account setup or credential storage.",
     "acceptanceCriteria": [
       "Rust engine and domain have no Tauri/webview dependencies; CLI and UI use one command/event contract.",
       "Mock browser development supports all player journeys and failure/progress/draft/recovery states without native dependencies.",
@@ -16,16 +16,17 @@
       "Three trust domains and per-platform artifact pairing/signing are independently verified.",
       "Frontend semantic/accessibility/visual tests and actual WebView2/WKWebView UX qualification are required.",
       "Dependency work is executed by explicit repo-scoped packets with real commands and receipts.",
-      "No placeholder gates, inferred account identity, reused WPF qualification or one-OS release substitution."
+      "No placeholder gates, inferred account identity, reused WPF qualification or one-OS release substitution.",
+      "Named profiles use current-user canonical runtime isolation; update observations, bounded diagnostics, explicit development feeds and safe application-installer handoff follow the refined existing package criteria."
     ],
-    "technicalContext": "Proposed frontend default: Svelte + TypeScript + Vite; Tauri is a replaceable shell adapter. Rust crates: bridge-contracts/domain/engine/profiles/toml/platform-windows/platform-macos/cli/updater. Canonical repositories remain existing checkouts. macOS Profiles registration, ordinary setup, coordinated launch/loading, update and browser/Keychain qualification are open prerequisites. Installed LexRunner2.1.0 supports FeatureSpecv0, ExecutionPlanv1, plan schema validation and Kahn dependency ordering. Rich work packages bind owners/scopes/gate requirements; Runner scheduling projection is planning-only until exact issues/heads/native hosts/gates are materialized.",
-    "constraints": "Planning only. No product code, branch switches, worktrees, runs, attempts, merges, builds, deployments or game cycles. ALLOW_MUTATIONS and automatic Lex frame emission remain disabled. Shared databasePath must be explicit for future coordination. Every owner uses canonical cwd and scoped continuity; Mac roots/host bindings must be resolved on real Mac before execution. Current branches are observations, not designated implementation branches. Root integrates; at most three active implementation workers plus root.",
+    "technicalContext": "Proposed frontend default: Svelte + TypeScript + Vite; Tauri is a replaceable shell adapter. Rust crates: bridge-contracts/domain/engine/profiles/toml/platform-windows/platform-macos/cli/updater. Canonical repositories remain existing checkouts. macOS Profiles registration, ordinary setup, coordinated launch/loading, update and browser/Keychain qualification are open prerequisites. Initial planning used LexRunner2.1.0 for FeatureSpecv0, ExecutionPlanv1, plan schema validation and Kahn dependency ordering. Rich work packages bind owners/scopes/gate requirements; Runner scheduling projection is planning-only until exact issues/heads/native hosts/gates are materialized.",
+    "constraints": "These are planning artifacts, not execution or release authority. Planning validation runs no product gates and creates no Runs, Attempts, branches, worktrees, deployments or game cycles; its process keeps mutations and automatic Lex frame emission disabled. Execution is separately bound to exact repo inputs, enabled governed tooling and declared gate/native-host requirements. Shared databasePath stays explicit. Each owner uses canonical cwd and scoped continuity; Mac roots/host bindings resolve on a matching native host. Recorded repo branches/heads are the initial planning inventory, not a command to switch checkouts. Root integrates; at most three explicitly authorized implementation workers plus root.",
     "repo": "Guffawaffle/stfc-mod-bridge",
     "createdAt": "2026-10-03T08:55:12.826Z"
   },
   "epic": {
     "title": "Frontend-independent Rust Bridge for Windows and macOS",
-    "description": "Fresh Rust application engine and replaceable web frontend in a thin Tauri shell. UI iteration is a primary product goal: all first-release flows must run against deterministic typed mocks without game/native/backend dependencies. Windows x64 and Apple Silicon macOS are independently planned and qualified. Intel Mac host support is outside this release; actual game process architecture on Apple Silicon still governs injected payload pairing. Existing behavior and test scenarios inform requirements; C#/WPF implementation preservation is not a constraint. Canonical Profiles and producer ownership remain separate.",
+    "description": "Fresh Rust application engine and replaceable web frontend in a thin Tauri shell. UI iteration is a primary product goal: all first-release flows must run against deterministic typed mocks without game/native/backend dependencies. Windows x64 and Apple Silicon macOS are independently planned and qualified. Intel Mac host support is outside this release; actual game process architecture on Apple Silicon still governs injected payload pairing. Existing behavior and test scenarios inform requirements; C#/WPF implementation preservation is not a constraint. Canonical Profiles and producer ownership remain separate. Named profile launches use canonical current-OS-user runtime isolation, without per-profile OS-account setup or credential storage.",
     "acceptanceCriteria": [
       "Rust engine and domain have no Tauri/webview dependencies; CLI and UI use one command/event contract.",
       "Mock browser development supports all player journeys and failure/progress/draft/recovery states without native dependencies.",
@@ -38,7 +39,8 @@
       "Three trust domains and per-platform artifact pairing/signing are independently verified.",
       "Frontend semantic/accessibility/visual tests and actual WebView2/WKWebView UX qualification are required.",
       "Dependency work is executed by explicit repo-scoped packets with real commands and receipts.",
-      "No placeholder gates, inferred account identity, reused WPF qualification or one-OS release substitution."
+      "No placeholder gates, inferred account identity, reused WPF qualification or one-OS release substitution.",
+      "Named profiles use current-user canonical runtime isolation; update observations, bounded diagnostics, explicit development feeds and safe application-installer handoff follow the refined existing package criteria."
     ]
   },
   "subIssues": [
@@ -280,13 +282,14 @@
     {
       "id": "br-15",
       "title": "Provider/runtime install, source switch and recovery",
-      "description": "Owner Bridge; lane engine/deployment. Fresh per-OS runtime deploy/install/update/repair/adopt/remove transaction and ownership journal. Source switch coordinates configuration participants through defined prepare/commit/compensation seam. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane engine/deployment. Fresh per-OS runtime deploy/install/update/repair/adopt/remove transaction and ownership journal. Source switch coordinates configuration participants through defined prepare/commit/compensation seam. Provider configuration supports explicit fork/development feeds without rebuilding; captured source/artifact authority remains distinct from future-check preferences. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "Reviewed digest/size/version/source/platform/signer evidence binds exact artifact before mutation.",
         "External/replaced/unowned runtime cannot be removed as managed; adopted bytes restored on rollback.",
         "Fault injection at each durable boundary, stale plans, same-byte replacement and source/config switch compensation.",
-        "Provider support is independently qualified by OS/architecture; one bootstrap/profile product per installation."
+        "Provider support is independently qualified by OS/architecture; one bootstrap/profile product per installation.",
+        "Custom feed/channel selection retains stable provider identity and captured endpoint/artifact authority; changing a preference cannot silently switch installed ownership, trust keys or a confirmed transaction."
       ],
       "dependsOn": [
         "br-04",
@@ -364,13 +367,14 @@
     {
       "id": "br-20",
       "title": "Management, confirmation, recovery and support UI against mocks",
-      "description": "Owner Bridge; lane UI. Profile/install/provider management, prepared-plan confirmation, progress/recovery/history/diagnostic export and Bridge update views. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane UI. Profile/install/provider management, prepared-plan confirmation, progress/recovery/history/diagnostic export and Bridge update views. Shared latest-read reconciliation for observational panels, with bounded structured diagnostic views and explicit normal/debug detail. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "Plan shows captured target/scope; changing selection cannot change confirmed work.",
         "Duplicate submission, requested/too-late cancellation, no-change/failure/recovery all have coherent feedback.",
         "Diagnostic preview/redaction/opt-in paths and token filtering fixtures pass.",
-        "No native game/account material is needed for component and journey tests."
+        "No native game/account material is needed for component and journey tests.",
+        "Out-of-order log/diagnostic read results, errors and loading completion cannot replace the newer request or selected target; abandoning a read never cancels admitted work or clears a draft."
       ],
       "dependsOn": [
         "br-12"
@@ -397,13 +401,15 @@
     {
       "id": "br-22",
       "title": "Diagnostics, history and application support engine",
-      "description": "Owner Bridge; lane engine/support. Redacted diagnostic preview/export, application preferences/history and service ownership interfaces. Keep dormant Battle/sidecar activation outside initial release unless br-00 explicitly adds qualified scope. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane engine/support. Redacted diagnostic preview/export, application preferences/history and service ownership interfaces. Keep dormant Battle/sidecar activation outside initial release unless br-00 explicitly adds qualified scope. Stable diagnostic records carry timestamp, severity, category/component, operation ID when present, phase and reason code; bounded date/range reads and opt-in debug detail remain separate from the recovery journal. One service-owned completion-based update-observation scheduler per host uses injected family ports; clients consume typed observations rather than duplicating network polling. Concrete game/runtime/Bridge ports are composed in br-26. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "Preview bytes match exported bytes; secrets/account contents/default private paths excluded.",
         "Read-only support queries do not launch sinks/sidecars or mutate configs.",
         "Per-user app preferences do not become mod TOML; recovery retains exact operation ownership.",
-        "Known/unavailable capability and cleanup failures remain visible."
+        "Known/unavailable capability and cleanup failures remain visible.",
+        "Diagnostic range/size limits, optional operation correlation and normal/debug detail are explicit; exact preview/export allowlists omit account values and default private paths, and diagnostic records cannot substitute for durable recovery state.",
+        "Disabled/configurable cadence, per-family in-flight coordination for manual and automatic checks, timeouts/backoff and observation ages are exercised with injected clocks/ports. A failed or timed-out family stays unknown/unavailable while other families and locally healthy offline launch remain usable."
       ],
       "dependsOn": [
         "br-04",
@@ -414,14 +420,15 @@
     {
       "id": "br-23",
       "title": "Platform package identity, native pairing and build pipeline",
-      "description": "Owner Bridge; lane delivery. Per-target Bridge packages, paired native dependencies/companions and immutable source/build receipts. Windows installer/update identity and Mac app/DMG identity, signing/notarization pipeline and release-asset inspection. Document transition from existing MSIX identity; no automatic change to trust/publisher roots. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane delivery. Per-target Bridge packages, paired native dependencies/companions and immutable source/build receipts. Windows installer/update identity and Mac app/DMG identity, signing/notarization pipeline and release-asset inspection. Document transition from existing MSIX identity; no automatic change to trust/publisher roots. Record an accept/reject evaluation of the official Tauri updater behind a desktop platform port, including supported package/installer formats, architecture/native pairing, signing and Windows installer-exit behavior. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "Each Windows x64 / Apple Silicon Mac arm64 package includes matching architecture/pins and rejects missing/mismatched native bytes; game/runtime/companions match the actual selected process architecture.",
         "Exact final signed/notarized bytes hashed; no universal or Intel-host package is required.",
         "Three trust domains kept independent; installer signing/updater signatures do not establish provider/game artifact authority.",
         "Clean-host install/storage/permission/uninstall behavior and retained external data verified.",
-        "Publisher/signing/notary/channel decisions and credential provisioning are recorded prerequisites, not invented approvals."
+        "Publisher/signing/notary/channel decisions and credential provisioning are recorded prerequisites, not invented approvals.",
+        "The updater evaluation preserves a Tauri-independent engine/domain and independently configured application channels/feed authority. Updater artifact signatures do not replace platform signing/notarization or native-pair verification; unsupported formats/routes remain explicit."
       ],
       "dependsOn": [
         "br-01",
@@ -434,13 +441,15 @@
     {
       "id": "br-24",
       "title": "Independent Bridge self-update and recovery engine",
-      "description": "Owner Bridge; lane delivery. Fresh Bridge release selection/verification/staging/replacement and recovery on both platforms. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane delivery. Fresh Bridge release selection/verification/staging/replacement and recovery on both platforms. Separate check/download/stage from installer handoff; configured stable/prerelease/development application feeds share captured package authority and the engine safe-exit protocol. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "Mod/provider authority cannot authorize Bridge update; helpers/native payloads remain exact paired identities.",
         "Candidate/plan reverified before replacement; updater cannot mutate game/catalog roots.",
         "Interrupted update, denied access, stale package and downgrade/withdrawal policy produce explicit outcomes.",
-        "New installer/channel migration is qualified per OS, not inferred from Tauri updater support."
+        "New installer/channel migration is qualified per OS, not inferred from Tauri updater support.",
+        "Feed preferences affect future checks only; prepared updates retain exact endpoint/channel/package/signing/native-pair identities and revalidate before installation. Routine confirmation preferences cannot bypass protected changes, source switches or trust review.",
+        "A platform installer that exits the host is invoked only after admitted writers reach a proven safe durable boundary and an exact recoverable handoff is recorded. Active writers, denied/failed handoff and interrupted installation retain explicit ownership/recovery; no client relaunch drops a lease or marks an unobserved update complete."
       ],
       "dependsOn": [
         "br-04",
@@ -469,13 +478,15 @@
     {
       "id": "br-26",
       "title": "Integrated user journeys and multi-client contention",
-      "description": "Owner Bridge; lane integration. Bind real engine results to UI with identical protocol fixtures; whole-journey tests across CLI/Tauri/native adapters. Install/profile/config/mod/game/Bridge update and recovery fixture flows, captured target/revision/receipt checks. Gate state: planned/not implemented. Detailed owner/write scope/native host/gates are in work-packages.json.",
+      "description": "Owner Bridge; lane integration. Bind real engine results to UI with identical protocol fixtures; whole-journey tests across CLI/Tauri/native adapters. Install/profile/config/mod/game/Bridge update and recovery fixture flows, captured target/revision/receipt checks. Gate declarations retain initial planning state; execution acceptance needs separately bound receipts. Detailed owner/write scope/native host/gates are in work-packages.json.",
       "type": "feature",
       "acceptanceCriteria": [
         "UI and CLI agree on normalized outcomes; UI/CLI race yields one writer and no losing-client durable side effect.",
         "Read/prepare/confirm/commit/reconnect/restart/recover preserve operation target and draft boundaries.",
         "All new engine gates implemented and tested; no placeholder successful commands.",
-        "Windows x64 and Apple Silicon Mac integrations independently pass before platform release UX."
+        "Windows x64 and Apple Silicon Mac integrations independently pass before platform release UX.",
+        "Manual/automatic family-check races, timeout/offline recovery and out-of-order support reads preserve per-family outcomes/age and captured targets without duplicate polling policy in clients.",
+        "Self-update requested during admitted work defers/refuses until the qualified durable installer handoff; restart/disconnect and installation failure preserve exact operation/native-pair/recovery evidence."
       ],
       "dependsOn": [
         "br-14",
