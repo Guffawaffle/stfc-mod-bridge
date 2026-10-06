@@ -128,6 +128,12 @@ custody. Normal host exit must honor the kernel's close obligations.
 
 The kernel prevalidates the terminal operation, snapshot budgets and every
 consecutive OperationChanged/DraftChanged envelope before the terminal append.
+Each operation and draft event must also fit inside its actual single-event
+replay reply. A near-limit raw event cannot strand the replay cursor after
+completion. Refusal occurs before terminal append and local publication, with
+the native result and lease retained for retry. A retained event that cannot
+fit the first replay reply requires resnapshot instead of an empty stalled read.
+
 Local publication follows a successful append; event emission then uses only
 prevalidated envelopes. Pending local completion keeps the worker even when
 the native owner reached a safe boundary. Unknown append disposition poisons

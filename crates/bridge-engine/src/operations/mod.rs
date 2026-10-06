@@ -1284,6 +1284,9 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
             })
             .map_err(|_| error(ErrorCode::InternalFailure))?;
             if payload.len() > MAX_MESSAGE_BYTES {
+                if events.is_empty() {
+                    return Err(error(ErrorCode::ResnapshotRequired));
+                }
                 break;
             }
             events = candidate;
@@ -1413,11 +1416,7 @@ impl<P: OperationPorts + ApplicationServices, J: DurableJournal, C: HostClock, I
                 operation: Box::new(snapshot.clone()),
             },
         };
-        let bytes = serde_json::to_vec(&event).map_err(|_| KernelFailure::InvalidPortResult)?;
-        if bytes.len() > self.observation_budget {
-            return Err(KernelFailure::Capacity);
-        }
-        decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+        preflight_event(&event, self.observation_budget)?;
         Ok(event)
     }
     /// Only prevalidated events reach the shared emitter. Application services
@@ -1549,14 +1548,38 @@ fn preflight_draft_events(
                 draft: Box::new(draft.clone()),
             },
         };
-        let bytes = serde_json::to_vec(&event).map_err(|_| KernelFailure::InvalidPortResult)?;
-        if bytes.len() > budget {
-            return Err(KernelFailure::Capacity);
-        }
-        decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+        preflight_event(&event, budget)?;
         events.push(event);
     }
     Ok(events)
+}
+fn preflight_event(event: &Event, budget: usize) -> Result<(), KernelFailure> {
+    let bytes = serde_json::to_vec(event).map_err(|_| KernelFailure::InvalidPortResult)?;
+    if bytes.len() > budget {
+        return Err(KernelFailure::Capacity);
+    }
+    decode_event(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+    let mut after = event.cursor.clone();
+    after.sequence = Sequence::new(
+        after
+            .sequence
+            .get()
+            .checked_sub(1)
+            .ok_or(KernelFailure::InvalidPortResult)?,
+    );
+    let reply = query_reply(QueryResult::ResumeEvents(EventBatch {
+        after,
+        next: event.cursor.clone(),
+        events: list(vec![event.clone()]),
+    }));
+    let bytes = serde_json::to_vec(&reply).map_err(|_| KernelFailure::InvalidPortResult)?;
+    // Every published event must fit inside the actual replay envelope. A raw
+    // event that fills the transport limit would strand this and later cursors.
+    if bytes.len() > MAX_MESSAGE_BYTES {
+        return Err(KernelFailure::Capacity);
+    }
+    decode_reply(&bytes).map_err(|_| KernelFailure::InvalidPortResult)?;
+    Ok(())
 }
 fn validate_command_output(command: CommandResult) -> Result<(), KernelFailure> {
     validated_reply(Reply {

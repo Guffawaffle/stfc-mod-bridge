@@ -12,6 +12,7 @@ mod cfg;
 #[derive(Default)]
 struct Control {
     oversized: Cell<bool>,
+    replay_oversized: Cell<bool>,
     double_commit: Cell<bool>,
     fail_after_commit: Cell<bool>,
     fail_terminal_wal: Cell<bool>,
@@ -254,6 +255,7 @@ impl OperationPorts for Ports {
             return commit(&[]);
         };
         let control = self.control.clone();
+        let host_epoch = self.workspace.host_epoch().clone();
         self.workspace
             .publish_configuration_completion(tx, &lease.native, |changed| {
                 control.order.borrow_mut().push("preflight");
@@ -272,6 +274,9 @@ impl OperationPorts for Ports {
                             .collect(),
                     );
                     assert!(serde_json::to_vec(&changed[0]).unwrap().len() > MAX_MESSAGE_BYTES);
+                }
+                if control.replay_oversized.get() {
+                    changed[0] = replay_oversized_draft(&changed[0], &host_epoch);
                 }
                 commit(&changed).map_err(|_| ConfigurationFailure::Capacity)?;
                 if control.double_commit.get() {
@@ -421,6 +426,96 @@ fn current(engine: &mut TestEngine, draft: &DraftSnapshot) -> DraftSnapshot {
     value
 }
 
+// A semantically valid projection fits as a standalone event but cannot fit
+// even a single-event replay reply. The actual kernel must refuse before WAL
+// or local publication rather than retaining an event that stalls every read.
+fn replay_oversized_draft(draft: &DraftSnapshot, host_epoch: &HostEpoch) -> DraftSnapshot {
+    let mut draft = draft.clone();
+    let template = draft.schema.fields.as_slice()[0].clone();
+    draft.schema.sync = cfg::list(vec![]);
+    let target_bytes = MAX_MESSAGE_BYTES - 300;
+    for count in 1..=512 {
+        let fields = (0..count)
+            .map(|i| {
+                let mut field = template.clone();
+                field.field_id = FieldId::new(format!("envelope.{i}")).unwrap();
+                field.path = cfg::list(vec![TomlPathSegment::new(format!("envelope{i}")).unwrap()]);
+                field.aliases = cfg::list(vec![]);
+                field.search_terms = cfg::list(vec![SchemaText::new("x".repeat(64)).unwrap(); 32]);
+                field
+            })
+            .collect();
+        let mut next = draft.clone();
+        next.schema.fields = cfg::list(fields);
+        if serde_json::to_vec(&next).unwrap().len() > target_bytes {
+            break;
+        }
+        draft = next;
+    }
+    let mut fields = draft.schema.fields.as_slice().to_vec();
+    let remaining = target_bytes - serde_json::to_vec(&draft).unwrap().len();
+    assert!(remaining < 4096);
+    let mut remaining = remaining;
+    for field in &mut fields {
+        let terms = field
+            .search_terms
+            .as_slice()
+            .iter()
+            .map(|term| {
+                let extra = remaining.min(448);
+                remaining -= extra;
+                SchemaText::new(format!("{}{}", term.as_str(), "y".repeat(extra))).unwrap()
+            })
+            .collect();
+        field.search_terms = cfg::list(terms);
+    }
+    assert_eq!(remaining, 0);
+    draft.schema.fields = cfg::list(fields);
+    let after = Cursor {
+        host_epoch: host_epoch.clone(),
+        stream_id: StreamId::new(uuid(4242)).unwrap(),
+        sequence: Sequence::new(10),
+    };
+    let event = Event {
+        protocol_version: ProtocolVersion,
+        cursor: Cursor {
+            sequence: Sequence::new(11),
+            ..after.clone()
+        },
+        body: EventBody::DraftChanged {
+            draft: Box::new(draft.clone()),
+        },
+    };
+    let raw = serde_json::to_vec(&event).unwrap();
+    assert!(raw.len() <= MAX_MESSAGE_BYTES);
+    decode_event(&raw).unwrap();
+    let open = Reply {
+        protocol_version: ProtocolVersion,
+        request_id: ReplyRequestId::new(Some(RequestId::new(uuid(1)).unwrap())),
+        body: ReplyBody::Result {
+            result: ResultPayload::Command {
+                command: Box::new(CommandResult::OpenDraft(draft.clone())),
+            },
+        },
+    };
+    decode_reply(&serde_json::to_vec(&open).unwrap()).unwrap();
+    let reply = Reply {
+        protocol_version: ProtocolVersion,
+        request_id: ReplyRequestId::new(Some(RequestId::new(uuid(1)).unwrap())),
+        body: ReplyBody::Result {
+            result: ResultPayload::Query {
+                query: Box::new(QueryResult::ResumeEvents(EventBatch {
+                    after,
+                    next: event.cursor.clone(),
+                    events: cfg::list(vec![event]),
+                })),
+            },
+        },
+    };
+    assert!(serde_json::to_vec(&reply).unwrap().len() > MAX_MESSAGE_BYTES);
+    draft
+}
+
 #[test]
 fn terminal_wal_precedes_local_publication_and_consecutive_operation_draft_events() {
     let (_fixture, mut engine, control, state, draft) = setup();
@@ -516,6 +611,75 @@ fn draft_event_capacity_refusal_retains_pending_completion_lease_and_native_resu
     assert_eq!(state.borrow().acquisitions, 1);
     assert_eq!(state.borrow().drops, 1);
     assert_eq!(current(&mut engine, &draft).state, DraftState::Clean);
+}
+#[test]
+fn single_event_replay_capacity_refusal_precedes_wal_and_local_publication() {
+    let (_fixture, mut engine, control, state, draft) = setup();
+    let operation = execute(&mut engine, &draft);
+    control.replay_oversized.set(true);
+    assert!(matches!(
+        engine.advance(&operation.operation_id).unwrap().state,
+        OperationState::RecoveryRequired { .. }
+    ));
+    assert_eq!(current(&mut engine, &draft), draft);
+    assert_eq!(control.published.get(), 0);
+    assert!(!control.terminal_written.get());
+    assert_eq!(*control.order.borrow(), vec!["preflight"]);
+    assert_eq!(state.borrow().drops, 0);
+    let steps = state.borrow().steps;
+    let effects = state.borrow().effects;
+    control.replay_oversized.set(false);
+    let before = engine.cursor();
+    assert!(matches!(
+        engine.recover(&operation.operation_id).unwrap().state,
+        OperationState::Completed { .. }
+    ));
+    assert_eq!(state.borrow().steps, steps);
+    assert_eq!(state.borrow().effects, effects);
+    assert_eq!(state.borrow().drops, 1);
+    let reply = engine
+        .dispatch(request(RequestBody::Query {
+            query: Query::ResumeEvents(ResumeEventsInput {
+                after: before.clone(),
+                maximum_events: ProgressCount::new(1),
+            }),
+        }))
+        .unwrap()
+        .into_inner();
+    let ReplyBody::Result {
+        result: ResultPayload::Query { query },
+    } = reply.body
+    else {
+        panic!("replay reply");
+    };
+    let QueryResult::ResumeEvents(batch) = *query else {
+        panic!("replay result");
+    };
+    assert_eq!(batch.events.as_slice().len(), 1);
+    assert_eq!(batch.next.sequence.get(), before.sequence.get() + 1);
+    let reply = engine
+        .dispatch(request(RequestBody::Query {
+            query: Query::ResumeEvents(ResumeEventsInput {
+                after: batch.next,
+                maximum_events: ProgressCount::new(1),
+            }),
+        }))
+        .unwrap()
+        .into_inner();
+    let ReplyBody::Result {
+        result: ResultPayload::Query { query },
+    } = reply.body
+    else {
+        panic!("draft replay reply");
+    };
+    let QueryResult::ResumeEvents(batch) = *query else {
+        panic!("draft replay result");
+    };
+    assert_eq!(batch.events.as_slice().len(), 1);
+    assert!(matches!(
+        batch.events.as_slice()[0].body,
+        EventBody::DraftChanged { .. }
+    ));
 }
 #[test]
 fn terminal_wal_failure_keeps_dirty_draft_and_lease_without_local_publication() {

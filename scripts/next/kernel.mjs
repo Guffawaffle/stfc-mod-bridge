@@ -68,6 +68,7 @@ const names = run('list-tests', executable, ['--list']).split(/\r?\n/)
   .filter(line => line.endsWith(': test')).map(line => line.slice(0, -6));
 assert.ok(names.length >= 20 && new Set(names).size === names.length, 'Expected complete unique kernel test inventory');
 const recovery = [
+  'configuration_completion::single_event_replay_capacity_refusal_precedes_wal_and_local_publication',
   'configuration_completion::draft_event_capacity_refusal_retains_pending_completion_lease_and_native_result',
   'configuration_completion::terminal_wal_failure_keeps_dirty_draft_and_lease_without_local_publication',
   'configuration_completion::repeated_commit_or_post_commit_error_poison_host_and_retain_custody',
