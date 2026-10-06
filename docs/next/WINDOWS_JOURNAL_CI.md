@@ -122,6 +122,15 @@ The child bootstrap is a fixed checked-in PowerShell script. It observes its
 own token before starting pinned Node and compares its user/session/logon and
 current-user LocalAppData observations to the bounded source handshake.
 
+The fixture driver creates a fresh `test-target` below its own invocation's
+artifact directory and binds Clippy, test compilation and ownership doc tests
+to that target. It retains the separate fresh normal-library target and all
+source/tool/executable fences. Cargo-selected test executables must resolve
+under the exact fresh test target and native host triple. This avoids opening
+the earlier elevated foundation build's shared Cargo lock; no existing target
+ACL is rewritten, no caller target selector is accepted and no elevated retry
+is introduced. Build-output isolation does not qualify journal construction.
+
 The versioned closed handshake also carries the requested desktop. Before Node
 starts, the child independently queries its own station and thread desktop,
 records those observations separately from the parent DACL snapshots, and

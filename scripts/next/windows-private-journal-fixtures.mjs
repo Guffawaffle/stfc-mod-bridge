@@ -139,6 +139,11 @@ async function main(){
   const directory=ownedArtifactPath(root,`artifacts/next/windows-private-journal-fixtures/${id}`,'directory',{allowMissing:true});
   artifactCreationAttempted=true;
   mkdirSync(directory,{recursive:true});ownedArtifactPath(root,relative(directory),'directory');
+  // The ordinary fixture child owns fresh build outputs. Reusing the earlier
+  // elevated foundation target can refuse its existing Cargo build lock.
+  const testTarget=ownedArtifactPath(root,`${relative(directory)}/test-target`,'directory',{allowMissing:true});
+  mkdirSync(testTarget);ownedArtifactPath(root,relative(testTarget),'directory');
+  rust.env.CARGO_TARGET_DIR=testTarget;
   const save=(name,data)=>{const bytes=Buffer.isBuffer(data)?data:Buffer.from(data);const selected=ownedArtifactPath(root,`${relative(directory)}/${name}`,'file',{allowMissing:true});writeFileSync(selected,bytes,{flag:'wx'});return {path:relative(selected),bytes:bytes.length,sha256:sha(bytes)};};
   let toolsAfter=[],sourcesAfter=null,headBefore=null,headAfter=null,treeBefore=null,treeAfter=null,failure=null,normalExclusion=null,normalArchiveSelection=null,ownershipDocs=null,suite=null,passed=false;
   const tool=(role,route)=>({...boundedFile(realpathSync.native(route)).observation,role,route,physical:realpathSync.native(route)});
@@ -235,7 +240,7 @@ async function main(){
     cargoMessages(compile.stdout);
     const selected=selectHostArtifacts(text(compile.stdout),{root,targets:[{name:'bridge_platform_windows',kind:'lib',manifest:'crates/bridge-platform-windows/Cargo.toml',source:'crates/bridge-platform-windows/src/lib.rs'}]});assert.equal(selected.length,1);
     const artifact=selected[0];assert.equal(artifact.package_id,platformPackage.id);assert.deepEqual(artifact.features,[]);
-    const relation=relative(artifact.executable);assert.ok(relation.startsWith(`target/${rust.hostTarget}/`));
+    const relation=relative(artifact.executable);assert.ok(relation.startsWith(`${relative(testTarget)}/${rust.hostTarget}/`));
     const executable=ownedArtifactPath(root,relation),read=boundedFile(executable,{privateArtifact:true}),headers=peHeaders(read.bytes);
     for(const needle of needles.slice(0,4)) assert.ok(read.bytes.includes(Buffer.from(needle,'utf8')),'Positive test-artifact fixture byte witness required');
     const retainedCopy={...save('compiled-library.test-artifact',read.bytes),executed:false};

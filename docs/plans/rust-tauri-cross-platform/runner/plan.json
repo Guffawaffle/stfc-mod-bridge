@@ -57,7 +57,7 @@
             "BRIDGE_WORK_PACKAGE": "br-01"
           },
           "runtime": "local",
-          "timeoutMs": 900000,
+          "timeoutMs": 1830000,
           "artifacts": [
             "artifacts/next/br-01/acceptance.json"
           ]
