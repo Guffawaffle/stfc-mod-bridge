@@ -1,0 +1,138 @@
+{
+  "disposition": "planning-structure-validated-only",
+  "verifiedAt": "2026-10-06T05:25:50.423Z",
+  "runnerVersion": "2.4.0",
+  "nodeVersion": "v24.14.1",
+  "bridgeRoot": "D:\\dev\\stfc-mod-launcher",
+  "baseline": {
+    "Bridge": {
+      "root": "D:/dev/stfc-mod-launcher",
+      "head": "b46e6d1ba882386956a997fb888c33dd066787be",
+      "branch": "feature/named-launch-profiles-225",
+      "dirty": true
+    },
+    "Profiles": {
+      "root": "D:/dev/stfc-profiles",
+      "head": "aeef4861693613fab119edcd03117b4e8de01d4b",
+      "branch": "codex/profile-catalog-runtime",
+      "dirty": false
+    },
+    "Upstream": {
+      "root": "D:/dev/netniv/stfc-mod",
+      "head": "77c93dcfdbde2a394cd34ee606177e24c25441f0",
+      "branch": "release/artifact-gallery-hotfix-beta",
+      "dirty": false
+    },
+    "Downstream": {
+      "root": "D:/dev/stfc-mod",
+      "head": "f07a113dcaf5cd0e25778e81ec324fdb0a9213f8",
+      "branch": "play-dev",
+      "dirty": false
+    }
+  },
+  "packageCount": 30,
+  "dependencyEdges": 68,
+  "dependencyLevels": 10,
+  "artifactSha256": {
+    "feature-spec.json": "2a777267b0cf8292d280b7fe936c168cacdf2eac6b9124a89863be04e1ce6614",
+    "work-packages.json": "057482b4dbab2c916859ebe32038aa71a93324be7d66d56acde61eb72b679b4d",
+    "runner/execution-plan.json": "e2a280697d142d2f09184458e74e2b8bac3a298786aa91a7f804e3a5de718312",
+    "runner/plan.json": "c55487c7e7c24cada62e770091277485bb14d1e799dd02b684664d153a48cdde",
+    "runner/planning-state.json": "b252a270e6e2ee6807db3493ed0084d8610cfd0e7be4f4f3934d74137341e2ae"
+  },
+  "controlInputSha256": {
+    "docs/plans/rust-tauri-cross-platform/verify-plan.mjs": "9a8bbbbf4f7c22eaf3b8f9e977b2d09eb92129420688f2884e7aebae35f02ba3",
+    "scripts/next/gate-registry.mjs": "df0f4e143cc4b978dc8fa9e672ecf0825222885d347f7321050ab7ae8dad88c0"
+  },
+  "checks": [
+    {
+      "name": "Execution Plan v1 validates with installed LexRunner schema",
+      "result": "passed"
+    },
+    {
+      "name": "Expanded plan and Runner projection cover the same exact work packages",
+      "result": "passed"
+    },
+    {
+      "name": "All required native host coverage and unresolved bindings remain explicit",
+      "result": "passed"
+    },
+    {
+      "name": "UI autonomy and shared write ownership are enforced by the plan",
+      "result": "passed"
+    },
+    {
+      "name": "Refined lessons retain the existing package graph and authority boundaries",
+      "result": "passed"
+    },
+    {
+      "name": "Planning validation cannot claim implementation or execution acceptance",
+      "result": "passed"
+    }
+  ],
+  "commands": [
+    {
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "cli": "C:\\Users\\Guff\\AppData\\Roaming\\npm\\node_modules\\@smartergpt\\lexrunner\\dist\\cli.js",
+      "argv": [
+        "--no-emit-frames",
+        "schema",
+        "validate",
+        "docs/plans/rust-tauri-cross-platform/runner/plan.json",
+        "--json"
+      ],
+      "cwd": "D:\\dev\\stfc-mod-launcher",
+      "exitCode": 0,
+      "durationMs": 1518,
+      "stdout": "{\n  \"valid\": true,\n  \"errors\": [],\n  \"warnings\": [],\n  \"diagnostics\": {\n    \"nodes\": 30,\n    \"edges\": 68,\n    \"layers\": [\n      {\n        \"level\": 0,\n        \"prs\": [\n          \"br-00\"\n        ]\n      },\n      {\n        \"level\": 1,\n        \"prs\": [\n          \"br-01\"\n        ]\n      },\n      {\n        \"level\": 2,\n        \"prs\": [\n          \"br-02\"\n        ]\n      },\n      {\n        \"level\": 3,\n        \"prs\": [\n          \"br-03\",\n          \"br-04\",\n          \"br-05\",\n          \"br-06\",\n          \"br-07\",\n          \"br-08\",\n          \"br-09\",\n          \"br-13\"\n        ]\n      },\n      {\n        \"level\": 4,\n        \"prs\": [\n          \"br-10\",\n          \"br-11\",\n          \"br-12\",\n          \"br-14\",\n          \"br-16\",\n          \"br-21\",\n          \"br-23\"\n        ]\n      },\n      {\n        \"level\": 5,\n        \"prs\": [\n          \"br-15\",\n          \"br-17\",\n          \"br-18\",\n          \"br-19\",\n          \"br-20\",\n          \"br-22\",\n          \"br-24\"\n        ]\n      },\n      {\n        \"level\": 6,\n        \"prs\": [\n          \"br-25\"\n        ]\n      },\n      {\n        \"level\": 7,\n        \"prs\": [\n          \"br-26\"\n        ]\n      },\n      {\n        \"level\": 8,\n        \"prs\": [\n          \"br-27\",\n          \"br-29\"\n        ]\n      },\n      {\n        \"level\": 9,\n        \"prs\": [\n          \"br-30\"\n        ]\n      }\n    ],\n    \"orphans\": []\n  }\n}\n",
+      "stderr": ""
+    },
+    {
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "cli": "C:\\Users\\Guff\\AppData\\Roaming\\npm\\node_modules\\@smartergpt\\lexrunner\\dist\\cli.js",
+      "argv": [
+        "--no-emit-frames",
+        "weave",
+        "merge-order",
+        "docs/plans/rust-tauri-cross-platform/runner/plan.json",
+        "--json"
+      ],
+      "cwd": "D:\\dev\\stfc-mod-launcher",
+      "exitCode": 0,
+      "durationMs": 1438,
+      "stdout": "{\n  \"contract\": \"bounded-ax-v1\",\n  \"levels\": [\n    [\n      \"br-00\"\n    ],\n    [\n      \"br-01\"\n    ],\n    [\n      \"br-02\"\n    ],\n    [\n      \"br-03\",\n      \"br-04\",\n      \"br-05\",\n      \"br-06\",\n      \"br-07\",\n      \"br-08\",\n      \"br-09\",\n      \"br-13\"\n    ],\n    [\n      \"br-10\",\n      \"br-11\",\n      \"br-12\",\n      \"br-14\",\n      \"br-16\",\n      \"br-21\",\n      \"br-23\"\n    ],\n    [\n      \"br-15\",\n      \"br-17\",\n      \"br-18\",\n      \"br-19\",\n      \"br-20\",\n      \"br-22\",\n      \"br-24\"\n    ],\n    [\n      \"br-25\"\n    ],\n    [\n      \"br-26\"\n    ],\n    [\n      \"br-27\",\n      \"br-29\"\n    ],\n    [\n      \"br-30\"\n    ]\n  ],\n  \"maxParallelism\": 8,\n  \"totalItems\": 30\n}\n",
+      "stderr": ""
+    },
+    {
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "cli": "C:\\Users\\Guff\\AppData\\Roaming\\npm\\node_modules\\@smartergpt\\lexrunner\\dist\\cli.js",
+      "argv": [
+        "--no-emit-frames",
+        "--token-budget",
+        "6000",
+        "gate",
+        "run",
+        "docs/plans/rust-tauri-cross-platform/runner/plan.json",
+        "--dry-run",
+        "--keep-cache",
+        "--json"
+      ],
+      "cwd": "D:\\dev\\stfc-mod-launcher",
+      "exitCode": 0,
+      "durationMs": 1477,
+      "stdout": "{\n  \"budget\": {\n    \"prompts\": 1,\n    \"tokens_estimated\": 5615\n  },\n  \"dryRun\": true,\n  \"execution\": {\n    \"levels\": [\n      {\n        \"items\": [\n          \"br-00\"\n        ],\n        \"level\": 1\n      },\n      {\n        \"items\": [\n          \"br-01\"\n        ],\n        \"level\": 2\n      },\n      {\n        \"items\": [\n          \"br-02\"\n        ],\n        \"level\": 3\n      },\n      {\n        \"items\": [\n          \"br-03\",\n          \"br-04\",\n          \"br-05\",\n          \"br-06\",\n          \"br-07\",\n          \"br-08\",\n          \"br-09\",\n          \"br-13\"\n        ],\n        \"level\": 4\n      },\n      {\n        \"items\": [\n          \"br-10\",\n          \"br-11\",\n          \"br-12\",\n          \"br-14\",\n          \"br-16\",\n          \"br-21\",\n          \"br-23\"\n        ],\n        \"level\": 5\n      },\n      {\n        \"items\": [\n          \"br-15\",\n          \"br-17\",\n          \"br-18\",\n          \"br-19\",\n          \"br-20\",\n          \"br-22\",\n          \"br-24\"\n        ],\n        \"level\": 6\n      },\n      {\n        \"items\": [\n          \"br-25\"\n        ],\n        \"level\": 7\n      },\n      {\n        \"items\": [\n          \"br-26\"\n        ],\n        \"level\": 8\n      },\n      {\n        \"items\": [\n          \"br-27\",\n          \"br-29\"\n        ],\n        \"level\": 9\n      },\n      {\n        \"items\": [\n          \"br-30\"\n        ],\n        \"level\": 10\n      }\n    ],\n    \"policy\": {\n      \"maxWorkers\": 3,\n      \"retryConfigs\": 0\n    }\n  },\n  \"plan\": {\n    \"itemCount\": 30,\n    \"schemaVersion\": \"1.0.0\",\n    \"target\": \"main\"\n  },\n  \"selection\": {\n    \"onlyGate\": null,\n    \"onlyItem\": null\n  },\n  \"tiers\": {\n    \"assignments\": {\n      \"br-00\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-01\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-02\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-03\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-04\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-05\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-06\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-07\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-08\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-09\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-10\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-11\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-12\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-13\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-14\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-15\": {\n        \"escalated\": false,\n        \"suggested\": \"senior\"\n      },\n      \"br-16\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-17\": {\n        \"escalated\": false,\n        \"suggested\": \"senior\"\n      },\n      \"br-18\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-19\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-20\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-21\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-22\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-23\": {\n        \"escalated\": false,\n        \"suggested\": \"senior\"\n      },\n      \"br-24\": {\n        \"escalated\": false,\n        \"suggested\": \"senior\"\n      },\n      \"br-25\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-26\": {\n        \"escalated\": false,\n        \"suggested\": \"senior\"\n      },\n      \"br-27\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-29\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      },\n      \"br-30\": {\n        \"escalated\": false,\n        \"suggested\": \"mid\"\n      }\n    },\n    \"metrics\": {\n      \"byActualTier\": {\n        \"junior\": 0,\n        \"mid\": 25,\n        \"senior\": 5\n      },\n      \"byTier\": {\n        \"junior\": 0,\n        \"mid\": 25,\n        \"senior\": 5\n      },\n      \"escalationRate\": 0,\n      \"escalations\": 0,\n      \"governance\": {\n        \"escalationRate\": true,\n        \"meetsAll\": true,\n        \"tierMatchRate\": true\n      },\n      \"mismatches\": 0,\n      \"tierMatchRate\": 1,\n      \"totalTasks\": 30\n    }\n  }\n}\n",
+      "stderr": ""
+    }
+  ],
+  "implementationGatesExecuted": 0,
+  "runsCreated": 0,
+  "attemptsCreated": 0,
+  "proofBoundary": "Schema, cross-artifact coverage and dependency order are validated. Gate declarations distinguish initial plans from explicitly partial component implementations; zero-execution counters describe planning validation and acceptance requires separately bound receipts. No product implementation, native build, runtime qualification or release eligibility follows from this planning result.",
+  "priorProbe": {
+    "command": "lexrunner --no-emit-frames gate run <plan> --dry-run --keep-cache --json",
+    "result": "input-size-budget-exceeded",
+    "tokensEstimated": 5392,
+    "defaultLimit": 5000,
+    "resolution": "Explicit 6000-token plan-input allowance; no gates run."
+  }
+}

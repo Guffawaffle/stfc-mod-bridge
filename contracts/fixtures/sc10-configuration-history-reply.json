@@ -1,0 +1,63 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "configuration_history",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [
+              {
+                "backupId": "000008fe-1111-4111-8111-111111111111",
+                "createdAt": "2026-10-03T10:00:00Z",
+                "document": {
+                  "baseline": {
+                    "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "fileIdentity": "synthetic-file-1",
+                    "kind": "existing"
+                  },
+                  "documentId": "000007d0-1111-4111-8111-111111111111",
+                  "revision": "synthetic-document-1",
+                  "schema": {
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "providerId": "guffawaffle",
+                    "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "schemaId": "stfc-community-mod.config-schema",
+                    "schemaVersion": "1.0.0"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                },
+                "nativeBackupRef": "synthetic-native-backup-1",
+                "retainedDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            ],
+            "revision": "synthetic-inventory-1"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000848-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,39 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "resume_events",
+        "output": {
+          "after": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "1",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "events": [
+            {
+              "body": {
+                "reason": "catalog_changed",
+                "type": "snapshot_invalidated"
+              },
+              "cursor": {
+                "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                "sequence": "3",
+                "streamId": "000003e9-1111-4111-8111-111111111111"
+              },
+              "protocolVersion": 1
+            }
+          ],
+          "next": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "3",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000178b-1111-4111-8111-111111111111"
+}

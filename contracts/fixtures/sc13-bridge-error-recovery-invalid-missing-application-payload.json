@@ -1,0 +1,66 @@
+{
+  "body": {
+    "error": {
+      "code": "recovery_required",
+      "recovery": {
+        "operationId": "00000d1e-1111-4111-8111-111111111111",
+        "target": {
+          "kind": "bridge",
+          "recovery": {
+            "application": {
+              "applicationId": "guffawaffle.stfc-mod-bridge",
+              "architecture": "x86_64",
+              "channelId": "stable",
+              "installationRef": "synthetic-bridge-installation-1",
+              "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "payloads": [
+                {
+                  "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                  "role": "application",
+                  "size": "1024"
+                },
+                {
+                  "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                  "role": "profiles_native",
+                  "size": "512"
+                },
+                {
+                  "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                  "role": "toml_native",
+                  "size": "512"
+                },
+                {
+                  "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                  "role": "update_helper",
+                  "size": "512"
+                }
+              ],
+              "platform": "windows",
+              "revision": "synthetic-bridge-app-1"
+            },
+            "bridgeJournalRef": "synthetic-bridge-journal-1",
+            "expectedApplication": {
+              "applicationId": "guffawaffle.stfc-mod-bridge",
+              "architecture": "x86_64",
+              "channelId": "stable",
+              "installationRef": "synthetic-bridge-installation-1",
+              "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "payloads": [],
+              "platform": "windows",
+              "revision": "synthetic-bridge-app-1"
+            },
+            "revision": "synthetic-bridge-journal-1"
+          }
+        },
+        "transaction": "synthetic-bridge-journal-1"
+      },
+      "retryDisposition": "after_recovery",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d2a-1111-4111-8111-111111111111"
+}

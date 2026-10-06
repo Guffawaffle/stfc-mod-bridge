@@ -1,0 +1,47 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "000009c5-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:b6ae97bfa8a1509430e93d59c4c46a958ac22dc21e60f053bac7e4673cd2c49a"
+          },
+          "semantics": {
+            "action": "save_application_preferences",
+            "capture": {
+              "input": {
+                "expectedRevision": "synthetic-preferences-1",
+                "values": {
+                  "lastTarget": {
+                    "installationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "profile": {
+                      "kind": "ordinary"
+                    }
+                  },
+                  "motion": "reduced",
+                  "theme": "light"
+                }
+              },
+              "kind": "save_application_preferences"
+            },
+            "effects": [
+              "save_application_preferences"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "application_state"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000858-1111-4111-8111-111111111111"
+}

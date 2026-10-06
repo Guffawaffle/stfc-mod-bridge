@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "bridge-generated-protocol/v1",
+  "protocolVersion": 1,
+  "draft": "draft-07",
+  "source": "crates/bridge-contracts/src/v1",
+  "files": [
+    {
+      "path": "contracts/generated/aggregate.schema.json",
+      "sha256": "28795f36a863650dc5b5ad489652b673ec4a2896e8e9275b10295e2670d1ae75"
+    },
+    {
+      "path": "contracts/generated/event.schema.json",
+      "sha256": "d73e05cdfbb540cd2b7d608f5dac973e77c371289d6b79cff6a82541e997788d"
+    },
+    {
+      "path": "contracts/generated/reply.schema.json",
+      "sha256": "ac1eba71490cc148ac674633da8b4a48a30eb1654a054806f4b257b529f189b5"
+    },
+    {
+      "path": "contracts/generated/request.schema.json",
+      "sha256": "ef5a5688bb3aa5a87004008f63220acc0a4b5cc19eba6fe3fd234c43230539db"
+    },
+    {
+      "path": "ui/src/generated/protocol.ts",
+      "sha256": "39f648e832c710045fe0488acd68b65db32830e176b92f09daf6ba045f074dc1"
+    }
+  ],
+  "generationBoundary": "wire/schema/types; no native or operation execution qualification"
+}

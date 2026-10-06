@@ -1,0 +1,88 @@
+name: Next Bridge foundation
+on:
+  pull_request:
+    paths: ['contracts/**', 'crates/**', 'apps/desktop/**', 'ui/**', 'scripts/next/**', 'docs/next/**', 'docs/plans/rust-tauri-cross-platform/**', 'dependencies/next-*', 'Cargo.*', 'rust-toolchain.toml', 'package.json', 'pnpm-*', '.cargo/**', '.github/workflows/next-foundation.yml', 'AGENTS.md', '.gitignore', 'assets/stfc-mod-bridge.png', 'src/STFCCommunityMod.Launcher/Assets/stfc-mod-bridge.ico']
+  push:
+    branches: [main, feature/rust-bridge-231]
+    paths: ['contracts/**', 'crates/**', 'apps/desktop/**', 'ui/**', 'scripts/next/**', 'docs/next/**', 'docs/plans/rust-tauri-cross-platform/**', 'dependencies/next-*', 'Cargo.*', 'rust-toolchain.toml', 'package.json', 'pnpm-*', '.cargo/**', '.github/workflows/next-foundation.yml', 'AGENTS.md', '.gitignore', 'assets/stfc-mod-bridge.png', 'src/STFCCommunityMod.Launcher/Assets/stfc-mod-bridge.ico']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            host: windows-x64
+          - os: macos-15
+            host: macos-arm64-native
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      BRIDGE_EXPECTED_HOST: ${{ matrix.host }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component clippy --component rustfmt
+      - name: Install locked frontend dependencies and pinned gate runner
+        run: |
+          npx --yes pnpm@11.19.0 install --frozen-lockfile --ignore-scripts
+          npm install --global @smartergpt/lexrunner@2.1.0
+      - name: Bind and execute current prerequisite gate
+        run: |
+          node scripts/next/make-runner-plan.mjs --package br-00
+          lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-00.plan.json --artifact-dir artifacts/next/runner/br-00 --timeout 150000 --max-level 0 --keep-cache --json
+      - name: Bind foundation to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-01
+      - name: Execute current foundation gate
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-01.plan.json --artifact-dir artifacts/next/runner/br-01 --timeout 1830000 --max-level 0 --keep-cache --json
+      - name: Bind protocol and scenario package to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-02
+      - name: Execute both protocol and complete scenario gates
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-02.plan.json --artifact-dir artifacts/next/runner/br-02 --timeout 990000 --max-level 0 --keep-cache --json
+      - name: Execute private Windows journal fixtures in a verified ordinary context
+        if: matrix.host == 'windows-x64'
+        shell: pwsh
+        run: ./scripts/next/windows-journal-ci.ps1
+      - name: Bind selected Apple Silicon fixtures to this job's prerequisites
+        if: matrix.host == 'macos-arm64-native'
+        run: node scripts/next/make-runner-plan.mjs --suite macos-platform-fixtures --host macos-arm64-native
+      - name: Execute private Apple Silicon fixture subset
+        if: matrix.host == 'macos-arm64-native'
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-07.macos-platform-fixtures.macos-arm64-native.plan.json --artifact-dir artifacts/next/runner/br-07-fixtures --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Install pinned project browser
+        run: node scripts/next/browser.mjs install
+      - name: Bind frontend package to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-03
+      - name: Execute typed mock and browser development gates
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-03.plan.json --artifact-dir artifacts/next/runner/br-03 --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Bind operation kernel to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-04
+      - name: Execute operation contention and durable crash recovery gates
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-04.plan.json --artifact-dir artifacts/next/runner/br-04 --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Bind shared frontend components to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-12
+      - name: Execute component and browser accessibility gates
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-12.plan.json --artifact-dir artifacts/next/runner/br-12 --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Bind capability projections to completed prerequisites
+        run: node scripts/next/make-runner-plan.mjs --package br-13
+      - name: Execute pure capability projection gate
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-13.plan.json --artifact-dir artifacts/next/runner/br-13 --timeout 330000 --max-level 0 --keep-cache --json
+      - name: Bind portable host adapter foundation to this native host
+        run: node scripts/next/make-runner-plan.mjs --suite host-adapter-foundation --host ${{ matrix.host }}
+      - name: Execute portable host and injected frontend adapter observations
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-21.host-adapter-foundation.${{ matrix.host }}.plan.json --artifact-dir artifacts/next/runner/br-21-foundation --timeout 630000 --max-level 0 --keep-cache --json
+      - name: Retain source and host observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: next-foundation-${{ matrix.host }}-${{ github.sha }}
+          path: |
+            artifacts/next/
+            !artifacts/next/windows-private-journal-fixtures/**/test-target/**
+          retention-days: 14

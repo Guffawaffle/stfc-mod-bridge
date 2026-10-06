@@ -1,0 +1,82 @@
+{
+  "case": "sc14-reconnect-retention-gap-resnapshot",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc14-reconnect-retention-gap-resnapshot",
+  "scenario": "SC-14",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-prepare-reply",
+      "request": "sc14-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc14-admit-reply",
+      "request": "sc14-admit-request",
+      "type": "exchange"
+    },
+    {
+      "event": "sc14-event-one",
+      "type": "event"
+    },
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "1",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "reconnect",
+      "type": "boundary"
+    },
+    {
+      "event": "sc14-event-two",
+      "type": "event"
+    },
+    {
+      "reply": "sc14-resume-gap-refusal-reply",
+      "request": "sc14-resume-gap-refusal-request",
+      "type": "exchange"
+    },
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "20",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "retention_gap",
+      "type": "boundary"
+    },
+    {
+      "event": "sc14-event-after-retention-gap",
+      "type": "event"
+    },
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "00001787-1111-4111-8111-111111111111"
+      },
+      "reason": "resnapshot",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-resnapshot-reply",
+      "request": "sc14-resnapshot-request",
+      "type": "exchange"
+    },
+    {
+      "event": "sc14-event-new-stream",
+      "type": "event"
+    }
+  ]
+}

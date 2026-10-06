@@ -1,0 +1,24 @@
+{
+  "case": "A foreign host lookup refuses before consulting draft custody",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc08-get-foreign-host-draft-journey",
+  "scenario": "SC-08",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc08-get-foreign-host-draft-reply",
+      "request": "sc08-get-foreign-host-draft-request",
+      "type": "exchange"
+    }
+  ]
+}

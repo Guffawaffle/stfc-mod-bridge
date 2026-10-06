@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": "pairing_mismatch",
+      "retryDisposition": "after_user_choice",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d34-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "bridge-browser-validators/v1",
+  "protocolVersion": 1,
+  "sourceProtocolManifestSha256": "f30c9af41e6b53ffc00ac29bd660c6b83492f3f68e98c0206dc3882dcbfec3fd",
+  "toolchain": {
+    "ajv": "8.20.0",
+    "formats": "3.0.1",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3"
+  },
+  "validation": {
+    "strict": true,
+    "ownProperties": true,
+    "coerceTypes": false,
+    "useDefaults": false,
+    "removeAdditional": false,
+    "dateTimeFormat": "full",
+    "offlineCompilation": true
+  },
+  "schemas": [
+    {
+      "path": "contracts/generated/request.schema.json",
+      "sha256": "ef5a5688bb3aa5a87004008f63220acc0a4b5cc19eba6fe3fd234c43230539db"
+    },
+    {
+      "path": "contracts/generated/reply.schema.json",
+      "sha256": "ac1eba71490cc148ac674633da8b4a48a30eb1654a054806f4b257b529f189b5"
+    },
+    {
+      "path": "contracts/generated/event.schema.json",
+      "sha256": "d73e05cdfbb540cd2b7d608f5dac973e77c371289d6b79cff6a82541e997788d"
+    }
+  ],
+  "bundledHelpers": [
+    {
+      "path": "node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/formats.js",
+      "sha256": "b61693a26869970a92cc1fe832c931ccd3afe8b6d66802b19c48306349e84880"
+    },
+    {
+      "path": "node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/runtime/ucs2length.js",
+      "sha256": "1df012dd3d23fced07255a7204798004509687cb1f431ae0ab976db436bbd890"
+    }
+  ],
+  "files": [
+    {
+      "path": "ui/src/generated/validators.mjs",
+      "sha256": "e0a3d61456d669c29ef548936651ec3ec72207e16b9bdd2493fe79b71bd31ff9"
+    },
+    {
+      "path": "ui/src/generated/validators.d.mts",
+      "sha256": "fd7dedc4912eee490a9bce1c920678b3c6d5224e3ca5e3bf71aa8bb3da026d19"
+    },
+    {
+      "path": "ui/src/generated/validators.LICENSE.txt",
+      "sha256": "2cd4d7031c508c7acd39b7e10e355aa4523eb753fce10613a42ec505c112bcbe"
+    }
+  ],
+  "boundary": "browser schema/type guards and bundled helpers; no Rust cross-field or native authority"
+}

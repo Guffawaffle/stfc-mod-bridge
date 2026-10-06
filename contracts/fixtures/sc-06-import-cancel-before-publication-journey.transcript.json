@@ -1,0 +1,34 @@
+{
+  "case": "import-cancel-before-publication",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-06-import-cancel-before-publication-journey",
+  "scenario": "SC-06",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-06-import-cancel-prepare-reply",
+      "request": "sc-06-import-cancel-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-06-import-cancel-commit-reply",
+      "request": "sc-06-import-cancel-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-06-import-cancel-before-publication-reply",
+      "request": "sc-06-import-cancel-before-publication-request",
+      "type": "exchange"
+    }
+  ]
+}

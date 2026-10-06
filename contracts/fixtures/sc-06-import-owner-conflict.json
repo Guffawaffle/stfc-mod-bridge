@@ -1,0 +1,57 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001fe7-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:294b5ba88fda0b66f07c7d36282edebfc709b95ff384b04db34df04855fadc5a"
+          },
+          "semantics": {
+            "action": "create_profile",
+            "capture": {
+              "input": {
+                "catalogRevision": "synthetic-catalog-1",
+                "destinationOwner": "synthetic-other-native-owner",
+                "name": "Synthetic profile",
+                "nativePreparationRef": "synthetic-import-reviewed-owner-and-consent-prepare",
+                "preferredInstallation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "setup": {
+                  "approval": "request_native_approval",
+                  "kind": "windows_user_import",
+                  "source": {
+                    "destinationOwner": "synthetic-native-owner-1",
+                    "requiresNativeApproval": true,
+                    "sourceId": "synthetic-native-import-source",
+                    "sourceRevision": "synthetic-source-1"
+                  }
+                }
+              },
+              "kind": "create_profile"
+            },
+            "effects": [
+              "publish_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001ff5-1111-4111-8111-111111111111"
+}

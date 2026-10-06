@@ -1,0 +1,66 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00001771-1111-4111-8111-111111111111",
+              "operationRevision": "2",
+              "semantics": {
+                "action": "launch_ordinary",
+                "capture": {
+                  "catalogRevision": "synthetic-catalog-1",
+                  "kind": "launch_ordinary",
+                  "runtime": {
+                    "kind": "absent"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                },
+                "effects": [
+                  "launch_session"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "session"
+              },
+              "state": {
+                "progress": {
+                  "measurement": {
+                    "completed": "1",
+                    "total": "2",
+                    "unit": "files"
+                  },
+                  "phase": "synthetic-working"
+                },
+                "status": "running"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000178e-1111-4111-8111-111111111111"
+}

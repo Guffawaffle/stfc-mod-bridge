@@ -1,0 +1,47 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00002007-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "delete_profile",
+            "capture": {
+              "input": {
+                "confirmation": "delete_entire_owned_profile",
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "archived"
+                }
+              },
+              "kind": "delete_profile"
+            },
+            "effects": [
+              "delete_owned_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "profile_deleted",
+                "profileId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00002009-1111-4111-8111-111111111111"
+}

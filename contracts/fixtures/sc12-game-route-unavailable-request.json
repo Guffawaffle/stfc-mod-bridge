@@ -1,0 +1,16 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "installation": {
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "registered"
+        }
+      },
+      "name": "check_game_update"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d18-1111-4111-8111-111111111111"
+}

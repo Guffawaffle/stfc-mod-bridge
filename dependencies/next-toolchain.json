@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "bridge-toolchain/v1",
+  "node": "24.14.1", "pnpm": "11.19.0", "rust": "1.99.0",
+  "tauri": "2.12.1", "tauriBuild": "2.7.1",
+  "svelte": "5.57.1", "typescript": "6.0.3", "vite": "8.3.2",
+  "browserDevelopment": {
+    "validatorBundler": "esbuild@0.28.2", "playwright": "1.63.0",
+    "browser": "chromium-headless-shell", "revision": "1243", "version": "153.0.8010.12",
+    "installation": "project-local ignored artifacts/next/tooling/browsers",
+    "launch": "explicit executable path, observed version and before/after byte hash",
+    "nativeWebviewQualified": false
+  },
+  "protocol": {
+    "serde": "1.0.229", "serdeJson": "1.0.151", "schemars": "1.2.2",
+    "sha2": "0.11.0", "jsonschema": "0.58.5", "jsonschemaDefaultFeatures": false,
+    "ajv": "8.20.0", "ajvFormats": "3.0.1", "jsonSchemaToTypeScript": "16.0.0", "schemaDraft": "draft-07",
+    "source": "Rust DTOs", "operationalQualification": false
+  },
+  "nativeAutomation": {
+    "service": "@wdio/tauri-service", "version": "1.4.0", "webdriverio": "9.32.0",
+    "provider": "embedded", "webdriverPlugin": "tauri-plugin-wdio-webdriver@1.4.0", "backendTestPlugin": "tauri-plugin-wdio@1.4.0",
+    "productionInstrumentationEnabled": false, "nativeTestsQualified": false,
+    "supplyChainIssue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/235",
+    "documentation": "https://v2.tauri.app/develop/tests/webdriver/"
+  },
+  "nativeHostBindings": {
+    "windows-x64": "local compiler/build available; installed application/game qualification pending",
+    "macos-arm64-native": "hosted native CI definition present; this candidate job and live game qualification pending"
+  }
+}

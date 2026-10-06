@@ -1,0 +1,52 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00000d0e-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:64c9f9406a2f130b3a1b85434908099a0da12c6c835b4671c031bbff01ece25b"
+          },
+          "semantics": {
+            "action": "recover_game_update",
+            "capture": {
+              "input": {
+                "recovery": {
+                  "expectedClient": {
+                    "architecture": "x86_64",
+                    "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "version": "270"
+                  },
+                  "installation": {
+                    "kind": "registered",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1",
+                    "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "registrationRevision": "synthetic-installation-revision-1"
+                  },
+                  "nativeTransaction": "synthetic-native-installation-path-key",
+                  "revision": "synthetic-game-journal-1"
+                }
+              },
+              "kind": "recover_game_update"
+            },
+            "effects": [
+              "recover_game"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "game_client"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d0f-1111-4111-8111-111111111111"
+}

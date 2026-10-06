@@ -1,0 +1,51 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00002013-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "archive_profile",
+            "capture": {
+              "input": {
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "active"
+                }
+              },
+              "kind": "archive_profile"
+            },
+            "effects": [
+              "archive_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "reason": "native_custody_unresolved",
+            "recovery": {
+              "operationId": "00002013-1111-4111-8111-111111111111",
+              "target": {
+                "kind": "profile",
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "active"
+                }
+              },
+              "transaction": "synthetic-owned-profile-journal"
+            },
+            "status": "recovery_required"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00002015-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,18 @@
+{
+  "body": {
+    "obligations": [
+      {
+        "kind": "operation",
+        "operationId": "00001771-1111-4111-8111-111111111111",
+        "operationRevision": "2"
+      }
+    ],
+    "type": "host_close_deferred"
+  },
+  "cursor": {
+    "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+    "sequence": "1",
+    "streamId": "000003e9-1111-4111-8111-111111111111"
+  },
+  "protocolVersion": 1
+}

@@ -1,0 +1,81 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "diagnostic_preview",
+        "output": {
+          "content": {
+            "disclosure": "include_paths",
+            "facts": [
+              {
+                "kind": "target",
+                "value": {
+                  "installation": {
+                    "kind": "registered",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1",
+                    "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "registrationRevision": "synthetic-installation-revision-1"
+                  },
+                  "profile": {
+                    "kind": "ordinary",
+                    "ownerScope": "synthetic-native-owner-1"
+                  }
+                }
+              },
+              {
+                "kind": "issue",
+                "value": {
+                  "code": "native_unavailable"
+                }
+              }
+            ],
+            "paths": {
+              "installation": {
+                "platform": "windows",
+                "value": "C:\\Synthetic\\Game"
+              }
+            },
+            "target": {
+              "installation": {
+                "kind": "registered",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1",
+                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "registrationRevision": "synthetic-installation-revision-1"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          },
+          "reference": {
+            "digest": "sha256:7f058d724a8a2c0428b1244793c2d106d6d51664844783e0e10a931b735c1557",
+            "disclosure": "include_paths",
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "previewId": "00000960-1111-4111-8111-111111111111",
+            "revision": "synthetic-preview-1",
+            "target": {
+              "installation": {
+                "kind": "registered",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1",
+                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "registrationRevision": "synthetic-installation-revision-1"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000855-1111-4111-8111-111111111111"
+}

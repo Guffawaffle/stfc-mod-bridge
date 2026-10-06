@@ -1,0 +1,41 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "request_export_destination",
+        "output": {
+          "binding": {
+            "preview": {
+              "digest": "sha256:0ab057c38a965ad780b331736a3844224b212ffed73b53c175f2f990e4638503",
+              "disclosure": "redacted",
+              "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+              "previewId": "00000960-1111-4111-8111-111111111111",
+              "revision": "synthetic-preview-1",
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "kind": "ordinary",
+                  "ownerScope": "synthetic-native-owner-1"
+                }
+              }
+            }
+          },
+          "outcome": {
+            "reason": "selection_unavailable",
+            "status": "unavailable"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000852-1111-4111-8111-111111111111"
+}

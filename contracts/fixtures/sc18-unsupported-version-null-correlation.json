@@ -1,0 +1,15 @@
+{
+  "body": {
+    "error": {
+      "code": "unsupported_protocol",
+      "retryDisposition": "never",
+      "supportedVersions": [
+        1
+      ],
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": null
+}

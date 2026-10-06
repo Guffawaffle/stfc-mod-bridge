@@ -1,0 +1,39 @@
+{
+  "case": "sc15-partial-snapshot-declares-missing-observation",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc15-partial-snapshot-declares-missing-observation",
+  "scenario": "SC-15",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc15-prepare-reply",
+      "request": "sc15-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-admit-reply",
+      "request": "sc15-admit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-running-reply",
+      "request": "sc15-running-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-explicit-partial-snapshot-reply",
+      "request": "sc15-explicit-partial-snapshot-request",
+      "type": "exchange"
+    }
+  ]
+}

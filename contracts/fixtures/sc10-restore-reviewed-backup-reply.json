@@ -1,0 +1,100 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "000008ff-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:0302944ea3a663dcf3c6478d250b02c562ac57f9a8ac9496d126f61745047308"
+          },
+          "semantics": {
+            "action": "restore_configuration",
+            "capture": {
+              "input": {
+                "backup": {
+                  "backupId": "000008fe-1111-4111-8111-111111111111",
+                  "createdAt": "2026-10-03T10:00:00Z",
+                  "document": {
+                    "baseline": {
+                      "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "fileIdentity": "synthetic-file-1",
+                      "kind": "existing"
+                    },
+                    "documentId": "000007d0-1111-4111-8111-111111111111",
+                    "revision": "synthetic-document-1",
+                    "schema": {
+                      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "providerId": "guffawaffle",
+                      "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "schemaId": "stfc-community-mod.config-schema",
+                      "schemaVersion": "1.0.0"
+                    },
+                    "target": {
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "profile": {
+                        "kind": "ordinary",
+                        "ownerScope": "synthetic-native-owner-1"
+                      }
+                    }
+                  },
+                  "nativeBackupRef": "synthetic-native-backup-1",
+                  "retainedDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                },
+                "document": {
+                  "baseline": {
+                    "contentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                    "fileIdentity": "synthetic-file-2",
+                    "kind": "existing"
+                  },
+                  "documentId": "000007d0-1111-4111-8111-111111111111",
+                  "revision": "synthetic-document-2",
+                  "schema": {
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "providerId": "guffawaffle",
+                    "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "schemaId": "stfc-community-mod.config-schema",
+                    "schemaVersion": "1.0.0"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                }
+              },
+              "kind": "restore_configuration"
+            },
+            "effects": [
+              "write_configuration"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "configuration"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000849-1111-4111-8111-111111111111"
+}

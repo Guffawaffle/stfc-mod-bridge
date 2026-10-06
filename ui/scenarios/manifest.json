@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "bridge-browser-scenario-manifest/v1",
+  "scripts": 156,
+  "fixtures": 472,
+  "sourceIndexSha256": "0dc55765464de4523c4bc06b6e1d2319d6064c746137b892fda06370e62c88e1",
+  "sourceProtocolManifestSha256": "f30c9af41e6b53ffc00ac29bd660c6b83492f3f68e98c0206dc3882dcbfec3fd",
+  "browserValidatorManifestSha256": "07be65280ce80a60789a4564f6e379fbacd76707cde2d37bd95ae468e6474d73",
+  "correlationSlots": [
+    "requestId"
+  ],
+  "files": [
+    {
+      "path": "ui/scenarios/catalog.json",
+      "sha256": "b4c28bf12361e0920689e06042e4bca3a4b7c89361764e886bf000385e2a639b"
+    }
+  ],
+  "engineExecutionQualified": false,
+  "nativeRuntimeQualified": false,
+  "releaseQualified": false
+}

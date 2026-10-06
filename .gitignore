@@ -3,8 +3,14 @@
 .vscode/
 artifacts/
 **/bin/
+!/crates/**/src/bin/
 **/obj/
 *.user
 *.suo
 *.nupkg
 TestResults/
+/target/
+/node_modules/
+/ui/node_modules/
+/ui/dist/
+/apps/desktop/src-tauri/gen/

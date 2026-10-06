@@ -1,0 +1,28 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "storeMode": "new",
+            "target": {
+              "installation": {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "registered"
+              },
+              "profile": {
+                "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "kind": "isolated"
+              }
+            }
+          },
+          "kind": "launch_isolated"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f9d-1111-4111-8111-111111111111"
+}

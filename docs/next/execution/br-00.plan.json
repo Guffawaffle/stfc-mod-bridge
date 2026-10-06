@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "target": "main",
+  "policy": {"requiredGates": ["acceptance"], "optionalGates": [], "maxWorkers": 1, "retries": {}, "overrides": {}, "mergeRule": {"type": "strict-required"}},
+  "items": [{
+    "name": "br-00",
+    "deps": [],
+    "gates": [{
+      "name": "acceptance",
+      "run": "node scripts/next/qualify.mjs --package br-00 --host any",
+      "cwd": "D:/dev/stfc-mod-launcher",
+      "runtime": "local",
+      "timeoutMs": 120000,
+      "env": {"BRIDGE_WORK_PACKAGE": "br-00", "BRIDGE_ISSUE": "232"},
+      "artifacts": ["artifacts/next/br-00/acceptance.json"]
+    }]
+  }]
+}

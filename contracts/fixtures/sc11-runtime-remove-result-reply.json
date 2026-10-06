@@ -1,0 +1,93 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00000cf5-1111-4111-8111-111111111111",
+              "operationRevision": "3",
+              "semantics": {
+                "action": "runtime_remove",
+                "capture": {
+                  "input": {
+                    "reference": {
+                      "binding": {
+                        "architecture": "x86_64",
+                        "artifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "clientRevision": "synthetic-client-270",
+                        "configurationSchemaDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "distributionId": "guffawaffle.stfc-community-mod",
+                        "manifest": {
+                          "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                          "status": "observed"
+                        },
+                        "platform": "windows",
+                        "providerId": "guffawaffle"
+                      },
+                      "receiptId": "synthetic-runtime-receipt-1",
+                      "revision": "synthetic-runtime-management-1",
+                      "target": {
+                        "installation": {
+                          "kind": "registered",
+                          "nativeTargetRef": "synthetic-native-target-1",
+                          "physicalId": "synthetic-installation-physical-1",
+                          "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "registrationRevision": "synthetic-installation-revision-1"
+                        },
+                        "profile": {
+                          "kind": "ordinary",
+                          "ownerScope": "synthetic-native-owner-1"
+                        }
+                      }
+                    }
+                  },
+                  "kind": "runtime_remove"
+                },
+                "effects": [
+                  "remove_managed_runtime"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "runtime_distribution"
+              },
+              "state": {
+                "outcome": {
+                  "kind": "changed",
+                  "reason": "applied",
+                  "receipt": {
+                    "kind": "runtime_removed",
+                    "target": {
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "profile": {
+                        "kind": "ordinary",
+                        "ownerScope": "synthetic-native-owner-1"
+                      }
+                    }
+                  }
+                },
+                "status": "completed"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000cf6-1111-4111-8111-111111111111"
+}

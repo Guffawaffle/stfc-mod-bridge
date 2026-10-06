@@ -1,0 +1,58 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001fc8-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "edit_ordinary_profile",
+            "capture": {
+              "input": {
+                "preferredInstallation": {
+                  "kind": "clear"
+                },
+                "profile": {
+                  "catalogId": "cccccccccccccccccccccccccccccccc",
+                  "kind": "ordinary",
+                  "ownerScope": "synthetic-native-owner-1",
+                  "revision": "synthetic-ordinary-revision-1"
+                }
+              },
+              "kind": "edit_ordinary_profile"
+            },
+            "effects": [
+              "edit_profile_metadata"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "profile_edited",
+                "profile": {
+                  "kind": "ordinary",
+                  "reference": {
+                    "catalogId": "cccccccccccccccccccccccccccccccc",
+                    "kind": "ordinary",
+                    "ownerScope": "synthetic-native-owner-1",
+                    "revision": "synthetic-ordinary-revision-2"
+                  }
+                }
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fca-1111-4111-8111-111111111111"
+}

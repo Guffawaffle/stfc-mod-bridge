@@ -1,0 +1,121 @@
+:root, .bridge-theme {
+  color-scheme: light;
+  --bridge-background: #f3f6f8;
+  --bridge-surface: #ffffff;
+  --bridge-text: #182c3b;
+  --bridge-muted: #465d6d;
+  --bridge-border: #8194a0;
+  --bridge-accent: #08685f;
+  --bridge-on-accent: #ffffff;
+  --bridge-accent-text: #065e56;
+  --bridge-accent-soft: #e4f1ee;
+  --bridge-success: #247043;
+  --bridge-warning: #8a5304;
+  --bridge-warning-soft: #fff2d6;
+  --bridge-danger: #a32f35;
+  --bridge-on-danger: #ffffff;
+  --bridge-danger-text: #98292f;
+  --bridge-danger-soft: #fcebed;
+  --bridge-disabled-surface: #e6ecf0;
+  --bridge-disabled-text: #526674;
+  --bridge-focus: #075bc3;
+  --bridge-backdrop: rgb(12 23 33 / 65%);
+  --bridge-shadow: 0 1rem 3rem rgb(12 23 33 / 20%);
+  --bridge-radius: .45rem;
+  --bridge-radius-large: .8rem;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  background: var(--bridge-background);
+  color: var(--bridge-text);
+}
+
+:root[data-theme='dark'], .bridge-theme[data-theme='dark'] {
+  color-scheme: dark;
+  --bridge-background: #101c27;
+  --bridge-surface: #172735;
+  --bridge-text: #e5edf3;
+  --bridge-muted: #b2c3d0;
+  --bridge-border: #718696;
+  --bridge-accent: #76d1c2;
+  --bridge-on-accent: #102c28;
+  --bridge-accent-text: #8edccc;
+  --bridge-accent-soft: #203d3b;
+  --bridge-success: #92d9a6;
+  --bridge-warning: #f1c477;
+  --bridge-warning-soft: #3c3120;
+  --bridge-danger: #f2a2a8;
+  --bridge-on-danger: #3f141a;
+  --bridge-danger-text: #ffb2b7;
+  --bridge-danger-soft: #412c34;
+  --bridge-disabled-surface: #273845;
+  --bridge-disabled-text: #abbcc8;
+  --bridge-focus: #accfff;
+  --bridge-backdrop: rgb(0 0 0 / 65%);
+  --bridge-shadow: 0 1rem 3rem rgb(0 0 0 / 40%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]), :root[data-theme='system'], .bridge-theme[data-theme='system'] {
+    color-scheme: dark;
+    --bridge-background: #101c27;
+    --bridge-surface: #172735;
+    --bridge-text: #e5edf3;
+    --bridge-muted: #b2c3d0;
+    --bridge-border: #718696;
+    --bridge-accent: #76d1c2;
+    --bridge-on-accent: #102c28;
+    --bridge-accent-text: #8edccc;
+    --bridge-accent-soft: #203d3b;
+    --bridge-success: #92d9a6;
+    --bridge-warning: #f1c477;
+    --bridge-warning-soft: #3c3120;
+    --bridge-danger: #f2a2a8;
+    --bridge-on-danger: #3f141a;
+    --bridge-danger-text: #ffb2b7;
+    --bridge-danger-soft: #412c34;
+    --bridge-disabled-surface: #273845;
+    --bridge-disabled-text: #abbcc8;
+    --bridge-focus: #accfff;
+    --bridge-backdrop: rgb(0 0 0 / 65%);
+    --bridge-shadow: 0 1rem 3rem rgb(0 0 0 / 40%);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; }
+:focus-visible { outline: 2px solid var(--bridge-focus); outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--bridge-surface); }
+.bridge-sr-only { position: absolute; inline-size: 1px; block-size: 1px; padding: 0;
+  margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+@media (forced-colors: active) {
+  :root, .bridge-theme, :root[data-theme], .bridge-theme[data-theme] {
+    --bridge-background: Canvas;
+    --bridge-surface: Canvas;
+    --bridge-text: CanvasText;
+    --bridge-muted: CanvasText;
+    --bridge-border: CanvasText;
+    --bridge-accent: Highlight;
+    --bridge-on-accent: HighlightText;
+    --bridge-accent-text: LinkText;
+    --bridge-accent-soft: Canvas;
+    --bridge-success: CanvasText;
+    --bridge-warning: CanvasText;
+    --bridge-warning-soft: Canvas;
+    --bridge-danger: Highlight;
+    --bridge-on-danger: HighlightText;
+    --bridge-danger-text: CanvasText;
+    --bridge-danger-soft: Canvas;
+    --bridge-disabled-surface: Canvas;
+    --bridge-disabled-text: GrayText;
+    --bridge-focus: Highlight;
+    --bridge-backdrop: Canvas;
+    --bridge-shadow: none;
+  }
+  :focus-visible { outline: 3px solid Highlight; box-shadow: none; }
+}

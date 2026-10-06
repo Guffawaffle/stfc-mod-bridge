@@ -1,0 +1,79 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "000017bf-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "focus_session",
+            "capture": {
+              "kind": "focus_session",
+              "session": {
+                "process": {
+                  "architecture": "arm64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-installation-physical-1",
+                  "pid": 9876,
+                  "startIdentity": {
+                    "platform": "macos",
+                    "value": "synthetic-macos-arm64-generation"
+                  }
+                },
+                "revision": "synthetic-session-1",
+                "sessionId": "000017bb-1111-4111-8111-111111111111"
+              },
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "kind": "ordinary",
+                  "ownerScope": "synthetic-native-owner-1"
+                }
+              }
+            },
+            "effects": [
+              "focus_session"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "session"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "session_focused",
+                "session": {
+                  "process": {
+                    "architecture": "arm64",
+                    "executableIdentity": "synthetic-game-executable-1",
+                    "installationPhysicalId": "synthetic-installation-physical-1",
+                    "pid": 9876,
+                    "startIdentity": {
+                      "platform": "macos",
+                      "value": "synthetic-macos-arm64-generation"
+                    }
+                  },
+                  "revision": "synthetic-session-1",
+                  "sessionId": "000017bb-1111-4111-8111-111111111111"
+                }
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017c1-1111-4111-8111-111111111111"
+}

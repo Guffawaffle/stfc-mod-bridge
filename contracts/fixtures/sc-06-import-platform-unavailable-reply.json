@@ -1,0 +1,17 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "list_import_sources",
+        "output": {
+          "reason": "unsupported_platform",
+          "status": "unavailable"
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe6-1111-4111-8111-111111111111"
+}

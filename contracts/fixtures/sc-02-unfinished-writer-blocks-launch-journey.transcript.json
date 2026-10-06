@@ -1,0 +1,24 @@
+{
+  "case": "unfinished-writer-blocks-launch",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-02-unfinished-writer-blocks-launch-journey",
+  "scenario": "SC-02",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-02-unfinished-writer-blocks-launch-reply",
+      "request": "sc-02-unfinished-writer-blocks-launch-request",
+      "type": "exchange"
+    }
+  ]
+}

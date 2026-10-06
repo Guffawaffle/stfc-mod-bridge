@@ -1,0 +1,58 @@
+{
+  "case": "sc15-forced-restart-observes-recovery",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc15-forced-restart-observes-recovery",
+  "scenario": "SC-15",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc15-prepare-reply",
+      "request": "sc15-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-admit-reply",
+      "request": "sc15-admit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-running-reply",
+      "request": "sc15-running-request",
+      "type": "exchange"
+    },
+    {
+      "cursor": {
+        "hostEpoch": "00001776-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "00001777-1111-4111-8111-111111111111"
+      },
+      "reason": "restart",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc15-post-restart-recovery-reply",
+      "request": "sc15-post-restart-recovery-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-cancel-recovery-required-reply",
+      "request": "sc15-cancel-recovery-required-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-close-recovery-required-reply",
+      "request": "sc15-close-recovery-required-request",
+      "type": "exchange"
+    }
+  ]
+}

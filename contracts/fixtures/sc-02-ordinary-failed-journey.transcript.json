@@ -1,0 +1,34 @@
+{
+  "case": "ordinary-failed",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-02-ordinary-failed-journey",
+  "scenario": "SC-02",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-02-ordinary-failed-prepare-reply",
+      "request": "sc-02-ordinary-failed-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-02-ordinary-failed-commit-reply",
+      "request": "sc-02-ordinary-failed-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-02-ordinary-failed-observe-reply",
+      "request": "sc-02-ordinary-failed-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

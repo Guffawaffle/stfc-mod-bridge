@@ -1,0 +1,22 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "disclosure": "include_paths",
+        "target": {
+          "installation": {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "registered"
+          },
+          "profile": {
+            "kind": "ordinary"
+          }
+        }
+      },
+      "name": "diagnostic_preview"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000855-1111-4111-8111-111111111111"
+}

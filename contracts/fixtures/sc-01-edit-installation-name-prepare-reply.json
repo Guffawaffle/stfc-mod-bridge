@@ -1,0 +1,44 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001f50-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:413ec9ad89fc91c052baa5eb1288bb104fed2ddc567dbe1234cfe2676fc6ce4b"
+          },
+          "semantics": {
+            "action": "edit_installation",
+            "capture": {
+              "input": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "name": "Synthetic renamed registration"
+              },
+              "kind": "edit_installation"
+            },
+            "effects": [
+              "edit_installation_metadata"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f51-1111-4111-8111-111111111111"
+}

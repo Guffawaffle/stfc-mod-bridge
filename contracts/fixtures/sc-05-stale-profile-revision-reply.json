@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": "stale_revision",
+      "retryDisposition": "after_resnapshot",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe0-1111-4111-8111-111111111111"
+}

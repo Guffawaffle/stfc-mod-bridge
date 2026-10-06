@@ -1,0 +1,27 @@
+[package]
+name = "bridge-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bridge-contracts.workspace = true
+bridge-domain.workspace = true
+bridge-engine.workspace = true
+time.workspace = true
+
+[target.'cfg(all(target_os = "windows", target_arch = "x86_64"))'.dependencies]
+bridge-platform-windows.workspace = true
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+bridge-platform-macos.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+bridge-toml.workspace = true
+sha2.workspace = true

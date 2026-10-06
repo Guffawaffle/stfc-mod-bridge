@@ -1,0 +1,44 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "draft": {
+          "document": {
+            "baseline": {
+              "kind": "missing"
+            },
+            "documentId": "000007d0-1111-4111-8111-111111111111",
+            "revision": "synthetic-document-1",
+            "schema": {
+              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "providerId": "guffawaffle",
+              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "schemaId": "stfc-community-mod.config-schema",
+              "schemaVersion": "1.0.0"
+            },
+            "target": {
+              "installation": {
+                "kind": "registered",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1",
+                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "registrationRevision": "synthetic-installation-revision-1"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          },
+          "draftId": "000007d1-1111-4111-8111-111111111111",
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "revision": "2"
+        }
+      },
+      "name": "discard_draft"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000836-1111-4111-8111-111111111111"
+}

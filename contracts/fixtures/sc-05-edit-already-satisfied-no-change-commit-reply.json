@@ -1,0 +1,50 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001fda-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "edit_isolated_profile",
+            "capture": {
+              "input": {
+                "name": "Synthetic renamed profile",
+                "preferredInstallation": {
+                  "expected": {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "kind": "registered"
+                  },
+                  "kind": "keep"
+                },
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "active"
+                }
+              },
+              "kind": "edit_isolated_profile"
+            },
+            "effects": [
+              "edit_profile_metadata"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "no_change",
+              "reason": "already_satisfied"
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fdc-1111-4111-8111-111111111111"
+}

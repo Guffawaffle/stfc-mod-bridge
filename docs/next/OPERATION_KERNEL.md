@@ -1,0 +1,187 @@
+# Operation kernel
+
+br-04 belongs to issue #238. `bridge-engine::operations` hosts the engine within
+the calling CLI or desktop process. It depends on portable contracts and owner
+ports, without a Tauri, webview or frontend dependency. The kernel supplies
+dispatch, prepared-plan capture, admission/replay, worker progression,
+cancellation, close dispositions, event cursors and durable restart recovery.
+Native domain services and canonical platform consumers remain later packages.
+
+`OperationPorts::Custody` carries opaque local owner state without Clone, Debug,
+Serialize or Send requirements. Capture returns it alongside semantic values;
+Preparation owns it until successful admission moves it once into Worker. The
+worker retains this exact token with the lease through advancement, recovery,
+session handoff and unknown persistence disposition. Worker destroys custody
+before its lease; Engine destroys preparations/workers before their provider
+context. Custody never enters a plan digest, DTO or journal record.
+
+Admission consumes a preparation. A fresh idempotency key cannot reuse its
+PlanRef after cancellation or completion; it must Prepare again. This tightens
+the earlier reusable-plan behavior. Exact-key durable replay still takes
+precedence and returns the original operation across expiry, close and restart.
+Pre-admission refusal retains a live preparation for retry. Exact expiry removes
+its token; forged or foreign-host refs and unavailable clocks cannot retire it.
+Issued identities remain burned. Unknown admission persistence consumes the
+preparation and retains the worker token/lease in the poisoned engine.
+
+Restart and missing-worker session handoff use `acquire_recovery` with the exact
+durable operation, recovery reference and normalized resources. The owner
+reconstructs recovery-only state, without recapturing drafts or old protected
+bytes. In-process recovery reuses retained worker custody. The engine immediately
+owns recovery pairs in custody-before-lease field order before validating them.
+These controlled-port proofs do not qualify any canonical native writer.
+
+Time sampling and plan/operation identities use fallible backend-only ports.
+Fresh plans expire on host-local monotonic milliseconds, including suspension;
+UTC is an evidence/display projection. Deadline calculation uses one supplied
+sample with checked addition and no resampling. Equal actual samples are valid;
+decreasing samples or a reported regression latch refusal for that engine's
+lifetime. Only actual samples update the high-water mark, never future deadlines.
+Fresh Commit checks expiry before acquisition and again after owner revalidation
+under the lease. Identity failure/collision precedes acquisition. Refusal creates
+no admission record or recovery binding and does not poison persistence.
+
+Issued plan IDs remain reserved for the host lifetime after their captures expire.
+The history is bounded at 4096 IDs; exhaustion refuses fresh Preparation with
+OperationBusy before provider sampling or capture. It never recycles an old
+PlanRef, and durable admitted replay remains available.
+
+Exact durable replay runs before clock, entropy, host, expiry and close checks.
+Snapshot, admitted progression, cancellation and close stay provider-independent
+after a regression; GetOperation evidence refuses rather than inventing a time.
+Opening a restored portable kernel does not preflight providers and block replay.
+Production bootstrap must qualify its own providers before creating fresh state.
+
+Platform helper modules expose native uptime and 16 raw entropy bytes without
+creating IDs or application state. Windows uses GetTickCount64/BCryptGenRandom;
+Mac uses checked mach_continuous_time conversion/SecRandomCopyBytes. Both count
+suspension and refuse entropy errors without fallback. `bridge-app` supplies
+the backend clock and identity providers: checked signed UTC conversion, one
+native monotonic sample followed by one wall observation, checked deadlines
+without resampling, and UUID v4 encoding from one native draw per identity.
+Unsupported hosts refuse native sampling. Providers are not yet bound to a
+private production host. Windows calls, portable conversion/fault tests and
+real Apple Silicon probes remain separate evidence; suspend behavior and
+installed application bootstrap still require native qualification.
+
+BR04-01: the owner port acquires canonical resource exclusions before commit
+revalidation. A losing writer returns busy before a download, stage, backup or
+admission journal. The worker retains its lease while observers disconnect.
+Fixture assertions count all these effects and race two engine instances.
+
+BR04-02: native preparation retains the exact intent/capture, expiry and owner
+bindings. Commit revalidates physical/revision identity under the lease and
+refuses retargeting, stale revisions, foreign recovery bindings and expired
+plans. The platform owner must retain and revalidate the original installation
+directory/path assertion against the prepared intent under exclusion; a
+directory selector may resolve to its registered installation. Launch captures
+carry opaque native bindings, and v1 register-installation capture omits its
+path. The portable kernel cannot derive physical equivalence from those refs.
+Registered selectors still require the exact registration kind, ID and asserted
+revision. Opaque identifiers never replace a physical owner check.
+Public dispatch tests cover both ordinary and isolated directory requests and
+registered kind/ID/revision substitutions before effects. A data-only unit test
+also checks all 26 action kinds against the accepted shared preparation corpus,
+while empty or duplicated owner-resource lists remain invalid.
+
+BR04-03: observer loss does not cancel the worker or release exclusions.
+Explicit cancellation distinguishes precommit cancellation, a retained request,
+a native noncancellable boundary, honest completion and recovery-required state.
+The fixture owner controls its durable boundary; the kernel cannot infer that
+an arbitrary port error rolled back native effects.
+
+BR04-04: normal close is deferred while admitted work or session custody has an
+unsafe outstanding obligation. The host must obey the returned disposition;
+closing a webview alone cannot authorize process exit. An actual forced child
+process kill ends all work. Restart inspects its durable journal and native
+owner boundary, without claiming execution continued after process death.
+Whenever close is deferred, its operation obligations cover every noncompleted
+operation at its exact observed revision, including a recovery already at a
+safe owner boundary. Session custody is an additional obligation. Handing off
+that session cannot release an unsafe recovery operation's resource exclusion;
+the owning recovery must independently establish its safe boundary.
+The full 64-operation fixture retains 128 operation/session obligations through
+restart and native reinspection; the reply and event codecs preserve all of
+them. A 65th admission is refused before acquisition, journaling or mutation.
+
+BR04-05: admission is persisted before acknowledgement. Exact commit replay
+looks up retained input/operation identity before rejecting an old host's plan;
+it returns the original operation without new effects. Conflicting input for a
+retained idempotency key is refused. The bounded candidate retains at most 64
+operations and refuses admission before effects when full. It does not silently
+evict replay records; sustainable history retention/pagination must be resolved
+before a release workloads claim.
+
+BR04-06: restart invalidates uncommitted plans and creates fresh host/stream
+identity. Admitted durable work remains inspectable by operation ID. Scoped
+consecutive events have bounded retention; an unavailable cursor requires a new
+snapshot rather than reexecution. Complete snapshots never omit known pending
+work to fit a wire limit.
+
+BR04-07: the filesystem journal uses bounded length/JSON/SHA-256 frames,
+exclusive file custody and sync boundaries. Complete corruption or conflicting
+replay binding blocks open; incomplete trailing frames are handled through the
+recorded recovery path. Tests exercise admission persistence failure, stage
+interruption/rollback, native commit before terminal acknowledgement, foreign
+replacement, close obligations and real subprocess kills at admitted, staging
+and committed boundaries. A native owner supplies the exact recovery binding
+before admission and reconciles its effects; missing custody is unavailable.
+
+Canonical producers which publish durable admission reservations opt into
+terminal settlement. That policy is immutable in every operation WAL record.
+Completion still invokes the terminal/draft commit callback exactly once and
+publishes local successors without fallible post-commit work. A subsequent
+host pump calls only the owner's idempotent settlement port under the retained
+exclusion; it does not repeat native begin, advance, recovery or publication.
+Refusal or pending settlement retains custody, blocks conflicting admissions
+and keeps normal close deferred with the exact terminal operation ID/revision.
+Safe recovery and session handoff cannot discard that separate obligation.
+
+After durable producer settlement, a separate WAL acknowledgment binds the
+terminal operation ID and its current revision. It emits no duplicate operation
+or draft event and changes no completion outcome. Unknown acknowledgment
+persistence poisons the host while retaining custody. Restart either reads the
+acknowledgment or reacquires exact exclusions and asks the producer to inspect
+its reservation/tombstone; it never replays the completed mutation. Cancellation
+before begin and an admitted-operation restart also require settlement.
+Unknown, duplicate, nonterminal or wrong-revision acknowledgments refuse open.
+
+The new required `settlement_required` field intentionally refuses older
+development operation records which omit that policy; there is no automatic
+false default, migration or journal deletion. Host-only WAL/storage fixtures
+retain their existing framing. Production owner composition, enumeration of
+producer reservations with no operation WAL, cross-process writer admission and
+native Windows/Apple Silicon proof remain separate dependencies. Owners with no
+durable reservation keep the false policy; this is not native qualification.
+
+`FileJournal::open_retained` owns a `bridge-journal-io::JournalStorage` for its
+entire lifetime. The storage owner validates custody and length, truncates a
+torn tail and acknowledges durable synchronization. Reads stop at the 128 MiB
+bound plus one byte; changing custody or length prevents parsing or repair.
+Append acknowledges a record only after writing, syncing and revalidating its
+new length. Any uncertain append poisons the journal while retaining its owner
+and exclusion until drop. Complete corruption remains untouched.
+
+The legacy path opener remains a fixture adapter. Its caller must establish the
+physical namespace and private directory boundary; a file lock alone cannot
+prove ancestry or permissions. Native private owners, their namespace flush
+protocols and production host binding remain work. Kernel fixture proof does
+not qualify a shared game catalog, permissions, canonical process lifetime
+exclusions or native domain services. Journal custody alone is not a
+cross-process game writer lock.
+
+`node scripts/next/kernel.mjs operation` runs formatting/strict Clippy, compiles
+the exact current native test artifact, verifies its executable architecture
+and runs the operation inventory. `kernel.mjs recovery` compiles its own current
+artifact and executes the required named durable/crash tests, refusing absent
+or ignored tests. Recovery also compiles and inventories the retained-storage
+fault suite and executes the journal's ownership compile-fail documentation
+tests. These cover bounded reads, partial writes, uncertain synchronization,
+custody loss and a poisoned journal retaining an actual file lock. The operation
+suite separately compiles, inventories and
+executes the required accepted-corpus binding unit test. Together the inventories
+cover all kernel tests. Each receipt
+binds the actual Cargo compiler artifact and executable bytes before/after
+execution. Both suites are required by the br-04 LexRunner projection.
+These are synthetic owner/filesystem/process-boundary observations, not an
+installed application, game/runtime, signed review or release qualification.

@@ -1,0 +1,11 @@
+{
+  "body": {
+    "query": {
+      "input": {},
+      "name": "list_sessions"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017b3-1111-4111-8111-111111111111"
+}

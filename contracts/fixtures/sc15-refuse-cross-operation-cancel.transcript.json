@@ -1,0 +1,41 @@
+{
+  "case": "sc15-refuse-cross-operation-cancel",
+  "expected": {
+    "accepted": false,
+    "code": "transcript_operation_binding",
+    "step": 4
+  },
+  "id": "sc15-refuse-cross-operation-cancel",
+  "scenario": "SC-15",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc15-prepare-reply",
+      "request": "sc15-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-admit-reply",
+      "request": "sc15-admit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-running-reply",
+      "request": "sc15-running-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-wrong-operation-cancel-reply",
+      "request": "sc15-wrong-operation-cancel-request",
+      "type": "exchange"
+    }
+  ]
+}
