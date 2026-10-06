@@ -40,7 +40,7 @@ jobs:
       - name: Bind foundation to completed prerequisites
         run: node scripts/next/make-runner-plan.mjs --package br-01
       - name: Execute current foundation gate
-        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-01.plan.json --artifact-dir artifacts/next/runner/br-01 --timeout 930000 --max-level 0 --keep-cache --json
+        run: lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-01.plan.json --artifact-dir artifacts/next/runner/br-01 --timeout 1830000 --max-level 0 --keep-cache --json
       - name: Bind protocol and scenario package to completed prerequisites
         run: node scripts/next/make-runner-plan.mjs --package br-02
       - name: Execute both protocol and complete scenario gates

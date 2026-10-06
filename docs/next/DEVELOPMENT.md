@@ -92,13 +92,21 @@ unbundled shell bytes. Defining that workflow does not mean its Mac job ran.
 Local Windows shell compilation, actual Mac compilation, native ABI, installed
 game/runtime, accessibility and release qualification retain distinct boundaries.
 
+The complete foundation suite has a fixed 30-minute aggregate budget, including
+cold debug qualification and the separate release shell build. Individual
+foundation commands keep their existing limits; all checks must finish before
+the package can pass. The Runner projection adds 30 seconds around that suite,
+and CI uses the resulting 1,830,000-millisecond budget. This is an execution
+allowance, not evidence that a cold hosted build or any native fixture passed.
+The hosted job remains bounded to 60 minutes for the complete gate sequence.
+
 Execute prerequisite and package acceptance through a current owning-root plan:
 
 ```text
 node scripts/next/make-runner-plan.mjs --package br-00
 lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-00.plan.json --artifact-dir artifacts/next/runner/br-00 --timeout 150000 --max-level 0 --keep-cache --json
 node scripts/next/make-runner-plan.mjs --package br-01
-lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-01.plan.json --artifact-dir artifacts/next/runner/br-01 --timeout 930000 --max-level 0 --keep-cache --json
+lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-01.plan.json --artifact-dir artifacts/next/runner/br-01 --timeout 1830000 --max-level 0 --keep-cache --json
 node scripts/next/make-runner-plan.mjs --package br-02
 lexrunner --no-emit-frames gate run --plan artifacts/next/plans/br-02.plan.json --artifact-dir artifacts/next/runner/br-02 --timeout 990000 --max-level 0 --keep-cache --json
 node scripts/next/make-runner-plan.mjs --package br-03

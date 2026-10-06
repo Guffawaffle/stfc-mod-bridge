@@ -27,7 +27,9 @@ export const registry = {
     boundary: 'Scope/ownership contract completeness and fail-closed dispatcher tests; no native runtime or release qualification.'
   },
   'workspace-foundation': {
-    host: 'any', timeoutMs: 900000,
+    // Aggregate budget includes both cold debug qualification and release shell
+    // compilation. Individual foundation commands retain their own limits.
+    host: 'any', timeoutMs: 1800000,
     argv: ['scripts/next/foundation.mjs'],
     inputs: ['.gitignore', '.cargo/config.toml', '.github/workflows/next-foundation.yml', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'dependencies/next-toolchain.json', 'docs/next/DEVELOPMENT.md', 'scripts/next', 'crates', 'contracts', 'apps/desktop/src-tauri/Cargo.toml', 'apps/desktop/src-tauri/build.rs', 'apps/desktop/src-tauri/src', 'apps/desktop/src-tauri/tauri.conf.json', 'apps/desktop/src-tauri/capabilities', 'assets/stfc-mod-bridge.png', 'src/STFCCommunityMod.Launcher/Assets/stfc-mod-bridge.ico', 'ui/package.json', 'ui/index.html', 'ui/vite.config.ts', 'ui/svelte.config.js', 'ui/tsconfig.json', 'ui/src', 'ui/tests', 'ui/scenarios', 'ui/gallery'],
     criteria: ['BR01-01', 'BR01-02', 'BR01-03', 'BR01-04', 'BR01-05'],
