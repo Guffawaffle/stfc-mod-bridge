@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "contracts/fixtures/index.json",
-      "sha256": "6dbf09eaf1a808b6ef464a7889d9487d42ef547f7cfe4f08c9397ba7a7e3bddb"
+      "sha256": "0dc55765464de4523c4bc06b6e1d2319d6064c746137b892fda06370e62c88e1"
     },
     {
       "path": "contracts/fixtures/sc-01-discovery-invalid-journey.transcript.json",
@@ -2219,7 +2219,7 @@
     },
     {
       "path": "contracts/fixtures/sc14-modeled-second-submit-busy.transcript.json",
-      "sha256": "9c762b6e25b82dcabdcd64fda23b99e974d5931601b5c6b8888b01accdd108b2"
+      "sha256": "08b98e596348c0a29e26fe1299da975906da33a43b9116ac54f86d8f752548f0"
     },
     {
       "path": "contracts/fixtures/sc14-operation-missing-reply.json",
@@ -2228,6 +2228,14 @@
     {
       "path": "contracts/fixtures/sc14-operation-missing-request.json",
       "sha256": "0ba676088f0a68dae8f54321293643646ddb1b021cf015436cf859688282f748"
+    },
+    {
+      "path": "contracts/fixtures/sc14-prepare-independent-busy-reply.json",
+      "sha256": "cd7c79d32da4d51208a9c365561e3928d5487cf1f2c734b9ee88209e2b1f9a24"
+    },
+    {
+      "path": "contracts/fixtures/sc14-prepare-independent-busy-request.json",
+      "sha256": "e343fa75386c8ca8b4afd5c2ed5c3ef2b2621109a8680b58d3eca080c0054b6f"
     },
     {
       "path": "contracts/fixtures/sc14-prepare-reply.json",
@@ -2339,7 +2347,7 @@
     },
     {
       "path": "contracts/fixtures/sc14-second-submit-busy-request.json",
-      "sha256": "943655eec73fcd32c6a0549fb3bf4e350bd3cab21fce83416e41c79b53c3dde7"
+      "sha256": "d7b05bb3a5d9b3367f8b593d71ecbd80a58dab085d552c9ec6e9f9d09676e25c"
     },
     {
       "path": "contracts/fixtures/sc14-wrong-epoch-event.json",
@@ -3133,7 +3141,7 @@
     },
     {
       "path": "contracts/fixtures/workflow-cases.ts",
-      "sha256": "13853c1cd031880b128872fd88ed2dc1f3ae770e7e459c0c124ca06f22726b1e"
+      "sha256": "1b5dd206ce70e8a79d7de155c94a6b5bf0dc9ac4af67f8f526b0b4047da4d421"
     }
   ]
 }

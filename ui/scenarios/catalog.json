@@ -30278,6 +30278,86 @@
         {
           "reply": {
             "body": {
+              "result": {
+                "command": {
+                  "name": "prepare",
+                  "output": {
+                    "expiresAt": "2026-10-04T00:00:00Z",
+                    "grantsLock": false,
+                    "grantsPermission": false,
+                    "planRef": {
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "planId": "0000c350-1111-4111-8111-111111111111",
+                      "reviewDigest": "sha256:b7908f5c33c36f655bff7e29b334a1adb2f33a294249f8aa92811d0a18971318"
+                    },
+                    "semantics": {
+                      "action": "launch_ordinary",
+                      "capture": {
+                        "catalogRevision": "synthetic-catalog-1",
+                        "kind": "launch_ordinary",
+                        "runtime": {
+                          "kind": "absent"
+                        },
+                        "target": {
+                          "installation": {
+                            "kind": "registered",
+                            "nativeTargetRef": "synthetic-native-target-1",
+                            "physicalId": "synthetic-installation-physical-1",
+                            "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "registrationRevision": "synthetic-installation-revision-1"
+                          },
+                          "profile": {
+                            "kind": "ordinary",
+                            "ownerScope": "synthetic-native-owner-1"
+                          }
+                        }
+                      },
+                      "effects": [
+                        "launch_session"
+                      ],
+                      "hashProfile": "bridge-plan-semantic-json-v1",
+                      "trustDomain": "session"
+                    }
+                  }
+                },
+                "type": "command"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000c351-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "command": {
+                "input": {
+                  "intent": {
+                    "input": {
+                      "target": {
+                        "installation": {
+                          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "kind": "registered"
+                        },
+                        "profile": {
+                          "kind": "ordinary"
+                        }
+                      }
+                    },
+                    "kind": "launch_ordinary"
+                  }
+                },
+                "name": "prepare"
+              },
+              "type": "command"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000c351-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        },
+        {
+          "reply": {
+            "body": {
               "error": {
                 "code": "operation_busy",
                 "retryDisposition": "after_user_choice",
@@ -30295,7 +30375,7 @@
                   "idempotencyKey": "00001785-1111-4111-8111-111111111111",
                   "planRef": {
                     "hostEpoch": "000003e8-1111-4111-8111-111111111111",
-                    "planId": "00001770-1111-4111-8111-111111111111",
+                    "planId": "0000c350-1111-4111-8111-111111111111",
                     "reviewDigest": "sha256:b7908f5c33c36f655bff7e29b334a1adb2f33a294249f8aa92811d0a18971318"
                   }
                 },
@@ -30319,6 +30399,14 @@
           "sha256": "8207affa2757148a57280345aa6f6e664bf2ed257c7b36c05b94132be0e834c4"
         },
         {
+          "id": "sc14-prepare-independent-busy-reply",
+          "sha256": "cd7c79d32da4d51208a9c365561e3928d5487cf1f2c734b9ee88209e2b1f9a24"
+        },
+        {
+          "id": "sc14-prepare-independent-busy-request",
+          "sha256": "e343fa75386c8ca8b4afd5c2ed5c3ef2b2621109a8680b58d3eca080c0054b6f"
+        },
+        {
           "id": "sc14-prepare-reply",
           "sha256": "d31394c2964dc66ef1a4df3fc65242808b48c8fbe4d9fbd05bfb96ade78c5979"
         },
@@ -30332,12 +30420,12 @@
         },
         {
           "id": "sc14-second-submit-busy-request",
-          "sha256": "943655eec73fcd32c6a0549fb3bf4e350bd3cab21fce83416e41c79b53c3dde7"
+          "sha256": "d7b05bb3a5d9b3367f8b593d71ecbd80a58dab085d552c9ec6e9f9d09676e25c"
         }
       ],
       "transcriptSource": {
         "path": "contracts/fixtures/sc14-modeled-second-submit-busy.transcript.json",
-        "sha256": "9c762b6e25b82dcabdcd64fda23b99e974d5931601b5c6b8888b01accdd108b2"
+        "sha256": "08b98e596348c0a29e26fe1299da975906da33a43b9116ac54f86d8f752548f0"
       }
     },
     {

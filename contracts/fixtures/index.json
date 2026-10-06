@@ -199,7 +199,7 @@
       "scenario": "SC-13"
     },
     {
-      "accepted": 41,
+      "accepted": 43,
       "codecRefusals": 1,
       "features": [
         "action:launch_ordinary",
@@ -209,7 +209,7 @@
         "query:resume_events",
         "query:snapshot"
       ],
-      "pairedExchanges": 17,
+      "pairedExchanges": 18,
       "pairedTranscripts": 18,
       "scenario": "SC-14"
     },
@@ -5699,6 +5699,26 @@
       "id": "sc14-result-variant-reply",
       "kind": "reply",
       "path": "sc14-result-variant-reply.json",
+      "scenario": "SC-14",
+      "tags": []
+    },
+    {
+      "case": "sc14-prepare-independent-busy",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc14-prepare-independent-busy-request",
+      "kind": "request",
+      "path": "sc14-prepare-independent-busy-request.json",
+      "scenario": "SC-14",
+      "tags": []
+    },
+    {
+      "case": "sc14-prepare-independent-busy",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc14-prepare-independent-busy-reply",
+      "kind": "reply",
+      "path": "sc14-prepare-independent-busy-reply.json",
       "scenario": "SC-14",
       "tags": []
     },

@@ -28,8 +28,7 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
   const at = (value: string, epoch = hostEpoch, stream = streamId): Cursor => ({ hostEpoch: epoch, streamId: stream, sequence: value });
   const initial = (): GoldenStep => ({ type: 'boundary', reason: 'initial', cursor });
   const error = (code: BridgeError['code'], retryDisposition: BridgeError['retryDisposition'] = 'after_resnapshot'): BridgeError => ({ code, retryDisposition, violations: [] });
-  function commandCase(id: string, scenario: ScenarioId, input: Command, output: CommandResult): ExchangeStep {
-    const requestId = nextId();
+  function commandCase(id: string, scenario: ScenarioId, input: Command, output: CommandResult, requestId = nextId()): ExchangeStep {
     fixtures.push(requestFixture(`${id}-request`, scenario, id, commandRequest(requestId, input)));
     fixtures.push(replyFixture(`${id}-reply`, scenario, id, commandReply(requestId, output)));
     return { type: 'exchange', request: `${id}-request`, reply: `${id}-reply` };
@@ -96,9 +95,14 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
   fixtures.push(requestFixture('sc14-result-variant-request', 'SC-14', 'A command needs its corresponding result variant', commandRequest(variantId, { name: 'commit', input: commitInput })));
   fixtures.push(replyFixture('sc14-result-variant-reply', 'SC-14', 'An independently valid query result cannot answer commit', queryReply(variantId, { name: 'hello', output: { hostEpoch, hostKind: 'windows_x64', supportedVersions: [1], implementedCommands: [] } })));
   trace('sc14-refuse-query-result-for-command', 'SC-14', [initial(), { type: 'exchange', request: 'sc14-result-variant-request', reply: 'sc14-result-variant-reply' }], { accepted: false, code: 'transcript_result_variant', step: 1 });
-  // A modeled busy reply is a domain projection, never evidence of exclusion.
-  const busy14 = rejectionCase('sc14-second-submit-busy', 'SC-14', { name: 'commit', input: { ...clone(commitInput), idempotencyKey: nextId() } }, error('operation_busy', 'after_user_choice'));
-  trace('sc14-modeled-second-submit-busy', 'SC-14', [initial(), prepare14, admit14, busy14]);
+  // Busy belongs to a distinct preparation that overlaps admitted work. The
+  // admitted plan itself is consumed. Dedicated synthetic IDs preserve every
+  // existing example's identity rather than renumbering the rest of this file.
+  // A modeled busy reply is never evidence of a real native exclusion.
+  const independentPlan = prepared(hooks, launchSemantics, 50_000);
+  const prepareBusy14 = commandCase('sc14-prepare-independent-busy', 'SC-14', { name: 'prepare', input: { intent: { kind: 'launch_ordinary', input: { target: launchSelector } } } }, { name: 'prepare', output: independentPlan }, syntheticId(50_001));
+  const busy14 = rejectionCase('sc14-second-submit-busy', 'SC-14', { name: 'commit', input: { planRef: independentPlan.planRef, idempotencyKey: nextId() } }, error('operation_busy', 'after_user_choice'));
+  trace('sc14-modeled-second-submit-busy', 'SC-14', [initial(), prepare14, admit14, prepareBusy14, busy14]);
 
   const event1 = eventCase('sc14-event-one', 'SC-14', at('1'), { type: 'snapshot_invalidated', reason: 'operation_changed' });
   const event2 = eventCase('sc14-event-two', 'SC-14', at('2'), { type: 'snapshot_invalidated', reason: 'session_changed' });
