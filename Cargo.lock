@@ -190,9 +190,12 @@ dependencies = [
  "bridge-contracts",
  "bridge-domain",
  "bridge-engine",
+ "bridge-native",
  "bridge-platform-macos",
  "bridge-platform-windows",
+ "bridge-profiles",
  "bridge-toml",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "time",
@@ -213,7 +216,11 @@ dependencies = [
 name = "bridge-desktop"
 version = "0.1.0"
 dependencies = [
+ "bridge-app",
  "bridge-engine",
+ "bridge-host-adapter",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]

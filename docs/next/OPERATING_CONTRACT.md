@@ -46,6 +46,17 @@ history; diagnostics; application preferences; and Bridge update/recovery.
 Battle ingestion, sink activation, and convergence with an always-running
 sidecar are deferred. No dormant capability is activated by this release plan.
 
+## First live milestone, 2026-10-20
+
+Guff selected a first connected flow that detects registered installations and
+shows the running game. Multiple launches remain future work. Preserve the
+existing installation/session collections and exact process identities; do not
+replace them with a global singleton or silently select the first process.
+This milestone admits read-only observations and safe host close. Launch/focus,
+configuration/catalog writes and updates remain unavailable until their owning
+execution paths are connected and qualified. Reporting multiple observed sessions
+does not establish support for coordinated multiple launches.
+
 ## Authority and application boundaries
 
 | Component | Owns | Required boundary |

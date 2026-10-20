@@ -11,6 +11,10 @@ tauri-build.workspace = true
 
 [dependencies]
 bridge-engine.workspace = true
+bridge-app.workspace = true
+bridge-host-adapter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tauri.workspace = true
 
 [features]

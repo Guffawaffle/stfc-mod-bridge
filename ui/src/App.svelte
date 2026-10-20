@@ -10,8 +10,8 @@
   import { Management, sections, type ManagementInputs, type ManagementSection } from './views/management';
   import { Support } from './views/support';
   import { ActionReview, UnsavedChanges, WorkspaceNavigation } from './navigation';
-  let { facade = new BridgeFacade(bridgeClient, { idempotencyKey: () => crypto.randomUUID() }), managementInputs = {}, registrationPlatform }: {
-    facade?: BridgeFacade; managementInputs?: ManagementInputs; registrationPlatform?: 'windows' | 'macos';
+  let { facade = new BridgeFacade(bridgeClient, { idempotencyKey: () => crypto.randomUUID() }), managementInputs = {}, registrationPlatform, autoRefresh = false }: {
+    facade?: BridgeFacade; managementInputs?: ManagementInputs; registrationPlatform?: 'windows' | 'macos'; autoRefresh?: boolean;
   } = $props();
   const scopedFacade = untrack(() => facade);
   provideBridge(scopedFacade);
@@ -36,7 +36,12 @@
   }
   onMount(() => {
     active = true; void reconnect();
-    return () => { active = false; observation.abort(); scopedFacade.dispose(); };
+    const refresh = autoRefresh ? setInterval(() => {
+      if (!active || connecting) return;
+      connecting = true;
+      void scopedFacade.refresh({ signal: observation.signal }).finally(() => { if (active) connecting = false; });
+    }, 5000) : undefined;
+    return () => { active = false; if (refresh !== undefined) clearInterval(refresh); observation.abort(); scopedFacade.dispose(); };
   });
 </script>
 <Shell announcements={scopedFacade.announcements}>

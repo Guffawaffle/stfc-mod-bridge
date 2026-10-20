@@ -7,3 +7,5 @@ pub mod configuration;
 mod providers;
 
 pub use providers::{NativeClock, NativeIdentitySource};
+
+pub mod observations;

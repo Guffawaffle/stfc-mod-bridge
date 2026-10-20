@@ -20,6 +20,7 @@
   const installationRows = $derived(installations($facade.observations));
   const profileRows = $derived(profiles($facade.observations));
   const sessionRows = $derived(sessions($facade.observations));
+  const liveSessionRows = $derived(sessionRows.filter(row => row.liveIdentity.status === 'observed' && row.liveIdentity.value));
   const labels = $derived(targetLabels($facade.work.binding, $facade.work.selector, $facade.observations));
   const candidate = $derived(selectorFor(installationChoice, profileChoice, $facade.observations));
   const blocked = $derived.by(() => {
@@ -55,6 +56,22 @@
       <p>{$facade.observations.confidence === 'partial' ? 'The lists are incomplete. Known facts and unavailable observations are shown separately.' : 'Unknown observations do not mean that a game is stopped or that a target is ready.'}</p>
     </Notice>
   {/if}
+  {#if installationRows.length}
+    <section class="installations" aria-label="Detected installations"><h2>Detected installations</h2>
+      {#each installationRows as installation (installation.binding.nativeTargetRef)}
+        {@const running = liveSessionRows.filter(row => row.binding.process.installationPhysicalId === installation.binding.physicalId)}
+        <article class="installation"><h3>{installation.name}</h3>
+          <p class="helper">{installation.client.status === 'observed' ? `Client ${installation.client.value.version}` : 'Client version unavailable'}</p>
+          <p>{running.length ? `Running · PID ${running.map(row => row.binding.process.pid).join(', ')}`
+            : $facade.observations.snapshot?.sessions.status === 'observed' && $facade.observations.snapshot.sessions.value.completeness === 'complete'
+              ? 'No running session observed' : 'Session status unavailable'}</p>
+        </article>
+      {/each}
+    </section>
+  {/if}
+  {#if liveSessionRows.length > 1}
+    <Notice title="Multiple game sessions detected" tone="warning"><p>This preview supports one active session. It will not choose a session automatically.</p></Notice>
+  {/if}
   <div class="target-grid">
     <div class="choose-target"><h2>Choose a target</h2><p class="helper">Apply both choices explicitly. A profile preference does not select an installation for you.</p>
       <Select id="home-installation" label="Installation" bind:value={installationChoice} disabled={blocked}
@@ -85,8 +102,10 @@
     <p class="inventory">{inventoryText($facade.observations.snapshot?.sessions, 'Sessions')}</p>
     {#each sessionRows as session, index (session.binding.sessionId)}
       {@const sessionLabels = targetLabels(session.target.status === 'observed' ? session.target.value : undefined, undefined, $facade.observations)}
+      {@const knownInstallation = installationRows.find(row => row.binding.physicalId === session.binding.process.installationPhysicalId)}
       <article class="session" aria-label={`Session ${index + 1}, PID ${session.binding.process.pid}`}>
-        <div><h3>Session {index + 1} · PID {session.binding.process.pid}</h3><p>{sessionLabels.installation} · {sessionLabels.profile}</p><p class="helper">{sessionStatus(session)}</p></div>
+        <div><h3>Session {index + 1} · PID {session.binding.process.pid}</h3><p>{session.target.status === 'observed'
+          ? `${sessionLabels.installation} · ${sessionLabels.profile}` : `${knownInstallation?.name ?? 'Installation unconfirmed'} · Profile unconfirmed`}</p><p class="helper">{sessionStatus(session)}</p></div>
         <div class="session-actions"><p id={`home-session-${index}-reason`}>{availabilityText($controller.focus[session.binding.sessionId]?.availability)}</p>
           <Button disabled={blocked} onclick={async () => { await controller.inspectSession(session.binding); }}>Check focus for session {index + 1}</Button>
           <div use:registerFocus={`home-session-${session.binding.sessionId}`}><Button disabled={reviewBlocked || !$controller.focus[session.binding.sessionId] || !controller.focusIntent(session.binding)} describedBy={`home-session-${index}-reason`}
@@ -101,6 +120,8 @@
 </section>
 <style>
   .home { display: grid; gap: 1.75rem; min-inline-size: 0; max-inline-size: 74rem; margin-inline: auto; }
+  .installations { display: grid; gap: .75rem; }
+  .installation { display: grid; gap: .35rem; padding: 1rem; border: 1px solid var(--bridge-border); border-radius: .5rem; }
   .home-heading, .section-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
   .eyebrow { color: var(--bridge-accent-text); font-size: .8125rem; font-weight: 700; letter-spacing: .08em; }
   h1 { margin: .3rem 0 .6rem; font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.2; }

@@ -11,6 +11,11 @@ bridge-contracts.workspace = true
 bridge-domain.workspace = true
 bridge-engine.workspace = true
 time.workspace = true
+bridge-native.workspace = true
+bridge-profiles.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 
 [target.'cfg(all(target_os = "windows", target_arch = "x86_64"))'.dependencies]
 bridge-platform-windows.workspace = true
@@ -22,6 +27,4 @@ bridge-platform-macos.workspace = true
 workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 bridge-toml.workspace = true
-sha2.workspace = true

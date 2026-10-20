@@ -147,3 +147,10 @@ pending. It does not label the complete development dependency graph clean.
 
 The retained WPF workflows are unchanged. The new foundation workflow has no tag,
 publish, signing, environment promotion, game deployment or process-cycle step.
+
+## First connected desktop milestone
+
+See [Live observations](LIVE_OBSERVATIONS.md) for the read-only canonical
+installation and running-client flow, native startup input, five-second refresh
+and its current qualification limits. This supersedes the foundation-only
+unbound desktop composition, without accepting the entire br-21 host package.

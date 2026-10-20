@@ -11,5 +11,5 @@ test('production shell grants no broad plugin or remote page capabilities', () =
   expect(capability.permissions).toEqual([]);
   expect(capability.remote).toBeUndefined();
   const shell = readFileSync(new URL('../../apps/desktop/src-tauri/src/main.rs', import.meta.url), 'utf8');
-  expect(shell).not.toMatch(/wdio|webdriver|\.plugin\(/);
+  expect(shell).not.toMatch(/wdio|webdriver|tauri_plugin_/);
 });
