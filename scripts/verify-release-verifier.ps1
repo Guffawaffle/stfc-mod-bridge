@@ -8,7 +8,7 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $moduleRoot = Join-Path $repositoryRoot "src/STFCModBridge.ReleaseVerifier"
 $inventoryPath = Join-Path $moduleRoot "dependencies.v1.txt"
 $licenseInventoryPath = Join-Path $moduleRoot "licenses.v1.json"
-$expectedGoVersion = "go1.26.6"
+$expectedGoVersion = "go1.26.10"
 $expectedSigstoreVersion = "v1.3.0"
 
 $actualGoVersion = (& go env GOVERSION).Trim()
@@ -75,7 +75,7 @@ try {
     | ConvertFrom-Json
   $goInventory = @($aboutCatalog.dependencyInventory | Where-Object { $_.evidenceKind -like "go-build-*" })
   $hasToolchainInventory = $null -ne ($goInventory | Where-Object {
-      $_.evidenceKind -eq "go-build-toolchain" -and $_.version -eq "1.26.6"
+      $_.evidenceKind -eq "go-build-toolchain" -and $_.version -eq "1.26.10"
     })
   $hasSigstoreInventory = $null -ne ($goInventory | Where-Object {
       $_.evidenceKind -eq "go-build-module" `
