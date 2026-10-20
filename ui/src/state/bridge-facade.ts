@@ -22,6 +22,7 @@ export class BridgeFacade {
   readonly actions: ActionReviewController;
   private transition: ScreenTransition = { kind: 'idle' };
   private notice = '';
+  private connectionAnnouncement?: string;
   private attempt?: SaveAttempt;
   private discardReview?: DraftReview;
   private reopening?: BaselineReopen;
@@ -69,10 +70,10 @@ export class BridgeFacade {
     if (!this.disposed && outcome.kind === 'result' && draft) await this.reconcileDraft(draft, options);
     return outcome;
   }
-  async refresh(options: CallOptions = {}) {
+  async refresh(options: CallOptions & { background?: boolean } = {}) {
     const draft = this.work.captureDraftReconciliation();
     const outcome = await this.observe(value => this.session.refresh(value), options);
-    if (!this.disposed) this.announceConnection(outcome.kind === 'result');
+    if (!this.disposed) this.announceConnection(outcome.kind === 'result', options.background);
     if (!this.disposed && outcome.kind === 'result' && draft) await this.reconcileDraft(draft, options);
     return outcome;
   }
@@ -82,8 +83,11 @@ export class BridgeFacade {
     if (this.disposed) return;
     if (!this.work.finishDraftReconciliation(capture, outcome)) this.say('Current draft could not be reconciled. Changes and unfinished input are retained.', true);
   }
-  private announceConnection(received: boolean): void {
+  private announceConnection(received: boolean, onlyChanged = false): void {
     const confidence = this.work.observations.state.confidence;
+    const state = `${received}:${confidence}`;
+    if (onlyChanged && this.connectionAnnouncement === state) return;
+    this.connectionAnnouncement = state;
     this.say(received && confidence === 'authoritative' ? 'Observations updated.'
       : received && confidence === 'partial' ? 'Some observations are unavailable. Refresh is required.'
       : 'Observations are unavailable. Refresh is required.', !received || confidence !== 'authoritative');

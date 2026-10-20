@@ -39,7 +39,7 @@
     const refresh = autoRefresh ? setInterval(() => {
       if (!active || connecting) return;
       connecting = true;
-      void scopedFacade.refresh({ signal: observation.signal }).finally(() => { if (active) connecting = false; });
+      void scopedFacade.refresh({ signal: observation.signal, background: true }).finally(() => { if (active) connecting = false; });
     }, 5000) : undefined;
     return () => { active = false; if (refresh !== undefined) clearInterval(refresh); observation.abort(); scopedFacade.dispose(); };
   });

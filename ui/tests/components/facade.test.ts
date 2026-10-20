@@ -572,3 +572,37 @@ test('facade uncertain Save replays only its retained exact input after host rep
   await facade.replaySave(); expect(sent.filter(row => row.body.command?.name === 'commit').map(row => row.body.command.input)).toEqual([input, input]);
   await facade.reconcileSave(); expect(client.replayCount).toBe(0); expect(facade.state.notice).toBe('Changes saved.'); expect(facade.state.work.closeRequested).toBe(true); facade.dispose();
 });
+
+
+test('background refresh announces connection transitions without repeating unchanged warnings', async () => {
+  let partial = true, sequence = 0;
+  const client = new BridgeClient({ subscribe: () => () => {}, exchange: async encoded => {
+    const reply = frame('sc15-complete-empty-snapshot-reply');
+    reply.body.result.query.output.cursor.sequence = String(++sequence);
+    if (partial) {
+      reply.body.result.query.output.capabilities.completeness = 'partial';
+      reply.body.result.query.output.capabilities.issues = [{ code: 'native_unavailable' }];
+    }
+    return correlation(reply, encoded);
+  } }, { requestId: keySequence() });
+  const facade = new BridgeFacade(client, { idempotencyKey: keySequence() });
+  expect((await facade.connect()).kind).toBe('result');
+  expect(facade.state.observations.confidence).toBe('partial');
+  const initial = facade.announcements.state;
+  expect(initial.assertive.message).toContain('Some observations');
+  for (let tick = 0; tick < 3; tick++) await facade.refresh({ background: true });
+  expect(facade.announcements.state).toBe(initial);
+  await facade.refresh();
+  expect(facade.announcements.state.assertive.id).toBeGreaterThan(initial.assertive.id);
+  const manual = facade.announcements.state;
+  partial = false;
+  await facade.refresh({ background: true });
+  expect(facade.state.observations.confidence).toBe('authoritative');
+  expect(facade.announcements.state.polite.message).toBe('Observations updated.');
+  expect(facade.announcements.state.polite.id).toBeGreaterThan(manual.assertive.id);
+  const restored = facade.announcements.state;
+  await facade.refresh({ background: true });
+  expect(facade.announcements.state).toBe(restored);
+  expect(readFileSync(new URL('../../src/App.svelte', import.meta.url), 'utf8')).toContain('background: true');
+  facade.dispose();
+});
