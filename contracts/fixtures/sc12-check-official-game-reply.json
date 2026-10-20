@@ -1,0 +1,45 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "check_game_update",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "checkId": "00000c1c-1111-4111-8111-111111111111",
+            "currentClient": {
+              "architecture": "x86_64",
+              "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "version": "270"
+            },
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "installation": {
+              "kind": "registered",
+              "nativeTargetRef": "synthetic-native-target-1",
+              "physicalId": "synthetic-installation-physical-1",
+              "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "registrationRevision": "synthetic-installation-revision-1"
+            },
+            "offeredClient": {
+              "architecture": "x86_64",
+              "executableDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "version": "271"
+            },
+            "officialManifestDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "revision": "synthetic-game-check-1",
+            "route": "canonical_native_direct"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d07-1111-4111-8111-111111111111"
+}

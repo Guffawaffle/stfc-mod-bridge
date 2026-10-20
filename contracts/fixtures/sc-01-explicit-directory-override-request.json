@@ -1,0 +1,24 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "target": {
+          "installation": {
+            "directory": {
+              "platform": "windows",
+              "value": "C:\\Synthetic\\SelectedGame"
+            },
+            "kind": "directory"
+          },
+          "profile": {
+            "kind": "ordinary"
+          }
+        }
+      },
+      "name": "resolve_target"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f48-1111-4111-8111-111111111111"
+}

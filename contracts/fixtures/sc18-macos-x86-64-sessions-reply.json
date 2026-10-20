@@ -1,0 +1,83 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "list_sessions",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [
+              {
+                "binding": {
+                  "process": {
+                    "architecture": "x86_64",
+                    "executableIdentity": "synthetic-game-executable-1",
+                    "installationPhysicalId": "synthetic-installation-physical-1",
+                    "pid": 9876,
+                    "startIdentity": {
+                      "platform": "macos",
+                      "value": "synthetic-macos-x86-64-generation"
+                    }
+                  },
+                  "revision": "synthetic-session-1",
+                  "sessionId": "000017c4-1111-4111-8111-111111111111"
+                },
+                "liveIdentity": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": true
+                },
+                "readiness": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": "ordinary_spawned"
+                },
+                "target": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                }
+              }
+            ],
+            "revision": "synthetic-inventory-1"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017c5-1111-4111-8111-111111111111"
+}

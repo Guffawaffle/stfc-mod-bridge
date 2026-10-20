@@ -1,0 +1,40 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001f4a-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:b16092389ab9bedda58307cbd403085227088f79a776eee0e06992d01b2fbdca"
+          },
+          "semantics": {
+            "action": "register_installation",
+            "capture": {
+              "input": {
+                "catalogRevision": "synthetic-catalog-1",
+                "name": "Synthetic registration",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1"
+              },
+              "kind": "register_installation"
+            },
+            "effects": [
+              "register_installation"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f4b-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "bridge-native-probe-inputs/v1",
+  "purpose": "Explicit adoption of historical receipt-backed producer bytes for consumer ABI probes",
+  "owningRepository": "Guffawaffle/stfc-mod-bridge",
+  "issue": "https://github.com/Guffawaffle/stfc-mod-bridge/issues/239",
+  "loader": {"libloading": "0.9.0", "windowsSys": "0.61.2", "libc": "0.2.190", "sha2": "0.11.0"},
+  "modules": [
+    {
+      "component": "profiles",
+      "host": "windows-x64",
+      "relativePath": "artifacts/bay-native/stfc-profiles-native.dll",
+      "sha256": "b4597f3b5048a930264873a88c26504403179380f780e3cab945f4a582706ee9",
+      "provenance": {
+        "sourceRevision": "aeef4861693613fab119edcd03117b4e8de01d4b",
+        "sourceArchiveSha256": "b556a158519275c47fdb275f288b567eb350baf305c68b9d89de2bc6fbaca49e",
+        "buildReceiptSha256": "4c0e64efe905f7370631c8c989a5eb39409deea2f8d8e0085fcfb2c2410a37d6"
+      },
+      "buildReceipt": "artifacts/bay-native/build-receipt.json",
+      "producer": "Guffawaffle/stfc-profiles",
+      "symbolAbi": 1,
+      "jsonApi": 2,
+      "resolvedRecipeEvidence": "historical receipt incomplete",
+      "releaseInputQualified": false
+    },
+    {
+      "component": "toml",
+      "host": "windows-x64",
+      "relativePath": "artifacts/shared-toml-qualified/toml-native/stfc-toml-native.dll",
+      "sha256": "d94a5c774f973a00bb778e7e17b597ad936aa7f2c0c893cde0118deebcce3eb7",
+      "provenance": {
+        "sourceRevision": "f83c8d55b542cb4b8ac4a85ca5d69173c0cd58b0",
+        "sourceArchiveSha256": "0ce4b510eb6c6040c0974a6ce292596f33164ff46ae9b0314254eefc2dc3204c",
+        "buildReceiptSha256": "ce3c9f09237660e3d271a3b227f8ce0906fa5982e3af1fa0432beb426deb4545"
+      },
+      "buildReceipt": "artifacts/shared-toml-qualified/toml-native/build-receipt.json",
+      "producer": "Guffawaffle/stfc-mod",
+      "componentPath": "shared/toml",
+      "componentGitTree": "c8f89d3f4715c7b99d14553b4b1f55d7177a0154",
+      "symbolAbi": 1,
+      "resolvedRecipeEvidence": "historical receipt incomplete",
+      "releaseInputQualified": false
+    }
+  ],
+  "unresolvedHosts": ["macos-arm64-native"],
+  "nativeRuntimeQualified": false,
+  "releaseQualified": false
+}

@@ -1,0 +1,72 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001fd4-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "edit_isolated_profile",
+            "capture": {
+              "input": {
+                "name": "Synthetic renamed profile",
+                "preferredInstallation": {
+                  "expected": {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "kind": "registered"
+                  },
+                  "kind": "keep"
+                },
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "active"
+                }
+              },
+              "kind": "edit_isolated_profile"
+            },
+            "effects": [
+              "edit_profile_metadata"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "profile_edited",
+                "profile": {
+                  "kind": "isolated",
+                  "name": "Synthetic renamed profile",
+                  "preferredInstallation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "reference": {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "revision": "synthetic-profile-revision-1",
+                    "state": "active"
+                  },
+                  "store": {
+                    "evidence": {
+                      "observationId": "000003ea-1111-4111-8111-111111111111",
+                      "observedAt": "2026-10-03T11:00:00Z",
+                      "source": "native_live"
+                    },
+                    "status": "observed",
+                    "value": "new"
+                  }
+                }
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fd6-1111-4111-8111-111111111111"
+}

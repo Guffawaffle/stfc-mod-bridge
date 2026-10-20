@@ -1,0 +1,42 @@
+{
+  "disposition": "planning-only-not-execution-authority",
+  "createdAt": "2026-10-03T08:55:12.826Z",
+  "implementationTasksCompleted": 0,
+  "implementationGatesPassed": 0,
+  "issuesCreated": 0,
+  "runsCreated": 0,
+  "attemptsCreated": 0,
+  "requiredBindings": [
+    {
+      "id": "mac-native-executor",
+      "state": "unbound",
+      "detail": "No macOS executor attached to this session. Bind an actual Apple Silicon host, native CI jobs and owning canonical checkouts before Mac execution. Record actual game/runtime/companion architectures on that host."
+    },
+    {
+      "id": "mac-profiles-qualified-route",
+      "state": "implementation-required",
+      "detail": "Registration/setup/launch/update platform unavailable/unqualified in current Profiles source; br-08/10/11 close these."
+    },
+    {
+      "id": "mac-explicit-loader",
+      "state": "implementation-required",
+      "detail": "Current upstream loader chooses launcher INI and forwards executable-only argv; br-09 required."
+    },
+    {
+      "id": "release-identity",
+      "state": "decision-and-provisioning-required",
+      "detail": "Package/channel/publisher/mac signing/notary and architecture/runtime pairing decisions owned by br-00/23."
+    },
+    {
+      "id": "executable-gates",
+      "state": "not-implemented",
+      "detail": "Qualification scripts/Cargo/frontend suites are future task deliverables. Validation/order success is not implementation acceptance."
+    },
+    {
+      "id": "issue-branch-binding",
+      "state": "not-created",
+      "detail": "No new issues/branches/PRs created by planning. Bind each package to its owning repo issue before implementation; branch change/worktree creation requires user authorization."
+    }
+  ],
+  "workPackageSha256": "057482b4dbab2c916859ebe32038aa71a93324be7d66d56acde61eb72b679b4d"
+}

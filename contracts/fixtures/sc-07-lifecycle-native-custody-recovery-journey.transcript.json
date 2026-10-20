@@ -1,0 +1,29 @@
+{
+  "case": "lifecycle-native-custody-recovery",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-07-lifecycle-native-custody-recovery-journey",
+  "scenario": "SC-07",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-07-lifecycle-recovery-prepare-reply",
+      "request": "sc-07-lifecycle-recovery-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-07-lifecycle-recovery-commit-reply",
+      "request": "sc-07-lifecycle-recovery-commit-request",
+      "type": "exchange"
+    }
+  ]
+}

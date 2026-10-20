@@ -1,0 +1,29 @@
+{
+  "case": "sc15-exact-maximum-revision",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc15-exact-maximum-revision",
+  "scenario": "SC-15",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc15-maximum-operation-revision-reply",
+      "request": "sc15-maximum-operation-revision-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc15-maximum-operation-revision-reply",
+      "request": "sc15-maximum-operation-revision-request",
+      "type": "exchange"
+    }
+  ]
+}

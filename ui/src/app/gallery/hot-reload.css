@@ -1,0 +1,4 @@
+/* Development-only CSS hot-reload fixture. The frontend accessibility gate
+   owns temporary changes to this probe and restores these exact bytes in
+   finally. It supplies no production presentation or backend authority. */
+:root { --bridge-gallery-hmr-probe: baseline; }

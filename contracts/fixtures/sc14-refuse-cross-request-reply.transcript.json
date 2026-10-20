@@ -1,0 +1,26 @@
+{
+  "case": "sc14-refuse-cross-request-reply",
+  "expected": {
+    "accepted": false,
+    "code": "transcript_reply_binding",
+    "step": 1
+  },
+  "id": "sc14-refuse-cross-request-reply",
+  "scenario": "SC-14",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc14-correlation-reply",
+      "request": "sc14-correlation-request",
+      "type": "exchange"
+    }
+  ]
+}

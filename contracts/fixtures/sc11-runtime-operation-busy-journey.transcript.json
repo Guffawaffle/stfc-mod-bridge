@@ -1,0 +1,24 @@
+{
+  "case": "Runtime refusal operation_busy remains visible before mutation",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc11-runtime-operation-busy-journey",
+  "scenario": "SC-11",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc11-runtime-operation-busy-reply",
+      "request": "sc11-runtime-operation-busy-request",
+      "type": "exchange"
+    }
+  ]
+}

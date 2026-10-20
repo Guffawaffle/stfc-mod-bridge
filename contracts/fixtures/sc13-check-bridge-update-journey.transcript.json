@@ -1,0 +1,24 @@
+{
+  "case": "Bridge update authority is separate from runtime and game authorities",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc13-check-bridge-update-journey",
+  "scenario": "SC-13",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc13-check-bridge-update-reply",
+      "request": "sc13-check-bridge-update-request",
+      "type": "exchange"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "bridge-windows-signature-fixture-pin/v1",
+  "subject": "current-pinned-Windows-Node-executable",
+  "nodeVersion": "v24.14.1",
+  "sha256": "58e74bf02fc5bbacc41dcb8bef089961cd5bddd37830b87784e4fc624d145d1f",
+  "primarySignerCertificateSha256": "9b58b2c9c5a8fe0ab28597026203f9afde121f48c83c41efc57548eb37aea241",
+  "certificateObservation": "Embedded certificate DER, 1784 bytes, independently extracted using X509Certificate.CreateFromSignedFile. This pin grants no publisher approval or OS trust; native cache-only verification must establish its own observation."
+}

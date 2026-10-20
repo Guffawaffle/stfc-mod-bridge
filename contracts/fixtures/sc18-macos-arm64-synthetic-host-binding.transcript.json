@@ -1,0 +1,44 @@
+{
+  "case": "sc18-macos-arm64-synthetic-host-binding",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc18-macos-arm64-synthetic-host-binding",
+  "scenario": "SC-18",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc18-macos-arm64-hello-reply",
+      "request": "sc18-macos-arm64-hello-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc18-macos-arm64-resolve-reply",
+      "request": "sc18-macos-arm64-resolve-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc18-macos-arm64-sessions-reply",
+      "request": "sc18-macos-arm64-sessions-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc18-macos-arm64-focus-prepare-reply",
+      "request": "sc18-macos-arm64-focus-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc18-macos-arm64-focus-commit-reply",
+      "request": "sc18-macos-arm64-focus-commit-request",
+      "type": "exchange"
+    }
+  ]
+}

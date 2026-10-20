@@ -1,0 +1,62 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001faa-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:883a9f5582d5b98c7d70fd87a9e4b19efc1133fc72a35229da217f439c97af14"
+          },
+          "semantics": {
+            "action": "focus_session",
+            "capture": {
+              "kind": "focus_session",
+              "session": {
+                "process": {
+                  "architecture": "x86_64",
+                  "executableIdentity": "synthetic-game-executable-1",
+                  "installationPhysicalId": "synthetic-other-installation",
+                  "pid": 4300,
+                  "startIdentity": {
+                    "platform": "windows",
+                    "value": "synthetic-process-generation-1"
+                  }
+                },
+                "revision": "synthetic-session-revision-1",
+                "sessionId": "00001fa9-1111-4111-8111-111111111111"
+              },
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "isolated",
+                  "revision": "synthetic-profile-revision-1"
+                }
+              }
+            },
+            "effects": [
+              "focus_session"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "session"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fb6-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,34 @@
+{
+  "case": "profile-two",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-03-profile-two-journey",
+  "scenario": "SC-03",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-03-profile-two-prepare-reply",
+      "request": "sc-03-profile-two-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-profile-two-commit-reply",
+      "request": "sc-03-profile-two-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-profile-two-observe-reply",
+      "request": "sc-03-profile-two-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

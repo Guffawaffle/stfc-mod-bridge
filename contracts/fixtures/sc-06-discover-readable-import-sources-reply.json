@@ -1,0 +1,46 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "list_import_sources",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [
+              {
+                "accessibility": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": true
+                },
+                "name": "Synthetic native user",
+                "reference": {
+                  "destinationOwner": "synthetic-native-owner-1",
+                  "requiresNativeApproval": true,
+                  "sourceId": "synthetic-native-import-source",
+                  "sourceRevision": "synthetic-source-1"
+                }
+              }
+            ],
+            "revision": "synthetic-inventory-1"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe3-1111-4111-8111-111111111111"
+}

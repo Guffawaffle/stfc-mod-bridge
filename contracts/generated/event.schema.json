@@ -1,0 +1,5867 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "ActionId": {
+      "enum": [
+        "launch_ordinary",
+        "launch_isolated",
+        "focus_session",
+        "create_profile",
+        "edit_ordinary_profile",
+        "edit_isolated_profile",
+        "archive_profile",
+        "restore_profile",
+        "delete_profile",
+        "register_installation",
+        "edit_installation",
+        "save_configuration",
+        "restore_configuration",
+        "runtime_install",
+        "runtime_update",
+        "runtime_repair",
+        "runtime_adopt",
+        "runtime_remove",
+        "runtime_stop_managing",
+        "runtime_switch_source",
+        "game_update",
+        "recover_game_update",
+        "bridge_update",
+        "recover_bridge_update",
+        "export_diagnostics",
+        "save_application_preferences"
+      ],
+      "type": "string"
+    },
+    "ApplicationIdentity": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ApplicationPreferences": {
+      "additionalProperties": false,
+      "properties": {
+        "lastTarget": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SavedTargetPreference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "motion": {
+          "$ref": "#/definitions/MotionPreference"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProviderPreference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "theme": {
+          "$ref": "#/definitions/ThemePreference"
+        }
+      },
+      "required": [
+        "theme",
+        "motion"
+      ],
+      "type": "object"
+    },
+    "ApplicationPreferencesSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "values": {
+          "$ref": "#/definitions/ApplicationPreferences"
+        }
+      },
+      "required": [
+        "revision",
+        "values"
+      ],
+      "type": "object"
+    },
+    "ApplyTiming": {
+      "enum": [
+        "immediate",
+        "next_launch",
+        "restart_required"
+      ],
+      "type": "string"
+    },
+    "ArtifactAuthorityRef": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ArtifactRole": {
+      "enum": [
+        "runtime_module",
+        "runtime_loader",
+        "runtime_manifest",
+        "configuration_schema"
+      ],
+      "type": "string"
+    },
+    "BackupId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "BackupReceiptRef": {
+      "additionalProperties": false,
+      "properties": {
+        "backupId": {
+          "$ref": "#/definitions/BackupId"
+        },
+        "createdAt": {
+          "$ref": "#/definitions/UtcTimestamp"
+        },
+        "document": {
+          "$ref": "#/definitions/DocumentBinding"
+        },
+        "nativeBackupRef": {
+          "$ref": "#/definitions/NativeTargetRef"
+        },
+        "retainedDigest": {
+          "$ref": "#/definitions/Sha256"
+        }
+      },
+      "required": [
+        "backupId",
+        "document",
+        "retainedDigest",
+        "nativeBackupRef",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "BoundedList_ApplyTiming_3": {
+      "items": {
+        "$ref": "#/definitions/ApplyTiming"
+      },
+      "maxItems": 3,
+      "type": "array"
+    },
+    "BoundedList_BoundedList_TomlPathSegment_16_16": {
+      "items": {
+        "$ref": "#/definitions/BoundedList_TomlPathSegment_16"
+      },
+      "maxItems": 16,
+      "type": "array"
+    },
+    "BoundedList_BridgePayloadSubject_8": {
+      "items": {
+        "$ref": "#/definitions/BridgePayloadSubject"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "BoundedList_CloseObligation_128": {
+      "items": {
+        "$ref": "#/definitions/CloseObligation"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_ConfigurationEdit_256": {
+      "items": {
+        "$ref": "#/definitions/ConfigurationEdit"
+      },
+      "maxItems": 256,
+      "type": "array"
+    },
+    "BoundedList_DraftViolation_64": {
+      "items": {
+        "$ref": "#/definitions/DraftViolation"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "BoundedList_EnumValue_128": {
+      "items": {
+        "$ref": "#/definitions/EnumValue"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_FeedId_128": {
+      "items": {
+        "$ref": "#/definitions/FeedId"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_FieldDefinition_512": {
+      "items": {
+        "$ref": "#/definitions/FieldDefinition"
+      },
+      "maxItems": 512,
+      "type": "array"
+    },
+    "BoundedList_FieldId_128": {
+      "items": {
+        "$ref": "#/definitions/FieldId"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_FieldViolation_8": {
+      "items": {
+        "$ref": "#/definitions/FieldViolation"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "BoundedList_KeyChord_8": {
+      "items": {
+        "$ref": "#/definitions/KeyChord"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "BoundedList_KeyToken_128": {
+      "items": {
+        "$ref": "#/definitions/KeyToken"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_Modifier_4": {
+      "items": {
+        "$ref": "#/definitions/Modifier"
+      },
+      "maxItems": 4,
+      "type": "array"
+    },
+    "BoundedList_ProposedEffect_16": {
+      "items": {
+        "$ref": "#/definitions/ProposedEffect"
+      },
+      "maxItems": 16,
+      "type": "array"
+    },
+    "BoundedList_RuntimeArtifactSubject_16": {
+      "items": {
+        "$ref": "#/definitions/RuntimeArtifactSubject"
+      },
+      "maxItems": 16,
+      "type": "array"
+    },
+    "BoundedList_SchemaText_32": {
+      "items": {
+        "$ref": "#/definitions/SchemaText"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "BoundedList_SupportedPlatform_2": {
+      "items": {
+        "$ref": "#/definitions/SupportedPlatform"
+      },
+      "maxItems": 2,
+      "type": "array"
+    },
+    "BoundedList_SyncFeedOverride_128": {
+      "items": {
+        "$ref": "#/definitions/SyncFeedOverride"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "BoundedList_SyncTypeDefinition_16": {
+      "items": {
+        "$ref": "#/definitions/SyncTypeDefinition"
+      },
+      "maxItems": 16,
+      "type": "array"
+    },
+    "BoundedList_TomlPathSegment_16": {
+      "items": {
+        "$ref": "#/definitions/TomlPathSegment"
+      },
+      "maxItems": 16,
+      "type": "array"
+    },
+    "BridgeApplicationBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "applicationId": {
+          "$ref": "#/definitions/ApplicationIdentity"
+        },
+        "architecture": {
+          "$ref": "#/definitions/ProcessArchitecture"
+        },
+        "channelId": {
+          "$ref": "#/definitions/ChannelId"
+        },
+        "installationRef": {
+          "$ref": "#/definitions/NativeTargetRef"
+        },
+        "packageDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "pairingDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "payloads": {
+          "$ref": "#/definitions/BoundedList_BridgePayloadSubject_8"
+        },
+        "platform": {
+          "$ref": "#/definitions/SupportedPlatform"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        }
+      },
+      "required": [
+        "applicationId",
+        "installationRef",
+        "revision",
+        "channelId",
+        "platform",
+        "architecture",
+        "packageDigest",
+        "pairingDigest",
+        "payloads"
+      ],
+      "type": "object"
+    },
+    "BridgeAuthorityRef": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "BridgeError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/ErrorCode"
+        },
+        "expectedRevision": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ScopedRevisionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedRevision": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ScopedRevisionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RecoveryRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retryDisposition": {
+          "$ref": "#/definitions/RetryDisposition"
+        },
+        "supportedVersions": {
+          "items": {
+            "$ref": "#/definitions/ProtocolVersion"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "violations": {
+          "$ref": "#/definitions/BoundedList_FieldViolation_8"
+        }
+      },
+      "required": [
+        "code",
+        "retryDisposition",
+        "violations"
+      ],
+      "type": "object"
+    },
+    "BridgePayloadRole": {
+      "enum": [
+        "application",
+        "profiles_native",
+        "toml_native",
+        "update_helper"
+      ],
+      "type": "string"
+    },
+    "BridgePayloadSubject": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "role": {
+          "$ref": "#/definitions/BridgePayloadRole"
+        },
+        "size": {
+          "$ref": "#/definitions/ProgressCount"
+        }
+      },
+      "required": [
+        "role",
+        "digest",
+        "size"
+      ],
+      "type": "object"
+    },
+    "BridgeRecoveryRef": {
+      "additionalProperties": false,
+      "properties": {
+        "application": {
+          "$ref": "#/definitions/BridgeApplicationBinding"
+        },
+        "bridgeJournalRef": {
+          "$ref": "#/definitions/NativeTransactionRef"
+        },
+        "expectedApplication": {
+          "$ref": "#/definitions/BridgeApplicationBinding"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        }
+      },
+      "required": [
+        "application",
+        "expectedApplication",
+        "bridgeJournalRef",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "BridgeReleaseId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "BridgeReleaseSelectionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "$ref": "#/definitions/BridgeAuthorityRef"
+        },
+        "current": {
+          "$ref": "#/definitions/BridgeApplicationBinding"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "offered": {
+          "$ref": "#/definitions/BridgeApplicationBinding"
+        },
+        "releaseVersion": {
+          "$ref": "#/definitions/ReleaseVersion"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "selectionId": {
+          "$ref": "#/definitions/BridgeReleaseId"
+        }
+      },
+      "required": [
+        "selectionId",
+        "hostEpoch",
+        "current",
+        "offered",
+        "releaseVersion",
+        "authority",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "BridgeUpdateInput": {
+      "additionalProperties": false,
+      "properties": {
+        "selectedRelease": {
+          "$ref": "#/definitions/BridgeReleaseSelectionRef"
+        }
+      },
+      "required": [
+        "selectedRelease"
+      ],
+      "type": "object"
+    },
+    "CategoryId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "ChannelId": {
+      "maxLength": 64,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "type": "string"
+    },
+    "CheckedGameUpdateRef": {
+      "additionalProperties": false,
+      "properties": {
+        "checkId": {
+          "$ref": "#/definitions/GameUpdateId"
+        },
+        "currentClient": {
+          "$ref": "#/definitions/GameClientBinding"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "installation": {
+          "$ref": "#/definitions/InstallationBinding"
+        },
+        "offeredClient": {
+          "$ref": "#/definitions/GameClientBinding"
+        },
+        "officialManifestDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "route": {
+          "$ref": "#/definitions/GameUpdateRoute"
+        }
+      },
+      "required": [
+        "checkId",
+        "hostEpoch",
+        "revision",
+        "installation",
+        "currentClient",
+        "offeredClient",
+        "officialManifestDigest",
+        "route"
+      ],
+      "type": "object"
+    },
+    "CloseObligation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "operation",
+              "type": "string"
+            },
+            "operationId": {
+              "$ref": "#/definitions/OperationId"
+            },
+            "operationRevision": {
+              "$ref": "#/definitions/RevisionCounter"
+            }
+          },
+          "required": [
+            "kind",
+            "operationId",
+            "operationRevision"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session_custody",
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/definitions/SessionBinding"
+            }
+          },
+          "required": [
+            "kind",
+            "session"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CompletionOutcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "changed",
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompletionReason"
+            },
+            "receipt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/EffectReceipt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "no_change",
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompletionReason"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "cancelled_before_commit",
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompletionReason"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "rolled_back",
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompletionReason"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/definitions/BridgeError"
+            },
+            "kind": {
+              "const": "failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CompletionReason": {
+      "enum": [
+        "applied",
+        "already_satisfied",
+        "cancellation_accepted",
+        "rollback_completed"
+      ],
+      "type": "string"
+    },
+    "ConfigString": {
+      "maxLength": 4096,
+      "not": {
+        "pattern": "[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]"
+      },
+      "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]*$",
+      "type": "string"
+    },
+    "ConfigurationEdit": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fieldId": {
+              "$ref": "#/definitions/FieldId"
+            },
+            "kind": {
+              "const": "set_public",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/PublicConfigValue"
+            }
+          },
+          "required": [
+            "kind",
+            "fieldId",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fieldId": {
+              "$ref": "#/definitions/FieldId"
+            },
+            "kind": {
+              "const": "set_private",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/PrivateValueRef"
+            }
+          },
+          "required": [
+            "kind",
+            "fieldId",
+            "reference"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fieldId": {
+              "$ref": "#/definitions/FieldId"
+            },
+            "kind": {
+              "const": "replace_secret",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/SecretRef"
+            }
+          },
+          "required": [
+            "kind",
+            "fieldId",
+            "reference"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fieldId": {
+              "$ref": "#/definitions/FieldId"
+            },
+            "kind": {
+              "const": "clear_secret",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "fieldId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fieldId": {
+              "$ref": "#/definitions/FieldId"
+            },
+            "kind": {
+              "const": "remove_override",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "fieldId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/definitions/NewSyncDestination"
+            },
+            "kind": {
+              "const": "add_sync_destination",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "destination"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destinationId": {
+              "$ref": "#/definitions/DestinationId"
+            },
+            "kind": {
+              "const": "remove_sync_destination",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "destinationId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destinationId": {
+              "$ref": "#/definitions/DestinationId"
+            },
+            "feedId": {
+              "$ref": "#/definitions/FeedId"
+            },
+            "kind": {
+              "const": "set_sync_feed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/InheritedBoolean"
+            }
+          },
+          "required": [
+            "kind",
+            "destinationId",
+            "feedId",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destinationId": {
+              "$ref": "#/definitions/DestinationId"
+            },
+            "kind": {
+              "const": "set_sync_proxy",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/ProxyChoice"
+            }
+          },
+          "required": [
+            "kind",
+            "destinationId",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ConfigurationParticipant": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "unchanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "draft": {
+              "$ref": "#/definitions/DraftRef"
+            },
+            "kind": {
+              "const": "save_reviewed_draft",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "draft"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/definitions/SchemaBinding"
+            },
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "compatible_migration",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document",
+            "destination"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ConfigurationParticipantOutcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "unchanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "backup": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BackupReceiptRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "written",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ConfigurationSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "binding": {
+          "$ref": "#/definitions/SchemaBinding"
+        },
+        "fields": {
+          "$ref": "#/definitions/BoundedList_FieldDefinition_512"
+        },
+        "sync": {
+          "$ref": "#/definitions/BoundedList_SyncTypeDefinition_16"
+        }
+      },
+      "required": [
+        "binding",
+        "fields",
+        "sync"
+      ],
+      "type": "object"
+    },
+    "CreateProfileCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "destinationOwner": {
+          "$ref": "#/definitions/OwnerScope"
+        },
+        "name": {
+          "$ref": "#/definitions/DisplayName"
+        },
+        "nativePreparationRef": {
+          "$ref": "#/definitions/NativePreparationRef"
+        },
+        "preferredInstallation": {
+          "$ref": "#/definitions/RegisteredInstallationBinding"
+        },
+        "setup": {
+          "$ref": "#/definitions/ProfileSetup"
+        }
+      },
+      "required": [
+        "name",
+        "setup",
+        "preferredInstallation",
+        "catalogRevision",
+        "nativePreparationRef",
+        "destinationOwner"
+      ],
+      "type": "object"
+    },
+    "Cursor": {
+      "additionalProperties": false,
+      "properties": {
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "sequence": {
+          "$ref": "#/definitions/Sequence"
+        },
+        "streamId": {
+          "$ref": "#/definitions/StreamId"
+        }
+      },
+      "required": [
+        "hostEpoch",
+        "streamId",
+        "sequence"
+      ],
+      "type": "object"
+    },
+    "DecimalValue": {
+      "maxLength": 66,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^(0|[1-9][0-9]{0,31}|-[1-9][0-9]{0,31}|-?(0|[1-9][0-9]{0,31})\\.[0-9]{0,31}[1-9])$",
+      "type": "string"
+    },
+    "DeleteProfileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmation": {
+          "$ref": "#/definitions/DeletionConfirmation"
+        },
+        "profile": {
+          "$ref": "#/definitions/IsolatedProfileRef"
+        }
+      },
+      "required": [
+        "profile",
+        "confirmation"
+      ],
+      "type": "object"
+    },
+    "DeletionConfirmation": {
+      "enum": [
+        "delete_entire_owned_profile"
+      ],
+      "type": "string"
+    },
+    "DestinationId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "DiagnosticDisclosure": {
+      "enum": [
+        "redacted",
+        "include_paths"
+      ],
+      "type": "string"
+    },
+    "DisplayName": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\x00-\\x1f\\x7f\\u2028\\u2029]"
+      },
+      "pattern": "^[^\\x00-\\x1f\\x7f\\u2028\\u2029]+$",
+      "type": "string"
+    },
+    "DistributionId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "DocumentBaseline": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "contentDigest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "fileIdentity": {
+              "$ref": "#/definitions/NativeFileIdentity"
+            },
+            "kind": {
+              "const": "existing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "fileIdentity",
+            "contentDigest"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DocumentBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "$ref": "#/definitions/DocumentBaseline"
+        },
+        "documentId": {
+          "$ref": "#/definitions/DocumentId"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "schema": {
+          "$ref": "#/definitions/SchemaBinding"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "documentId",
+        "target",
+        "revision",
+        "baseline",
+        "schema"
+      ],
+      "type": "object"
+    },
+    "DocumentId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "DraftId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "DraftRef": {
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "$ref": "#/definitions/DocumentBinding"
+        },
+        "draftId": {
+          "$ref": "#/definitions/DraftId"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "revision": {
+          "$ref": "#/definitions/RevisionCounter"
+        }
+      },
+      "required": [
+        "draftId",
+        "hostEpoch",
+        "revision",
+        "document"
+      ],
+      "type": "object"
+    },
+    "DraftSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "apply": {
+          "$ref": "#/definitions/BoundedList_ApplyTiming_3"
+        },
+        "draft": {
+          "$ref": "#/definitions/DraftRef"
+        },
+        "edits": {
+          "$ref": "#/definitions/BoundedList_ConfigurationEdit_256"
+        },
+        "schema": {
+          "$ref": "#/definitions/ConfigurationSchema"
+        },
+        "state": {
+          "$ref": "#/definitions/DraftState"
+        },
+        "validation": {
+          "$ref": "#/definitions/BoundedList_DraftViolation_64"
+        }
+      },
+      "required": [
+        "draft",
+        "schema",
+        "edits",
+        "apply",
+        "state",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "DraftState": {
+      "enum": [
+        "clean",
+        "dirty",
+        "invalid",
+        "stale"
+      ],
+      "type": "string"
+    },
+    "DraftViolation": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/DraftViolationCode"
+        },
+        "fieldId": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FieldId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "DraftViolationCode": {
+      "enum": [
+        "unknown_field",
+        "invalid_type",
+        "constraint_violation",
+        "private_value_required",
+        "secret_reference_required",
+        "unsupported_sync_field",
+        "stale_schema"
+      ],
+      "type": "string"
+    },
+    "EditInstallationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "installation": {
+          "$ref": "#/definitions/InstallationBinding"
+        },
+        "name": {
+          "$ref": "#/definitions/DisplayName"
+        }
+      },
+      "required": [
+        "installation",
+        "name"
+      ],
+      "type": "object"
+    },
+    "EditIsolatedProfileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DisplayName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preferredInstallation": {
+          "$ref": "#/definitions/PreferredInstallationEdit"
+        },
+        "profile": {
+          "$ref": "#/definitions/IsolatedProfileRef"
+        }
+      },
+      "required": [
+        "profile",
+        "preferredInstallation"
+      ],
+      "type": "object"
+    },
+    "EditOrdinaryProfileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "preferredInstallation": {
+          "$ref": "#/definitions/PreferredInstallationEdit"
+        },
+        "profile": {
+          "$ref": "#/definitions/OrdinaryProfileRef"
+        }
+      },
+      "required": [
+        "profile",
+        "preferredInstallation"
+      ],
+      "type": "object"
+    },
+    "EffectReceipt": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session_spawned",
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/definitions/SessionProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "session"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session_focused",
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/definitions/SessionBinding"
+            }
+          },
+          "required": [
+            "kind",
+            "session"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_published",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/ProfileProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_edited",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/ProfileProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_archived",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/IsolatedProfileRef"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_restored",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/IsolatedProfileRef"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_deleted",
+              "type": "string"
+            },
+            "profileId": {
+              "$ref": "#/definitions/ProfileId"
+            }
+          },
+          "required": [
+            "kind",
+            "profileId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "installation": {
+              "$ref": "#/definitions/InstallationBinding"
+            },
+            "kind": {
+              "const": "installation_registered",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/definitions/DisplayName"
+            }
+          },
+          "required": [
+            "kind",
+            "installation",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "installation": {
+              "$ref": "#/definitions/InstallationBinding"
+            },
+            "kind": {
+              "const": "installation_edited",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/definitions/DisplayName"
+            }
+          },
+          "required": [
+            "kind",
+            "installation",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "backup": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BackupReceiptRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "configuration_written",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "configuration": {
+              "$ref": "#/definitions/ConfigurationParticipantOutcome"
+            },
+            "kind": {
+              "const": "runtime_managed",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/ManagedRuntimeRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference",
+            "configuration"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime_adopted",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/ManagedRuntimeRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime_removed",
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime_unmanaged",
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "client": {
+              "$ref": "#/definitions/GameClientBinding"
+            },
+            "installation": {
+              "$ref": "#/definitions/InstallationBinding"
+            },
+            "kind": {
+              "const": "game_updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "installation",
+            "client"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "application": {
+              "$ref": "#/definitions/BridgeApplicationBinding"
+            },
+            "kind": {
+              "const": "bridge_updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "application"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/definitions/ExportDestinationRef"
+            },
+            "kind": {
+              "const": "diagnostics_exported",
+              "type": "string"
+            },
+            "previewDigest": {
+              "$ref": "#/definitions/Sha256"
+            }
+          },
+          "required": [
+            "kind",
+            "previewDigest",
+            "destination"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "application_preferences_saved",
+              "type": "string"
+            },
+            "snapshot": {
+              "$ref": "#/definitions/ApplicationPreferencesSnapshot"
+            }
+          },
+          "required": [
+            "kind",
+            "snapshot"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EnumValue": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ErrorCode": {
+      "enum": [
+        "invalid_request",
+        "unsupported_protocol",
+        "unknown_command",
+        "invalid_target",
+        "conflicting_target",
+        "target_missing",
+        "target_unknown",
+        "stale_revision",
+        "profile_archived",
+        "wrong_owner",
+        "unsupported_capability",
+        "operation_busy",
+        "plan_expired",
+        "plan_host_mismatch",
+        "idempotency_conflict",
+        "native_unavailable",
+        "recovery_required",
+        "export_preview_changed",
+        "internal_failure",
+        "invalid_configuration",
+        "unsupported_schema",
+        "unsupported_preservation_syntax",
+        "backup_unavailable",
+        "persistence_failed",
+        "artifact_unrecognized",
+        "verification_failed",
+        "release_withdrawn",
+        "pairing_mismatch",
+        "unsupported_platform",
+        "resnapshot_required"
+      ],
+      "type": "string"
+    },
+    "EventBody": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/SnapshotInvalidationReason"
+            },
+            "type": {
+              "const": "snapshot_invalidated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "$ref": "#/definitions/OperationSnapshot"
+            },
+            "type": {
+              "const": "operation_changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "operation"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "obligations": {
+              "$ref": "#/definitions/BoundedList_CloseObligation_128"
+            },
+            "type": {
+              "const": "host_close_deferred",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "obligations"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "draft": {
+              "$ref": "#/definitions/DraftSnapshot"
+            },
+            "type": {
+              "const": "draft_changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "draft"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "observationId": {
+          "$ref": "#/definitions/ObservationId"
+        },
+        "observedAt": {
+          "$ref": "#/definitions/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/definitions/EvidenceSource"
+        }
+      },
+      "required": [
+        "observationId",
+        "observedAt",
+        "source"
+      ],
+      "type": "object"
+    },
+    "EvidenceSource": {
+      "enum": [
+        "native_live",
+        "catalog_metadata",
+        "session_receipt",
+        "disk_file_hash",
+        "artifact_self_description",
+        "verified_release"
+      ],
+      "type": "string"
+    },
+    "ExecutableIdentity": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ExportDestinationId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ExportDestinationRef": {
+      "additionalProperties": false,
+      "properties": {
+        "destinationId": {
+          "$ref": "#/definitions/ExportDestinationId"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "nativeTargetRef": {
+          "$ref": "#/definitions/NativeTargetRef"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        }
+      },
+      "required": [
+        "destinationId",
+        "hostEpoch",
+        "nativeTargetRef",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ExportDiagnosticsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/ExportDestinationRef"
+        },
+        "preview": {
+          "$ref": "#/definitions/PreviewRef"
+        }
+      },
+      "required": [
+        "preview",
+        "destination"
+      ],
+      "type": "object"
+    },
+    "FeedId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "FieldDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "$ref": "#/definitions/BoundedList_BoundedList_TomlPathSegment_16_16"
+        },
+        "apply": {
+          "$ref": "#/definitions/ApplyTiming"
+        },
+        "category": {
+          "$ref": "#/definitions/CategoryId"
+        },
+        "defaultValue": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PublicConfigValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "fieldId": {
+          "$ref": "#/definitions/FieldId"
+        },
+        "path": {
+          "$ref": "#/definitions/BoundedList_TomlPathSegment_16"
+        },
+        "platforms": {
+          "$ref": "#/definitions/BoundedList_SupportedPlatform_2"
+        },
+        "searchTerms": {
+          "$ref": "#/definitions/BoundedList_SchemaText_32"
+        },
+        "sensitivity": {
+          "$ref": "#/definitions/Sensitivity"
+        },
+        "valueType": {
+          "$ref": "#/definitions/FieldType"
+        }
+      },
+      "required": [
+        "fieldId",
+        "path",
+        "valueType",
+        "sensitivity",
+        "category",
+        "searchTerms",
+        "apply",
+        "platforms",
+        "aliases",
+        "deprecated"
+      ],
+      "type": "object"
+    },
+    "FieldId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "FieldPath": {
+      "enum": [
+        "envelope",
+        "protocol_version",
+        "request_id",
+        "body",
+        "target",
+        "session",
+        "plan",
+        "operation",
+        "cursor"
+      ],
+      "type": "string"
+    },
+    "FieldType": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "boolean",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "integer",
+              "type": "string"
+            },
+            "maximum": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SignedInteger"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "minimum": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SignedInteger"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number",
+              "type": "string"
+            },
+            "maximum": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DecimalValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "minimum": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DecimalValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "string",
+              "type": "string"
+            },
+            "maximumLength": {
+              "$ref": "#/definitions/ProgressCount"
+            }
+          },
+          "required": [
+            "kind",
+            "maximumLength"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "enum",
+              "type": "string"
+            },
+            "values": {
+              "$ref": "#/definitions/BoundedList_EnumValue_128"
+            }
+          },
+          "required": [
+            "kind",
+            "values"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "$ref": "#/definitions/BoundedList_KeyToken_128"
+            },
+            "kind": {
+              "const": "keybinding",
+              "type": "string"
+            },
+            "multiple": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple",
+            "keys"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "notification_policy",
+              "type": "string"
+            },
+            "sounds": {
+              "$ref": "#/definitions/BoundedList_EnumValue_128"
+            }
+          },
+          "required": [
+            "kind",
+            "sounds"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FieldViolation": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/ViolationCode"
+        },
+        "field": {
+          "$ref": "#/definitions/FieldPath"
+        }
+      },
+      "required": [
+        "field",
+        "code"
+      ],
+      "type": "object"
+    },
+    "GameClientBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/definitions/ProcessArchitecture"
+        },
+        "executableDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "version": {
+          "$ref": "#/definitions/ReleaseVersion"
+        }
+      },
+      "required": [
+        "version",
+        "executableDigest",
+        "architecture"
+      ],
+      "type": "object"
+    },
+    "GameUpdateId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "GameUpdateInput": {
+      "additionalProperties": false,
+      "properties": {
+        "checkedUpdate": {
+          "$ref": "#/definitions/CheckedGameUpdateRef"
+        }
+      },
+      "required": [
+        "checkedUpdate"
+      ],
+      "type": "object"
+    },
+    "GameUpdateRoute": {
+      "enum": [
+        "canonical_native_direct",
+        "canonical_managed_handoff"
+      ],
+      "type": "string"
+    },
+    "HashProfile": {
+      "enum": [
+        "bridge-plan-semantic-json-v1"
+      ],
+      "type": "string"
+    },
+    "HostEpoch": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ImportSourceId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ImportSourceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "destinationOwner": {
+          "$ref": "#/definitions/OwnerScope"
+        },
+        "requiresNativeApproval": {
+          "type": "boolean"
+        },
+        "sourceId": {
+          "$ref": "#/definitions/ImportSourceId"
+        },
+        "sourceRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        }
+      },
+      "required": [
+        "sourceId",
+        "sourceRevision",
+        "destinationOwner",
+        "requiresNativeApproval"
+      ],
+      "type": "object"
+    },
+    "InheritedBoolean": {
+      "enum": [
+        "inherit",
+        "on",
+        "off"
+      ],
+      "type": "string"
+    },
+    "InstallationBinding": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "registered",
+              "type": "string"
+            },
+            "nativeTargetRef": {
+              "$ref": "#/definitions/NativeTargetRef"
+            },
+            "physicalId": {
+              "$ref": "#/definitions/PhysicalInstallationId"
+            },
+            "registrationId": {
+              "$ref": "#/definitions/InstallationId"
+            },
+            "registrationRevision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            }
+          },
+          "required": [
+            "kind",
+            "registrationId",
+            "registrationRevision",
+            "physicalId",
+            "nativeTargetRef"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "directory",
+              "type": "string"
+            },
+            "nativeTargetRef": {
+              "$ref": "#/definitions/NativeTargetRef"
+            },
+            "physicalId": {
+              "$ref": "#/definitions/PhysicalInstallationId"
+            }
+          },
+          "required": [
+            "kind",
+            "physicalId",
+            "nativeTargetRef"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "InstallationId": {
+      "maxLength": 32,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "IsolatedProfileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/ProfileId"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "state": {
+          "$ref": "#/definitions/ProfileState"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "state"
+      ],
+      "type": "object"
+    },
+    "IsolatedStoreState": {
+      "enum": [
+        "new",
+        "established",
+        "interrupted",
+        "missing_established"
+      ],
+      "type": "string"
+    },
+    "KeyChord": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/KeyToken"
+        },
+        "modifiers": {
+          "$ref": "#/definitions/BoundedList_Modifier_4"
+        }
+      },
+      "required": [
+        "key",
+        "modifiers"
+      ],
+      "type": "object"
+    },
+    "KeyToken": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ManagedRuntimeInput": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "$ref": "#/definitions/ManagedRuntimeRef"
+        }
+      },
+      "required": [
+        "reference"
+      ],
+      "type": "object"
+    },
+    "ManagedRuntimeRef": {
+      "additionalProperties": false,
+      "properties": {
+        "binding": {
+          "$ref": "#/definitions/RuntimeBinding"
+        },
+        "receiptId": {
+          "$ref": "#/definitions/RuntimeReceiptId"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "receiptId",
+        "revision",
+        "target",
+        "binding"
+      ],
+      "type": "object"
+    },
+    "Measurement": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "unit"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "completed": {
+              "$ref": "#/definitions/ProgressCount"
+            },
+            "total": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProgressCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "const": "bytes",
+              "type": "string"
+            }
+          },
+          "required": [
+            "unit",
+            "completed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "completed": {
+              "$ref": "#/definitions/ProgressCount"
+            },
+            "total": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProgressCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "const": "files",
+              "type": "string"
+            }
+          },
+          "required": [
+            "unit",
+            "completed"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Modifier": {
+      "enum": [
+        "control",
+        "alt",
+        "shift",
+        "meta"
+      ],
+      "type": "string"
+    },
+    "MotionPreference": {
+      "enum": [
+        "system",
+        "reduced"
+      ],
+      "type": "string"
+    },
+    "NativeApprovalChoice": {
+      "enum": [
+        "decline",
+        "request_native_approval"
+      ],
+      "type": "string"
+    },
+    "NativeFileIdentity": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "NativeGameRecoveryRef": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedClient": {
+          "$ref": "#/definitions/GameClientBinding"
+        },
+        "installation": {
+          "$ref": "#/definitions/InstallationBinding"
+        },
+        "nativeTransaction": {
+          "$ref": "#/definitions/NativeTransactionRef"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        }
+      },
+      "required": [
+        "installation",
+        "nativeTransaction",
+        "revision",
+        "expectedClient"
+      ],
+      "type": "object"
+    },
+    "NativePreparationRef": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "NativeTargetRef": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "NativeTransactionRef": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "NewSyncDestination": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "$ref": "#/definitions/PrivateValueRef"
+        },
+        "feeds": {
+          "$ref": "#/definitions/BoundedList_SyncFeedOverride_128"
+        },
+        "id": {
+          "$ref": "#/definitions/DestinationId"
+        },
+        "mode": {
+          "$ref": "#/definitions/SyncMode"
+        },
+        "proxy": {
+          "$ref": "#/definitions/ProxyChoice"
+        },
+        "secret": {
+          "$ref": "#/definitions/SecretRef"
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "endpoint",
+        "secret",
+        "proxy",
+        "feeds"
+      ],
+      "type": "object"
+    },
+    "NotificationPolicy": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "system_only",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "audio": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "channels",
+              "type": "string"
+            },
+            "sound": {
+              "$ref": "#/definitions/EnumValue"
+            },
+            "system": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "system",
+            "audio",
+            "sound"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Observation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Observation2": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Observation3": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SessionReadiness"
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Observation4": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/IsolatedStoreState"
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "$ref": "#/definitions/Evidence"
+            },
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ObservationId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ObservationReason": {
+      "enum": [
+        "access_denied",
+        "incomplete_inventory",
+        "native_unavailable",
+        "unrecognized_identity",
+        "conflicting_evidence",
+        "unsupported_platform"
+      ],
+      "type": "string"
+    },
+    "OpaqueRevision": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "OperationId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "OperationSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "$ref": "#/definitions/OperationId"
+        },
+        "operationRevision": {
+          "$ref": "#/definitions/RevisionCounter"
+        },
+        "semantics": {
+          "$ref": "#/definitions/PlanSemantics"
+        },
+        "state": {
+          "$ref": "#/definitions/OperationState"
+        }
+      },
+      "required": [
+        "operationId",
+        "operationRevision",
+        "semantics",
+        "state"
+      ],
+      "type": "object"
+    },
+    "OperationState": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "admitted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "progress": {
+              "$ref": "#/definitions/Progress"
+            },
+            "status": {
+              "const": "running",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "progress"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "progress": {
+              "$ref": "#/definitions/Progress"
+            },
+            "status": {
+              "const": "cancellation_requested",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "progress"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "$ref": "#/definitions/CompletionOutcome"
+            },
+            "status": {
+              "const": "completed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "outcome"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/RecoveryReason"
+            },
+            "recovery": {
+              "$ref": "#/definitions/RecoveryRef"
+            },
+            "status": {
+              "const": "recovery_required",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "recovery",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OrdinaryProfileRef": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "catalogId": {
+              "$ref": "#/definitions/ProfileId"
+            },
+            "kind": {
+              "const": "ordinary",
+              "type": "string"
+            },
+            "ownerScope": {
+              "$ref": "#/definitions/OwnerScope"
+            },
+            "revision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            }
+          },
+          "required": [
+            "kind",
+            "catalogId",
+            "revision",
+            "ownerScope"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OwnerScope": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "PhaseId": {
+      "maxLength": 64,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "type": "string"
+    },
+    "PhysicalInstallationId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "Pid": {
+      "maximum": 4294967295,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "PlanSemantics": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/ActionId"
+        },
+        "capture": {
+          "$ref": "#/definitions/PreparedCapture"
+        },
+        "effects": {
+          "$ref": "#/definitions/BoundedList_ProposedEffect_16"
+        },
+        "hashProfile": {
+          "$ref": "#/definitions/HashProfile"
+        },
+        "trustDomain": {
+          "$ref": "#/definitions/TrustDomain"
+        }
+      },
+      "required": [
+        "hashProfile",
+        "action",
+        "capture",
+        "trustDomain",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "PreferredInstallationEdit": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expected": {
+              "$ref": "#/definitions/SavedInstallationPreference"
+            },
+            "kind": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "clear",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "installation": {
+              "$ref": "#/definitions/RegisteredInstallationBinding"
+            },
+            "kind": {
+              "const": "set",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "installation"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PreparedCapture": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "catalogRevision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            },
+            "kind": {
+              "const": "launch_ordinary",
+              "type": "string"
+            },
+            "runtime": {
+              "$ref": "#/definitions/RuntimeExpectation"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            },
+            "unrecognizedRuntimeChoice": {
+              "$ref": "#/definitions/UnrecognizedRuntimeChoice"
+            }
+          },
+          "required": [
+            "kind",
+            "target",
+            "catalogRevision",
+            "runtime"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "catalogRevision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            },
+            "kind": {
+              "const": "launch_isolated",
+              "type": "string"
+            },
+            "runtime": {
+              "$ref": "#/definitions/RuntimeExpectation"
+            },
+            "storeMode": {
+              "$ref": "#/definitions/StoreMode"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            },
+            "unrecognizedRuntimeChoice": {
+              "$ref": "#/definitions/UnrecognizedRuntimeChoice"
+            }
+          },
+          "required": [
+            "kind",
+            "target",
+            "catalogRevision",
+            "runtime",
+            "storeMode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "focus_session",
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/definitions/SessionBinding"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "session",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/CreateProfileCapture"
+            },
+            "kind": {
+              "const": "create_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/EditOrdinaryProfileInput"
+            },
+            "kind": {
+              "const": "edit_ordinary_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/EditIsolatedProfileInput"
+            },
+            "kind": {
+              "const": "edit_isolated_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/ProfileLifecycleInput"
+            },
+            "kind": {
+              "const": "archive_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/ProfileLifecycleInput"
+            },
+            "kind": {
+              "const": "restore_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/DeleteProfileInput"
+            },
+            "kind": {
+              "const": "delete_profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RegisterInstallationCapture"
+            },
+            "kind": {
+              "const": "register_installation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/EditInstallationInput"
+            },
+            "kind": {
+              "const": "edit_installation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/SaveConfigurationCapture"
+            },
+            "kind": {
+              "const": "save_configuration",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RestoreConfigurationInput"
+            },
+            "kind": {
+              "const": "restore_configuration",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RuntimeDeployInput"
+            },
+            "kind": {
+              "const": "runtime_install",
+              "type": "string"
+            },
+            "preparedConfiguration": {
+              "$ref": "#/definitions/PreparedConfigurationEffect"
+            }
+          },
+          "required": [
+            "kind",
+            "input",
+            "preparedConfiguration"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RuntimeDeployInput"
+            },
+            "kind": {
+              "const": "runtime_update",
+              "type": "string"
+            },
+            "preparedConfiguration": {
+              "$ref": "#/definitions/PreparedConfigurationEffect"
+            }
+          },
+          "required": [
+            "kind",
+            "input",
+            "preparedConfiguration"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RuntimeDeployInput"
+            },
+            "kind": {
+              "const": "runtime_repair",
+              "type": "string"
+            },
+            "preparedConfiguration": {
+              "$ref": "#/definitions/PreparedConfigurationEffect"
+            }
+          },
+          "required": [
+            "kind",
+            "input",
+            "preparedConfiguration"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RuntimeAdoptInput"
+            },
+            "kind": {
+              "const": "runtime_adopt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/ManagedRuntimeInput"
+            },
+            "kind": {
+              "const": "runtime_remove",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/ManagedRuntimeInput"
+            },
+            "kind": {
+              "const": "runtime_stop_managing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RuntimeSwitchSourceInput"
+            },
+            "kind": {
+              "const": "runtime_switch_source",
+              "type": "string"
+            },
+            "preparedConfiguration": {
+              "$ref": "#/definitions/PreparedConfigurationEffect"
+            }
+          },
+          "required": [
+            "kind",
+            "input",
+            "preparedConfiguration"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/GameUpdateInput"
+            },
+            "kind": {
+              "const": "game_update",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RecoverGameUpdateInput"
+            },
+            "kind": {
+              "const": "recover_game_update",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/BridgeUpdateInput"
+            },
+            "kind": {
+              "const": "bridge_update",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/RecoverBridgeUpdateInput"
+            },
+            "kind": {
+              "const": "recover_bridge_update",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/ExportDiagnosticsInput"
+            },
+            "kind": {
+              "const": "export_diagnostics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/SaveApplicationPreferencesInput"
+            },
+            "kind": {
+              "const": "save_application_preferences",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "input"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PreparedConfigurationEffect": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "unchanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "baseline": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "candidateDigest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "destinationSchema": {
+              "$ref": "#/definitions/SchemaBinding"
+            },
+            "kind": {
+              "const": "write",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "baseline",
+            "destinationSchema",
+            "candidateDigest"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PreviewId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "PreviewRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "disclosure": {
+          "$ref": "#/definitions/DiagnosticDisclosure"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "previewId": {
+          "$ref": "#/definitions/PreviewId"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "previewId",
+        "hostEpoch",
+        "revision",
+        "target",
+        "disclosure",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "PrivateValueId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "PrivateValueRef": {
+      "additionalProperties": false,
+      "properties": {
+        "capturedFor": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DraftRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present only for Bridge-protected entry custody. Saved document values\nremain bound to the document revision and do not claim a native handle."
+        },
+        "document": {
+          "$ref": "#/definitions/DocumentBinding"
+        },
+        "fieldId": {
+          "$ref": "#/definitions/FieldId"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "valueId": {
+          "$ref": "#/definitions/PrivateValueId"
+        }
+      },
+      "required": [
+        "valueId",
+        "document",
+        "fieldId",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ProcessArchitecture": {
+      "enum": [
+        "x86_64",
+        "arm64"
+      ],
+      "type": "string"
+    },
+    "ProcessGeneration": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ProcessIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/definitions/ProcessArchitecture"
+        },
+        "executableIdentity": {
+          "$ref": "#/definitions/ExecutableIdentity"
+        },
+        "installationPhysicalId": {
+          "$ref": "#/definitions/PhysicalInstallationId"
+        },
+        "pid": {
+          "$ref": "#/definitions/Pid"
+        },
+        "startIdentity": {
+          "$ref": "#/definitions/ProcessStartIdentity"
+        }
+      },
+      "required": [
+        "pid",
+        "startIdentity",
+        "executableIdentity",
+        "installationPhysicalId",
+        "architecture"
+      ],
+      "type": "object"
+    },
+    "ProcessStartIdentity": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "platform": {
+              "const": "windows",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/ProcessGeneration"
+            }
+          },
+          "required": [
+            "platform",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "platform": {
+              "const": "macos",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/ProcessGeneration"
+            }
+          },
+          "required": [
+            "platform",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileBinding": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ordinary",
+              "type": "string"
+            },
+            "ordinaryId": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProfileId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerScope": {
+              "$ref": "#/definitions/OwnerScope"
+            }
+          },
+          "required": [
+            "kind",
+            "ownerScope"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ProfileId"
+            },
+            "kind": {
+              "const": "isolated",
+              "type": "string"
+            },
+            "revision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "revision"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileId": {
+      "maxLength": 32,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "ProfileLifecycleInput": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/definitions/IsolatedProfileRef"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "type": "object"
+    },
+    "ProfileProjection": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ordinary",
+              "type": "string"
+            },
+            "preferredInstallation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/InstallationId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reference": {
+              "$ref": "#/definitions/OrdinaryProfileRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "isolated",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/definitions/DisplayName"
+            },
+            "preferredInstallation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/InstallationId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reference": {
+              "$ref": "#/definitions/IsolatedProfileRef"
+            },
+            "store": {
+              "$ref": "#/definitions/Observation4"
+            }
+          },
+          "required": [
+            "kind",
+            "reference",
+            "name",
+            "store"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileSelector": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "catalogIdAssertion": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProfileId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "const": "ordinary",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ProfileId"
+            },
+            "kind": {
+              "const": "isolated",
+              "type": "string"
+            },
+            "revisionAssertion": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/OpaqueRevision"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileSetup": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "new",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "approval": {
+              "$ref": "#/definitions/NativeApprovalChoice"
+            },
+            "kind": {
+              "const": "windows_user_import",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/definitions/ImportSourceRef"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "approval"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileState": {
+      "enum": [
+        "active",
+        "archived"
+      ],
+      "type": "string"
+    },
+    "Progress": {
+      "additionalProperties": false,
+      "properties": {
+        "measurement": {
+          "$ref": "#/definitions/Measurement"
+        },
+        "phase": {
+          "$ref": "#/definitions/PhaseId"
+        }
+      },
+      "required": [
+        "phase",
+        "measurement"
+      ],
+      "type": "object"
+    },
+    "ProgressCount": {
+      "maxLength": 20,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0-0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0-0][0-9]{1}|1844674407370955161[0-4][0-9]{0}|18446744073709551615)$",
+      "type": "string"
+    },
+    "ProposedEffect": {
+      "enum": [
+        "launch_session",
+        "create_isolated_store",
+        "focus_session",
+        "publish_profile",
+        "edit_profile_metadata",
+        "archive_profile",
+        "restore_profile",
+        "delete_owned_profile",
+        "register_installation",
+        "edit_installation_metadata",
+        "write_configuration",
+        "replace_runtime",
+        "adopt_runtime",
+        "remove_managed_runtime",
+        "release_runtime_management",
+        "update_game",
+        "recover_game",
+        "replace_bridge",
+        "recover_bridge",
+        "export_diagnostics",
+        "save_application_preferences"
+      ],
+      "type": "string"
+    },
+    "ProtocolVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "ProviderId": {
+      "maxLength": 64,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "type": "string"
+    },
+    "ProviderPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "channelId": {
+          "$ref": "#/definitions/ChannelId"
+        },
+        "providerId": {
+          "$ref": "#/definitions/ProviderId"
+        }
+      },
+      "required": [
+        "providerId",
+        "channelId"
+      ],
+      "type": "object"
+    },
+    "ProxyChoice": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "global",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "custom",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/PrivateValueRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PublicConfigValue": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "boolean",
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "integer",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/SignedInteger"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "number",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/DecimalValue"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "string",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/ConfigString"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "enum",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/EnumValue"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "keybinding",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/BoundedList_KeyChord_8"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "notification_policy",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/NotificationPolicy"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RecoverBridgeUpdateInput": {
+      "additionalProperties": false,
+      "properties": {
+        "recovery": {
+          "$ref": "#/definitions/BridgeRecoveryRef"
+        }
+      },
+      "required": [
+        "recovery"
+      ],
+      "type": "object"
+    },
+    "RecoverGameUpdateInput": {
+      "additionalProperties": false,
+      "properties": {
+        "recovery": {
+          "$ref": "#/definitions/NativeGameRecoveryRef"
+        }
+      },
+      "required": [
+        "recovery"
+      ],
+      "type": "object"
+    },
+    "RecoveryReason": {
+      "enum": [
+        "interrupted_transaction",
+        "rollback_incomplete",
+        "native_custody_unresolved"
+      ],
+      "type": "string"
+    },
+    "RecoveryRef": {
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "$ref": "#/definitions/OperationId"
+        },
+        "target": {
+          "$ref": "#/definitions/RecoveryTarget"
+        },
+        "transaction": {
+          "$ref": "#/definitions/NativeTransactionRef"
+        }
+      },
+      "required": [
+        "operationId",
+        "transaction",
+        "target"
+      ],
+      "type": "object"
+    },
+    "RecoveryTarget": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "launch",
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session",
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/definitions/SessionBinding"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "session",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/IsolatedProfileRef"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ordinary_profile",
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/definitions/OrdinaryProfileRef"
+            }
+          },
+          "required": [
+            "kind",
+            "profile"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile_creation",
+              "type": "string"
+            },
+            "nativePreparationRef": {
+              "$ref": "#/definitions/NativePreparationRef"
+            },
+            "owner": {
+              "$ref": "#/definitions/OwnerScope"
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "nativePreparationRef"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "installation": {
+              "$ref": "#/definitions/InstallationBinding"
+            },
+            "kind": {
+              "const": "installation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "installation"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "installation_registration",
+              "type": "string"
+            },
+            "nativeTargetRef": {
+              "$ref": "#/definitions/NativeTargetRef"
+            },
+            "physicalId": {
+              "$ref": "#/definitions/PhysicalInstallationId"
+            }
+          },
+          "required": [
+            "kind",
+            "physicalId",
+            "nativeTargetRef"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "$ref": "#/definitions/DocumentBinding"
+            },
+            "kind": {
+              "const": "configuration",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime",
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "game",
+              "type": "string"
+            },
+            "recovery": {
+              "$ref": "#/definitions/NativeGameRecoveryRef"
+            }
+          },
+          "required": [
+            "kind",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bridge",
+              "type": "string"
+            },
+            "recovery": {
+              "$ref": "#/definitions/BridgeRecoveryRef"
+            }
+          },
+          "required": [
+            "kind",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/definitions/ExportDestinationRef"
+            },
+            "kind": {
+              "const": "diagnostics",
+              "type": "string"
+            },
+            "preview": {
+              "$ref": "#/definitions/PreviewRef"
+            }
+          },
+          "required": [
+            "kind",
+            "preview",
+            "destination"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "application_preferences",
+              "type": "string"
+            },
+            "revision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            }
+          },
+          "required": [
+            "kind",
+            "revision"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RegisterInstallationCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "name": {
+          "$ref": "#/definitions/DisplayName"
+        },
+        "nativeTargetRef": {
+          "$ref": "#/definitions/NativeTargetRef"
+        },
+        "physicalId": {
+          "$ref": "#/definitions/PhysicalInstallationId"
+        }
+      },
+      "required": [
+        "name",
+        "physicalId",
+        "nativeTargetRef",
+        "catalogRevision"
+      ],
+      "type": "object"
+    },
+    "RegisteredInstallationBinding": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "registered",
+              "type": "string"
+            },
+            "nativeTargetRef": {
+              "$ref": "#/definitions/NativeTargetRef"
+            },
+            "physicalId": {
+              "$ref": "#/definitions/PhysicalInstallationId"
+            },
+            "registrationId": {
+              "$ref": "#/definitions/InstallationId"
+            },
+            "registrationRevision": {
+              "$ref": "#/definitions/OpaqueRevision"
+            }
+          },
+          "required": [
+            "kind",
+            "registrationId",
+            "registrationRevision",
+            "physicalId",
+            "nativeTargetRef"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ReleaseVersion": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ResolvedTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "installation": {
+          "$ref": "#/definitions/InstallationBinding"
+        },
+        "profile": {
+          "$ref": "#/definitions/ProfileBinding"
+        }
+      },
+      "required": [
+        "installation",
+        "profile"
+      ],
+      "type": "object"
+    },
+    "RestoreConfigurationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "backup": {
+          "$ref": "#/definitions/BackupReceiptRef"
+        },
+        "document": {
+          "$ref": "#/definitions/DocumentBinding"
+        }
+      },
+      "required": [
+        "document",
+        "backup"
+      ],
+      "type": "object"
+    },
+    "RetryDisposition": {
+      "enum": [
+        "never",
+        "after_resnapshot",
+        "after_user_choice",
+        "after_recovery"
+      ],
+      "type": "string"
+    },
+    "RevisionCounter": {
+      "maxLength": 20,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0-0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0-0][0-9]{1}|1844674407370955161[0-4][0-9]{0}|18446744073709551615)$",
+      "type": "string"
+    },
+    "RevisionScope": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ProfileId"
+            },
+            "kind": {
+              "const": "profile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "installation",
+              "type": "string"
+            },
+            "physicalId": {
+              "$ref": "#/definitions/PhysicalInstallationId"
+            }
+          },
+          "required": [
+            "kind",
+            "physicalId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/DocumentId"
+            },
+            "kind": {
+              "const": "document",
+              "type": "string"
+            },
+            "schemaDigest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "target": {
+              "$ref": "#/definitions/ResolvedTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "target",
+            "schemaDigest"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/OperationId"
+            },
+            "kind": {
+              "const": "operation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ApplicationIdentity"
+            },
+            "kind": {
+              "const": "application",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "catalog",
+              "type": "string"
+            },
+            "owner": {
+              "$ref": "#/definitions/OwnerScope"
+            }
+          },
+          "required": [
+            "kind",
+            "owner"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RuntimeAdoptInput": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmation": {
+          "$ref": "#/definitions/RuntimeAdoptionConfirmation"
+        },
+        "observedArtifactDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "recognitionAuthority": {
+          "$ref": "#/definitions/ArtifactAuthorityRef"
+        },
+        "recognizedBinding": {
+          "$ref": "#/definitions/RuntimeBinding"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "target",
+        "observedArtifactDigest",
+        "recognizedBinding",
+        "recognitionAuthority",
+        "confirmation"
+      ],
+      "type": "object"
+    },
+    "RuntimeAdoptionConfirmation": {
+      "enum": [
+        "adopt_exact_recognized_artifact"
+      ],
+      "type": "string"
+    },
+    "RuntimeArtifactSubject": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/definitions/ProcessArchitecture"
+        },
+        "digest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "platform": {
+          "$ref": "#/definitions/SupportedPlatform"
+        },
+        "role": {
+          "$ref": "#/definitions/ArtifactRole"
+        },
+        "size": {
+          "$ref": "#/definitions/ProgressCount"
+        }
+      },
+      "required": [
+        "role",
+        "platform",
+        "architecture",
+        "digest",
+        "size"
+      ],
+      "type": "object"
+    },
+    "RuntimeBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/definitions/ProcessArchitecture"
+        },
+        "artifactDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "clientRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "configurationSchemaDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "distributionId": {
+          "$ref": "#/definitions/DistributionId"
+        },
+        "manifest": {
+          "$ref": "#/definitions/RuntimeManifestObservation"
+        },
+        "platform": {
+          "$ref": "#/definitions/SupportedPlatform"
+        },
+        "providerId": {
+          "$ref": "#/definitions/ProviderId"
+        }
+      },
+      "required": [
+        "providerId",
+        "distributionId",
+        "artifactDigest",
+        "manifest",
+        "configurationSchemaDigest",
+        "clientRevision",
+        "platform",
+        "architecture"
+      ],
+      "type": "object"
+    },
+    "RuntimeDeployInput": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration": {
+          "$ref": "#/definitions/ConfigurationParticipant"
+        },
+        "expectedOwnership": {
+          "$ref": "#/definitions/RuntimeOwnership"
+        },
+        "selectedRelease": {
+          "$ref": "#/definitions/RuntimeReleaseSelectionRef"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "target",
+        "selectedRelease",
+        "expectedOwnership",
+        "configuration"
+      ],
+      "type": "object"
+    },
+    "RuntimeExpectation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "absent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "binding": {
+              "$ref": "#/definitions/RuntimeBinding"
+            },
+            "kind": {
+              "const": "verified",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "binding"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactDigest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "choice": {
+              "$ref": "#/definitions/UnrecognizedRuntimeChoice"
+            },
+            "kind": {
+              "const": "unrecognized",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "artifactDigest",
+            "choice"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RuntimeManifestObservation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "digest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "status": {
+              "const": "observed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "digest"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "missing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/ObservationReason"
+            },
+            "status": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RuntimeOwnership": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "absent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "managed",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/definitions/ManagedRuntimeRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactDigest": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "kind": {
+              "const": "unmanaged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "artifactDigest"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RuntimeReceiptId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "RuntimeReleaseId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "RuntimeReleaseSelectionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "$ref": "#/definitions/BoundedList_RuntimeArtifactSubject_16"
+        },
+        "authority": {
+          "$ref": "#/definitions/ArtifactAuthorityRef"
+        },
+        "channelId": {
+          "$ref": "#/definitions/ChannelId"
+        },
+        "clientRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "configurationSchema": {
+          "$ref": "#/definitions/SchemaBinding"
+        },
+        "distributionId": {
+          "$ref": "#/definitions/DistributionId"
+        },
+        "hostEpoch": {
+          "$ref": "#/definitions/HostEpoch"
+        },
+        "providerId": {
+          "$ref": "#/definitions/ProviderId"
+        },
+        "releaseVersion": {
+          "$ref": "#/definitions/ReleaseVersion"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "selectionId": {
+          "$ref": "#/definitions/RuntimeReleaseId"
+        },
+        "target": {
+          "$ref": "#/definitions/ResolvedTarget"
+        }
+      },
+      "required": [
+        "selectionId",
+        "hostEpoch",
+        "revision",
+        "target",
+        "providerId",
+        "distributionId",
+        "channelId",
+        "releaseVersion",
+        "clientRevision",
+        "artifacts",
+        "configurationSchema",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "RuntimeSwitchSourceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration": {
+          "$ref": "#/definitions/ConfigurationParticipant"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/SourceSwitchConfirmation"
+        },
+        "current": {
+          "$ref": "#/definitions/ManagedRuntimeRef"
+        },
+        "selectedRelease": {
+          "$ref": "#/definitions/RuntimeReleaseSelectionRef"
+        }
+      },
+      "required": [
+        "current",
+        "selectedRelease",
+        "configuration",
+        "confirmation"
+      ],
+      "type": "object"
+    },
+    "SaveApplicationPreferencesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "values": {
+          "$ref": "#/definitions/ApplicationPreferences"
+        }
+      },
+      "required": [
+        "expectedRevision",
+        "values"
+      ],
+      "type": "object"
+    },
+    "SaveConfigurationCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "candidateDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "draft": {
+          "$ref": "#/definitions/DraftSnapshot"
+        }
+      },
+      "required": [
+        "draft",
+        "candidateDigest"
+      ],
+      "type": "object"
+    },
+    "SavedInstallationPreference": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/InstallationId"
+            },
+            "kind": {
+              "const": "registered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SavedTargetPreference": {
+      "additionalProperties": false,
+      "properties": {
+        "installationId": {
+          "$ref": "#/definitions/InstallationId"
+        },
+        "profile": {
+          "$ref": "#/definitions/ProfileSelector"
+        }
+      },
+      "required": [
+        "installationId",
+        "profile"
+      ],
+      "type": "object"
+    },
+    "SchemaBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "providerId": {
+          "$ref": "#/definitions/ProviderId"
+        },
+        "runtimeArtifactDigest": {
+          "$ref": "#/definitions/Sha256"
+        },
+        "schemaId": {
+          "$ref": "#/definitions/SchemaId"
+        },
+        "schemaVersion": {
+          "$ref": "#/definitions/SchemaVersion"
+        }
+      },
+      "required": [
+        "providerId",
+        "schemaId",
+        "schemaVersion",
+        "digest",
+        "runtimeArtifactDigest"
+      ],
+      "type": "object"
+    },
+    "SchemaId": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "SchemaText": {
+      "maxLength": 512,
+      "not": {
+        "pattern": "[\\x00-\\x1f\\x7f\\u2028\\u2029]"
+      },
+      "pattern": "^[^\\x00-\\x1f\\x7f\\u2028\\u2029]*$",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "maxLength": 128,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "ScopedRevisionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "scope": {
+          "$ref": "#/definitions/RevisionScope"
+        }
+      },
+      "required": [
+        "scope",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "SecretRef": {
+      "additionalProperties": false,
+      "properties": {
+        "draft": {
+          "$ref": "#/definitions/DraftRef"
+        },
+        "fieldId": {
+          "$ref": "#/definitions/FieldId"
+        },
+        "secretId": {
+          "$ref": "#/definitions/SecretRefId"
+        }
+      },
+      "required": [
+        "secretId",
+        "draft",
+        "fieldId"
+      ],
+      "type": "object"
+    },
+    "SecretRefId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "enum": [
+        "public",
+        "private",
+        "secret"
+      ],
+      "type": "string"
+    },
+    "Sequence": {
+      "maxLength": 20,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|1844674407370955[0-0][0-9]{3}|18446744073709551[0-5][0-9]{2}|184467440737095516[0-0][0-9]{1}|1844674407370955161[0-4][0-9]{0}|18446744073709551615)$",
+      "type": "string"
+    },
+    "SessionBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/definitions/ProcessIdentity"
+        },
+        "revision": {
+          "$ref": "#/definitions/OpaqueRevision"
+        },
+        "sessionId": {
+          "$ref": "#/definitions/SessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "revision",
+        "process"
+      ],
+      "type": "object"
+    },
+    "SessionId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "SessionProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "binding": {
+          "$ref": "#/definitions/SessionBinding"
+        },
+        "liveIdentity": {
+          "$ref": "#/definitions/Observation2"
+        },
+        "readiness": {
+          "$ref": "#/definitions/Observation3"
+        },
+        "target": {
+          "$ref": "#/definitions/Observation"
+        }
+      },
+      "required": [
+        "binding",
+        "target",
+        "liveIdentity",
+        "readiness"
+      ],
+      "type": "object"
+    },
+    "SessionReadiness": {
+      "enum": [
+        "ordinary_spawned",
+        "isolated_initializing",
+        "isolated_ready",
+        "isolation_failed"
+      ],
+      "type": "string"
+    },
+    "Sha256": {
+      "maxLength": 71,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "SignedInteger": {
+      "maxLength": 20,
+      "not": {
+        "anyOf": [
+          {
+            "const": "-0"
+          },
+          {
+            "pattern": "[\\r\\n\\u2028\\u2029]"
+          }
+        ]
+      },
+      "pattern": "^((0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-6][0-9]{0}|9223372036854775807)|-(0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7][0-9]{0}|9223372036854775808))$",
+      "type": "string"
+    },
+    "SnapshotInvalidationReason": {
+      "enum": [
+        "catalog_changed",
+        "session_changed",
+        "operation_changed",
+        "host_restarted",
+        "retention_gap"
+      ],
+      "type": "string"
+    },
+    "SourceSwitchConfirmation": {
+      "enum": [
+        "switch_runtime_and_configuration_source"
+      ],
+      "type": "string"
+    },
+    "StoreMode": {
+      "enum": [
+        "new",
+        "resume",
+        "existing"
+      ],
+      "type": "string"
+    },
+    "StreamId": {
+      "maxLength": 36,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "SupportedPlatform": {
+      "enum": [
+        "windows",
+        "macos"
+      ],
+      "type": "string"
+    },
+    "SyncExposure": {
+      "enum": [
+        "creatable",
+        "existing_configuration_only",
+        "hidden"
+      ],
+      "type": "string"
+    },
+    "SyncFeedOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "desired": {
+          "$ref": "#/definitions/InheritedBoolean"
+        },
+        "feedId": {
+          "$ref": "#/definitions/FeedId"
+        }
+      },
+      "required": [
+        "feedId",
+        "desired"
+      ],
+      "type": "object"
+    },
+    "SyncMode": {
+      "enum": [
+        "legacy",
+        "sidecar",
+        "majel"
+      ],
+      "type": "string"
+    },
+    "SyncTypeDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "endpointFieldId": {
+          "$ref": "#/definitions/FieldId"
+        },
+        "exposure": {
+          "$ref": "#/definitions/SyncExposure"
+        },
+        "feeds": {
+          "$ref": "#/definitions/BoundedList_FeedId_128"
+        },
+        "fields": {
+          "$ref": "#/definitions/BoundedList_FieldId_128"
+        },
+        "inheritsGlobalProxy": {
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/definitions/SyncMode"
+        },
+        "proxyFieldId": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FieldId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secretFieldId": {
+          "$ref": "#/definitions/FieldId"
+        }
+      },
+      "required": [
+        "mode",
+        "exposure",
+        "feeds",
+        "fields",
+        "endpointFieldId",
+        "secretFieldId",
+        "inheritsGlobalProxy"
+      ],
+      "type": "object"
+    },
+    "ThemePreference": {
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ],
+      "type": "string"
+    },
+    "TomlPathSegment": {
+      "maxLength": 256,
+      "not": {
+        "pattern": "[\\x00-\\x1f\\x7f\\u2028\\u2029]"
+      },
+      "pattern": "^[^\\x00-\\x1f\\x7f\\u2028\\u2029]+$",
+      "type": "string"
+    },
+    "TrustDomain": {
+      "enum": [
+        "session",
+        "profile_state",
+        "configuration",
+        "runtime_distribution",
+        "game_client",
+        "bridge_application",
+        "application_state",
+        "diagnostics"
+      ],
+      "type": "string"
+    },
+    "UnrecognizedRuntimeChoice": {
+      "enum": [
+        "reject",
+        "allow_once"
+      ],
+      "type": "string"
+    },
+    "UtcTimestamp": {
+      "format": "date-time",
+      "maxLength": 30,
+      "not": {
+        "pattern": "[\\r\\n\\u2028\\u2029]"
+      },
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+      "type": "string"
+    },
+    "ViolationCode": {
+      "enum": [
+        "invalid_framing",
+        "invalid_shape",
+        "invalid_value",
+        "conflicting_binding"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "body": {
+      "$ref": "#/definitions/EventBody"
+    },
+    "cursor": {
+      "$ref": "#/definitions/Cursor"
+    },
+    "protocolVersion": {
+      "$ref": "#/definitions/ProtocolVersion"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "cursor",
+    "body"
+  ],
+  "title": "Event",
+  "type": "object"
+}

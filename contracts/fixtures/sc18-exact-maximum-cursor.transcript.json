@@ -1,0 +1,23 @@
+{
+  "case": "sc18-exact-maximum-cursor",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc18-exact-maximum-cursor",
+  "scenario": "SC-18",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "18446744073709551614",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "event": "sc18-maximum-event-sequence",
+      "type": "event"
+    }
+  ]
+}

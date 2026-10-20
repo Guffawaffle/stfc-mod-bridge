@@ -1,0 +1,24 @@
+{
+  "case": "Completed restaged Save retains exactly its revision-3 captured semantics",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc10-save-restaged-result-journey",
+  "scenario": "SC-10",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc10-save-restaged-result-reply",
+      "request": "sc10-save-restaged-result-request",
+      "type": "exchange"
+    }
+  ]
+}

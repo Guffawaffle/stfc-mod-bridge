@@ -1,0 +1,54 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001f85-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:6bdc26cd89924be64af0429e62c7c6734eedade2a5e38d970746f1e742114e35"
+          },
+          "semantics": {
+            "action": "launch_isolated",
+            "capture": {
+              "catalogRevision": "synthetic-catalog-1",
+              "kind": "launch_isolated",
+              "runtime": {
+                "kind": "absent"
+              },
+              "storeMode": "new",
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                  "kind": "isolated",
+                  "revision": "synthetic-profile-revision-1"
+                }
+              }
+            },
+            "effects": [
+              "create_isolated_store",
+              "launch_session"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "session"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f86-1111-4111-8111-111111111111"
+}

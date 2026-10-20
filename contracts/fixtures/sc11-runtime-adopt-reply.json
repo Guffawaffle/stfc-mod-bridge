@@ -1,0 +1,65 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00000cf1-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:57eade1f08ab111a45369848d0e993df93999660a2da845fd430b9c826d649dc"
+          },
+          "semantics": {
+            "action": "runtime_adopt",
+            "capture": {
+              "input": {
+                "confirmation": "adopt_exact_recognized_artifact",
+                "observedArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "recognitionAuthority": "synthetic-runtime-recognition-1",
+                "recognizedBinding": {
+                  "architecture": "x86_64",
+                  "artifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "clientRevision": "synthetic-client-270",
+                  "configurationSchemaDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "distributionId": "guffawaffle.stfc-community-mod",
+                  "manifest": {
+                    "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "status": "observed"
+                  },
+                  "platform": "windows",
+                  "providerId": "guffawaffle"
+                },
+                "target": {
+                  "installation": {
+                    "kind": "registered",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1",
+                    "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "registrationRevision": "synthetic-installation-revision-1"
+                  },
+                  "profile": {
+                    "kind": "ordinary",
+                    "ownerScope": "synthetic-native-owner-1"
+                  }
+                }
+              },
+              "kind": "runtime_adopt"
+            },
+            "effects": [
+              "adopt_runtime"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "runtime_distribution"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000cf2-1111-4111-8111-111111111111"
+}

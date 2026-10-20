@@ -1,0 +1,34 @@
+{
+  "case": "isolated-resume",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-03-isolated-resume-journey",
+  "scenario": "SC-03",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-03-isolated-resume-prepare-reply",
+      "request": "sc-03-isolated-resume-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-isolated-resume-commit-reply",
+      "request": "sc-03-isolated-resume-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-isolated-resume-observe-reply",
+      "request": "sc-03-isolated-resume-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

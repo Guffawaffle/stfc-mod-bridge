@@ -1,0 +1,34 @@
+{
+  "case": "delete-profile",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-07-delete-profile-journey",
+  "scenario": "SC-07",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-07-delete-profile-prepare-reply",
+      "request": "sc-07-delete-profile-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-07-delete-profile-commit-reply",
+      "request": "sc-07-delete-profile-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-07-delete-profile-observe-reply",
+      "request": "sc-07-delete-profile-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

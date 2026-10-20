@@ -1,0 +1,1 @@
+{"protocolVersion":1,"requestId":"11111111-1111-4111-8111-111111111112","body":{"type":"result","result":{"type":"query","query":{"name":"resolve_target","output":{"target":{"status":"unavailable","reason":"native_unavailable"}}}}}}

@@ -1,0 +1,50 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001ff9-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "archive_profile",
+            "capture": {
+              "input": {
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "active"
+                }
+              },
+              "kind": "archive_profile"
+            },
+            "effects": [
+              "archive_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "profile_archived",
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-2",
+                  "state": "archived"
+                }
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001ffb-1111-4111-8111-111111111111"
+}

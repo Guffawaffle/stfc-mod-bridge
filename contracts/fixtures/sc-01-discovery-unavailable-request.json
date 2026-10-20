@@ -1,0 +1,11 @@
+{
+  "body": {
+    "query": {
+      "input": {},
+      "name": "snapshot"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f45-1111-4111-8111-111111111111"
+}

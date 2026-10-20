@@ -1,0 +1,24 @@
+{
+  "case": "A same-host discarded draft is missing without creating a replacement",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc08-get-missing-draft-journey",
+  "scenario": "SC-08",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc08-get-missing-draft-reply",
+      "request": "sc08-get-missing-draft-request",
+      "type": "exchange"
+    }
+  ]
+}

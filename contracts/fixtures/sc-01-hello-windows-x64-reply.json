@@ -1,0 +1,32 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "hello",
+        "output": {
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "hostKind": "windows_x64",
+          "implementedCommands": [
+            "prepare",
+            "commit",
+            "cancel_operation",
+            "request_host_close",
+            "open_draft",
+            "set_draft_changes",
+            "discard_draft",
+            "request_import_discovery",
+            "request_sensitive_input",
+            "request_export_destination"
+          ],
+          "supportedVersions": [
+            1
+          ]
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f40-1111-4111-8111-111111111111"
+}

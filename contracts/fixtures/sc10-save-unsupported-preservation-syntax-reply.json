@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": "unsupported_preservation_syntax",
+      "retryDisposition": "after_resnapshot",
+      "violations": []
+    },
+    "type": "rejected"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000084c-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,26 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "expectedCatalogRevision": "synthetic-catalog-1",
+            "name": "Synthetic profile",
+            "preferredInstallation": {
+              "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "kind": "registered"
+            },
+            "setup": {
+              "kind": "new"
+            }
+          },
+          "kind": "create_profile"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fba-1111-4111-8111-111111111111"
+}

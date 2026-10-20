@@ -1,0 +1,41 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001ffe-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:13dc8f471836e04f0630b356fedc1cdb5d306d0558c3810f13df091119d09e13"
+          },
+          "semantics": {
+            "action": "restore_profile",
+            "capture": {
+              "input": {
+                "profile": {
+                  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "revision": "synthetic-profile-revision-1",
+                  "state": "archived"
+                }
+              },
+              "kind": "restore_profile"
+            },
+            "effects": [
+              "restore_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fff-1111-4111-8111-111111111111"
+}

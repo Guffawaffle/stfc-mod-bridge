@@ -1,0 +1,24 @@
+{
+  "case": "Preparation captures the acknowledged revision-3 draft rather than reusing its old references",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc10-save-restaged-draft-journey",
+  "scenario": "SC-10",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc10-save-restaged-draft-reply",
+      "request": "sc10-save-restaged-draft-request",
+      "type": "exchange"
+    }
+  ]
+}

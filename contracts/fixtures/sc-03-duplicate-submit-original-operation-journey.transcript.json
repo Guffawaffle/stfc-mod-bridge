@@ -1,0 +1,35 @@
+{
+  "case": "duplicate-submit-original-operation",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-03-duplicate-submit-original-operation-journey",
+  "scenario": "SC-03",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-03-duplicate-submit-prepare-reply",
+      "request": "sc-03-duplicate-submit-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "delivery": "lost",
+      "reply": "sc-03-duplicate-submit-commit-reply",
+      "request": "sc-03-duplicate-submit-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-duplicate-submit-replay-reply",
+      "request": "sc-03-duplicate-submit-replay-request",
+      "type": "exchange"
+    }
+  ]
+}

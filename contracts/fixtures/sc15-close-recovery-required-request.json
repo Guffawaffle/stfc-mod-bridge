@@ -1,0 +1,17 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "expectedCursor": {
+          "hostEpoch": "00001776-1111-4111-8111-111111111111",
+          "sequence": "0",
+          "streamId": "00001777-1111-4111-8111-111111111111"
+        }
+      },
+      "name": "request_host_close"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017a1-1111-4111-8111-111111111111"
+}

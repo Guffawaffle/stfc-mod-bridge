@@ -1,0 +1,98 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "draft": {
+          "document": {
+            "baseline": {
+              "kind": "missing"
+            },
+            "documentId": "000007d0-1111-4111-8111-111111111111",
+            "revision": "synthetic-document-1",
+            "schema": {
+              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "providerId": "guffawaffle",
+              "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "schemaId": "stfc-community-mod.config-schema",
+              "schemaVersion": "1.0.0"
+            },
+            "target": {
+              "installation": {
+                "kind": "registered",
+                "nativeTargetRef": "synthetic-native-target-1",
+                "physicalId": "synthetic-installation-physical-1",
+                "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "registrationRevision": "synthetic-installation-revision-1"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          },
+          "draftId": "000007d1-1111-4111-8111-111111111111",
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "revision": "1"
+        },
+        "edits": [
+          {
+            "fieldId": "setting.integer",
+            "kind": "set_public",
+            "value": {
+              "kind": "integer",
+              "value": "9223372036854775807"
+            }
+          },
+          {
+            "fieldId": "setting.number",
+            "kind": "set_public",
+            "value": {
+              "kind": "number",
+              "value": "2.5"
+            }
+          },
+          {
+            "fieldId": "setting.enum",
+            "kind": "set_public",
+            "value": {
+              "kind": "enum",
+              "value": "summary"
+            }
+          },
+          {
+            "fieldId": "setting.keys",
+            "kind": "set_public",
+            "value": {
+              "kind": "keybinding",
+              "value": [
+                {
+                  "key": "K",
+                  "modifiers": [
+                    "control"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "fieldId": "setting.notification",
+            "kind": "set_public",
+            "value": {
+              "kind": "notification_policy",
+              "value": {
+                "audio": true,
+                "kind": "channels",
+                "sound": "warning",
+                "system": true
+              }
+            }
+          }
+        ]
+      },
+      "name": "set_draft_changes"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000839-1111-4111-8111-111111111111"
+}

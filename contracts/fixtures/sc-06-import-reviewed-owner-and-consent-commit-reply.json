@@ -1,0 +1,80 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001fe9-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "create_profile",
+            "capture": {
+              "input": {
+                "catalogRevision": "synthetic-catalog-1",
+                "destinationOwner": "synthetic-native-owner-1",
+                "name": "Synthetic profile",
+                "nativePreparationRef": "synthetic-import-reviewed-owner-and-consent-prepare",
+                "preferredInstallation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "setup": {
+                  "approval": "request_native_approval",
+                  "kind": "windows_user_import",
+                  "source": {
+                    "destinationOwner": "synthetic-native-owner-1",
+                    "requiresNativeApproval": true,
+                    "sourceId": "synthetic-native-import-source",
+                    "sourceRevision": "synthetic-source-1"
+                  }
+                }
+              },
+              "kind": "create_profile"
+            },
+            "effects": [
+              "publish_profile"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "profile_state"
+          },
+          "state": {
+            "outcome": {
+              "kind": "changed",
+              "reason": "applied",
+              "receipt": {
+                "kind": "profile_published",
+                "profile": {
+                  "kind": "isolated",
+                  "name": "Synthetic profile",
+                  "preferredInstallation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "reference": {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "revision": "synthetic-profile-revision-1",
+                    "state": "active"
+                  },
+                  "store": {
+                    "evidence": {
+                      "observationId": "000003ea-1111-4111-8111-111111111111",
+                      "observedAt": "2026-10-03T11:00:00Z",
+                      "source": "native_live"
+                    },
+                    "status": "observed",
+                    "value": "new"
+                  }
+                }
+              }
+            },
+            "status": "completed"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001feb-1111-4111-8111-111111111111"
+}

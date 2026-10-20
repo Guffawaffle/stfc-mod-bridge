@@ -1,0 +1,44 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "application": {
+          "applicationId": "guffawaffle.stfc-mod-bridge",
+          "architecture": "x86_64",
+          "channelId": "stable",
+          "installationRef": "synthetic-bridge-installation-1",
+          "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "payloads": [
+            {
+              "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "role": "application",
+              "size": "1024"
+            },
+            {
+              "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+              "role": "profiles_native",
+              "size": "512"
+            },
+            {
+              "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+              "role": "toml_native",
+              "size": "512"
+            },
+            {
+              "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+              "role": "update_helper",
+              "size": "512"
+            }
+          ],
+          "platform": "windows",
+          "revision": "synthetic-bridge-app-1"
+        }
+      },
+      "name": "check_bridge_update"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d19-1111-4111-8111-111111111111"
+}

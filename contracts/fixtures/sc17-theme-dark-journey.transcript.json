@@ -1,0 +1,24 @@
+{
+  "case": "Presentation preference dark retains reduced-motion intent without claiming native accessibility QA",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc17-theme-dark-journey",
+  "scenario": "SC-17",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc17-theme-dark-reply",
+      "request": "sc17-theme-dark-request",
+      "type": "exchange"
+    }
+  ]
+}

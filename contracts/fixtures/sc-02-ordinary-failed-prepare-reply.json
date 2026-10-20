@@ -1,0 +1,51 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00001f77-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:b7908f5c33c36f655bff7e29b334a1adb2f33a294249f8aa92811d0a18971318"
+          },
+          "semantics": {
+            "action": "launch_ordinary",
+            "capture": {
+              "catalogRevision": "synthetic-catalog-1",
+              "kind": "launch_ordinary",
+              "runtime": {
+                "kind": "absent"
+              },
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "kind": "ordinary",
+                  "ownerScope": "synthetic-native-owner-1"
+                }
+              }
+            },
+            "effects": [
+              "launch_session"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "session"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f78-1111-4111-8111-111111111111"
+}

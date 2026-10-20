@@ -1,0 +1,269 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00000cfe-1111-4111-8111-111111111111",
+              "operationRevision": "3",
+              "semantics": {
+                "action": "runtime_switch_source",
+                "capture": {
+                  "input": {
+                    "configuration": {
+                      "destination": {
+                        "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                        "providerId": "netniv",
+                        "runtimeArtifactDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                        "schemaId": "stfc-community-mod.config-schema",
+                        "schemaVersion": "1.0.0"
+                      },
+                      "document": {
+                        "baseline": {
+                          "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                          "fileIdentity": "synthetic-file-1",
+                          "kind": "existing"
+                        },
+                        "documentId": "000007d0-1111-4111-8111-111111111111",
+                        "revision": "synthetic-document-1",
+                        "schema": {
+                          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "providerId": "guffawaffle",
+                          "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                          "schemaId": "stfc-community-mod.config-schema",
+                          "schemaVersion": "1.0.0"
+                        },
+                        "target": {
+                          "installation": {
+                            "kind": "registered",
+                            "nativeTargetRef": "synthetic-native-target-1",
+                            "physicalId": "synthetic-installation-physical-1",
+                            "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "registrationRevision": "synthetic-installation-revision-1"
+                          },
+                          "profile": {
+                            "kind": "ordinary",
+                            "ownerScope": "synthetic-native-owner-1"
+                          }
+                        }
+                      },
+                      "kind": "compatible_migration"
+                    },
+                    "confirmation": "switch_runtime_and_configuration_source",
+                    "current": {
+                      "binding": {
+                        "architecture": "x86_64",
+                        "artifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "clientRevision": "synthetic-client-270",
+                        "configurationSchemaDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "distributionId": "guffawaffle.stfc-community-mod",
+                        "manifest": {
+                          "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                          "status": "observed"
+                        },
+                        "platform": "windows",
+                        "providerId": "guffawaffle"
+                      },
+                      "receiptId": "synthetic-runtime-receipt-1",
+                      "revision": "synthetic-runtime-management-1",
+                      "target": {
+                        "installation": {
+                          "kind": "registered",
+                          "nativeTargetRef": "synthetic-native-target-1",
+                          "physicalId": "synthetic-installation-physical-1",
+                          "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "registrationRevision": "synthetic-installation-revision-1"
+                        },
+                        "profile": {
+                          "kind": "ordinary",
+                          "ownerScope": "synthetic-native-owner-1"
+                        }
+                      }
+                    },
+                    "selectedRelease": {
+                      "artifacts": [
+                        {
+                          "architecture": "x86_64",
+                          "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                          "platform": "windows",
+                          "role": "runtime_module",
+                          "size": "512"
+                        },
+                        {
+                          "architecture": "x86_64",
+                          "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                          "platform": "windows",
+                          "role": "configuration_schema",
+                          "size": "512"
+                        }
+                      ],
+                      "authority": "synthetic-netniv-runtime-authority-1",
+                      "channelId": "stable",
+                      "clientRevision": "synthetic-client-270",
+                      "configurationSchema": {
+                        "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                        "providerId": "netniv",
+                        "runtimeArtifactDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                        "schemaId": "stfc-community-mod.config-schema",
+                        "schemaVersion": "1.0.0"
+                      },
+                      "distributionId": "netniv.stfc-community-mod",
+                      "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                      "providerId": "netniv",
+                      "releaseVersion": "1.1.6.0",
+                      "revision": "synthetic-runtime-release-1",
+                      "selectionId": "00000cfb-1111-4111-8111-111111111111",
+                      "target": {
+                        "installation": {
+                          "kind": "registered",
+                          "nativeTargetRef": "synthetic-native-target-1",
+                          "physicalId": "synthetic-installation-physical-1",
+                          "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "registrationRevision": "synthetic-installation-revision-1"
+                        },
+                        "profile": {
+                          "kind": "ordinary",
+                          "ownerScope": "synthetic-native-owner-1"
+                        }
+                      }
+                    }
+                  },
+                  "kind": "runtime_switch_source",
+                  "preparedConfiguration": {
+                    "baseline": {
+                      "baseline": {
+                        "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                        "fileIdentity": "synthetic-file-1",
+                        "kind": "existing"
+                      },
+                      "documentId": "000007d0-1111-4111-8111-111111111111",
+                      "revision": "synthetic-document-1",
+                      "schema": {
+                        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "providerId": "guffawaffle",
+                        "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "schemaId": "stfc-community-mod.config-schema",
+                        "schemaVersion": "1.0.0"
+                      },
+                      "target": {
+                        "installation": {
+                          "kind": "registered",
+                          "nativeTargetRef": "synthetic-native-target-1",
+                          "physicalId": "synthetic-installation-physical-1",
+                          "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "registrationRevision": "synthetic-installation-revision-1"
+                        },
+                        "profile": {
+                          "kind": "ordinary",
+                          "ownerScope": "synthetic-native-owner-1"
+                        }
+                      }
+                    },
+                    "candidateDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+                    "destinationSchema": {
+                      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                      "providerId": "netniv",
+                      "runtimeArtifactDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                      "schemaId": "stfc-community-mod.config-schema",
+                      "schemaVersion": "1.0.0"
+                    },
+                    "kind": "write"
+                  }
+                },
+                "effects": [
+                  "replace_runtime",
+                  "write_configuration"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "runtime_distribution"
+              },
+              "state": {
+                "outcome": {
+                  "kind": "changed",
+                  "reason": "applied",
+                  "receipt": {
+                    "configuration": {
+                      "document": {
+                        "baseline": {
+                          "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                          "fileIdentity": "synthetic-file-1",
+                          "kind": "existing"
+                        },
+                        "documentId": "000007d0-1111-4111-8111-111111111111",
+                        "revision": "synthetic-document-1",
+                        "schema": {
+                          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "providerId": "guffawaffle",
+                          "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                          "schemaId": "stfc-community-mod.config-schema",
+                          "schemaVersion": "1.0.0"
+                        },
+                        "target": {
+                          "installation": {
+                            "kind": "registered",
+                            "nativeTargetRef": "synthetic-native-target-1",
+                            "physicalId": "synthetic-installation-physical-1",
+                            "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "registrationRevision": "synthetic-installation-revision-1"
+                          },
+                          "profile": {
+                            "kind": "ordinary",
+                            "ownerScope": "synthetic-native-owner-1"
+                          }
+                        }
+                      },
+                      "kind": "unchanged"
+                    },
+                    "kind": "runtime_managed",
+                    "reference": {
+                      "binding": {
+                        "architecture": "x86_64",
+                        "artifactDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                        "clientRevision": "synthetic-client-270",
+                        "configurationSchemaDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                        "distributionId": "netniv.stfc-community-mod",
+                        "manifest": {
+                          "status": "missing"
+                        },
+                        "platform": "windows",
+                        "providerId": "netniv"
+                      },
+                      "receiptId": "synthetic-runtime-receipt-1",
+                      "revision": "synthetic-runtime-management-2",
+                      "target": {
+                        "installation": {
+                          "kind": "registered",
+                          "nativeTargetRef": "synthetic-native-target-1",
+                          "physicalId": "synthetic-installation-physical-1",
+                          "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "registrationRevision": "synthetic-installation-revision-1"
+                        },
+                        "profile": {
+                          "kind": "ordinary",
+                          "ownerScope": "synthetic-native-owner-1"
+                        }
+                      }
+                    }
+                  }
+                },
+                "status": "completed"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d01-1111-4111-8111-111111111111"
+}

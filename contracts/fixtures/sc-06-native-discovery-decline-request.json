@@ -1,0 +1,14 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "approval": "decline",
+        "expectedDestinationOwner": "synthetic-native-owner-1"
+      },
+      "name": "request_import_discovery"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe4-1111-4111-8111-111111111111"
+}

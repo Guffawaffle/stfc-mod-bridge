@@ -1,0 +1,34 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "resolve_target",
+        "output": {
+          "target": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "installation": {
+                "kind": "directory",
+                "nativeTargetRef": "synthetic-explicit-native-1",
+                "physicalId": "synthetic-explicit-directory"
+              },
+              "profile": {
+                "kind": "ordinary",
+                "ownerScope": "synthetic-native-owner-1"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f48-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,18 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "after": {
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "sequence": "1",
+          "streamId": "000003e9-1111-4111-8111-111111111111"
+        },
+        "maximumEvents": "2"
+      },
+      "name": "resume_events"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000178a-1111-4111-8111-111111111111"
+}

@@ -1,0 +1,34 @@
+{
+  "case": "import-reviewed-owner-and-consent",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-06-import-reviewed-owner-and-consent-journey",
+  "scenario": "SC-06",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-06-import-reviewed-owner-and-consent-prepare-reply",
+      "request": "sc-06-import-reviewed-owner-and-consent-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-06-import-reviewed-owner-and-consent-commit-reply",
+      "request": "sc-06-import-reviewed-owner-and-consent-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-06-import-reviewed-owner-and-consent-observe-reply",
+      "request": "sc-06-import-reviewed-owner-and-consent-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

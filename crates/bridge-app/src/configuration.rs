@@ -1,0 +1,151 @@
+//! Portable adoption of one existing configuration workspace into Engine's
+//! owned ports. This supplies no production owner, writer, schema or entry UI.
+use bridge_contracts::v1::*;
+use bridge_engine::{configuration::*, operations::*, services::*};
+mod operations;
+pub use operations::{ConfigurationCustody, ConfigurationLease};
+
+pub struct ConfigurationServices<P, T, S, O, E, I> {
+    operations: P,
+    workspace: ConfigurationWorkspace<T, S, O, E, I>,
+}
+impl<P, T, S, O, E, I> ConfigurationServices<P, T, S, O, E, I> {
+    pub fn new(operations: P, workspace: ConfigurationWorkspace<T, S, O, E, I>) -> Self {
+        Self {
+            operations,
+            workspace,
+        }
+    }
+}
+
+/// Preserve the exact engine refusal across the workspace's closed-error port.
+fn preflight_result<T>(
+    invoke: impl FnOnce(&mut dyn FnMut(&T) -> ConfigurationResult<()>) -> ConfigurationResult<T>,
+    preflight: &mut Preflight<'_, T>,
+) -> ApplicationResult<T> {
+    let mut refusal = None;
+    let result = invoke(&mut |value| {
+        preflight(value).map_err(|error| {
+            refusal = Some(error);
+            ConfigurationFailure::Capacity
+        })
+    });
+    match refusal {
+        Some(error) => Err(error),
+        None => result.map_err(ConfigurationFailure::bridge_error),
+    }
+}
+
+impl<
+    P,
+    T: TomlPreparation,
+    S: SchemaSource,
+    O: DocumentOwner,
+    E: SensitiveEntry,
+    I: ConfigurationIds,
+> ApplicationServices for ConfigurationServices<P, T, S, O, E, I>
+{
+    fn configuration_host_epoch(&self) -> Option<&HostEpoch> {
+        Some(self.workspace.host_epoch())
+    }
+    fn implemented_commands(&self) -> Vec<CommandId> {
+        let mut commands = vec![
+            CommandId::OpenDraft,
+            CommandId::SetDraftChanges,
+            CommandId::DiscardDraft,
+        ];
+        if self.workspace.sensitive_entry_available() {
+            commands.push(CommandId::RequestSensitiveInput);
+        }
+        commands
+    }
+    fn read_configuration(
+        &mut self,
+        input: &ReadConfigurationInput,
+        preflight: &mut ReadPreflight<'_>,
+    ) -> ApplicationResult<DocumentSnapshot> {
+        let mut refusal = None;
+        let result =
+            self.workspace
+                .read_configuration_with_preflight(&input.target, |snapshot, changed| {
+                    preflight(snapshot, changed).map_err(|error| {
+                        refusal = Some(error);
+                        ConfigurationFailure::Capacity
+                    })
+                });
+        match refusal {
+            Some(error) => Err(error),
+            None => result.map_err(ConfigurationFailure::bridge_error),
+        }
+    }
+    fn configuration_history(
+        &mut self,
+        input: &ConfigurationHistoryInput,
+    ) -> ApplicationResult<Inventory<BackupReceiptRef>> {
+        self.workspace
+            .configuration_history(input)
+            .map_err(ConfigurationFailure::bridge_error)
+    }
+    fn get_draft(&self, input: &GetDraftInput) -> ApplicationResult<Option<DraftSnapshot>> {
+        self.workspace
+            .current_draft(&input.host_epoch, &input.draft_id)
+            .map_err(ConfigurationFailure::bridge_error)
+    }
+    fn open_draft(
+        &mut self,
+        input: &OpenDraftInput,
+        preflight: &mut Preflight<'_, DraftSnapshot>,
+    ) -> ApplicationResult<DraftSnapshot> {
+        preflight_result(
+            |check| self.workspace.open_draft_with_preflight(input, check),
+            preflight,
+        )
+    }
+    fn set_draft_changes(
+        &mut self,
+        input: SetDraftChangesInput,
+        preflight: &mut StagePreflight<'_>,
+    ) -> ApplicationResult<SetDraftChangesResult> {
+        let previous = self
+            .workspace
+            .current_draft(&input.draft.host_epoch, &input.draft.draft_id)
+            .map_err(ConfigurationFailure::bridge_error)?;
+        let mut refusal = None;
+        let result = self.workspace.set_draft_changes(input, |receipt| {
+            preflight(receipt, previous.as_ref() != Some(&receipt.snapshot)).map_err(|error| {
+                refusal = Some(error);
+                ConfigurationFailure::Capacity
+            })
+        });
+        match refusal {
+            Some(error) => Err(error),
+            None => result.map_err(ConfigurationFailure::bridge_error),
+        }
+    }
+    fn discard_draft(
+        &mut self,
+        input: &DiscardDraftInput,
+        preflight: &mut Preflight<'_, DiscardedDraft>,
+    ) -> ApplicationResult<DiscardedDraft> {
+        preflight_result(
+            |check| self.workspace.discard_draft_with_preflight(input, check),
+            preflight,
+        )
+    }
+    fn request_sensitive_input(
+        &mut self,
+        input: &RequestSensitiveInputInput,
+        preflight: &mut Preflight<'_, SensitiveInputResult>,
+    ) -> ApplicationResult<SensitiveInputResult> {
+        if !self.workspace.sensitive_entry_available() {
+            return Err(error(ErrorCode::UnsupportedCapability));
+        }
+        preflight_result(
+            |check| {
+                self.workspace
+                    .request_sensitive_input_with_preflight(input, check)
+            },
+            preflight,
+        )
+    }
+}

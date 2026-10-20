@@ -1,0 +1,24 @@
+{
+  "case": "Bridge refusal verification_failed remains explicit",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc13-bridge-verification-failed-journey",
+  "scenario": "SC-13",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc13-bridge-verification-failed-reply",
+      "request": "sc13-bridge-verification-failed-request",
+      "type": "exchange"
+    }
+  ]
+}

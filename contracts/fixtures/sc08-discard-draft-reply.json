@@ -1,0 +1,18 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "discard_draft",
+        "output": {
+          "draftId": "000007d1-1111-4111-8111-111111111111",
+          "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+          "previousRevision": "2"
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000836-1111-4111-8111-111111111111"
+}

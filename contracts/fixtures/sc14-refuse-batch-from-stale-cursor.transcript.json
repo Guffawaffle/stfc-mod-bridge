@@ -1,0 +1,34 @@
+{
+  "case": "sc14-refuse-batch-from-stale-cursor",
+  "expected": {
+    "accepted": false,
+    "code": "transcript_resume_cursor",
+    "step": 3
+  },
+  "id": "sc14-refuse-batch-from-stale-cursor",
+  "scenario": "SC-14",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "event": "sc14-event-one",
+      "type": "event"
+    },
+    {
+      "event": "sc14-event-two",
+      "type": "event"
+    },
+    {
+      "reply": "sc14-contiguous-event-batch-reply",
+      "request": "sc14-contiguous-event-batch-request",
+      "type": "exchange"
+    }
+  ]
+}

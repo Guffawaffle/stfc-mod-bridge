@@ -1,0 +1,24 @@
+{
+  "case": "ordinary-lifecycle-protected",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-07-ordinary-lifecycle-protected-journey",
+  "scenario": "SC-07",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-07-ordinary-lifecycle-protected-reply",
+      "request": "sc-07-ordinary-lifecycle-protected-request",
+      "type": "exchange"
+    }
+  ]
+}

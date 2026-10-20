@@ -1,0 +1,56 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "snapshot",
+        "output": {
+          "capabilities": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [],
+            "revision": "synthetic-inventory-1"
+          },
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "installations": {
+            "reason": "native_unavailable",
+            "status": "unavailable"
+          },
+          "operations": {
+            "completeness": "partial",
+            "issues": [
+              {
+                "code": "native_unavailable",
+                "resource": {
+                  "id": "00001771-1111-4111-8111-111111111111",
+                  "kind": "operation"
+                }
+              }
+            ],
+            "items": [],
+            "revision": "synthetic-inventory-1"
+          },
+          "preferences": {
+            "reason": "native_unavailable",
+            "status": "unavailable"
+          },
+          "profiles": {
+            "reason": "native_unavailable",
+            "status": "unavailable"
+          },
+          "sessions": {
+            "reason": "native_unavailable",
+            "status": "unavailable"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017a9-1111-4111-8111-111111111111"
+}

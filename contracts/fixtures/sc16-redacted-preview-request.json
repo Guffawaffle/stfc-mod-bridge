@@ -1,0 +1,22 @@
+{
+  "body": {
+    "query": {
+      "input": {
+        "disclosure": "redacted",
+        "target": {
+          "installation": {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "registered"
+          },
+          "profile": {
+            "kind": "ordinary"
+          }
+        }
+      },
+      "name": "diagnostic_preview"
+    },
+    "type": "query"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000084f-1111-4111-8111-111111111111"
+}

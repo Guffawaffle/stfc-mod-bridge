@@ -1,0 +1,59 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "cancel_operation",
+        "output": {
+          "kind": "requested",
+          "operation": {
+            "operationId": "00001771-1111-4111-8111-111111111111",
+            "operationRevision": "3",
+            "semantics": {
+              "action": "launch_ordinary",
+              "capture": {
+                "catalogRevision": "synthetic-catalog-1",
+                "kind": "launch_ordinary",
+                "runtime": {
+                  "kind": "absent"
+                },
+                "target": {
+                  "installation": {
+                    "kind": "registered",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1",
+                    "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "registrationRevision": "synthetic-installation-revision-1"
+                  },
+                  "profile": {
+                    "kind": "ordinary",
+                    "ownerScope": "synthetic-native-owner-1"
+                  }
+                }
+              },
+              "effects": [
+                "launch_session"
+              ],
+              "hashProfile": "bridge-plan-semantic-json-v1",
+              "trustDomain": "session"
+            },
+            "state": {
+              "progress": {
+                "measurement": {
+                  "completed": "1",
+                  "total": "2",
+                  "unit": "files"
+                },
+                "phase": "synthetic-working"
+              },
+              "status": "cancellation_requested"
+            }
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000178f-1111-4111-8111-111111111111"
+}

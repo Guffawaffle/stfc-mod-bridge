@@ -1,0 +1,61 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "cancel_operation",
+        "output": {
+          "kind": "cancelled_before_commit",
+          "operation": {
+            "operationId": "00001ff1-1111-4111-8111-111111111111",
+            "operationRevision": "2",
+            "semantics": {
+              "action": "create_profile",
+              "capture": {
+                "input": {
+                  "catalogRevision": "synthetic-catalog-1",
+                  "destinationOwner": "synthetic-native-owner-1",
+                  "name": "Synthetic profile",
+                  "nativePreparationRef": "synthetic-import-reviewed-owner-and-consent-prepare",
+                  "preferredInstallation": {
+                    "kind": "registered",
+                    "nativeTargetRef": "synthetic-native-target-1",
+                    "physicalId": "synthetic-installation-physical-1",
+                    "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "registrationRevision": "synthetic-installation-revision-1"
+                  },
+                  "setup": {
+                    "approval": "request_native_approval",
+                    "kind": "windows_user_import",
+                    "source": {
+                      "destinationOwner": "synthetic-native-owner-1",
+                      "requiresNativeApproval": true,
+                      "sourceId": "synthetic-native-import-source",
+                      "sourceRevision": "synthetic-source-1"
+                    }
+                  }
+                },
+                "kind": "create_profile"
+              },
+              "effects": [
+                "publish_profile"
+              ],
+              "hashProfile": "bridge-plan-semantic-json-v1",
+              "trustDomain": "profile_state"
+            },
+            "state": {
+              "outcome": {
+                "kind": "cancelled_before_commit",
+                "reason": "cancellation_accepted"
+              },
+              "status": "completed"
+            }
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001ff4-1111-4111-8111-111111111111"
+}

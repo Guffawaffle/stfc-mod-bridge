@@ -1,0 +1,48 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "commit",
+        "output": {
+          "operationId": "00001771-1111-4111-8111-111111111111",
+          "operationRevision": "1",
+          "semantics": {
+            "action": "launch_ordinary",
+            "capture": {
+              "catalogRevision": "synthetic-catalog-1",
+              "kind": "launch_ordinary",
+              "runtime": {
+                "kind": "absent"
+              },
+              "target": {
+                "installation": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-other-physical-installation",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "profile": {
+                  "kind": "ordinary",
+                  "ownerScope": "synthetic-native-owner-1"
+                }
+              }
+            },
+            "effects": [
+              "launch_session"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "session"
+          },
+          "state": {
+            "status": "admitted"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001781-1111-4111-8111-111111111111"
+}

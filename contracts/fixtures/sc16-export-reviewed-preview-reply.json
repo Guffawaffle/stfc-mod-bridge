@@ -1,0 +1,62 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00000962-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:172cebd6fb940b86a3f3c1bb1b44632d760ad5f4ddbb6a07c04dc5a8d09e5448"
+          },
+          "semantics": {
+            "action": "export_diagnostics",
+            "capture": {
+              "input": {
+                "destination": {
+                  "destinationId": "00000961-1111-4111-8111-111111111111",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                  "nativeTargetRef": "synthetic-export-destination-1",
+                  "revision": "synthetic-destination-1"
+                },
+                "preview": {
+                  "digest": "sha256:0ab057c38a965ad780b331736a3844224b212ffed73b53c175f2f990e4638503",
+                  "disclosure": "redacted",
+                  "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                  "previewId": "00000960-1111-4111-8111-111111111111",
+                  "revision": "synthetic-preview-1",
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                }
+              },
+              "kind": "export_diagnostics"
+            },
+            "effects": [
+              "export_diagnostics"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "diagnostics"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000853-1111-4111-8111-111111111111"
+}

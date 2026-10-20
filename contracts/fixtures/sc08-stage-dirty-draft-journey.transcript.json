@@ -1,0 +1,24 @@
+{
+  "case": "One scoped draft retains an edit while navigation changes views",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc08-stage-dirty-draft-journey",
+  "scenario": "SC-08",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc08-stage-dirty-draft-reply",
+      "request": "sc08-stage-dirty-draft-request",
+      "type": "exchange"
+    }
+  ]
+}

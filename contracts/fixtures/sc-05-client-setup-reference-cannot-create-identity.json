@@ -1,0 +1,27 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "expectedCatalogRevision": "synthetic-catalog-1",
+            "name": "Synthetic invalid setup",
+            "preferredInstallation": {
+              "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "kind": "registered"
+            },
+            "setup": {
+              "kind": "resume",
+              "nativeSetupRef": "client-invented-setup-reference"
+            }
+          },
+          "kind": "create_profile"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe2-1111-4111-8111-111111111111"
+}

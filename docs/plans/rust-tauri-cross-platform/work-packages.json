@@ -1,0 +1,1852 @@
+{
+  "schemaVersion": "bridge-rust-implementation-plan/v1",
+  "createdAt": "2026-10-03T08:55:12.826Z",
+  "disposition": "planning-only-not-execution-authority",
+  "accepted": {
+    "backend": "Rust",
+    "shell": "thin Tauri adapter",
+    "platforms": [
+      "Windows x64",
+      "Apple Silicon macOS"
+    ],
+    "excluded": [
+      "Intel Mac host support"
+    ],
+    "deprecationClaim": "User scope direction; game Intel deprecation has not been verified",
+    "preserveOldImplementation": false,
+    "priority": "make UI development and iteration easier",
+    "namedProfileLaunch": "Named profiles run as the current OS user through canonical Profiles runtime isolation. Routine profile launches do not require another OS account or stored OS-account credentials. Native import consent remains a separate flow."
+  },
+  "proposed": {
+    "frontend": "Svelte + TypeScript + Vite",
+    "initialConcurrency": "root integrator + up to 3 workers",
+    "engineHost": "in-process CLI/Tauri with deferred normal exit and durable forced-termination recovery"
+  },
+  "sharedFileOwners": {
+    "integrator": [
+      "Cargo workspace/manifests/locks",
+      "Rust module registration",
+      "frontend dependencies",
+      "top-level frontend app/state/routes",
+      "generated contract registration",
+      "fixture indexes",
+      "qualification dispatcher registration",
+      "CI composition"
+    ],
+    "requiredWorkerBehavior": "Submit integration requests for shared files instead of opportunistic edits."
+  },
+  "repositories": {
+    "Bridge": {
+      "root": "D:/dev/stfc-mod-launcher",
+      "head": "b46e6d1ba882386956a997fb888c33dd066787be",
+      "branch": "feature/named-launch-profiles-225",
+      "dirty": true
+    },
+    "Profiles": {
+      "root": "D:/dev/stfc-profiles",
+      "head": "aeef4861693613fab119edcd03117b4e8de01d4b",
+      "branch": "codex/profile-catalog-runtime",
+      "dirty": false
+    },
+    "Upstream": {
+      "root": "D:/dev/netniv/stfc-mod",
+      "head": "77c93dcfdbde2a394cd34ee606177e24c25441f0",
+      "branch": "release/artifact-gallery-hotfix-beta",
+      "dirty": false
+    },
+    "Downstream": {
+      "root": "D:/dev/stfc-mod",
+      "head": "f07a113dcaf5cd0e25778e81ec324fdb0a9213f8",
+      "branch": "play-dev",
+      "dirty": false
+    }
+  },
+  "coordination": {
+    "databasePath": "D:/dev/stfc-workspace/.smartergpt/runner/coordination.db",
+    "runsCreated": false,
+    "attemptsCreated": false,
+    "destructiveMutationsEnabled": false,
+    "automaticLexFrameEmission": false
+  },
+  "architecture": [
+    "bridge-contracts: versioned DTOs/events/errors and generated frontend types",
+    "bridge-domain: pure decisions and capability projections",
+    "bridge-engine: operation owner and ports, no Tauri",
+    "bridge-profiles/bridge-toml: explicit canonical native consumers",
+    "bridge-platform-windows/macos: actual native implementations",
+    "bridge-cli/AXF and Tauri: thin clients of same dispatcher",
+    "ui: replaceable frontend with real/mock client adapters"
+  ],
+  "executionRules": [
+    "Contract changes have one integrator; consumers use frozen fixtures/types.",
+    "Workers lease narrow declared write scopes. Cargo/pnpm locks, composition, CI, provider contracts and shared session/game paths have one owner at a time.",
+    "Root serializes shared workspace files and final integration. Dependency-ready does not mean safe to edit concurrently.",
+    "Each work package becomes an issue and repo-scoped packet with exact source inputs before implementation. No invented branches/worktrees.",
+    "Review PRs using the owning repo review gate; review correction deltas and required checks on exact head.",
+    "An acceptance dispatcher runs every declared suite for its work package and aggregates per-host receipts; a single-suite pass cannot mark a multi-suite package accepted.",
+    "Qualify gates on matching native hosts. Aggregate independently retained receipts; never execute a Mac gate on Windows and label it Mac.",
+    "Re-resolve host cwd and regenerate execution-bound plans for that owner; scheduling plan is not a cross-repo bulk execution command.",
+    "This planning projection does not enable Runner prepare/start or grant execution authority. Exact repo/native-host bindings and separately enabled governed execution are required; never bypass runtime mutation policy."
+  ],
+  "blockers": [
+    {
+      "id": "mac-native-executor",
+      "state": "unbound",
+      "detail": "No macOS executor attached to this session. Bind an actual Apple Silicon host, native CI jobs and owning canonical checkouts before Mac execution. Record actual game/runtime/companion architectures on that host."
+    },
+    {
+      "id": "mac-profiles-qualified-route",
+      "state": "implementation-required",
+      "detail": "Registration/setup/launch/update platform unavailable/unqualified in current Profiles source; br-08/10/11 close these."
+    },
+    {
+      "id": "mac-explicit-loader",
+      "state": "implementation-required",
+      "detail": "Current upstream loader chooses launcher INI and forwards executable-only argv; br-09 required."
+    },
+    {
+      "id": "release-identity",
+      "state": "decision-and-provisioning-required",
+      "detail": "Package/channel/publisher/mac signing/notary and architecture/runtime pairing decisions owned by br-00/23."
+    },
+    {
+      "id": "executable-gates",
+      "state": "not-implemented",
+      "detail": "Qualification scripts/Cargo/frontend suites are future task deliverables. Validation/order success is not implementation acceptance."
+    },
+    {
+      "id": "issue-branch-binding",
+      "state": "not-created",
+      "detail": "No new issues/branches/PRs created by planning. Bind each package to its owning repo issue before implementation; branch change/worktree creation requires user authorization."
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Scope and stable wire contract",
+      "packages": [
+        "br-00",
+        "br-01",
+        "br-02"
+      ]
+    },
+    {
+      "id": "M1",
+      "title": "Usable mock frontend before native game integration",
+      "packages": [
+        "br-03",
+        "br-12",
+        "br-18",
+        "br-19",
+        "br-20",
+        "br-25"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "Headless operations and native prerequisites",
+      "packages": [
+        "br-04",
+        "br-05",
+        "br-06",
+        "br-07",
+        "br-08",
+        "br-09",
+        "br-10",
+        "br-11",
+        "br-13",
+        "br-14",
+        "br-15",
+        "br-16",
+        "br-17",
+        "br-21",
+        "br-22"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Packaged integration with parity and recovery",
+      "packages": [
+        "br-23",
+        "br-24",
+        "br-26"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Both operating systems qualified and cut over",
+      "packages": [
+        "br-27",
+        "br-29",
+        "br-30"
+      ]
+    }
+  ],
+  "evidenceReferences": [
+    "docs/windows-launcher/CURRENT_AUTHORITY.md",
+    "docs/windows-launcher/UX_DIRECTION.md",
+    "docs/windows-launcher/SHARED_INSTALL_PROFILE_CONTRACT.md",
+    "tests/STFCCommunityMod.Launcher.Core.Tests/LauncherOperationContentionMatrixTests.cs",
+    "tests/STFCCommunityMod.Launcher.Core.Tests/ModDeploymentServiceTests.cs",
+    "D:/dev/stfc-profiles/docs/PROFILE_CATALOG_CONTRACT.md",
+    "D:/dev/stfc-profiles/docs/GAME_INSTALLATION_CONTRACT.md",
+    "D:/dev/stfc-profiles/include/stfc_profiles/c_api.h",
+    "D:/dev/stfc-profiles/src/catalog.cc",
+    "D:/dev/stfc-profiles/src/installation.cc",
+    "D:/dev/netniv/stfc-mod/macos-loader/src/main.cc"
+  ],
+  "dependencyPinsObserved": {
+    "profiles": {
+      "schemaVersion": 1,
+      "repository": "Guffawaffle/stfc-profiles",
+      "revision": "aeef4861693613fab119edcd03117b4e8de01d4b",
+      "xmakeVersion": "3.0.8",
+      "nativeDependencies": [
+        {
+          "id": "nlohmann_json",
+          "version": "3.12.0",
+          "license": "MIT"
+        },
+        {
+          "id": "libarchive",
+          "version": "3.8.9",
+          "license": "BSD-2-Clause AND BSD-3-Clause AND CC0-1.0"
+        },
+        {
+          "id": "xz",
+          "version": "5.8.3",
+          "license": "0BSD"
+        },
+        {
+          "id": "zlib",
+          "version": "1.3.2",
+          "license": "Zlib"
+        }
+      ],
+      "sourceArchiveSha256": "b556a158519275c47fdb275f288b567eb350baf305c68b9d89de2bc6fbaca49e"
+    },
+    "toml": {
+      "schemaVersion": 1,
+      "repository": "Guffawaffle/stfc-mod",
+      "revision": "f83c8d55b542cb4b8ac4a85ca5d69173c0cd58b0",
+      "sourceArchiveSha256": "0ce4b510eb6c6040c0974a6ce292596f33164ff46ae9b0314254eefc2dc3204c",
+      "qualificationState": "immutable",
+      "sourceSubdirectory": "shared/toml",
+      "xmakeVersion": "3.0.8",
+      "nativeDependencies": [
+        {
+          "id": "toml++",
+          "version": "3.4.0",
+          "license": "MIT"
+        },
+        {
+          "id": "nlohmann_json",
+          "version": "3.12.0",
+          "license": "MIT"
+        }
+      ]
+    }
+  },
+  "packages": [
+    {
+      "id": "br-00",
+      "title": "Product scope, ownership and operating contract",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [],
+      "lane": "integration",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Supersede Windows/WPF ownership for the new Bridge; do not relocate existing mac launcher or mod runtime.",
+        "Ratify first-release journeys, architecture matrix, frontend default and native dependency responsibilities.",
+        "Record proposed in-process engine hosting and safe normal-exit versus forced-termination recovery rules.",
+        "Map existing behavior/test scenarios into requirements without preserving C# implementation.",
+        "Create the fail-closed qualification dispatcher and gate inventory; record unavailable host/script/receipt as blocked, never success."
+      ],
+      "acceptanceCriteria": [
+        "Required host matrix is Windows x64 and Apple Silicon macOS; shell/game/native module architectures are matched explicitly. Intel Mac host qualification is excluded by user direction.",
+        "Shared Profiles remains sole owner of catalog/storage/exclusion/game update; runtime producers retain their source/artifact ownership.",
+        "Shuttle Bay and Engineering share selected target and draft semantics; ordinary and isolated requests remain distinct.",
+        "Scope includes launch/catalog, game and mod management, settings/Data Sync, support and Bridge update; dormant Battle activation is an optional later extension.",
+        "Review records distinguish accepted decisions, proposed frontend details and implementation evidence."
+      ],
+      "writeScope": [
+        "AGENTS.md",
+        "docs/next/**",
+        "scripts/next/qualify.mjs"
+      ],
+      "sharedResources": [
+        "product-contract"
+      ],
+      "gates": [
+        {
+          "id": "scope-contract",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite scope-contract --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-01",
+      "title": "Rust/frontend workspace and native CI foundations",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-00"
+      ],
+      "lane": "integration",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Cargo workspace, locked dependencies, Rust toolchain pin, frontend package lock and native Tauri shell.",
+        "Define Windows x64 and Apple Silicon native CI jobs and receipt collection; record unresolved host bindings without claiming a native job ran.",
+        "Implement cargo fmt/clippy/test and frontend typecheck/test/build gate definitions; qualified gate dispatcher refuses wrong-host/missing output."
+      ],
+      "acceptanceCriteria": [
+        "Fresh clean local host can run supported foundation development commands using exact pins.",
+        "Core/engine dependency graph contains no Tauri/webview/DOM packages.",
+        "Select and pin native UI automation: current Tauri documentation supports embedded WebdriverIO on macOS; plain tauri-driver alone cannot provide that Mac coverage.",
+        "UI mock startup requires neither game nor native library nor Rust compilation.",
+        "Native host bindings are recorded as resolved or unresolved; unresolved Mac execution blocks native gates, while workspace and mock development can continue."
+      ],
+      "writeScope": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        "pnpm-workspace.yaml",
+        "ui/package.json",
+        "ui/pnpm-lock.yaml",
+        "apps/desktop/**",
+        ".github/workflows/next-*.yml",
+        "scripts/next/**"
+      ],
+      "sharedResources": [
+        "Cargo-workspace",
+        "dependency-locks",
+        "CI"
+      ],
+      "gates": [
+        {
+          "id": "workspace-foundation",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite workspace-foundation --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-02",
+      "title": "Versioned domain protocol and scenario fixtures",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-01"
+      ],
+      "lane": "contracts",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Typed commands/queries/events/errors, explicit install/profile/session targets, preparation tokens and revision expectations.",
+        "Generated TypeScript types, JSON golden fixtures and complete required scenario catalog.",
+        "Ports for Profiles, native platform services, artifacts, configuration and lifetime custody."
+      ],
+      "acceptanceCriteria": [
+        "Contradictory targets, unsupported version and malformed/unknown commands fail explicitly.",
+        "Requests and events carry request/operation IDs; snapshots carry revision and events monotonic sequence.",
+        "Commit idempotency keys bind exact input; replay after response loss returns original operation/status, while conflicting reuse rejects.",
+        "Prepare tokens bind target/revisions/artifact/schema identity and expire across restart; they do not grant permission or locks.",
+        "Backend facts/action availability contain no colors, controls, UI copy or window handles.",
+        "Scenarios cover ready/missing/offline/busy/unknown/multiple sessions/stale/failed/no-change/recovery."
+      ],
+      "writeScope": [
+        "crates/bridge-contracts/**",
+        "contracts/**",
+        "ui/src/generated/**"
+      ],
+      "sharedResources": [
+        "public-contract"
+      ],
+      "gates": [
+        {
+          "id": "protocol-contract",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite protocol-contract --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "scenario-catalog",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite scenario-catalog --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-03",
+      "title": "Typed frontend client and deterministic mock transport",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "UI",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Renderer-neutral backend client with generated types and mock/real transport seam.",
+        "Browser development mode with fixture picker, simulated progress/latency/faults and reconnection."
+      ],
+      "acceptanceCriteria": [
+        "UI runs from frontend tooling alone with no game, native binary, account data or backend.",
+        "Mock responses validate against exact protocol schema and share fixtures with engine tests.",
+        "Mocks preserve captured targets, errors/revisions/event ordering rather than replacing policy with happy-path stubs.",
+        "Production build excludes test bypasses and mock mutation hosts."
+      ],
+      "writeScope": [
+        "ui/src/client/**",
+        "ui/src/mocks/**",
+        "ui/scenarios/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "mock-contract",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite mock-contract --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "mock-development",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite mock-development --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-04",
+      "title": "Operation ownership, journal and recovery kernel",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "engine",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Headless Rust command dispatcher, prepared-plan registry, resource admission, durable operation/journal state and event stream.",
+        "Deterministic fake ports for contention, cancellation, crash/restart and idempotent recovery.",
+        "Choose and record process custody: first release hosts the engine within each CLI/Tauri process; safe shutdown retains admitted work until completion, while abrupt process death requires durable recovery. A daemon is a separate later design decision."
+      ],
+      "acceptanceCriteria": [
+        "Losing writer returns busy before downloads/staging/backups/journals; one exact mutation owner.",
+        "Commit revalidates physical/revision identities while retaining owning exclusions.",
+        "Webview/CLI disconnect cannot release the writing worker lease; cancellation is requested/cancelled-before-commit/too-late/committed/recovery-required.",
+        "Normal host close during native work defers process exit until safe durable state; forced process kill leaves restart recovery, never a claim that work continued after death.",
+        "Commit replay after response loss resolves original operation without a second mutation; conflicting input with the same idempotency key rejects.",
+        "Uncommitted plans invalidate on restart; admitted durable work remains inspectable by operation ID.",
+        "Fault injection at every durable boundary yields committed, rolled-back or explicit recovery-required state."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/operations/**",
+        "crates/bridge-engine/tests/operation_*",
+        "crates/bridge-engine/tests/crash_*"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "operation-contention",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite operation-contention --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "crash-recovery",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite crash-recovery --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-05",
+      "title": "Safe Profiles/TOML native consumers",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "native consumer",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Versioned Rust FFI consumers of canonical native JSON and shared TOML operations.",
+        "Immutable source/native pins, per-target module hash receipts, buffer/lease ownership and module lifetime."
+      ],
+      "acceptanceCriteria": [
+        "No second catalog, account store, game patch engine or native writer authority.",
+        "Return buffers/handles released through originating module; module stays loaded until last native lease/response ends.",
+        "Bounded malformed-response/version/non-ASCII/native-error tests and real ABI tests independently on each target.",
+        "Synchronous native update work can outlive await/client; cancellation never pretends the worker stopped."
+      ],
+      "writeScope": [
+        "crates/bridge-profiles/**",
+        "crates/bridge-toml/**",
+        "dependencies/next-*.json"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "native-ffi-contract",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite native-ffi-contract --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-06",
+      "title": "Windows platform services",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "Windows",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64"
+      ],
+      "deliverables": [
+        "Native identity/process/filesystem/protected-state/signature/focus/shortcut adapters behind shared ports."
+      ],
+      "acceptanceCriteria": [
+        "Exact file/directory and PID/start/executable identity; unknown observations remain unknown.",
+        "Alias/replacement/same-bytes-different-file and process reuse/exited-process tests pass on Windows.",
+        "Retained resource and flush/replace/recovery semantics match documented native guarantees.",
+        "Ordinary user scope; mod, official game and Bridge update trust domains remain separate."
+      ],
+      "writeScope": [
+        "crates/bridge-platform-windows/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "windows-platform",
+          "state": "planned-not-implemented",
+          "requiredHost": "windows-x64",
+          "command": "node scripts/next/qualify.mjs --suite windows-platform --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "windows-private-journal-fixtures",
+          "state": "implemented-awaiting-native-observation",
+          "requiredHost": "windows-x64",
+          "command": "node scripts/next/qualify.mjs --suite windows-private-journal-fixtures --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true,
+          "packageAcceptanceAvailable": false
+        }
+      ],
+      "host": "windows-x64"
+    },
+    {
+      "id": "br-07",
+      "title": "macOS platform services",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Native bundle/process/filesystem/Keychain/signature/focus/menu/shortcut adapters behind the same ports."
+      ],
+      "acceptanceCriteria": [
+        "Canonical bundle/executable/physical identity and alias/case rules use actual macOS semantics.",
+        "Native Apple Silicon host cases verify process identity, replacement, permissions and durability; actual game/runtime architectures are recorded.",
+        "No Windows path/version/signature assumption or automatic Rosetta parity.",
+        "Unavailable platform feature is explicit; renderer does not decide operational policy by OS name."
+      ],
+      "writeScope": [
+        "crates/bridge-platform-macos/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "macos-platform",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "node scripts/next/qualify.mjs --suite macos-platform --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "macos-platform-fixtures",
+          "state": "implemented-awaiting-native-observation",
+          "requiredHost": "macos-arm64-native",
+          "command": "node scripts/next/qualify.mjs --suite macos-platform-fixtures --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true,
+          "packageAcceptanceAvailable": false
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-08",
+      "title": "Profiles macOS identity, ordinary setup and protected-state foundation",
+      "owner": "Profiles",
+      "canonicalRoot": "D:/dev/stfc-profiles",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "Profiles/macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Canonical Mac ordinary setup kind and owner identity, installation registration/custody and lifetime exclusions.",
+        "Keychain/consent/persistence and browser/companion lifecycle implementation and synthetic native tests.",
+        "Publish exact dependency source/native receipts for producer and Bridge consumers; bindings follow shared contract."
+      ],
+      "acceptanceCriteria": [
+        "Replace platform_unavailable for accepted Mac registration/ordinary setup with native qualified behavior.",
+        "No display-name inference or relabeling windows-user as a Mac profile kind.",
+        "Rename/replacement/symlink/concurrent-client admission cases run on actual native Macs.",
+        "Synthetic Keychain tests use ephemeral test Keychains; no developer login Keychain setup or real preference fixtures.",
+        "Browser child/callback identity, abnormal exit and archive exclusion are tested; same-profile duplicate refused."
+      ],
+      "writeScope": [
+        "src/catalog*",
+        "src/installation*",
+        "src/macos/**",
+        "adapters/community_mod/**",
+        "bootstrap/**",
+        "cli/**",
+        "tests/**",
+        "scripts/Qualify-CrossPlatform.ps1",
+        "docs/**"
+      ],
+      "sharedResources": [
+        "profiles-native-composition"
+      ],
+      "gates": [
+        {
+          "id": "macos-foundation",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Suite macos-foundation -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-09",
+      "title": "Producer macOS explicit loader and artifact contract",
+      "owner": "Upstream",
+      "canonicalRoot": "D:/dev/netniv/stfc-mod",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "producer/macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Owning mod loader accepts explicit installation/profile/store/config/log request and forwards exact argv.",
+        "Per-architecture runtime/loader manifests, identity and loading/signature/entitlement contract.",
+        "Integrate an exact Profiles dependency in the owning producer bootstrap/config/hooks/build; consume reusable hooks without moving their authority into Bridge."
+      ],
+      "acceptanceCriteria": [
+        "No implicit official-launcher INI selection when host supplies exact target.",
+        "Environment/DYLD handling and loading restrictions are specified and tested on actual target architecture.",
+        "Requested isolation either activates with attributed readiness or fails; spawn never claims login.",
+        "No source move into Bridge; other providers need their own compatible artifact evidence."
+      ],
+      "writeScope": [
+        "macos-loader/**",
+        "macos-dylib/**",
+        "mods/src/**",
+        "dependencies/**",
+        "xmake.lua",
+        "tests/**",
+        "scripts/Qualify-MacLaunch.ps1"
+      ],
+      "sharedResources": [
+        "producer-launch-contract"
+      ],
+      "gates": [
+        {
+          "id": "explicit-loader-contract",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "pwsh -NoLogo -NoProfile -File scripts/Qualify-MacLaunch.ps1 -Suite explicit-loader-contract -HostArchitecture arm64",
+          "cwd": "D:/dev/netniv/stfc-mod",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-10",
+      "title": "Profiles macOS coordinated launch and lifetime qualification",
+      "owner": "Profiles",
+      "canonicalRoot": "D:/dev/stfc-profiles",
+      "dependsOn": [
+        "br-08",
+        "br-09"
+      ],
+      "lane": "Profiles/macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Ordinary and isolated launch, attributed session readiness, store-mode failure, companion placement and lifetime writer custody."
+      ],
+      "acceptanceCriteria": [
+        "Replace launch_unqualified only after actual native-host loading and session receipts.",
+        "Two distinct isolated IDs from one executable; same-ID duplicate refusal; reverse restart persistence.",
+        "Sign-in callbacks, CLI companion architecture, abnormal child exit, stopped archive/restore and client-close ownership are qualified.",
+        "Session identity uses exact executable/start/PID; account login remains a separate observed outcome."
+      ],
+      "writeScope": [
+        "src/catalog*",
+        "src/macos/**",
+        "adapters/community_mod/**",
+        "bootstrap/**",
+        "cli/**",
+        "tests/**",
+        "scripts/Qualify-CrossPlatform.ps1"
+      ],
+      "sharedResources": [
+        "profiles-native-composition"
+      ],
+      "gates": [
+        {
+          "id": "macos-launch",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Suite macos-launch -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-11",
+      "title": "Profiles macOS game updater route and recovery",
+      "owner": "Profiles",
+      "canonicalRoot": "D:/dev/stfc-profiles",
+      "dependsOn": [
+        "br-08"
+      ],
+      "lane": "Profiles/macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Research exact official Mac metadata/image/version/signature route; implement direct updater or a qualified managed official-updater handoff.",
+        "Shared status/check/admission/update/recovery contract with Mac journal rules."
+      ],
+      "acceptanceCriteria": [
+        "Direct-update feasibility decision is recorded with payload evidence; a handoff must honestly report what it can observe/control.",
+        "Replace unsupported_platform for required first-release journeys only with qualified behavior.",
+        "Stopped-install exclusion, archive/extraction containment, interruption, rollback and journal admission pass on native hosts.",
+        "Checked target version and install are immutable through the operation; Windows version/image rules are not reused.",
+        "No direct-update claim if first-release implementation uses managed handoff."
+      ],
+      "writeScope": [
+        "src/installation*",
+        "src/macos/**",
+        "tests/**",
+        "scripts/Qualify-CrossPlatform.ps1",
+        "docs/GAME_INSTALLATION_CONTRACT.md"
+      ],
+      "sharedResources": [
+        "profiles-native-composition"
+      ],
+      "gates": [
+        {
+          "id": "macos-game-update",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "pwsh -NoLogo -NoProfile -File scripts/Qualify-CrossPlatform.ps1 -Suite macos-game-update -Platform macosx -Architecture arm64",
+          "cwd": "D:/dev/stfc-profiles",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-12",
+      "title": "Design system and accessible frontend primitives",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-03"
+      ],
+      "lane": "UI",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Svelte/TypeScript/Vite proposed default, reusable tokens/themes/navigation/dialogs/status/progress/form components.",
+        "Browser component gallery and reviewed visual/focus scenarios for both OS conventions.",
+        "Implement and freeze shared selected-target, draft, operation and navigation context interfaces before parallel screen work."
+      ],
+      "acceptanceCriteria": [
+        "System/light/dark, keyboard, focus restoration, reduced motion, high contrast, 200% text and long labels.",
+        "Layout/copy/style edits hot reload without rebuilding Rust or requiring native integration.",
+        "Native window conventions expressed at thin shell boundary; UI components contain no filesystem/process policy.",
+        "Component/visual/automated accessibility suites plus recorded UX review; screenshots alone cannot approve behavior."
+      ],
+      "writeScope": [
+        "ui/src/components/**",
+        "ui/src/styles/**",
+        "ui/src/app/**",
+        "ui/src/state/**",
+        "ui/src/App.svelte",
+        "ui/tests/components/**"
+      ],
+      "sharedResources": [
+        "frontend-composition"
+      ],
+      "gates": [
+        {
+          "id": "frontend-components",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite frontend-components --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "frontend-accessibility",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite frontend-accessibility --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-13",
+      "title": "Domain capability and observation projections",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-02"
+      ],
+      "lane": "engine",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Pure read models for targets/providers/features/operational availability with stable reason codes and diagnostics provenance."
+      ],
+      "acceptanceCriteria": [
+        "Facts, policy and supported capability stay distinct; missing/invalid manifests do not grant support.",
+        "Provider IDs select behavior; display names never branch operational policy.",
+        "Preference is next-launch intent and cannot rewrite running session or captured operation.",
+        "Read-only projections do not bootstrap stores, mutate preferences, launch game or sidecars."
+      ],
+      "writeScope": [
+        "crates/bridge-domain/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "capability-projection",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite capability-projection --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-14",
+      "title": "Configuration/Data Sync draft and transaction engine",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-05"
+      ],
+      "lane": "engine/configuration",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Schema-driven semantic sparse TOML drafts, preview/validate/Save/Discard/restore/history and migration participants.",
+        "Settings and Data Sync share the same exact target/document draft."
+      ],
+      "acceptanceCriteria": [
+        "Unknown keys/comments survive; inherited/default removal is first-class.",
+        "Missing config creates nothing until meaningful Save; no-change produces explicit outcome.",
+        "External modification/replacement/stale revision retains draft and rejects commit; same bytes do not erase physical target identity.",
+        "Save advances baseline once; failures/cancel/discard do not silently drop edits.",
+        "Backup/restore and profile lifecycle use canonical native lease/resource boundaries."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/configuration/**",
+        "crates/bridge-engine/tests/configuration_*"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "configuration-workspace",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite configuration-workspace --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-15",
+      "title": "Provider/runtime install, source switch and recovery",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-06",
+        "br-07",
+        "br-14"
+      ],
+      "lane": "engine/deployment",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Fresh per-OS runtime deploy/install/update/repair/adopt/remove transaction and ownership journal.",
+        "Source switch coordinates configuration participants through defined prepare/commit/compensation seam.",
+        "Provider configuration supports explicit fork/development feeds without rebuilding; captured source/artifact authority remains distinct from future-check preferences."
+      ],
+      "acceptanceCriteria": [
+        "Reviewed digest/size/version/source/platform/signer evidence binds exact artifact before mutation.",
+        "External/replaced/unowned runtime cannot be removed as managed; adopted bytes restored on rollback.",
+        "Fault injection at each durable boundary, stale plans, same-byte replacement and source/config switch compensation.",
+        "Provider support is independently qualified by OS/architecture; one bootstrap/profile product per installation.",
+        "Custom feed/channel selection retains stable provider identity and captured endpoint/artifact authority; changing a preference cannot silently switch installed ownership, trust keys or a confirmed transaction."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/deployment/**",
+        "crates/bridge-engine/tests/runtime_*",
+        "providers/next/**"
+      ],
+      "sharedResources": [
+        "provider-artifact-contract"
+      ],
+      "gates": [
+        {
+          "id": "runtime-lifecycle",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite runtime-lifecycle --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-16",
+      "title": "Windows session and game-client application slice",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-05",
+        "br-06"
+      ],
+      "lane": "integration/Windows",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64"
+      ],
+      "deliverables": [
+        "Explicit ordinary/isolated launch/focus/session observation and canonical game status/check/update/recover adapter."
+      ],
+      "acceptanceCriteria": [
+        "Selection changes cannot retarget an admitted launch/update; recycled PID cannot be focused/cycled.",
+        "Spawn/isolation readiness/login are separate; unavailable observations block dependent mutation.",
+        "Every session using target is excluded from update; checked install/version survives selection change.",
+        "Synchronous native mutation continues to final outcome despite client disconnect."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/sessions/**",
+        "crates/bridge-engine/src/game/**"
+      ],
+      "sharedResources": [
+        "session-game-integration"
+      ],
+      "gates": [
+        {
+          "id": "windows-session-game",
+          "state": "planned-not-implemented",
+          "requiredHost": "windows-x64",
+          "command": "node scripts/next/qualify.mjs --suite windows-session-game --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "windows-x64"
+    },
+    {
+      "id": "br-17",
+      "title": "macOS session and game-client application slice",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-05",
+        "br-07",
+        "br-10",
+        "br-11"
+      ],
+      "lane": "integration/macOS",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Implement same application commands with qualified Mac catalog/loader/update capabilities."
+      ],
+      "acceptanceCriteria": [
+        "Real Mac ordinary/isolated launch and exact process/readiness semantics match protocol.",
+        "Mac game route is truthful direct-update or managed handoff; outcome never overstates completion.",
+        "Mac lifetime/exclusion/recovery tests use real native modules and installed candidate topology.",
+        "First-release capability matrix reconciled for Apple Silicon hosts and their explicitly qualified game/runtime architectures."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/sessions/**",
+        "crates/bridge-engine/src/game/**"
+      ],
+      "sharedResources": [
+        "session-game-integration"
+      ],
+      "gates": [
+        {
+          "id": "macos-session-game",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "node scripts/next/qualify.mjs --suite macos-session-game --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-18",
+      "title": "Shuttle Bay/Home and shared navigation against mocks",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-12"
+      ],
+      "lane": "UI",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Outcome-first Home, one visible target/profile selection and ordinary/isolated session views.",
+        "Separate game, mod and Bridge maintenance journeys with consistent action feedback."
+      ],
+      "acceptanceCriteria": [
+        "Ready/missing/offline/running/unknown/multiple processes/recovery cases are usable without backend.",
+        "View switching preserves drafts; target changes use Save/Discard/Stay.",
+        "Primary action and warnings use typed backend facts and reasons, not duplicated operational policy.",
+        "Private paths absent in ordinary UI; diagnostics are explicit."
+      ],
+      "writeScope": [
+        "ui/src/views/home/**",
+        "ui/src/navigation/**",
+        "ui/tests/home/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "frontend-home-targets",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite frontend-home-targets --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-19",
+      "title": "Engineering/settings workspace against mocks",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-12"
+      ],
+      "lane": "UI",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Reusable schema controls, categories/search, sparse overrides/defaults, validation/restart notices, Data Sync editing."
+      ],
+      "acceptanceCriteria": [
+        "All semantic field types and error/no-change/loading/stale/failed-save fixtures covered.",
+        "External changes preserve drafts; target transitions and Save/Discard behavior remain visible and accessible.",
+        "Screen development does not wait for br-14 engine implementation.",
+        "Backend schema remains authoritative; no handwritten duplicate TOML feature list."
+      ],
+      "writeScope": [
+        "ui/src/views/settings/**",
+        "ui/src/views/sync/**",
+        "ui/tests/settings/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "frontend-settings-drafts",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite frontend-settings-drafts --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-20",
+      "title": "Management, confirmation, recovery and support UI against mocks",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-12"
+      ],
+      "lane": "UI",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Profile/install/provider management, prepared-plan confirmation, progress/recovery/history/diagnostic export and Bridge update views.",
+        "Shared latest-read reconciliation for observational panels, with bounded structured diagnostic views and explicit normal/debug detail."
+      ],
+      "acceptanceCriteria": [
+        "Plan shows captured target/scope; changing selection cannot change confirmed work.",
+        "Duplicate submission, requested/too-late cancellation, no-change/failure/recovery all have coherent feedback.",
+        "Diagnostic preview/redaction/opt-in paths and token filtering fixtures pass.",
+        "No native game/account material is needed for component and journey tests.",
+        "Out-of-order log/diagnostic read results, errors and loading completion cannot replace the newer request or selected target; abandoning a read never cancels admitted work or clears a draft."
+      ],
+      "writeScope": [
+        "ui/src/views/management/**",
+        "ui/src/views/support/**",
+        "ui/tests/management/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "frontend-management-feedback",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite frontend-management-feedback --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-21",
+      "title": "Headless CLI/AXF and real Tauri protocol adapter",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-03",
+        "br-04",
+        "br-13"
+      ],
+      "lane": "integration",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "CLI structured commands and thin Tauri command/event adapter sharing the same Rust dispatcher.",
+        "Frontend reconnect/resnapshot, event subscription and deterministic test host."
+      ],
+      "acceptanceCriteria": [
+        "CLI resolves target, reviews/prepares/commits fixture change, streams events and restarts/recovers without linking Tauri.",
+        "Pure mock/CLI conformance runs on ordinary CI; actual Tauri invoke/event/reconnect conformance runs independently on Windows x64 and Apple Silicon using native shell receipts.",
+        "Production artifact excludes test host/mock bypass; Tauri capability allowlist limited to required adapter.",
+        "Closing UI follows engine safe shutdown; actual transaction custody remains with worker.",
+        "Reconnect after lost commit response reuses original operation; normal close during native mutation and forced-host-kill/restart both reach honest outcomes."
+      ],
+      "writeScope": [
+        "crates/bridge-cli/**",
+        "crates/bridge-host-adapter/**",
+        "apps/desktop/src-tauri/src/transport/**",
+        "ui/src/client/tauri/**",
+        "crates/bridge-contract-tests/**"
+      ],
+      "sharedResources": [
+        "desktop-composition"
+      ],
+      "gates": [
+        {
+          "id": "host-adapter-foundation",
+          "state": "implemented-source-observation-only",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite host-adapter-foundation --host <actual-native-host>",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "single-host-source-observation-only",
+          "receiptRequired": true
+        },
+        {
+          "id": "client-transport-conformance",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite client-transport-conformance --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "headless-workflow",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite headless-workflow --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-22",
+      "title": "Diagnostics, history and application support engine",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-13",
+        "br-14"
+      ],
+      "lane": "engine/support",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Redacted diagnostic preview/export, application preferences/history and service ownership interfaces.",
+        "Keep dormant Battle/sidecar activation outside initial release unless br-00 explicitly adds qualified scope.",
+        "Stable diagnostic records carry timestamp, severity, category/component, operation ID when present, phase and reason code; bounded date/range reads and opt-in debug detail remain separate from the recovery journal.",
+        "One service-owned completion-based update-observation scheduler per host uses injected family ports; clients consume typed observations rather than duplicating network polling. Concrete game/runtime/Bridge ports are composed in br-26."
+      ],
+      "acceptanceCriteria": [
+        "Preview bytes match exported bytes; secrets/account contents/default private paths excluded.",
+        "Read-only support queries do not launch sinks/sidecars or mutate configs.",
+        "Per-user app preferences do not become mod TOML; recovery retains exact operation ownership.",
+        "Known/unavailable capability and cleanup failures remain visible.",
+        "Diagnostic range/size limits, optional operation correlation and normal/debug detail are explicit; exact preview/export allowlists omit account values and default private paths, and diagnostic records cannot substitute for durable recovery state.",
+        "Disabled/configurable cadence, per-family in-flight coordination for manual and automatic checks, timeouts/backoff and observation ages are exercised with injected clocks/ports. A failed or timed-out family stays unknown/unavailable while other families and locally healthy offline launch remain usable."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/support/**",
+        "crates/bridge-engine/tests/diagnostic_*"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "diagnostics-support",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite diagnostics-support --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-23",
+      "title": "Platform package identity, native pairing and build pipeline",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-01",
+        "br-05",
+        "br-06",
+        "br-07",
+        "br-09"
+      ],
+      "lane": "delivery",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Per-target Bridge packages, paired native dependencies/companions and immutable source/build receipts.",
+        "Windows installer/update identity and Mac app/DMG identity, signing/notarization pipeline and release-asset inspection.",
+        "Document transition from existing MSIX identity; no automatic change to trust/publisher roots.",
+        "Record an accept/reject evaluation of the official Tauri updater behind a desktop platform port, including supported package/installer formats, architecture/native pairing, signing and Windows installer-exit behavior."
+      ],
+      "acceptanceCriteria": [
+        "Each Windows x64 / Apple Silicon Mac arm64 package includes matching architecture/pins and rejects missing/mismatched native bytes; game/runtime/companions match the actual selected process architecture.",
+        "Exact final signed/notarized bytes hashed; no universal or Intel-host package is required.",
+        "Three trust domains kept independent; installer signing/updater signatures do not establish provider/game artifact authority.",
+        "Clean-host install/storage/permission/uninstall behavior and retained external data verified.",
+        "Publisher/signing/notary/channel decisions and credential provisioning are recorded prerequisites, not invented approvals.",
+        "The updater evaluation preserves a Tauri-independent engine/domain and independently configured application channels/feed authority. Updater artifact signatures do not replace platform signing/notarization or native-pair verification; unsupported formats/routes remain explicit."
+      ],
+      "writeScope": [
+        "packaging/next/**",
+        "scripts/next/package/**",
+        ".github/workflows/next-release.yml"
+      ],
+      "sharedResources": [
+        "release-identity",
+        "CI"
+      ],
+      "gates": [
+        {
+          "id": "package-native-pairing",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite package-native-pairing --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "package-trust",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite package-trust --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-24",
+      "title": "Independent Bridge self-update and recovery engine",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-04",
+        "br-06",
+        "br-07",
+        "br-23"
+      ],
+      "lane": "delivery",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Fresh Bridge release selection/verification/staging/replacement and recovery on both platforms.",
+        "Separate check/download/stage from installer handoff; configured stable/prerelease/development application feeds share captured package authority and the engine safe-exit protocol."
+      ],
+      "acceptanceCriteria": [
+        "Mod/provider authority cannot authorize Bridge update; helpers/native payloads remain exact paired identities.",
+        "Candidate/plan reverified before replacement; updater cannot mutate game/catalog roots.",
+        "Interrupted update, denied access, stale package and downgrade/withdrawal policy produce explicit outcomes.",
+        "New installer/channel migration is qualified per OS, not inferred from Tauri updater support.",
+        "Feed preferences affect future checks only; prepared updates retain exact endpoint/channel/package/signing/native-pair identities and revalidate before installation. Routine confirmation preferences cannot bypass protected changes, source switches or trust review.",
+        "A platform installer that exits the host is invoked only after admitted writers reach a proven safe durable boundary and an exact recoverable handoff is recorded. Active writers, denied/failed handoff and interrupted installation retain explicit ownership/recovery; no client relaunch drops a lease or marks an unobserved update complete."
+      ],
+      "writeScope": [
+        "crates/bridge-engine/src/self_update/**",
+        "crates/bridge-updater/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "bridge-self-update",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite bridge-self-update --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-25",
+      "title": "Mock UX milestone and independent design review",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-18",
+        "br-19",
+        "br-20"
+      ],
+      "lane": "review",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "any"
+      ],
+      "deliverables": [
+        "Review complete first-release mock journeys with failure/progress/draft fixtures and both OS layouts.",
+        "Record usability/accessibility findings and correction deltas before native binding dominates the work."
+      ],
+      "acceptanceCriteria": [
+        "Reviewers can run all normal/error/recovery flows without Rust/game/native prerequisites.",
+        "Player can identify exact intended target, next action, unsaved edits and recovery choice.",
+        "No unresolved blocking UX/keyboard/privacy issue; baselines bound to exact frontend commit.",
+        "Automated schema/screenshots alone do not stand in for reviewed UX."
+      ],
+      "writeScope": [
+        "docs/next/ux-review/**",
+        "ui/scenarios/**",
+        "ui/tests/visual/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "mock-ux-review",
+          "state": "planned-not-implemented",
+          "requiredHost": "any",
+          "command": "node scripts/next/qualify.mjs --suite mock-ux-review --host any",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ]
+    },
+    {
+      "id": "br-26",
+      "title": "Integrated user journeys and multi-client contention",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-14",
+        "br-15",
+        "br-16",
+        "br-17",
+        "br-18",
+        "br-19",
+        "br-20",
+        "br-21",
+        "br-22",
+        "br-24",
+        "br-25"
+      ],
+      "lane": "integration",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64",
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Bind real engine results to UI with identical protocol fixtures; whole-journey tests across CLI/Tauri/native adapters.",
+        "Install/profile/config/mod/game/Bridge update and recovery fixture flows, captured target/revision/receipt checks."
+      ],
+      "acceptanceCriteria": [
+        "UI and CLI agree on normalized outcomes; UI/CLI race yields one writer and no losing-client durable side effect.",
+        "Read/prepare/confirm/commit/reconnect/restart/recover preserve operation target and draft boundaries.",
+        "All new engine gates implemented and tested; no placeholder successful commands.",
+        "Windows x64 and Apple Silicon Mac integrations independently pass before platform release UX.",
+        "Manual/automatic family-check races, timeout/offline recovery and out-of-order support reads preserve per-family outcomes/age and captured targets without duplicate polling policy in clients.",
+        "Self-update requested during admitted work defers/refuses until the qualified durable installer handoff; restart/disconnect and installation failure preserve exact operation/native-pair/recovery evidence."
+      ],
+      "writeScope": [
+        "tests/next/integration/**",
+        "ui/tests/integration/**",
+        "ui/src/app/**",
+        "ui/src/state/**",
+        "ui/src/App.svelte"
+      ],
+      "sharedResources": [
+        "integration-baseline",
+        "frontend-composition"
+      ],
+      "gates": [
+        {
+          "id": "integrated-journeys",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite integrated-journeys --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        },
+        {
+          "id": "multi-client-contention",
+          "state": "planned-not-implemented",
+          "requiredHost": "native-target-matrix",
+          "command": "node scripts/next/qualify.mjs --suite multi-client-contention --host native-target-matrix",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "native-target-matrix"
+    },
+    {
+      "id": "br-27",
+      "title": "Windows packaged UI and live journey qualification",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-23",
+        "br-25",
+        "br-26"
+      ],
+      "lane": "qualification/Windows",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "windows-x64"
+      ],
+      "deliverables": [
+        "Actual signed packaged WebView2 client tests, Narrator/keyboard/high contrast/DPI and first-run/update/recovery.",
+        "Explicit live game/profile lifecycle qualification using approved test identities and exact target/artifact/client receipts."
+      ],
+      "acceptanceCriteria": [
+        "Qualify exact Windows x64 signed bytes/OS/client/WebView runtime, not browser mock or old WPF result.",
+        "Ordinary launch, two isolated IDs, duplicate refusal, restart persistence, callbacks, archive/restore and shared-install update exclusion.",
+        "Safe fixture accounts/state used; real credentials/preferences never copied to test artifacts.",
+        "Blocking accessibility/runtime/identity/recovery issues corrected and independently re-reviewed."
+      ],
+      "writeScope": [
+        "tests/next/qualification/windows/**",
+        "docs/next/qualification/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "windows-webview-live",
+          "state": "planned-not-implemented",
+          "requiredHost": "windows-x64",
+          "command": "node scripts/next/qualify.mjs --suite windows-webview-live --host windows-x64",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "canonical-local-checkout",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "windows-x64"
+    },
+    {
+      "id": "br-29",
+      "title": "Apple Silicon packaged UI and live journey qualification",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-23",
+        "br-25",
+        "br-26"
+      ],
+      "lane": "qualification/macOS Arm",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "macos-arm64-native"
+      ],
+      "deliverables": [
+        "Actual signed/notarized WKWebView client on native Apple Silicon and independent live journey/accessibility evidence."
+      ],
+      "acceptanceCriteria": [
+        "App/game/mod/companions architecture matrix is explicit; native arm64 shell alone does not qualify x86 game/runtime under translation.",
+        "Same required lifecycle/update/recovery/callback/consent journeys, exact signed bytes and host/client/runtime receipts.",
+        "VoiceOver/native keyboard/window/scaling acceptance recorded; native automation route is qualified and accessibility also has manual evidence.",
+        "Test-only embedded WebDriver/IPC mocking plugins, if selected, are absent from final shipped artifacts; production signed packages receive independent smoke/UX qualification.",
+        "Translation-based route, if required by game architecture, separately qualified and labeled."
+      ],
+      "writeScope": [
+        "tests/next/qualification/macos/**",
+        "docs/next/qualification/**"
+      ],
+      "sharedResources": [],
+      "gates": [
+        {
+          "id": "macos-arm-webview-live",
+          "state": "planned-not-implemented",
+          "requiredHost": "macos-arm64-native",
+          "command": "node scripts/next/qualify.mjs --suite macos-arm-webview-live --host macos-arm64-native",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "macos-arm64-native"
+    },
+    {
+      "id": "br-30",
+      "title": "Release readiness, independent review and old-stack retirement",
+      "owner": "Bridge",
+      "canonicalRoot": "D:/dev/stfc-mod-launcher",
+      "dependsOn": [
+        "br-27",
+        "br-29"
+      ],
+      "lane": "release",
+      "state": "planned",
+      "issue": null,
+      "pullRequest": null,
+      "requiredHosts": [
+        "evidence-aggregation"
+      ],
+      "deliverables": [
+        "Independent implementation/security/UX review and correction reviews on exact final heads and artifact hashes.",
+        "Cross-platform release docs/support/recovery/installer migration, signed immutable dependency/source records.",
+        "Retire superseded WPF product/build paths as part of reviewed cutover; no requirement to preserve its implementation."
+      ],
+      "acceptanceCriteria": [
+        "Both required host evidence lanes complete with no unresolved blocker; partial native capability cannot count as cross-platform release.",
+        "No unknown or failed required gate is bypassed; stale source/artifact evidence forces only affected checks to repeat.",
+        "Release/signing/publication follow owning repo/user authority; planning graph grants no eligibility or authority.",
+        "Old instructions/UX update delegation explicitly reconciled with new product contract."
+      ],
+      "writeScope": [
+        "docs/**",
+        "README.md",
+        "AGENTS.md",
+        "src/STFCCommunityMod.Launcher*/**",
+        "STFCCommunityMod.Launcher.sln",
+        "packaging/**"
+      ],
+      "sharedResources": [
+        "release-cutover"
+      ],
+      "gates": [
+        {
+          "id": "cross-platform-release-readiness",
+          "state": "planned-not-implemented",
+          "requiredHost": "evidence-aggregation",
+          "command": "node scripts/next/qualify.mjs --suite cross-platform-release-readiness --host evidence-aggregation",
+          "cwd": "D:/dev/stfc-mod-launcher",
+          "cwdResolution": "required-on-matching-native-host-before-execution",
+          "availability": "not-established",
+          "receiptRequired": true
+        }
+      ],
+      "host": "evidence-aggregation"
+    }
+  ],
+  "implementationRefinement": {
+    "date": "2026-10-05",
+    "decision": "Continue our Bridge; retain current-user profile isolation and frontend-independent Rust engine. Borrow implementation concepts, not the maintainer launcher profile system or native ownership.",
+    "source": {
+      "version": "maintainer launcher Windows x64 v0.4.2",
+      "msiSha256": "b2f125ce2cba6120110de834fd6ad35276a8b6e6f3ed024fb3b4d6337850544c",
+      "payloadSha256": "57eac414d43766ceea9f822fd8dd0151a6ecf73c31a46ad07e5a32a20ea7aa32",
+      "method": "Static extracted frontend and exact native messages. No installer, executable or foreign JavaScript execution; private source and Mac artifact were not inspected.",
+      "primaryUpdaterReference": "https://v2.tauri.app/plugin/updater/"
+    },
+    "packageMapping": {
+      "completion-based-observation": [
+        "br-22",
+        "br-24",
+        "br-26"
+      ],
+      "latest-read-reconciliation": [
+        "br-20",
+        "br-26"
+      ],
+      "structured-diagnostics": [
+        "br-20",
+        "br-22"
+      ],
+      "configurable-fork-feeds": [
+        "br-15",
+        "br-23",
+        "br-24"
+      ],
+      "official-updater-evaluation": [
+        "br-23",
+        "br-24"
+      ]
+    },
+    "scope": "Refinements to existing future deliverables only. No packages/dependencies added, no existing completed foundation criteria reopened, no Tauri dependency in engine/domain, no second game updater, no new qualification inferred."
+  }
+}

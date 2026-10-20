@@ -1,0 +1,250 @@
+{
+  "budget": {
+    "prompts": 1,
+    "tokens_estimated": 5615
+  },
+  "dryRun": true,
+  "execution": {
+    "levels": [
+      {
+        "items": [
+          "br-00"
+        ],
+        "level": 1
+      },
+      {
+        "items": [
+          "br-01"
+        ],
+        "level": 2
+      },
+      {
+        "items": [
+          "br-02"
+        ],
+        "level": 3
+      },
+      {
+        "items": [
+          "br-03",
+          "br-04",
+          "br-05",
+          "br-06",
+          "br-07",
+          "br-08",
+          "br-09",
+          "br-13"
+        ],
+        "level": 4
+      },
+      {
+        "items": [
+          "br-10",
+          "br-11",
+          "br-12",
+          "br-14",
+          "br-16",
+          "br-21",
+          "br-23"
+        ],
+        "level": 5
+      },
+      {
+        "items": [
+          "br-15",
+          "br-17",
+          "br-18",
+          "br-19",
+          "br-20",
+          "br-22",
+          "br-24"
+        ],
+        "level": 6
+      },
+      {
+        "items": [
+          "br-25"
+        ],
+        "level": 7
+      },
+      {
+        "items": [
+          "br-26"
+        ],
+        "level": 8
+      },
+      {
+        "items": [
+          "br-27",
+          "br-29"
+        ],
+        "level": 9
+      },
+      {
+        "items": [
+          "br-30"
+        ],
+        "level": 10
+      }
+    ],
+    "policy": {
+      "maxWorkers": 3,
+      "retryConfigs": 0
+    }
+  },
+  "plan": {
+    "itemCount": 30,
+    "schemaVersion": "1.0.0",
+    "target": "main"
+  },
+  "selection": {
+    "onlyGate": null,
+    "onlyItem": null
+  },
+  "tiers": {
+    "assignments": {
+      "br-00": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-01": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-02": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-03": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-04": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-05": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-06": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-07": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-08": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-09": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-10": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-11": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-12": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-13": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-14": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-15": {
+        "escalated": false,
+        "suggested": "senior"
+      },
+      "br-16": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-17": {
+        "escalated": false,
+        "suggested": "senior"
+      },
+      "br-18": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-19": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-20": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-21": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-22": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-23": {
+        "escalated": false,
+        "suggested": "senior"
+      },
+      "br-24": {
+        "escalated": false,
+        "suggested": "senior"
+      },
+      "br-25": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-26": {
+        "escalated": false,
+        "suggested": "senior"
+      },
+      "br-27": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-29": {
+        "escalated": false,
+        "suggested": "mid"
+      },
+      "br-30": {
+        "escalated": false,
+        "suggested": "mid"
+      }
+    },
+    "metrics": {
+      "byActualTier": {
+        "junior": 0,
+        "mid": 25,
+        "senior": 5
+      },
+      "byTier": {
+        "junior": 0,
+        "mid": 25,
+        "senior": 5
+      },
+      "escalationRate": 0,
+      "escalations": 0,
+      "governance": {
+        "escalationRate": true,
+        "meetsAll": true,
+        "tierMatchRate": true
+      },
+      "mismatches": 0,
+      "tierMatchRate": 1,
+      "totalTasks": 30
+    }
+  }
+}

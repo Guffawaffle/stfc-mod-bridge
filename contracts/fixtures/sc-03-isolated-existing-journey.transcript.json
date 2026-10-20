@@ -1,0 +1,34 @@
+{
+  "case": "isolated-existing",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-03-isolated-existing-journey",
+  "scenario": "SC-03",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-03-isolated-existing-prepare-reply",
+      "request": "sc-03-isolated-existing-prepare-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-isolated-existing-commit-reply",
+      "request": "sc-03-isolated-existing-commit-request",
+      "type": "exchange"
+    },
+    {
+      "reply": "sc-03-isolated-existing-observe-reply",
+      "request": "sc-03-isolated-existing-observe-request",
+      "type": "exchange"
+    }
+  ]
+}

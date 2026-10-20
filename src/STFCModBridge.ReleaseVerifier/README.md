@@ -29,7 +29,7 @@ this component cannot enroll a downloaded root.
 
 ## Locked inputs
 
-- Go `1.26.6`
+- Go `1.26.10`
 - `github.com/sigstore/sigstore-go` `v1.3.0`
 - embedded public-good root trust epoch `1`
 - normalized root-document SHA-256

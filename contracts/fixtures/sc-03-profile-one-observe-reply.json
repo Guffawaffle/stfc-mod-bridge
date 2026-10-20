@@ -1,0 +1,124 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00001f80-1111-4111-8111-111111111111",
+              "operationRevision": "1",
+              "semantics": {
+                "action": "launch_isolated",
+                "capture": {
+                  "catalogRevision": "synthetic-catalog-1",
+                  "kind": "launch_isolated",
+                  "runtime": {
+                    "kind": "absent"
+                  },
+                  "storeMode": "new",
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "kind": "isolated",
+                      "revision": "synthetic-profile-revision-1"
+                    }
+                  }
+                },
+                "effects": [
+                  "create_isolated_store",
+                  "launch_session"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "session"
+              },
+              "state": {
+                "outcome": {
+                  "kind": "changed",
+                  "reason": "applied",
+                  "receipt": {
+                    "kind": "session_spawned",
+                    "session": {
+                      "binding": {
+                        "process": {
+                          "architecture": "x86_64",
+                          "executableIdentity": "synthetic-game-executable-1",
+                          "installationPhysicalId": "synthetic-installation-physical-1",
+                          "pid": 4200,
+                          "startIdentity": {
+                            "platform": "windows",
+                            "value": "synthetic-process-generation-1"
+                          }
+                        },
+                        "revision": "synthetic-session-revision-1",
+                        "sessionId": "00001f7d-1111-4111-8111-111111111111"
+                      },
+                      "liveIdentity": {
+                        "evidence": {
+                          "observationId": "000003ea-1111-4111-8111-111111111111",
+                          "observedAt": "2026-10-03T11:00:00Z",
+                          "source": "native_live"
+                        },
+                        "status": "observed",
+                        "value": true
+                      },
+                      "readiness": {
+                        "evidence": {
+                          "observationId": "000003ea-1111-4111-8111-111111111111",
+                          "observedAt": "2026-10-03T11:00:00Z",
+                          "source": "native_live"
+                        },
+                        "status": "observed",
+                        "value": "isolated_initializing"
+                      },
+                      "target": {
+                        "evidence": {
+                          "observationId": "000003ea-1111-4111-8111-111111111111",
+                          "observedAt": "2026-10-03T11:00:00Z",
+                          "source": "native_live"
+                        },
+                        "status": "observed",
+                        "value": {
+                          "installation": {
+                            "kind": "registered",
+                            "nativeTargetRef": "synthetic-native-target-1",
+                            "physicalId": "synthetic-installation-physical-1",
+                            "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "registrationRevision": "synthetic-installation-revision-1"
+                          },
+                          "profile": {
+                            "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "kind": "isolated",
+                            "revision": "synthetic-profile-revision-1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "status": "completed"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001f83-1111-4111-8111-111111111111"
+}

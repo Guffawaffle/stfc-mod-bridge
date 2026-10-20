@@ -1,0 +1,29 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "expectedCatalogRevision": "synthetic-catalog-1",
+            "name": "Synthetic path preference",
+            "preferredInstallation": {
+              "directory": {
+                "platform": "windows",
+                "value": "C:\\Synthetic\\Game"
+              },
+              "kind": "directory"
+            },
+            "setup": {
+              "kind": "new"
+            }
+          },
+          "kind": "create_profile"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fdf-1111-4111-8111-111111111111"
+}

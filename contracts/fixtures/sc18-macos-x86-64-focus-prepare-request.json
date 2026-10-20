@@ -1,0 +1,31 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "intent": {
+          "input": {
+            "session": {
+              "process": {
+                "architecture": "x86_64",
+                "executableIdentity": "synthetic-game-executable-1",
+                "installationPhysicalId": "synthetic-installation-physical-1",
+                "pid": 9876,
+                "startIdentity": {
+                  "platform": "macos",
+                  "value": "synthetic-macos-x86-64-generation"
+                }
+              },
+              "revision": "synthetic-session-1",
+              "sessionId": "000017c4-1111-4111-8111-111111111111"
+            }
+          },
+          "kind": "focus_session"
+        }
+      },
+      "name": "prepare"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "000017c7-1111-4111-8111-111111111111"
+}

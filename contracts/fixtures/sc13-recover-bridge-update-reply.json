@@ -1,0 +1,104 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "prepare",
+        "output": {
+          "expiresAt": "2026-10-04T00:00:00Z",
+          "grantsLock": false,
+          "grantsPermission": false,
+          "planRef": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "planId": "00000d2f-1111-4111-8111-111111111111",
+            "reviewDigest": "sha256:76778091589cd9efd194110171a19190e00712893e06e83f5d1096ed98d47072"
+          },
+          "semantics": {
+            "action": "recover_bridge_update",
+            "capture": {
+              "input": {
+                "recovery": {
+                  "application": {
+                    "applicationId": "guffawaffle.stfc-mod-bridge",
+                    "architecture": "x86_64",
+                    "channelId": "stable",
+                    "installationRef": "synthetic-bridge-installation-1",
+                    "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                    "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                    "payloads": [
+                      {
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                        "role": "application",
+                        "size": "1024"
+                      },
+                      {
+                        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                        "role": "profiles_native",
+                        "size": "512"
+                      },
+                      {
+                        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                        "role": "toml_native",
+                        "size": "512"
+                      },
+                      {
+                        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                        "role": "update_helper",
+                        "size": "512"
+                      }
+                    ],
+                    "platform": "windows",
+                    "revision": "synthetic-bridge-app-1"
+                  },
+                  "bridgeJournalRef": "synthetic-bridge-journal-1",
+                  "expectedApplication": {
+                    "applicationId": "guffawaffle.stfc-mod-bridge",
+                    "architecture": "x86_64",
+                    "channelId": "stable",
+                    "installationRef": "synthetic-bridge-installation-1",
+                    "packageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                    "pairingDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                    "payloads": [
+                      {
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                        "role": "application",
+                        "size": "1024"
+                      },
+                      {
+                        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                        "role": "profiles_native",
+                        "size": "512"
+                      },
+                      {
+                        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                        "role": "toml_native",
+                        "size": "512"
+                      },
+                      {
+                        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                        "role": "update_helper",
+                        "size": "512"
+                      }
+                    ],
+                    "platform": "windows",
+                    "revision": "synthetic-bridge-app-1"
+                  },
+                  "revision": "synthetic-bridge-journal-1"
+                }
+              },
+              "kind": "recover_bridge_update"
+            },
+            "effects": [
+              "recover_bridge"
+            ],
+            "hashProfile": "bridge-plan-semantic-json-v1",
+            "trustDomain": "bridge_application"
+          }
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d30-1111-4111-8111-111111111111"
+}

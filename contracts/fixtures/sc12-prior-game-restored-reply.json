@@ -1,0 +1,78 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_operation",
+        "output": {
+          "operation": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "operationId": "00000d10-1111-4111-8111-111111111111",
+              "operationRevision": "3",
+              "semantics": {
+                "action": "recover_game_update",
+                "capture": {
+                  "input": {
+                    "recovery": {
+                      "expectedClient": {
+                        "architecture": "x86_64",
+                        "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                        "version": "270"
+                      },
+                      "installation": {
+                        "kind": "registered",
+                        "nativeTargetRef": "synthetic-native-target-1",
+                        "physicalId": "synthetic-installation-physical-1",
+                        "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "registrationRevision": "synthetic-installation-revision-1"
+                      },
+                      "nativeTransaction": "synthetic-native-installation-path-key",
+                      "revision": "synthetic-game-journal-1"
+                    }
+                  },
+                  "kind": "recover_game_update"
+                },
+                "effects": [
+                  "recover_game"
+                ],
+                "hashProfile": "bridge-plan-semantic-json-v1",
+                "trustDomain": "game_client"
+              },
+              "state": {
+                "outcome": {
+                  "kind": "changed",
+                  "reason": "applied",
+                  "receipt": {
+                    "client": {
+                      "architecture": "x86_64",
+                      "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "version": "270"
+                    },
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "kind": "game_updated"
+                  }
+                },
+                "status": "completed"
+              }
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d11-1111-4111-8111-111111111111"
+}

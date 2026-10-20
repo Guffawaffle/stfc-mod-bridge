@@ -1,0 +1,26 @@
+{
+  "case": "refuse-cross-session-correspondence",
+  "expected": {
+    "accepted": false,
+    "code": "transcript_prepare_session",
+    "step": 1
+  },
+  "id": "sc-04-refuse-cross-session-correspondence-journey",
+  "scenario": "SC-04",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-04-old-focus-reply",
+      "request": "sc-04-recycled-session-request",
+      "type": "exchange"
+    }
+  ]
+}

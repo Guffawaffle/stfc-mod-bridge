@@ -1,0 +1,386 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "get_draft",
+        "output": {
+          "cursor": {
+            "hostEpoch": "00000bae-1111-4111-8111-111111111111",
+            "sequence": "7",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "draft": {
+            "evidence": {
+              "observationId": "000003ea-1111-4111-8111-111111111111",
+              "observedAt": "2026-10-03T11:00:00Z",
+              "source": "native_live"
+            },
+            "status": "observed",
+            "value": {
+              "apply": [
+                "immediate"
+              ],
+              "draft": {
+                "document": {
+                  "baseline": {
+                    "kind": "missing"
+                  },
+                  "documentId": "000007d0-1111-4111-8111-111111111111",
+                  "revision": "synthetic-document-1",
+                  "schema": {
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "providerId": "guffawaffle",
+                    "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "schemaId": "stfc-community-mod.config-schema",
+                    "schemaVersion": "1.0.0"
+                  },
+                  "target": {
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "profile": {
+                      "kind": "ordinary",
+                      "ownerScope": "synthetic-native-owner-1"
+                    }
+                  }
+                },
+                "draftId": "000007d1-1111-4111-8111-111111111111",
+                "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+                "revision": "2"
+              },
+              "edits": [
+                {
+                  "fieldId": "setting.boolean",
+                  "kind": "set_public",
+                  "value": {
+                    "kind": "boolean",
+                    "value": true
+                  }
+                }
+              ],
+              "schema": {
+                "binding": {
+                  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "providerId": "guffawaffle",
+                  "runtimeArtifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "schemaId": "stfc-community-mod.config-schema",
+                  "schemaVersion": "1.0.0"
+                },
+                "fields": [
+                  {
+                    "aliases": [],
+                    "apply": "immediate",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "boolean",
+                      "value": false
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.boolean",
+                    "path": [
+                      "setting",
+                      "boolean"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.boolean"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "boolean"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "integer",
+                      "value": "1"
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.integer",
+                    "path": [
+                      "setting",
+                      "integer"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.integer"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "integer",
+                      "maximum": "9223372036854775807",
+                      "minimum": "-9223372036854775808"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "restart_required",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "number",
+                      "value": "1.5"
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.number",
+                    "path": [
+                      "setting",
+                      "number"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.number"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "number",
+                      "maximum": "5.25",
+                      "minimum": "-2.5"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "string",
+                      "value": "Synthetic long display label for text scaling"
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.string",
+                    "path": [
+                      "setting",
+                      "string"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.string"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "string",
+                      "maximumLength": "64"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "enum",
+                      "value": "off"
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.enum",
+                    "path": [
+                      "setting",
+                      "enum"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.enum"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "enum",
+                      "values": [
+                        "off",
+                        "summary"
+                      ]
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "keybinding",
+                      "value": [
+                        {
+                          "key": "SPACE",
+                          "modifiers": []
+                        }
+                      ]
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.keys",
+                    "path": [
+                      "setting",
+                      "keys"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.keys"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "keys": [
+                        "SPACE",
+                        "K"
+                      ],
+                      "kind": "keybinding",
+                      "multiple": true
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "defaultValue": {
+                      "kind": "notification_policy",
+                      "value": {
+                        "kind": "disabled"
+                      }
+                    },
+                    "deprecated": false,
+                    "fieldId": "setting.notification",
+                    "path": [
+                      "setting",
+                      "notification"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "setting.notification"
+                    ],
+                    "sensitivity": "public",
+                    "valueType": {
+                      "kind": "notification_policy",
+                      "sounds": [
+                        "none",
+                        "warning"
+                      ]
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "deprecated": false,
+                    "fieldId": "sync.endpoint",
+                    "path": [
+                      "sync",
+                      "endpoint"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "sync.endpoint"
+                    ],
+                    "sensitivity": "private",
+                    "valueType": {
+                      "kind": "string",
+                      "maximumLength": "4096"
+                    }
+                  },
+                  {
+                    "aliases": [],
+                    "apply": "next_launch",
+                    "category": "settings",
+                    "deprecated": false,
+                    "fieldId": "sync.token",
+                    "path": [
+                      "sync",
+                      "token"
+                    ],
+                    "platforms": [
+                      "windows",
+                      "macos"
+                    ],
+                    "searchTerms": [
+                      "sync.token"
+                    ],
+                    "sensitivity": "secret",
+                    "valueType": {
+                      "kind": "string",
+                      "maximumLength": "4096"
+                    }
+                  }
+                ],
+                "sync": [
+                  {
+                    "endpointFieldId": "sync.endpoint",
+                    "exposure": "creatable",
+                    "feeds": [
+                      "battlelog",
+                      "missions"
+                    ],
+                    "fields": [
+                      "sync.endpoint",
+                      "sync.token"
+                    ],
+                    "inheritsGlobalProxy": true,
+                    "mode": "legacy",
+                    "secretFieldId": "sync.token"
+                  },
+                  {
+                    "endpointFieldId": "sync.endpoint",
+                    "exposure": "existing_configuration_only",
+                    "feeds": [
+                      "battlelog"
+                    ],
+                    "fields": [
+                      "sync.endpoint",
+                      "sync.token"
+                    ],
+                    "inheritsGlobalProxy": false,
+                    "mode": "sidecar",
+                    "secretFieldId": "sync.token"
+                  },
+                  {
+                    "endpointFieldId": "sync.endpoint",
+                    "exposure": "hidden",
+                    "feeds": [
+                      "missions"
+                    ],
+                    "fields": [
+                      "sync.endpoint",
+                      "sync.token"
+                    ],
+                    "inheritsGlobalProxy": true,
+                    "mode": "majel",
+                    "secretFieldId": "sync.token"
+                  }
+                ]
+              },
+              "state": "dirty",
+              "validation": []
+            }
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000b8c-1111-4111-8111-111111111111"
+}

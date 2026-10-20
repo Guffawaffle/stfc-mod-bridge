@@ -1,0 +1,17 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "request_import_discovery",
+        "output": {
+          "reason": "native_unavailable",
+          "status": "unavailable"
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00001fe4-1111-4111-8111-111111111111"
+}

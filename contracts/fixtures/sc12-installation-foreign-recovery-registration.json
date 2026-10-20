@@ -1,0 +1,75 @@
+{
+  "body": {
+    "result": {
+      "query": {
+        "name": "list_installations",
+        "output": {
+          "evidence": {
+            "observationId": "000003ea-1111-4111-8111-111111111111",
+            "observedAt": "2026-10-03T11:00:00Z",
+            "source": "native_live"
+          },
+          "status": "observed",
+          "value": {
+            "completeness": "complete",
+            "issues": [],
+            "items": [
+              {
+                "binding": {
+                  "kind": "registered",
+                  "nativeTargetRef": "synthetic-native-target-1",
+                  "physicalId": "synthetic-installation-physical-1",
+                  "registrationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registrationRevision": "synthetic-installation-revision-1"
+                },
+                "client": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "architecture": "x86_64",
+                    "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "version": "270"
+                  }
+                },
+                "name": "Synthetic registered installation",
+                "update": {
+                  "evidence": {
+                    "observationId": "000003ea-1111-4111-8111-111111111111",
+                    "observedAt": "2026-10-03T11:00:00Z",
+                    "source": "native_live"
+                  },
+                  "status": "observed",
+                  "value": {
+                    "expectedClient": {
+                      "architecture": "x86_64",
+                      "executableDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "version": "270"
+                    },
+                    "installation": {
+                      "kind": "registered",
+                      "nativeTargetRef": "synthetic-native-target-1",
+                      "physicalId": "synthetic-installation-physical-1",
+                      "registrationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "registrationRevision": "synthetic-installation-revision-1"
+                    },
+                    "nativeTransaction": "synthetic-native-installation-path-key",
+                    "revision": "synthetic-game-journal-1"
+                  }
+                }
+              }
+            ],
+            "revision": "synthetic-inventory-1"
+          }
+        }
+      },
+      "type": "query"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "00000d14-1111-4111-8111-111111111111"
+}

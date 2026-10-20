@@ -1,0 +1,24 @@
+{
+  "case": "unsupported-runtime-isolation",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc-03-unsupported-runtime-isolation-journey",
+  "scenario": "SC-03",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc-03-unsupported-runtime-isolation-reply",
+      "request": "sc-03-unsupported-runtime-isolation-request",
+      "type": "exchange"
+    }
+  ]
+}
