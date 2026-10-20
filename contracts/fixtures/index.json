@@ -4503,7 +4503,7 @@
     {
       "case": "Collection control refuses a nonboolean enable value",
       "expectedSemantic": false,
-      "expectedWire": true,
+      "expectedWire": false,
       "id": "sc16-astrometrics-nonboolean-enable",
       "kind": "request",
       "path": "sc16-astrometrics-nonboolean-enable.json",

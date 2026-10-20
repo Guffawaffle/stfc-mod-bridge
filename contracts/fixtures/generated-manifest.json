@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "contracts/fixtures/index.json",
-      "sha256": "daec064a0d69808273898f47f6e296e3002f5317c7c13854d37615d8287ec248"
+      "sha256": "c2a076a4bc272f84cb3ae21d38b510d1b4286178d5891ab4c90c20f21b75a924"
     },
     {
       "path": "contracts/fixtures/sc-01-discovery-invalid-journey.transcript.json",
@@ -3161,7 +3161,7 @@
     },
     {
       "path": "contracts/fixtures/configuration-cases.ts",
-      "sha256": "0c1b16eac9e5b5e876e9118cb576c0b681d9dc80fc37f7ee89a7eaaeaa14818e"
+      "sha256": "b8f139a7c4ccd2ccae5c108cb7e833571b1c61442cd9df19c3a0d602f8f5ef9d"
     },
     {
       "path": "contracts/fixtures/distribution-cases.ts",

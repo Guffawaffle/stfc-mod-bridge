@@ -22187,6 +22187,146 @@
       }
     },
     {
+      "id": "sc16-astrometrics-disabled-journey",
+      "scenario": "SC-16",
+      "case": "Optional collection is off without exposing connection credentials",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "query": {
+                  "name": "astrometrics",
+                  "output": {
+                    "available": true,
+                    "enabled": false,
+                    "endpoint": null,
+                    "events": [],
+                    "historyAvailable": false,
+                    "notice": "disabled",
+                    "rejectedRequests": "0",
+                    "storedEvents": "0",
+                    "syncToken": null
+                  }
+                },
+                "type": "query"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000085b-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "query": {
+                "input": {},
+                "name": "astrometrics"
+              },
+              "type": "query"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000085b-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc16-astrometrics-disabled-reply",
+          "sha256": "3fbc4ea965ea1f049f03002ad74bc061f6ec753e94c29ae7be3784aed46bdb21"
+        },
+        {
+          "id": "sc16-astrometrics-disabled-request",
+          "sha256": "9952ed64dd8069416a4b4e3eddd9dab6f6011aa70c28d7e6ce84e6f19791c6a2"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc16-astrometrics-disabled-journey.transcript.json",
+        "sha256": "6f0de36596dff7fddde37aa46dd11c2d274bc52df388fb5da3b747e2617118c9"
+      }
+    },
+    {
+      "id": "sc16-astrometrics-stop-journey",
+      "scenario": "SC-16",
+      "case": "Collection control preserves a disabled result through the shared command contract",
+      "correlationSlot": "requestId",
+      "steps": [
+        {
+          "cursor": {
+            "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+            "sequence": "0",
+            "streamId": "000003e9-1111-4111-8111-111111111111"
+          },
+          "reason": "initial",
+          "type": "boundary"
+        },
+        {
+          "reply": {
+            "body": {
+              "result": {
+                "command": {
+                  "name": "set_astrometrics",
+                  "output": {
+                    "available": true,
+                    "enabled": false,
+                    "endpoint": null,
+                    "events": [],
+                    "historyAvailable": false,
+                    "notice": "disabled",
+                    "rejectedRequests": "0",
+                    "storedEvents": "0",
+                    "syncToken": null
+                  }
+                },
+                "type": "command"
+              },
+              "type": "result"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000085c-1111-4111-8111-111111111111"
+          },
+          "request": {
+            "body": {
+              "command": {
+                "input": {
+                  "enabled": false
+                },
+                "name": "set_astrometrics"
+              },
+              "type": "command"
+            },
+            "protocolVersion": 1,
+            "requestId": "0000085c-1111-4111-8111-111111111111"
+          },
+          "type": "exchange"
+        }
+      ],
+      "sources": [
+        {
+          "id": "sc16-astrometrics-stop-reply",
+          "sha256": "ae1a4227b952a56e536dd0441b23623c5a3ffe9476616f937aa838fdfd57d1a2"
+        },
+        {
+          "id": "sc16-astrometrics-stop-request",
+          "sha256": "d99ab401ef9799b64cc5936223c5b562d8748145930fa01deff1268c0d77500a"
+        }
+      ],
+      "transcriptSource": {
+        "path": "contracts/fixtures/sc16-astrometrics-stop-journey.transcript.json",
+        "sha256": "2ff1beaae08b453fb238c03e41699734f519391e6ea40608f719afe79e5438f6"
+      }
+    },
+    {
       "id": "sc11-check-runtime-release-journey",
       "scenario": "SC-11",
       "case": "Runtime metadata uses its own reviewed provider authority",

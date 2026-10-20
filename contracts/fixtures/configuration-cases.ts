@@ -307,7 +307,7 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
     commandReply(requestId, { name: 'set_astrometrics', output: astrometricsOff }), ['astrometrics']);
   fixtures.push(refusalFixture('sc16-astrometrics-nonboolean-enable', 'SC-16', 'Collection control refuses a nonboolean enable value', 'request', {
     protocolVersion: 1, requestId: id(), body: { type: 'command', command: { name: 'set_astrometrics', input: { enabled: 'true' } } }
-  }));
+  }, false));
 
   return { fixtures, transcripts };
 }
