@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fingerprintInputRecords } from './input-tree.mjs';
@@ -63,6 +63,42 @@ export function nativeArchitecture(bytes, platform) {
   return 'macos-arm64-mach-o';
 }
 
+export function fileIdentity(selected, limit = 256 * 1024 * 1024) {
+  const stat = lstatSync(selected);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= limit, 'Invalid bounded executable/artifact');
+  const physical = realpathSync.native(selected), bytes = readFileSync(physical);
+  const afterStat = lstatSync(selected);
+  assert.ok(stat.dev === afterStat.dev && stat.ino === afterStat.ino && stat.size === afterStat.size
+    && stat.mtimeMs === afterStat.mtimeMs && bytes.length === stat.size, 'Artifact changed while observed');
+  return { path: physical, bytes: bytes.length, sha256: sha(bytes) };
+}
+
+export function toolIdentity(selected) {
+  const route = path.resolve(selected), resolvedPath = realpathSync.native(route);
+  const payload = fileIdentity(resolvedPath);
+  assert.equal(realpathSync.native(route), resolvedPath, 'Tool invocation route changed');
+  return { path: route, resolvedPath, bytes: payload.bytes, sha256: payload.sha256 };
+}
+
+export function cleanupFixture(root, fixtureDirectory) {
+  const relative = path.relative(root, fixtureDirectory).replaceAll('\\', '/');
+  const directory = ownedArtifactPath(root, relative, 'directory');
+  let removed = 0;
+  for (const name of ['fixture-events.sqlite', 'fixture-events.sqlite-journal', 'fixture-events.sqlite-wal', 'fixture-events.sqlite-shm']) {
+    const selected = path.join(directory, name);
+    try {
+      const stat = lstatSync(selected);
+      assert.ok(stat.isFile() && !stat.isSymbolicLink(), 'Refuse unexpected fixture cleanup target');
+      ownedArtifactPath(root, `${relative}/${name}`);
+      unlinkSync(selected);
+      removed++;
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return { status: 'complete', removed };
+}
+
 function main() {
   const root = path.resolve(import.meta.dirname, '../..');
   assert.equal(process.argv.length, 2, 'No caller acceptance selectors or paths');
@@ -90,7 +126,7 @@ function main() {
   const startedAt = new Date().toISOString(), checks = [], tools = [];
   const toolchain = { pin: rust.pin, nativeTarget: rust.hostTarget };
   let before = null, after = null, candidateBefore = null, candidateAfter = null, binary = null, observation = null;
-  let result = 'failed', failure = null;
+  let result = 'failed', failure = null, fixtureCleanup = null;
   function run(id, executable, argv, timeout = 30000, environment = rust.env) {
     const start = Date.now();
     const child = spawnSync(executable, argv, { cwd: root, env: environment, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
@@ -105,15 +141,6 @@ function main() {
     assert.ok(Buffer.from(text, 'utf8').equals(stdout), 'Command stdout is not UTF-8');
     return text;
   }
-  function fileIdentity(selected, limit = 256 * 1024 * 1024) {
-    const stat = lstatSync(selected);
-    assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= limit, 'Invalid bounded executable/artifact');
-    const physical = realpathSync.native(selected), bytes = readFileSync(physical);
-    const afterStat = lstatSync(selected);
-    assert.ok(stat.dev === afterStat.dev && stat.ino === afterStat.ino && stat.size === afterStat.size
-      && stat.mtimeMs === afterStat.mtimeMs && bytes.length === stat.size, 'Artifact changed while observed');
-    return { path: physical, bytes: bytes.length, sha256: sha(bytes) };
-  }
   function candidate(id) {
     const head = run(`${id}-head`, 'git', ['--no-optional-locks', 'rev-parse', 'HEAD']).trim();
     assert.match(head, /^[0-9a-f]{40}$/);
@@ -125,8 +152,8 @@ function main() {
     candidateBefore = candidate('before');
     before = fingerprintInputRecords(root, inputs);
     const cargo = resolveHostTool(rust.cargo, rust.env), rustc = resolveHostTool(rust.rustc, rust.env);
-    tools.push({ role: 'node', ...fileIdentity(process.execPath) }, { role: 'cargo-route', ...fileIdentity(cargo) },
-      { role: 'rustc-route', ...fileIdentity(rustc) });
+    tools.push({ role: 'node', ...toolIdentity(process.execPath) }, { role: 'cargo-route', ...toolIdentity(cargo) },
+      { role: 'rustc-route', ...toolIdentity(rustc) });
     const compilerVersion = run('rustc-version', rustc, [`+${rust.pin}`, '-vV']);
     assert.ok(compilerVersion.startsWith(`rustc ${rust.pin} `) && compilerVersion.split(/\r?\n/).includes(`host: ${rust.hostTarget}`),
       'Compiler release/host differs from the tracked native toolchain');
@@ -137,7 +164,7 @@ function main() {
     const sysroot = run('rustc-sysroot', rustc, [`+${rust.pin}`, '--print', 'sysroot']).trim();
     assert.ok(path.isAbsolute(sysroot) && !/[\r\n]/.test(sysroot), 'Require one actual compiler sysroot');
     for (const name of ['cargo', 'rustc']) tools.push({ role: `toolchain-${name}`,
-      ...fileIdentity(path.join(sysroot, 'bin', name + (process.platform === 'win32' ? '.exe' : ''))) });
+      ...toolIdentity(path.join(sysroot, 'bin', name + (process.platform === 'win32' ? '.exe' : ''))) });
     ownedArtifactPath(root, 'target', 'directory', { allowMissing: true });
     ownedArtifactPath(root, `target/${rust.hostTarget}`, 'directory', { allowMissing: true });
     const built = run('compile-native-test', cargo, [`+${rust.pin}`, 'test', '--locked', '--offline', '-p', 'bridge-app',
@@ -164,7 +191,7 @@ function main() {
     assert.deepEqual(after, before, 'Source changed during native acceptance');
     candidateAfter = candidate('after');
     assert.deepEqual(candidateAfter, candidateBefore, 'Repository candidate changed');
-    for (const tool of tools) assert.deepEqual(fileIdentity(tool.path), { path: tool.path, bytes: tool.bytes, sha256: tool.sha256 }, 'Tool bytes changed');
+    for (const tool of tools) assert.deepEqual(toolIdentity(tool.path), { path: tool.path, resolvedPath: tool.resolvedPath, bytes: tool.bytes, sha256: tool.sha256 }, 'Tool route or payload changed');
     after = fingerprintInputRecords(root, inputs);
     assert.deepEqual(after, before, 'Source changed during final tool verification');
     result = 'passed';
@@ -172,6 +199,12 @@ function main() {
     // Do not serialize child output, assertion operands or arbitrary exception text.
     failure = { code: 'ASTROMETRICS_ACCEPTANCE_FAILED', category: error?.name === 'AssertionError' ? 'evidence-refused' : 'execution-failed' };
   } finally {
+    try { fixtureCleanup = cleanupFixture(root, fixtureDirectory); }
+    catch {
+      fixtureCleanup = { status: 'failed' };
+      result = 'failed';
+      failure = { code: 'ASTROMETRICS_FIXTURE_CLEANUP_FAILED', category: 'evidence-refused' };
+    }
     if (before && !after) {
       try { after = fingerprintInputRecords(root, inputs); } catch { after = null; }
     }
@@ -179,7 +212,7 @@ function main() {
     writeFileSync(receiptPath, JSON.stringify({ schemaVersion: 'bridge-astrometrics-acceptance/v1', result, startedAt,
       completedAt: new Date().toISOString(), host: { platform: process.platform, architecture: process.arch, node: process.version },
       toolchain, candidateBefore, candidateAfter, inputs,
-      sourcesBefore: before, sourcesAfter: after, tools, binary, checks, observation, failure,
+      sourcesBefore: before, sourcesAfter: after, tools, binary, checks, observation, failure, fixtureCleanup,
       boundary: 'Exact native bridge-app integration test using the real local HTTP receiver and SQLite store with synthetic producer payloads. No game/mod producer, desktop GUI, abrupt process interruption, other-host execution or release qualification.',
       br21Accepted: false, liveModProducerObserved: false, nativeWebviewQualified: false,
       abruptRecoveryQualified: false, otherNativeHostQualified: false, releaseQualified: false

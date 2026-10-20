@@ -259,14 +259,18 @@ fn post(token: &str, events: &[Value]) -> Check<u16> {
         .map_err(|_| "Diagnostic HTTP response has invalid status code")
 }
 fn socket_closed() -> Check<bool> {
-    let address: SocketAddr = ADDRESS
-        .parse()
-        .map_err(|_| "Invalid fixed acceptance address")?;
-    match TcpStream::connect_timeout(&address, Duration::from_millis(250)) {
-        Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => Ok(true),
-        _ => Ok(false),
+    // Windows may defer a refused connect past a short timeout. Binding proves
+    // the production address is free without timing a TCP refusal handshake.
+    match TcpListener::bind(ADDRESS) {
+        Ok(listener) => {
+            drop(listener);
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => Ok(false),
+        Err(_) => Err("Cannot inspect production socket ownership"),
     }
 }
+
 fn digest(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
