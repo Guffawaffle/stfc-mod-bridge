@@ -70,6 +70,7 @@ pub struct ReadOnlyApplication<S: ObservationSource> {
     events: VecDeque<Event>,
     signature: Option<Value>,
     closing: bool,
+    astrometrics: Option<crate::astrometrics::Astrometrics>,
 }
 impl<S: ObservationSource> ReadOnlyApplication<S> {
     pub fn new(source: S) -> Result<Self, HostFailure> {
@@ -89,7 +90,12 @@ impl<S: ObservationSource> ReadOnlyApplication<S> {
             events: VecDeque::new(),
             signature: None,
             closing: false,
+            astrometrics: None,
         })
+    }
+    pub fn with_astrometrics(mut self, path: std::path::PathBuf) -> Self {
+        self.astrometrics = Some(crate::astrometrics::Astrometrics::new(path));
+        self
     }
     fn evidence(&self) -> Result<Evidence, HostFailure> {
         Ok(Evidence {
@@ -159,6 +165,11 @@ impl<S: ObservationSource> ReadOnlyApplication<S> {
     fn query(&mut self, query: Query) -> Result<QueryResult, Box<BridgeError>> {
         let failed = |_| error(ErrorCode::InternalFailure);
         match query {
+            Query::Astrometrics(_) => self
+                .astrometrics
+                .as_ref()
+                .map(|a| QueryResult::Astrometrics(a.view()))
+                .ok_or_else(|| error(ErrorCode::UnsupportedCapability)),
             Query::Hello(_) => Ok(QueryResult::Hello(HelloResult {
                 supported_versions: [ProtocolVersion],
                 host_epoch: self.cursor.host_epoch.clone(),
@@ -167,7 +178,11 @@ impl<S: ObservationSource> ReadOnlyApplication<S> {
                 } else {
                     HostKind::MacosArm64
                 },
-                implemented_commands: list(vec![CommandId::RequestHostClose]),
+                implemented_commands: list(if self.astrometrics.is_some() {
+                    vec![CommandId::RequestHostClose, CommandId::SetAstrometrics]
+                } else {
+                    vec![CommandId::RequestHostClose]
+                }),
             })),
             Query::Snapshot(_) => self.snapshot().map(QueryResult::Snapshot).map_err(failed),
             Query::ListInstallations(_) => self
@@ -301,9 +316,23 @@ impl<S: ObservationSource> LocalHost for ReadOnlyApplication<S> {
                 })
             }
             RequestBody::Command {
+                command: Command::SetAstrometrics(input),
+            } if !self.closing => match self.astrometrics.as_mut() {
+                Some(a) => {
+                    a.set_enabled(input.enabled);
+                    Ok(ResultPayload::Command {
+                        command: Box::new(CommandResult::SetAstrometrics(a.view())),
+                    })
+                }
+                None => Err(error(ErrorCode::UnsupportedCapability)),
+            },
+            RequestBody::Command {
                 command: Command::RequestHostClose(input),
             } if input.expected_cursor == self.cursor => {
                 self.closing = true;
+                if let Some(a) = &mut self.astrometrics {
+                    a.set_enabled(false);
+                }
                 Ok(ResultPayload::Command {
                     command: Box::new(CommandResult::RequestHostClose(CloseDisposition::Ready)),
                 })
@@ -352,6 +381,9 @@ impl<S: ObservationSource> LocalHost for ReadOnlyApplication<S> {
     }
     fn request_close(&mut self) -> Result<CloseDisposition, HostFailure> {
         self.closing = true;
+        if let Some(a) = &mut self.astrometrics {
+            a.set_enabled(false);
+        }
         Ok(CloseDisposition::Ready)
     }
     fn close_disposition(&self) -> Result<CloseDisposition, HostFailure> {

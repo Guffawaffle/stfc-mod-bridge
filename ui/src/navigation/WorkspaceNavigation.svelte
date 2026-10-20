@@ -7,7 +7,7 @@
   let { facade = useBridge(), items = [
     { id: 'home', label: 'Shuttle Bay' }, { id: 'engineering', label: 'Engineering' },
     { id: 'settings', label: 'Settings' }, { id: 'data_sync', label: 'Data Sync' },
-    { id: 'history', label: 'History' }, { id: 'diagnostics', label: 'Support' }, { id: 'preferences', label: 'Preferences' }
+    { id: 'astrometrics', label: 'Astrometrics' }, { id: 'history', label: 'History' }, { id: 'diagnostics', label: 'Support' }, { id: 'preferences', label: 'Preferences' }
   ] }: Props = $props();
 </script>
 <Navigation label="Bridge workspace" {items} current={$facade.work.view} onselect={id => {

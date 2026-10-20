@@ -1,5 +1,6 @@
 //! Protocol v1 describes requested and observed work; it grants no native authority.
 //! Untrusted transports must use `decode_*`, not raw DTO deserialization.
+mod astrometrics;
 mod codec;
 mod configuration;
 mod distribution;
@@ -11,6 +12,7 @@ mod targets;
 mod wire;
 mod workflow;
 
+pub use astrometrics::*;
 pub use codec::{
     DecodeFailure, MAX_CONTAINER_DEPTH, MAX_MESSAGE_BYTES, ValidatedEvent, ValidatedReply,
     ValidatedRequest, decode_event, decode_reply, decode_request, diagnostic_preview_digest,

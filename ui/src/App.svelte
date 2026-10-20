@@ -4,6 +4,7 @@
   import { Shell, provideBridge } from './app';
   import { BridgeFacade } from './state';
   import { Navigation } from './components';
+  import Astrometrics from './views/astrometrics/Astrometrics.svelte';
   import { Home } from './views/home';
   import { Settings } from './views/settings';
   import { DataSync } from './views/sync';
@@ -49,6 +50,8 @@
   {#snippet navigation()}<WorkspaceNavigation facade={scopedFacade}/>{/snippet}
   {#if $scopedFacade.work.view === 'home'}
     <Home facade={scopedFacade} onmaintenance={openMaintenance}/>
+  {:else if $scopedFacade.work.view === 'astrometrics'}
+    <Astrometrics facade={scopedFacade}/>
   {:else if $scopedFacade.work.view === 'settings'}
     <Settings facade={scopedFacade}/>
   {:else if $scopedFacade.work.view === 'data_sync'}

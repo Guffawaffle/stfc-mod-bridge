@@ -1,6 +1,6 @@
 use super::{
-    configuration::*, distribution::*, management::*, primitives::*, projections::*, targets::*,
-    workflow::*,
+    astrometrics::*, configuration::*, distribution::*, management::*, primitives::*,
+    projections::*, targets::*, workflow::*,
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,7 @@ pub struct GetDraftInput {
     deny_unknown_fields
 )]
 pub enum Query {
+    Astrometrics(EmptyInput),
     Hello(EmptyInput),
     ResolveTarget(ResolveTargetInput),
     GetOperation(GetOperationInput),
@@ -138,6 +139,7 @@ pub struct RequestHostCloseInput {
     deny_unknown_fields
 )]
 pub enum Command {
+    SetAstrometrics(SetAstrometricsInput),
     Prepare(Box<PrepareInput>),
     Commit(CommitInput),
     CancelOperation(CancelOperationInput),
@@ -210,6 +212,7 @@ pub enum HostKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandId {
+    SetAstrometrics,
     Prepare,
     Commit,
     CancelOperation,
@@ -255,6 +258,7 @@ pub struct GetDraftResult {
     deny_unknown_fields
 )]
 pub enum QueryResult {
+    Astrometrics(AstrometricsView),
     Hello(HelloResult),
     ResolveTarget(ResolveTargetResult),
     GetOperation(Box<GetOperationResult>),
@@ -281,6 +285,7 @@ pub enum QueryResult {
     deny_unknown_fields
 )]
 pub enum CommandResult {
+    SetAstrometrics(AstrometricsView),
     Prepare(PreparedPlan),
     Commit(OperationSnapshot),
     CancelOperation(CancelDisposition),
@@ -406,6 +411,7 @@ impl Reply {
             ReplyBody::Rejected { error } => error.valid(),
             ReplyBody::Result { result } => match result {
                 ResultPayload::Query { query } => match query.as_ref() {
+                    QueryResult::Astrometrics(output) => output.valid(),
                     QueryResult::Hello(output) => {
                         let commands = output.implemented_commands.as_slice();
                         commands
@@ -474,6 +480,7 @@ impl Reply {
                     QueryResult::DiagnosticPreview(output) => output.valid(),
                 },
                 ResultPayload::Command { command } => match command.as_ref() {
+                    CommandResult::SetAstrometrics(output) => output.valid(),
                     CommandResult::Prepare(plan) => {
                         plan.semantics.valid()
                             && plan

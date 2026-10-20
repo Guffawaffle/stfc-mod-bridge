@@ -288,6 +288,7 @@ test('all accepted generated method pairs cross the same raw boundary', async ()
     const body: { steps: { type: string; request?: string; reply?: string }[] } = JSON.parse(readFileSync(new URL(transcript.path, fixtures), 'utf8'));
     return body.steps.filter(step => step.type === 'exchange').map(step => ({ request: step.request!, reply: step.reply! }));
   });
+  for (const method of ['astrometrics', 'set_astrometrics']) pairs.push({request:`astrometrics-${method}-request`, reply:`astrometrics-${method}-reply`});
   const names = new Set<string>();
   for (const pair of pairs) {
     const request = decodeRequest(raw(pair.request));

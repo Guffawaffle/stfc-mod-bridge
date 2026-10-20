@@ -16,6 +16,7 @@ bridge-profiles.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+rusqlite.workspace = true
 
 [target.'cfg(all(target_os = "windows", target_arch = "x86_64"))'.dependencies]
 bridge-platform-windows.workspace = true

@@ -57,6 +57,19 @@ configuration/catalog writes and updates remain unavailable until their owning
 execution paths are connected and qualified. Reporting multiple observed sessions
 does not establish support for coordinated multiple launches.
 
+## Optional Astrometrics milestone, 2026-10-20
+
+Guff selected an optional, local diagnostic companion before launch/focus work.
+Bridge may explicitly receive the new diagnostic sync category and append it to
+its own SQLite event store while the application is open. This direction extends
+the first read-only milestone with app-local collection control and diagnostic
+storage; game/catalog/configuration mutation remains unavailable. Sender delivery
+retains current fire-and-forget behavior. Existing captures supply initial claim,
+bulk-selection and receipt events. See `ASTROMETRICS.md` for schema, bounded local
+HTTP ingress, atomic append/conflict handling and shutdown. Remote collection,
+relay, widgets and independent service deployment remain future work. No battle
+sink or dormant science probe is activated by this milestone.
+
 ## Authority and application boundaries
 
 | Component | Owns | Required boundary |

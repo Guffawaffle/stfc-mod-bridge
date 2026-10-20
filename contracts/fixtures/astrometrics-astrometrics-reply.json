@@ -1,0 +1,23 @@
+{
+  "protocolVersion": 1,
+  "requestId": "10000000-0000-4000-8000-000000000001",
+  "body": {
+    "type": "result",
+    "result": {
+      "type": "query",
+      "query": {
+        "name": "astrometrics",
+        "output": {
+          "available": true,
+          "enabled": false,
+          "notice": "disabled",
+          "storedEvents": "0",
+          "rejectedRequests": "0",
+          "endpoint": null,
+          "syncToken": null,
+          "events": []
+        }
+      }
+    }
+  }
+}

@@ -73,9 +73,14 @@ pub struct Desktop {
     service: Mutex<Option<thread::JoinHandle<()>>>,
 }
 impl Desktop {
-    pub fn new(root: PathBuf) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
-        let (host, owner) =
-            spawn_local_host(move || ReadOnlyApplication::new(ProfilesObservations::open(&root)))?;
+    pub fn new(
+        root: PathBuf,
+        astrometrics_db: PathBuf,
+    ) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
+        let (host, owner) = spawn_local_host(move || {
+            ReadOnlyApplication::new(ProfilesObservations::open(&root))
+                .map(|host| host.with_astrometrics(astrometrics_db))
+        })?;
         let desktop = Arc::new(Self {
             host,
             documents: Mutex::new(Documents {

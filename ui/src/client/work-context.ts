@@ -6,7 +6,7 @@ import { bindingEquivalent } from './relations';
 import { draftAcknowledgementMatches } from './draft-acknowledgement';
 import { configurationCompletionValid, possibleSavedDraftSuccessor } from './configuration-completion';
 
-export type WorkspaceView = 'home' | 'engineering' | 'settings' | 'data_sync' | 'history' | 'diagnostics' | 'preferences';
+export type WorkspaceView = 'home' | 'astrometrics' | 'engineering' | 'settings' | 'data_sync' | 'history' | 'diagnostics' | 'preferences';
 export type Navigation = { readonly kind: 'target'; readonly selector: DeepReadonly<TargetSelector> } | { readonly kind: 'close' };
 /** Presentation limits; raw text is never a wire ConfigurationEdit. */
 export const PUBLIC_INPUT_LIMITS = Object.freeze({ maximumBuffers: 64, maximumTextLength: 128 });

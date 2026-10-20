@@ -2357,6 +2357,10 @@ export type ResultPayload =
  */
 export type QueryResult =
   | {
+      name: 'astrometrics';
+      output: AstrometricsView;
+    }
+  | {
       name: 'hello';
       output: HelloResult;
     }
@@ -2425,6 +2429,18 @@ export type QueryResult =
       output: DiagnosticPreview;
     };
 /**
+ * @maxItems 30
+ *
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "BoundedList_AstrometricsEvent_30".
+ */
+export type BoundedList_AstrometricsEvent_30 = AstrometricsEvent[];
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "AstrometricsNotice".
+ */
+export type AstrometricsNotice = 'disabled' | 'listening' | 'unavailable';
+/**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "HostKind".
  */
@@ -2434,6 +2450,7 @@ export type HostKind = 'windows_x64' | 'macos_arm64';
  * via the `definition` "CommandId".
  */
 export type CommandId =
+  | 'set_astrometrics'
   | 'prepare'
   | 'commit'
   | 'cancel_operation'
@@ -3335,6 +3352,10 @@ export type MacAbsolutePath = string;
  */
 export type CommandResult =
   | {
+      name: 'set_astrometrics';
+      output: AstrometricsView;
+    }
+  | {
       name: 'prepare';
       output: PreparedPlan;
     }
@@ -3535,6 +3556,10 @@ export type RequestBody =
 export type Query =
   | {
       input: EmptyInput;
+      name: 'astrometrics';
+    }
+  | {
+      input: EmptyInput;
       name: 'hello';
     }
   | {
@@ -3662,6 +3687,10 @@ export type ActionScope =
  * via the `definition` "Command".
  */
 export type Command =
+  | {
+      input: SetAstrometricsInput;
+      name: 'set_astrometrics';
+    }
   | {
       input: PrepareInput;
       name: 'prepare';
@@ -4522,6 +4551,38 @@ export interface Reply {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "AstrometricsView".
+ */
+export interface AstrometricsView {
+  available: boolean;
+  enabled: boolean;
+  endpoint?: string | null;
+  events: BoundedList_AstrometricsEvent_30;
+  notice: AstrometricsNotice;
+  rejectedRequests: ProgressCount;
+  storedEvents: ProgressCount;
+  /**
+   * Revealed only on this explicit local collection page, never a diagnostic export.
+   */
+  syncToken?: HostEpoch | null;
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "AstrometricsEvent".
+ */
+export interface AstrometricsEvent {
+  eventType: string;
+  payloadJson: string;
+  payloadTruncated: boolean;
+  rowId: ProgressCount;
+  sequence: string;
+  sourceSession: string;
+  stream: string;
+  summary: string;
+  utcMs?: string | null;
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "HelloResult".
  */
 export interface HelloResult {
@@ -4969,6 +5030,13 @@ export interface ResumeEventsInput {
 export interface DiagnosticPreviewInput {
   disclosure: DiagnosticDisclosure;
   target: TargetSelector;
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "SetAstrometricsInput".
+ */
+export interface SetAstrometricsInput {
+  enabled: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

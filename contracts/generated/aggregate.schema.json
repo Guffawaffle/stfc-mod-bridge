@@ -319,6 +319,117 @@
       ],
       "type": "string"
     },
+    "AstrometricsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "eventType": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "payloadJson": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "payloadTruncated": {
+          "type": "boolean"
+        },
+        "rowId": {
+          "$ref": "#/definitions/ProgressCount"
+        },
+        "sequence": {
+          "maxLength": 20,
+          "type": "string"
+        },
+        "sourceSession": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "stream": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "utcMs": {
+          "maxLength": 20,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rowId",
+        "sourceSession",
+        "stream",
+        "sequence",
+        "eventType",
+        "summary",
+        "payloadJson",
+        "payloadTruncated"
+      ],
+      "type": "object"
+    },
+    "AstrometricsNotice": {
+      "enum": [
+        "disabled",
+        "listening",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "AstrometricsView": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "maxLength": 128,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "events": {
+          "$ref": "#/definitions/BoundedList_AstrometricsEvent_30"
+        },
+        "notice": {
+          "$ref": "#/definitions/AstrometricsNotice"
+        },
+        "rejectedRequests": {
+          "$ref": "#/definitions/ProgressCount"
+        },
+        "storedEvents": {
+          "$ref": "#/definitions/ProgressCount"
+        },
+        "syncToken": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HostEpoch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Revealed only on this explicit local collection page, never a diagnostic export."
+        }
+      },
+      "required": [
+        "available",
+        "enabled",
+        "notice",
+        "storedEvents",
+        "rejectedRequests",
+        "events"
+      ],
+      "type": "object"
+    },
     "AvailabilityReason": {
       "additionalProperties": false,
       "properties": {
@@ -427,6 +538,13 @@
         "$ref": "#/definitions/ApplyTiming"
       },
       "maxItems": 3,
+      "type": "array"
+    },
+    "BoundedList_AstrometricsEvent_30": {
+      "items": {
+        "$ref": "#/definitions/AstrometricsEvent"
+      },
+      "maxItems": 30,
       "type": "array"
     },
     "BoundedList_AvailabilityReason_16": {
@@ -1293,6 +1411,23 @@
           "additionalProperties": false,
           "properties": {
             "input": {
+              "$ref": "#/definitions/SetAstrometricsInput"
+            },
+            "name": {
+              "const": "set_astrometrics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
               "$ref": "#/definitions/PrepareInput"
             },
             "name": {
@@ -1463,6 +1598,7 @@
     },
     "CommandId": {
       "enum": [
+        "set_astrometrics",
         "prepare",
         "commit",
         "cancel_operation",
@@ -1478,6 +1614,23 @@
     },
     "CommandResult": {
       "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "set_astrometrics",
+              "type": "string"
+            },
+            "output": {
+              "$ref": "#/definitions/AstrometricsView"
+            }
+          },
+          "required": [
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
         {
           "additionalProperties": false,
           "properties": {
@@ -8722,6 +8875,23 @@
               "$ref": "#/definitions/EmptyInput"
             },
             "name": {
+              "const": "astrometrics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/EmptyInput"
+            },
+            "name": {
               "const": "hello",
               "type": "string"
             }
@@ -9008,6 +9178,23 @@
     },
     "QueryResult": {
       "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "const": "astrometrics",
+              "type": "string"
+            },
+            "output": {
+              "$ref": "#/definitions/AstrometricsView"
+            }
+          },
+          "required": [
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
         {
           "additionalProperties": false,
           "properties": {
@@ -11035,6 +11222,18 @@
         "isolation_failed"
       ],
       "type": "string"
+    },
+    "SetAstrometricsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
     },
     "SetDraftChangesInput": {
       "additionalProperties": false,

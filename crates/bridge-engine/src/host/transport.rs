@@ -671,7 +671,8 @@ fn reply_kind_matches(request: &RequestBody, reply: &ReplyBody) -> bool {
             },
         ) => matches!(
             (input, output.as_ref()),
-            (Query::Hello(_), QueryResult::Hello(_))
+            (Query::Astrometrics(_), QueryResult::Astrometrics(_))
+                | (Query::Hello(_), QueryResult::Hello(_))
                 | (Query::ResolveTarget(_), QueryResult::ResolveTarget(_))
                 | (Query::GetOperation(_), QueryResult::GetOperation(_))
                 | (Query::Snapshot(_), QueryResult::Snapshot(_))
@@ -716,7 +717,10 @@ fn reply_kind_matches(request: &RequestBody, reply: &ReplyBody) -> bool {
             },
         ) => matches!(
             (input, output.as_ref()),
-            (Command::Prepare(_), CommandResult::Prepare(_))
+            (
+                Command::SetAstrometrics(_),
+                CommandResult::SetAstrometrics(_)
+            ) | (Command::Prepare(_), CommandResult::Prepare(_))
                 | (Command::Commit(_), CommandResult::Commit(_))
                 | (
                     Command::CancelOperation(_),

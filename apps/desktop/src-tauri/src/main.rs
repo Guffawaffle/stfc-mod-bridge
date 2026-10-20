@@ -29,7 +29,13 @@ fn main() {
                 .build(),
         )
         .setup(move |app| {
-            app.manage(ipc::Desktop::new(native_root)?);
+            app.manage(ipc::Desktop::new(
+                native_root,
+                app.path()
+                    .app_local_data_dir()?
+                    .join("astrometrics")
+                    .join("events.sqlite"),
+            )?);
             Ok(())
         })
         .on_page_load(|webview, payload| {

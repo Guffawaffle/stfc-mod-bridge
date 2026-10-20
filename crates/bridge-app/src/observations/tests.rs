@@ -162,3 +162,32 @@ fn event_replay_honors_the_requested_page_and_next_cursor() {
         2
     );
 }
+
+#[test]
+fn optional_astrometrics_uses_the_same_validated_dispatcher_and_starts_off() {
+    let path = std::env::temp_dir()
+        .join(format!(
+            "bridge-astro-dispatch-{}",
+            NativeIdentitySource::new().host_epoch().unwrap().as_str()
+        ))
+        .join("events.sqlite");
+    let mut host = ReadOnlyApplication::new(Missing)
+        .unwrap()
+        .with_astrometrics(path.clone());
+    let output = query(&mut host, "astrometrics");
+    assert_eq!(
+        output["body"]["result"]["query"]["output"]["enabled"],
+        false
+    );
+    assert!(
+        query(&mut host, "hello")["body"]["result"]["query"]["output"]["implementedCommands"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("set_astrometrics"))
+    );
+    let reply=host.dispatch(request(json!({"type":"command","command":{"name":"set_astrometrics","input":{"enabled":false}}}))).unwrap();
+    assert!(matches!(reply.as_inner().body, ReplyBody::Result { .. }));
+    assert!(!path.exists());
+    host.request_close().unwrap();
+    assert_eq!(query(&mut host, "astrometrics")["body"]["type"], "rejected");
+}

@@ -560,6 +560,23 @@
           "additionalProperties": false,
           "properties": {
             "input": {
+              "$ref": "#/definitions/SetAstrometricsInput"
+            },
+            "name": {
+              "const": "set_astrometrics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
               "$ref": "#/definitions/PrepareInput"
             },
             "name": {
@@ -3268,6 +3285,23 @@
               "$ref": "#/definitions/EmptyInput"
             },
             "name": {
+              "const": "astrometrics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/EmptyInput"
+            },
+            "name": {
               "const": "hello",
               "type": "string"
             }
@@ -4399,6 +4433,18 @@
       },
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "SetAstrometricsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
     },
     "SetDraftChangesInput": {
       "additionalProperties": false,
