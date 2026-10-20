@@ -230,17 +230,19 @@
       "scenario": "SC-15"
     },
     {
-      "accepted": 14,
-      "codecRefusals": 1,
+      "accepted": 18,
+      "codecRefusals": 2,
       "features": [
         "action:export_diagnostics",
         "command:prepare",
         "command:request_export_destination",
+        "command:set_astrometrics",
+        "query:astrometrics",
         "query:diagnostic_preview",
         "query:read_configuration"
       ],
-      "pairedExchanges": 10,
-      "pairedTranscripts": 8,
+      "pairedExchanges": 12,
+      "pairedTranscripts": 10,
       "scenario": "SC-16"
     },
     {
@@ -4451,6 +4453,66 @@
       ]
     },
     {
+      "case": "Optional collection is off without exposing connection credentials",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc16-astrometrics-disabled-request",
+      "kind": "request",
+      "path": "sc16-astrometrics-disabled-request.json",
+      "scenario": "SC-16",
+      "tags": [
+        "astrometrics"
+      ]
+    },
+    {
+      "case": "Optional collection is off without exposing connection credentials",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc16-astrometrics-disabled-reply",
+      "kind": "reply",
+      "path": "sc16-astrometrics-disabled-reply.json",
+      "scenario": "SC-16",
+      "tags": [
+        "astrometrics"
+      ]
+    },
+    {
+      "case": "Collection control preserves a disabled result through the shared command contract",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc16-astrometrics-stop-request",
+      "kind": "request",
+      "path": "sc16-astrometrics-stop-request.json",
+      "scenario": "SC-16",
+      "tags": [
+        "astrometrics"
+      ]
+    },
+    {
+      "case": "Collection control preserves a disabled result through the shared command contract",
+      "expectedSemantic": true,
+      "expectedWire": true,
+      "id": "sc16-astrometrics-stop-reply",
+      "kind": "reply",
+      "path": "sc16-astrometrics-stop-reply.json",
+      "scenario": "SC-16",
+      "tags": [
+        "astrometrics"
+      ]
+    },
+    {
+      "case": "Collection control refuses a nonboolean enable value",
+      "expectedSemantic": false,
+      "expectedWire": false,
+      "id": "sc16-astrometrics-nonboolean-enable",
+      "kind": "request",
+      "path": "sc16-astrometrics-nonboolean-enable.json",
+      "scenario": "SC-16",
+      "tags": [
+        "codec-refusal"
+      ]
+    },
+    {
       "case": "Runtime metadata uses its own reviewed provider authority",
       "expectedSemantic": true,
       "expectedWire": true,
@@ -8153,6 +8215,24 @@
       "id": "sc17-theme-dark-journey",
       "path": "sc17-theme-dark-journey.transcript.json",
       "scenario": "SC-17"
+    },
+    {
+      "case": "Optional collection is off without exposing connection credentials",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc16-astrometrics-disabled-journey",
+      "path": "sc16-astrometrics-disabled-journey.transcript.json",
+      "scenario": "SC-16"
+    },
+    {
+      "case": "Collection control preserves a disabled result through the shared command contract",
+      "expected": {
+        "accepted": true
+      },
+      "id": "sc16-astrometrics-stop-journey",
+      "path": "sc16-astrometrics-stop-journey.transcript.json",
+      "scenario": "SC-16"
     },
     {
       "case": "Runtime metadata uses its own reviewed provider authority",

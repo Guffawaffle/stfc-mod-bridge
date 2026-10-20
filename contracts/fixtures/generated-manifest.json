@@ -3,7 +3,7 @@
   "files": [
     {
       "path": "contracts/fixtures/index.json",
-      "sha256": "0dc55765464de4523c4bc06b6e1d2319d6064c746137b892fda06370e62c88e1"
+      "sha256": "c2a076a4bc272f84cb3ae21d38b510d1b4286178d5891ab4c90c20f21b75a924"
     },
     {
       "path": "contracts/fixtures/sc-01-discovery-invalid-journey.transcript.json",
@@ -2726,6 +2726,34 @@
       "sha256": "7ddef8e916ceb6c1af37df34367a8d30b339b665a67b3008723233ce4f39ec49"
     },
     {
+      "path": "contracts/fixtures/sc16-astrometrics-disabled-journey.transcript.json",
+      "sha256": "6f0de36596dff7fddde37aa46dd11c2d274bc52df388fb5da3b747e2617118c9"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-disabled-reply.json",
+      "sha256": "3fbc4ea965ea1f049f03002ad74bc061f6ec753e94c29ae7be3784aed46bdb21"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-disabled-request.json",
+      "sha256": "9952ed64dd8069416a4b4e3eddd9dab6f6011aa70c28d7e6ce84e6f19791c6a2"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-nonboolean-enable.json",
+      "sha256": "9e040abc2e143375ae931c46739297902aecdbebb2a4ef6d8a749fb2e6331adf"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-stop-journey.transcript.json",
+      "sha256": "2ff1beaae08b453fb238c03e41699734f519391e6ea40608f719afe79e5438f6"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-stop-reply.json",
+      "sha256": "ae1a4227b952a56e536dd0441b23623c5a3ffe9476616f937aa838fdfd57d1a2"
+    },
+    {
+      "path": "contracts/fixtures/sc16-astrometrics-stop-request.json",
+      "sha256": "d99ab401ef9799b64cc5936223c5b562d8748145930fa01deff1268c0d77500a"
+    },
+    {
       "path": "contracts/fixtures/sc16-capture-export-destination-journey.transcript.json",
       "sha256": "8c9fdd54bb07c439ca2690120e2ca91d211f2b2677f498818170d106d8d9786c"
     },
@@ -3133,7 +3161,7 @@
     },
     {
       "path": "contracts/fixtures/configuration-cases.ts",
-      "sha256": "40e8d65723fd381755c834a4f89121b3e709f6f3d4283c816711edb5214b245b"
+      "sha256": "b8f139a7c4ccd2ccae5c108cb7e833571b1c61442cd9df19c3a0d602f8f5ef9d"
     },
     {
       "path": "contracts/fixtures/distribution-cases.ts",

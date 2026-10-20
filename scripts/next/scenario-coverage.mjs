@@ -17,7 +17,7 @@ const required = Object.freeze({
   'SC-13': ['query:check_bridge_update', 'action:bridge_update', 'action:recover_bridge_update'],
   'SC-14': ['command:commit', 'query:resume_events'],
   'SC-15': ['command:cancel_operation', 'command:request_host_close', 'query:get_operation'],
-  'SC-16': ['query:diagnostic_preview', 'command:request_export_destination', 'action:export_diagnostics'],
+  'SC-16': ['query:astrometrics', 'command:set_astrometrics', 'query:diagnostic_preview', 'command:request_export_destination', 'action:export_diagnostics'],
   'SC-17': ['action:save_application_preferences'],
   'SC-18': ['query:hello']
 });

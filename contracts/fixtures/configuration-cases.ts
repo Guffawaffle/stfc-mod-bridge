@@ -1,5 +1,5 @@
 import type {
-  BackupReceiptRef, ConfigurationSchema, DiagnosticContent, DiagnosticPreview,
+  AstrometricsView, BackupReceiptRef, ConfigurationSchema, DiagnosticContent, DiagnosticPreview,
   DocumentBinding, DocumentSnapshot, DraftSnapshot, FieldDefinition, FieldType,
   PublicConfigValue, Request, Reply, SaveApplicationPreferencesInput, SchemaBinding, PlanSemantics, DraftRef, SetDraftChangesResult, PrivateValueRef, SecretRef
 } from '../../ui/src/generated/protocol.js';
@@ -293,5 +293,21 @@ export function buildCatalog(hooks: FixtureHooks): GoldenCatalog {
       commandReply(requestId, { name: 'prepare', output: plan }), ['presentation']);
   }
   fixtures.push(refusalFixture('sc17-unknown-theme', 'SC-17', 'Presentation preference enums are closed', 'request', { protocolVersion: 1, requestId: id(), body: { type: 'command', command: { name: 'prepare', input: { intent: { kind: 'save_application_preferences', input: { expectedRevision: 'synthetic-preferences-1', values: { theme: 'unknown', motion: 'system' } } } } } } }, false));
+  const astrometricsOff: AstrometricsView = {
+    available: true, enabled: false, historyAvailable: false, notice: 'disabled',
+    storedEvents: '0', rejectedRequests: '0', endpoint: null, syncToken: null, events: []
+  };
+  requestId = id();
+  pair('sc16-astrometrics-disabled', 'SC-16', 'Optional collection is off without exposing connection credentials',
+    queryRequest(requestId, { name: 'astrometrics', input: {} }),
+    queryReply(requestId, { name: 'astrometrics', output: astrometricsOff }), ['astrometrics']);
+  requestId = id();
+  pair('sc16-astrometrics-stop', 'SC-16', 'Collection control preserves a disabled result through the shared command contract',
+    commandRequest(requestId, { name: 'set_astrometrics', input: { enabled: false } }),
+    commandReply(requestId, { name: 'set_astrometrics', output: astrometricsOff }), ['astrometrics']);
+  fixtures.push(refusalFixture('sc16-astrometrics-nonboolean-enable', 'SC-16', 'Collection control refuses a nonboolean enable value', 'request', {
+    protocolVersion: 1, requestId: id(), body: { type: 'command', command: { name: 'set_astrometrics', input: { enabled: 'true' } } }
+  }, false));
+
   return { fixtures, transcripts };
 }

@@ -70,3 +70,17 @@ reopen, duplicate/conflict rollback, foreign-store refusal and bounded previews.
 Protocol/client tests cover the new optional methods. Tests and Windows builds
 do not establish Apple Silicon runtime or an installed live-game capture. Full
 br-21 and release acceptance remain governed by the existing qualification gates.
+
+The opt-in native acceptance command is `node scripts/next/astrometrics-acceptance.mjs`.
+Run it from a clean, committed owning checkout with port 58237 free. It compiles
+and identifies the exact native integration-test executable, sends synthetic
+producer envelopes through the production dispatcher and HTTP receiver, and
+checks SQLite persistence, authentication, replay/conflict, disabled history,
+normal close and reopen. It never stops an existing listener. Candidate-bound,
+sanitized observations are retained under `artifacts/next/astrometrics-acceptance/`;
+connection tokens and database files containing them are not retained. The latest
+complete receipt is also copied to `artifacts/next/astrometrics-acceptance/latest.json`
+for runners that require an exact artifact path rather than a glob.
+This command can run as a local LexRunner integration gate. Its result covers
+only the observed host and synthetic producer; it does not accept full br-21,
+actual mod delivery, a desktop webview, abrupt recovery or a Rust release.

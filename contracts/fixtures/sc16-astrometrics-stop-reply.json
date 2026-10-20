@@ -1,0 +1,24 @@
+{
+  "body": {
+    "result": {
+      "command": {
+        "name": "set_astrometrics",
+        "output": {
+          "available": true,
+          "enabled": false,
+          "endpoint": null,
+          "events": [],
+          "historyAvailable": false,
+          "notice": "disabled",
+          "rejectedRequests": "0",
+          "storedEvents": "0",
+          "syncToken": null
+        }
+      },
+      "type": "command"
+    },
+    "type": "result"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000085c-1111-4111-8111-111111111111"
+}
