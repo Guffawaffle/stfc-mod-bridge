@@ -78,7 +78,9 @@ producer envelopes through the production dispatcher and HTTP receiver, and
 checks SQLite persistence, authentication, replay/conflict, disabled history,
 normal close and reopen. It never stops an existing listener. Candidate-bound,
 sanitized observations are retained under `artifacts/next/astrometrics-acceptance/`;
-connection tokens and database files containing them are not retained.
+connection tokens and database files containing them are not retained. The latest
+complete receipt is also copied to `artifacts/next/astrometrics-acceptance/latest.json`
+for runners that require an exact artifact path rather than a glob.
 This command can run as a local LexRunner integration gate. Its result covers
 only the observed host and synthetic producer; it does not accept full br-21,
 actual mod delivery, a desktop webview, abrupt recovery or a Rust release.

@@ -392,7 +392,7 @@ fn astrometrics_real_receiver_acceptance() -> Check<()> {
     {
         let db = Connection::open_with_flags(&fixture.database, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|_| "Cannot independently read committed SQLite database")?;
-        let count: u64 = db
+        let count: i64 = db
             .query_row("SELECT count(*) FROM event", [], |row| row.get(0))
             .map_err(|_| "Cannot independently count SQLite evidence")?;
         let original: String = db

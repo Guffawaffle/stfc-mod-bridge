@@ -184,6 +184,8 @@ function main() {
       br21Accepted: false, liveModProducerObserved: false, nativeWebviewQualified: false,
       abruptRecoveryQualified: false, otherNativeHostQualified: false, releaseQualified: false
     }, null, 2) + '\n', { flag: 'wx' });
+    const latest = ownedArtifactPath(root, 'artifacts/next/astrometrics-acceptance/latest.json', 'file', { allowMissing: true });
+    writeFileSync(latest, readFileSync(receiptPath));
     console.log(JSON.stringify({ result, receipt: relative(receiptPath), sha256: sha(readFileSync(receiptPath)),
       nativeTarget: rust.hostTarget, tests: result === 'passed' ? 1 : 0, br21Accepted: false, releaseQualified: false }));
     process.exitCode = result === 'passed' ? 0 : 1;
