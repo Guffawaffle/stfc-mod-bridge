@@ -1,0 +1,24 @@
+{
+  "case": "Collection control preserves a disabled result through the shared command contract",
+  "expected": {
+    "accepted": true
+  },
+  "id": "sc16-astrometrics-stop-journey",
+  "scenario": "SC-16",
+  "steps": [
+    {
+      "cursor": {
+        "hostEpoch": "000003e8-1111-4111-8111-111111111111",
+        "sequence": "0",
+        "streamId": "000003e9-1111-4111-8111-111111111111"
+      },
+      "reason": "initial",
+      "type": "boundary"
+    },
+    {
+      "reply": "sc16-astrometrics-stop-reply",
+      "request": "sc16-astrometrics-stop-request",
+      "type": "exchange"
+    }
+  ]
+}

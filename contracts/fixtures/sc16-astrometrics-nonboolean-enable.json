@@ -1,0 +1,13 @@
+{
+  "body": {
+    "command": {
+      "input": {
+        "enabled": "true"
+      },
+      "name": "set_astrometrics"
+    },
+    "type": "command"
+  },
+  "protocolVersion": 1,
+  "requestId": "0000085d-1111-4111-8111-111111111111"
+}
