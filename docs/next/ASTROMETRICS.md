@@ -31,13 +31,15 @@ explicit supported version; future versions are refused, not guessed.
 Bridge binds only `127.0.0.1:58237`, POST `/sync`, using the existing
 `stfc-sync-token` header and JSON content type. A token is generated and retained
 in its own local database; connection settings are revealed only on the explicit
-Astrometrics page. No CORS/browser-origin or remote bind is admitted. The bounded
+Astrometrics page. The generated local target overrides an inherited sync proxy
+with an explicit empty proxy setting. No CORS/browser-origin or remote bind is admitted. The bounded
 HTTP1.1 reader accepts fixed-length bodies up to256KiB, at most16 events/batch,
 8KiB headers and a two-second read deadline. No thread is created per connection.
 
 The local SQLite file is under Bridge's application-local-data directory,
 `astrometrics/events.sqlite`. Opening the tab while disabled creates no store or
-listener. First activation initializes only an empty, app-owned database. The
+listener; an existing owned database is opened read-only to inspect history.
+History availability is separate from receiver availability. First activation initializes only an empty, app-owned database. The
 application ID, schema version and schema hash must match on reopen; unrelated
 or newer stores are refused. Batches commit atomically before HTTP200. Exact
 redelivery is idempotent; conflicting identity returns409 and rolls the batch

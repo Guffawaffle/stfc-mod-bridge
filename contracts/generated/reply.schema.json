@@ -294,6 +294,9 @@
         "events": {
           "$ref": "#/definitions/BoundedList_AstrometricsEvent_30"
         },
+        "historyAvailable": {
+          "type": "boolean"
+        },
         "notice": {
           "$ref": "#/definitions/AstrometricsNotice"
         },
@@ -317,6 +320,7 @@
       },
       "required": [
         "available",
+        "historyAvailable",
         "enabled",
         "notice",
         "storedEvents",

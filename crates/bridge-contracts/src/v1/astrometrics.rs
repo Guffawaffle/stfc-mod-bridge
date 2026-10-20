@@ -42,6 +42,7 @@ pub struct AstrometricsEvent {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AstrometricsView {
     pub available: bool,
+    pub history_available: bool,
     pub enabled: bool,
     pub notice: AstrometricsNotice,
     pub stored_events: ProgressCount,

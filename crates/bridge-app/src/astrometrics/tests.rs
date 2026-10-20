@@ -197,3 +197,29 @@ fn stopping_a_partial_http_read_joins_before_receiver_release() {
     assert!(ended.load(Ordering::Acquire));
     assert!(TcpStream::connect(address).is_err());
 }
+
+#[test]
+fn retained_history_is_readable_after_restart_without_activating_collection() {
+    let fixture = Fixture::new();
+    {
+        let mut store = Store::open(&fixture.path).unwrap();
+        store
+            .ingest(&serde_json::to_vec(&vec![event("1")]).unwrap())
+            .unwrap();
+    }
+    let before = std::fs::read(&fixture.path).unwrap();
+    let mut collector = Astrometrics::new(fixture.path.clone());
+    let view = collector.view();
+    assert!(!view.enabled);
+    assert!(view.history_available);
+    assert_eq!(view.stored_events.get(), 1);
+    assert_eq!(view.events.as_slice().len(), 1);
+    assert!(collector.receiver.is_none());
+    assert!(collector.store.is_none());
+    assert!(view.sync_token.is_none());
+    // A failed attempt to start collection cannot hide a readable history.
+    collector.unavailable = true;
+    assert!(collector.view().history_available);
+    assert_eq!(collector.view().stored_events.get(), 1);
+    assert_eq!(std::fs::read(&fixture.path).unwrap(), before);
+}

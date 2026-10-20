@@ -180,6 +180,50 @@ impl Store {
             token: HostEpoch::new(token).map_err(fail)?,
         })
     }
+    fn read_only(path: &std::path::Path) -> Result<Option<Self>> {
+        match std::fs::metadata(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(Failure),
+            Ok(metadata) if !metadata.is_file() => return Err(Failure),
+            Ok(_) => {}
+        }
+        let db = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(fail)?;
+        db.busy_timeout(Duration::from_millis(250)).map_err(fail)?;
+        let id: i64 = db
+            .pragma_query_value(None, "application_id", |r| r.get(0))
+            .map_err(fail)?;
+        let version: i64 = db
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .map_err(fail)?;
+        if id != APPLICATION_ID || version != 1 {
+            return Err(Failure);
+        }
+        let hash: String = db
+            .query_row(
+                "SELECT value FROM metadata WHERE key='schema_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(fail)?;
+        if hash != digest(SCHEMA.as_bytes()) {
+            return Err(Failure);
+        }
+        let token: String = db
+            .query_row(
+                "SELECT value FROM metadata WHERE key='sync_token'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(fail)?;
+        Ok(Some(Self {
+            db,
+            token: HostEpoch::new(token).map_err(fail)?,
+        }))
+    }
     fn ingest(&mut self, bytes: &[u8]) -> std::result::Result<(), u16> {
         if bytes.len() > LIMIT {
             return Err(413);
@@ -465,20 +509,28 @@ impl Astrometrics {
     }
     pub fn view(&self) -> AstrometricsView {
         let enabled = self.receiver.is_some();
-        let facts = self
-            .store
-            .as_ref()
-            .and_then(|s| s.lock().ok())
-            .and_then(|s| s.timeline().ok().map(|t| (s.token.clone(), t)));
+        // History reads never bind a listener, create a database, migrate it or
+        // apply writable pragmas. Collection failure is separate from history.
+        let facts = if let Some(store) = &self.store {
+            store
+                .lock()
+                .map_err(fail)
+                .and_then(|store| store.timeline().map(Some))
+        } else {
+            Store::read_only(&self.path)
+                .and_then(|store| store.map(|store| store.timeline()).transpose())
+        };
+        let history_available = facts.is_ok();
         let failed = self.unavailable
-            || (self.store.is_some() && facts.is_none())
+            || !history_available
             || self
                 .receiver
                 .as_ref()
                 .is_some_and(|r| r.owner.as_ref().is_none_or(|o| o.is_finished()));
-        let (count, events) = facts.map(|(_, t)| t).unwrap_or((0, vec![]));
+        let (count, events) = facts.unwrap_or(None).unwrap_or((0, vec![]));
         AstrometricsView {
             available: !failed,
+            history_available,
             enabled,
             notice: if failed {
                 AstrometricsNotice::Unavailable

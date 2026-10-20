@@ -1,10 +1,14 @@
-import { expect, test, vi, afterEach } from 'vitest';
+import { expect, test, vi, afterEach, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const context = vi.hoisted(() => ({ native: false, invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => context.native, invoke: context.invoke }));
 const epoch = '10000000-0000-4000-8000-000000000001';
 const clients: Array<{dispose(): void}> = [];
+// Warm the shared codec outside the behavioral test's five-second deadline.
+// Cold validator compilation can exceed that deadline during native builds.
+beforeAll(async () => { await import('../src/client'); }, 15000);
+
 afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.resetModules(); context.invoke.mockReset(); });
 
 test('ordinary browser stays unavailable and never invokes native code', async () => {

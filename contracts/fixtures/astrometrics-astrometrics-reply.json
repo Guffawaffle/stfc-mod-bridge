@@ -15,7 +15,8 @@
           "rejectedRequests": "0",
           "endpoint": null,
           "syncToken": null,
-          "events": []
+          "events": [],
+          "historyAvailable": true
         }
       }
     }

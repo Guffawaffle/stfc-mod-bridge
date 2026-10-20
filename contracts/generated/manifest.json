@@ -6,7 +6,7 @@
   "files": [
     {
       "path": "contracts/generated/aggregate.schema.json",
-      "sha256": "5f28d866b40611e183ec1d133e75af714a4cdefa4c78d6f16dbca6246f5e80b7"
+      "sha256": "2e3d1b2d08c05e71ff4c95caa3004feb793e42e711ef304fdfe4e1d1e6317d5f"
     },
     {
       "path": "contracts/generated/event.schema.json",
@@ -14,7 +14,7 @@
     },
     {
       "path": "contracts/generated/reply.schema.json",
-      "sha256": "6e342b9e3073b25c08ee67dd67eeb5d96858c28cf34b700503b683ca19ecdc48"
+      "sha256": "ea4ece2562ad40abc3354bb2675cac236c4dff24bd8b4e36f38fd021e48eabbe"
     },
     {
       "path": "contracts/generated/request.schema.json",
@@ -22,7 +22,7 @@
     },
     {
       "path": "ui/src/generated/protocol.ts",
-      "sha256": "9c5095e432ea5947f496a79bace311f2fae95b4396e3e3f4cbc4138e4f811625"
+      "sha256": "550b4e359b6ed282e5ce7706b44f7bd9c7d42045ea93f66726eb2522920ec456"
     }
   ],
   "generationBoundary": "wire/schema/types; no native or operation execution qualification"

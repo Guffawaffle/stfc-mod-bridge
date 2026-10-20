@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { connectionSettings } from './connection';
   import { onMount, untrack } from 'svelte';
   import { useBridge } from '../../app';
   import { Button, Notice } from '../../components';
@@ -34,10 +35,7 @@
     const date = new Date(Number(value));
     return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Time unavailable';
   }
-  const configuration = $derived(view?.enabled && view.endpoint && view.syncToken
-    ? `[sync.targets.astrometrics]\nurl = "${view.endpoint}"\ntoken = "${view.syncToken}"\ndiagnostics = true\n`
-      + ['away_assignments', 'battlelogs', 'buffs', 'buildings', 'haven', 'inventory', 'jobs', 'missions', 'officers', 'research', 'resources', 'ships', 'slots', 'tech', 'traits'].map(key => `${key} = false`).join('\n')
-    : '');
+  const configuration = $derived(view ? connectionSettings(view) : '');
   onMount(() => {
     active = true; void refresh();
     const timer = setInterval(() => { void refresh(); }, 3000);
@@ -55,7 +53,7 @@
     <Notice title="Collection could not be confirmed" tone="warning"><p>The local port or diagnostic store is unavailable. Existing records are retained.</p></Notice>
   {/if}
   <div class="controls">
-    <p role="status">{view?.enabled ? 'Collecting while Bridge is open' : view ? 'Collection is off' : 'Checking collection status'}</p>
+    <p role="status">{view?.notice === 'unavailable' ? 'Collection needs attention' : view?.enabled ? 'Collecting while Bridge is open' : view ? 'Collection is off' : 'Checking collection status'}</p>
     <Button variant="primary" busy={busy} disabled={!view || unavailable} onclick={() => setEnabled(!view?.enabled)}>{view?.enabled ? 'Stop collection' : 'Start collection'}</Button>
   </div>
   <p class="helper">Other tabs keep collection running. Closing Bridge stops its receiver. The mod keeps its existing fire-and-forget behavior; missed events are not replayed.</p>
@@ -67,7 +65,7 @@
       <p class="helper">Keep this token private. The receiver listens only on this computer.</p>
     </details>
   {/if}
-  {#if view}
+  {#if view?.historyAvailable}
     <p>{view.storedEvents} stored events · {view.rejectedRequests} rejected requests in this Bridge session</p>
     <h2>Recent observations</h2>
     <p class="helper">Newest arrivals first, up to 30. Sequence numbers apply within one producer session and stream. Account identity is unconfirmed.</p>
@@ -80,6 +78,8 @@
         <details><summary>Recorded evidence{event.payloadTruncated ? ' (preview truncated)' : ''}</summary><pre>{event.payloadJson}</pre></details>
       </article>
     {/each}
+  {:else if view}
+    <p>Stored history is unavailable. Existing records have not been removed.</p>
   {/if}
 </section>
 <style>

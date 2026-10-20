@@ -4558,6 +4558,7 @@ export interface AstrometricsView {
   enabled: boolean;
   endpoint?: string | null;
   events: BoundedList_AstrometricsEvent_30;
+  historyAvailable: boolean;
   notice: AstrometricsNotice;
   rejectedRequests: ProgressCount;
   storedEvents: ProgressCount;
