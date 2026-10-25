@@ -3,7 +3,7 @@
   "schemaId": "stfc-mod-bridge.versioned-config-schema-set",
   "provider": {
     "id": "netniv",
-    "repository": "netniV/stfc-mod"
+    "repository": "STFC-Mod/mod"
   },
   "featureGateSets": {
     "none": [],

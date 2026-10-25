@@ -943,7 +943,7 @@ public sealed class ModManagementCoordinatorTests
                 "active",
                 new Version(0, 1, 0),
                 new(
-                    "netniV/stfc-mod",
+                    "STFC-Mod/mod",
                     "e80a303a9949c89100b6e59b8a5e5cc2271e7144"),
                 "launcher-reviewed-exact-hash",
                 []),
@@ -979,7 +979,7 @@ public sealed class ModManagementCoordinatorTests
             attribution.ProviderId,
             attribution.ReleaseChannelId,
             attribution.RuntimeDistributionId,
-            "netniV/stfc-mod",
+            "STFC-Mod/mod",
             tag,
             tag.TrimStart('v'),
             new string('A', 40),
@@ -1010,7 +1010,7 @@ public sealed class ModManagementCoordinatorTests
         ReleaseArtifact() with
         {
             DownloadUri = new Uri(
-                "https://github.com/netniV/stfc-mod/releases/download/v1.1.6.0/stfc-community-mod.zip"),
+                "https://github.com/STFC-Mod/mod/releases/download/v1.1.6.0/stfc-community-mod.zip"),
             ExpectedVersion = "1.1.6.0",
         };
 

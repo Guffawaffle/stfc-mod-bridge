@@ -1851,7 +1851,7 @@ public sealed class LauncherProviderAtomicSwitchCoordinatorTests
             "netniv",
             "stable",
             "netniv.stfc-community-mod",
-            "NetniV/stfc-mod",
+            "STFC-Mod/mod",
             "v1.1.5.1",
             "1.1.5.1",
             new string('1', 40),
