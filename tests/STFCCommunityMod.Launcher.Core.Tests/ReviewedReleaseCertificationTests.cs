@@ -20,6 +20,7 @@ public sealed class ReviewedReleaseCertificationTests
         var certification = catalog.Find("netniv", "stable");
 
         Assert.IsNotNull(certification);
+        Assert.AreEqual("STFC-Mod/mod", certification.Repository);
         Assert.AreEqual("v1.1.6.0", certification.Tag);
         Assert.AreEqual("e80a303a9949c89100b6e59b8a5e5cc2271e7144", certification.SourceCommit);
         Assert.AreEqual(9448048, certification.AssetSize);
@@ -92,6 +93,20 @@ public sealed class ReviewedReleaseCertificationTests
         var client = new ReviewedGitHubReleaseAssetClient(
             new(new StaticHandler(response)),
             certification);
+
+        await Assert.ThrowsExceptionAsync<InvalidDataException>(
+            () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
+    }
+
+    [TestMethod]
+    public async Task LegacyRepositoryDownloadUrlDoesNotWidenCurrentRouting()
+    {
+        var certification = Certification();
+        var response = JsonResponse(certification).Replace(
+            "https://github.com/STFC-Mod/mod/",
+            "https://github.com/netniV/stfc-mod/",
+            StringComparison.Ordinal);
+        var client = new ReviewedGitHubReleaseAssetClient(new(new StaticHandler(response)), certification);
 
         await Assert.ThrowsExceptionAsync<InvalidDataException>(
             () => client.DiscoverLatestAsync("stable", new Version(0, 1, 0)));
@@ -466,7 +481,7 @@ public sealed class ReviewedReleaseCertificationTests
             "netniv",
             "stable",
             "netniv.stfc-community-mod",
-            "netniV/stfc-mod",
+            "STFC-Mod/mod",
             "v1.1.6.0",
             "1.1.6.0",
             "e80a303a9949c89100b6e59b8a5e5cc2271e7144",

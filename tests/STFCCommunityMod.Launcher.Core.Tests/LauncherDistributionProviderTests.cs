@@ -15,7 +15,7 @@ public sealed class LauncherDistributionProviderTests
         var guffawaffle = catalog.GetProvider("guffawaffle");
         var netniv = catalog.GetProvider("netniv");
         Assert.AreEqual("Guffawaffle/stfc-mod", guffawaffle.DefaultReleaseChannel.Repository);
-        Assert.AreEqual("netniV/stfc-mod", netniv.DefaultReleaseChannel.Repository);
+        Assert.AreEqual("STFC-Mod/mod", netniv.DefaultReleaseChannel.Repository);
         Assert.AreEqual(
             LauncherSelfUpdateAuthority.WindowsArtifactPublisher,
             guffawaffle.ArtifactPolicy.WindowsPublisher);

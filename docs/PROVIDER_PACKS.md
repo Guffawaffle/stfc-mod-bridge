@@ -36,6 +36,12 @@ Missing capability IDs resolve to `unknown`. `unknown` never means false and
 never means probably supported: the corresponding install, edit, or migration
 path fails closed and the source-switch preview names the unknown evidence.
 
+Upstream now uses `STFC-Mod/mod` (GitHub repository ID `693298224`), transferred from `netniV/stfc-mod`.
+The `netniv` provider ID and `netniv.stfc-community-mod` runtime identity remain stable. Repository fields in the
+reviewed release catalog are current routing coordinates for the same transferred repository; tags, commits,
+observation dates, sizes and hashes remain unchanged. This does not re-certify artifacts or rewrite historical
+attestation signer claims. No new artifact or signer is trusted by this routing update.
+
 ## Current capability matrix
 
 This matrix documents the current bundled evidence, not an aspiration.
@@ -44,7 +50,7 @@ This matrix documents the current bundled evidence, not an aspiration.
 |---|---|---|
 | Stable provider ID | `guffawaffle` | `netniv` |
 | Stable channel | `stable` | `stable` |
-| Release repository | `Guffawaffle/stfc-mod` | `netniV/stfc-mod` |
+| Release repository | `Guffawaffle/stfc-mod` | `STFC-Mod/mod` |
 | Release discovery | Repository release manifest plus exact reviewed fallback if the manifest asset is absent | Exact launcher-reviewed GitHub release asset |
 | Windows artifact trust | SHA-256 plus exact Authenticode subject and durable Artifact Signing identity EKU; fallback ZIP/DLL hashes are also pinned | Temporary launcher-reviewed ZIP and DLL SHA-256 allowlist |
 | Runtime manifest | Bundled verified fixture | Unknown |

@@ -10,7 +10,7 @@
       {
         "id": "stable",
         "displayName": "Stable",
-        "repository": "netniV/stfc-mod",
+        "repository": "STFC-Mod/mod",
         "discoveryKind": "github-release-asset",
         "manifestAssetName": null,
         "artifactAssetName": "stfc-community-mod.zip"
